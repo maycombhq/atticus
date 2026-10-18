@@ -49,7 +49,7 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 ## Next
 
 1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0029; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
-2. **M3: the change pipeline** (see the plan): change lifecycle and hand-off PRs, the critic, stories/tasks/SNOW drafts, Run with AI and assistant files, adopt/absorb, test generation and drift check, initiatives and eval harness. Built one track at a time. Exit: a seeded fixture feature runs from Define to Release against mocks and recorded replay; the critic catches every seeded blocking issue and at least 90% of seeded gaps; generated Copilot and Claude Code files pass smoke runs; stories meet the story bar; adopt and absorb bars met.
+2. **M3: the change pipeline** (see the plan): change lifecycle and hand-off PRs, the critic, one framework over OpenSpec and Spec Kit (ADR 0030), stories/tasks/SNOW drafts, Run with AI and assistant files, adopt/absorb, test generation and drift check, initiatives and eval harness. Built one track at a time. Exit: a seeded fixture feature runs from Define to Release against mocks and recorded replay; the critic catches every seeded blocking issue and at least 90% of seeded gaps; generated Copilot and Claude Code files pass smoke runs; stories meet the story bar; adopt and absorb bars met.
 
 ## How to work
 
