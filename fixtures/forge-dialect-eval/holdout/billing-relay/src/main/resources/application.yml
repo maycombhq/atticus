@@ -1,0 +1,4 @@
+relay:
+  clients:
+    ledger-api:
+      timeout: 1500ms

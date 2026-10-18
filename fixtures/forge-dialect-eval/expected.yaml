@@ -1,0 +1,162 @@
+# The records a correct forge-messaging dialect produces from each eval repo.
+# Written by hand from the repos; never regenerate it from a dialect's output.
+# The grader compares, per repo, every listed field of every record, and reports any
+# extra record of these kinds. holdout/ is never given to the assistant: it checks that
+# the dialect's rules generalise instead of naming the eval repos' values.
+dialect: forge-messaging
+repos:
+  - path: repos/order-intake
+    records:
+      - kind: Endpoint
+        id: order-intake.queue.orders.in
+        component: order-intake
+        endpointType: mq-queue
+        pathOrTopic: ORDERS.IN
+        confidence: verified
+      - kind: Interface
+        id: if-388dac6b99d62ee6
+        from: order-intake
+        to: inventory-api
+        via: direct
+        method: GET
+        normalizedPath: /stock/{}
+        sync: sync
+        confidence: inferred
+      - kind: Interface
+        id: if-39f6d71491016a72
+        from: order-intake
+        to: inventory-api
+        via: direct
+        method: POST
+        normalizedPath: /reservations
+        sync: sync
+        confidence: inferred
+      - kind: Unresolved
+        id: order-intake.publish.orders.received
+        unresolvedKind: event-publish
+        raw: orders.received
+        owner: order-intake
+        confidence: inferred
+      - kind: Unresolved
+        id: order-intake.subscribe.payments.settled
+        unresolvedKind: event-subscribe
+        raw: payments.settled
+        owner: order-intake
+        confidence: inferred
+      - kind: Setting
+        id: order-intake.inventory-api.timeout
+        component: order-intake
+        settingKind: timeout
+        key: relay.clients.inventory-api.timeout
+        valueOrRef: 2s
+        confidence: verified
+
+  - path: repos/inventory-sync
+    records:
+      - kind: Endpoint
+        id: inventory-sync.queue.stock.adjust
+        component: inventory-sync
+        endpointType: mq-queue
+        pathOrTopic: STOCK.ADJUST
+        confidence: verified
+      - kind: Interface
+        id: if-444a80174d7113fb
+        from: inventory-sync
+        to: warehouse-gateway
+        via: direct
+        method: PUT
+        normalizedPath: /bins/{}
+        sync: sync
+        confidence: inferred
+      - kind: Interface
+        id: if-a335408ee3c9f01d
+        from: inventory-sync
+        to: warehouse-gateway
+        via: direct
+        method: GET
+        normalizedPath: /bins/{}/contents
+        sync: sync
+        confidence: inferred
+      - kind: Unresolved
+        id: inventory-sync.publish.stock.changed
+        unresolvedKind: event-publish
+        raw: stock.changed
+        owner: inventory-sync
+        confidence: inferred
+      - kind: Unresolved
+        id: inventory-sync.subscribe.orders.received
+        unresolvedKind: event-subscribe
+        raw: orders.received
+        owner: inventory-sync
+        confidence: inferred
+      - kind: Setting
+        id: inventory-sync.warehouse-gateway.timeout
+        component: inventory-sync
+        settingKind: timeout
+        key: relay.clients.warehouse-gateway.timeout
+        valueOrRef: 5000ms
+        confidence: verified
+
+  - path: repos/notify-worker
+    records:
+      - kind: Endpoint
+        id: notify-worker.queue.notify.retry
+        component: notify-worker
+        endpointType: mq-queue
+        pathOrTopic: NOTIFY.RETRY
+        confidence: verified
+      - kind: Unresolved
+        id: notify-worker.publish.notifications.sent
+        unresolvedKind: event-publish
+        raw: notifications.sent
+        owner: notify-worker
+        confidence: inferred
+      - kind: Unresolved
+        id: notify-worker.subscribe.orders.received
+        unresolvedKind: event-subscribe
+        raw: orders.received
+        owner: notify-worker
+        confidence: inferred
+      - kind: Unresolved
+        id: notify-worker.subscribe.stock.changed
+        unresolvedKind: event-subscribe
+        raw: stock.changed
+        owner: notify-worker
+        confidence: inferred
+
+  - path: holdout/billing-relay
+    records:
+      - kind: Endpoint
+        id: billing-relay.queue.billing.in
+        component: billing-relay
+        endpointType: mq-queue
+        pathOrTopic: BILLING.IN
+        confidence: verified
+      - kind: Interface
+        id: if-546fab3ebf596ab7
+        from: billing-relay
+        to: ledger-api
+        via: direct
+        method: POST
+        normalizedPath: /entries
+        sync: sync
+        confidence: inferred
+      - kind: Unresolved
+        id: billing-relay.publish.billing.closed
+        unresolvedKind: event-publish
+        raw: billing.closed
+        owner: billing-relay
+        confidence: inferred
+      - kind: Unresolved
+        id: billing-relay.subscribe.invoices.issued
+        unresolvedKind: event-subscribe
+        raw: invoices.issued
+        owner: billing-relay
+        confidence: inferred
+      - kind: Setting
+        id: billing-relay.ledger-api.timeout
+        component: billing-relay
+        settingKind: timeout
+        key: relay.clients.ledger-api.timeout
+        valueOrRef: 1500ms
+        confidence: verified

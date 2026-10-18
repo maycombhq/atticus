@@ -1,0 +1,4 @@
+# Forge Messaging app descriptor (held out: never given to the assistant)
+app: billing-relay
+system: billing
+broker: forge-bus

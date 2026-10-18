@@ -1,0 +1,158 @@
+# Reference solution for fixtures/forge-dialect-eval (used only by the grader's tests).
+# Never copy it into the kit or the eval sandbox.
+schemaVersion: 1
+name: forge-messaging
+version: 0.1.0
+description: Forge Messaging apps name themselves in messaging.yaml and declare queues, channels and relay clients with annotations.
+extends: []
+appliesTo:
+  repoTypes: []
+  marker: messaging.yaml
+layout:
+  sourceRoots: [src/main/java]
+  configFiles: [src/main/resources/application.yml]
+rules:
+  - id: queue-consumer
+    description: A method annotated @QueueConsumer serves the named message queue.
+    match:
+      annotation: QueueConsumer
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Endpoint
+      id: "${yaml:messaging.yaml#app}.queue.${attr.queue | lower}"
+      fields:
+        component: "${yaml:messaging.yaml#app}"
+        endpointType: mq-queue
+        pathOrTopic: "${attr.queue}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: relay-call
+    description: A method annotated @RelayCall in a @RelayClient interface makes a direct request to the client's target.
+    match:
+      annotation: RelayCall
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Interface
+      fields:
+        from: "${yaml:messaging.yaml#app}"
+        to: "${annotation.RelayClient.target}"
+        via: direct
+        method: "${attr.verb | upper}"
+        normalizedPath: "${attr.route | normalizePath}"
+        sync: sync
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: emits
+    description: A method annotated @Emits publishes to a channel; the consumers are resolved later.
+    match:
+      annotation: Emits
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${yaml:messaging.yaml#app}.publish.${attr.channel | slug}"
+      fields:
+        unresolvedKind: event-publish
+        raw: "${attr.channel}"
+        owner: "${yaml:messaging.yaml#app}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: on-message
+    description: A method annotated @OnMessage consumes a channel; the producers are resolved later.
+    match:
+      annotation: OnMessage
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${yaml:messaging.yaml#app}.subscribe.${attr.channel | slug}"
+      fields:
+        unresolvedKind: event-subscribe
+        raw: "${attr.channel}"
+        owner: "${yaml:messaging.yaml#app}"
+      evidence: { source: code, side: callee }
+    confidence: inferred
+
+  - id: relay-timeout
+    description: relay.clients.<client>.timeout in application.yml is the timeout of that relay client.
+    match:
+      configKey: relay.clients.*.timeout
+      files: [src/main/resources/application.yml]
+    emit:
+      kind: Setting
+      id: "${yaml:messaging.yaml#app}.${match.3}.timeout"
+      fields:
+        component: "${yaml:messaging.yaml#app}"
+        settingKind: timeout
+        key: "relay.clients.${match.3}.timeout"
+        valueOrRef: "${match.0}"
+      evidence: { source: config }
+    confidence: verified
+
+tests:
+  - name: queues, relay calls, channels and timeouts in order-intake
+    fixture: ../../../../fixtures/forge-dialect-eval/repos/order-intake
+    expect:
+      - kind: Endpoint
+        id: order-intake.queue.orders.in
+        component: order-intake
+        endpointType: mq-queue
+        pathOrTopic: ORDERS.IN
+      - kind: Interface
+        id: if-388dac6b99d62ee6
+        from: order-intake
+        to: inventory-api
+        method: GET
+        normalizedPath: /stock/{}
+      - kind: Unresolved
+        id: order-intake.publish.orders.received
+        unresolvedKind: event-publish
+        raw: orders.received
+      - kind: Unresolved
+        id: order-intake.subscribe.payments.settled
+        unresolvedKind: event-subscribe
+      - kind: Setting
+        id: order-intake.inventory-api.timeout
+        valueOrRef: 2s
+    absent: [order-intake.publish.orders.audit, order-intake.subscribe.test.orders]
+
+  - name: lower-case verbs and colon path parameters
+    files:
+      messaging.yaml: "app: demo\n"
+      src/main/java/demo/Client.java: |
+        @RelayClient(target = "stock-api")
+        public interface Client {
+          @RelayCall(route = "/bins/:id", verb = "put")
+          void move(String id);
+        }
+      src/main/resources/application.yml: |
+        relay:
+          server:
+            timeout: 30s
+          clients:
+            stock-api:
+              timeout: 1s
+              retries: 2
+    expect:
+      - kind: Interface
+        id: if-98c0c1f4486bf854
+        method: PUT
+        normalizedPath: /bins/{}
+      - kind: Setting
+        id: demo.stock-api.timeout
+        key: relay.clients.stock-api.timeout
+        valueOrRef: 1s
+
+  - name: an app without messaging.yaml produces nothing
+    files:
+      src/main/java/x/A.java: |
+        public class A {
+          @OnMessage(channel = "a.b")
+          public void a() {}
+        }
+    expect: []
