@@ -236,7 +236,8 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
       const p = e.pattern ? patterns.get(e.pattern) : undefined;
       for (const i of candidates) {
         if (p) {
-          const via =
+          // Strings: Interface.via has values (mesh, webhook; ADR 0040) a C6 pattern can't name yet.
+          const via: string[] =
             p.detection.via.length > 0
               ? p.detection.via
               : p.route !== "jdbc" && p.route !== "other"

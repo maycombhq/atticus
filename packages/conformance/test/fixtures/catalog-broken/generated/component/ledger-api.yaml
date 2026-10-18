@@ -1,0 +1,11 @@
+kind: Component
+schemaVersion: 2
+id: ledger-api
+status: current
+confidence: verified
+system: ledger
+type: service
+evidence:
+  - source: config
+    repo: forge-ledger
+    path: pom.xml

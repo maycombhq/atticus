@@ -1,0 +1,11 @@
+schemaVersion: 1
+kind: System
+id: old
+status: current
+confidence: verified
+boundary: internal
+evidence:
+  - source: config
+    repo: forge-old
+    path: forge.yaml
+name: Old

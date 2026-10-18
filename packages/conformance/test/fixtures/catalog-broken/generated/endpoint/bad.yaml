@@ -1,0 +1,11 @@
+schemaVersion: 2
+kind: Endpoint
+id: bad
+status: current
+confidence: verified
+component: ledger-api
+endpointType: rest
+evidence:
+  - path: A.java
+    source: code
+schemaRefs: []

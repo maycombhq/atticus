@@ -1,0 +1,27 @@
+# Deliberately broken: its test expects a component the rule doesn't produce, and it extends
+# a dialect that isn't next to it.
+schemaVersion: 1
+name: tags
+version: 0.1.0
+extends: [house-base]
+appliesTo: {}
+rules:
+  - id: tag-service
+    description: A line "SERVICE <name>" in services.txt names a component.
+    match:
+      regex: "SERVICE (\\w+)"
+      files: ["services.txt"]
+    emit:
+      kind: Component
+      id: "${match.1 | slug}"
+      fields:
+        system: "${match.1 | slug}"
+        type: service
+      evidence: { source: config }
+    confidence: verified
+tests:
+  - name: names the billing service
+    files:
+      services.txt: "SERVICE billing\n"
+    expect:
+      - { kind: Component, id: invoicing }
