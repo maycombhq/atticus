@@ -33,6 +33,7 @@ packages/
   index/             local SQLite index, query language, graph and impact
   reconcile/         draw.io reader, aliases, diagram-versus-code reconcile
   ingestors/         diagram (Lucid, Visio, Mermaid) and document (Office, PDF, Markdown) readers
+  changes/           change lifecycle, hand-off PRs, approvals, risk and conflicts
   intake/            inputs/ intake, triage, curated decisions
   stubs/             stub servers from specs or the catalog
   diagrams/          Mermaid and draw.io views of the catalog

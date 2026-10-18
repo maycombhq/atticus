@@ -40,9 +40,15 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 | T6    | Stub servers from specs or the catalog; Mermaid and draw.io views and a shape library; reconcile accepts drawn data access; `atticus stub`, `atticus diagram`                                                                                                      | `packages/stubs`, `packages/diagrams`, ADR 0027                                 |
 | T7    | Dialect build kit, `atticus dialect new/test/run/kit`, and the M2 exit grader with the Forge Messaging eval fixture                                                                                                                                                | `packages/assistant-kit`, `fixtures/forge-dialect-eval`, ADR 0028               |
 
+## Done (M3, in progress)
+
+| Track | What                                                                                                                                                                                                                                                                                                   | Where                                                              |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| A     | Change lifecycle: `change.yaml` contract, change types and templates, hand-off PRs through the Git host adapter with auto-merge, separation of duties, privacy impact, risk scoring, test strategy by type, conflict detection; `atticus change new/status/handoff/sync/return/archive/list/conflicts` | `packages/changes`, `packages/core/src/schema/change.ts`, ADR 0029 |
+
 ## Next
 
-1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0028; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
+1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0029; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
 2. **M3: the change pipeline** (see the plan): change lifecycle and hand-off PRs, the critic, stories/tasks/SNOW drafts, Run with AI and assistant files, adopt/absorb, test generation and drift check, initiatives and eval harness. Built one track at a time. Exit: a seeded fixture feature runs from Define to Release against mocks and recorded replay; the critic catches every seeded blocking issue and at least 90% of seeded gaps; generated Copilot and Claude Code files pass smoke runs; stories meet the story bar; adopt and absorb bars met.
 
 ## How to work

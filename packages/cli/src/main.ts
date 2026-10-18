@@ -24,6 +24,16 @@ import { diagramLibrary, diagramRender } from "./diagram-commands.js";
 import { stubCheck, stubServe } from "./stub-commands.js";
 import { intakeAdd, intakeList, triageDecide, triageList } from "./intake-commands.js";
 import {
+  changeArchive,
+  changeConflicts,
+  changeHandoff,
+  changeList,
+  changeNew,
+  changeReturn,
+  changeStatus,
+  changeSync,
+} from "./change-commands.js";
+import {
   dialectGrade,
   dialectKit,
   dialectNew,
@@ -72,6 +82,15 @@ Usage:
   atticus dialect test <name>          Run a dialect's own tests
   atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
+  atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
+          [--template id] [--id id] [--owner role=a,b]... [--system id]...
+  atticus change status <id> [--json]  State, next step, what blocks it, risk, approvals and test kinds
+  atticus change handoff <id> --by <you>  Open the phase's hand-off PR for approval [--repo]
+  atticus change sync <id> [--by <you>]   Merge an approved hand-off and advance the state [--repo]
+  atticus change return <id> --by <you> --reason "<why>"  Return the change to the product owner
+  atticus change archive <id> --by <you>  Archive a released change
+  atticus change list [--json]         Every change and its state
+  atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -124,6 +143,13 @@ export async function main(argv: string[], io: Output): Promise<number> {
       host: { type: "string" },
       catalog: { type: "boolean" },
       from: { type: "string" },
+      type: { type: "string" },
+      template: { type: "string" },
+      id: { type: "string" },
+      owner: { type: "string", multiple: true },
+      system: { type: "string", multiple: true },
+      base: { type: "string" },
+      repo: { type: "string" },
     },
     strict: false,
   });
@@ -226,6 +252,60 @@ export async function main(argv: string[], io: Output): Promise<number> {
   }
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const json = values.json === true;
+  if (group === "change") {
+    const list = (v: unknown) =>
+      Array.isArray(v) ? (v as string[]) : typeof v === "string" ? [v] : undefined;
+    const repo = str(values.repo);
+    if (command === "new")
+      return changeNew(
+        root,
+        {
+          ...(arg ? { title: arg } : {}),
+          ...(str(values.type) ? { type: str(values.type)! } : {}),
+          ...(str(values.template) ? { template: str(values.template)! } : {}),
+          ...(str(values.id) ? { id: str(values.id)! } : {}),
+          ...(str(values.by) ? { by: str(values.by)! } : {}),
+          ...(list(values.owner) ? { owners: list(values.owner)! } : {}),
+          ...(list(values.system) ? { systems: list(values.system)! } : {}),
+        },
+        io,
+      );
+    if (command === "list") return changeList(root, { json }, io);
+    if (command === "conflicts") return changeConflicts(root, { json }, io);
+    if (!arg) {
+      io.err(
+        `change ${command ?? ""} needs a change id, for example: atticus change status add-transfer-limit`,
+      );
+      return 2;
+    }
+    const by = str(values.by);
+    if (command === "status") return changeStatus(root, arg, { json }, io);
+    if (command === "handoff")
+      return changeHandoff(
+        root,
+        arg,
+        {
+          ...(by ? { by } : {}),
+          ...(repo ? { repo } : {}),
+          ...(str(values.base) ? { base: str(values.base)! } : {}),
+        },
+        io,
+      );
+    if (command === "sync")
+      return changeSync(root, arg, { ...(by ? { by } : {}), ...(repo ? { repo } : {}) }, io);
+    if (command === "return")
+      return changeReturn(
+        root,
+        arg,
+        {
+          ...(by ? { by } : {}),
+          ...(str(values.reason) ? { reason: str(values.reason)! } : {}),
+          ...(repo ? { repo } : {}),
+        },
+        io,
+      );
+    if (command === "archive") return changeArchive(root, arg, { ...(by ? { by } : {}) }, io);
+  }
   if (group === "intake" && command === "add")
     return intakeAdd(
       root,

@@ -239,3 +239,16 @@ describe("atticus change", () => {
     expect(parseOwners(["architect"])).toMatch(/^--owner takes role=person/);
   });
 });
+
+describe("change commands through main", () => {
+  it("routes usage errors and reads repeated --owner and --system flags", async () => {
+    const { main } = await import("../src/main.js");
+    const err: string[] = [];
+    const out: string[] = [];
+    const io = { out: (l: string) => out.push(l), err: (l: string) => err.push(l) };
+    expect(await main(["change", "status"], io)).toBe(2);
+    expect(err.join("\n")).toMatch(/needs a change id/);
+    expect(await main(["change", "new", "--root", "/nonexistent-atticus-root"], io)).toBe(2);
+    expect(err.join("\n")).toMatch(/Usage: atticus change new/);
+  });
+});
