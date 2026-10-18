@@ -10,7 +10,8 @@ import {
   writeFileAtomic,
 } from "@maycombhq/changes";
 import { Finding, Lens, toCanonicalYaml, type ChecklistPack, orgPackDirOf } from "@maycombhq/core";
-import type { AiRuntime } from "@maycombhq/ai";
+import type { AiRuntime, QuarantineItem } from "@maycombhq/ai";
+import { writeQuarantineItems } from "./defences.js";
 import { runLenses, type Discarded, type LensName, type LensRun } from "./ai.js";
 import { artifactOf, readChangeFiles } from "./artifacts.js";
 import { checkRegistry } from "./checks/index.js";
@@ -272,12 +273,16 @@ export async function runCritic(
 
   // Layer 2: AI lenses, only on artifacts that passed layer 1.
   const lenses = opts.lenses ?? [...Lens.options];
+  const quarantined: QuarantineItem[] = [];
   const ai = await runLenses(ctx, applicable, {
     ...(opts.runtime ? { runtime: opts.runtime } : {}),
     lenses,
     failed,
     ...(opts.maxClassification ? { maxClassification: opts.maxClassification } : {}),
+    quarantined,
   });
+  // What the defences left out of the lenses' packs, for a person (ADR 0042).
+  await writeQuarantineItems(root, change.id, `${gate.id}-${round}`, quarantined);
   skipped.push(...ai.skipped);
   ran.push(...ai.runs.filter((r) => r.state === "ran").flatMap((r) => r.rules));
 

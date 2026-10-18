@@ -3,12 +3,14 @@ import { z } from "zod";
 import { AgentDefinition, toCanonicalYaml } from "@maycombhq/core";
 import {
   buildContextPack,
+  quarantineItems,
   toRunSummary,
   type AiRuntime,
   type Run,
   type SourceInput,
 } from "@maycombhq/ai";
 import type { RunSummary } from "@maycombhq/core";
+import { writeQuarantineItems } from "@maycombhq/naysayer";
 import type { PlanContext } from "./context.js";
 import type { PlanSkeleton, StorySkeleton } from "./skeleton.js";
 
@@ -302,15 +304,20 @@ export async function writeProse(
   if (!o.runtime) return { prose: new Map(), discarded: [] };
   const agent = storyWriter(ctx);
   const pack = storyPack(ctx, skeleton, agent, o.now);
+  // Anything the defences left out of the pack (ADR 0042) becomes an item for a person.
+  const quarantined = quarantineItems(pack.defences ?? []);
   let run: Run;
-  if (o.resume) run = await o.runtime.result(o.resume);
-  else {
+  if (o.resume) {
+    run = await o.runtime.result(o.resume);
+    await writeQuarantineItems(ctx.root, ctx.change.id, o.resume, quarantined);
+  } else {
     const prepared = await o.runtime.prepare({
       change: ctx.change.id,
       agent,
       pack,
       outputPath: "stories.md",
     });
+    await writeQuarantineItems(ctx.root, ctx.change.id, prepared.runId, quarantined);
     run = await o.runtime.run(prepared.runId);
   }
   if (run.state === "waiting" || run.state === "prepared")

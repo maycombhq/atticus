@@ -21,8 +21,10 @@
     "test": "vitest run --testTimeout=30000"
   },
   "dependencies": {
+    "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/extractors": "workspace:*",
+    "@maycombhq/ingestors": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",
     "@maycombhq/sdk": "workspace:*",
     "yaml": "^2.9.1"

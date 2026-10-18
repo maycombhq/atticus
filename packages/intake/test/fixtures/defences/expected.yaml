@@ -1,0 +1,96 @@
+# Hand-written expected result of scanInputs over ./inputs (org pack from ../mixed/metarepo),
+# with the ingested-content defences on. Do not generate it from intake's output.
+#   ledger-handover.md  hides an instruction in an HTML comment   -> high: flag, triage item
+#   portal-notes.md     addresses the AI reviewer in plain sight  -> medium: flag only
+#   deploy-runbook.md   rule-like prose with nothing aimed at an AI -> nothing
+# Records omit schemaVersion and status: current; the test adds them.
+
+documents:
+  - path: inputs/docs/deploy-runbook.md
+    id: doc.deploy-runbook
+    classification: document
+    status: needs-reading
+    hash: 145a70300524419b9fa4352f2b697c137febb44e06102c179eb7d441e48009bf
+    systems: []
+    unknownNames: []
+    records: []
+  - path: inputs/inbox/ledger-handover.md
+    id: doc.ledger-handover
+    classification: document
+    status: needs-reading
+    hash: ec8e7b9038e3e04b12d0779b4f802f0ed74d8d1d68bfabb3fa7d8d433d013099
+    systems: [ledger]
+    unknownNames: []
+    records: []
+    defences:
+      risk: high
+      reason: "It hides an instruction (override) from people: hidden text."
+      rules: [override, suppress-output, rule-change]
+  - path: inputs/inbox/portal-notes.md
+    id: doc.portal-notes
+    classification: document
+    status: needs-reading
+    hash: 237fc84d8f86a309da85ac00373f863a46c9e8aa4062b87aa44c5090bf8fd762
+    systems: []
+    unknownNames: []
+    records: []
+    defences:
+      risk: medium
+      reason: "Visible instruction-like text (addresses-ai, suppress-output): kept as data and marked."
+      rules: [addresses-ai, suppress-output]
+
+records:
+  - kind: SourceDocument
+    id: doc.deploy-runbook
+    confidence: verified
+    evidence: [{ source: document, path: inputs/docs/deploy-runbook.md }]
+    path: inputs/docs/deploy-runbook.md
+    docType: document
+    hash: 145a70300524419b9fa4352f2b697c137febb44e06102c179eb7d441e48009bf
+    recordsProduced: []
+  - kind: SourceDocument
+    id: doc.ledger-handover
+    confidence: verified
+    evidence: [{ source: document, path: inputs/inbox/ledger-handover.md }]
+    flags: ["defences:high"]
+    path: inputs/inbox/ledger-handover.md
+    docType: document
+    hash: ec8e7b9038e3e04b12d0779b4f802f0ed74d8d1d68bfabb3fa7d8d433d013099
+    recordsProduced: []
+  - kind: SourceDocument
+    id: doc.portal-notes
+    confidence: verified
+    evidence: [{ source: document, path: inputs/inbox/portal-notes.md }]
+    flags: ["defences:medium"]
+    path: inputs/inbox/portal-notes.md
+    docType: document
+    hash: 237fc84d8f86a309da85ac00373f863a46c9e8aa4062b87aa44c5090bf8fd762
+    recordsProduced: []
+
+# Only the high-risk file raises an item for a person. The id carries the first eight characters
+# of the file's hash, so a changed file is asked about again.
+triage:
+  - id: defences.doc-ledger-handover.ec8e7b90
+    kind: defences
+    summary: "inputs/inbox/ledger-handover.md was held back from every AI step: It hides an instruction (override) from people: hidden text. A person decides whether it is fine."
+    source: { path: inputs/inbox/ledger-handover.md, line: 7 }
+    records: [doc.ledger-handover]
+    options:
+      - action: suppress
+        label: "Clear it (it's fine)"
+        decision:
+          id: triage.defences.doc-ledger-handover.ec8e7b90
+          target: doc.ledger-handover
+          action: suppress
+          value: { triage: defences.doc-ledger-handover.ec8e7b90 }
+          reason: "Clear it (it's fine)"
+      - action: assert
+        label: Keep it quarantined
+        decision:
+          id: triage.defences.doc-ledger-handover.ec8e7b90
+          target: doc.ledger-handover
+          action: assert
+          value: { flags: ["defences:high", "defences:quarantined"] }
+          reason: Keep it quarantined
+
+problems: []

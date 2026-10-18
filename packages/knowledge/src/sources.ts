@@ -9,6 +9,7 @@ import {
   orgPackDirOf,
 } from "@maycombhq/core";
 import type { ProfileSystem } from "@maycombhq/reconcile";
+import { screenDocuments } from "@maycombhq/ai";
 import { readMarkdown, type MarkdownDoc, type MdSection } from "./markdown.js";
 import { mentionIndex, type MentionIndex } from "./mentions.js";
 
@@ -147,6 +148,11 @@ export interface KnowledgePage {
   subject?: string;
   freshness: "fresh" | "stale" | "unknown";
   stale: StaleReason[];
+  /**
+   * What the ingested-content defences found (ADR 0042), set only for medium and high risk.
+   * The page is kept (it is data either way); a high-risk page never reaches an AI step.
+   */
+  defences?: { risk: "medium" | "high"; reason: string; rules: string[] };
 }
 
 export interface SyncResult {
@@ -377,6 +383,12 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
       });
       continue;
     }
+    // Screen every page as it was read (wiki text is untrusted); keep them all, flag the risky.
+    const flagged = new Map(
+      screenDocuments(raw.map((r) => ({ path: r.path, text: r.content, format: "markdown" }))).map(
+        (f) => [f.path, f],
+      ),
+    );
     for (const r of raw) {
       const page = readPage({
         source: source.id,
@@ -415,6 +427,15 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
         }
         page.freshness = page.stale.length ? "stale" : "fresh";
       }
+      const flag = flagged.get(r.path);
+      if (flag && (flag.risk === "medium" || flag.risk === "high")) {
+        page.defences = { risk: flag.risk, reason: flag.reason, rules: [...flag.rules] };
+        if (flag.risk === "high")
+          res.problems.push({
+            source: source.id,
+            message: `${r.path} is held back from every AI step: ${flag.reason} A person must review the page.`,
+          });
+      }
       res.pages.push(page);
       res.documents.push(sourceDocument(page));
     }
@@ -437,6 +458,7 @@ export function sourceDocument(page: KnowledgePage): SourceDocumentRecord {
     ...(page.owner ? { author: page.owner } : {}),
     ...(page.date ? { date: page.date } : {}),
     hash: page.hash,
+    ...(page.defences ? { flags: [`defences:${page.defences.risk}`] } : {}),
     recordsProduced: [],
     evidence: [{ source: "document", path: page.path }],
   });
