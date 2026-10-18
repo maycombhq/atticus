@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useApi } from "../api/client.js";
 import { Changes } from "../screens/Changes.js";
 import { CommandCenter } from "../screens/CommandCenter.js";
+import { Explore } from "../screens/Explore.js";
 import { NotBuilt } from "../screens/NotBuilt.js";
 import { GROUPS, SCREENS, screenOf, type ScreenDef } from "./screens.js";
 
@@ -130,6 +131,8 @@ export function App() {
           <CommandCenter />
         ) : current.id === "changes" ? (
           <Changes hash={hash} />
+        ) : current.id === "explore" ? (
+          <Explore hash={hash} />
         ) : (
           <NotBuilt screen={current} />
         )}

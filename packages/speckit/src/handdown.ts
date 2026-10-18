@@ -24,6 +24,7 @@ import {
   renderOpenApi,
   renderPlan,
   renderSpec,
+  renderTasks,
 } from "./render.js";
 
 /**
@@ -99,6 +100,7 @@ export function handDownFiles(t: TaskContext, engine: BuildEngine): Map<string, 
   const dir = `specs/${t.task.id}`;
   files.set(`${dir}/spec.md`, renderSpec(t));
   files.set(`${dir}/plan.md`, renderPlan(t));
+  files.set(`${dir}/tasks.md`, renderTasks(t));
   const dm = renderDataModel(t);
   if (dm) files.set(`${dir}/data-model.md`, dm);
   const oa = renderOpenApi(t);

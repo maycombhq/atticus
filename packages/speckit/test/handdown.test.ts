@@ -28,7 +28,13 @@ describe("hand-down (Spec Kit engine)", () => {
         kept: [],
       });
       const wt = worktree(root, "forge-ledger");
-      for (const f of ["spec.md", "plan.md", "data-model.md", "checklists/requirements.md"])
+      for (const f of [
+        "spec.md",
+        "plan.md",
+        "tasks.md",
+        "data-model.md",
+        "checklists/requirements.md",
+      ])
         expect(await read(join(wt, "specs/1.2", f)), f).toBe(
           await read(join(EXPECTED, "specs/1.2", f)),
         );
@@ -42,6 +48,7 @@ describe("hand-down (Spec Kit engine)", () => {
         expect.arrayContaining([
           "specs/1.2/spec.md",
           "specs/1.2/plan.md",
+          "specs/1.2/tasks.md",
           "specs/1.2/data-model.md",
           "specs/1.2/contracts/ledger-api.yaml",
           "specs/1.2/checklists/requirements.md",

@@ -1,5 +1,5 @@
-import { useMemo } from "react";
 import { useApi, useLiveEvents } from "../api/client.js";
+import { GraphView, type Graph } from "../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
 
 interface ChangeSummary {
@@ -29,17 +29,6 @@ interface KindCount {
   count: number;
   stale: number;
 }
-interface Graph {
-  nodes: { id: string; kind: string; label: string; status: string; system?: string }[];
-  edges: {
-    id: string;
-    from: string;
-    to: string;
-    via: string;
-    confidence: string;
-    status: string;
-  }[];
-}
 
 const PHASES = ["define", "design", "plan", "build", "qa", "release-ready"] as const;
 const PHASE_LABEL: Record<string, string> = {
@@ -58,92 +47,6 @@ function stateChip(c: ChangeSummary) {
     cls: c.state === "release-ready" ? "warn" : "",
     text: (PHASE_LABEL[c.state] ?? c.state).toUpperCase(),
   };
-}
-
-/** A deterministic layout: systems on a ring, their components around them. */
-function layout(g: Graph, w: number, h: number) {
-  const systems = [...new Set(g.nodes.map((n) => n.system ?? n.id))].sort();
-  const pos = new Map<string, { x: number; y: number }>();
-  const cx = w / 2;
-  const cy = h / 2;
-  systems.forEach((s, i) => {
-    const a = (i / Math.max(systems.length, 1)) * Math.PI * 2 - Math.PI / 2;
-    const sx = cx + Math.cos(a) * (w * 0.33);
-    const sy = cy + Math.sin(a) * (h * 0.33);
-    const members = g.nodes.filter((n) => (n.system ?? n.id) === s);
-    members.forEach((n, j) => {
-      const b = (j / Math.max(members.length, 1)) * Math.PI * 2;
-      const r = members.length > 1 ? 28 + members.length * 3 : 0;
-      pos.set(n.id, { x: sx + Math.cos(b) * r, y: sy + Math.sin(b) * r * 0.7 });
-    });
-  });
-  return pos;
-}
-
-function SystemMap({ g }: { g: Graph }) {
-  const W = 820;
-  const H = 430;
-  const pos = useMemo(() => layout(g, W, H), [g]);
-  const labelled = new Set(
-    g.nodes
-      .filter((n) => n.kind === "Component")
-      .slice(0, 14)
-      .map((n) => n.id),
-  );
-  return (
-    <svg
-      role="img"
-      aria-label={`System map: ${g.nodes.length} systems and components and ${g.edges.length} interfaces, built from code.`}
-      viewBox={`0 0 ${W} ${H}`}
-      style={{ width: "100%", height: "100%", minHeight: 360, display: "block" }}
-    >
-      <defs>
-        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2.2" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      <g stroke="#2EE6F6" strokeWidth={0.8} opacity={0.4}>
-        {g.edges.map((e) => {
-          const a = pos.get(e.from);
-          const b = pos.get(e.to);
-          if (!a || !b) return null;
-          return (
-            <line
-              key={e.id}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              strokeDasharray={e.via === "event" || e.via === "topic" ? "4 4" : undefined}
-            />
-          );
-        })}
-      </g>
-      <g fill="#BFFAFF" filter="url(#glow)">
-        {g.nodes.map((n) => {
-          const p = pos.get(n.id);
-          if (!p) return null;
-          return <circle key={n.id} cx={p.x} cy={p.y} r={n.kind === "System" ? 4 : 2.4} />;
-        })}
-      </g>
-      <g fontFamily="JetBrains Mono, monospace" fontSize={10.5} fill="#BFEFF7">
-        {g.nodes
-          .filter((n) => labelled.has(n.id))
-          .map((n) => {
-            const p = pos.get(n.id)!;
-            return (
-              <text key={n.id} x={p.x + 6} y={p.y - 6}>
-                {n.label}
-              </text>
-            );
-          })}
-      </g>
-    </svg>
-  );
 }
 
 export function CommandCenter() {
@@ -309,7 +212,7 @@ export function CommandCenter() {
             empty={(g) => g.nodes.length === 0}
             emptyText="The catalog is empty. Run a scan to map your repos."
           >
-            {(g) => <SystemMap g={g} />}
+            {(g) => <GraphView g={g} />}
           </View>
         </Panel>
 

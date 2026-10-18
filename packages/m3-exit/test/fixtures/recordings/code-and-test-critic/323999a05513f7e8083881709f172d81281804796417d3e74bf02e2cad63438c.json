@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "agent": "code-and-test-critic",
-  "promptSha256": "de158db1964e7615f5f95f00f97be4682ef50340e4e4a922c4aa97791a31d049",
+  "promptSha256": "323999a05513f7e8083881709f172d81281804796417d3e74bf02e2cad63438c",
   "output": "findings: []\n",
   "usage": {
     "inputTokens": 6400,

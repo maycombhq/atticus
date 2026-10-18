@@ -264,6 +264,15 @@ export function parseLensOutput(
       drop(`not a finding: ${p.error.issues[0]?.path.join(".")} ${p.error.issues[0]?.message}`);
       continue;
     }
+    // An unquoted question in a YAML flow mapping ({text: a, b, owner: x}) is cut at its first
+    // comma, and the rest turns into stray keys. Refuse it rather than ask a half question.
+    const q = (raw as { question?: unknown }).question;
+    if (q && typeof q === "object" && Object.keys(q).some((k) => k !== "text" && k !== "owner")) {
+      drop(
+        "its question was cut at a comma (the text needs quotes, or block style: question: then text: on the next lines)",
+      );
+      continue;
+    }
     const f = p.data;
     const rule = byRule.get(f.rule);
     if (!rule) {

@@ -132,6 +132,10 @@ async function findPr(
 export const handUpLensOutput = (task: string) => `tasks/${task}/review-code-and-test.yaml`;
 
 /** The task whose hand-up lens a run's output path belongs to, if it is one. */
+/** Test files by the usual conventions of Java, JS/TS, Python, Go, C# and Ruby projects. */
+const TEST_FILE =
+  /(^|\/)(src\/test|tests?|__tests__|spec)\/|(\.|_)(test|spec)\.[cm]?[jt]sx?$|(Test|Tests|IT)\.(java|kt|cs)$|_test\.(go|py|rb)$|^test_.*\.py$|\/test_[^/]*\.py$|\.feature$/;
+
 export function handUpLensTask(outputPath: string): string | undefined {
   return /^tasks\/([^/]+)\/review-code-and-test\.yaml$/.exec(outputPath)?.[1];
 }
@@ -318,6 +322,34 @@ export async function handUp(
     evidence.push(to);
     docs.push(parseDoc(to, text));
   }
+  // The tests the task added or changed, so the code-and-test lens can check coverage: test
+  // files changed on the change branch since it left the default branch (at most 8, 60 kB each).
+  const base = await git(["merge-base", "HEAD", t.repo.defaultBranch ?? "main"], dir).then(
+    (r) => r.stdout.trim(),
+    () => undefined,
+  );
+  if (base) {
+    const changed = await git(["diff", "--name-only", `${base}..HEAD`], dir).then(
+      (r) =>
+        r.stdout
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean),
+      () => [] as string[],
+    );
+    const tests = changed
+      .filter((f) => TEST_FILE.test(f))
+      .sort()
+      .slice(0, 8);
+    for (const rel of tests) {
+      const text = await readFile(join(dir, rel), "utf8").catch(() => undefined);
+      if (text === undefined || text.length > 60_000) continue;
+      const to = `tasks/${t.task.id}/evidence/tests/${rel.replace(/[\\/]/g, "__")}`;
+      await writeFileAtomic(join(folder, to), text);
+      evidence.push(to);
+      docs.push(parseDoc(to, text));
+    }
+  }
   if (engine === "speckit" && !evidence.some((e) => e.endsWith("/plan.md")))
     throw new SpecKitError(
       "refused",
@@ -335,6 +367,9 @@ export async function handUp(
         ...(sha ? { commit: sha } : {}),
         pr: { number: pr.number, url: pr.url },
         files: wanted.filter((w) => evidence.some((e) => e.endsWith(`/${w.split("/").pop()}`))),
+        ...(evidence.some((e) => e.includes("/evidence/tests/"))
+          ? { tests: evidence.filter((e) => e.includes("/evidence/tests/")) }
+          : {}),
         by: o.by,
         at: now,
       },

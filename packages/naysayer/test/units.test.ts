@@ -104,6 +104,13 @@ describe("AI lens output", () => {
     why: x
     evidence: [{ path: ux.md, line: 3 }]
   - rule: ux-states-complete
+    kind: knowledge-gap
+    artifact: ux.md
+    summary: A question cut at a comma.
+    why: x
+    evidence: [{ path: ux.md, line: 3 }]
+    question: { text: Who decides the limit, and when, owner: product-owner }
+  - rule: ux-states-complete
     artifact: ux.md
     severity: blocking
     layer: constitution
@@ -129,6 +136,7 @@ describe("AI lens output", () => {
       "it is about design.md, which this lens wasn't given",
       "none of its evidence is in the files it was given",
       "a knowledge gap without an owner question",
+      "its question was cut at a comma (the text needs quotes, or block style: question: then text: on the next lines)",
     ]);
     const kept = r.findings.filter((f) => f.layer === "ai");
     expect(kept).toHaveLength(1);

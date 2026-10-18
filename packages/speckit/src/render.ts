@@ -345,6 +345,39 @@ export function renderChecklist(t: TaskContext): string {
   ].join("\n");
 }
 
+/**
+ * A seeded tasks.md in Spec Kit's shape, so the task prompt, three-way drift and the hand-up
+ * review have the repo's task list from the start: one implementation task, then a test task
+ * per acceptance criterion. /speckit.tasks refines it; hand-down never overwrites an edited one.
+ */
+export function renderTasks(t: TaskContext): string {
+  const stories = t.task.stories.map((s) => readStory(t.files, s)).filter((s) => !!s);
+  const lines = [
+    `# Tasks: ${t.task.title}`,
+    "",
+    `**Input**: spec.md and plan.md in this folder (task ${t.task.id} of change ${t.change.id})`,
+    "",
+    "<!-- Seeded by Atticus at hand-down. Refine it with /speckit.tasks; tick each box as you finish it. -->",
+    "",
+    "## Implementation",
+    "",
+    `- [ ] T001 ${t.task.title}`,
+    "",
+    "## Tests",
+    "",
+  ];
+  let n = 2;
+  for (const s of stories)
+    for (const c of s.criteria)
+      lines.push(
+        `- [ ] T${String(n++).padStart(3, "0")} [${s.id}] Test: ${c.replace(/\s+/g, " ").trim()}`,
+      );
+  if (n === 2)
+    lines.push(`- [ ] T002 Test the behaviour spec.md describes [${NC}: no acceptance criteria]`);
+  lines.push("");
+  return lines.join("\n");
+}
+
 /** The plain task file for repos on the Atticus build engine. */
 export function renderAtticusTask(t: TaskContext): string {
   const spec = renderSpec(t).split("\n");

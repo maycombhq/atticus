@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
@@ -15,6 +15,13 @@ const TASKS = `# Tasks: Check the limit in the transfer transaction
 
 - [x] T001 [US1] Refuse over-limit transfers in src/main/java/forge/ledger/LedgerEndpoints.java
 - [ ] T002 [US1] Test the limit in src/test/java/forge/ledger/TransferLimitsTest.java
+`;
+
+const TEST_FILE = `package forge.ledger;
+
+class TransferLimitsTest {
+  @Test void refusesOverTheLimit() {}
+}
 `;
 
 const LENS_ANSWER = `findings:
@@ -38,6 +45,12 @@ async function ready() {
   const { root } = await speckitRoot({ repos: ["forge-ledger"] });
   await handDown(root, CHANGE, "1.2", { git });
   await writeFile(join(worktree(root, "forge-ledger"), "specs/1.2/tasks.md"), TASKS);
+  // The developer's test, committed on the change branch: hand-up attaches it for the lens.
+  const wt = worktree(root, "forge-ledger");
+  await mkdir(join(wt, "src/test/java/forge/ledger"), { recursive: true });
+  await writeFile(join(wt, "src/test/java/forge/ledger/TransferLimitsTest.java"), TEST_FILE);
+  await git(["add", "src/test/java/forge/ledger/TransferLimitsTest.java"], wt);
+  await git(["commit", "-q", "-m", "Test the limit"], wt);
   const host = new MockGitHost([{ repo: "forge-ledger" }]);
   const pr = await host.createPullRequest(
     {
@@ -85,6 +98,7 @@ describe("hand-up", () => {
         "tasks/1.2/evidence/plan.md",
         "tasks/1.2/evidence/tasks.md",
         "tasks/1.2/evidence/spec.md",
+        "tasks/1.2/evidence/tests/src__test__java__forge__ledger__TransferLimitsTest.java",
       ]);
       expect(
         await readFile(
@@ -103,12 +117,14 @@ describe("hand-up", () => {
         branch: "task/add-transfer-limit/1.2",
         by: "dev",
         pr: { number: pr.number },
+        tests: ["tasks/1.2/evidence/tests/src__test__java__forge__ledger__TransferLimitsTest.java"],
       });
 
       // The lens saw the evidence as data and the code-and-test rules of the org and the owning team.
       expect(r.lens).toMatchObject({ state: "ran", agent: "code-and-test-critic" });
       expect(r.lens.rules.sort()).toEqual(["plan-tests-first", "tests-cover-scenarios"]);
       expect(seen[0]!.pack.prompt).toContain('<atticus-data id="tasks/1.2/evidence/tasks.md"');
+      expect(seen[0]!.pack.prompt).toContain("refusesOverTheLimit");
       expect(r.lens.discarded.map((d) => d.reason)).toEqual([
         "it names rule no-such-rule, which this lens wasn't asked to apply",
       ]);
