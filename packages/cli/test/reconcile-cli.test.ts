@@ -121,3 +121,28 @@ describe("atticus alias", () => {
     expect(await main(["alias", "Only a name", "--root", root], capture().io)).toBe(2);
   });
 });
+
+describe("atticus reconcile with other diagram formats", () => {
+  it("reads Lucid CSV and Mermaid copies of the Forge diagram and finds the same items", async () => {
+    const root = await forgeRoot();
+    const fx = join(dirname(fileURLToPath(import.meta.url)), "../../ingestors/test/fixtures/forge");
+    await cp(
+      join(fx, "forge-context.lucid.csv"),
+      join(root, "inputs/diagrams/forge-context.lucid.csv"),
+    );
+    await cp(join(fx, "forge-context.mmd"), join(root, "inputs/diagrams/forge-context.mmd"));
+    const c = capture();
+    expect(await main(["reconcile", "--json", "--root", root], c.io)).toBe(1);
+    const res = JSON.parse(c.out.join("\n")) as {
+      diagrams: { file: string; items: { type: string }[] }[];
+    };
+    expect(res.diagrams.map((d) => d.file)).toEqual([
+      "inputs/diagrams/forge-context.drawio",
+      "inputs/diagrams/forge-context.lucid.csv",
+      "inputs/diagrams/forge-context.mmd",
+    ]);
+    const types = (i: number) => res.diagrams[i]!.items.map((x) => x.type).sort();
+    expect(types(1)).toEqual(types(0));
+    expect(types(2)).toEqual(types(0));
+  });
+});

@@ -2,7 +2,8 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { loadOrgPack, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
-import { readDrawio, reconcile, type ReconcileResult } from "@maycombhq/reconcile";
+import { readDiagram } from "@maycombhq/ingestors";
+import { reconcile, type ReconcileResult } from "@maycombhq/reconcile";
 import { readCatalog } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 
@@ -20,7 +21,7 @@ async function findDiagrams(dir: string): Promise<string[]> {
     for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       const full = join(d, e.name);
       if (e.isDirectory()) await walk(full);
-      else if (/\.drawio(\.xml)?$/i.test(e.name)) out.push(full);
+      else if (/\.(drawio|drawio\.xml|vsdx|mmd|mermaid|csv)$/i.test(e.name)) out.push(full);
     }
   }
   await walk(dir);
@@ -42,13 +43,15 @@ export async function reconcileCommand(
       ? files.map((f) => resolve(root, f))
       : await findDiagrams(join(root, ...DEFAULT_DIR.split("/")));
   if (paths.length === 0) {
-    io.err(`No diagrams to reconcile: name one, or put .drawio files under ${DEFAULT_DIR}/`);
+    io.err(
+      `No diagrams to reconcile: name one, or put diagrams (.drawio, .vsdx, Lucid .csv, .mmd) under ${DEFAULT_DIR}/`,
+    );
     return 2;
   }
-  const texts: { file: string; xml: string }[] = [];
+  const texts: { file: string; bytes: Uint8Array }[] = [];
   for (const p of paths) {
     try {
-      texts.push({ file: relative(root, p).split(sep).join("/"), xml: await readFile(p, "utf8") });
+      texts.push({ file: relative(root, p).split(sep).join("/"), bytes: await readFile(p) });
     } catch {
       io.err(`Can't read ${p}`);
       return 2;
@@ -71,7 +74,13 @@ export async function reconcileCommand(
     problems: { cell: string; message: string }[];
   })[] = [];
   for (const t of texts) {
-    const diagram = readDrawio(t.xml, profile?.legend);
+    const diagram = readDiagram(t.file, t.bytes, profile?.legend);
+    if (!diagram) {
+      io.err(
+        `${t.file}: not a diagram Atticus can read (draw.io, Visio .vsdx, Lucid CSV, Mermaid)`,
+      );
+      continue;
+    }
     const r = reconcile({
       diagram,
       file: t.file,

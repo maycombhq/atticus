@@ -59,6 +59,9 @@ importers:
       '@maycombhq/index':
         specifier: workspace:*
         version: link:../index
+      '@maycombhq/ingestors':
+        specifier: workspace:*
+        version: link:../ingestors
       '@maycombhq/knowledge':
         specifier: workspace:*
         version: link:../knowledge
@@ -125,6 +128,21 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
+  packages/ingestors:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/reconcile':
+        specifier: workspace:*
+        version: link:../reconcile
+      '@maycombhq/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       yaml:
         specifier: ^2.9.1
         version: 2.9.1

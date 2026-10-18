@@ -32,10 +32,11 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 | Track | What                                                                                                                                                                                                                                                               | Where                          |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
 | T5    | Knowledge sources (read-only wiki adapters), wiki facts against code (document conflicts, document-only facts), pattern scan, knowledge gaps with owner questions, coverage, freshness; `atticus sources`, `patterns scan`, `coverage`, `questions`. Finds d09–d12 | `packages/knowledge`, ADR 0021 |
+| T3    | Ingestors: Lucid CSV, Visio .vsdx, Mermaid diagrams; Markdown, HTML, text, .docx, .pptx, .xlsx, PDF documents; images and Figma as records; safe in-house ZIP reader; `atticus reconcile` reads every diagram format                                               | `packages/ingestors`, ADR 0022 |
 
 ## Next
 
-1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0021; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
+1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0022; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
 2. **M2:** intake of documents (partner specs, wiki pages, tickets) and the remaining ingestors; triage of reconcile items into curated decisions; the dialect build kit. Exit: golden tests for every extractor and ingestor; a fresh session writes a second Forge dialect from the build kit in 4 of 5 runs, also with a small model.
 
 ## How to work
