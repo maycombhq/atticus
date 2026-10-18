@@ -176,6 +176,10 @@ export async function sourcesSync(
       for (const p of sync.problems.filter((x) => x.source === w.id)) io.out(`  ! ${p.message}`);
     }
     for (const s of sync.skipped) io.out(`Skipped ${s.path}: ${s.reason}`);
+    // High-risk pages are problems (printed above); medium risk stays data, marked for a person.
+    for (const p of sync.pages)
+      if (p.defences?.risk === "medium")
+        io.out(`Flagged ${p.path}: medium risk, ${p.defences.reason}`);
     for (const p of sync.pages)
       for (const s of p.stale)
         io.out(

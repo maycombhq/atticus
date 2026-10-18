@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { INSTRUCTION_RULES, screenText, type DefenceSignal } from "@maycombhq/ai";
 import { artifactOf, docOf, filesOf, readStoryIndex, readTasks } from "../artifacts.js";
 import { sectionLines, sectionMatching } from "../doc.js";
 import { lineEvidence, sentence, type DeterministicCheckDef, type Hit } from "../hits.js";
@@ -217,15 +218,17 @@ export const tasksCoverStories: DeterministicCheckDef = {
   },
 };
 
-/** Phrases that address an AI agent or reviewer rather than a person reading the artifact. */
-const INSTRUCTIONS: RegExp[] = [
-  /\bignore (all |any |the |your |their |previous |prior |these |those )*(rules|instructions|checks|guidelines|policies)\b/i,
-  /\bdisregard (all |any |the |your |their |previous |prior )*(rules|instructions|checks|guidelines)\b/i,
-  /\byou are now\b/i,
-  /\b(system|developer) prompt\b/i,
-  /\breport no findings\b/i,
-  /\bdo not (report|raise|flag) (any )?(findings|issues)\b/i,
-];
+/**
+ * What counts as an instruction aimed at an AI: the defences' instruction rules (ADR 0042), a
+ * wrapper break-out, instructions hidden in encoded text, and tag characters that spell words.
+ * Hidden or disguised text alone (a zero-width character, a look-alike letter, a comment with
+ * no instruction in it) is not reported here: the defences neutralise it before any AI step.
+ */
+const aimedAtAi = (s: DefenceSignal) =>
+  INSTRUCTION_RULES.includes(s.rule) ||
+  s.rule === "delimiter" ||
+  s.rule === "encoded-instructions" ||
+  (s.rule === "tag-characters" && s.decoded !== undefined);
 
 export const noEmbeddedInstructions: DeterministicCheckDef = {
   id: "no-embedded-instructions",
@@ -234,28 +237,35 @@ export const noEmbeddedInstructions: DeterministicCheckDef = {
   params: z.strictObject({ phrases: z.array(z.string()).optional() }),
   run(ctx, p, rule) {
     const extra = ((p.phrases as string[] | undefined) ?? []).map((s) => new RegExp(s, "i"));
-    const res = [...INSTRUCTIONS, ...extra];
     const hits: Hit[] = [];
     for (const doc of ctx.files.docs.values()) {
       const a = artifactOf(doc.path);
       if (!a || !(rule.appliesTo.artifacts as string[]).includes(a)) continue;
+      // The detector the context packs use, so a hidden or disguised instruction is found as
+      // surely as a plain one. One finding per line.
+      const found = new Map<number, DefenceSignal[]>();
+      for (const sig of screenText(doc.rawLines.join("\n"), { format: "markdown" }).signals)
+        if (aimedAtAi(sig)) found.set(sig.line, [...(found.get(sig.line) ?? []), sig]);
       doc.rawLines.forEach((text, i) => {
-        if (!res.some((re) => re.test(text))) return;
+        if (!found.has(i + 1) && extra.some((re) => re.test(text))) found.set(i + 1, []);
+      });
+      for (const [line, signals] of [...found].sort((x, y) => x[0] - y[0])) {
+        const disguised = signals.some((sig) => sig.hidden || sig.encoded || sig.obfuscated);
         hits.push({
           kind: "issue",
           artifact: doc.path,
-          locator: { line: i + 1 },
+          locator: { line },
           summary: sentence(
-            `${doc.path} line ${i + 1} holds an instruction aimed at AI agents or reviewers.`,
+            `${doc.path} line ${line} holds an instruction aimed at AI agents or reviewers.`,
           ),
-          why: "Ingested content is data, never instructions. Text that tries to steer a reviewer or an agent is removed, and the artifact is not sent to the AI lenses until it is.",
+          why: `Ingested content is data, never instructions. Text that tries to steer a reviewer or an agent is removed, and the artifact is not sent to the AI lenses until it is.${disguised ? " This one is hidden or disguised, which makes it worse." : ""}`,
           fix: {
             text: "Remove the instruction. If it records a real decision, say who decided and link the approval instead.",
           },
-          evidence: [lineEvidence(doc, i + 1)],
-          key: `inject|${doc.path}|${i + 1}`,
+          evidence: [lineEvidence(doc, line)],
+          key: `inject|${doc.path}|${line}`,
         });
-      });
+      }
     }
     return { hits, subjects: [] };
   },

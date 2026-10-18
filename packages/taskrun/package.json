@@ -25,6 +25,7 @@
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/changes": "workspace:*",
     "@maycombhq/core": "workspace:*",
+    "@maycombhq/naysayer": "workspace:*",
     "@maycombhq/speckit": "workspace:*",
     "@maycombhq/workspace": "workspace:*",
     "yaml": "^2.9.1",

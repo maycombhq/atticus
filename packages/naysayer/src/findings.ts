@@ -211,10 +211,13 @@ export async function roundsOf(root: string, change: string, gate: string): Prom
 /** Gates that have a review folder. */
 export async function reviewedGates(root: string, change: string): Promise<string[]> {
   try {
-    return (await readdir(join(changeFolder(root, change), "review"), { withFileTypes: true }))
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name)
-      .sort();
+    return (
+      (await readdir(join(changeFolder(root, change), "review"), { withFileTypes: true }))
+        // review/defences holds quarantine items (ADR 0042), not a gate's rounds
+        .filter((d) => d.isDirectory() && d.name !== "defences")
+        .map((d) => d.name)
+        .sort()
+    );
   } catch {
     return [];
   }

@@ -7,7 +7,15 @@ import {
   type CatalogRecord,
   type RunSummary,
 } from "@maycombhq/core";
-import { buildContextPack, toRunSummary, type AiRuntime, type SourceInput } from "@maycombhq/ai";
+import {
+  buildContextPack,
+  quarantineItems,
+  toRunSummary,
+  type AiRuntime,
+  type QuarantineItem,
+  type SourceInput,
+} from "@maycombhq/ai";
+import { quarantineHits } from "./defences.js";
 import { artifactOf, hopRoutes, type ArtifactName } from "./artifacts.js";
 import type { CriticContext } from "./context.js";
 import { headingAt, type Doc } from "./doc.js";
@@ -328,6 +336,8 @@ export interface LensOptions {
   /** Artifacts with a blocking layer-1 finding: they stay out of layer 2. */
   failed: Set<string>;
   maxClassification?: string;
+  /** Collects the quarantine items of every lens run, for the round (ADR 0042). */
+  quarantined: QuarantineItem[];
 }
 
 const ARTIFACT_INPUTS = new Set<string>([
@@ -473,7 +483,18 @@ export async function runLenses(
       runs.push({ ...base, state: "failed", reason: (e as Error).message });
       continue;
     }
+    // Sources the defences rate high risk were left out of the pack (ADR 0042): a person gets
+    // an item for each, and the lens that wanted it a gap finding.
+    const quarantined = quarantineItems(pack.defences ?? []);
+    if (quarantined.length) {
+      const seen = new Set(o.quarantined.map((q) => `${q.source}|${q.sha256}`));
+      for (const q of quarantined) if (!seen.has(`${q.source}|${q.sha256}`)) o.quarantined.push(q);
+      hits.push(
+        ...quarantineHits(lens, DEFAULT_ROLES[lens], quarantined, (source) => docs.has(source)),
+      );
+    }
     const left = pack.manifest.dropped.filter((d) => docs.has(d.id));
+    const overBudget = left.filter((d) => !quarantined.some((q) => q.source === d.id));
     try {
       const prepared = await o.runtime.prepare({
         change: ctx.change.id,
@@ -506,8 +527,19 @@ export async function runLenses(
         ...base,
         ...meta,
         state: "ran",
-        ...(left.length
-          ? { reason: `left out to fit the budget: ${left.map((d) => d.id).join(", ")}` }
+        ...(overBudget.length || quarantined.length
+          ? {
+              reason: [
+                overBudget.length
+                  ? `left out to fit the budget: ${overBudget.map((d) => d.id).join(", ")}`
+                  : "",
+                quarantined.length
+                  ? `quarantined by the defences, for a person to review: ${quarantined.map((q) => q.source).join(", ")}`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join("; "),
+            }
           : {}),
       });
     } catch (e) {

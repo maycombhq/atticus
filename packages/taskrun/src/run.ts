@@ -11,6 +11,7 @@ import {
 import {
   createRuntime,
   HandoffRuntime,
+  quarantineItems,
   toRunSummary,
   type AiRequest,
   type AiRuntime,
@@ -20,6 +21,7 @@ import {
 } from "@maycombhq/ai";
 import { writeFileAtomic, changeFolder } from "@maycombhq/changes";
 import { changeBranch } from "@maycombhq/core";
+import { writeQuarantineItems } from "@maycombhq/naysayer";
 import {
   buildEngineFor,
   changeWorktree,
@@ -141,6 +143,13 @@ async function aiStep(
     outputPath: `tasks/${c.t.task.id}/${level === "plan" ? "plan.md" : "report.md"}`,
   };
   const prepared = await c.runtime.prepare(request);
+  // Sources the defences left out of the pack (ADR 0042) become items for a person.
+  await writeQuarantineItems(
+    c.root,
+    c.t.change.id,
+    prepared.runId,
+    quarantineItems(pack.defences ?? []),
+  );
   if (c.runtime instanceof HandoffRuntime) {
     // The generic hand-off prompt says "change no other files"; a task run works in its
     // worktree, so it gets its own prompt with the same completion command.

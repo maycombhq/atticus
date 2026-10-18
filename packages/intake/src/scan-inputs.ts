@@ -12,6 +12,7 @@ import {
 import { drawioIngestor, readDrawio, resolveNames, type ProfileSystem } from "@maycombhq/reconcile";
 import type { Ingestor, ScanContext } from "@maycombhq/sdk";
 import { classify, type Classification } from "./classify.js";
+import { screenFile } from "./screen-file.js";
 import { readAsyncApiSpec, readOpenApiSpec, readPayload, READERS } from "./readers.js";
 import {
   boundedId,
@@ -523,6 +524,55 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
     f.doc.records = [...new Set(f.doc.records)].sort();
   }
 
+  // ---- ingested-content defences (ADR 0042): screen every file kept, flag medium and high risk
+  const decisionIds = new Map<string, Rec>();
+  for (const r of records)
+    if (r.kind === "CuratedDecision" && r.status === "current")
+      decisionIds.set(r.id, r as unknown as Rec);
+  const flags = new Map<string, string[]>();
+  for (const f of kept) {
+    const { screening, problem } = screenFile(f.path, f.bytes);
+    if (problem) problems.push({ path: f.path, message: `defences: ${problem}` });
+    if (!screening || (screening.risk !== "medium" && screening.risk !== "high")) continue;
+    const info = { reason: screening.reason, rules: [...screening.rules] as string[] };
+    if (screening.risk === "medium") {
+      f.doc.defences = { risk: "medium", ...info };
+      flags.set(f.doc.id!, ["defences:medium"]);
+      continue;
+    }
+    // High risk: out of every AI step until a person decides. The item is tied to the file's
+    // bytes, so a changed file is asked about again.
+    const itemId = `defences.${slug(f.doc.id!)}.${f.hash.slice(0, 8)}`;
+    const decided = decisionIds.get(boundedId("triage.", itemId));
+    if (decided?.action === "suppress") {
+      f.doc.defences = { risk: "cleared", ...info };
+      flags.set(f.doc.id!, ["defences:cleared"]);
+      continue;
+    }
+    f.doc.defences = { risk: "high", ...info };
+    flags.set(f.doc.id!, ["defences:high", ...(decided ? ["defences:quarantined"] : [])]);
+    if (decided) continue;
+    const first =
+      screening.signals.find((s) => s.hidden || s.encoded || s.obfuscated) ?? screening.signals[0];
+    triage.push({
+      id: itemId,
+      kind: "defences",
+      summary: `${f.path} was held back from every AI step: ${screening.reason} A person decides whether it is fine.`,
+      source: { path: f.path, ...(first ? { line: first.line } : {}) },
+      records: [f.doc.id!],
+      options: [
+        opt.dismiss(itemId, f.doc.id!, "Clear it (it's fine)"),
+        opt.make(
+          itemId,
+          "assert",
+          f.doc.id!,
+          { flags: ["defences:high", "defences:quarantined"] },
+          "Keep it quarantined",
+        ),
+      ],
+    });
+  }
+
   // ---- partner specs never overwrite code: disagreements go to triage
   const recs = records as unknown as Rec[];
   const fromCode = (r: Rec) => r.evidence.some((e) => e.source === "code" || e.source === "config");
@@ -598,6 +648,7 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
       ...(author ? { author } : {}),
       ...(f.doc.date ? { date: f.doc.date } : {}),
       hash: f.hash,
+      ...(flags.has(f.doc.id!) ? { flags: flags.get(f.doc.id!) } : {}),
       ...(f.doc.supersededBy ? { supersededBy: f.doc.supersededBy } : {}),
       recordsProduced: f.doc.records,
       evidence: [{ source: EVIDENCE_SOURCE[f.doc.classification], path: f.path }],

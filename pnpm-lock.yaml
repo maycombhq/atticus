@@ -529,12 +529,18 @@ importers:
 
   packages/intake:
     dependencies:
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
       '@maycombhq/extractors':
         specifier: workspace:*
         version: link:../extractors
+      '@maycombhq/ingestors':
+        specifier: workspace:*
+        version: link:../ingestors
       '@maycombhq/reconcile':
         specifier: workspace:*
         version: link:../reconcile
@@ -547,6 +553,9 @@ importers:
 
   packages/knowledge:
     dependencies:
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
@@ -812,6 +821,9 @@ importers:
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+      '@maycombhq/naysayer':
+        specifier: workspace:*
+        version: link:../naysayer
       '@maycombhq/speckit':
         specifier: workspace:*
         version: link:../speckit

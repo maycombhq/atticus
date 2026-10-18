@@ -21,6 +21,7 @@
     "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
   },
   "dependencies": {
+    "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/features": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",

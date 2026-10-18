@@ -7,7 +7,7 @@ import { cliMarkdown, gradeDialect, kindsMarkdown } from "@maycombhq/assistant-k
 import { AgentDefinition, ServiceRequestTemplate, type CatalogRecord } from "@maycombhq/core";
 import { detectFeatures, nameFeatures, type Capability } from "@maycombhq/features";
 import { buildGlossary, proposeDefinitions, undefinedCodeTerms } from "@maycombhq/glossary";
-import { runCritic } from "@maycombhq/naysayer";
+import { BUILT_IN_CHECKS, runCritic } from "@maycombhq/naysayer";
 import {
   draftTemplates,
   planStories,
@@ -152,10 +152,20 @@ export const criticLens: SuiteBuilder = (def, repoRoot) => ({
       const seen: { dropped: { id: string; reason: string }[] }[] = [];
       const runtime = spy(ctx.runtime, (pack) => seen.push({ dropped: pack.manifest.dropped }));
       const lens = str(def.params.lens);
+      // Layer 1's no-embedded-instructions check also finds an injected instruction (it shares
+      // the pack defences' detector) and would keep the artifact out of the lens altogether.
+      // These cases measure the lens's own defences, so that one check stands aside.
+      const standAside = inject
+        ? BUILT_IN_CHECKS.filter((c) => c.id === "no-embedded-instructions").map((c) => ({
+            ...c,
+            run: () => ({ hits: [], subjects: [] }),
+          }))
+        : [];
       const r = await runCritic(root, SEEDED_CHANGE, {
         now: nowIso(ctx.now),
         runtime,
         lenses: [lens as never],
+        checks: standAside,
         ...(def.params.gate ? { gate: str(def.params.gate) } : {}),
       });
       const run = r.lenses.find((l) => l.lens === lens);

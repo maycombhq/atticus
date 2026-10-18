@@ -41,6 +41,8 @@ export interface IntakeDocument {
   unknownNames: string[];
   /** Ids of the records read from it. */
   records: string[];
+  /** What the ingested-content defences found, when the risk is medium or high (or a person cleared it). */
+  defences?: { risk: "medium" | "high" | "cleared"; reason: string; rules: string[] };
 }
 
 export interface IntakeProblem {
@@ -49,6 +51,8 @@ export interface IntakeProblem {
 }
 
 export type TriageKind =
+  /** Ingested text the defences found hidden, encoded or built to steer an AI (ADR 0042): kept out of every AI step until a person decides. */
+  | "defences"
   /** Documents and code disagree, or two sources give two values: code stands until decided. */
   | "conflict"
   /** A name that matches nothing: someone says what it is. */
@@ -67,6 +71,7 @@ export type TriageKind =
   | "feature-link";
 
 export const KIND_ORDER: TriageKind[] = [
+  "defences",
   "conflict",
   "unknown-name",
   "alias-needed",

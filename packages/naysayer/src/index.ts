@@ -13,6 +13,7 @@ export { looksPersonal } from "./checks/data.js";
 export * from "./findings.js";
 export * from "./model.js";
 export * from "./ai.js";
+export * from "./defences.js";
 export * from "./gates.js";
 export * from "./critic.js";
 export * from "./act.js";
