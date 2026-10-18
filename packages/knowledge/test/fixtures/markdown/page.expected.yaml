@@ -1,0 +1,39 @@
+# Hand-written golden output of readMarkdown(page.md). Line numbers are 1-based source lines.
+frontMatter:
+  title: Payments hub runbook
+  owner: team-hub
+  date: "2026-03-01"
+  classification: internal
+title: Payments hub runbook
+sections:
+  - heading: Payments hub
+    level: 1
+    line: 7
+    blocks:
+      - { type: paragraph, line: 9, text: "Intro paragraph line one.\nLine two of the same paragraph." }
+  - heading: Calls
+    level: 2
+    line: 12
+    blocks:
+      - type: list
+        line: 14
+        ordered: false
+        items:
+          - { line: 14, text: The hub calls Contoso Ledger through the gateway. }
+          - { line: 15, text: "Second item\ncontinued here." }
+      - type: list
+        line: 17
+        ordered: true
+        items:
+          - { line: 17, text: Numbered item }
+      - type: table
+        line: 19
+        header: [Code, Name]
+        rows:
+          - { line: 21, cells: [A.B.C, "Pipe | inside"] }
+      - { type: code, line: 23, lang: yaml, text: "not: a paragraph" }
+  - heading: Deep heading
+    level: 3
+    line: 27
+    blocks:
+      - { type: paragraph, line: 28, text: "Last updated: 2026-04-02" }

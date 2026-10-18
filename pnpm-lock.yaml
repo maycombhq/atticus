@@ -59,6 +59,9 @@ importers:
       '@maycombhq/index':
         specifier: workspace:*
         version: link:../index
+      '@maycombhq/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
       '@maycombhq/openspec-adapter':
         specifier: workspace:*
         version: link:../openspec-adapter
@@ -122,6 +125,18 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
+  packages/knowledge:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/reconcile':
+        specifier: workspace:*
+        version: link:../reconcile
       yaml:
         specifier: ^2.9.1
         version: 2.9.1

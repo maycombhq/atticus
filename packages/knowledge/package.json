@@ -1,0 +1,28 @@
+{
+  "name": "@maycombhq/knowledge",
+  "version": "0.0.1",
+  "description": "Read-only knowledge sources (wikis), facts mapped from them, the integration pattern scan, coverage, freshness and owner questions for knowledge gaps.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000"
+  },
+  "dependencies": {
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/reconcile": "workspace:*",
+    "yaml": "^2.9.1"
+  }
+}

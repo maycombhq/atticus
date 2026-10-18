@@ -1,0 +1,439 @@
+import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { parseRecord, type CatalogRecord, type OrgPack, type RecordOf } from "@maycombhq/core";
+import type { ProfileSystem } from "@maycombhq/reconcile";
+import { readMarkdown, type MarkdownDoc, type MdSection } from "./markdown.js";
+import { mentionIndex, type MentionIndex } from "./mentions.js";
+
+export type WikiSource = OrgPack["sources"]["wikis"][number];
+export type SourceDocumentRecord = RecordOf<"SourceDocument">;
+
+/** One page as an adapter hands it over, before it is read. */
+export interface RawPage {
+  /** Path of the page inside its source, "/"-separated. */
+  pagePath: string;
+  /** Path recorded as evidence: relative to the metarepo root for folders. */
+  path: string;
+  content: string;
+  /** Date the source system reports (an API's last-updated), when it has one. */
+  updatedAt?: string;
+  version?: string;
+}
+
+/**
+ * Reads pages from one kind of knowledge source. Adapters only read: there is no method to
+ * write, so Atticus can't write back to a wiki even by mistake.
+ */
+export interface KnowledgeSourceAdapter {
+  pages(source: WikiSource, ctx: { root: string; orgPackDir: string }): Promise<RawPage[]>;
+}
+
+/** The read-only part of the C4 wiki adapter (Confluence, ADO wiki, SharePoint); mocks in tests. */
+export interface WikiApi {
+  listPages(
+    space: string,
+  ): Promise<
+    { id: string; space: string; title: string; version: number; updatedAt: string; url: string }[]
+  >;
+  getPage(id: string): Promise<{
+    id: string;
+    space: string;
+    title: string;
+    body: string;
+    version: number;
+    updatedAt: string;
+    url: string;
+  }>;
+}
+
+const toPosix = (p: string) => p.split(sep).join("/");
+const isUrl = (s: string) => /^[a-z][a-z0-9+.-]*:\/\//i.test(s);
+
+/** Where a folder source lives: relative to the org-pack folder, where sources.yaml is. */
+const folderOf = (source: WikiSource, orgPackDir: string) =>
+  isAbsolute(source.location) ? source.location : resolve(orgPackDir, source.location);
+
+class FolderUnreadable extends Error {}
+
+/**
+ * A folder of Markdown files: a `markdown-folder` source, an export folder, or a wiki kept
+ * as a Git clone (ADO and GitHub wikis are Git repos). Dot folders such as .git are skipped.
+ */
+export const markdownFolderAdapter: KnowledgeSourceAdapter = {
+  async pages(source, { root, orgPackDir }) {
+    const dir = folderOf(source, orgPackDir);
+    const out: RawPage[] = [];
+    async function walk(d: string, top: boolean) {
+      let entries;
+      try {
+        entries = await readdir(d, { withFileTypes: true });
+      } catch {
+        if (top) throw new FolderUnreadable(source.location);
+        return;
+      }
+      for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+        if (e.name.startsWith(".")) continue;
+        const full = join(d, e.name);
+        if (e.isDirectory()) await walk(full, false);
+        else if (/\.(md|markdown)$/i.test(e.name))
+          out.push({
+            pagePath: toPosix(relative(dir, full)),
+            path: toPosix(relative(root, full)),
+            content: await readFile(full, "utf8"),
+          });
+      }
+    }
+    await walk(dir, true);
+    return out;
+  },
+};
+
+/** An API wiki read through the C4 wiki adapter: every page of each listed space. */
+export function wikiApiAdapter(api: WikiApi): KnowledgeSourceAdapter {
+  return {
+    async pages(source) {
+      const out: RawPage[] = [];
+      for (const space of source.spaces) {
+        const heads = await api.listPages(space);
+        for (const h of [...heads].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))) {
+          const p = await api.getPage(h.id);
+          out.push({
+            pagePath: `${space}/${p.id}`,
+            path: `${source.id}:${space}/${p.id}`,
+            content: p.body,
+            updatedAt: p.updatedAt,
+            version: String(p.version),
+          });
+        }
+      }
+      return out;
+    },
+  };
+}
+
+export type StaleReason =
+  | { reason: "too-old"; days: number; maxDays: number }
+  | { reason: "code-newer"; system: string; codeAt: string };
+
+export interface KnowledgePage {
+  source: string;
+  sourceType: string;
+  /** Evidence path: relative to the metarepo root for folder sources. */
+  path: string;
+  /** Path inside the source. */
+  pagePath: string;
+  title: string;
+  frontMatter: Record<string, unknown>;
+  sections: MdSection[];
+  doc: MarkdownDoc;
+  /** Page date: front matter (updated, last_updated, date), a "Last updated:" line, or the API's. */
+  date?: string;
+  /** Front matter owner, or an "Owner:" line. */
+  owner?: string;
+  classification: string;
+  version?: string;
+  /** sha-256 of the page text. */
+  hash: string;
+  /** Systems the page mentions, resolved like diagram names. */
+  systems: string[];
+  /** The system the page is about, from its title (or front matter `system`). */
+  subject?: string;
+  freshness: "fresh" | "stale" | "unknown";
+  stale: StaleReason[];
+}
+
+export interface SyncResult {
+  pages: KnowledgePage[];
+  /** One SourceDocument per page read (docType wiki-page). Pages skipped get none. */
+  documents: SourceDocumentRecord[];
+  skipped: { source: string; path: string; reason: string }[];
+  problems: { source: string; message: string }[];
+  /** The highest classification read. */
+  classificationLimit: string;
+}
+
+export interface SyncOptions {
+  /** The metarepo root; evidence paths are relative to it. */
+  root: string;
+  orgPack: OrgPack;
+  /** Where sources.yaml lives; folder locations are relative to it. Default: <root>/org-pack. */
+  orgPackDir?: string;
+  /** The catalog, for system mentions and the code-newer check. */
+  records?: CatalogRecord[];
+  /** The clock, from the caller (ISO date-time). Without it no page is aged. */
+  now?: string;
+  /** Pages older than this are stale. Default: pack freshness for SourceDocument, else 365. */
+  maxAgeDays?: number;
+  /**
+   * The highest classification Atticus may read. C6 lists the levels (pack.yaml
+   * `classification`) but no limit, so it is a parameter. Default: "internal" when it is a
+   * level, else the lowest level.
+   */
+  maxClassification?: string;
+  /** Classification of a page that states none. Same default as maxClassification. */
+  defaultClassification?: string;
+  /** Adapters by source type; a folder adapter is built in. */
+  adapters?: Partial<Record<WikiSource["type"], KnowledgeSourceAdapter>>;
+}
+
+const DEFAULT_LEVELS = ["public", "internal", "confidential", "restricted"];
+const DAY = 86_400_000;
+
+export const daysBetween = (from: string, to: string) =>
+  Math.floor((Date.parse(to) - Date.parse(from)) / DAY);
+
+const dateOnly = (v: unknown): string | undefined => {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v !== "string") return undefined;
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(v.trim());
+  return m && !Number.isNaN(Date.parse(m[1]!)) ? m[1] : undefined;
+};
+
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+/** A line such as "Owner: ..." or "Last updated: ..." in the page's prose. */
+function metaLine(doc: MarkdownDoc, key: RegExp): { value: string; line: number } | undefined {
+  for (const s of doc.sections)
+    for (const b of s.blocks) {
+      if (b.type !== "paragraph") continue;
+      const lines = b.text.split("\n");
+      for (let k = 0; k < lines.length; k++) {
+        const m = new RegExp(`^${key.source}\\s*:\\s*(.+)$`, "i").exec(lines[k]!);
+        if (m) return { value: m[1]!.trim(), line: b.line + k };
+      }
+    }
+  return undefined;
+}
+
+export function pageOwnerLine(doc: MarkdownDoc) {
+  return metaLine(doc, /owner/);
+}
+
+export interface ReadPageInput {
+  source: string;
+  sourceType?: string;
+  path: string;
+  pagePath?: string;
+  content: string;
+  updatedAt?: string;
+  version?: string;
+  records?: CatalogRecord[];
+  systems?: ProfileSystem[];
+  defaultClassification?: string;
+  /** Reuse one index for many pages. */
+  mentions?: MentionIndex;
+}
+
+/** Read one page: Markdown sections, metadata, hash and the systems it mentions. */
+export function readPage(i: ReadPageInput): KnowledgePage {
+  const doc = readMarkdown(i.content);
+  const fm = doc.frontMatter;
+  const fmStr = (k: string) => (typeof fm[k] === "string" ? (fm[k] as string) : undefined);
+  const date =
+    dateOnly(fm.updated) ??
+    dateOnly(fm.last_updated) ??
+    dateOnly(fm.lastUpdated) ??
+    dateOnly(fm.date) ??
+    dateOnly(metaLine(doc, /last\s+updated/)?.value) ??
+    dateOnly(i.updatedAt);
+  const owner = fmStr("owner") ?? pageOwnerLine(doc)?.value;
+  const index = i.mentions ?? mentionIndex(i.records ?? [], i.systems ?? []);
+  const text = [
+    doc.title ?? "",
+    ...doc.sections.flatMap((s) => [
+      s.heading,
+      ...s.blocks.map((b) =>
+        b.type === "paragraph"
+          ? b.text
+          : b.type === "list"
+            ? b.items.map((x) => x.text).join("\n")
+            : "",
+      ),
+    ]),
+  ].join("\n");
+  const systems = [...new Set(index.find(text).map((m) => m.system))].sort();
+  const subject =
+    (fmStr("system") && index.systemOf(fmStr("system")!)) || index.find(doc.title ?? "")[0]?.system;
+  const title =
+    doc.title ??
+    (i.pagePath ?? i.path)
+      .split("/")
+      .pop()!
+      .replace(/\.[^.]+$/, "");
+  return {
+    source: i.source,
+    sourceType: i.sourceType ?? "markdown-folder",
+    path: i.path,
+    pagePath: i.pagePath ?? i.path,
+    title,
+    frontMatter: fm,
+    sections: doc.sections,
+    doc,
+    ...(date ? { date } : {}),
+    ...(owner ? { owner } : {}),
+    classification: fmStr("classification") ?? i.defaultClassification ?? "internal",
+    ...(i.version ? { version: i.version } : fmStr("version") ? { version: fmStr("version") } : {}),
+    hash: createHash("sha256").update(i.content).digest("hex"),
+    systems,
+    ...(subject ? { subject } : {}),
+    freshness: date ? "fresh" : "unknown",
+    stale: [],
+  };
+}
+
+/** Newest scan time of non-document evidence per system. */
+function newestCodePerSystem(records: CatalogRecord[], index: MentionIndex): Map<string, string> {
+  const out = new Map<string, string>();
+  const owner = (r: CatalogRecord): string | undefined => {
+    const anyR = r as Record<string, unknown>;
+    for (const k of ["system", "component", "ownerComponent", "from"]) {
+      const v = anyR[k];
+      if (typeof v === "string") {
+        const s = index.systemOf(v);
+        if (s) return s;
+      }
+    }
+    return index.systemOf(r.id);
+  };
+  for (const r of records) {
+    const sys = owner(r);
+    if (!sys) continue;
+    for (const e of r.evidence) {
+      if (!e.scannedAt || e.source === "document" || e.source === "diagram") continue;
+      const prev = out.get(sys);
+      if (!prev || Date.parse(e.scannedAt) > Date.parse(prev)) out.set(sys, e.scannedAt);
+    }
+  }
+  return out;
+}
+
+/**
+ * Read every wiki listed in sources.yaml. Wikis are read-only: this never writes to them.
+ * Pages above the classification limit are skipped and leave nothing behind but their path.
+ * A page is stale when its date is older than the age limit, or older than the newest code
+ * evidence for a system it describes. A page with no date can't be judged: "unknown".
+ */
+export async function syncSources(o: SyncOptions): Promise<SyncResult> {
+  const orgPackDir = o.orgPackDir ?? join(o.root, "org-pack");
+  const levels = o.orgPack.pack?.classification ?? DEFAULT_LEVELS;
+  const fallbackLevel = levels.includes("internal") ? "internal" : levels[0]!;
+  const limit = o.maxClassification ?? fallbackLevel;
+  const limitLevel = levels.indexOf(limit);
+  const defaultClassification = o.defaultClassification ?? fallbackLevel;
+  const maxDays = o.maxAgeDays ?? o.orgPack.pack?.freshness.SourceDocument ?? 365;
+  const records = o.records ?? [];
+  const systems = o.orgPack.profiles.flatMap((p) => p.profile?.systems ?? []);
+  const index = mentionIndex(records, systems);
+  const codeAt = newestCodePerSystem(records, index);
+
+  const res: SyncResult = {
+    pages: [],
+    documents: [],
+    skipped: [],
+    problems: [],
+    classificationLimit: limit,
+  };
+  if (limitLevel === -1) {
+    res.problems.push({
+      source: "*",
+      message: `${limit} is not a classification level in pack.yaml, so no page was read.`,
+    });
+    return res;
+  }
+
+  for (const source of o.orgPack.sources.wikis) {
+    const folder =
+      source.type === "markdown-folder" ||
+      (source.type !== "confluence" && !isUrl(source.location));
+    const adapter = o.adapters?.[source.type] ?? (folder ? markdownFolderAdapter : undefined);
+    if (!adapter) {
+      res.problems.push({
+        source: source.id,
+        message: `No adapter for the ${source.type} wiki ${source.id}, so its pages were not read.`,
+      });
+      continue;
+    }
+    let raw: RawPage[];
+    try {
+      raw = await adapter.pages(source, { root: o.root, orgPackDir });
+    } catch (e) {
+      res.problems.push({
+        source: source.id,
+        message:
+          e instanceof FolderUnreadable
+            ? `Can't read the wiki folder ${source.location}.`
+            : `Can't read the ${source.type} wiki ${source.id}: ${(e as Error).message}`,
+      });
+      continue;
+    }
+    for (const r of raw) {
+      const page = readPage({
+        source: source.id,
+        sourceType: source.type,
+        path: r.path,
+        pagePath: r.pagePath,
+        content: r.content,
+        ...(r.updatedAt ? { updatedAt: r.updatedAt } : {}),
+        ...(r.version ? { version: r.version } : {}),
+        records,
+        systems,
+        defaultClassification,
+        mentions: index,
+      });
+      const level = levels.indexOf(page.classification);
+      if (level === -1 || level > limitLevel) {
+        res.skipped.push({
+          source: source.id,
+          path: r.path,
+          reason:
+            level === -1
+              ? `unknown classification ${page.classification}`
+              : `${page.classification} is above the limit (${limit})`,
+        });
+        continue;
+      }
+      if (page.date) {
+        if (o.now) {
+          const days = daysBetween(page.date, o.now);
+          if (days > maxDays) page.stale.push({ reason: "too-old", days, maxDays });
+        }
+        for (const sys of page.systems) {
+          const at = codeAt.get(sys);
+          if (at && Date.parse(at) > Date.parse(page.date))
+            page.stale.push({ reason: "code-newer", system: sys, codeAt: at });
+        }
+        page.freshness = page.stale.length ? "stale" : "fresh";
+      }
+      res.pages.push(page);
+      res.documents.push(sourceDocument(page));
+    }
+  }
+  return res;
+}
+
+/** The SourceDocument record for a page read from a wiki. */
+export function sourceDocument(page: KnowledgePage): SourceDocumentRecord {
+  const base = page.pagePath.replace(/\.(md|markdown)$/i, "");
+  const p = parseRecord({
+    schemaVersion: 1,
+    kind: "SourceDocument",
+    id: `doc.${slug(page.source)}.${slug(base)}`.slice(0, 120),
+    status: "current",
+    confidence: "verified",
+    path: page.path,
+    docType: "wiki-page",
+    ...(page.version ? { version: page.version } : {}),
+    ...(page.owner ? { author: page.owner } : {}),
+    ...(page.date ? { date: page.date } : {}),
+    hash: page.hash,
+    recordsProduced: [],
+    evidence: [{ source: "document", path: page.path }],
+  });
+  if (!p.ok) throw new Error(`SourceDocument for ${page.path}: ${JSON.stringify(p.issues)}`);
+  return p.record as SourceDocumentRecord;
+}
