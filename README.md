@@ -45,7 +45,7 @@ node packages/cli/dist/bin.js --help
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Contributors and AI coding assistants follow [CLAUDE.md](CLAUDE.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Contributors and AI coding assistants follow [CLAUDE.md](CLAUDE.md); [docs/build-status.md](docs/build-status.md) says what is done and what is next.
 
 ## Licence
 
