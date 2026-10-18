@@ -1,0 +1,22 @@
+{
+  "name": "@maycombhq/m3-exit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The M3 exit check: a seeded Forge feature driven from Define to Release through the atticus command line, against mocks and recorded replay.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/adapters": "workspace:*",
+    "@maycombhq/adopt": "workspace:*",
+    "@maycombhq/ai": "workspace:*",
+    "@maycombhq/assistant-files": "workspace:*",
+    "@maycombhq/cli": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/naysayer": "workspace:*",
+    "yaml": "^2.9.1"
+  }
+}
