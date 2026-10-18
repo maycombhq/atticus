@@ -1,0 +1,4 @@
+# Forge Messaging app descriptor (the invented in-house messaging framework)
+app: order-intake
+system: orders
+broker: forge-bus

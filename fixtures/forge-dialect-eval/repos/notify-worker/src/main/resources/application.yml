@@ -1,0 +1,5 @@
+relay:
+  server:
+    port: 8080
+mail:
+  from: noreply@notify.example

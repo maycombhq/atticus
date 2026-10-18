@@ -48,11 +48,32 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/assistant-kit:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/extractors':
+        specifier: workspace:*
+        version: link:../extractors
+      '@maycombhq/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
+
   packages/cli:
     dependencies:
       '@maycombhq/ai':
         specifier: workspace:*
         version: link:../ai
+      '@maycombhq/assistant-kit':
+        specifier: workspace:*
+        version: link:../assistant-kit
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core

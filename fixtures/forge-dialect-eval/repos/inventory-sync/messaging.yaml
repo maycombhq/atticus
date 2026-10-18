@@ -1,0 +1,4 @@
+# Forge Messaging app descriptor
+app: inventory-sync
+system: inventory
+broker: forge-bus

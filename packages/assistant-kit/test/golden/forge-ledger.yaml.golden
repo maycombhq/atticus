@@ -1,0 +1,97 @@
+# Dialect forge-house, scaffolded by `atticus dialect new` from 1 repo: forge-ledger.
+# A starting point, not a working dialect: it has no rules and no tests yet.
+#   1. Read kit/README.md and kit/c2-reference.md.
+#   2. Turn the candidate rules under `rules:` into real rules, finishing every TODO.
+#   3. Write tests, then run `atticus dialect test forge-house` until it passes.
+#      `atticus dialect run forge-house <repo>` prints what the rules produce.
+schemaVersion: 1
+name: forge-house
+version: 0.1.0
+description: TODO say which framework this dialect teaches the scanner.
+extends: []
+appliesTo:
+  repoTypes: []
+  marker: forge.yaml # in 1 of 1 repos
+layout:
+  sourceRoots: [src/main/java]
+  configFiles: [src/main/resources/application.yml]
+rules:
+  # Candidate rules, one per framework annotation. Uncomment one, finish its TODOs,
+  # and delete the [] below once the list has a rule. Delete candidates you don't need.
+  #
+  # - id: forge-call
+  #   description: TODO what a method annotated @ForgeCall means.
+  #   match:
+  #     annotation: ForgeCall
+  #     target: method
+  #     files: ["src/main/java/**/*.java"]
+  #   emit:
+  #     kind: TODO # a record kind from kit/c1-kinds.md
+  #     id: "${yaml:forge.yaml#service}.TODO" # leave id out for an Interface
+  #     fields:
+  #       TODO: "${attr.method}" # attributes: method, path; enclosing type: ${annotation.ForgeClient.<attribute>}
+  #   confidence: inferred # verified when this code alone proves the record
+  #
+  # - id: forge-endpoint
+  #   description: TODO what a method annotated @ForgeEndpoint means.
+  #   match:
+  #     annotation: ForgeEndpoint
+  #     target: method
+  #     files: ["src/main/java/**/*.java"]
+  #   emit:
+  #     kind: TODO # a record kind from kit/c1-kinds.md
+  #     id: "${yaml:forge.yaml#service}.TODO" # leave id out for an Interface
+  #     fields:
+  #       TODO: "${attr.auth}" # attributes: auth, method, path; enclosing type: ${annotation.ForgeService.<attribute>}
+  #   confidence: inferred # verified when this code alone proves the record
+  #
+  # - id: forge-publish
+  #   description: TODO what a method annotated @ForgePublish means.
+  #   match:
+  #     annotation: ForgePublish
+  #     target: method
+  #     files: ["src/main/java/**/*.java"]
+  #   emit:
+  #     kind: TODO # a record kind from kit/c1-kinds.md
+  #     id: "${yaml:forge.yaml#service}.TODO" # leave id out for an Interface
+  #     fields:
+  #       TODO: "${attr.topic}" # attributes: topic
+  #   confidence: inferred # verified when this code alone proves the record
+  #
+  # - id: forge-subscribe
+  #   description: TODO what a method annotated @ForgeSubscribe means.
+  #   match:
+  #     annotation: ForgeSubscribe
+  #     target: method
+  #     files: ["src/main/java/**/*.java"]
+  #   emit:
+  #     kind: TODO # a record kind from kit/c1-kinds.md
+  #     id: "${yaml:forge.yaml#service}.TODO" # leave id out for an Interface
+  #     fields:
+  #       TODO: "${attr.topic}" # attributes: topic
+  #   confidence: inferred # verified when this code alone proves the record
+  []
+tests: []
+
+# ------------------------------------------------------------------ survey
+# Descriptor forge.yaml (read a key with ${yaml:forge.yaml#<key>}):
+#   framework: forge (forge-ledger)
+#   service: ledger-api (forge-ledger)
+#   system: ledger (forge-ledger)
+#
+# Annotations in src/main/java:
+#   @ForgeCall on method: 1 in 1 repo; attributes: method, path; inside @ForgeClient
+#     forge-ledger/src/main/java/forge/ledger/NorthwindClient.java:8  @ForgeCall(method = "POST", path = "/v2/payments")
+#   @ForgeClient on class: 1 in 1 repo; attributes: baseUrl, service
+#     forge-ledger/src/main/java/forge/ledger/NorthwindClient.java:6  @ForgeClient(service = "northwind-pay", baseUrl = "${northwind.url}")
+#   @ForgeEndpoint on method: 2 in 1 repo; attributes: auth, method, path; inside @ForgeService
+#     forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:8  @ForgeEndpoint(method = "GET", path = "/accounts/{id}/balance", auth = "oauth2")
+#   @ForgePublish on method: 1 in 1 repo; attributes: topic
+#     forge-ledger/src/main/java/forge/ledger/LedgerEvents.java:9  @ForgePublish(topic = "transfers.completed")
+#   @ForgeService on class: 1 in 1 repo; attributes: name
+#     forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:5  @ForgeService(name = "ledger-api")
+#   @ForgeSubscribe on method: 1 in 1 repo; attributes: topic
+#     forge-ledger/src/main/java/forge/ledger/LedgerEvents.java:6  @ForgeSubscribe(topic = "payments.initiated")
+#
+# Config keys in src/main/resources/application.yml (read one with ${config:<key>}):
+#   northwind.url: https://api.northwind.example (forge-ledger)

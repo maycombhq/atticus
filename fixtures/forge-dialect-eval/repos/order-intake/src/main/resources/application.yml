@@ -1,0 +1,6 @@
+relay:
+  clients:
+    inventory-api:
+      timeout: 2s
+logging:
+  level: INFO

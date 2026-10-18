@@ -1,0 +1,7 @@
+relay:
+  server:
+    timeout: 30s
+  clients:
+    warehouse-gateway:
+      timeout: 5000ms
+      retries: 3
