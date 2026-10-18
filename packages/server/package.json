@@ -1,0 +1,34 @@
+{
+  "name": "@maycombhq/server",
+  "version": "0.0.1",
+  "description": "The local server behind the Atticus UI: the C4 local API on 127.0.0.1 with a session token, live events and the UI files.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/changes": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/index": "workspace:*",
+    "@maycombhq/naysayer": "workspace:*",
+    "@maycombhq/workspace": "workspace:*",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "zod": "^4.6.0"
+  }
+}

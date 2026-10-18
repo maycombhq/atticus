@@ -192,7 +192,7 @@ describe("M3 exit live runs: grade.mjs", () => {
         "5 of 5 stories ready (100%, bar 90%); 13 of 13 gaps covered; 0 invented names",
       );
       expect(g("b").results[0]!.reason).toBe(
-        "14 of 14 blocking; 13 of 13 gaps (100%); 5 of 5 lenses ran; 0 unlisted",
+        "14 of 14 blocking; 13 of 13 gaps (100%); 5 of 5 lenses ran; 0 unlisted (for a person to review)",
       );
       expect(g("c").results[0]!.reason).toBe(
         "built in 1 attempt; No drift.; trace links code to s2",

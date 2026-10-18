@@ -752,6 +752,31 @@ importers:
         specifier: ^2.9.1
         version: 2.9.1
 
+  packages/server:
+    dependencies:
+      '@maycombhq/changes':
+        specifier: workspace:*
+        version: link:../changes
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/index':
+        specifier: workspace:*
+        version: link:../index
+      '@maycombhq/naysayer':
+        specifier: workspace:*
+        version: link:../naysayer
+      '@maycombhq/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+    devDependencies:
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
+
   packages/speckit:
     dependencies:
       '@maycombhq/adapters':

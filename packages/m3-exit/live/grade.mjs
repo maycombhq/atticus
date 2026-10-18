@@ -124,7 +124,7 @@ async function gradeCritic(runDir) {
           ? ` (still waiting, handoff done not run: ${named("waiting")})`
           : ""
     }`,
-    `${unlisted.length} unlisted`,
+    `${unlisted.length} unlisted (for a person to review)`,
   ];
   if (discarded.length)
     parts.push(
@@ -137,7 +137,10 @@ async function gradeCritic(runDir) {
     discarded,
     lenses,
   };
-  const ok = missedBlocking.length === 0 && gapRate >= 0.9 && unlisted.length === 0;
+  // The exit is every seeded blocking issue and at least 90% of seeded gaps. Findings the
+  // fixture doesn't list aren't wrong by definition (a lens may see a real extra problem), so
+  // they are listed for a person to judge, not counted against the run.
+  const ok = missedBlocking.length === 0 && gapRate >= 0.9;
   return (ok ? pass : fail)(parts.join("; "), details);
 }
 
