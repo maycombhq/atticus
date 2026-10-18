@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { parseRecord, type CatalogRecord } from "@maycombhq/core";
+import { ChecklistPack, Dialect, parseRecord, type CatalogRecord } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import { readdirSync } from "node:fs";
 
@@ -165,5 +165,33 @@ describe("Forge repo manifest", () => {
     for (const rec of records) {
       if (rec.kind === "Component" && rec.repo) expect(ids.has(rec.repo), rec.id).toBe(true);
     }
+  });
+});
+
+describe("Forge org pack samples (C2, C3)", () => {
+  const orgPack = (p: string) => parse(read(join("metarepo/org-pack", p)));
+
+  it("the Forge dialect is a valid C2 file whose test expectations match the expected catalog", () => {
+    const d = Dialect.parse(orgPack("dialects/forge.yaml"));
+    for (const t of d.tests) {
+      if (t.fixture) expect(existsSync(join(ROOT, "metarepo/org-pack/dialects", t.fixture)), t.fixture).toBe(true);
+      for (const want of t.expect) {
+        const got = byId.get(want.id) as Record<string, unknown> | undefined;
+        expect(got?.kind, want.id).toBe(want.kind);
+        for (const [k, v] of Object.entries(want)) expect(got?.[k], `${want.id}.${k}`).toEqual(v);
+      }
+      for (const id of t.absent) expect(byId.has(id), id).toBe(false);
+    }
+  });
+
+  it("the architecture checklist is a valid C3 pack and its rules name real seeded problems", () => {
+    const pack = ChecklistPack.parse(orgPack("checklists/architecture.yaml"));
+    const seeded = new Set(discrepancies.map((d) => d.id.split("-")[0]));
+    for (const r of pack.rules) {
+      for (const m of (r.description ?? "").matchAll(/\b(d\d\d)\b/g)) expect(seeded.has(m[1]!), `${r.id} -> ${m[1]}`).toBe(true);
+    }
+    const ruleIds = pack.rules.map((r) => r.id);
+    expect(ruleIds).toContain("vendor-calls-through-gateway");
+    expect(pack.rules.filter((r) => r.needs.length > 0).length).toBeGreaterThanOrEqual(3);
   });
 });

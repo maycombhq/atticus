@@ -1,0 +1,115 @@
+# Architecture and release checks for the Forge platform. Contract C3.
+# Hand-written sample; the critic that runs it arrives in M3. Each rule names the
+# seeded discrepancy in fixtures/forge/expected/discrepancies.yaml it should catch.
+schemaVersion: 1
+name: forge-architecture
+version: 0.1.0
+description: Integration, resilience and operability checks for changes on the Forge platform.
+rules:
+  - id: vendor-calls-through-gateway
+    title: Calls to vendors go through the gateway
+    description: Catches d01. Pattern S.GW.VND requires the gateway between a service and an external vendor.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: interface-via-matches-pattern
+      params: { pattern: S.GW.VND, via: gateway }
+    waivable: false
+    source: wiki/integration-patterns.md
+    needs:
+      - kind: Interface
+        field: via
+        scope: touched-interfaces
+        question: "Does ${record} call the vendor directly or through the gateway?"
+
+  - id: pattern-code-known
+    title: Every pattern code is in the registry
+    description: Catches d07. A code that isn't in the pattern registry is usually a typo.
+    layer: org
+    lens: architecture
+    appliesTo: { artifacts: [interfaces] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: pattern-code-in-registry
+    waivable: true
+    source: wiki/integration-patterns.md
+
+  - id: every-hop-labelled
+    title: Every hop names its pattern
+    description: Catches d08.
+    layer: org
+    lens: architecture
+    appliesTo: { artifacts: [interfaces] }
+    severity: risk
+    check:
+      type: deterministic
+      check: interface-has-pattern
+    waivable: false
+    source: wiki/integration-patterns.md
+
+  - id: vendor-timeouts-set
+    title: Vendor calls have timeouts and retries
+    description: Raises d09 as a knowledge gap when the settings are unknown.
+    layer: org
+    lens: architecture
+    appliesTo: { artifacts: [design, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: settings-present
+      params: { settingKinds: [timeout, retry], forVia: [direct, gateway], forBoundary: vendor }
+    waivable: true
+    source: Platform resilience standard
+    needs:
+      - kind: Setting
+        field: settingKind
+        scope: touched-components
+        freshForDays: 180
+        question: "What timeout and retry settings does ${record} use for its vendor calls?"
+
+  - id: jobs-have-alerts
+    title: Jobs and services have alerts
+    description: Raises d10 as a knowledge gap.
+    layer: org
+    lens: release
+    appliesTo: { artifacts: [catalog, release] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: observability-present
+      params: { assetKinds: [alert] }
+    waivable: true
+    source: Platform operability standard
+    needs:
+      - kind: ObservabilityAsset
+        scope: touched-components
+        question: "What alerts or dashboards exist for ${record}?"
+
+  - id: story-has-acceptance-criteria
+    title: Every story has acceptance criteria
+    description: Catches d13.
+    layer: constitution
+    lens: story
+    appliesTo: { artifacts: [stories] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: story-has-acceptance-criteria
+    waivable: false
+    source: Story quality bar
+
+  - id: design-has-rollback
+    title: The design says how to roll back
+    layer: team
+    lens: delivery
+    appliesTo: { artifacts: [design] }
+    severity: risk
+    check:
+      type: ai
+      prompt: Read the design's rollout section. Report a finding if it does not say how each repo's change is rolled back, in what order, and what happens to data written in between. Quote the passage you relied on.
+    waivable: false
+    source: Team practice

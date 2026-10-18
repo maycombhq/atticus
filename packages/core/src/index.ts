@@ -6,3 +6,6 @@ export * from "./serialize.js";
 export * from "./json-schema.js";
 export * from "./schema/workspace.js";
 export * from "./branches.js";
+export * from "./template.js";
+export * from "./schema/dialect.js";
+export * from "./schema/review.js";

@@ -3,6 +3,7 @@ import { join, relative, sep } from "node:path";
 import {
   catalogJsonSchemas,
   deserializeRecord,
+  rulesJsonSchemas,
   workspaceJsonSchemas,
   recordPath,
   serializeRecord,
@@ -21,6 +22,7 @@ export async function schemaExport(dir: string, io: Output): Promise<number> {
   const groups: [string, Record<string, object>][] = [
     ["catalog", catalogJsonSchemas()],
     ["workspace", workspaceJsonSchemas()],
+    ["rules", rulesJsonSchemas()],
   ];
   let n = 0;
   for (const [group, schemas] of groups) {

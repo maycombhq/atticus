@@ -55,6 +55,11 @@ describe("atticus CLI", () => {
     const c = capture();
     expect(await main(["schema", "export", dir], c.io)).toBe(0);
     expect(await readdir(join(dir, "catalog"))).toHaveLength(29);
+    expect((await readdir(join(dir, "rules"))).sort()).toEqual([
+      "ChecklistPack.json",
+      "Dialect.json",
+      "Finding.json",
+    ]);
     expect((await readdir(join(dir, "workspace"))).sort()).toEqual([
       "ChangeRepos.json",
       "RepoManifest.json",

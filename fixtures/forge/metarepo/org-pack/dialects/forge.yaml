@@ -1,0 +1,109 @@
+# The Forge dialect: teaches the scanner the invented in-house Forge framework.
+# Contract C2. Hand-written sample; the rule engine that runs it arrives in M1.
+schemaVersion: 1
+name: forge
+version: 0.1.0
+description: Forge services declare endpoints, clients and events with annotations, and name themselves in forge.yaml.
+extends: []
+appliesTo:
+  repoTypes: [forge-service]
+  marker: forge.yaml
+layout:
+  sourceRoots: [src/main/java]
+  configFiles: [src/main/resources/application.yml]
+rules:
+  - id: forge-endpoint
+    description: A method annotated @ForgeEndpoint serves a REST endpoint of the service named in forge.yaml.
+    match:
+      annotation: ForgeEndpoint
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Endpoint
+      id: "${yaml:forge.yaml#service}.${attr.method | lower}-${member.name | slug}"
+      fields:
+        component: "${yaml:forge.yaml#service}"
+        endpointType: rest
+        method: "${attr.method | upper}"
+        pathOrTopic: "${attr.path}"
+        normalizedPath: "${attr.path | normalizePath}"
+        auth: "${attr.auth | default('none')}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: forge-client-call
+    description: A method annotated @ForgeCall in a @ForgeClient interface calls another service directly (not through the gateway).
+    match:
+      annotation: ForgeCall
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Interface
+      fields:
+        from: "${yaml:forge.yaml#service}"
+        to: "${annotation.ForgeClient.service}"
+        via: direct
+        method: "${attr.method | upper}"
+        normalizedPath: "${attr.path | normalizePath}"
+        sync: sync
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: forge-publish
+    description: A method annotated @ForgePublish publishes to a topic; the consumer is resolved later from topic configs.
+    match:
+      annotation: ForgePublish
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${yaml:forge.yaml#service}.publish.${attr.topic | slug}"
+      fields:
+        unresolvedKind: event-publish
+        raw: "${attr.topic}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: forge-subscribe
+    description: A method annotated @ForgeSubscribe consumes a topic; the producer is resolved later from topic configs.
+    match:
+      annotation: ForgeSubscribe
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${yaml:forge.yaml#service}.subscribe.${attr.topic | slug}"
+      fields:
+        unresolvedKind: event-subscribe
+        raw: "${attr.topic}"
+      evidence: { source: code, side: callee }
+    confidence: inferred
+
+tests:
+  - name: endpoints and the direct vendor call in forge-ledger
+    fixture: ../../../repos/forge-ledger
+    expect:
+      - kind: Endpoint
+        id: ledger-api.get-balance
+        method: GET
+        pathOrTopic: /accounts/{id}/balance
+        normalizedPath: /accounts/{}/balance
+        auth: oauth2
+      - kind: Endpoint
+        id: ledger-api.post-transfer
+        method: POST
+        pathOrTopic: /transfers
+      - kind: Interface
+        id: if-e7344c9455608119
+        from: ledger-api
+        to: northwind-pay
+        via: direct
+        method: POST
+        normalizedPath: /v2/payments
+    absent: [ledger-api.get-accounts]
+  - name: a service with no forge.yaml produces nothing
+    files:
+      src/main/java/x/A.java: |
+        @ForgeEndpoint(method = "GET", path = "/a")
+        public void a() {}
+    expect: []

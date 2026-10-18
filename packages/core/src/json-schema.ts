@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
 import { ChangeRepos, RepoManifest } from "./schema/workspace.js";
+import { Dialect } from "./schema/dialect.js";
+import { ChecklistPack, Finding } from "./schema/review.js";
 
 /**
  * JSON Schema for every record kind, generated from the zod source of truth, for editors,
@@ -29,5 +31,19 @@ export function workspaceJsonSchemas(): Record<"RepoManifest" | "ChangeRepos", o
   return {
     RepoManifest: gen("RepoManifest", RepoManifest),
     ChangeRepos: gen("ChangeRepos", ChangeRepos),
+  };
+}
+
+/** JSON Schema for the dialect rule file (C2) and checklist packs and findings (C3). */
+export function rulesJsonSchemas(): Record<"Dialect" | "ChecklistPack" | "Finding", object> {
+  const gen = (name: string, schema: z.ZodType) => ({
+    $id: `https://maycombhq.github.io/atticus/schema/rules/v1/${name}.json`,
+    title: name,
+    ...z.toJSONSchema(schema, { io: "input", unrepresentable: "any" }),
+  });
+  return {
+    Dialect: gen("Dialect", Dialect),
+    ChecklistPack: gen("ChecklistPack", ChecklistPack),
+    Finding: gen("Finding", Finding),
   };
 }
