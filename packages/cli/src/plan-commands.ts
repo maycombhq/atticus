@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { Approval, WorkTracker, ServiceDesk } from "@maycombhq/adapters";
 import { runtimeForCli, type AiRuntime, type Run } from "@maycombhq/ai";
 import { changesRelOf, proposalsRelOf } from "@maycombhq/core";
@@ -208,9 +208,7 @@ export async function storyBarCommand(
     return 2;
   }
   try {
-    const ev = o.eval
-      ? await readStoryEval(o.eval.startsWith("/") ? o.eval : join(root, o.eval))
-      : undefined;
+    const ev = o.eval ? await readStoryEval(resolve(root, o.eval)) : undefined;
     const r = await storyBar(root, changeId, ev ? { eval: ev } : {});
     if (o.json) {
       io.out(JSON.stringify(r, null, 2));

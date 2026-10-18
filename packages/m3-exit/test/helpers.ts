@@ -35,6 +35,17 @@ const ENV = {
   GIT_TERMINAL_PROMPT: "0",
 };
 
+// The CLI runs in this process and commits on task branches as the developer would; give it the
+// identity a developer's machine has (CI runners have no git user configured).
+for (const k of [
+  "GIT_AUTHOR_NAME",
+  "GIT_AUTHOR_EMAIL",
+  "GIT_COMMITTER_NAME",
+  "GIT_COMMITTER_EMAIL",
+  "GIT_TERMINAL_PROMPT",
+] as const)
+  process.env[k] ??= ENV[k];
+
 export function sh(cwd: string, ...args: string[]): string {
   return execFileSync("git", ["-c", "init.defaultBranch=main", ...args], {
     cwd,
