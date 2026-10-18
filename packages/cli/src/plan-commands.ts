@@ -1,4 +1,4 @@
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { Approval, WorkTracker, ServiceDesk } from "@maycombhq/adapters";
 import { runtimeForCli, type AiRuntime, type Run } from "@maycombhq/ai";
 import { changesRelOf, proposalsRelOf } from "@maycombhq/core";
