@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { catalogDirOf } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import {
   diffCatalogs,
@@ -46,7 +47,7 @@ export async function scanCommand(
       return 2;
     }
   }
-  const out = join(root, "catalog", "generated");
+  const out = join(catalogDirOf(root), "generated");
   const before = await readCatalog(out);
   const started = Date.now();
   const scan = await scanEstate({

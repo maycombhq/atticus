@@ -9,7 +9,7 @@ import {
   type RuntimeMode,
 } from "@maycombhq/ai";
 import { generateAssistantFiles, smokeCheck } from "@maycombhq/assistant-files";
-import { loadOrgPack } from "@maycombhq/core";
+import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import { driftCheck, handDown, handUp } from "@maycombhq/speckit";
 import {
   completeTaskHandoff,
@@ -245,7 +245,7 @@ export async function specHandUp(
       (await runtimeForCli(root, { ...(deps.env ? { env: deps.env } : {}) })).runtime;
     let gitHost = deps.gitHost;
     if (!gitHost && o.pr === undefined) {
-      const op = await loadOrgPack(join(root, "org-pack"));
+      const op = await loadOrgPack(join(orgPackDirOf(root)));
       gitHost = createAdapters(op.runtime).gitHost;
     }
     const r = await handUp(root, changeId, taskId, {

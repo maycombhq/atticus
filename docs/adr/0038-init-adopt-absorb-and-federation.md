@@ -1,0 +1,18 @@
+# 0038. Init, discovery, adopt in place, absorb and federation
+
+- Status: accepted
+- Date: 2026-10-18
+
+## Decision
+
+**Init and discovery.** `atticus init` creates a metarepo whose org pack is the built-in defaults written out as files (or a copy of a given pack), so a team changes a visible file by PR rather than an invisible default; OpenSpec is set up with the bundled CLI offline (or as folders), always with the org-flow schema. `atticus repos discover` detects each repo's type from files alone (spring-boot, java, frontend, node, python, go, dotnet, gateway, mainframe, infra, event-config) and reuses the component extractor; owners and systems can't be read from files, so they become owner questions (an unknown owner is written as `unassigned`). Discovery fills only a missing or empty manifest; otherwise it writes a proposal.
+
+**Adopt in place.** An adopted repo keeps everything Atticus owns in `.atticus/`: the org pack in `.atticus/org-pack/` with `sources.yaml` `layout` pointing at the repo's own OpenSpec folder, catalog, constitution, prompts and skills; local state git-ignored; repos recorded in place (`./<path>`), read where they are. Adopt hashes the repo before and after and fails if anything outside `.atticus/` changed. Every command resolves the org pack, catalog and index through the layout (`orgPackDirOf`, `stateDirOf`, `layoutOf`, `catalogDirOf` in core). `atticus unadopt` removes only what Atticus created, using adopt's snapshot, and restores files with an Atticus section to their exact bytes, so removal leaves the repo byte-identical apart from Atticus's own folders (tested end to end with scan, change and critic runs in between).
+
+**Absorb and federation.** `atticus absorb` turns another team's repo into an org-pack proposal and never applies it: each item is adopt (a copy we own), link (followed) or ignore, with a reason, a confidence and the translated artifact. Prompts become org-pack commands; agents, chat modes, skills and instruction files become skills; checklist items become C3 rule drafts, deterministic only when they ask exactly what a built-in check checks; a Spec Kit constitution becomes constitution-layer rules, its spec template a change template, its specs OpenSpec specs; schemas and API specs become references; OpenSpec specs and changes are linked or imported. Absorbed content is copied and converted, never executed. An Atticus metarepo in link mode is federated at full fidelity: its records join every scan with their origin kept (`federated:<id>`), local records win, and its open changes take part in conflict detection read-only. On the fixtures every item is listed and 100% translated, in milliseconds (bar: ≥90% in under 10 minutes).
+
+**Zero-install.** In an adopted repo the generated `/atticus-*` commands point at `.atticus/` and work from committed files alone: questions and impact from the catalog, a critic-style review, drafting tasks and service-desk requests, release readiness, the org's own commands and skills. Scanning, recording findings, hand-offs, PRs, adapters and deterministic checks need Atticus installed.
+
+## Consequences
+
+Atticus can be tried in any repo with no config and removed without a trace, and other teams' assets come in as reviewable proposals. Candidate additive contracts: C6 `layout.agents`, C4 `GitHost.listRepos`, an optional manifest `path` for in-place repos. Not yet (M3 exit integration): change folders through the layout (still `openspec/changes` in four places), workspace sync skipping in-place repos, Spec Kit hand-down merging with a team's existing constitution instead of replacing it, a refresh command for linked absorbed sources, and merge identity resolution for federated loose ends.

@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { SCHEMA_VERSION } from "@maycombhq/core";
+import { SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
 import { join, resolve } from "node:path";
 import { catalogValidate, orgPackValidate, schemaExport, type Output } from "./commands.js";
 import {
@@ -43,6 +43,15 @@ import {
   templatesDraft,
 } from "./plan-commands.js";
 import { executorsCheck, todoDone, todoList, todoRun, todoShow } from "./todo-commands.js";
+import {
+  absorbCommand,
+  adoptCommand,
+  initCommand,
+  reposDiscoverCommand,
+  unadoptCommand,
+  zeroInstallCommand,
+} from "./setup-commands.js";
+import { existsSync } from "node:fs";
 import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
   catalogMigrate,
@@ -156,6 +165,12 @@ Usage:
   atticus todo done <step> --by <you>  Record a manual step's result [--result k=v]... [--skip --note why]
   atticus todo run <step> --with <executor>  Run a step with a team's own tool [--approve --by you --inputs sha] [--fill-only]
   atticus executors check              Ping configured executors and show what each covers
+  atticus init <name> --platform <p>  Create a new metarepo [--from pack] [--owner who]
+  atticus adopt <path>                 Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]
+  atticus unadopt <path>               Remove Atticus from an adopted repo, leaving it as it was
+  atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
+  atticus absorb <git-url|path> --id <id>  Translate another team's prompts, agents, checklists, Spec Kit or Atticus repo
+          [--mode adopt|link|ignore] [--ref r] [--dry-run]
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -241,6 +256,9 @@ export async function main(argv: string[], io: Output): Promise<number> {
       with: { type: "string" },
       inputs: { type: "string" },
       "fill-only": { type: "boolean" },
+      platform: { type: "string" },
+      ref: { type: "string" },
+      org: { type: "string" },
     },
     strict: false,
   });
@@ -343,6 +361,65 @@ export async function main(argv: string[], io: Output): Promise<number> {
   }
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const json = values.json === true;
+  if (group === "init") {
+    const owner = Array.isArray(values.owner)
+      ? (values.owner[0] as string | undefined)
+      : str(values.owner);
+    return initCommand(
+      resolve(command ?? "."),
+      {
+        ...(command ? { name: command } : {}),
+        ...(str(values.platform) ? { platform: str(values.platform)! } : {}),
+        ...(str(values.from) ? { packFrom: resolve(str(values.from)!) } : {}),
+        ...(owner ? { owner } : {}),
+        json,
+      },
+      io,
+    );
+  }
+  if (group === "adopt")
+    return adoptCommand(
+      resolve(command ?? "."),
+      {
+        json,
+        ...(str(values.platform) ? { platform: str(values.platform)! } : {}),
+        ...(str(values.name) ? { name: str(values.name)! } : {}),
+      },
+      io,
+    );
+  if (group === "unadopt") return unadoptCommand(resolve(command ?? "."), io);
+  if (group === "repos" && command === "discover")
+    return reposDiscoverCommand(
+      root,
+      {
+        ...(arg ? { from: resolve(arg) } : {}),
+        ...(str(values.org) ? { org: str(values.org)! } : {}),
+        ...(str(values.platform) ? { platform: str(values.platform)! } : {}),
+        dryRun: values["dry-run"] === true,
+        json,
+      },
+      io,
+    );
+  if (group === "absorb") {
+    if (!command) {
+      io.err(
+        "absorb needs a git URL or a folder, for example: atticus absorb ../payments-metarepo --id payments",
+      );
+      return 2;
+    }
+    return absorbCommand(
+      root,
+      command,
+      {
+        ...(str(values.id) ? { id: str(values.id)! } : {}),
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+        ...(str(values.ref) ? { ref: str(values.ref)! } : {}),
+        json,
+        dryRun: values["dry-run"] === true,
+      },
+      io,
+    );
+  }
   const approver = values.approve === true ? str(values.by) : undefined;
   const dryRun = values["dry-run"] === true;
   if (group === "plan") {
@@ -490,6 +567,12 @@ export async function main(argv: string[], io: Output): Promise<number> {
       io,
     );
   if (group === "drift") return driftCommand(root, command, { json }, io);
+  if (group === "assistant-files" && existsSync(join(root, ".atticus", "adopted.yaml")))
+    return zeroInstallCommand(
+      root,
+      { check: values.check === true, force: values.force === true },
+      io,
+    );
   if (group === "assistant-files")
     return assistantFiles(
       root,
@@ -823,7 +906,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
   if (group === "reconcile")
     return reconcileCommand(root, positionals.slice(1), { json: values.json === true }, io);
   if (group === "orgpack" && command === "validate")
-    return orgPackValidate(arg ? resolve(arg) : join(root, "org-pack"), io);
+    return orgPackValidate(arg ? resolve(arg) : join(orgPackDirOf(root)), io);
   if (group === "handoff" && command === "done") {
     if (!arg) {
       io.err(

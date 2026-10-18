@@ -9,7 +9,7 @@ import {
   statePhase,
   writeFileAtomic,
 } from "@maycombhq/changes";
-import { Finding, Lens, toCanonicalYaml, type ChecklistPack } from "@maycombhq/core";
+import { Finding, Lens, toCanonicalYaml, type ChecklistPack, orgPackDirOf } from "@maycombhq/core";
 import type { AiRuntime } from "@maycombhq/ai";
 import { runLenses, type Discarded, type LensName, type LensRun } from "./ai.js";
 import { artifactOf, readChangeFiles } from "./artifacts.js";
@@ -97,7 +97,7 @@ async function ruleSources(
   const sources: PackSource[] = [
     { pack: await loadConstitution(), file: CONSTITUTION_FILE_LABEL, origin: "constitution" },
   ];
-  const orgDir = join(ctx.root, "org-pack");
+  const orgDir = join(orgPackDirOf(ctx.root));
   const org = await readPackFiles(ctx.root, join(orgDir, "checklists"));
   const named = ctx.gate.checklists;
   const chosen = named.length ? org.packs.filter((p) => named.includes(p.pack.name)) : org.packs;

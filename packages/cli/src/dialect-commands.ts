@@ -1,7 +1,7 @@
 import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { stringify } from "yaml";
-import { RecordId } from "@maycombhq/core";
+import { RecordId, orgPackDirOf } from "@maycombhq/core";
 import {
   candidateAnnotations,
   dialectFilePath,
@@ -53,8 +53,8 @@ export async function dialectNew(
       return 2;
     }
   }
-  const file = join(root, "org-pack", "dialects", `${name}.yaml`);
-  const existing = await dialectFilePath(join(root, "org-pack"), name);
+  const file = join(orgPackDirOf(root), "dialects", `${name}.yaml`);
+  const existing = await dialectFilePath(join(orgPackDirOf(root)), name);
   if (existing) {
     io.err(
       `${shown(root, existing)} already exists; it was left as it is. Choose another name or edit that file.`,
@@ -62,7 +62,7 @@ export async function dialectNew(
     return 1;
   }
   const survey = await surveyRepos(dirs);
-  await mkdir(join(root, "org-pack", "dialects"), { recursive: true });
+  await mkdir(join(orgPackDirOf(root), "dialects"), { recursive: true });
   await writeFile(file, scaffoldDialect(name, survey), { encoding: "utf8", flag: "wx" });
   const house = survey.annotations.filter((a) => !a.known).length;
   io.out(
@@ -79,7 +79,7 @@ async function load(
   io: Output,
   allowNoTests: boolean,
 ): Promise<LoadedDialect | undefined> {
-  const file = await dialectFilePath(join(root, "org-pack"), name);
+  const file = await dialectFilePath(join(orgPackDirOf(root)), name);
   if (!file) {
     io.err(
       `No dialect file org-pack/dialects/${name}.yaml. Create one with: atticus dialect new ${name} --from <repo>...`,

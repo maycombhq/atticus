@@ -11,6 +11,7 @@ import {
   type CatalogRecord,
   type OrgPack,
   type RecordOf,
+  orgPackDirOf,
 } from "@maycombhq/core";
 import { buildContextPack, toRunSummary, type AiRuntime, type SourceInput } from "@maycombhq/ai";
 import { writeFileAtomic } from "@maycombhq/changes";
@@ -813,7 +814,7 @@ export async function draftTemplates(
   root: string,
   o: { runtime?: AiRuntime; now?: Date; inputsDir?: string } = {},
 ): Promise<DraftTemplatesResult> {
-  const orgPackDir = join(root, "org-pack");
+  const orgPackDir = join(orgPackDirOf(root));
   const orgPack = await loadOrgPack(orgPackDir);
   const records = (await readCatalog(join(root, orgPack.sources.layout.catalog, "generated")))
     .records;

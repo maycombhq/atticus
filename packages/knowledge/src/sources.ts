@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { parseRecord, type CatalogRecord, type OrgPack, type RecordOf } from "@maycombhq/core";
+import {
+  parseRecord,
+  type CatalogRecord,
+  type OrgPack,
+  type RecordOf,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import type { ProfileSystem } from "@maycombhq/reconcile";
 import { readMarkdown, type MarkdownDoc, type MdSection } from "./markdown.js";
 import { mentionIndex, type MentionIndex } from "./mentions.js";
@@ -319,7 +325,7 @@ function newestCodePerSystem(records: CatalogRecord[], index: MentionIndex): Map
  * evidence for a system it describes. A page with no date can't be judged: "unknown".
  */
 export async function syncSources(o: SyncOptions): Promise<SyncResult> {
-  const orgPackDir = o.orgPackDir ?? join(o.root, "org-pack");
+  const orgPackDir = o.orgPackDir ?? join(orgPackDirOf(o.root));
   const levels = o.orgPack.pack?.classification ?? DEFAULT_LEVELS;
   const fallbackLevel = levels.includes("internal") ? "internal" : levels[0]!;
   const limit = o.maxClassification ?? fallbackLevel;

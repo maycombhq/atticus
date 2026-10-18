@@ -1,5 +1,11 @@
 import { join } from "node:path";
-import { loadOrgPack, type CatalogRecord, type ChangeType, type OrgPack } from "@maycombhq/core";
+import {
+  loadOrgPack,
+  type CatalogRecord,
+  type ChangeType,
+  type OrgPack,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
 import { ChangeError } from "./errors.js";
 import { loadChangePolicy, type ChangePolicy } from "./policy.js";
@@ -23,7 +29,7 @@ export interface ChangeContext {
 }
 
 export async function loadChangeContext(root: string): Promise<ChangeContext> {
-  const orgPackDir = join(root, "org-pack");
+  const orgPackDir = join(orgPackDirOf(root));
   const orgPack = await loadOrgPack(orgPackDir);
   const policy = await loadChangePolicy(orgPackDir);
   const templates = await loadTemplates(orgPackDir);

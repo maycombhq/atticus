@@ -1,7 +1,13 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { loadOrgPack, RuntimeKind, type OrgPack, type Recording } from "@maycombhq/core";
+import {
+  loadOrgPack,
+  RuntimeKind,
+  type OrgPack,
+  type Recording,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import { DATA_RULE, estimateTokens } from "./context.js";
 import { HandoffRuntime, type HandoffOptions } from "./handoff.js";
 import {
@@ -341,7 +347,7 @@ export async function runtimeForCli(
   } = {},
 ): Promise<CliRuntime> {
   const env = o.env ?? process.env;
-  const op = await loadOrgPack(join(root, "org-pack"));
+  const op = await loadOrgPack(join(orgPackDirOf(root)));
   const bad = op.problems.filter((p) => p.file === "runtime.yaml");
   if (bad.length)
     throw new RuntimeConfigError(

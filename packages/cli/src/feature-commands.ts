@@ -13,6 +13,7 @@ import {
   type CatalogRecord,
   type OrgPack,
   type RecordOf,
+  orgPackDirOf,
 } from "@maycombhq/core";
 import {
   FeatureError,
@@ -59,7 +60,7 @@ interface Loaded {
 }
 
 async function load(root: string, io: Output): Promise<Loaded> {
-  const op = await loadOrgPack(join(root, "org-pack"));
+  const op = await loadOrgPack(join(orgPackDirOf(root)));
   for (const p of op.problems)
     io.err(`org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
   const catalogRel = op.sources.layout.catalog;
@@ -507,7 +508,7 @@ export async function catalogMigrate(
   io: Output,
   o: { dryRun?: boolean } = {},
 ): Promise<number> {
-  const op = await loadOrgPack(join(root, "org-pack"));
+  const op = await loadOrgPack(join(orgPackDirOf(root)));
   const rel = op.sources.layout.catalog;
   const res = await migrateCatalog(join(root, rel), o);
   for (const f of res.migrated) io.out(`  ${rel}/${f}`);

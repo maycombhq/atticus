@@ -3,7 +3,9 @@ import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import {
   deserializeRecord,
+  layoutOf,
   recordReferences,
+  stateDirOf,
   type CatalogRecord,
   type RecordKind,
 } from "@maycombhq/core";
@@ -50,7 +52,10 @@ async function listFiles(root: string): Promise<CatalogFile[]> {
       }
     }
   }
-  for (const d of CATALOG_DIRS) await walk(join(root, ...d.split("/")));
+  // The catalog folder follows sources.yaml layout (catalog/ unless the org pack says otherwise).
+  const catalog = layoutOf(root).catalog;
+  for (const d of CATALOG_DIRS)
+    await walk(join(root, ...d.replace(/^catalog\//, `${catalog}/`).split("/")));
   return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }
 
@@ -200,7 +205,7 @@ export interface OpenOptions {
  * the files' fingerprint and rebuilds when anything changed, so it is never out of date.
  */
 export async function openIndex(root: string, o: OpenOptions = {}): Promise<CatalogIndex> {
-  const file = o.file ?? join(root, ".index", "catalog.sqlite");
+  const file = o.file ?? join(stateDirOf(root), ".index", "catalog.sqlite");
   const files = await listFiles(root);
   const fp = fingerprint(files);
   let current: string | undefined;

@@ -8,6 +8,7 @@ import {
   type EffectiveRule,
   type PackSource,
 } from "@maycombhq/naysayer";
+import { orgPackDirOf } from "@maycombhq/core";
 
 /**
  * The repo's `.specify/memory/constitution.md`, generated from one source: the critic's
@@ -52,11 +53,11 @@ export async function rulesForRepo(
   const sources: PackSource[] = [
     { pack: constitution, file: CONSTITUTION_FILE_LABEL, origin: "constitution" },
   ];
-  const org = await readPackFiles(root, join(root, "org-pack", "checklists"));
+  const org = await readPackFiles(root, join(orgPackDirOf(root), "checklists"));
   for (const p of org.packs) sources.push({ ...p, origin: "org" });
   const problems = [...org.problems];
   if (team) {
-    const t = await readPackFiles(root, join(root, "org-pack", "teams", team, "checklists"));
+    const t = await readPackFiles(root, join(orgPackDirOf(root), "teams", team, "checklists"));
     problems.push(...t.problems);
     for (const p of t.packs) sources.push({ ...p, origin: "team" });
   }

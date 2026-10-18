@@ -1,7 +1,13 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
-import { ChangeRepos, RepoManifest, toCanonicalYaml, type ManifestRepo } from "@maycombhq/core";
+import {
+  ChangeRepos,
+  RepoManifest,
+  toCanonicalYaml,
+  type ManifestRepo,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import { changeReposPath } from "./layout.js";
 
 export class WorkspaceFileError extends Error {
@@ -42,7 +48,7 @@ export interface LoadedRepo extends ManifestRepo {
  * Repo ids must be unique across profiles, because each one names a folder under workspace/.
  */
 export async function loadRepos(root: string): Promise<LoadedRepo[]> {
-  const profiles = join(root, "org-pack", "profiles");
+  const profiles = join(orgPackDirOf(root), "profiles");
   let names: string[];
   try {
     names = (await readdir(profiles, { withFileTypes: true }))

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { loadOrgPack, type ExecutorConfig, type Procedure } from "@maycombhq/core";
+import { loadOrgPack, type ExecutorConfig, type Procedure, orgPackDirOf } from "@maycombhq/core";
 import { clientFor, isLocalUrl, TransportError, type ExecutorClient } from "./transports.js";
 import { loadExecutors } from "./run.js";
 
@@ -39,7 +39,7 @@ export async function executorsCheck(
   } = {},
 ): Promise<ExecutorsCheckResult> {
   const loaded = o.executors ? { executors: o.executors, problems: [] } : await loadExecutors(root);
-  const procedures = o.procedures ?? (await loadOrgPack(join(root, "org-pack"))).procedures;
+  const procedures = o.procedures ?? (await loadOrgPack(join(orgPackDirOf(root)))).procedures;
   const out: ExecutorStatus[] = [];
   for (const cfg of loaded.executors) {
     const allowedFor = procedures

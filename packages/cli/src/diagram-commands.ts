@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { loadOrgPack, type CatalogRecord } from "@maycombhq/core";
+import { loadOrgPack, type CatalogRecord, orgPackDirOf } from "@maycombhq/core";
 import {
   buildView,
   shapeLibrary,
@@ -24,7 +24,7 @@ export async function loadCatalog(
   generated: number;
   legend?: Parameters<typeof readDrawio>[1];
 }> {
-  const op = await loadOrgPack(join(root, "org-pack"));
+  const op = await loadOrgPack(join(orgPackDirOf(root)));
   const catalogDir = join(root, op.sources.layout.catalog);
   const generated = await readCatalog(join(catalogDir, "generated"));
   const curated = await readCatalog(join(catalogDir, "curated"));
@@ -77,7 +77,7 @@ export async function diagramRender(
       io.err(`Can't read ${o.view}`);
       return 2;
     }
-    const op = await loadOrgPack(join(root, "org-pack"));
+    const op = await loadOrgPack(join(orgPackDirOf(root)));
     const diagram = readDrawio(xml, op.profiles[0]?.profile?.legend);
     for (const p of diagram.problems) io.err(`cell ${p.cell}: ${p.message}`);
     const view = viewFromDiagram(diagram, relative(root, full).split(sep).join("/"));

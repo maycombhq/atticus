@@ -14,6 +14,7 @@ import {
   type RunResult,
   type StepApproval,
   type StepRun,
+  orgPackDirOf,
 } from "@maycombhq/core";
 import { checkResult, fileStepStore, recordStep, type StepStore } from "@maycombhq/adapters";
 import { TransportError, clientFor, isLocalUrl, type ExecutorClient } from "./transports.js";
@@ -210,7 +211,7 @@ export async function runStep(
   const store = o.store ?? fileStepStore(root);
   let step = await store.get(stepId);
   if (!step) throw new ExecutorError("not-found", `There is no step ${stepId}.`);
-  const procedures = o.procedures ?? (await loadOrgPack(join(root, "org-pack"))).procedures;
+  const procedures = o.procedures ?? (await loadOrgPack(join(orgPackDirOf(root)))).procedures;
   // A step made before its procedure was approved: name the procedure now, by template and kind.
   if (!step.procedure && step.state === "open") {
     const s = step;

@@ -2,7 +2,13 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
-import { loadOrgPack, RecordId, type BuildEngine, type OrgPack } from "@maycombhq/core";
+import {
+  loadOrgPack,
+  RecordId,
+  type BuildEngine,
+  type OrgPack,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import { loadRepos, readChangeRepos } from "@maycombhq/workspace";
 import {
   renderAssistantFiles,
@@ -150,7 +156,7 @@ export async function generateAssistantFiles(
   root: string,
   o: GenerateOptions = {},
 ): Promise<GenerateResult> {
-  const orgPackDir = join(root, "org-pack");
+  const orgPackDir = join(orgPackDirOf(root));
   const orgPack = await loadOrgPack(orgPackDir);
   const { commands, problems } = await loadOrgCommands(orgPackDir);
   problems.unshift(

@@ -8,7 +8,7 @@ import {
   type ServiceRequest,
   type WorkItem,
 } from "@maycombhq/adapters";
-import { loadOrgPack } from "@maycombhq/core";
+import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import { readServiceRequestExports, readWorkItemExports } from "@maycombhq/intake";
 
 /**
@@ -27,7 +27,7 @@ export async function metarepoAdapters(
     onFallback?: (e: FallbackEvent) => void;
   } = {},
 ): Promise<Adapters> {
-  const pack = await loadOrgPack(join(root, "org-pack"));
+  const pack = await loadOrgPack(join(orgPackDirOf(root)));
   const inputs = { root, ...(o.inputsDir ? { inputsDir: o.inputsDir } : {}) };
   const workItems = async (): Promise<WorkItem[]> =>
     (await readWorkItemExports(inputs)).items.map((i) => ({

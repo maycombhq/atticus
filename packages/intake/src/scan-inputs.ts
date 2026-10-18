@@ -7,6 +7,7 @@ import {
   parseRecord,
   type CatalogRecord,
   type OrgPack,
+  orgPackDirOf,
 } from "@maycombhq/core";
 import { drawioIngestor, readDrawio, resolveNames, type ProfileSystem } from "@maycombhq/reconcile";
 import type { Ingestor, ScanContext } from "@maycombhq/sdk";
@@ -159,7 +160,7 @@ function systemsInName(stem: string, systems: ProfileSystem[]): string[] {
 }
 
 export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult> {
-  const orgPackDir = typeof o.orgPack === "string" ? o.orgPack : join(o.root, "org-pack");
+  const orgPackDir = typeof o.orgPack === "string" ? o.orgPack : join(orgPackDirOf(o.root));
   const op = typeof o.orgPack === "object" ? o.orgPack : await loadOrgPack(orgPackDir);
   const systems: ProfileSystemFull[] = op.profiles.flatMap((p) => p.profile?.systems ?? []);
   const legend = op.profiles.find((p) => p.profile?.legend)?.profile?.legend;

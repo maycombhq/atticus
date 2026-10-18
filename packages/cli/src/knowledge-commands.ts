@@ -1,6 +1,12 @@
 import { stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { loadOrgPack, Sources, type CatalogRecord, type OrgPack } from "@maycombhq/core";
+import {
+  loadOrgPack,
+  Sources,
+  type CatalogRecord,
+  type OrgPack,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import {
   coverage,
   diffPatterns,
@@ -35,7 +41,7 @@ async function isDir(p: string): Promise<boolean> {
 }
 
 async function load(root: string, io: Output) {
-  const orgPackDir = join(root, "org-pack");
+  const orgPackDir = join(orgPackDirOf(root));
   const op = await loadOrgPack(orgPackDir);
   for (const p of op.problems)
     io.err(`org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
@@ -68,7 +74,7 @@ export async function sourcesAdd(
     return 2;
   }
   const type = kind as WikiType;
-  const orgPackDir = join(root, "org-pack");
+  const orgPackDir = join(orgPackDirOf(root));
   const op = await loadOrgPack(orgPackDir);
   const folder = type === "markdown-folder" || (type !== "confluence" && !isUrl(location));
   let entryLocation: string;

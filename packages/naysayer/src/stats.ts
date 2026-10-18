@@ -4,6 +4,7 @@ import { CHANGES_DIR } from "@maycombhq/changes";
 import type { Finding } from "@maycombhq/core";
 import { fingerprint, readRound, reviewedGates, roundsOf } from "./findings.js";
 import { linePatch } from "./patch.js";
+import { orgPackDirOf } from "@maycombhq/core";
 
 /**
  * Override rates per rule across every change (open and archived): how often people dismiss
@@ -95,8 +96,8 @@ async function ruleFile(
       else if (/\.ya?ml$/.test(e.name)) files.push(full);
     }
   }
-  await walk(join(root, "org-pack", "checklists"));
-  await walk(join(root, "org-pack", "teams"));
+  await walk(join(orgPackDirOf(root), "checklists"));
+  await walk(join(orgPackDirOf(root), "teams"));
   for (const f of files) {
     const text = await readFile(f, "utf8");
     const lines = text.replace(/\r\n/g, "\n").split("\n");

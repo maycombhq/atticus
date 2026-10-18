@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { loadOrgPack, recordPath, serializeRecord, type CatalogRecord } from "@maycombhq/core";
+import {
+  loadOrgPack,
+  recordPath,
+  serializeRecord,
+  type CatalogRecord,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import {
   buildTriage,
   classify,
@@ -102,7 +108,7 @@ interface Context {
 
 /** The org pack, the catalog (generated and curated) and the inputs, as every command sees them. */
 async function context(root: string, io: Output): Promise<Context> {
-  const op = await loadOrgPack(join(root, "org-pack"));
+  const op = await loadOrgPack(join(orgPackDirOf(root)));
   const catalogDir = join(root, op.sources.layout.catalog);
   const generated = await readCatalog(join(catalogDir, "generated"));
   const curated = await readCatalog(join(catalogDir, "curated"));
@@ -280,7 +286,7 @@ export async function triageDecide(
     }
     throw e;
   }
-  const op = await loadOrgPack(join(root, "org-pack"));
+  const op = await loadOrgPack(join(orgPackDirOf(root)));
   const relPath = `${op.sources.layout.catalog}/curated/${recordPath(decision)}`;
   const full = join(root, ...relPath.split("/"));
   await mkdir(dirname(full), { recursive: true });

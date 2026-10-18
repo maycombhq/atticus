@@ -1,7 +1,13 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { loadOrgPack, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import {
+  loadOrgPack,
+  parseRecord,
+  recordPath,
+  serializeRecord,
+  orgPackDirOf,
+} from "@maycombhq/core";
 import { readDiagram } from "@maycombhq/ingestors";
 import { reconcile, type ReconcileResult } from "@maycombhq/reconcile";
 import { readCatalog } from "@maycombhq/scanner";
@@ -57,7 +63,7 @@ export async function reconcileCommand(
       return 2;
     }
   }
-  const op = await loadOrgPack(join(root, "org-pack"));
+  const op = await loadOrgPack(join(orgPackDirOf(root)));
   const profile = op.profiles[0]?.profile;
   const catalogDir = join(root, op.sources.layout.catalog);
   const generated = await readCatalog(join(catalogDir, "generated"));
@@ -133,7 +139,7 @@ export async function aliasCommand(
   o: { by?: string; reason?: string },
   io: Output,
 ): Promise<number> {
-  const op = await loadOrgPack(join(root, "org-pack"));
+  const op = await loadOrgPack(join(orgPackDirOf(root)));
   const catalogDir = join(root, op.sources.layout.catalog);
   const generated = await readCatalog(join(catalogDir, "generated"));
   const systems = op.profiles.flatMap((p) => p.profile?.systems ?? []).map((s) => s.id);

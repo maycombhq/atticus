@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { createAdapters, type Approval, type GitHost } from "@maycombhq/adapters";
-import { handoffBranch, loadOrgPack } from "@maycombhq/core";
+import { handoffBranch, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import {
   ChangeError,
   archiveChange,
@@ -56,7 +56,7 @@ async function gitHostFor(
   io: Output,
 ): Promise<GitHost | undefined> {
   if (deps.gitHost) return deps.gitHost;
-  const op = await loadOrgPack(join(root, "org-pack"));
+  const op = await loadOrgPack(join(orgPackDirOf(root)));
   const gh = createAdapters(op.runtime).gitHost;
   if (!gh) io.err("No Git host is configured. Set adapters.gitHost in org-pack/runtime.yaml.");
   return gh;
