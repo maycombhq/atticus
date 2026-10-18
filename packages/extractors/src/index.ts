@@ -24,6 +24,8 @@ export * from "./data/index.js";
 import { DATA_EXTRACTORS } from "./data/index.js";
 export * from "./speckit/index.js";
 import { SPECKIT_EXTRACTORS } from "./speckit/index.js";
+export * from "./vocab/index.js";
+import { VOCAB_EXTRACTORS } from "./vocab/index.js";
 export {
   apigeeExtractor,
   componentExtractor,
@@ -50,4 +52,5 @@ export const BUILT_IN_EXTRACTORS: readonly Extractor[] = [
   ...PLATFORM_EXTRACTORS,
   ...DATA_EXTRACTORS,
   ...SPECKIT_EXTRACTORS,
+  ...VOCAB_EXTRACTORS,
 ];

@@ -79,6 +79,7 @@ import {
   sandboxCreate,
 } from "./learn-commands.js";
 import { defencesScan, evalReport, evalRun } from "./eval-commands.js";
+import { conformanceCommand } from "./u1-commands.js";
 import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
   catalogMigrate,
@@ -219,6 +220,8 @@ Usage:
   atticus eval run [--agent a]... [--mode mock|replay|live] [--runs n]  Evaluate AI agents
   atticus eval report                  The latest eval results and AI quality
   atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts
+  atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>
+                                       Check a catalog, org pack, dialect, plugin or executor against the spec
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -256,6 +259,9 @@ export async function main(argv: string[], io: Output): Promise<number> {
       root: { type: "string" },
       repos: { type: "string" },
       all: { type: "boolean" },
+      kind: { type: "string" },
+      executor: { type: "string" },
+      fixture: { type: "string" },
       force: { type: "boolean" },
       full: { type: "boolean" },
       "dry-run": { type: "boolean" },
@@ -501,6 +507,24 @@ export async function main(argv: string[], io: Output): Promise<number> {
       io,
     );
   if (group === "eval" && command === "report") return evalReport(root, { json }, io);
+  if (group === "conformance") {
+    if (!command) {
+      io.err(
+        "conformance needs a folder or file to check, for example: atticus conformance catalog --kind catalog",
+      );
+      return 2;
+    }
+    return conformanceCommand(
+      command,
+      {
+        ...(str(values.kind) ? { kind: str(values.kind)! } : {}),
+        ...(str(values.executor) ? { executor: str(values.executor)! } : {}),
+        ...(str(values.fixture) ? { fixture: str(values.fixture)! } : {}),
+        json,
+      },
+      io,
+    );
+  }
   if (group === "defences" && command === "scan")
     return defencesScan(
       root,
