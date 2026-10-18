@@ -10,6 +10,7 @@ import {
   workspacePrune,
   workspaceSync,
 } from "./workspace-commands.js";
+import { catalogDiff, scanCommand } from "./scan-commands.js";
 
 export const VERSION = "0.0.1";
 
@@ -19,6 +20,12 @@ Usage:
   atticus schema export [dir]          Write JSON Schema for every contract and the API's OpenAPI document (default: ./schema)
   atticus catalog validate <dir>       Check record files: schema, location and canonical form
           [--fix]                      Rewrite files that aren't in canonical form
+  atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
+  atticus scan                         Scan every repo's base clone and write catalog/generated
+          [--repos a,b]                Only these repos
+          [--full]                     Ignore the scan cache
+          [--dry-run]                  Show what would change; write nothing
+          [--json]                     Print the result as JSON
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
@@ -49,6 +56,9 @@ export async function main(argv: string[], io: Output): Promise<number> {
       repos: { type: "string" },
       all: { type: "boolean" },
       force: { type: "boolean" },
+      full: { type: "boolean" },
+      "dry-run": { type: "boolean" },
+      json: { type: "boolean" },
     },
     strict: false,
   });
@@ -76,6 +86,16 @@ export async function main(argv: string[], io: Output): Promise<number> {
     const s = await catalogValidate(arg, { fix: values.fix === true }, io);
     return s.invalid + s.misplaced + s.notCanonical > 0 ? 1 : 0;
   }
+  if (group === "catalog" && command === "diff") {
+    const b = positionals[3];
+    if (!arg || !b) {
+      io.err(
+        "catalog diff needs two folders, for example: atticus catalog diff catalog/generated /tmp/other",
+      );
+      return 2;
+    }
+    return catalogDiff(resolve(arg), resolve(b), values.json === true, io);
+  }
   const root = resolve(typeof values.root === "string" ? values.root : process.cwd());
   const repoIds =
     typeof values.repos === "string"
@@ -84,6 +104,17 @@ export async function main(argv: string[], io: Output): Promise<number> {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
+  if (group === "scan")
+    return scanCommand(
+      root,
+      {
+        ...(repoIds ? { repos: repoIds } : {}),
+        full: values.full === true,
+        dryRun: values["dry-run"] === true,
+        json: values.json === true,
+      },
+      io,
+    );
   if (group === "orgpack" && command === "validate")
     return orgPackValidate(arg ? resolve(arg) : join(root, "org-pack"), io);
   if (group === "handoff" && command === "done") {

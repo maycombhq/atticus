@@ -23,7 +23,7 @@ repos:
     dialects: [forge]
   - id: forge-reports-job
     url: https://git.example.com/forge/forge-reports-job.git
-    type: batch-job
+    type: spring-batch
     owner: team-reports
     component: reports-job
     system: reports

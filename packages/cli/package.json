@@ -19,6 +19,7 @@
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/openspec-adapter": "workspace:*",
+    "@maycombhq/scanner": "workspace:*",
     "@maycombhq/workspace": "workspace:*"
   },
   "devDependencies": {

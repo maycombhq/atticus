@@ -1,0 +1,32 @@
+{
+  "name": "@maycombhq/scanner",
+  "version": "0.0.1",
+  "description": "Runs every extractor and dialect over every repo, merges the results into one catalog, and writes and diffs catalog files.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/extractors": "workspace:*",
+    "@maycombhq/sdk": "workspace:*",
+    "@maycombhq/workspace": "workspace:*"
+  },
+  "devDependencies": {
+    "yaml": "^2.9.1"
+  }
+}

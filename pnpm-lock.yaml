@@ -59,6 +59,9 @@ importers:
       '@maycombhq/openspec-adapter':
         specifier: workspace:*
         version: link:../openspec-adapter
+      '@maycombhq/scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@maycombhq/workspace':
         specifier: workspace:*
         version: link:../workspace
@@ -118,6 +121,25 @@ importers:
       zod:
         specifier: ^4.6.0
         version: 4.6.7
+
+  packages/scanner:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/extractors':
+        specifier: workspace:*
+        version: link:../extractors
+      '@maycombhq/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@maycombhq/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+    devDependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   packages/sdk:
     dependencies:

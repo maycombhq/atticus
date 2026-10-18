@@ -6,7 +6,7 @@ interaction: sync
 route: direct
 targetType: product
 controls: [Session auth]
-detection: { via: [direct], sync: sync, hints: [fetch, axios] }
+detection: { via: [direct], sync: sync, sameSystem: true, hints: [fetch, axios] }
 source: inputs/wiki/integration-patterns.md
 version: 1.0.0
 status: confirmed

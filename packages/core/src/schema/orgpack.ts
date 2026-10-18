@@ -264,6 +264,8 @@ export const IntegrationPattern = z.strictObject({
         .default([]),
       sync: z.enum(["sync", "async"]).optional(),
       targetBoundary: z.enum(["product", "internal", "vendor"]).optional(),
+      /** Caller and callee belong to the same system (e.g. a UI and its own BFF). */
+      sameSystem: z.boolean().optional(),
       hints: z.array(z.string().min(1)).default([]),
     })
     .default({ via: [], hints: [] }),

@@ -7,6 +7,7 @@
   confidence: verified
   name: Portal
   boundary: product
+  owner: team-portal
   repos: [forge-portal-ui, forge-portal-bff]
   evidence: [{ source: config, repo: forge-portal-bff, path: pom.xml }]
 - kind: System
@@ -14,6 +15,7 @@
   confidence: verified
   name: Ledger
   boundary: product
+  owner: team-ledger
   repos: [forge-ledger]
   evidence: [{ source: config, repo: forge-ledger, path: forge.yaml, line: 3 }]
 - kind: System
@@ -21,6 +23,7 @@
   confidence: verified
   name: Reports
   boundary: product
+  owner: team-reports
   repos: [forge-reports-job]
   evidence: [{ source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java }]
 - kind: System
