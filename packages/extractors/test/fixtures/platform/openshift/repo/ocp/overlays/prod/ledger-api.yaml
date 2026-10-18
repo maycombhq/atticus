@@ -1,0 +1,62 @@
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: ledger-api
+  namespace: forge-prod
+  labels:
+    app: ledger-api
+spec:
+  replicas: 3
+  selector:
+    app: ledger-api
+  template:
+    metadata:
+      labels:
+        app: ledger-api
+        tier: backend
+    spec:
+      containers:
+        - name: ledger-api
+          image: registry.example.com/forge/ledger-api:1.4.2
+          resources:
+            limits:
+              cpu: 500m
+              memory: 768Mi
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ledger-api
+  namespace: forge-prod
+spec:
+  scaleTargetRef:
+    apiVersion: apps.openshift.io/v1
+    kind: DeploymentConfig
+    name: ledger-api
+  minReplicas: 3
+  maxReplicas: 8
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ledger-svc
+  namespace: forge-prod
+spec:
+  selector:
+    app: ledger-api
+  ports:
+    - port: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: ledger-public
+  namespace: forge-prod
+spec:
+  host: ledger.apps.forge.example
+  path: /ledger
+  to:
+    kind: Service
+    name: ledger-svc
+  tls:
+    termination: edge

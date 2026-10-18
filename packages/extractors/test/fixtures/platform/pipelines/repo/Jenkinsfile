@@ -1,0 +1,30 @@
+// Declarative pipeline for the ledger service.
+pipeline {
+  agent any
+  triggers {
+    cron('H 4 * * 1-5')
+  }
+  stages {
+    stage('Build') {
+      steps {
+        sh './gradlew assemble'
+      }
+    }
+    stage('Test') {
+      steps {
+        sh './gradlew test'
+      }
+      post {
+        always {
+          junit 'build/test-results/test/*.xml'
+          jacoco(execPattern: 'build/jacoco/*.exec')
+        }
+      }
+    }
+    stage('Deploy to UAT') {
+      steps {
+        sh "oc apply -f openshift/ -n forge-uat"
+      }
+    }
+  }
+}

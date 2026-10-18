@@ -1,0 +1,17 @@
+[
+  {
+    "name": "ledger-read",
+    "displayName": "Ledger read access",
+    "proxies": ["ledger-v1"],
+    "scopes": ["ledger.read"],
+    "environments": ["prod"],
+    "apiResources": ["/accounts/**"]
+  },
+  {
+    "name": "ledger-partner",
+    "displayName": "Ledger partner access",
+    "proxies": ["ledger-v1", "transfers-v1"],
+    "scopes": ["ledger.read", "transfers.write"],
+    "environments": ["test", "prod"]
+  }
+]

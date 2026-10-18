@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: portal-bff-config
+  namespace: forge-prod
+data:
+  LEDGER_URL: https://ledger.apps.forge.example/ledger
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal-bff
+  namespace: forge-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: portal-bff
+  template:
+    metadata:
+      labels:
+        app: portal-bff
+    spec:
+      containers:
+        - name: portal-bff
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi

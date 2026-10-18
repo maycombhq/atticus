@@ -1,0 +1,6 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: reports-job-dev
+spec:
+  schedule: "*/5 * * * *

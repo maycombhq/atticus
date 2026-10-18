@@ -1,0 +1,112 @@
+# Hand-written expected output of the access extractor over ./repo (repo "forge-access", type infra).
+records:
+  # RoleBinding subjects get the rules of the role they are bound to, one "verb resource" each,
+  # sorted. Users are never recorded.
+  - kind: AccessGrant
+    id: ledger-api.rbac.forge-prod.ledger-api-config-reader
+    confidence: verified
+    subjectKind: service-account
+    subject: ledger-api
+    resource: namespace/forge-prod
+    scopesOrPermissions:
+      [get apps/deployments, get configmaps, get secrets, list configmaps, list secrets]
+    env: prod
+    evidence:
+      - { source: infrastructure, repo: forge-access, path: rbac/prod/ledger-rbac.yaml, line: 15 }
+      - { source: infrastructure, repo: forge-access, path: rbac/prod/ledger-rbac.yaml, line: 2 }
+
+  - kind: AccessGrant
+    id: forge-ledger-devs.rbac.forge-prod.ledger-api-config-reader
+    confidence: verified
+    subjectKind: group
+    subject: forge-ledger-devs
+    resource: namespace/forge-prod
+    scopesOrPermissions:
+      [get apps/deployments, get configmaps, get secrets, list configmaps, list secrets]
+    env: prod
+    evidence:
+      - { source: infrastructure, repo: forge-access, path: rbac/prod/ledger-rbac.yaml, line: 15 }
+      - { source: infrastructure, repo: forge-access, path: rbac/prod/ledger-rbac.yaml, line: 2 }
+
+  # A RoleBinding to a ClusterRole defined in the repo: namespace scope, the cluster role's rules.
+  - kind: AccessGrant
+    id: reports-job.rbac.forge-prod.reports-job-runner
+    confidence: verified
+    subjectKind: service-account
+    subject: reports-job
+    resource: namespace/forge-prod
+    scopesOrPermissions: [create batch/jobs, delete batch/jobs]
+    env: prod
+    evidence:
+      - { source: infrastructure, repo: forge-access, path: rbac/prod/reports-rbac.yaml, line: 11 }
+      - { source: infrastructure, repo: forge-access, path: rbac/prod/reports-rbac.yaml, line: 2 }
+
+  # A built-in cluster role isn't in the repo: the grant names it instead of listing rules.
+  - kind: AccessGrant
+    id: forge-auditors.rbac.cluster.auditors-view
+    confidence: verified
+    subjectKind: group
+    subject: forge-auditors
+    resource: cluster
+    scopesOrPermissions: [ClusterRole/view]
+    evidence:
+      - { source: infrastructure, repo: forge-access, path: rbac/cluster.yaml, line: 2 }
+
+  # Apigee-style API products act as roles over the proxies they bundle.
+  - kind: AccessGrant
+    id: gw-ledger-v1.product-ledger-read
+    confidence: verified
+    subjectKind: role
+    subject: ledger-read
+    resource: ledger-v1
+    scopesOrPermissions: [ledger.read]
+    env: prod
+    evidence:
+      - { source: gateway, repo: forge-access, path: apigee/resources/edge/org/apiProducts.json, line: 3, side: gateway }
+
+  - kind: AccessGrant
+    id: gw-ledger-v1.product-ledger-partner
+    confidence: verified
+    subjectKind: role
+    subject: ledger-partner
+    resource: ledger-v1
+    scopesOrPermissions: [ledger.read, transfers.write]
+    evidence:
+      - { source: gateway, repo: forge-access, path: apigee/resources/edge/org/apiProducts.json, line: 11, side: gateway }
+
+  - kind: AccessGrant
+    id: gw-transfers-v1.product-ledger-partner
+    confidence: verified
+    subjectKind: role
+    subject: ledger-partner
+    resource: transfers-v1
+    scopesOrPermissions: [ledger.read, transfers.write]
+    evidence:
+      - { source: gateway, repo: forge-access, path: apigee/resources/edge/org/apiProducts.json, line: 11, side: gateway }
+
+  # Developer apps get their products' proxies and scopes. The developer key is never recorded.
+  - kind: AccessGrant
+    id: gw-ledger-v1.app-northwind-pay-app
+    confidence: verified
+    subjectKind: oauth-client
+    subject: northwind-pay-app
+    resource: ledger-v1
+    scopesOrPermissions: [ledger.read, transfers.write]
+    evidence:
+      - { source: gateway, repo: forge-access, path: apigee/resources/edge/org/developerApps.json, line: 4, side: gateway }
+      - { source: gateway, repo: forge-access, path: apigee/resources/edge/org/apiProducts.json, line: 11, side: gateway }
+
+  - kind: AccessGrant
+    id: gw-transfers-v1.app-northwind-pay-app
+    confidence: verified
+    subjectKind: oauth-client
+    subject: northwind-pay-app
+    resource: transfers-v1
+    scopesOrPermissions: [ledger.read, transfers.write]
+    evidence:
+      - { source: gateway, repo: forge-access, path: apigee/resources/edge/org/developerApps.json, line: 4, side: gateway }
+      - { source: gateway, repo: forge-access, path: apigee/resources/edge/org/apiProducts.json, line: 11, side: gateway }
+
+warnings:
+  - path: rbac/dev/broken.yaml
+    message: Could not read this file as YAML; skipped it.

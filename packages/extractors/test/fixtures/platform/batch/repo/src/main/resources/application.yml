@@ -1,0 +1,3 @@
+reports:
+  statement:
+    cron: "0 0 2 * * *"

@@ -1,0 +1,46 @@
+apiVersion: template.openshift.io/v1
+kind: Template
+metadata:
+  name: notify-svc
+parameters:
+  - name: APP_NAME
+    value: notify-svc
+  - name: NAMESPACE
+    value: forge-uat
+  - name: REPLICAS
+    value: "2"
+  - name: MEMORY_LIMIT
+    value: 256Mi
+  - name: ROUTE_HOST
+    description: Public host name for the route.
+    required: true
+objects:
+  - apiVersion: apps.openshift.io/v1
+    kind: DeploymentConfig
+    metadata:
+      name: ${APP_NAME}
+      namespace: ${NAMESPACE}
+      labels:
+        app: ${APP_NAME}
+    spec:
+      replicas: "${{REPLICAS}}"
+      template:
+        metadata:
+          labels:
+            app: ${APP_NAME}
+        spec:
+          containers:
+            - name: ${APP_NAME}
+              resources:
+                limits:
+                  memory: ${MEMORY_LIMIT}
+  - apiVersion: route.openshift.io/v1
+    kind: Route
+    metadata:
+      name: ${APP_NAME}
+      namespace: ${NAMESPACE}
+    spec:
+      host: ${ROUTE_HOST}
+      to:
+        kind: Service
+        name: ${APP_NAME}

@@ -1,0 +1,19 @@
+parameters:
+  - name: env
+    type: string
+    default: dev
+
+stages:
+  - stage: Deploy_${{ parameters.env }}
+    jobs:
+      - deployment: deploy
+        environment: forge-${{ parameters.env }}
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: KubernetesManifest@1
+                  inputs:
+                    action: deploy
+                    manifests: k8s/*.yaml
+                - script: oc rollout status dc/ledger-api

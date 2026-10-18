@@ -1,0 +1,8 @@
+runtime: custom
+env: flex
+service: admin-svc
+manual_scaling:
+  instances: 2
+resources:
+  cpu: 2
+  memory_gb: 4

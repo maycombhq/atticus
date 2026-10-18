@@ -1,0 +1,7 @@
+apiVersion: apps.openshift.io/v1
+kind: DeploymentConfig
+metadata:
+  name: [ledger-api
+  namespace: forge-dev
+spec:
+  replicas: 1

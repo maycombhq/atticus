@@ -1,0 +1,14 @@
+on:
+  schedule:
+    - cron: "0 2 * * *"
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - run: npm ci
+      - run: npm run test:e2e
+      - uses: dorny/test-reporter@v1
+        with:
+          name: E2E
+          path: reports/e2e-*.xml
+          reporter: jest-junit

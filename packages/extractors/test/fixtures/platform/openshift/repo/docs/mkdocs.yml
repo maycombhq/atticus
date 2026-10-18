@@ -1,0 +1,4 @@
+site_name: Forge platform
+nav:
+  - Home: index.md
+  - Routes: routes.md

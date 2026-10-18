@@ -1,0 +1,38 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: config-reader
+  namespace: forge-prod
+rules:
+  - apiGroups: [""]
+    resources: [configmaps, secrets]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ledger-api-config-reader
+  namespace: forge-prod
+subjects:
+  - kind: ServiceAccount
+    name: ledger-api
+    namespace: forge-prod
+  - kind: Group
+    name: forge-ledger-devs
+    apiGroup: rbac.authorization.k8s.io
+  - kind: User
+    name: someone@example.com
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: config-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ledger-api
+  namespace: forge-prod

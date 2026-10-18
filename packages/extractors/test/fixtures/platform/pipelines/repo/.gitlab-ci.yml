@@ -1,0 +1,30 @@
+stages:
+  - build
+  - test
+  - deploy
+
+include:
+  - local: /ci/deploy.yml
+
+variables:
+  MAVEN_OPTS: -Xmx1g
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+.maven:
+  image: maven:3.9
+
+unit-tests:
+  extends: .maven
+  stage: test
+  script:
+    - mvn -B verify
+  artifacts:
+    reports:
+      junit: target/surefire-reports/TEST-*.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: target/site/cobertura/coverage.xml

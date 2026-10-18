@@ -1,0 +1,8 @@
+deploy-prod:
+  stage: deploy
+  environment:
+    name: production
+  script:
+    - helm upgrade --install ledger-api charts/ledger-api
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"

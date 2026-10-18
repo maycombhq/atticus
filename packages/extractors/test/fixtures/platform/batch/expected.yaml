@@ -1,0 +1,131 @@
+# Hand-written expected output of the batch extractor over ./repo
+# (repo "forge-reports-batch", component "reports-job", type spring-batch).
+# A schedule is a config Setting with key "schedule.<job>"; a time zone is written as a
+# CRON_TZ= prefix so the value stays one string.
+records:
+  # Kubernetes CronJobs: the batch component's deployment and its schedule. The app label
+  # matches the repo's component; the second job is a component of its own.
+  - kind: Deployment
+    id: reports-job.prod
+    confidence: verified
+    component: reports-job
+    env: prod
+    platform: kubernetes
+    resources: { cpu: 250m, memory: 256Mi }
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: forge-reports-batch, path: deploy/prod/nightly-cronjob.yaml, line: 2 }
+
+  - kind: Setting
+    id: reports-job.prod.schedule-reports-job-nightly
+    confidence: verified
+    component: reports-job
+    env: prod
+    settingKind: config
+    key: schedule.reports-job-nightly
+    valueOrRef: CRON_TZ=Europe/London 30 1 * * *
+    evidence:
+      - { source: infrastructure, repo: forge-reports-batch, path: deploy/prod/nightly-cronjob.yaml, line: 9 }
+
+  - kind: Deployment
+    id: statement-export.prod
+    confidence: verified
+    component: statement-export
+    env: prod
+    platform: kubernetes
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: forge-reports-batch, path: deploy/prod/nightly-cronjob.yaml, line: 26 }
+
+  - kind: Setting
+    id: statement-export.prod.schedule-statement-export
+    confidence: verified
+    component: statement-export
+    env: prod
+    settingKind: config
+    key: schedule.statement-export
+    valueOrRef: 0 6 1 * *
+    evidence:
+      - { source: infrastructure, repo: forge-reports-batch, path: deploy/prod/nightly-cronjob.yaml, line: 31 }
+
+  # Spring @Scheduled: cron (placeholder resolved from application config), zone, fixed delay.
+  - kind: Setting
+    id: reports-job.schedule-statementjob-exportdaily
+    confidence: verified
+    component: reports-job
+    settingKind: config
+    key: schedule.StatementJob.exportDaily
+    valueOrRef: 0 0 2 * * *
+    evidence:
+      - { source: code, repo: forge-reports-batch, path: src/main/java/forge/reports/StatementJob.java, line: 9 }
+      - { source: config, repo: forge-reports-batch, path: src/main/resources/application.yml, line: 3 }
+
+  - kind: Setting
+    id: reports-job.schedule-statementjob-refreshcache
+    confidence: verified
+    component: reports-job
+    settingKind: config
+    key: schedule.StatementJob.refreshCache
+    valueOrRef: CRON_TZ=Europe/London 0 */15 * * * *
+    evidence:
+      - { source: code, repo: forge-reports-batch, path: src/main/java/forge/reports/StatementJob.java, line: 12 }
+
+  - kind: Setting
+    id: reports-job.schedule-statementjob-pollinbox
+    confidence: verified
+    component: reports-job
+    settingKind: config
+    key: schedule.StatementJob.pollInbox
+    valueOrRef: fixedDelay=PT30S
+    evidence:
+      - { source: code, repo: forge-reports-batch, path: src/main/java/forge/reports/StatementJob.java, line: 15 }
+
+  # Quartz: named by the trigger's identity, else by the method that builds it.
+  - kind: Setting
+    id: reports-job.schedule-reconcile-trigger
+    confidence: verified
+    component: reports-job
+    settingKind: config
+    key: schedule.reconcile-trigger
+    valueOrRef: 0 0 6 ? * MON-FRI
+    evidence:
+      - { source: code, repo: forge-reports-batch, path: src/main/java/forge/reports/QuartzConfig.java, line: 19 }
+
+  - kind: Setting
+    id: reports-job.schedule-quartzconfig-purgetrigger
+    confidence: verified
+    component: reports-job
+    settingKind: config
+    key: schedule.QuartzConfig.purgeTrigger
+    valueOrRef: 0 0 1 1 * ?
+    evidence:
+      - { source: code, repo: forge-reports-batch, path: src/main/java/forge/reports/QuartzConfig.java, line: 26 }
+
+  # Cloud Scheduler: an HTTP target names the Cloud Run service it calls; a Pub/Sub target
+  # belongs to the repo's component and points at the topic.
+  - kind: Setting
+    id: reports-job.prod.schedule-month-end-close
+    confidence: verified
+    component: reports-job
+    env: prod
+    settingKind: config
+    key: schedule.month-end-close
+    valueOrRef: CRON_TZ=Europe/London 0 22 28-31 * *
+    evidence:
+      - { source: infrastructure, repo: forge-reports-batch, path: terraform/prod/scheduler.tf, line: 11 }
+
+  - kind: Setting
+    id: reports-job.prod.schedule-payments-tick
+    confidence: verified
+    component: reports-job
+    env: prod
+    settingKind: config
+    key: schedule.payments-tick
+    valueOrRef: "*/5 * * * *"
+    target: topic.payments-tick
+    evidence:
+      - { source: infrastructure, repo: forge-reports-batch, path: terraform/prod/scheduler.tf, line: 21 }
+
+warnings:
+  - path: deploy/dev/broken-cronjob.yaml
+    message: Could not read this file as YAML; skipped it.
