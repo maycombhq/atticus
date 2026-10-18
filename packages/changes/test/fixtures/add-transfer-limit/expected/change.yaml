@@ -1,0 +1,246 @@
+schemaVersion: 1
+id: add-transfer-limit
+title: Add transfer limit
+type: feature
+template: feature
+state: archived
+authors:
+  brief:
+    - pat
+  data:
+    - ari
+  design:
+    - ari
+  interfaces:
+    - ari
+  mappings:
+    - ari
+  proposal:
+    - pat
+  snow:
+    - bao
+  specs:
+    - pat
+  stories:
+    - bao
+  tasks:
+    - bao
+  ux:
+    - ari
+createdAt: 2026-10-19T09:00:00Z
+createdBy: pat
+handoffs:
+  - phase: define
+    state: merged
+    approvals:
+      - at: 2026-10-19T11:00:00Z
+        by: pat
+        roles:
+          - product-owner
+    artifacts:
+      - path: brief.md
+        sha256: 0b4f6ce157b4d6d4b620aff8b3239c68454e8ff157a946e13ae45c37f95a8c72
+      - path: proposal.md
+        sha256: 2b8f5451f41126670da5a3c01ec0ccb0618da85b2a472ab6ee49acffc6612145
+      - path: specs/transfer-limits/spec.md
+        sha256: 8ed1a9e840943273967b2df73ae1c640bd0884554ff4d73e44803e69d53e7975
+    branch: handoff/add-transfer-limit/define
+    by: pat
+    openedAt: 2026-10-19T10:00:00Z
+    pr:
+      number: 1
+      url: https://git.example.com/forge/forge-metarepo/pull/1
+    reviewers:
+      - forge/platform
+    updatedAt: 2026-10-19T11:00:00Z
+  - phase: design
+    state: merged
+    approvals:
+      - at: 2026-10-19T14:00:00Z
+        by: avery
+        roles:
+          - architect
+    artifacts:
+      - path: data.md
+        sha256: 54e8f66ed9054f0205a85e75e2ceaba6d84b877334bd0314a8c20349634b1654
+      - path: design.md
+        sha256: b8df1406d632e0e1e121a33076e3292535526ae6ac4ea95d5ebbefe59c9966ad
+      - path: interfaces.md
+        sha256: 3de1bbb62eef3942028bc5ca4b998e2fe527869ef3f28a290f95d28b954b5baf
+      - path: mappings.md
+        sha256: e4d45be97db03842b0b564a21b553f144f8ae0b64592c00a7481fd4f5fb6cb2b
+      - path: review/design/1/row-lock-missing.yaml
+        sha256: 1aa94f04dff9146e95bcfea0757b8f4fc43120710ad1d2f37423bab12dba0db9
+      - path: review/design/2/sum-query-cost.yaml
+        sha256: 6b62ee27a7039984e5e7bf3a343e35d7e42b7b2be5835e56001f30b6e7c167e7
+      - path: ux.md
+        sha256: 01fe4aa3a0cd0d245f4f5fd7d01453f3ddbde0c704912360eea7fe32c305113a
+    branch: handoff/add-transfer-limit/design
+    by: ari
+    openedAt: 2026-10-19T12:30:00Z
+    pr:
+      number: 2
+      url: https://git.example.com/forge/forge-metarepo/pull/2
+    reviewers:
+      - avery
+      - forge/platform
+    updatedAt: 2026-10-19T14:00:00Z
+  - phase: plan
+    state: merged
+    approvals:
+      - at: 2026-10-19T16:00:00Z
+        by: tia
+        roles:
+          - team-lead
+    artifacts:
+      - path: snow.md
+        sha256: 1b42896eef5997cfe3242513cd7e49b6d657bd144c2032b591dbb463799536bd
+      - path: stories.md
+        sha256: b10e0a4145e3146a8947dd5fb16e609f6aea019906c3de373159ea4a6d88916f
+      - path: stories/s1-refuse-over-limit.md
+        sha256: a48130e1be56d68c6817c6c7670c7bc0e21a94c9fe507437507dbbe9199c6c6d
+      - path: tasks.md
+        sha256: b70ebcf08ee707c548832f3a62fdac75d8da2c9a89d481eb04cc69113c1cd260
+    branch: handoff/add-transfer-limit/plan
+    by: bao
+    openedAt: 2026-10-19T15:00:00Z
+    pr:
+      number: 3
+      url: https://git.example.com/forge/forge-metarepo/pull/3
+    reviewers:
+      - forge/platform
+      - tia
+    updatedAt: 2026-10-19T16:00:00Z
+  - phase: build
+    state: merged
+    approvals:
+      - at: 2026-10-20T11:00:00Z
+        by: dee
+        roles:
+          - developer
+    artifacts:
+      - path: tasks.md
+        sha256: 5f51a266de34151a73907f779ccfd6bf3eba1fcc31eeb43d606b666fd72f14c2
+    branch: handoff/add-transfer-limit/build
+    by: dev
+    openedAt: 2026-10-20T09:00:00Z
+    pr:
+      number: 4
+      url: https://git.example.com/forge/forge-metarepo/pull/4
+    reviewers:
+      - dee
+      - forge/platform
+    updatedAt: 2026-10-20T11:00:00Z
+  - phase: qa
+    state: merged
+    approvals:
+      - at: 2026-10-20T13:00:00Z
+        by: quinn
+        roles:
+          - qa
+    artifacts: []
+    branch: handoff/add-transfer-limit/qa
+    by: quinn
+    openedAt: 2026-10-20T12:00:00Z
+    pr:
+      number: 5
+      url: https://git.example.com/forge/forge-metarepo/pull/5
+    reviewers: []
+    updatedAt: 2026-10-20T13:00:00Z
+  - phase: release
+    state: merged
+    approvals:
+      - at: 2026-10-20T15:00:00Z
+        by: dana
+        roles:
+          - delivery-lead
+      - at: 2026-10-20T15:00:00Z
+        by: sam
+        roles:
+          - sre
+    artifacts: []
+    branch: handoff/add-transfer-limit/release
+    by: tia
+    openedAt: 2026-10-20T14:00:00Z
+    pr:
+      number: 6
+      url: https://git.example.com/forge/forge-metarepo/pull/6
+    reviewers:
+      - dana
+      - sam
+    updatedAt: 2026-10-20T15:00:00Z
+history:
+  - from: draft
+    to: define
+    at: 2026-10-19T09:00:00Z
+    by: pat
+    reason: Created from the feature template
+  - from: define
+    to: design
+    at: 2026-10-19T11:00:00Z
+    by: pat
+    pr: 1
+    reason: Send to architecture merged
+  - from: design
+    to: plan
+    at: 2026-10-19T14:00:00Z
+    by: avery
+    pr: 2
+    reason: Approve design merged
+  - from: plan
+    to: build
+    at: 2026-10-19T16:00:00Z
+    by: tia
+    pr: 3
+    reason: Plan ready merged
+  - from: build
+    to: qa
+    at: 2026-10-20T11:00:00Z
+    by: dee
+    pr: 4
+    reason: Raise PR merged
+  - from: qa
+    to: release-ready
+    at: 2026-10-20T13:00:00Z
+    by: quinn
+    pr: 5
+    reason: QA sign-off merged
+  - from: release-ready
+    to: released
+    at: 2026-10-20T15:00:00Z
+    by: dana
+    pr: 6
+    reason: Go/no-go merged
+  - from: released
+    to: archived
+    at: 2026-10-20T16:00:00Z
+    by: dana
+    reason: Archived
+owners:
+  architect:
+    - ari
+    - avery
+  business-analyst:
+    - bao
+  delivery-lead:
+    - dana
+  developer:
+    - dev
+    - dee
+  product-owner:
+    - pat
+  qa:
+    - quinn
+  sre:
+    - sam
+  team-lead:
+    - tia
+systems:
+  - ledger
+  - portal
+touches:
+  dataStores: []
+  interfaces: []
+  records: []
+  repos: []
+  tables: []

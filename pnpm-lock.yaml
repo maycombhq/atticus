@@ -66,14 +66,44 @@ importers:
         specifier: ^4.6.0
         version: 4.6.7
 
+  packages/changes:
+    dependencies:
+      '@maycombhq/adapters':
+        specifier: workspace:*
+        version: link:../adapters
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/openspec-adapter':
+        specifier: workspace:*
+        version: link:../openspec-adapter
+      '@maycombhq/scanner':
+        specifier: workspace:*
+        version: link:../scanner
+      '@maycombhq/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
+
   packages/cli:
     dependencies:
+      '@maycombhq/adapters':
+        specifier: workspace:*
+        version: link:../adapters
       '@maycombhq/ai':
         specifier: workspace:*
         version: link:../ai
       '@maycombhq/assistant-kit':
         specifier: workspace:*
         version: link:../assistant-kit
+      '@maycombhq/changes':
+        specifier: workspace:*
+        version: link:../changes
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core

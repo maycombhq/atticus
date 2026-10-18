@@ -1,0 +1,119 @@
+schemaVersion: 1
+id: fix-northwind-timeout
+title: Fix Northwind timeout
+type: emergency-fix
+template: emergency-fix
+state: archived
+authors:
+  brief:
+    - dev
+  proposal:
+    - dev
+  tasks:
+    - dev
+createdAt: 2026-10-21T02:00:00Z
+createdBy: dev
+handoffs:
+  - phase: build
+    state: merged
+    approvals:
+      - at: 2026-10-21T02:45:00Z
+        by: dee
+        roles:
+          - developer
+    artifacts:
+      - path: brief.md
+        sha256: fad73f54a1459ea8f4a81507ecd96aaff0ea1cbb16932c5115651a3e00ab7237
+      - path: proposal.md
+        sha256: a9e5d8490134b80fabb054ab019ffdd673baa74b48bf82c4a5fdb634540b828b
+      - path: tasks.md
+        sha256: dd0e6dcbeb73b9014ef7f4d21bae9aa5ff86acb437d8176fc2f99f26a4e1527e
+    branch: handoff/fix-northwind-timeout/build
+    by: dev
+    openedAt: 2026-10-21T02:30:00Z
+    pr:
+      number: 1
+      url: https://git.example.com/forge/forge-metarepo/pull/1
+    reviewers:
+      - dee
+      - forge/platform
+      - pat
+    updatedAt: 2026-10-21T02:45:00Z
+  - phase: release
+    state: merged
+    approvals:
+      - at: 2026-10-21T03:20:00Z
+        by: ari
+        roles:
+          - architect
+      - at: 2026-10-21T03:20:00Z
+        by: dana
+        roles:
+          - delivery-lead
+      - at: 2026-10-21T03:20:00Z
+        by: sam
+        roles:
+          - sre
+    artifacts: []
+    branch: handoff/fix-northwind-timeout/release
+    by: dee
+    openedAt: 2026-10-21T03:00:00Z
+    pr:
+      number: 2
+      url: https://git.example.com/forge/forge-metarepo/pull/2
+    reviewers:
+      - ari
+      - dana
+      - dev
+      - sam
+    updatedAt: 2026-10-21T03:20:00Z
+history:
+  - from: draft
+    to: build
+    at: 2026-10-21T02:00:00Z
+    by: dev
+    reason: Created from the emergency-fix template
+  - from: build
+    to: release-ready
+    at: 2026-10-21T02:45:00Z
+    by: dee
+    pr: 1
+    reason: Raise PR merged
+  - from: release-ready
+    to: released
+    at: 2026-10-21T03:20:00Z
+    by: dana
+    pr: 2
+    reason: Go/no-go merged
+  - from: released
+    to: post-release-review
+    at: 2026-10-21T03:20:00Z
+    by: dana
+    reason: Released first; the skipped lenses are reviewed now
+  - from: post-release-review
+    to: archived
+    at: 2026-10-22T09:00:00Z
+    by: dana
+    reason: Archived
+owners:
+  architect:
+    - ari
+  delivery-lead:
+    - dana
+    - dev
+  developer:
+    - dev
+    - dee
+  sre:
+    - sam
+systems:
+  - ledger
+  - northwind-pay
+touches:
+  dataStores: []
+  interfaces:
+    - id: if-e7344c9455608119
+      status: planned-modify
+  records: []
+  repos: []
+  tables: []
