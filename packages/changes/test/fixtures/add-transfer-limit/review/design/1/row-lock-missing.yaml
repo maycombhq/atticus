@@ -1,0 +1,23 @@
+schemaVersion: 1
+id: row-lock-missing
+kind: issue
+change: add-transfer-limit
+gate: design
+round: 1
+rule: forge-arch-concurrency
+layer: org
+lens: architecture
+severity: blocking
+artifact: design.md
+locator:
+  heading: Risks
+summary: Two concurrent transfers can both pass the limit check.
+why: The design sums entries without saying how concurrent transfers are serialised.
+fix:
+  text: Lock the account row inside the transfer transaction and say so in the design.
+evidence:
+  - source: artifact
+    path: design.md
+waivable: true
+state: open
+createdAt: 2026-10-19T12:05:00Z

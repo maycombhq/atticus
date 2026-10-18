@@ -1,0 +1,25 @@
+schemaVersion: 1
+id: sum-query-cost
+kind: issue
+change: add-transfer-limit
+gate: design
+round: 2
+rule: forge-arch-capacity
+layer: org
+lens: architecture
+severity: risk
+artifact: design.md
+locator:
+  heading: Non-functional design
+summary: Summing today's entries on every transfer may slow busy accounts.
+why: Accounts with many entries a day make the sum slower inside the transaction.
+fix:
+  text: Watch transfer latency after release; keep a running daily total if it grows.
+evidence:
+  - source: artifact
+    path: design.md
+  - source: catalog
+    record: ledger-db.entry.idx-entry-account
+waivable: false
+state: open
+createdAt: 2026-10-19T12:40:00Z

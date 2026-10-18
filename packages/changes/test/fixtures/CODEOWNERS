@@ -1,0 +1,6 @@
+# Code owners for the test metarepo (fixture). The last matching pattern wins.
+*                                   @forge/platform
+/openspec/changes/**/brief.md       @pat
+/openspec/changes/**/proposal.md    @pat
+/openspec/changes/**/design.md      @ari @avery
+/openspec/changes/**/stories/       @bao

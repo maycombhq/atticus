@@ -16,8 +16,10 @@
     "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
   },
   "dependencies": {
+    "@maycombhq/adapters": "workspace:*",
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/assistant-kit": "workspace:*",
+    "@maycombhq/changes": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/diagrams": "workspace:*",
     "@maycombhq/index": "workspace:*",

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
 import { ChangeRepos, RepoManifest } from "./schema/workspace.js";
+import { ChangeLifecycle } from "./schema/change.js";
 import { Dialect } from "./schema/dialect.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
 import * as C6 from "./schema/orgpack.js";
@@ -23,8 +24,14 @@ export function catalogJsonSchemas(): Record<RecordKind, object> {
   return out;
 }
 
-/** JSON Schema for the workspace files: repos.manifest.yaml and a change's repos.yaml. */
-export function workspaceJsonSchemas(): Record<"RepoManifest" | "ChangeRepos", object> {
+/**
+ * JSON Schema for the workspace files: repos.manifest.yaml, and a change's repos.yaml and
+ * change.yaml (its lifecycle state).
+ */
+export function workspaceJsonSchemas(): Record<
+  "RepoManifest" | "ChangeRepos" | "ChangeLifecycle",
+  object
+> {
   const gen = (name: string, schema: z.ZodType) => ({
     $id: `https://maycombhq.github.io/atticus/schema/workspace/v1/${name}.json`,
     title: name,
@@ -33,6 +40,7 @@ export function workspaceJsonSchemas(): Record<"RepoManifest" | "ChangeRepos", o
   return {
     RepoManifest: gen("RepoManifest", RepoManifest),
     ChangeRepos: gen("ChangeRepos", ChangeRepos),
+    ChangeLifecycle: gen("ChangeLifecycle", ChangeLifecycle),
   };
 }
 

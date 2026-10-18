@@ -5,6 +5,7 @@ export * from "./identity.js";
 export * from "./serialize.js";
 export * from "./json-schema.js";
 export * from "./schema/workspace.js";
+export * from "./schema/change.js";
 export * from "./branches.js";
 export * from "./template.js";
 export * from "./schema/dialect.js";
