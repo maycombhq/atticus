@@ -4,6 +4,7 @@ import {
   catalogJsonSchemas,
   deserializeRecord,
   aiJsonSchemas,
+  executorJsonSchemas,
   openApiDocument,
   loadOrgPack,
   orgPackJsonSchemas,
@@ -29,6 +30,7 @@ export async function schemaExport(dir: string, io: Output): Promise<number> {
     ["rules", rulesJsonSchemas()],
     ["orgpack", orgPackJsonSchemas()],
     ["ai", aiJsonSchemas()],
+    ["executors", executorJsonSchemas()],
   ];
   let n = 0;
   for (const [group, schemas] of groups) {

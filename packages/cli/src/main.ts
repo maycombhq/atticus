@@ -34,6 +34,15 @@ import {
 import { featureSuggestNames } from "./feature-commands.js";
 import { isTaskRun } from "@maycombhq/taskrun";
 import { runtimeForCli, RuntimeConfigError } from "@maycombhq/ai";
+import {
+  adoSync,
+  planStories,
+  snowDraft,
+  snowSubmit,
+  storyBarCommand,
+  templatesDraft,
+} from "./plan-commands.js";
+import { executorsCheck, todoDone, todoList, todoRun, todoShow } from "./todo-commands.js";
 import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
   catalogMigrate,
@@ -136,6 +145,17 @@ Usage:
   atticus drift <change> [--json]      Compare design, repo plans and code
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
+  atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m]
+  atticus plan snow <change>           Draft service-desk requests the change needs [--force]
+  atticus plan bar <change>            Measure the story bar [--eval file]
+  atticus plan submit <change>         File the drafted requests [--dry-run] [--approve --by you]
+  atticus ado sync <change>            Create or update work items [--dry-run] [--approve --by you] [--epic id]
+  atticus templates draft              Draft request and work-item templates from wikis, uploads and past tickets [--no-ai]
+  atticus todo [--change id] [--all]   Manual steps waiting for a person
+  atticus todo show <step> [--export text|csv|import]
+  atticus todo done <step> --by <you>  Record a manual step's result [--result k=v]... [--skip --note why]
+  atticus todo run <step> --with <executor>  Run a step with a team's own tool [--approve --by you --inputs sha] [--fill-only]
+  atticus executors check              Ping configured executors and show what each covers
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -210,6 +230,17 @@ export async function main(argv: string[], io: Output): Promise<number> {
       "pr-url": { type: "string" },
       change: { type: "string" },
       check: { type: "boolean" },
+      resume: { type: "string" },
+      eval: { type: "string" },
+      epic: { type: "string" },
+      "no-ai": { type: "boolean" },
+      export: { type: "string" },
+      result: { type: "string", multiple: true },
+      skip: { type: "boolean" },
+      note: { type: "string" },
+      with: { type: "string" },
+      inputs: { type: "string" },
+      "fill-only": { type: "boolean" },
     },
     strict: false,
   });
@@ -312,6 +343,123 @@ export async function main(argv: string[], io: Output): Promise<number> {
   }
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const json = values.json === true;
+  const approver = values.approve === true ? str(values.by) : undefined;
+  const dryRun = values["dry-run"] === true;
+  if (group === "plan") {
+    if (!arg) {
+      io.err(
+        `plan ${command ?? ""} needs a change id, for example: atticus plan stories add-transfer-limit`.replace(
+          "  ",
+          " ",
+        ),
+      );
+      return 2;
+    }
+    if (command === "stories")
+      return planStories(
+        root,
+        arg,
+        {
+          force: values.force === true,
+          ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
+          ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+          json,
+        },
+        io,
+      );
+    if (command === "snow") return snowDraft(root, arg, { force: values.force === true, json }, io);
+    if (command === "bar")
+      return storyBarCommand(
+        root,
+        arg,
+        { ...(str(values.eval) ? { eval: str(values.eval)! } : {}), json },
+        io,
+      );
+    if (command === "submit")
+      return snowSubmit(
+        root,
+        arg,
+        { ...(approver ? { approve: approver } : {}), dryRun, json },
+        io,
+      );
+  }
+  if (group === "ado" && command === "sync") {
+    if (!arg) {
+      io.err("ado sync needs a change id");
+      return 2;
+    }
+    return adoSync(
+      root,
+      arg,
+      {
+        ...(approver ? { approve: approver } : {}),
+        dryRun,
+        ...(str(values.epic) ? { epic: str(values.epic)! } : {}),
+        json,
+      },
+      io,
+    );
+  }
+  if (group === "templates" && command === "draft")
+    return templatesDraft(
+      root,
+      {
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+        json,
+        noAi: values["no-ai"] === true,
+      },
+      io,
+    );
+  if (group === "executors" && command === "check") return executorsCheck(root, { json }, io);
+  if (group === "todo") {
+    if (!command || command === "list")
+      return todoList(
+        root,
+        {
+          json,
+          ...(str(values.change) ? { change: str(values.change)! } : {}),
+          all: values.all === true,
+        },
+        io,
+      );
+    if (!arg) {
+      io.err(`todo ${command} needs a step id; see atticus todo`);
+      return 2;
+    }
+    if (command === "show")
+      return todoShow(
+        root,
+        arg,
+        { ...(str(values.export) ? { export: str(values.export)! } : {}) },
+        io,
+      );
+    if (command === "done") {
+      const results = Array.isArray(values.result) ? (values.result as string[]) : [];
+      return todoDone(
+        root,
+        arg,
+        {
+          result: results,
+          ...(str(values.by) ? { by: str(values.by)! } : {}),
+          skip: values.skip === true,
+          ...(str(values.note) ? { note: str(values.note)! } : {}),
+        },
+        io,
+      );
+    }
+    if (command === "run")
+      return todoRun(
+        root,
+        arg,
+        {
+          ...(str(values.with) ? { with: str(values.with)! } : {}),
+          ...(approver ? { approve: approver } : {}),
+          ...(str(values.inputs) ? { inputs: str(values.inputs)! } : {}),
+          fillOnly: values["fill-only"] === true,
+        },
+        io,
+      );
+  }
   if (group === "task" && command === "run")
     return taskRun(
       root,
