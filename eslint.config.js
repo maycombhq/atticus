@@ -15,10 +15,13 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     languageOptions: {
-      globals: { process: "readonly", console: "readonly" },
+      globals: { process: "readonly", console: "readonly", URL: "readonly" },
     },
     rules: {
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
     },
   },
 );

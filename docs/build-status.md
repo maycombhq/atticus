@@ -15,10 +15,11 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 | 8a     | Contract C6: every org-pack file as a schema, built-in defaults (13 roles, 6 change types, a gate per phase), `loadOrgPack` with cross-file checks, `atticus orgpack validate`; a full Forge org pack in the fixture                                       | `packages/core`, `packages/cli`, `fixtures/forge/metarepo/org-pack`, ADR 0012 |
 | 8b     | Adapters (C4): work tracker, service desk, Git host, wiki, design tool, notifications; approval required on every write; merge gated by reviews and checks; mocks with journals, injected failures and fixture loaders; `createAdapters` from runtime.yaml | `packages/adapters`, ADR 0013                                                 |
 | 8c     | Contract C5: agent definitions, context packs (data wrapping, classification, budget, manifest), the hand-off runtime with `atticus handoff done`, model runtime, mock and recorded-replay runtimes, run summaries and retention                           | `packages/ai`, `packages/core`, ADR 0014                                      |
+| 9      | The local API as an OpenAPI 3.1 document generated from zod, validated, committed at `docs/api/openapi.json`; the synthetic estate generator (300 repos by default) with a scale test proving exact counts and cached rescans                              | `packages/core`, `packages/synth`, ADR 0015                                   |
 
 ## Next
 
-1. **Remaining M0:** the local API's OpenAPI document (C4), the 300-repo synthetic generator, CI green on both platforms.
+1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0015; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
 2. **M1:** OpenAPI, gateway and Spring extractors; the Forge dialect; merge and identity; scan and diff; SQLite index; draw.io ingestor; reconcile. Exit: a scan of `fixtures/forge` matches `expected/scan.yaml`, and reconcile finds d01–d06.
 
 ## How to work

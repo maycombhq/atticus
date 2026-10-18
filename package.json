@@ -15,7 +15,8 @@
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "denylist": "node scripts/check-denylist.mjs",
-    "check": "pnpm denylist && pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm denylist && pnpm lint && pnpm typecheck && pnpm test",
+    "api:doc": "pnpm --filter @maycombhq/core build && node scripts/write-api-doc.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

@@ -57,6 +57,9 @@ describe("atticus CLI", () => {
     expect(await main(["schema", "export", dir], c.io)).toBe(0);
     expect(await readdir(join(dir, "catalog"))).toHaveLength(29);
     expect(await readdir(join(dir, "orgpack"))).toHaveLength(12);
+    expect(JSON.parse(await readFile(join(dir, "api", "openapi.json"), "utf8")).openapi).toBe(
+      "3.1.0",
+    );
     expect((await readdir(join(dir, "ai"))).sort()).toEqual([
       "ContextPackManifest.json",
       "Recording.json",

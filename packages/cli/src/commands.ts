@@ -4,6 +4,7 @@ import {
   catalogJsonSchemas,
   deserializeRecord,
   aiJsonSchemas,
+  openApiDocument,
   loadOrgPack,
   orgPackJsonSchemas,
   rulesJsonSchemas,
@@ -41,7 +42,13 @@ export async function schemaExport(dir: string, io: Output): Promise<number> {
       n++;
     }
   }
-  io.out(`Wrote ${n} schemas to ${dir}`);
+  await mkdir(join(dir, "api"), { recursive: true });
+  await writeFile(
+    join(dir, "api", "openapi.json"),
+    JSON.stringify(openApiDocument(), null, 2) + "\n",
+    "utf8",
+  );
+  io.out(`Wrote ${n} schemas and the API document to ${dir}`);
   return n;
 }
 

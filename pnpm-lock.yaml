@@ -75,6 +75,10 @@ importers:
       zod:
         specifier: ^4.6.0
         version: 4.6.7
+    devDependencies:
+      '@apidevtools/swagger-parser':
+        specifier: 13.1.0
+        version: 13.1.0(openapi-types@12.1.3)
 
   packages/fixtures:
     dependencies:
@@ -110,6 +114,19 @@ importers:
         specifier: ^2.9.1
         version: 2.9.1
 
+  packages/synth:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@maycombhq/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
   packages/workspace:
     dependencies:
       '@maycombhq/core':
@@ -120,6 +137,25 @@ importers:
         version: 2.9.1
 
 packages:
+
+  '@apidevtools/json-schema-ref-parser@16.0.5':
+    resolution: {integrity: sha512-z3LiEMqTP2FNu6u8bdUgBYErVuwMSZReOJy1MCEIB0BDHMoNgBtkciby32HOlcrfWwrOSzRU8YIsZ0CogYRuYQ==}
+    engines: {node: '>=22.19.0'}
+    peerDependencies:
+      '@types/json-schema': ^7.0.15
+
+  '@apidevtools/openapi-schemas@2.1.0':
+    resolution: {integrity: sha512-Zc1AlqrJlX3SlpupFGpiLi2EbteyP7fXmUOGup6/DnkRgjP9bgMM/ag+n91rsv0U1Gpz0H3VILA/o3bW7Ua6BQ==}
+    engines: {node: '>=10'}
+
+  '@apidevtools/swagger-methods@3.0.2':
+    resolution: {integrity: sha512-QAkD5kK2b1WfjDS/UQn/qQkbwF31uqRjPTrsCs5ZG9BQGAkjwvqGFjjPqAuzac/IYzpPtRzjCP1WrTuAIjMrXg==}
+
+  '@apidevtools/swagger-parser@13.1.0':
+    resolution: {integrity: sha512-dkCuqCWh5U7u0aurmmc/qvel2KeKDxHTwVtUdYonndIpD7mXV6AVaWNdvaja2HAy628z7FT/Qdz8sCgzwhgwKg==}
+    engines: {node: '>=22.19.0'}
+    peerDependencies:
+      openapi-types: '>=7'
 
   '@cacheable/memory@2.2.0':
     resolution: {integrity: sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ==}
@@ -583,12 +619,26 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
+  ajv-draft-04@1.0.0:
+    resolution: {integrity: sha512-mv00Te6nmYbRp5DCwclxtt7yV/joXJPGS7nM+97GdxvuttCOfgI3K4U25zboyeX0O+myI8ERluxQe5wljMmVIw==}
+    peerDependencies:
+      ajv: ^8.5.0
+    peerDependenciesMeta:
+      ajv:
+        optional: true
+
   ajv@6.15.0:
     resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
+
+  ajv@8.20.0:
+    resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
 
   ansi-regex@6.4.0:
     resolution: {integrity: sha512-KzTVk2tCWAHtYrvvvaP8bJKJq2pVinhLcGEQdtLIYPbmNGNyYe8QwNaTUYQp2J7/vIsUKt5QCqAfUkYyG9DkOw==}
     engines: {node: '>=12'}
+
+  argparse@3.0.3:
+    resolution: {integrity: sha512-Sn98ftV3KfsO8xfLPHG6oT8y+b0yvbrLgZjgPDXsharNY15tTAjqIsIju4S32nl6/iEUNNE4v+yL2Zhm8ooP3w==}
 
   assertion-error@2.0.1:
     resolution: {integrity: sha512-Izi8RQcffqCeNVgFigKli1ssklIbpHnCYc6AknXGYoB6grJqyeby7jv12JUQgmTAnIDnbck1uxksT4dzN3PWBA==}
@@ -608,6 +658,9 @@ packages:
 
   cacheable@2.5.0:
     resolution: {integrity: sha512-60cyAOytib/OzBw1JNSoSV/boK1AtHryDIjvVBk7XbN4ugfkM3+Sry7fEjNgPMGgOjuaZPAp8ruZ0Cxafwyq9g==}
+
+  call-me-maybe@1.0.2:
+    resolution: {integrity: sha512-HpX65o1Hnr9HH25ojC1YGs7HCQLq0GCOibSaWER0eNpgJ/Z1MZv2mTc7+xh6WOPxbRVcmgbv4hGU+uSQ/2xFZQ==}
 
   chai@6.3.0:
     resolution: {integrity: sha512-XWAtwJ6OHO+tj0EKCs0Y2UamnyOxseZWltU4x2U2wh8g4AigdjwvtUjvLP2tqkA/avxHEtzxNaqGq/YGNwckKg==}
@@ -735,6 +788,9 @@ packages:
   fast-string-width@3.0.2:
     resolution: {integrity: sha512-gX8LrtNEI5hq8DVUfRQMbr5lpaS4nMIWV+7XEbXk2b8kiQIizgnlr12B4dA3ZEx3308ze0O4Q1R+cHts8kyUJg==}
 
+  fast-uri@3.1.8:
+    resolution: {integrity: sha512-GZMtZUTNRpOVIECoXwLNZS5xUGE+mVNbTB8h/7Rwh2TFWcBQiPzTgyZi05BF9UMZKkLJv8XBRJTlU7zg8+ZfMg==}
+
   fast-wrap-ansi@0.2.2:
     resolution: {integrity: sha512-7F2Fl+TjRSenLqlU3UjSH0iyqopqoZIu7eZVpEirP2g1GtWa2G/ecEmBdgz31+Mxr+ELclgg6sokpSFIQiZ02Q==}
 
@@ -833,8 +889,15 @@ packages:
   isexe@2.0.0:
     resolution: {integrity: sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==}
 
+  js-yaml@5.5.0:
+    resolution: {integrity: sha512-paNr4LFIFPjeeSmwNYdrb8FafLLG/Cr2Af3GjbsHJ5CxIjH4r0c2emlmRdAtpPAieP1gRVzk6buBbVP5gBMGAg==}
+    hasBin: true
+
   json-schema-traverse@0.4.1:
     resolution: {integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==}
+
+  json-schema-traverse@1.0.0:
+    resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
 
   json-stable-stringify-without-jsonify@1.0.1:
     resolution: {integrity: sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw==}
@@ -966,6 +1029,9 @@ packages:
     resolution: {integrity: sha512-VXJjc87FScF88uafS3JllDgvAm+c/Slfz06lorj2uAY34rlUu0Nt+v8wreiImcrgAjjIHp1rXpTDlLOGw29WwQ==}
     engines: {node: '>=18'}
 
+  openapi-types@12.1.3:
+    resolution: {integrity: sha512-N4YtSYJqghVu4iek2ZUvcN/0aqH1kRDuNqzcycDxhOUpg7GdvLa2F3DgS6yBNhInhv2r/6I0Flkn7CqL8+nIcw==}
+
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
@@ -1024,6 +1090,10 @@ packages:
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
+
+  require-from-string@2.0.2:
+    resolution: {integrity: sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw==}
+    engines: {node: '>=0.10.0'}
 
   restore-cursor@5.1.0:
     resolution: {integrity: sha512-oMA2dcrw6u0YfxJQXm342bFKX/E4sG9rbTzO9ptUcR/e8A33cHuvStiYOwH7fszkZlZ1z/ta9AAoPk2F4qIOHA==}
@@ -1243,6 +1313,26 @@ packages:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
+
+  '@apidevtools/json-schema-ref-parser@16.0.5(@types/json-schema@7.0.15)':
+    dependencies:
+      '@types/json-schema': 7.0.15
+      js-yaml: 5.5.0
+
+  '@apidevtools/openapi-schemas@2.1.0': {}
+
+  '@apidevtools/swagger-methods@3.0.2': {}
+
+  '@apidevtools/swagger-parser@13.1.0(openapi-types@12.1.3)':
+    dependencies:
+      '@apidevtools/json-schema-ref-parser': 16.0.5(@types/json-schema@7.0.15)
+      '@apidevtools/openapi-schemas': 2.1.0
+      '@apidevtools/swagger-methods': 3.0.2
+      '@types/json-schema': 7.0.15
+      ajv: 8.20.0
+      ajv-draft-04: 1.0.0(ajv@8.20.0)
+      call-me-maybe: 1.0.2
+      openapi-types: 12.1.3
 
   '@cacheable/memory@2.2.0':
     dependencies:
@@ -1661,6 +1751,10 @@ snapshots:
 
   acorn@8.19.0: {}
 
+  ajv-draft-04@1.0.0(ajv@8.20.0):
+    optionalDependencies:
+      ajv: 8.20.0
+
   ajv@6.15.0:
     dependencies:
       fast-deep-equal: 3.1.3
@@ -1668,7 +1762,16 @@ snapshots:
       json-schema-traverse: 0.4.1
       uri-js: 4.4.1
 
+  ajv@8.20.0:
+    dependencies:
+      fast-deep-equal: 3.1.3
+      fast-uri: 3.1.8
+      json-schema-traverse: 1.0.0
+      require-from-string: 2.0.2
+
   ansi-regex@6.4.0: {}
+
+  argparse@3.0.3: {}
 
   assertion-error@2.0.1: {}
 
@@ -1689,6 +1792,8 @@ snapshots:
       hookified: 1.15.1
       keyv: 5.6.0
       qified: 0.10.1
+
+  call-me-maybe@1.0.2: {}
 
   chai@6.3.0: {}
 
@@ -1816,6 +1921,8 @@ snapshots:
     dependencies:
       fast-string-truncated-width: 3.0.3
 
+  fast-uri@3.1.8: {}
+
   fast-wrap-ansi@0.2.2:
     dependencies:
       fast-string-width: 3.0.2
@@ -1894,7 +2001,13 @@ snapshots:
 
   isexe@2.0.0: {}
 
+  js-yaml@5.5.0:
+    dependencies:
+      argparse: 3.0.3
+
   json-schema-traverse@0.4.1: {}
+
+  json-schema-traverse@1.0.0: {}
 
   json-stable-stringify-without-jsonify@1.0.1: {}
 
@@ -1996,6 +2109,8 @@ snapshots:
     dependencies:
       mimic-function: 5.0.1
 
+  openapi-types@12.1.3: {}
+
   optionator@0.9.4:
     dependencies:
       deep-is: 0.1.4
@@ -2051,6 +2166,8 @@ snapshots:
       hookified: 2.2.0
 
   queue-microtask@1.2.3: {}
+
+  require-from-string@2.0.2: {}
 
   restore-cursor@5.1.0:
     dependencies:

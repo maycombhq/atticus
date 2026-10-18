@@ -16,7 +16,7 @@ export const VERSION = "0.0.1";
 const HELP = `atticus ${VERSION} (catalog schema v${SCHEMA_VERSION})
 
 Usage:
-  atticus schema export [dir]          Write JSON Schema for catalog records and workspace files (default: ./schema)
+  atticus schema export [dir]          Write JSON Schema for every contract and the API's OpenAPI document (default: ./schema)
   atticus catalog validate <dir>       Check record files: schema, location and canonical form
           [--fix]                      Rewrite files that aren't in canonical form
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
