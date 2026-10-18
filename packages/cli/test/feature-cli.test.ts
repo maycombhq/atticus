@@ -360,3 +360,15 @@ describe("atticus catalog migrate", () => {
     expect((await readdir(join(root, "catalog/generated"))).length).toBeGreaterThan(0);
   });
 });
+
+describe("feature commands through main", () => {
+  it("routes usage errors", async () => {
+    const { main } = await import("../src/main.js");
+    const err: string[] = [];
+    const io = { out: () => {}, err: (l: string) => err.push(l) };
+    expect(await main(["feature", "show"], io)).toBe(2);
+    expect(await main(["feature", "name", "feature.x"], io)).toBe(2);
+    expect(await main(["feature", "suggest-names"], io)).toBe(2);
+    expect(err.join("\n")).toMatch(/needs a feature id/);
+  });
+});

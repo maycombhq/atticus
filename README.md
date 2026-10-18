@@ -35,6 +35,7 @@ packages/
   ingestors/         diagram (Lucid, Visio, Mermaid) and document (Office, PDF, Markdown) readers
   changes/           change lifecycle, hand-off PRs, approvals, risk and conflicts
   naysayer/          the critic: rule layers, deterministic checks, AI lenses, gates
+  features/          features found in code, names, links and gaps
   intake/            inputs/ intake, triage, curated decisions
   stubs/             stub servers from specs or the catalog
   diagrams/          Mermaid and draw.io views of the catalog

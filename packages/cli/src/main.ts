@@ -25,6 +25,18 @@ import { stubCheck, stubServe } from "./stub-commands.js";
 import { intakeAdd, intakeList, triageDecide, triageList } from "./intake-commands.js";
 import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
+  catalogMigrate,
+  featureLink,
+  featureList,
+  featureMerge,
+  featureName,
+  featureShow,
+  featureSpec,
+  featureSplit,
+  featureSuggestLinks,
+  featureTag,
+} from "./feature-commands.js";
+import {
   changeArchive,
   changeConflicts,
   changeHandoff,
@@ -97,6 +109,16 @@ Usage:
   atticus findings <change> [--json]   The change's findings by gate and round
   atticus finding <change> <id> <action> --by <you>  apply | edit-and-apply | not-relevant | waive | ask
           [--reason text] [--asked-of who] [--edit patch-file]
+  atticus feature list [--json]        Features found in code, named by people or proposed by AI
+  atticus feature show <id> [--json]   A feature's entry points, flow, owner, links and gaps
+  atticus feature name <id> "<name>"   Confirm or correct a feature's name [--description] [--owner] [--by]
+  atticus feature tag <id> <tags...>   Tag a feature [--by]
+  atticus feature merge <into> <from...>  Merge features [--by]
+  atticus feature split <id> <entry-points...>  Split entry points into another feature [--name] [--into] [--by]
+  atticus feature link <id> <ref>      Link a work item or page, e.g. ado:1234 [--title] [--by]
+  atticus feature suggest-links [--json]  Suggest links between features and work items
+  atticus feature spec <id>            Draft an OpenSpec capability spec from a confirmed feature
+  atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -160,6 +182,10 @@ export async function main(argv: string[], io: Output): Promise<number> {
       lens: { type: "string" },
       "asked-of": { type: "string" },
       edit: { type: "string" },
+      description: { type: "string" },
+      title: { type: "string" },
+      name: { type: "string" },
+      into: { type: "string" },
     },
     strict: false,
   });
@@ -262,6 +288,79 @@ export async function main(argv: string[], io: Output): Promise<number> {
   }
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const json = values.json === true;
+  if (group === "catalog" && command === "migrate")
+    return catalogMigrate(root, io, { dryRun: values["dry-run"] === true });
+  if (group === "feature") {
+    const rest = positionals.slice(3);
+    const by = str(values.by);
+    const firstOwner = Array.isArray(values.owner)
+      ? (values.owner[0] as string | undefined)
+      : str(values.owner);
+    if (command === "list") return featureList(root, { json }, io);
+    if (command === "suggest-links") return featureSuggestLinks(root, { json }, io);
+    if (command === "suggest-names") {
+      io.err(
+        "AI naming needs an AI runtime; it is configured with Run with AI (runtime.yaml). Until then, name features with atticus feature name.",
+      );
+      return 2;
+    }
+    if (!arg) {
+      io.err(
+        `feature ${command ?? ""} needs a feature id, for example: atticus feature show feature.transfers`,
+      );
+      return 2;
+    }
+    if (command === "show") return featureShow(root, arg, { json }, io);
+    if (command === "spec") return featureSpec(root, arg, io);
+    if (command === "name") {
+      if (!rest[0]) {
+        io.err(
+          'feature name needs a name, for example: atticus feature name feature.transfers "Transfer money"',
+        );
+        return 2;
+      }
+      return featureName(
+        root,
+        arg,
+        rest.join(" "),
+        {
+          ...(by ? { by } : {}),
+          ...(str(values.description) ? { description: str(values.description)! } : {}),
+          ...(firstOwner ? { owner: firstOwner } : {}),
+        },
+        io,
+      );
+    }
+    if (command === "tag") return featureTag(root, arg, rest, { ...(by ? { by } : {}) }, io);
+    if (command === "merge") return featureMerge(root, arg, rest, { ...(by ? { by } : {}) }, io);
+    if (command === "split")
+      return featureSplit(
+        root,
+        arg,
+        rest,
+        {
+          ...(by ? { by } : {}),
+          ...(str(values.name) ? { name: str(values.name)! } : {}),
+          ...(str(values.into) ? { into: str(values.into)! } : {}),
+        },
+        io,
+      );
+    if (command === "link") {
+      if (!rest[0]) {
+        io.err(
+          "feature link needs a reference, for example: atticus feature link feature.transfers ado:1234",
+        );
+        return 2;
+      }
+      return featureLink(
+        root,
+        arg,
+        rest[0],
+        { ...(by ? { by } : {}), ...(str(values.title) ? { title: str(values.title)! } : {}) },
+        io,
+      );
+    }
+  }
   if (group === "critic" && command === "stats") return criticStats(root, { json }, io);
   if (group === "critic") {
     if (!command) {
