@@ -1,0 +1,24 @@
+# The M3 exit runtime (contract C6), laid over fixtures/forge and fixtures/forge-speckit. The
+# same settings as the Spec Kit fixture, with the Git host's metarepo named so hand-offs need no
+# --repo, and every outside system a mock. AI runs as recorded replay (--mode replay with
+# ATTICUS_REPLAY_DIR), which never leaves the machine.
+schemaVersion: 1
+assistants: { allowed: [copilot, claude-code], default: copilot }
+editors: [vscode, intellij]
+modes: { allowed: [hand-off, model, headless-claude-code], default: hand-off }
+models: { allowed: [mock-model] }
+autonomy:
+  default: draft
+  capPerRepo: { forge-gateway: plan-only, forge-infra: plan-only, forge-reports-job: draft }
+  maxFixRounds: 3
+budgets: { defaultTokens: 150000 }
+retention: { runsDays: 30 }
+buildEngine:
+  default: speckit
+  perRepo: { forge-portal-bff: atticus }
+adapters:
+  workTracker: { type: mock }
+  serviceDesk: { type: mock }
+  gitHost: { type: mock, settings: { metarepo: forge/forge-metarepo } }
+  notify: { type: mock }
+  model: { type: mock, settings: { model: mock-model } }

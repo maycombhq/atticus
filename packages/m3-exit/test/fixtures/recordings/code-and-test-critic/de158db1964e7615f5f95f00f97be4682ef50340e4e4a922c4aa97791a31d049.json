@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "agent": "code-and-test-critic",
+  "promptSha256": "de158db1964e7615f5f95f00f97be4682ef50340e4e4a922c4aa97791a31d049",
+  "output": "findings: []\n",
+  "usage": {
+    "inputTokens": 6400,
+    "outputTokens": 4
+  },
+  "model": "hand-written",
+  "recordedAt": "2026-10-18T09:00:00Z"
+}

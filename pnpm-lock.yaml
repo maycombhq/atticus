@@ -524,6 +524,33 @@ importers:
         specifier: ^4.6.0
         version: 4.6.7
 
+  packages/m3-exit:
+    dependencies:
+      '@maycombhq/adapters':
+        specifier: workspace:*
+        version: link:../adapters
+      '@maycombhq/adopt':
+        specifier: workspace:*
+        version: link:../adopt
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@maycombhq/assistant-files':
+        specifier: workspace:*
+        version: link:../assistant-files
+      '@maycombhq/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/naysayer':
+        specifier: workspace:*
+        version: link:../naysayer
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
   packages/naysayer:
     dependencies:
       '@maycombhq/ai':
