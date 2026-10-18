@@ -1,0 +1,26 @@
+# Hand-written curated decisions for the glossary golden test: an other name for Account
+# number, and a term only a person names. Records omit schemaVersion; the test adds it.
+- kind: CuratedDecision
+  id: glossary.alias.account-number
+  status: current
+  confidence: asserted
+  evidence: [{ source: manual, by: bao }]
+  target: term.account-number
+  action: alias
+  value: [Acct no]
+  reason: Reports call it acct_no
+  by: bao
+  at: 2026-10-01T09:00:00Z
+- kind: CuratedDecision
+  id: glossary.define.remaining-limit
+  status: current
+  confidence: asserted
+  evidence: [{ source: manual, by: pat }]
+  target: term.remaining-limit
+  action: assert
+  value:
+    term: Remaining limit
+    definition: "What an account can still send today: its daily limit minus today's outgoing transfers."
+  reason: Glossary definition of Remaining limit
+  by: pat
+  at: 2026-10-02T09:00:00Z

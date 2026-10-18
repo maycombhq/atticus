@@ -1,0 +1,127 @@
+# Hand-written: the glossary of the Forge pages plus the two fixture pages (ledger-glossary.md,
+# portal-help.md), the Forge catalog plus extra-records.yaml, the curated decisions in
+# decisions.yaml and the AI proposal for Payment, after curated decisions are applied.
+# evidence is "<repo>/<path>:<line>", "<path>:<line>" without a repo, or "manual:<by>".
+terms:
+  - id: term.account
+    term: Account
+    definition: A customer's ledger account that holds a balance and the entries posted to it.
+    confidence: inferred
+    owner: team-ledger
+    fields: [ledger-db.entry.account-id]
+    flags: []
+    evidence:
+      - inputs/wiki/ledger-glossary.md:9
+      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:8
+      - forge-ledger/src/main/resources/db/migration/V1__create_account.sql:1
+      - forge-ledger/src/main/resources/db/migration/V2__create_entry.sql:3
+  - id: term.account-number
+    term: Account number
+    definition: The identifier printed on statements, up to 34 characters.
+    confidence: inferred
+    owner: team-ledger
+    fields: [ledger-db.account.account-number, reports-db.daily-total.acct-no]
+    flags: []
+    evidence:
+      - inputs/wiki/ledger-glossary.md:10
+      - forge-ledger/src/main/resources/db/migration/V1__create_account.sql:3
+      - forge-reports-job/src/main/resources/db/migration/V1__create_daily_total.sql:3
+  - id: term.balance
+    term: Balance
+    definition: The amount an account holds after every posted entry.
+    confidence: inferred
+    owner: team-ledger
+    fields: []
+    flags: []
+    evidence:
+      - inputs/wiki/ledger-glossary.md:21
+      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:8
+      - forge-portal-bff/src/main/java/forge/portal/BalanceController.java:12
+  - id: term.daily-limit
+    term: Daily limit
+    definition: The most an account can send in one day, as an amount in the account's currency.
+    confidence: inferred
+    owner: team-ledger
+    fields: [ledger-db.account.daily-limit, reports-db.daily-total.daily-limit]
+    flags: ["conflict:code-usage"]
+    evidence:
+      - inputs/wiki/ledger-glossary.md:11
+      - inputs/wiki/portal-help.md:10
+      - forge-ledger/src/main/resources/db/migration/V3__add_daily_limit.sql:1
+      - forge-reports-job/src/main/resources/db/migration/V1__create_daily_total.sql:2
+  - id: term.daily-total
+    term: Daily total
+    definition: "Not defined yet. Found in code: reports-db.daily-total."
+    confidence: inferred
+    fields: []
+    flags: [undefined]
+    evidence: [forge-reports-job/src/main/resources/db/migration/V1__create_daily_total.sql:1]
+  - id: term.entry
+    term: Entry
+    definition: One posting of an amount to an account.
+    confidence: inferred
+    owner: team-ledger
+    fields: []
+    flags: []
+    evidence:
+      - inputs/wiki/ledger-glossary.md:12
+      - forge-ledger/src/main/resources/db/migration/V2__create_entry.sql:1
+  - id: term.holder-name
+    term: Holder name
+    definition: The name of the person who owns the account, as on their ID.
+    confidence: inferred
+    owner: team-ledger
+    fields: [ledger-db.account.holder-name]
+    flags: []
+    evidence:
+      - inputs/wiki/ledger-glossary.md:17
+      - forge-ledger/src/main/resources/db/migration/V1__create_account.sql:4
+  - id: term.payment
+    term: Payment
+    definition: Money a customer sends to a vendor such as Northwind Pay.
+    confidence: inferred
+    fields: []
+    flags: [ai-proposed]
+    evidence:
+      - inputs/partner-specs/northwind-pay-openapi.yaml:6
+      - forge-events/topics/payments.initiated.yaml:1
+  - id: term.remaining-limit
+    term: Remaining limit
+    definition: "What an account can still send today: its daily limit minus today's outgoing transfers."
+    confidence: asserted
+    fields: []
+    flags: []
+    evidence: ["manual:pat"]
+  - id: term.transfer
+    term: Transfer
+    definition: Moving an amount from one account to another inside Forge.
+    confidence: inferred
+    owner: team-ledger
+    fields: []
+    flags: ["conflict:definition"]
+    evidence:
+      - inputs/wiki/ledger-glossary.md:16
+      - inputs/wiki/portal-help.md:8
+      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:11
+      - forge-events/topics/transfers.completed.yaml:1
+columnLinks:
+  - { column: ledger-db.account.account-number, term: term.account-number, how: name }
+  - { column: ledger-db.account.daily-limit, term: term.daily-limit, how: name }
+  - { column: ledger-db.account.holder-name, term: term.holder-name, how: name }
+  - { column: ledger-db.entry.account-id, term: term.account, how: name }
+  - { column: reports-db.daily-total.acct-no, term: term.account-number, how: alias }
+  - { column: reports-db.daily-total.daily-limit, term: term.daily-limit, how: name }
+conflicts:
+  - term: term.daily-limit
+    kind: code-usage
+    message: "Daily limit is used differently in code: the definition says it is an amount or count, but reports-db.daily-total.daily-limit is varchar(20); its fields have different types: ledger-db.account.daily-limit numeric(18,2), reports-db.daily-total.daily-limit varchar(20)."
+  - term: term.transfer
+    kind: definition
+    message: 'Transfer has 2 definitions: "Moving an amount from one account to another inside Forge." (inputs/wiki/ledger-glossary.md:16) and "A payment a customer sends to another account, including accounts at other banks." (inputs/wiki/portal-help.md:8).'
+hints:
+  - record: reports-db.daily-total.holder-nm
+    term: term.holder-name
+    kind: abbreviation
+    message: holder_nm looks like Holder name (term.holder-name); name it holder_name or link it to that term.
+synonyms:
+  term.account-number: [Acct no]

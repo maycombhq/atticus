@@ -1,0 +1,34 @@
+{
+  "name": "@maycombhq/ci",
+  "version": "0.0.1",
+  "description": "CI checks: the pipeline drift check of a code repo against the committed catalog, pipeline snippets, and the metarepo archive gate.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/changes": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/extractors": "workspace:*",
+    "@maycombhq/naysayer": "workspace:*",
+    "@maycombhq/scanner": "workspace:*",
+    "@maycombhq/sdk": "workspace:*",
+    "@maycombhq/workspace": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

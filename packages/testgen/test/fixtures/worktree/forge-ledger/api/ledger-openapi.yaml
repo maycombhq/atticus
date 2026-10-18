@@ -1,0 +1,83 @@
+openapi: 3.0.3
+info:
+  title: Ledger API
+  version: 1.1.0
+paths:
+  /accounts/{id}/balance:
+    get:
+      operationId: getBalance
+      security:
+        - oauth2: [ledger.read]
+      responses:
+        "200":
+          description: Balance
+  /accounts/{id}/limit:
+    get:
+      operationId: getLimit
+      security:
+        - oauth2: [ledger.read]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: The daily limit and what is left of it today
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [limit, remaining]
+                properties:
+                  limit: { type: number }
+                  remaining: { type: number, minimum: 0 }
+              example: { limit: 1000, remaining: 100 }
+        "404":
+          description: Unknown account
+  /transfers:
+    post:
+      operationId: createTransfer
+      security:
+        - oauth2: [ledger.write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId, amount, currency]
+              properties:
+                accountId: { type: integer, minimum: 1 }
+                amount: { type: number, minimum: 0.01, maximum: 1000000 }
+                currency: { type: string, enum: [EUR, USD] }
+                reference: { type: string, maxLength: 140 }
+            example: { accountId: 42, amount: 100, currency: EUR, reference: Rent }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  transferId: { type: string }
+                  status: { type: string }
+              example: { transferId: t-1, status: posted }
+        "400":
+          description: The request breaks the schema
+        "422":
+          description: Daily limit exceeded (LIMIT_EXCEEDED)
+          content:
+            application/json:
+              example: { error: LIMIT_EXCEEDED, remaining: 100 }
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.forge.example/token
+          scopes:
+            ledger.read: read balances
+            ledger.write: create transfers

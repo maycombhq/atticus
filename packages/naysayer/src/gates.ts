@@ -71,8 +71,8 @@ export async function gateStatusOf(
   };
 }
 
-/** Gates Atticus itself writes findings to (drift check, Spec Kit hand-up), whether or not gates.yaml lists them. */
-export const BUILT_IN_GATES: readonly string[] = ["drift", "hand-up"];
+/** Gates Atticus itself writes findings to (drift check, Spec Kit hand-up, traceability), whether or not gates.yaml lists them. */
+export const BUILT_IN_GATES: readonly string[] = ["drift", "hand-up", "trace"];
 
 /** Counts for a gate and whether its hand-off may proceed. */
 export async function gateStatus(

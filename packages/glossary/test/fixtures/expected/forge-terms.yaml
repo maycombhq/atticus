@@ -1,0 +1,62 @@
+# Hand-written: the glossary of the Forge fixture as it is (fixtures/forge wiki pages and
+# expected catalog). The Forge pages define no terms (their "X: y" lines are metadata and
+# facts, not definitions), so every term comes from code and is not defined yet.
+# evidence is "<repo>/<path>:<line>" (or "<path>:<line>" without a repo).
+terms:
+  - id: term.account
+    term: Account
+    definition: "Not defined yet. Found in code: ledger-api.get-balance, ledger-db.account, ledger-db.entry.account-id."
+    fields: [ledger-db.entry.account-id]
+    flags: [undefined]
+    evidence:
+      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:8
+      - forge-ledger/src/main/resources/db/migration/V1__create_account.sql:1
+      - forge-ledger/src/main/resources/db/migration/V2__create_entry.sql:3
+  - id: term.account-number
+    term: Account number
+    definition: "Not defined yet. Found in code: ledger-db.account.account-number."
+    fields: [ledger-db.account.account-number]
+    flags: [undefined]
+    evidence: [forge-ledger/src/main/resources/db/migration/V1__create_account.sql:3]
+  - id: term.balance
+    term: Balance
+    definition: "Not defined yet. Found in code: ledger-api.get-balance, portal-bff.get-balance."
+    fields: []
+    flags: [undefined]
+    evidence:
+      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:8
+      - forge-portal-bff/src/main/java/forge/portal/BalanceController.java:12
+  - id: term.entry
+    term: Entry
+    definition: "Not defined yet. Found in code: ledger-db.entry."
+    fields: []
+    flags: [undefined]
+    evidence: [forge-ledger/src/main/resources/db/migration/V2__create_entry.sql:1]
+  - id: term.holder-name
+    term: Holder name
+    definition: "Not defined yet. Found in code: ledger-db.account.holder-name."
+    fields: [ledger-db.account.holder-name]
+    flags: [undefined]
+    evidence: [forge-ledger/src/main/resources/db/migration/V1__create_account.sql:4]
+  - id: term.payment
+    term: Payment
+    definition: "Not defined yet. Found in code: northwind-pay.post-payment, topic.payments-initiated."
+    fields: []
+    flags: [undefined]
+    evidence:
+      - inputs/partner-specs/northwind-pay-openapi.yaml:6
+      - forge-events/topics/payments.initiated.yaml:1
+  - id: term.transfer
+    term: Transfer
+    definition: "Not defined yet. Found in code: ledger-api.post-transfer, topic.transfers-completed."
+    fields: []
+    flags: [undefined]
+    evidence:
+      - forge-ledger/src/main/java/forge/ledger/LedgerEndpoints.java:11
+      - forge-events/topics/transfers.completed.yaml:1
+columnLinks:
+  - { column: ledger-db.account.account-number, term: term.account-number, how: name }
+  - { column: ledger-db.account.holder-name, term: term.holder-name, how: name }
+  - { column: ledger-db.entry.account-id, term: term.account, how: name }
+conflicts: []
+hints: []

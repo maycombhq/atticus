@@ -1,0 +1,52 @@
+# Hand-written records laid over the Forge expected catalog for the glossary golden test:
+# the planned daily_limit column of the add-transfer-limit change, and an invented reports
+# store that uses daily_limit as text, an alias name (acct_no) and an abbreviation (holder_nm).
+# Records omit schemaVersion; the test adds it.
+- kind: Column
+  id: ledger-db.account.daily-limit
+  status: planned-new
+  confidence: inferred
+  table: ledger-db.account
+  name: daily_limit
+  type: "numeric(18,2)"
+  evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V3__add_daily_limit.sql, line: 1 }]
+- kind: DataStore
+  id: reports-db
+  status: current
+  confidence: verified
+  storeType: postgresql
+  ownerComponent: reports-job
+  evidence: [{ source: migration, repo: forge-reports-job, path: src/main/resources/db/migration/V1__create_daily_total.sql, line: 1 }]
+- kind: Table
+  id: reports-db.daily-total
+  status: current
+  confidence: verified
+  dataStore: reports-db
+  name: daily_total
+  tableKind: table
+  ownerComponent: reports-job
+  evidence: [{ source: migration, repo: forge-reports-job, path: src/main/resources/db/migration/V1__create_daily_total.sql, line: 1 }]
+- kind: Column
+  id: reports-db.daily-total.daily-limit
+  status: current
+  confidence: verified
+  table: reports-db.daily-total
+  name: daily_limit
+  type: varchar(20)
+  evidence: [{ source: migration, repo: forge-reports-job, path: src/main/resources/db/migration/V1__create_daily_total.sql, line: 2 }]
+- kind: Column
+  id: reports-db.daily-total.acct-no
+  status: current
+  confidence: verified
+  table: reports-db.daily-total
+  name: acct_no
+  type: varchar(34)
+  evidence: [{ source: migration, repo: forge-reports-job, path: src/main/resources/db/migration/V1__create_daily_total.sql, line: 3 }]
+- kind: Column
+  id: reports-db.daily-total.holder-nm
+  status: current
+  confidence: verified
+  table: reports-db.daily-total
+  name: holder_nm
+  type: varchar(200)
+  evidence: [{ source: migration, repo: forge-reports-job, path: src/main/resources/db/migration/V1__create_daily_total.sql, line: 4 }]

@@ -8,6 +8,7 @@ import {
   type RecordOf,
 } from "@maycombhq/core";
 import { FEATURE_CHECKS } from "./feature-checks.js";
+import { glossaryTermKnown } from "./glossary-check.js";
 import { newestEvidence } from "./freshness.js";
 import { daysBetween } from "./sources.js";
 
@@ -266,6 +267,7 @@ export const KNOWLEDGE_CHECKS: KnowledgeCheck[] = [
   callResilience,
   unattendedMonitored,
   sourceKnown,
+  glossaryTermKnown,
   ...FEATURE_CHECKS,
 ];
 
