@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Masters xmlns="http://schemas.microsoft.com/office/visio/2012/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="10" NameU="Box" Name="Box"/>
+  <Master ID="11" NameU="Server icon" Name="Server icon"/>
+  <Master ID="12" NameU="Dynamic connector" Name="Dynamic connector"/>
+</Masters>

@@ -1,0 +1,23 @@
+---
+title: Forge context (as the architect drew it)
+---
+%% The Forge context diagram kept as code. Edges without an id are numbered e1, e2, ...
+flowchart LR
+  ui[Portal UI]
+  bff(Portal BFF)
+  ledger[(Ledger Platform)]
+  reports[[Reports Job]]
+  northwind>Northwind Pay]
+  notify["Notifications Service"]:::new
+
+  ui --> bff
+  bff -->|"S.GW.SOR GET /ledger/v1/accounts/{id}/balance"| ledger
+  bff -- S.GW.SOR POST /ledger/v1/transfers --> ledger
+  ledger -->|S.GW.VND POST /v2/payments| northwind;
+  reports -->|S.GW.SRO GET /ledger/v1/entries| ledger
+  bff -.->|A.EB.PUB payments.initiated| ledger
+  bff e7@-.->|A.EB.PUB notifications.requested| notify
+
+  classDef new stroke-dasharray: 5 5
+  class e7 new
+  click northwind "https://northwind.example/docs" "Never fetched"

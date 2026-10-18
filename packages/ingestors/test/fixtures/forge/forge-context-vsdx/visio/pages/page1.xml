@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<PageContents xmlns="http://schemas.microsoft.com/office/visio/2012/main" xml:space="preserve">
+  <Shapes>
+    <Shape ID="1" NameU="Rectangle" Name="Rectangle" Type="Shape" Master="1">
+      <Cell N="PinX" V="1"/><Cell N="PinY" V="6"/>
+      <Text><cp IX="0"/>Portal UI</Text>
+    </Shape>
+    <Shape ID="2" NameU="Rectangle.2" Name="Rectangle.2" Type="Shape" Master="1">
+      <Cell N="PinX" V="3"/><Cell N="PinY" V="6"/>
+      <Text><cp IX="0"/>Portal
+BFF</Text>
+    </Shape>
+    <Shape ID="3" NameU="Rectangle.3" Name="Rectangle.3" Type="Shape" Master="1">
+      <Cell N="PinX" V="5"/><Cell N="PinY" V="6"/>
+      <Text>Ledger Platform</Text>
+    </Shape>
+    <Shape ID="4" NameU="Rectangle.4" Name="Rectangle.4" Type="Shape" Master="1">
+      <Cell N="PinX" V="5"/><Cell N="PinY" V="3"/>
+      <Text>Reports Job</Text>
+    </Shape>
+    <Shape ID="5" NameU="Cloud" Name="Cloud" Type="Shape" Master="2">
+      <Cell N="PinX" V="8"/><Cell N="PinY" V="6"/>
+      <Text>Northwind Pay</Text>
+    </Shape>
+    <Shape ID="6" NameU="Rectangle.6" Name="Rectangle.6" Type="Shape" Master="1">
+      <Cell N="PinX" V="3"/><Cell N="PinY" V="9"/>
+      <Section N="Property">
+        <Row N="Legend"><Cell N="Label" V="Legend"/><Cell N="Value" V="New"/></Row>
+      </Section>
+      <Text>Notifications Service</Text>
+    </Shape>
+    <Shape ID="7" NameU="Dynamic connector" Name="Dynamic connector" Type="Shape" Master="3">
+      <Cell N="BeginX" V="1.5"/><Cell N="EndX" V="2.5"/>
+    </Shape>
+    <Shape ID="8" NameU="Dynamic connector.8" Name="Dynamic connector.8" Type="Shape" Master="3">
+      <Cell N="BeginX" V="3.5"/><Cell N="EndX" V="4.5"/>
+      <Text>S.GW.SOR GET /ledger/v1/accounts/{id}/balance</Text>
+    </Shape>
+    <Shape ID="9" NameU="Dynamic connector.9" Name="Dynamic connector.9" Type="Shape" Master="3">
+      <Cell N="BeginX" V="3.5"/><Cell N="EndX" V="4.5"/>
+      <Text>S.GW.SOR <cp IX="1"/>POST /ledger/v1/transfers</Text>
+    </Shape>
+    <Shape ID="10" NameU="Dynamic connector.10" Name="Dynamic connector.10" Type="Shape" Master="3">
+      <Cell N="BeginX" V="5.5"/><Cell N="EndX" V="7.5"/>
+      <Text>S.GW.VND POST /v2/payments</Text>
+    </Shape>
+    <Shape ID="11" NameU="Dynamic connector.11" Name="Dynamic connector.11" Type="Shape" Master="3">
+      <Cell N="BeginX" V="5"/><Cell N="EndX" V="5"/>
+      <Text>S.GW.SRO GET /ledger/v1/entries</Text>
+    </Shape>
+    <Shape ID="12" NameU="Dynamic connector.12" Name="Dynamic connector.12" Type="Shape" Master="3">
+      <Cell N="BeginX" V="3.5"/><Cell N="EndX" V="4.5"/>
+      <Text>A.EB.PUB payments.initiated</Text>
+    </Shape>
+    <Shape ID="13" NameU="Dynamic connector.13" Name="Dynamic connector.13" Type="Shape" Master="3">
+      <Cell N="BeginX" V="3"/><Cell N="EndX" V="3"/>
+      <Text>A.EB.PUB notifications.requested (New)</Text>
+    </Shape>
+  </Shapes>
+  <Connects>
+    <Connect FromSheet="7" FromCell="BeginX" FromPart="9" ToSheet="1" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="7" FromCell="EndX" FromPart="12" ToSheet="2" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="8" FromCell="BeginX" FromPart="9" ToSheet="2" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="8" FromCell="EndX" FromPart="12" ToSheet="3" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="9" FromCell="EndX" FromPart="12" ToSheet="3" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="9" FromCell="BeginX" FromPart="9" ToSheet="2" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="10" FromCell="BeginX" FromPart="9" ToSheet="3" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="10" FromCell="EndX" FromPart="12" ToSheet="5" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="11" FromCell="BeginX" FromPart="9" ToSheet="4" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="11" FromCell="EndX" FromPart="12" ToSheet="3" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="12" FromCell="BeginX" FromPart="9" ToSheet="2" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="12" FromCell="EndX" FromPart="12" ToSheet="3" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="13" FromCell="BeginX" FromPart="9" ToSheet="2" ToCell="PinX" ToPart="3"/>
+    <Connect FromSheet="13" FromCell="EndX" FromPart="12" ToSheet="6" ToCell="PinX" ToPart="3"/>
+  </Connects>
+</PageContents>

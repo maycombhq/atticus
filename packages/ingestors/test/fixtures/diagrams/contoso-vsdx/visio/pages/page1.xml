@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<PageContents xmlns="http://schemas.microsoft.com/office/visio/2012/main">
+  <Shapes>
+    <Shape ID="1" Type="Shape" Master="10"><Text>Fabrikam Queue</Text></Shape>
+    <Shape ID="2" Type="Shape" Master="10"><Text>Billing &amp; Settlement</Text></Shape>
+    <Shape ID="3" Type="Shape" Master="12">
+      <Section N="Property">
+        <Row N="Legend"><Cell N="Value" V="new"/></Row>
+      </Section>
+      <Text>billing.settled</Text>
+    </Shape>
+  </Shapes>
+  <Connects>
+    <Connect FromSheet="3" FromCell="EndX" ToSheet="1"/>
+    <Connect FromSheet="3" FromCell="BeginX" ToSheet="2"/>
+  </Connects>
+</PageContents>
