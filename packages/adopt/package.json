@@ -1,0 +1,36 @@
+{
+  "name": "@maycombhq/adopt",
+  "version": "0.0.1",
+  "description": "Set Atticus up: init a metarepo, discover repos, adopt an existing repo in place, absorb another team's work and federate another Atticus metarepo.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/assistant-files": "workspace:*",
+    "@maycombhq/changes": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/extractors": "workspace:*",
+    "@maycombhq/naysayer": "workspace:*",
+    "@maycombhq/openspec-adapter": "workspace:*",
+    "@maycombhq/scanner": "workspace:*",
+    "@maycombhq/sdk": "workspace:*",
+    "@maycombhq/workspace": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

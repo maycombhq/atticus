@@ -1,0 +1,5 @@
+<ProxyEndpoint name="default">
+  <HTTPProxyConnection>
+    <BasePath>/api/orders</BasePath>
+  </HTTPProxyConnection>
+</ProxyEndpoint>

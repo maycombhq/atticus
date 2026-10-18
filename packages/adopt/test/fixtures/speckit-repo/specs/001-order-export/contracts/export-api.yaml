@@ -1,0 +1,17 @@
+openapi: 3.0.3
+info:
+  title: Order export
+  version: 1.0.0
+paths:
+  /exports/orders:
+    get:
+      operationId: exportOrders
+      parameters:
+        - name: day
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CSV of the day's orders

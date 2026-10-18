@@ -1,7 +1,10 @@
-import { dirname, join } from "node:path";
+import { stat } from "node:fs/promises";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { featuresForScan } from "@maycombhq/features";
 import {
   configHash,
+  DEFAULT_IGNORES,
   fsRepo,
   fsScanCache,
   scanRepo,
@@ -49,8 +52,24 @@ export interface ScanOptions {
   onProgress?: (done: number, total: number, repo: string) => void;
   /** Where inputs/ is (documents, partner specs, diagrams); default <root>/inputs. Pass null to skip intake. */
   inputsDir?: string | null;
-  /** Folder of curated decisions applied over the merged catalog; default <root>/catalog/curated. */
+  /** Folder of curated decisions applied over the merged catalog; default <catalog>/curated (sources.yaml layout). */
   curatedDir?: string;
+  /**
+   * Other Atticus metarepos federated in `link` mode: their catalog records join this catalog
+   * with their origin kept (a `federated:<id>` flag and an export evidence entry), never
+   * replacing a record this scan found (local code wins). Default: sources.yaml `absorbed`
+   * entries with format atticus and mode link whose url is a local folder, or whose copy
+   * absorb keeps under the state folder's `absorbed/<id>/`.
+   */
+  federated?: { id: string; dir: string }[];
+}
+
+/** What each federated metarepo contributed. */
+export interface FederatedContribution {
+  id: string;
+  added: number;
+  /** Records the federated catalog also has, kept from this scan instead ("kind/id"). */
+  shadowed: string[];
 }
 
 export interface ScanProblem {
@@ -76,6 +95,103 @@ export interface EstateScan {
   inputs?: ScanInputsResult;
   /** Curated decisions applied, and the records they suppressed. */
   curated: { applied: string[]; suppressed: string[] };
+  /** Federated metarepos and what they contributed, when there are any. */
+  federated?: FederatedContribution[];
+}
+
+async function isDir(p: string): Promise<boolean> {
+  try {
+    return (await stat(p)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A metarepo's org pack: `org-pack/` at its root, or `.atticus/org-pack/` in a repo adopted in
+ * place (the same rule as @maycombhq/adopt's resolveMetarepo).
+ */
+export async function orgPackDirFor(root: string): Promise<{ dir: string; adopted: boolean }> {
+  if (!(await isDir(join(root, "org-pack"))) && (await isDir(join(root, ".atticus", "org-pack"))))
+    return { dir: join(root, ".atticus", "org-pack"), adopted: true };
+  return { dir: join(root, "org-pack"), adopted: false };
+}
+
+/** A manifest url that is `.` or `./<path>` names a repo in place under the root. */
+function inPlace(root: string, url: string): string | undefined {
+  if (url === "." || url === "./") return root;
+  if (url.startsWith("./") && !url.split("/").includes("..")) return join(root, url.slice(2));
+  return undefined;
+}
+
+/** Federated catalogs: records added with their origin; local records win. */
+async function federate(
+  local: CatalogRecord[],
+  sources: { id: string; dir: string }[],
+  problems: ScanProblem[],
+): Promise<{ records: CatalogRecord[]; contributions: FederatedContribution[] }> {
+  const have = new Set(local.map((r) => `${r.kind}/${r.id}`));
+  const records: CatalogRecord[] = [];
+  const contributions: FederatedContribution[] = [];
+  for (const s of sources) {
+    const theirs = await loadOrgPack((await orgPackDirFor(s.dir)).dir);
+    const catalogRel = `${theirs.sources.layout.catalog}/generated`;
+    const cat = await readCatalog(join(s.dir, ...catalogRel.split("/")));
+    for (const p of cat.problems)
+      problems.push({ source: `federated ${s.id}`, message: `${p.file}: ${p.message}` });
+    const c: FederatedContribution = { id: s.id, added: 0, shadowed: [] };
+    for (const r of cat.records) {
+      const key = `${r.kind}/${r.id}`;
+      if (have.has(key)) {
+        c.shadowed.push(key);
+        continue;
+      }
+      have.add(key);
+      records.push({
+        ...r,
+        flags: [...new Set([...(r.flags ?? []), `federated:${s.id}`])],
+        evidence: [
+          ...r.evidence,
+          {
+            source: "export",
+            repo: s.id,
+            path: `${catalogRel}/${r.kind.toLowerCase()}/${r.id}.yaml`,
+          },
+        ],
+      } as CatalogRecord);
+      c.added++;
+    }
+    contributions.push(c);
+  }
+  return { records, contributions };
+}
+
+const REMOTE_URL = /^[a-z][a-z0-9+.-]*:\/\//i;
+const SCP_URL = /^[^/]+@[^:/]+:/;
+
+/** Default federation sources from sources.yaml: atticus format, link mode, on this machine. */
+async function federationSources(
+  root: string,
+  stateDir: string,
+  op: OrgPack,
+): Promise<{ id: string; dir: string }[]> {
+  const out: { id: string; dir: string }[] = [];
+  for (const a of op.sources.absorbed) {
+    if (a.format !== "atticus" || a.mode !== "link") continue;
+    const local = a.url.startsWith("file://")
+      ? fileURLToPath(a.url)
+      : REMOTE_URL.test(a.url) || SCP_URL.test(a.url)
+        ? undefined
+        : isAbsolute(a.url)
+          ? a.url
+          : resolve(root, a.url);
+    const copy = join(stateDir, "absorbed", a.id);
+    // A bare repository (objects/ at its top) can't be read as files: absorb keeps a copy.
+    if (local && (await isDir(local)) && !(await isDir(join(local, "objects"))))
+      out.push({ id: a.id, dir: local });
+    else if (await isDir(copy)) out.push({ id: a.id, dir: copy });
+  }
+  return out;
 }
 
 /** Load and check dialects: a dialect whose own tests fail is not used, and the failure is reported. */
@@ -114,7 +230,10 @@ async function usableDialects(
  * whose tests pass, then merge into one catalog. Unchanged repos come from the cache.
  */
 export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
-  const orgPackDir = o.orgPack ?? join(o.root, "org-pack");
+  const pack = o.orgPack ? undefined : await orgPackDirFor(o.root);
+  const orgPackDir = o.orgPack ?? pack!.dir;
+  // A repo adopted in place keeps Atticus's local state in .atticus/.
+  const stateDir = pack?.adopted ? join(o.root, ".atticus") : o.root;
   const op = await loadOrgPack(orgPackDir);
   const problems: ScanProblem[] = op.problems.map((p) => ({
     source: `org-pack/${p.file}`,
@@ -124,7 +243,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const byName = new Map(dialects.map((d) => [d.name, d]));
   const dialectExtractors = dialects.map((d) => ({ d, x: dialectExtractor(d, byName) }));
   const cache =
-    o.cache === null ? undefined : (o.cache ?? fsScanCache(join(o.root, ".index", "scan-cache")));
+    o.cache === null ? undefined : (o.cache ?? fsScanCache(join(stateDir, ".index", "scan-cache")));
   const scannedAt = o.scannedAt ?? new Date().toISOString();
 
   const repos = op.profiles
@@ -133,7 +252,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const results: RepoScan[] = [];
   let done = 0;
   for (const r of repos) {
-    const dir = o.repoDir?.(r.id) ?? baseClonePath(o.root, r.id);
+    const dir = o.repoDir?.(r.id) ?? inPlace(o.root, r.url) ?? baseClonePath(o.root, r.id);
     let state: { commit: string; dirty: boolean };
     try {
       state = o.repoState ? await o.repoState(r.id, dir) : await checkoutState(dir);
@@ -153,7 +272,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         .map(({ x }) => x),
     ];
     const scan = await scanRepo({
-      repo: fsRepo(r.id, dir, state.commit),
+      // .atticus/ is Atticus's own folder (an adopted repo scans itself): never read as code.
+      repo: fsRepo(r.id, dir, state.commit, { ignore: [...DEFAULT_IGNORES, ".atticus"] }),
       extractors,
       dialects: r.dialects,
       scannedAt,
@@ -197,7 +317,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   });
   const codeRecords = results.flatMap((s) => s.records);
   let merged = mergeCatalog(mergeInput(codeRecords));
-  const curatedDir = o.curatedDir ?? join(o.root, "catalog", "curated");
+  const curatedDir =
+    o.curatedDir ?? join(o.root, ...op.sources.layout.catalog.split("/"), "curated");
   const curated = await readCatalog(curatedDir);
   for (const p of curated.problems)
     problems.push({ source: `catalog/curated/${p.file}`, message: p.message });
@@ -208,7 +329,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     inputs = await scanInputs({
       root: o.root,
       orgPack: op,
-      inputsDir: o.inputsDir ?? join(o.root, "inputs"),
+      inputsDir: o.inputsDir ?? join(stateDir, "inputs"),
       records: [...merged.records, ...curated.records],
       ingestors: listIngestors(),
       scannedAt,
@@ -227,7 +348,17 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   });
   for (const p of found.problems)
     problems.push({ source: "features", message: `${p.decision}: ${p.message}` });
-  const withFeatures = [...merged.records, ...found.features].sort((a, b) =>
+  // Federated metarepos (link mode) add their records last, before curated decisions: local
+  // records win, and their records never become features of ours.
+  const fedSources = o.federated ?? (await federationSources(o.root, stateDir, op));
+  let federated: FederatedContribution[] | undefined;
+  let fedRecords: CatalogRecord[] = [];
+  if (fedSources.length) {
+    const fed = await federate([...merged.records, ...found.features], fedSources, problems);
+    fedRecords = fed.records;
+    federated = fed.contributions;
+  }
+  const withFeatures = [...merged.records, ...found.features, ...fedRecords].sort((a, b) =>
     a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
   );
   const applied = applyCurated(withFeatures, curated.records);
@@ -253,5 +384,6 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     },
     ...(inputs ? { inputs } : {}),
     curated: { applied: applied.applied, suppressed: applied.suppressed },
+    ...(federated ? { federated } : {}),
   };
 }

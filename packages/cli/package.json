@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@maycombhq/adapters": "workspace:*",
+    "@maycombhq/adopt": "workspace:*",
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/assistant-files": "workspace:*",
     "@maycombhq/assistant-kit": "workspace:*",

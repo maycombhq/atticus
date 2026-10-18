@@ -1,0 +1,326 @@
+import { resolve } from "node:path";
+import {
+  absorb,
+  adopt,
+  AdoptError,
+  init,
+  reposDiscover,
+  unadopt,
+  zeroInstallFiles,
+  checkZeroInstall,
+  type Action,
+  type RepoListing,
+} from "@maycombhq/adopt";
+import type { Output } from "./commands.js";
+
+/**
+ * Setup commands: `init`, `adopt`, `unadopt`, `repos discover`, `absorb`, and the zero-install
+ * assistant files for an adopted repo. Exit codes: 0 done, 1 problems, 2 usage.
+ */
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+function fail(io: Output, e: unknown): number {
+  if (e instanceof AdoptError) {
+    io.err(e.message);
+    return e.code === "usage" ? 2 : 1;
+  }
+  io.err((e as Error).message);
+  return 1;
+}
+
+/** atticus init <name> --platform <pack> [--from <org pack>] [--owner who] */
+export async function initCommand(
+  dir: string,
+  o: { name?: string; platform?: string; packFrom?: string; owner?: string; json?: boolean },
+  io: Output,
+): Promise<number> {
+  if (!o.name || !o.platform) {
+    io.err("Usage: atticus init <name> --platform <platform> [--from <org pack folder>]");
+    return 2;
+  }
+  try {
+    const r = await init(dir, {
+      name: o.name,
+      platform: o.platform,
+      ...(o.packFrom ? { packFrom: resolve(o.packFrom) } : {}),
+      ...(o.owner ? { owner: o.owner } : {}),
+    });
+    if (o.json) {
+      io.out(JSON.stringify(r, null, 2));
+      return r.problems.length ? 1 : 0;
+    }
+    io.out(`Created the ${o.name} metarepo in ${dir} (${plural(r.created.length, "file")}).`);
+    io.out(
+      r.openspec === "cli"
+        ? "OpenSpec is set up with the org-flow schema."
+        : "openspec/ was made as folders with the org-flow schema.",
+    );
+    if (r.openspecNote) io.out(r.openspecNote);
+    for (const p of r.problems)
+      io.err(`org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
+    for (const q of r.questions) io.out(`Question: ${q}`);
+    io.out(
+      "Next: atticus repos discover <folder of clones>, then atticus workspace sync and atticus scan.",
+    );
+    return r.problems.length ? 1 : 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/** atticus adopt <path> [--platform id] [--json]: adopt an existing repo in place. */
+export async function adoptCommand(
+  path: string,
+  o: { json?: boolean; platform?: string; name?: string },
+  io: Output,
+): Promise<number> {
+  try {
+    const r = await adopt(path, {
+      ...(o.platform ? { platform: o.platform } : {}),
+      ...(o.name ? { name: o.name } : {}),
+    });
+    if (o.json) {
+      io.out(
+        JSON.stringify(
+          {
+            root: r.root,
+            platform: r.platform,
+            detected: r.detected,
+            layout: r.layout,
+            repos: r.repos.map((x) => ({ ...x.entry, signals: x.detection.signals })),
+            questions: r.questions,
+            written: r.written,
+            problems: r.problems,
+            ms: r.ms,
+          },
+          null,
+          2,
+        ),
+      );
+      return r.problems.length ? 1 : 0;
+    }
+    const d = r.detected;
+    const found = [
+      d.openspec ? `OpenSpec in ${d.openspec}/` : undefined,
+      d.speckit ? "Spec Kit (.specify/)" : undefined,
+      d.constitution ? `a constitution (${d.constitution})` : undefined,
+      d.prompts.length ? `prompts in ${d.prompts.join(", ")}` : undefined,
+      d.agents.length ? `agents in ${d.agents.join(", ")}` : undefined,
+      d.skills.length ? `skills in ${d.skills.join(", ")}` : undefined,
+      d.catalog ? `a catalog in ${d.catalog}/` : undefined,
+    ].filter(Boolean);
+    io.out(
+      `Adopted ${r.root} in place in ${(r.ms / 1000).toFixed(1)} s. No file of the repo was changed.`,
+    );
+    io.out(
+      found.length
+        ? `Found ${found.join("; ")}.`
+        : "Found no OpenSpec, Spec Kit or assistant files.",
+    );
+    io.out(`Repos: ${r.repos.map((x) => `${x.entry.id} (${x.entry.type})`).join(", ") || "none"}.`);
+    io.out(
+      `Everything Atticus owns is in .atticus/: the org pack points at what exists (openspec: ${r.layout.openspec}, catalog: ${r.layout.catalog}).`,
+    );
+    for (const p of r.problems)
+      io.err(`.atticus/org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
+    if (r.questions.length)
+      io.out(
+        `${plural(r.questions.length, "question")} for people are in .atticus/proposals/repos/${r.platform}/QUESTIONS.md.`,
+      );
+    io.out(`Next: atticus scan --root ${path}. To remove Atticus: atticus unadopt ${path}.`);
+    return r.problems.length ? 1 : 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/** atticus unadopt <path>: remove only Atticus's folders and files; prints what it removed. */
+export async function unadoptCommand(path: string, io: Output): Promise<number> {
+  try {
+    const r = await unadopt(path);
+    for (const f of r.removed) io.out(`Removed ${f}`);
+    for (const f of r.restored) io.out(`Took Atticus's section out of ${f}`);
+    for (const f of r.keptNew) io.out(`Kept ${f} (added since adoption, not Atticus's)`);
+    for (const f of r.changed) io.out(`Kept ${f} (changed since adoption)`);
+    for (const f of r.missing) io.out(`Note: ${f} was deleted since adoption`);
+    if (!r.hadSnapshot)
+      io.out(
+        "There was no adoption snapshot, so only files that are certainly Atticus's were removed.",
+      );
+    io.out(
+      r.changed.length || r.keptNew.length || r.missing.length
+        ? "Atticus is removed. The files above changed after adoption and were left as they are."
+        : "Atticus is removed; every other file is as it was before adoption.",
+    );
+    return 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/** atticus repos discover <folder> | --org <org>: propose repos.manifest.yaml entries. */
+export async function reposDiscoverCommand(
+  root: string,
+  o: {
+    from?: string;
+    org?: string;
+    host?: RepoListing;
+    platform?: string;
+    dryRun?: boolean;
+    json?: boolean;
+  },
+  io: Output,
+): Promise<number> {
+  if (!o.from && !o.org) {
+    io.err("Usage: atticus repos discover <folder of clones> | --org <organisation>");
+    return 2;
+  }
+  if (o.org && !o.host) {
+    io.err(
+      "Listing an organisation needs a Git host adapter that can list repos, and none is configured. Point at a folder of clones instead.",
+    );
+    return 2;
+  }
+  try {
+    const r = await reposDiscover(
+      root,
+      o.org ? { host: o.host!, org: o.org } : { dir: resolve(o.from!) },
+      { ...(o.platform ? { platform: o.platform } : {}), ...(o.dryRun ? { dryRun: true } : {}) },
+    );
+    if (o.json) {
+      io.out(
+        JSON.stringify(
+          {
+            platform: r.platform,
+            repos: r.repos.map((x) => ({ ...x.entry, signals: x.detection.signals })),
+            skipped: r.skipped,
+            questions: r.questions,
+            wrote: r.wrote,
+            file: r.file,
+          },
+          null,
+          2,
+        ),
+      );
+      return 0;
+    }
+    for (const x of r.repos)
+      io.out(
+        `  ${x.entry.id}: ${x.entry.type}${x.detection.signals[0] ? ` (${x.detection.signals[0]})` : ""}`,
+      );
+    for (const s of r.skipped) io.out(`  Skipped ${s.path}: ${s.reason}`);
+    io.out(
+      r.wrote === "manifest"
+        ? `Wrote ${plural(r.repos.length, "repo")} to ${r.file}.`
+        : r.wrote === "proposal"
+          ? `A manifest exists, so it was left as it is; the proposal is in ${r.file}.`
+          : `Found ${plural(r.repos.length, "repo")}; nothing written (dry run).`,
+    );
+    if (r.questions.length)
+      io.out(
+        `${plural(r.questions.length, "question")} need a person${r.questionsFile ? `: ${r.questionsFile}` : ""}.`,
+      );
+    return 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/** atticus absorb <git-url|path> --id <id> [--mode adopt|link|ignore] [--ref r] [--json] */
+export async function absorbCommand(
+  root: string,
+  url: string,
+  o: { id?: string; mode?: string; ref?: string; json?: boolean; dryRun?: boolean },
+  io: Output,
+): Promise<number> {
+  if (!url || !o.id) {
+    io.err("Usage: atticus absorb <git-url|path> --id <id> [--mode adopt|link|ignore]");
+    return 2;
+  }
+  if (o.mode && !["adopt", "link", "ignore"].includes(o.mode)) {
+    io.err(`--mode is adopt, link or ignore, not ${o.mode}.`);
+    return 2;
+  }
+  try {
+    const r = await absorb(root, url, {
+      id: o.id,
+      ...(o.mode ? { mode: o.mode as Action } : {}),
+      ...(o.ref ? { ref: o.ref } : {}),
+      ...(o.dryRun ? { dryRun: true } : {}),
+    });
+    if (o.json) {
+      io.out(
+        JSON.stringify(
+          {
+            id: r.id,
+            format: r.format,
+            entry: r.entry,
+            summary: r.summary,
+            items: r.items.map(({ artifact, ...i }) => ({
+              ...i,
+              ...(artifact ? { artifact: artifact.path } : {}),
+            })),
+            proposal: r.proposal,
+            files: r.files,
+            problems: r.problems,
+            ms: r.ms,
+          },
+          null,
+          2,
+        ),
+      );
+      return r.problems.length ? 1 : 0;
+    }
+    const s = r.summary;
+    io.out(
+      `Absorbed ${url} as ${r.id} (${r.format}): ${plural(s.items, "item")}, ${s.byAction.adopt} adopt, ${s.byAction.link} link, ${s.byAction.ignore} ignore.`,
+    );
+    for (const i of r.items)
+      io.out(
+        `  ${i.action.padEnd(6)} ${i.kind.padEnd(22)} ${i.path}${i.line ? `:${i.line}` : ""}  ${i.reason}`,
+      );
+    io.out(`Translated ${s.translated} of ${s.translatable} items (${s.translatedPercent}%).`);
+    for (const p of r.problems) io.err(`  ${p}`);
+    if (r.proposal)
+      io.out(
+        `Wrote the proposal to ${r.proposal}/ (${plural(r.files.length, "file")}): PR.md is the pull request description; nothing in the org pack was changed.`,
+      );
+    return r.problems.length ? 1 : 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/**
+ * atticus assistant-files for a repo adopted in place: the zero-install commands, pointing at
+ * `.atticus/org-pack/`, written into the repo's assistant folders, then checked: every file a
+ * command points at must exist in the committed tree.
+ */
+export async function zeroInstallCommand(
+  root: string,
+  o: { check?: boolean; force?: boolean },
+  io: Output,
+): Promise<number> {
+  try {
+    const r = await zeroInstallFiles(root, o);
+    for (const w of r.results.filter((x) => x.action !== "unchanged"))
+      io.out(`  ${w.action}: ${w.path}`);
+    const problems = await checkZeroInstall(
+      root,
+      r.files.map((f) => ({ path: f.path, content: f.content })),
+    );
+    for (const p of problems) io.err(`${p.file} points at ${p.missing}, which doesn't exist.`);
+    if (o.check)
+      io.out(
+        r.upToDate ? "The assistant files are up to date." : "The assistant files are out of date.",
+      );
+    else
+      io.out(
+        `Wrote the assistant files (${plural(r.files.length, "file")}); commit them for zero-install use.`,
+      );
+    return problems.length || (o.check && !r.upToDate) ? 1 : 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}

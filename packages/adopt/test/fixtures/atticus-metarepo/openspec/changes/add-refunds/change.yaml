@@ -1,0 +1,33 @@
+schemaVersion: 1
+id: add-refunds
+title: Add refunds
+type: feature
+template: feature
+state: design
+authors: {}
+createdAt: 2026-10-01T09:00:00Z
+createdBy: casey
+handoffs: []
+history:
+  - from: draft
+    to: define
+    at: 2026-10-01T09:00:00Z
+    by: casey
+    reason: Created from the feature template
+  - from: define
+    to: design
+    at: 2026-10-02T09:00:00Z
+    by: casey
+    reason: Send to architecture merged
+owners:
+  product-owner:
+    - casey
+systems:
+  - catalog-service
+  - payments
+touches:
+  dataStores: []
+  interfaces: []
+  records: []
+  repos: []
+  tables: []

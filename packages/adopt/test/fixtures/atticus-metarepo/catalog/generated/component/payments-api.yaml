@@ -1,0 +1,12 @@
+schemaVersion: 2
+kind: Component
+id: payments-api
+status: current
+confidence: verified
+evidence:
+  - source: config
+    repo: payments-api
+    path: pom.xml
+system: payments
+repo: payments-api
+type: spring-boot

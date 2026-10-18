@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.com/price.schema.json",
+  "title": "Price",
+  "type": "object",
+  "required": ["sku", "amount", "currency"],
+  "properties": {
+    "sku": { "type": "string" },
+    "amount": { "type": "integer" },
+    "currency": { "type": "string" }
+  }
+}

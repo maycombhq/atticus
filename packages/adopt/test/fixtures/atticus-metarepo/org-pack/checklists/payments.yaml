@@ -1,0 +1,17 @@
+schemaVersion: 1
+name: payments
+version: 1.0.0
+description: Rules the payments team applies to every change that touches card data.
+rules:
+  - id: payments-vendor-operation-known
+    title: Every vendor call names a documented operation
+    layer: team
+    lens: architecture
+    appliesTo:
+      artifacts: [interfaces]
+    severity: blocking
+    check:
+      type: deterministic
+      check: vendor-operation-known
+    waivable: true
+    source: payments design standard 3.1

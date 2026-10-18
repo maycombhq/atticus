@@ -1,0 +1,23 @@
+openapi: 3.0.3
+info:
+  title: Pricing API
+  version: 2.0.0
+paths:
+  /prices/{sku}:
+    get:
+      operationId: getPrice
+      parameters:
+        - name: sku
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The price
+  /prices:
+    post:
+      operationId: setPrice
+      responses:
+        "204":
+          description: Stored

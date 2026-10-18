@@ -1,0 +1,8 @@
+schemaVersion: 1
+platform: payments
+repos:
+  - id: payments-api
+    url: https://git.example.com/payments/payments-api.git
+    type: spring-boot
+    owner: team-payments
+    system: payments
