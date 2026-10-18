@@ -11,6 +11,7 @@ import {
   workspaceSync,
 } from "./workspace-commands.js";
 import { catalogDiff, scanCommand } from "./scan-commands.js";
+import { impactCommand, indexRebuild, queryCommand } from "./index-commands.js";
 
 export const VERSION = "0.0.1";
 
@@ -26,6 +27,11 @@ Usage:
           [--full]                     Ignore the scan cache
           [--dry-run]                  Show what would change; write nothing
           [--json]                     Print the result as JSON
+  atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
+          [--limit n] [--json]         (see docs/query-language.md)
+  atticus impact <id>                  What a change to a record reaches, with owners and open questions
+          [--depth n] [--json]
+  atticus index rebuild                Rebuild the local index from the catalog files
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
@@ -43,6 +49,12 @@ Usage:
 
 More commands arrive as the build progresses; see the plan's command reference.`;
 
+/** A positive whole number from an option, or undefined. */
+function num(v: unknown): number | undefined {
+  const n = typeof v === "string" ? Number(v) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
 /** Run the CLI. Returns the process exit code: 0 ok, 1 problems found, 2 usage error. */
 export async function main(argv: string[], io: Output): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -59,6 +71,8 @@ export async function main(argv: string[], io: Output): Promise<number> {
       full: { type: "boolean" },
       "dry-run": { type: "boolean" },
       json: { type: "boolean" },
+      limit: { type: "string" },
+      depth: { type: "string" },
     },
     strict: false,
   });
@@ -115,6 +129,31 @@ export async function main(argv: string[], io: Output): Promise<number> {
       },
       io,
     );
+  if (group === "query") {
+    if (!command) {
+      io.err('query needs a query, for example: atticus query "kind:interface via:gateway"');
+      return 2;
+    }
+    return queryCommand(
+      root,
+      command,
+      { json: values.json === true, ...(num(values.limit) ? { limit: num(values.limit)! } : {}) },
+      io,
+    );
+  }
+  if (group === "impact") {
+    if (!command) {
+      io.err("impact needs a record id, for example: atticus impact ledger-db.entry");
+      return 2;
+    }
+    return impactCommand(
+      root,
+      command,
+      { json: values.json === true, ...(num(values.depth) ? { depth: num(values.depth)! } : {}) },
+      io,
+    );
+  }
+  if (group === "index" && command === "rebuild") return indexRebuild(root, io);
   if (group === "orgpack" && command === "validate")
     return orgPackValidate(arg ? resolve(arg) : join(root, "org-pack"), io);
   if (group === "handoff" && command === "done") {

@@ -30,6 +30,6 @@ Rules for every contributor and every AI coding session (Claude Code, Copilot or
 
 ## Conventions
 
-- TypeScript, ESM, Node 22.12+. pnpm workspaces with Turborepo. Vitest. zod is the schema source of truth; JSON Schema is generated from it.
+- TypeScript, ESM, Node 22.13+ (ADR 0018). pnpm workspaces with Turborepo. Vitest. zod is the schema source of truth; JSON Schema is generated from it.
 - Record files are canonical YAML (`serializeRecord`), one file per record at `<kind>/<id>.yaml`.
 - Branches: `change/<change-id>` per code repo, `task/<change-id>/<task-id>` for AI task runs, `handoff/<change-id>/<phase>` for hand-off PRs in a metarepo.

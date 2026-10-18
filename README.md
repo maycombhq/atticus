@@ -30,6 +30,7 @@ packages/
   ai/                AI runtime (C5): context packs, hand-off, model, mock and replay runtimes
   extractors/        built-in extractors and the dialect rule engine
   scanner/           the estate scan: merge, catalog files and diffs
+  index/             local SQLite index, query language, graph and impact
   synth/             synthetic estate generator for scale tests
   cli/               the `atticus` command
   fixtures/          tests that keep the Forge fixture consistent
@@ -39,7 +40,7 @@ docs/adr/            architecture decision records
 
 ## Try it
 
-Requires Node.js 22.12 or newer and Git.
+Requires Node.js 22.13 or newer and Git.
 
 ```bash
 corepack enable

@@ -56,6 +56,9 @@ importers:
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+      '@maycombhq/index':
+        specifier: workspace:*
+        version: link:../index
       '@maycombhq/openspec-adapter':
         specifier: workspace:*
         version: link:../openspec-adapter
@@ -106,6 +109,16 @@ importers:
       '@maycombhq/workspace':
         specifier: workspace:*
         version: link:../workspace
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
+  packages/index:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
