@@ -1,0 +1,23 @@
+asyncapi: 2.6.0
+info:
+  title: Payments events
+  version: 1.0.0
+channels:
+  payments.initiated:
+    subscribe:
+      operationId: onPaymentInitiated
+      message:
+        name: PaymentInitiated
+  transfers.completed:
+    publish:
+      operationId: transferCompleted
+      message:
+        name: TransferCompleted
+  audit.events:
+    description: Read and written by this service.
+    publish:
+      message:
+        name: AuditIn
+    subscribe:
+      message:
+        name: AuditOut

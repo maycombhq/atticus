@@ -1,0 +1,17 @@
+groups:
+  - name: ledger-api
+    rules:
+      - record: job:ledger_http_requests:rate5m
+        expr: sum by (job) (rate(http_requests_total{service="ledger-api"}[5m]))
+      - alert: LedgerApiHighErrorRate
+        expr: rate(http_errors_total{service="ledger-api"}[5m]) > 0.05
+        for: 10m
+        labels:
+          severity: page
+          service: ledger-api
+        annotations:
+          runbook_url: https://wiki.forge.example/runbooks/ledger-errors
+      - alert: PortalBffLatency
+        expr: histogram_quantile(0.99, rate(http_duration_bucket{service="portal-bff"}[5m])) > 2
+        labels:
+          component: portal-bff

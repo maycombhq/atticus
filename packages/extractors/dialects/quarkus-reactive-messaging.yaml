@@ -1,0 +1,146 @@
+# Quarkus / SmallRye Reactive Messaging channels as event loose ends. Shipped with Atticus (C2).
+#
+# @Outgoing methods and @Channel Emitter fields publish; @Incoming methods and @Channel
+# Multi/Publisher injections subscribe. A channel's topic is the channel name unless
+# mp.messaging.<incoming|outgoing>.<channel>.topic sets it. Templates can't look a config key up
+# by a matched name, so the config rules emit the same record id as the annotation rules: rules
+# run in id order, the config rules ("channel-topic-*") come first, and the scan keeps the first
+# record with an id, so a configured topic wins over the bare channel name.
+#
+# The component is the configured quarkus.application.name; a repo without one gives no records.
+schemaVersion: 1
+name: quarkus-reactive-messaging
+version: 1.0.0
+description: Reactive Messaging @Incoming, @Outgoing and @Channel as event publish and subscribe loose ends, with topics from mp.messaging config.
+extends: []
+appliesTo:
+  repoTypes: []
+layout:
+  sourceRoots: [src/main/java]
+  configFiles:
+    - "**/src/main/resources/application.properties"
+    - "**/src/main/resources/application.yaml"
+    - "**/src/main/resources/application.yml"
+rules:
+  - id: channel-topic-incoming
+    description: mp.messaging.incoming.<channel>.topic names the topic the incoming channel subscribes to.
+    match:
+      configKey: mp.messaging.incoming.*.topic
+      files:
+        - "**/src/main/resources/application.properties"
+        - "**/src/main/resources/application.yaml"
+        - "**/src/main/resources/application.yml"
+    emit:
+      kind: Unresolved
+      id: "${config:quarkus.application.name}.subscribe.${match.4 | slug}"
+      fields:
+        unresolvedKind: event-subscribe
+        raw: "${match.0}"
+        owner: "${config:quarkus.application.name}"
+      evidence: { source: config, side: callee }
+    confidence: inferred
+
+  - id: channel-topic-outgoing
+    description: mp.messaging.outgoing.<channel>.topic names the topic the outgoing channel publishes to.
+    match:
+      configKey: mp.messaging.outgoing.*.topic
+      files:
+        - "**/src/main/resources/application.properties"
+        - "**/src/main/resources/application.yaml"
+        - "**/src/main/resources/application.yml"
+    emit:
+      kind: Unresolved
+      id: "${config:quarkus.application.name}.publish.${match.4 | slug}"
+      fields:
+        unresolvedKind: event-publish
+        raw: "${match.0}"
+        owner: "${config:quarkus.application.name}"
+      evidence: { source: config, side: caller }
+    confidence: inferred
+
+  - id: emitter-channel
+    description: A @Channel Emitter (or MutinyEmitter) field publishes to the channel.
+    match:
+      regex: '@Channel\(\s*"([^"]+)"\s*\)(?:\s*@[\w.]+(?:\([^)]*\))?)*\s*(?:(?:public|protected|private|static|final|synchronized|abstract|default)\s+)*(?:Mutiny)?Emitter\s*<'
+      files: ["**/src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${config:quarkus.application.name}.publish.${match.1 | slug}"
+      fields:
+        unresolvedKind: event-publish
+        raw: "${match.1}"
+        owner: "${config:quarkus.application.name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: incoming
+    description: An @Incoming method subscribes to the channel.
+    match: { annotation: Incoming, target: method, files: ["**/src/main/java/**/*.java"] }
+    emit:
+      kind: Unresolved
+      id: "${config:quarkus.application.name}.subscribe.${attr.value | slug}"
+      fields:
+        unresolvedKind: event-subscribe
+        raw: "${attr.value}"
+        owner: "${config:quarkus.application.name}"
+      evidence: { source: code, side: callee }
+    confidence: inferred
+
+  - id: outgoing
+    description: An @Outgoing method publishes to the channel.
+    match: { annotation: Outgoing, target: method, files: ["**/src/main/java/**/*.java"] }
+    emit:
+      kind: Unresolved
+      id: "${config:quarkus.application.name}.publish.${attr.value | slug}"
+      fields:
+        unresolvedKind: event-publish
+        raw: "${attr.value}"
+        owner: "${config:quarkus.application.name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: stream-channel
+    description: A @Channel Multi or Publisher injection consumes the channel.
+    match:
+      regex: '@Channel\(\s*"([^"]+)"\s*\)(?:\s*@[\w.]+(?:\([^)]*\))?)*\s*(?:(?:public|protected|private|static|final|synchronized|abstract|default)\s+)*(?:Multi|Publisher|Flow\.Publisher)\s*<'
+      files: ["**/src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${config:quarkus.application.name}.subscribe.${match.1 | slug}"
+      fields:
+        unresolvedKind: event-subscribe
+        raw: "${match.1}"
+        owner: "${config:quarkus.application.name}"
+      evidence: { source: code, side: callee }
+    confidence: inferred
+
+tests:
+  - name: channels and configured topics in fraud-service
+    fixture: ../test/fixtures/dialects/quarkus-reactive-messaging/fraud-service
+    expect:
+      - kind: Unresolved
+        id: fraud-service.subscribe.payments-in
+        unresolvedKind: event-subscribe
+        raw: payments.initiated
+        owner: fraud-service
+      - kind: Unresolved
+        id: fraud-service.publish.fraud-scores
+        unresolvedKind: event-publish
+        raw: fraud-scores
+      - kind: Unresolved
+        id: fraud-service.publish.alerts
+        unresolvedKind: event-publish
+        raw: alerts
+      - kind: Unresolved
+        id: fraud-service.subscribe.audit-stream
+        unresolvedKind: event-subscribe
+        raw: audit-stream
+    absent: [fraud-service.publish.audit-stream]
+  - name: without quarkus.application.name nothing is emitted
+    files:
+      src/main/java/x/Scorer.java: |
+        public class Scorer {
+            @Incoming("payments")
+            public void score(Payment p) {}
+        }
+    expect: []

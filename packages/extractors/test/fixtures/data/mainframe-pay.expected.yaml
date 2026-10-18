@@ -1,0 +1,101 @@
+# Hand-written: mainframe extractor output for fixtures/data/mainframe-pay (component pay-batch).
+# JCL: one batch-job Endpoint per EXEC PGM step; datasets as db-access loose ends
+# (DISP=SHR read; NEW, MOD and OLD write; temporary && datasets, SYSOUT and JOBLIB skipped).
+# The EXEC of a catalogued procedure (STEP030) is not expanded and gives nothing.
+- kind: Endpoint
+  id: pay-batch.batch-job.paydaily.step010
+  confidence: verified
+  component: pay-batch
+  endpointType: batch-job
+  pathOrTopic: PAYDAILY.STEP010.PAYEXTR
+  schemaRefs: []
+  evidence: [{ source: code, path: jcl/PAYDAILY.jcl, line: 4, side: definition }]
+- kind: Endpoint
+  id: pay-batch.batch-job.paydaily.step020
+  confidence: verified
+  component: pay-batch
+  endpointType: batch-job
+  pathOrTopic: PAYDAILY.STEP020.PAYCALC
+  schemaRefs: []
+  evidence: [{ source: code, path: jcl/PAYDAILY.jcl, line: 10, side: definition }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: db-access
+  raw: read FORGE.PAY.TIMECARD
+  owner: pay-batch
+  evidence: [{ source: code, path: jcl/PAYDAILY.jcl, line: 5, side: caller }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: db-access
+  raw: write FORGE.PAY.EXTRACT
+  owner: pay-batch
+  evidence: [{ source: code, path: jcl/PAYDAILY.jcl, line: 6, side: caller }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: db-access
+  raw: read FORGE.PAY.EXTRACT
+  owner: pay-batch
+  evidence: [{ source: code, path: jcl/PAYDAILY.jcl, line: 11, side: caller }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: db-access
+  raw: write FORGE.PAY.LEDGER
+  owner: pay-batch
+  evidence: [{ source: code, path: jcl/PAYDAILY.jcl, line: 12, side: caller }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: db-access
+  raw: write FORGE.PAY.MASTER
+  owner: pay-batch
+  evidence: [{ source: code, path: jcl/PAYDAILY.jcl, line: 13, side: caller }]
+
+# ---- copybooks: one Schema per 01 record (or per member when there is no 01 level)
+- kind: Schema
+  id: pay-batch.copybook.pay-master-rec
+  confidence: verified
+  format: other
+  ref: "copybooks/PAYREC.cpy#PAY-MASTER-REC"
+  fields:
+    - { name: EMP-ID, type: X(8) }
+    - { name: LAST-NAME, type: X(20) }
+    - { name: FIRST-NAME, type: X(15) }
+    - { name: GROSS-PAY, type: S9(7)V99 COMP-3 }
+    - { name: PAY-STATUS, type: X }
+    - { name: DEDUCTION-AMT, type: S9(5)V99 COMP-3 OCCURS 5 }
+  evidence: [{ source: code, path: copybooks/PAYREC.cpy, line: 2 }]
+- kind: Schema
+  id: pay-batch.copybook.raterec
+  confidence: verified
+  format: other
+  ref: copybooks/RATEREC.cpy
+  fields:
+    - { name: RATE-CODE, type: X(4) }
+    - { name: RATE-AMOUNT, type: 9(3)V9(4) COMP }
+    - { name: RATE-DESC, type: X(30) }
+  evidence: [{ source: code, path: copybooks/RATEREC.cpy, line: 2 }]
+
+# ---- CICS: a transaction has no C1 endpoint type, so it is a Setting naming its program;
+#      a server URIMAP is a REST endpoint; a client URIMAP is an outbound HTTP call.
+- kind: Setting
+  id: pay-batch.cics.transaction.payq
+  confidence: verified
+  component: pay-batch
+  settingKind: config
+  key: cics.transaction.PAYQ
+  valueOrRef: PAYINQ
+  evidence: [{ source: config, path: csd/PAYCSD.csd, line: 2 }]
+- kind: Endpoint
+  id: pay-batch.urimap.payuri
+  confidence: verified
+  component: pay-batch
+  endpointType: rest
+  pathOrTopic: /pay/v1/enquiries/*
+  normalizedPath: /pay/v1/enquiries/*
+  schemaRefs: []
+  evidence: [{ source: config, path: csd/PAYCSD.csd, line: 5, side: definition }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: http-call
+  raw: ANY http://rates.forge.example/rates
+  owner: pay-batch
+  evidence: [{ source: config, path: csd/PAYCSD.csd, line: 7, side: caller }]

@@ -1,0 +1,12 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ledger-db
+spec:
+  groups:
+    - name: ledger-db
+      rules:
+        - alert: LedgerApiDbConnectionsExhausted
+          expr: hikaricp_connections_pending{service="ledger-api"} > 5
+          labels:
+            service: ledger-api

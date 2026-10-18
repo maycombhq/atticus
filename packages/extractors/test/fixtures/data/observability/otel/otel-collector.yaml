@@ -1,0 +1,18 @@
+receivers:
+  otlp:
+    protocols:
+      grpc: {}
+exporters:
+  otlphttp:
+    endpoint: https://traces.forge.example
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp]
+    metrics/app:
+      receivers: [otlp]
+      exporters: [otlphttp]
+    logs:
+      receivers: [otlp]
+      exporters: [otlphttp]

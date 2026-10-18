@@ -1,0 +1,9 @@
+{
+  "asyncapi": "2.4.0",
+  "info": { "title": "Statements", "version": "1.0.0" },
+  "channels": {
+    "statements.ready": {
+      "subscribe": { "message": { "name": "StatementReady" } }
+    }
+  }
+}

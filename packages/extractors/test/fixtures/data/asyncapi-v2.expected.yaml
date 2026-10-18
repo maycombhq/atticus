@@ -1,0 +1,52 @@
+# Hand-written: asyncapi extractor output for fixtures/data/asyncapi-v2 (component payments-api).
+# AsyncAPI 2 operations are from the client's view: `subscribe` means clients receive, so this
+# service publishes; `publish` means clients send, so this service subscribes.
+# Unresolved ids are hashes, so they are checked by shape, not listed here.
+- kind: Endpoint
+  id: topic.payments-initiated
+  confidence: verified
+  component: payments-api
+  endpointType: event-topic
+  pathOrTopic: payments.initiated
+  schemaRefs: []
+  evidence: [{ source: spec, path: asyncapi.yaml, line: 6, side: definition }]
+- kind: Endpoint
+  id: topic.transfers-completed
+  confidence: verified
+  component: unknown
+  endpointType: event-topic
+  pathOrTopic: transfers.completed
+  schemaRefs: []
+  evidence: [{ source: spec, path: asyncapi.yaml, line: 11, side: definition }]
+- kind: Endpoint
+  id: topic.audit-events
+  confidence: verified
+  component: payments-api
+  endpointType: event-topic
+  pathOrTopic: audit.events
+  schemaRefs: []
+  evidence: [{ source: spec, path: asyncapi.yaml, line: 16, side: definition }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: event-publish
+  raw: payments.initiated
+  owner: payments-api
+  evidence: [{ source: spec, path: asyncapi.yaml, line: 7, side: definition }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: event-subscribe
+  raw: transfers.completed
+  owner: payments-api
+  evidence: [{ source: spec, path: asyncapi.yaml, line: 12, side: definition }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: event-subscribe
+  raw: audit.events
+  owner: payments-api
+  evidence: [{ source: spec, path: asyncapi.yaml, line: 18, side: definition }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: event-publish
+  raw: audit.events
+  owner: payments-api
+  evidence: [{ source: spec, path: asyncapi.yaml, line: 21, side: definition }]

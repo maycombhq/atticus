@@ -1,0 +1,7 @@
+micronaut:
+  application:
+    name: statements-service
+  http:
+    services:
+      ledger-api:
+        url: http://ledger-api.forge.internal

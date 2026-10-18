@@ -1,0 +1,148 @@
+# Hand-written: what the orm extractor must produce for fixtures/data/sqlalchemy-reports
+# (component reports-api, system reports). The pydantic model and test code give nothing.
+- kind: DataStore
+  id: reports-db
+  confidence: inferred
+  storeType: unknown
+  ownerComponent: reports-api
+  entitiesHeld: []
+  evidence: [{ source: code, path: app/models.py, line: 11 }]
+
+# ---- report
+- kind: Table
+  id: reports-db.report
+  confidence: inferred
+  dataStore: reports-db
+  name: report
+  tableKind: table
+  ownerComponent: reports-api
+  readers: [reports-api]
+  writers: [reports-api]
+  evidence: [{ source: code, path: app/models.py, line: 11 }]
+- kind: Column
+  id: reports-db.report.id
+  confidence: inferred
+  table: reports-db.report
+  name: id
+  type: Integer
+  nullable: false
+  evidence: [{ source: code, path: app/models.py, line: 17 }]
+- kind: Column
+  id: reports-db.report.title
+  confidence: inferred
+  table: reports-db.report
+  name: title
+  type: String(120)
+  nullable: false
+  evidence: [{ source: code, path: app/models.py, line: 18 }]
+- kind: Column
+  id: reports-db.report.period-code
+  confidence: inferred
+  table: reports-db.report
+  name: period_code
+  type: String(7)
+  evidence: [{ source: code, path: app/models.py, line: 19 }]
+- kind: Column
+  id: reports-db.report.owner-id
+  confidence: inferred
+  table: reports-db.report
+  name: owner_id
+  type: int
+  nullable: false
+  evidence: [{ source: code, path: app/models.py, line: 20 }]
+- kind: Column
+  id: reports-db.report.notes
+  confidence: inferred
+  table: reports-db.report
+  name: notes
+  type: str
+  nullable: true
+  evidence: [{ source: code, path: app/models.py, line: 21 }]
+- kind: IndexConstraint
+  id: reports-db.report.pk
+  confidence: inferred
+  table: reports-db.report
+  constraintKind: primary-key
+  columns: [id]
+  evidence: [{ source: code, path: app/models.py, line: 17 }]
+- kind: IndexConstraint
+  id: reports-db.report.ix-report-period-code
+  confidence: inferred
+  table: reports-db.report
+  constraintKind: index
+  columns: [period_code]
+  evidence: [{ source: code, path: app/models.py, line: 19 }]
+- kind: IndexConstraint
+  id: reports-db.report.uq-report-title-period
+  confidence: inferred
+  table: reports-db.report
+  constraintKind: unique
+  columns: [title, period_code]
+  evidence: [{ source: code, path: app/models.py, line: 14 }]
+- kind: IndexConstraint
+  id: reports-db.report.fk-owner
+  confidence: inferred
+  table: reports-db.report
+  constraintKind: foreign-key
+  columns: [owner_id]
+  references: { table: reports-db.owner, columns: [id] }
+  evidence: [{ source: code, path: app/models.py, line: 20 }]
+
+# ---- report_line
+- kind: Table
+  id: reports-db.report-line
+  confidence: inferred
+  dataStore: reports-db
+  name: report_line
+  tableKind: table
+  ownerComponent: reports-api
+  readers: [reports-api]
+  writers: [reports-api]
+  evidence: [{ source: code, path: app/models.py, line: 28 }]
+- kind: Column
+  id: reports-db.report-line.id
+  confidence: inferred
+  table: reports-db.report-line
+  name: id
+  type: int
+  nullable: false
+  evidence: [{ source: code, path: app/models.py, line: 31 }]
+- kind: Column
+  id: reports-db.report-line.report-id
+  confidence: inferred
+  table: reports-db.report-line
+  name: report_id
+  type: Integer
+  nullable: false
+  evidence: [{ source: code, path: app/models.py, line: 32 }]
+- kind: Column
+  id: reports-db.report-line.amount
+  confidence: inferred
+  table: reports-db.report-line
+  name: amount
+  type: Numeric(12, 2)
+  nullable: false
+  evidence: [{ source: code, path: app/models.py, line: 37 }]
+- kind: Column
+  id: reports-db.report-line.created-at
+  confidence: inferred
+  table: reports-db.report-line
+  name: created_at
+  type: DateTime
+  nullable: true
+  evidence: [{ source: code, path: app/models.py, line: 38 }]
+- kind: IndexConstraint
+  id: reports-db.report-line.pk
+  confidence: inferred
+  table: reports-db.report-line
+  constraintKind: primary-key
+  columns: [id]
+  evidence: [{ source: code, path: app/models.py, line: 31 }]
+- kind: IndexConstraint
+  id: reports-db.report-line.fk-report
+  confidence: inferred
+  table: reports-db.report-line
+  constraintKind: foreign-key
+  columns: [report_id]
+  references: { table: reports-db.report, columns: [id] }
+  evidence: [{ source: code, path: app/models.py, line: 32 }]

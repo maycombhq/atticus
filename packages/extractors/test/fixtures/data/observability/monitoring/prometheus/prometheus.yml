@@ -1,0 +1,7 @@
+# Scrape configuration: not rules, nothing to catalogue.
+global:
+  scrape_interval: 30s
+scrape_configs:
+  - job_name: ledger-api
+    static_configs:
+      - targets: ["ledger-api:8080"]

@@ -1,0 +1,191 @@
+# Hand-written: what the orm extractor must produce for fixtures/data/prisma-portal
+# (component portal-api, system portal). Index names follow Prisma's defaults unless mapped.
+- kind: DataStore
+  id: portal-db
+  confidence: inferred
+  storeType: postgresql
+  ownerComponent: portal-api
+  entitiesHeld: []
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 2 }]
+
+# ---- users (@@map)
+- kind: Table
+  id: portal-db.users
+  confidence: inferred
+  dataStore: portal-db
+  name: users
+  tableKind: table
+  ownerComponent: portal-api
+  readers: [portal-api]
+  writers: [portal-api]
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 16 }]
+- kind: Column
+  id: portal-db.users.id
+  confidence: inferred
+  table: portal-db.users
+  name: id
+  type: Int
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 17 }]
+- kind: Column
+  id: portal-db.users.email
+  confidence: inferred
+  table: portal-db.users
+  name: email
+  type: String
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 18 }]
+- kind: Column
+  id: portal-db.users.name
+  confidence: inferred
+  table: portal-db.users
+  name: name
+  type: String
+  nullable: true
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 19 }]
+- kind: Column
+  id: portal-db.users.role
+  confidence: inferred
+  table: portal-db.users
+  name: role
+  type: Role
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 20 }]
+- kind: Column
+  id: portal-db.users.created-at
+  confidence: inferred
+  table: portal-db.users
+  name: created_at
+  type: DateTime
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 21 }]
+- kind: IndexConstraint
+  id: portal-db.users.pk
+  confidence: inferred
+  table: portal-db.users
+  constraintKind: primary-key
+  columns: [id]
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 17 }]
+- kind: IndexConstraint
+  id: portal-db.users.users-email-key
+  confidence: inferred
+  table: portal-db.users
+  constraintKind: unique
+  columns: [email]
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 18 }]
+
+# ---- sessions (@map on fields, @relation, @@index)
+- kind: Table
+  id: portal-db.sessions
+  confidence: inferred
+  dataStore: portal-db
+  name: sessions
+  tableKind: table
+  ownerComponent: portal-api
+  readers: [portal-api]
+  writers: [portal-api]
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 27 }]
+- kind: Column
+  id: portal-db.sessions.id
+  confidence: inferred
+  table: portal-db.sessions
+  name: id
+  type: String
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 28 }]
+- kind: Column
+  id: portal-db.sessions.user-id
+  confidence: inferred
+  table: portal-db.sessions
+  name: user_id
+  type: Int
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 29 }]
+- kind: Column
+  id: portal-db.sessions.token
+  confidence: inferred
+  table: portal-db.sessions
+  name: token
+  type: VarChar(200)
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 30 }]
+- kind: Column
+  id: portal-db.sessions.expires-at
+  confidence: inferred
+  table: portal-db.sessions
+  name: expires_at
+  type: DateTime
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 31 }]
+- kind: IndexConstraint
+  id: portal-db.sessions.pk
+  confidence: inferred
+  table: portal-db.sessions
+  constraintKind: primary-key
+  columns: [id]
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 28 }]
+- kind: IndexConstraint
+  id: portal-db.sessions.fk-users
+  confidence: inferred
+  table: portal-db.sessions
+  constraintKind: foreign-key
+  columns: [user_id]
+  references: { table: portal-db.users, columns: [id] }
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 32 }]
+- kind: IndexConstraint
+  id: portal-db.sessions.sessions-user-id-expires-at-idx
+  confidence: inferred
+  table: portal-db.sessions
+  constraintKind: index
+  columns: [user_id, expires_at]
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 34 }]
+
+# ---- AuditMark (no @@map: the model name; composite @@id; mapped @@unique)
+- kind: Table
+  id: portal-db.auditmark
+  confidence: inferred
+  dataStore: portal-db
+  name: AuditMark
+  tableKind: table
+  ownerComponent: portal-api
+  readers: [portal-api]
+  writers: [portal-api]
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 38 }]
+- kind: Column
+  id: portal-db.auditmark.tenant
+  confidence: inferred
+  table: portal-db.auditmark
+  name: tenant
+  type: String
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 39 }]
+- kind: Column
+  id: portal-db.auditmark.seq
+  confidence: inferred
+  table: portal-db.auditmark
+  name: seq
+  type: Int
+  nullable: false
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 40 }]
+- kind: Column
+  id: portal-db.auditmark.note
+  confidence: inferred
+  table: portal-db.auditmark
+  name: note
+  type: Text
+  nullable: true
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 41 }]
+- kind: IndexConstraint
+  id: portal-db.auditmark.pk
+  confidence: inferred
+  table: portal-db.auditmark
+  constraintKind: primary-key
+  columns: [tenant, seq]
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 43 }]
+- kind: IndexConstraint
+  id: portal-db.auditmark.audit-note-uq
+  confidence: inferred
+  table: portal-db.auditmark
+  constraintKind: unique
+  columns: [note]
+  evidence: [{ source: code, path: prisma/schema.prisma, line: 44 }]

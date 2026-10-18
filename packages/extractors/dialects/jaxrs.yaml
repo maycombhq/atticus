@@ -1,0 +1,155 @@
+# JAX-RS (Jakarta REST) resources and MicroProfile REST clients. Shipped with Atticus (C2).
+#
+# A JAX-RS endpoint is a class-level @Path, a method-level @Path and an HTTP-method
+# annotation that sit side by side, in either order. Annotation matches only see the matched
+# annotation and the enclosing class, so these rules use regular expressions with lookbehinds
+# for the class (groups are numbered as they appear, lookbehinds included).
+#
+# Limits, by design: the component is the repo id (C2 has no template value for the manifest's
+# component); @ApplicationPath prefixes and sub-resource locators are not followed; a client's
+# host is its configKey (the usual convention is to name the target service), because a
+# template can't look a config key up by a name it has just matched. normalizedPath is left to
+# merge, which derives it from pathOrTopic.
+schemaVersion: 1
+name: jaxrs
+version: 1.0.0
+description: JAX-RS resource methods as REST endpoints, and MicroProfile REST client methods as HTTP calls.
+extends: []
+appliesTo:
+  repoTypes: []
+layout:
+  sourceRoots: [src/main/java]
+  configFiles: []
+rules:
+  - id: resource-method
+    description: >-
+      A method with an HTTP-method annotation and its own @Path, in a class with a @Path that
+      is not a @RegisterRestClient interface, serves the class path joined with the method path.
+    match:
+      regex: '(?=@(?:Path|GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)(?<!@RegisterRestClient[\s\S]*)(?<=@Path\(\s*"/?([^"]*?)/?"\s*\)\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:(?:public|abstract|final)\s+)*class\s+(\w+)\b[\s\S]*)(?:@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b(?:\s*@(?!Path\b)[\w.]+(?:\([^)]*\))?)*\s*@Path\(\s*"/?([^"]*?)/?"\s*\)|@Path\(\s*"/?([^"]*?)/?"\s*\)(?:\s*@(?!(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)[\w.]+(?:\([^)]*\))?)*\s*@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)(?:\s*@[\w.]+(?:\([^)]*\))?)*\s*(?:(?:public|protected|private|static|final|synchronized|abstract|default)\s+)*[\w.$]+(?:<[^;{}()]*>)?(?:\[\])*\s+(\w+)\s*\('
+      files: ["**/src/main/java/**/*.java"]
+    emit:
+      kind: Endpoint
+      id: "${repo.name}.${match.2 | slug}.${match.3 | lower}${match.6 | lower}-${match.7 | slug}"
+      fields:
+        component: "${repo.name}"
+        endpointType: rest
+        method: "${match.3}${match.6}"
+        pathOrTopic: "/${match.1}/${match.4}${match.5}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: resource-method-without-path
+    description: >-
+      A method with an HTTP-method annotation and no @Path of its own, in a class with a @Path,
+      serves the class path.
+    match:
+      regex: '(?=@(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)(?<!@RegisterRestClient[\s\S]*)(?<=@Path\(\s*"/?([^"]*?)/?"\s*\)\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:(?:public|abstract|final)\s+)*class\s+(\w+)\b[\s\S]*)(?<!@Path\([^)]*\)(?:\s*@[\w.]+(?:\([^)]*\))?)*\s*)@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b(?:\s*@(?!Path\b)[\w.]+(?:\([^)]*\))?)*\s*(?=[^@\s])(?:(?:public|protected|private|static|final|synchronized|abstract|default)\s+)*[\w.$]+(?:<[^;{}()]*>)?(?:\[\])*\s+(\w+)\s*\('
+      files: ["**/src/main/java/**/*.java"]
+    emit:
+      kind: Endpoint
+      id: "${repo.name}.${match.2 | slug}.${match.3 | lower}-${match.4 | slug}"
+      fields:
+        component: "${repo.name}"
+        endpointType: rest
+        method: "${match.3}"
+        pathOrTopic: "/${match.1}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: rest-client-call
+    description: >-
+      A method with an HTTP-method annotation and a @Path in a @RegisterRestClient(configKey)
+      interface that has its own @Path calls http://<configKey>/<interface path>/<method path>.
+    match:
+      regex: '(?=@(?:Path|GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)(?<=@RegisterRestClient\([^)]*configKey\s*=\s*"([^"]+)"[^)]*\)\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:public\s+)?interface\s+(\w+)\b[\s\S]*)(?<=@Path\(\s*"/?([^"]*?)/?"\s*\)\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:public\s+)?interface\s[\s\S]*)(?:@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b(?:\s*@(?!Path\b)[\w.]+(?:\([^)]*\))?)*\s*@Path\(\s*"/?([^"]*?)/?"\s*\)|@Path\(\s*"/?([^"]*?)/?"\s*\)(?:\s*@(?!(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)[\w.]+(?:\([^)]*\))?)*\s*@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)(?:\s*@[\w.]+(?:\([^)]*\))?)*\s*(?:(?:public|protected|private|static|final|synchronized|abstract|default)\s+)*[\w.$]+(?:<[^;{}()]*>)?(?:\[\])*\s+(\w+)\s*\('
+      files: ["**/src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${repo.name}.call.${match.1 | slug}.${match.4 | lower}${match.7 | lower}-${match.8 | slug}"
+      fields:
+        unresolvedKind: http-call
+        raw: "${match.4}${match.7} http://${match.1}/${match.3}/${match.5}${match.6}"
+        owner: "${repo.name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: rest-client-call-without-interface-path
+    description: >-
+      The same in a @RegisterRestClient(configKey) interface with no @Path of its own: the call
+      goes to http://<configKey>/<method path>.
+    match:
+      regex: '(?=@(?:Path|GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)(?<=@RegisterRestClient\([^)]*configKey\s*=\s*"([^"]+)"[^)]*\)\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:public\s+)?interface\s+(\w+)\b[\s\S]*)(?<!@Path\(\s*"/?([^"]*?)/?"\s*\)\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:public\s+)?interface\s[\s\S]*)(?:@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b(?:\s*@(?!Path\b)[\w.]+(?:\([^)]*\))?)*\s*@Path\(\s*"/?([^"]*?)/?"\s*\)|@Path\(\s*"/?([^"]*?)/?"\s*\)(?:\s*@(?!(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)[\w.]+(?:\([^)]*\))?)*\s*@(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\b)(?:\s*@[\w.]+(?:\([^)]*\))?)*\s*(?:(?:public|protected|private|static|final|synchronized|abstract|default)\s+)*[\w.$]+(?:<[^;{}()]*>)?(?:\[\])*\s+(\w+)\s*\('
+      files: ["**/src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${repo.name}.call.${match.1 | slug}.${match.4 | lower}${match.7 | lower}-${match.8 | slug}"
+      fields:
+        unresolvedKind: http-call
+        raw: "${match.4}${match.7} http://${match.1}/${match.5}${match.6}"
+        owner: "${repo.name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+tests:
+  - name: resources and MicroProfile clients in accounts-service
+    fixture: ../test/fixtures/dialects/jaxrs/accounts-service
+    expect:
+      - kind: Endpoint
+        id: accounts-service.accountresource.get-list
+        component: accounts-service
+        method: GET
+        pathOrTopic: /accounts
+      - kind: Endpoint
+        id: accounts-service.accountresource.get-get
+        method: GET
+        pathOrTopic: /accounts/{id}
+      - kind: Endpoint
+        id: accounts-service.accountresource.post-placehold
+        method: POST
+        pathOrTopic: /accounts/{id}/holds
+      - kind: Endpoint
+        id: accounts-service.accountresource.delete-close
+        method: DELETE
+        pathOrTopic: /accounts/{id}
+      - kind: Endpoint
+        id: accounts-service.accountresource.put-rename
+        method: PUT
+        pathOrTopic: /accounts/{id}/owner
+      - kind: Endpoint
+        id: accounts-service.accountresource.get-count
+        method: GET
+        pathOrTopic: /accounts
+      - kind: Unresolved
+        id: accounts-service.call.ledger-api.get-balance
+        unresolvedKind: http-call
+        raw: GET http://ledger-api/ledger/v1/accounts/{id}/balance
+        owner: accounts-service
+      - kind: Unresolved
+        id: accounts-service.call.ledger-api.post-transfer
+        raw: POST http://ledger-api/ledger/v1/transfers
+      - kind: Unresolved
+        id: accounts-service.call.audit-svc.post-record
+        raw: POST http://audit-svc/audit/events
+    absent:
+      - accounts-service.ledgerclient.get-balance
+      - accounts-service.ledgerclient.post-transfer
+      - accounts-service.auditclient.post-record
+  - name: a class without a class-level @Path (a sub-resource) gives nothing
+    files:
+      src/main/java/x/HoldResource.java: |
+        public class HoldResource {
+            @GET
+            @Path("/{holdId}")
+            public Hold get(@PathParam("holdId") String holdId) { return null; }
+        }
+    expect: []
+  - name: test sources are not scanned
+    files:
+      src/test/java/x/FakeResource.java: |
+        @Path("/fake")
+        public class FakeResource {
+            @GET
+            public String get() { return ""; }
+        }
+    expect: []
