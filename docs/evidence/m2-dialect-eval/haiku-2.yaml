@@ -1,0 +1,314 @@
+schemaVersion: 1
+name: forge-messaging
+version: 0.1.0
+description: Forge Messaging apps consume queues and channels, publish to channels and call relay clients with annotations, and name themselves in messaging.yaml.
+extends: []
+appliesTo:
+  marker: messaging.yaml
+layout:
+  sourceRoots: [src/main/java]
+  configFiles: [src/main/resources/application.yml]
+rules:
+  - id: queue-consumer
+    description: A method annotated @QueueConsumer consumes a message queue, so the app serves an mq-queue endpoint.
+    match:
+      annotation: QueueConsumer
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Endpoint
+      id: "${yaml:messaging.yaml#app}.queue.${attr.queue | slug}"
+      fields:
+        component: "${yaml:messaging.yaml#app}"
+        endpointType: mq-queue
+        pathOrTopic: "${attr.queue}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: relay-call
+    description: A method annotated @RelayCall in a @RelayClient interface makes a direct, synchronous request to the service that the client targets.
+    match:
+      annotation: RelayCall
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Interface
+      fields:
+        from: "${yaml:messaging.yaml#app}"
+        to: "${annotation.RelayClient.target}"
+        via: direct
+        method: "${attr.verb | upper}"
+        normalizedPath: "${attr.route | normalizePath}"
+        sync: sync
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: emits
+    description: A method annotated @Emits publishes to a broker channel; the consumers are resolved later.
+    match:
+      annotation: Emits
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${yaml:messaging.yaml#app}.publish.${attr.channel | slug}"
+      fields:
+        unresolvedKind: event-publish
+        raw: "${attr.channel}"
+        owner: "${yaml:messaging.yaml#app}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: on-message
+    description: A method annotated @OnMessage consumes a broker channel; the producer is resolved later.
+    match:
+      annotation: OnMessage
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${yaml:messaging.yaml#app}.subscribe.${attr.channel | slug}"
+      fields:
+        unresolvedKind: event-subscribe
+        raw: "${attr.channel}"
+        owner: "${yaml:messaging.yaml#app}"
+      evidence: { source: code, side: callee }
+    confidence: inferred
+
+  - id: relay-client-timeout
+    description: A relay.clients.<client>.timeout key in application.yml is the timeout the app sets for calls to that relay client.
+    match:
+      configKey: relay.clients.*.timeout
+      files: [src/main/resources/application.yml]
+    emit:
+      kind: Setting
+      id: "${yaml:messaging.yaml#app}.${match.3 | slug}.timeout"
+      fields:
+        component: "${yaml:messaging.yaml#app}"
+        settingKind: timeout
+        key: "relay.clients.${match.3}.timeout"
+        valueOrRef: "${match.0}"
+      evidence: { source: config, side: definition }
+    confidence: verified
+
+tests:
+  - name: order-intake records
+    fixture: ../../repos/order-intake
+    expect:
+      - kind: Endpoint
+        id: order-intake.queue.orders.in
+        component: order-intake
+        endpointType: mq-queue
+        pathOrTopic: ORDERS.IN
+        confidence: verified
+      - kind: Interface
+        id: if-388dac6b99d62ee6
+        from: order-intake
+        to: inventory-api
+        via: direct
+        method: GET
+        normalizedPath: /stock/{}
+        sync: sync
+        confidence: inferred
+      - kind: Interface
+        id: if-39f6d71491016a72
+        from: order-intake
+        to: inventory-api
+        via: direct
+        method: POST
+        normalizedPath: /reservations
+        sync: sync
+        confidence: inferred
+      - kind: Unresolved
+        id: order-intake.publish.orders.received
+        unresolvedKind: event-publish
+        raw: orders.received
+        owner: order-intake
+        confidence: inferred
+      - kind: Unresolved
+        id: order-intake.subscribe.payments.settled
+        unresolvedKind: event-subscribe
+        raw: payments.settled
+        owner: order-intake
+        confidence: inferred
+      - kind: Setting
+        id: order-intake.inventory-api.timeout
+        component: order-intake
+        settingKind: timeout
+        key: relay.clients.inventory-api.timeout
+        valueOrRef: 2s
+        confidence: verified
+    absent:
+      - order-intake.publish.orders.audit
+      - order-intake.subscribe.test.orders
+      - order-intake.queue.orders.legacy
+
+  - name: inventory-sync records
+    fixture: ../../repos/inventory-sync
+    expect:
+      - kind: Endpoint
+        id: inventory-sync.queue.stock.adjust
+        component: inventory-sync
+        endpointType: mq-queue
+        pathOrTopic: STOCK.ADJUST
+        confidence: verified
+      - kind: Interface
+        id: if-444a80174d7113fb
+        from: inventory-sync
+        to: warehouse-gateway
+        via: direct
+        method: PUT
+        normalizedPath: /bins/{}
+        sync: sync
+        confidence: inferred
+      - kind: Interface
+        id: if-a335408ee3c9f01d
+        from: inventory-sync
+        to: warehouse-gateway
+        via: direct
+        method: GET
+        normalizedPath: /bins/{}/contents
+        sync: sync
+        confidence: inferred
+      - kind: Unresolved
+        id: inventory-sync.publish.stock.changed
+        unresolvedKind: event-publish
+        raw: stock.changed
+        owner: inventory-sync
+        confidence: inferred
+      - kind: Unresolved
+        id: inventory-sync.subscribe.orders.received
+        unresolvedKind: event-subscribe
+        raw: orders.received
+        owner: inventory-sync
+        confidence: inferred
+      - kind: Setting
+        id: inventory-sync.warehouse-gateway.timeout
+        component: inventory-sync
+        settingKind: timeout
+        key: relay.clients.warehouse-gateway.timeout
+        valueOrRef: 5000ms
+        confidence: verified
+    absent:
+      - inventory-sync.warehouse-gateway.retries
+      - inventory-sync.server.timeout
+
+  - name: notify-worker records
+    fixture: ../../repos/notify-worker
+    expect:
+      - kind: Endpoint
+        id: notify-worker.queue.notify.retry
+        component: notify-worker
+        endpointType: mq-queue
+        pathOrTopic: NOTIFY.RETRY
+        confidence: verified
+      - kind: Unresolved
+        id: notify-worker.publish.notifications.sent
+        unresolvedKind: event-publish
+        raw: notifications.sent
+        owner: notify-worker
+        confidence: inferred
+      - kind: Unresolved
+        id: notify-worker.subscribe.orders.received
+        unresolvedKind: event-subscribe
+        raw: orders.received
+        owner: notify-worker
+        confidence: inferred
+      - kind: Unresolved
+        id: notify-worker.subscribe.stock.changed
+        unresolvedKind: event-subscribe
+        raw: stock.changed
+        owner: notify-worker
+        confidence: inferred
+    absent:
+      - notify-worker.server.port
+      - notify-worker.mail.from
+
+  - name: a repo without messaging.yaml produces nothing
+    files:
+      src/main/java/x/Handlers.java: |
+        package x;
+        public class Handlers {
+          @QueueConsumer(queue = "ORDERS.IN")
+          public void onOrder(Object m) { }
+          @Emits(channel = "orders.received")
+          public Object accepted(Object m) { return m; }
+      src/main/resources/application.yml: |
+        relay:
+          clients:
+            inventory-api:
+              timeout: 2s
+    expect: []
+
+  - name: commented-out and test-only annotations produce nothing
+    files:
+      messaging.yaml: "app: edge\nsystem: edge\nbroker: forge-bus\n"
+      src/main/java/x/Handlers.java: |
+        package x;
+        public class Handlers {
+          // @Emits(channel = "orders.audit")
+          public void audit(Object m) { }
+        }
+      src/test/java/x/HandlersTest.java: |
+        package x;
+        public class HandlersTest {
+          @OnMessage(channel = "test.orders", group = "test")
+          public void captures(Object m) { }
+          @QueueConsumer(queue = "TEST.QUEUE")
+          public void consumes(Object m) { }
+        }
+    expect: []
+
+  - name: edge cases - lower-case verb, other path parameter styles, lower-case queue
+    files:
+      messaging.yaml: "app: edge\nsystem: edge\nbroker: forge-bus\n"
+      src/main/java/x/Client.java: |
+        package x;
+        @RelayClient(target = "svc-b")
+        public interface Client {
+          @RelayCall(route = "/a/:id/b?x=1", verb = "post")
+          void one(String id);
+          @RelayCall(verb = "get", route = "/c/${id}")
+          void two(String id);
+        }
+      src/main/java/x/Queues.java: |
+        package x;
+        public class Queues {
+          @QueueConsumer(concurrency = 2, queue = "orders.retry")
+          public void retry(Object m) { }
+        }
+    expect:
+      - kind: Endpoint
+        id: edge.queue.orders.retry
+        component: edge
+        endpointType: mq-queue
+        pathOrTopic: orders.retry
+      - kind: Interface
+        id: if-043a725fcb4a55f3
+        from: edge
+        to: svc-b
+        via: direct
+        method: POST
+        normalizedPath: /a/{}/b
+        sync: sync
+      - kind: Interface
+        id: if-e42be03a8e4784d8
+        from: edge
+        to: svc-b
+        via: direct
+        method: GET
+        normalizedPath: /c/{}
+        sync: sync
+
+  - name: near-miss config keys produce no settings
+    files:
+      messaging.yaml: "app: edge\nsystem: edge\nbroker: forge-bus\n"
+      src/main/resources/application.yml: |
+        relay:
+          server:
+            timeout: 30s
+          clients:
+            svc-b:
+              retries: 3
+              timeouts: 4s
+    expect: []

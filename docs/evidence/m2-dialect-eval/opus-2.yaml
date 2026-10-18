@@ -1,0 +1,339 @@
+# Dialect forge-messaging: teaches the Atticus scanner the Forge Messaging framework.
+schemaVersion: 1
+name: forge-messaging
+version: 0.1.0
+description: Forge Messaging apps name themselves in messaging.yaml, consume queues with @QueueConsumer, publish and subscribe to channels with @Emits and @OnMessage, call other services through @RelayClient interfaces of @RelayCall methods, and set relay client timeouts under relay.clients in application.yml.
+extends: []
+appliesTo:
+  repoTypes: []
+  marker: messaging.yaml
+layout:
+  sourceRoots: [src/main/java]
+  configFiles: [src/main/resources/application.yml]
+rules:
+  - id: queue-consumer
+    description: A method annotated @QueueConsumer consumes a message queue, so the app serves an mq-queue endpoint named by the queue attribute.
+    match:
+      annotation: QueueConsumer
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Endpoint
+      id: "${yaml:messaging.yaml#app}.queue.${attr.queue | slug}"
+      fields:
+        component: "${yaml:messaging.yaml#app}"
+        endpointType: mq-queue
+        pathOrTopic: "${attr.queue}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: relay-call
+    description: A method annotated @RelayCall in a @RelayClient interface makes a direct, synchronous request to the service the client targets.
+    match:
+      annotation: RelayCall
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Interface
+      fields:
+        from: "${yaml:messaging.yaml#app}"
+        to: "${annotation.RelayClient.target}"
+        via: direct
+        method: "${attr.verb | upper}"
+        normalizedPath: "${attr.route | normalizePath}"
+        sync: sync
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: emits
+    description: A method annotated @Emits publishes to a channel; the consumers are resolved later, so it is an event-publish loose end.
+    match:
+      annotation: Emits
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${yaml:messaging.yaml#app}.publish.${attr.channel | slug}"
+      fields:
+        unresolvedKind: event-publish
+        raw: "${attr.channel}"
+        owner: "${yaml:messaging.yaml#app}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: on-message
+    description: A method annotated @OnMessage consumes a channel; the producers are resolved later, so it is an event-subscribe loose end.
+    match:
+      annotation: OnMessage
+      target: method
+      files: ["src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${yaml:messaging.yaml#app}.subscribe.${attr.channel | slug}"
+      fields:
+        unresolvedKind: event-subscribe
+        raw: "${attr.channel}"
+        owner: "${yaml:messaging.yaml#app}"
+      evidence: { source: code, side: callee }
+    confidence: inferred
+
+  - id: relay-client-timeout
+    description: A relay.clients.<client>.timeout key in application.yml sets the timeout of the app's relay client for that service.
+    match:
+      configKey: relay.clients.*.timeout
+      files: [src/main/resources/application.yml]
+    emit:
+      kind: Setting
+      id: "${yaml:messaging.yaml#app}.${match.3 | slug}.timeout"
+      fields:
+        component: "${yaml:messaging.yaml#app}"
+        settingKind: timeout
+        key: "${match.1}.${match.2}.${match.3}.${match.4}"
+        valueOrRef: "${match.0}"
+      evidence: { source: config, side: definition }
+    confidence: verified
+
+tests:
+  - name: every kind in order-intake, without commented-out or test code
+    fixture: ../../repos/order-intake
+    expect:
+      - kind: Endpoint
+        id: order-intake.queue.orders.in
+        confidence: verified
+        component: order-intake
+        endpointType: mq-queue
+        pathOrTopic: ORDERS.IN
+      - kind: Interface
+        id: if-388dac6b99d62ee6
+        confidence: inferred
+        from: order-intake
+        to: inventory-api
+        via: direct
+        method: GET
+        normalizedPath: /stock/{}
+        sync: sync
+      - kind: Interface
+        id: if-39f6d71491016a72
+        confidence: inferred
+        from: order-intake
+        to: inventory-api
+        via: direct
+        method: POST
+        normalizedPath: /reservations
+        sync: sync
+      - kind: Unresolved
+        id: order-intake.publish.orders.received
+        confidence: inferred
+        unresolvedKind: event-publish
+        raw: orders.received
+        owner: order-intake
+      - kind: Unresolved
+        id: order-intake.subscribe.payments.settled
+        confidence: inferred
+        unresolvedKind: event-subscribe
+        raw: payments.settled
+        owner: order-intake
+      - kind: Setting
+        id: order-intake.inventory-api.timeout
+        confidence: verified
+        component: order-intake
+        settingKind: timeout
+        key: relay.clients.inventory-api.timeout
+        valueOrRef: 2s
+    absent:
+      - order-intake.publish.orders.audit
+      - order-intake.subscribe.test.orders
+      - order-intake.logging.level
+
+  - name: inventory-sync, with relay calls in another attribute order, a lower-case verb and a :param route
+    fixture: ../../repos/inventory-sync
+    expect:
+      - kind: Endpoint
+        id: inventory-sync.queue.stock.adjust
+        component: inventory-sync
+        endpointType: mq-queue
+        pathOrTopic: STOCK.ADJUST
+        confidence: verified
+      - kind: Interface
+        id: if-444a80174d7113fb
+        from: inventory-sync
+        to: warehouse-gateway
+        via: direct
+        method: PUT
+        normalizedPath: /bins/{}
+        sync: sync
+        confidence: inferred
+      - kind: Interface
+        id: if-a335408ee3c9f01d
+        from: inventory-sync
+        to: warehouse-gateway
+        via: direct
+        method: GET
+        normalizedPath: /bins/{}/contents
+        sync: sync
+        confidence: inferred
+      - kind: Unresolved
+        id: inventory-sync.publish.stock.changed
+        unresolvedKind: event-publish
+        raw: stock.changed
+        owner: inventory-sync
+      - kind: Unresolved
+        id: inventory-sync.subscribe.orders.received
+        unresolvedKind: event-subscribe
+        raw: orders.received
+        owner: inventory-sync
+      - kind: Setting
+        id: inventory-sync.warehouse-gateway.timeout
+        component: inventory-sync
+        settingKind: timeout
+        key: relay.clients.warehouse-gateway.timeout
+        valueOrRef: 5000ms
+        confidence: verified
+    absent:
+      - inventory-sync.warehouse-gateway.retries
+      - inventory-sync.server.timeout
+      - inventory-sync.relay.server.timeout
+
+  - name: notify-worker, an app with no relay clients and no client timeouts
+    fixture: ../../repos/notify-worker
+    expect:
+      - kind: Endpoint
+        id: notify-worker.queue.notify.retry
+        component: notify-worker
+        endpointType: mq-queue
+        pathOrTopic: NOTIFY.RETRY
+      - kind: Unresolved
+        id: notify-worker.publish.notifications.sent
+        unresolvedKind: event-publish
+        raw: notifications.sent
+        owner: notify-worker
+      - kind: Unresolved
+        id: notify-worker.subscribe.orders.received
+        unresolvedKind: event-subscribe
+        raw: orders.received
+        owner: notify-worker
+      - kind: Unresolved
+        id: notify-worker.subscribe.stock.changed
+        unresolvedKind: event-subscribe
+        raw: stock.changed
+        owner: notify-worker
+    absent:
+      - notify-worker.server.port
+      - notify-worker.relay.server.port
+
+  - name: a repo without messaging.yaml produces nothing
+    files:
+      src/main/java/x/Handlers.java: |
+        public class Handlers {
+          @QueueConsumer(queue = "JOBS.IN")
+          public void job(Object m) { }
+          @OnMessage(channel = "jobs.done", group = "x")
+          public void done(Object m) { }
+          @Emits(channel = "jobs.started")
+          public Object started(Object m) { return m; }
+        }
+      src/main/java/x/BillingClient.java: |
+        @RelayClient(target = "billing")
+        public interface BillingClient {
+          @RelayCall(verb = "GET", route = "/invoices/{id}")
+          Object invoice(String id);
+        }
+      src/main/resources/application.yml: |
+        relay:
+          clients:
+            billing:
+              timeout: 3s
+    expect: []
+
+  - name: queue names keep their case in pathOrTopic and are lower-cased in the id; lower-case verbs and other path styles are normalised
+    files:
+      messaging.yaml: "app: billing-worker\nsystem: billing\n"
+      src/main/java/b/Jobs.java: |
+        public class Jobs {
+          @QueueConsumer(concurrency = 2, queue = "Billing.Retry")
+          public void retry(Object m) { }
+        }
+      src/main/java/b/LedgerClient.java: |
+        @RelayClient(target = "ledger-core")
+        public interface LedgerClient {
+          @RelayCall(route = "/entries/<entryId>/lines/${lineId}?full=true", verb = "delete")
+          void drop(String entryId, String lineId);
+        }
+    expect:
+      - kind: Endpoint
+        id: billing-worker.queue.billing.retry
+        component: billing-worker
+        endpointType: mq-queue
+        pathOrTopic: Billing.Retry
+        confidence: verified
+      - kind: Interface
+        id: if-f0d8543d6ca3da08
+        from: billing-worker
+        to: ledger-core
+        via: direct
+        method: DELETE
+        normalizedPath: /entries/{}/lines/{}
+        sync: sync
+        confidence: inferred
+
+  - name: only relay.clients.<client>.timeout keys are settings
+    files:
+      messaging.yaml: "app: billing-worker\n"
+      src/main/resources/application.yml: |
+        relay:
+          server:
+            timeout: 30s
+          clients:
+            ledger-core:
+              timeout: 750ms
+              retries: 2
+            tax-api:
+              read-timeout: 1s
+        clients:
+          other:
+            timeout: 9s
+    expect:
+      - kind: Setting
+        id: billing-worker.ledger-core.timeout
+        component: billing-worker
+        settingKind: timeout
+        key: relay.clients.ledger-core.timeout
+        valueOrRef: 750ms
+        confidence: verified
+    absent:
+      - billing-worker.server.timeout
+      - billing-worker.ledger-core.retries
+      - billing-worker.tax-api.timeout
+      - billing-worker.tax-api.read-timeout
+      - billing-worker.other.timeout
+
+  - name: commented-out annotations and test code produce nothing
+    files:
+      messaging.yaml: "app: billing-worker\n"
+      src/main/java/b/Events.java: |
+        public class Events {
+          // @Emits(channel = "billing.audit")
+          public void audit(Object m) { }
+          /* @OnMessage(channel = "billing.old", group = "b")
+          public void old(Object m) { } */
+          @Emits(channel = "billing.closed")
+          public Object closed(Object m) { return m; }
+        }
+      src/test/java/b/EventsTest.java: |
+        public class EventsTest {
+          @OnMessage(channel = "billing.test", group = "t")
+          public void capture(Object m) { }
+          @QueueConsumer(queue = "TEST.Q")
+          public void q(Object m) { }
+        }
+    expect:
+      - kind: Unresolved
+        id: billing-worker.publish.billing.closed
+        unresolvedKind: event-publish
+        raw: billing.closed
+        owner: billing-worker
+    absent:
+      - billing-worker.publish.billing.audit
+      - billing-worker.subscribe.billing.old
+      - billing-worker.subscribe.billing.test
+      - billing-worker.queue.test.q

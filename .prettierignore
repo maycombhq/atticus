@@ -4,3 +4,4 @@ pnpm-lock.yaml
 packages/core/schema/
 fixtures/
 docs/api/
+docs/evidence/
