@@ -96,7 +96,18 @@ export function Markdown({ text }: { text: string }) {
   const out: ReactNode[] = [];
   let list: string[] = [];
   let table: string[] = [];
+  let para: string[] = [];
   const flush = () => {
+    if (para.length)
+      out.push(
+        <p
+          key={`p${out.length}`}
+          style={{ margin: "4px 0 8px", lineHeight: 1.6, color: "var(--text-2)" }}
+        >
+          {inline(para.join(" "))}
+        </p>,
+      );
+    para = [];
     if (list.length)
       out.push(
         <ul
@@ -206,15 +217,13 @@ export function Markdown({ text }: { text: string }) {
           {inline(h[2]!)}
         </div>,
       );
-    } else if (li) list.push(li[1]!);
-    else if (!line.trim() || /^<!--/.test(line)) flush();
+    } else if (li) {
+      if (para.length) flush();
+      list.push(li[1]!);
+    } else if (!line.trim() || /^<!--/.test(line)) flush();
     else {
-      flush();
-      out.push(
-        <p key={out.length} style={{ margin: "4px 0", lineHeight: 1.6, color: "var(--text-2)" }}>
-          {inline(line)}
-        </p>,
-      );
+      if (list.length) flush();
+      para.push(line.trim());
     }
   }
   flush();

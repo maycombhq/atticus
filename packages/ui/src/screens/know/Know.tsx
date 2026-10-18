@@ -11,6 +11,7 @@ interface Coverage {
     documentOnly: number;
     unknown: number;
     gaps: number;
+    areas: { area: string; state: string; records: string[] }[];
   }[];
   areas: {
     area: string;
@@ -23,9 +24,26 @@ interface Coverage {
 
 // ------------------------------------------------------------------ Ecosystem map
 
+interface Questions {
+  questions: {
+    id: string;
+    system?: string;
+    owner?: string;
+    question: string;
+    questionState?: string;
+  }[];
+}
+
+const CELL: Record<string, { bg: string; label: string }> = {
+  verified: { bg: "rgba(46,230,246,0.55)", label: "verified from code" },
+  "document-only": { bg: "rgba(255,181,71,0.45)", label: "from documents only" },
+  unknown: { bg: "rgba(255,255,255,0.05)", label: "unknown" },
+};
+
 export function EcosystemMap() {
   const graph = useApi<Graph>("/api/graph");
   const cov = useView<Coverage>("coverage");
+  const qs = useView<Questions>("questions");
   const [focus, setFocus] = useState<string | undefined>();
   return (
     <div className="bento">
@@ -96,11 +114,172 @@ export function EcosystemMap() {
           )}
         </View>
       </Panel>
+      <Panel title="What the catalog knows" span="span 8">
+        <View of={cov} empty={(c) => c.systems.length === 0} emptyText="No systems yet.">
+          {(c) => {
+            const areas = [...new Set(c.systems.flatMap((x) => x.areas.map((a) => a.area)))];
+            return (
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    borderCollapse: "separate",
+                    borderSpacing: 4,
+                    width: "100%",
+                    fontSize: 11,
+                  }}
+                >
+                  <caption className="sr">Coverage by system and area</caption>
+                  <thead>
+                    <tr>
+                      <th />
+                      {areas.map((a) => (
+                        <th
+                          key={a}
+                          className="hud"
+                          style={{ fontSize: 9.5, fontWeight: 400, textAlign: "center" }}
+                        >
+                          {a}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {c.systems.map((s) => (
+                      <tr key={s.system}>
+                        <th
+                          className="mono"
+                          style={{ textAlign: "left", fontWeight: 400, paddingRight: 8 }}
+                        >
+                          {s.system}
+                        </th>
+                        {areas.map((name) => {
+                          const a = s.areas.find((x) => x.area === name);
+                          if (!a)
+                            return (
+                              <td key={name} title={`${s.system} · ${name}: not expected`}>
+                                <span className="sr">not expected</span>
+                              </td>
+                            );
+                          const cell = CELL[a.state] ?? CELL.unknown!;
+                          return (
+                            <td
+                              key={a.area}
+                              title={`${s.system} · ${a.area}: ${cell.label}${a.records.length ? ` (${a.records.length})` : ""}`}
+                              style={{
+                                background: cell.bg,
+                                height: 26,
+                                borderRadius: 4,
+                                textAlign: "center",
+                                border: "1px solid rgba(255,255,255,0.06)",
+                              }}
+                            >
+                              <span className="sr">{cell.label}</span>
+                              {a.records.length ? (
+                                <span aria-hidden="true">{a.records.length}</span>
+                              ) : null}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="row" style={{ gap: 14, marginTop: 8, flexWrap: "wrap" }}>
+                  {Object.entries(CELL).map(([k, v]) => (
+                    <span key={k} className="row" style={{ gap: 6, fontSize: 11.5 }}>
+                      <span
+                        aria-hidden="true"
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: 3,
+                          background: v.bg,
+                          display: "inline-block",
+                        }}
+                      />
+                      {v.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            );
+          }}
+        </View>
+      </Panel>
+      <Panel
+        title="Questions for owners"
+        span="span 4"
+        meta={qs.state === "ready" ? qs.data.questions.length : undefined}
+      >
+        <View
+          of={qs}
+          empty={(q) => q.questions.length === 0}
+          emptyText="No open questions: every gap has an answer."
+        >
+          {(q) => (
+            <ul
+              style={{
+                listStyle: "none",
+                margin: 0,
+                padding: 0,
+                maxHeight: 300,
+                overflowY: "auto",
+              }}
+              className="stack"
+            >
+              {q.questions.slice(0, 12).map((x) => (
+                <li
+                  key={x.id}
+                  className="stack"
+                  style={{ gap: 2, paddingBottom: 6, borderBottom: "1px solid #18202A" }}
+                >
+                  <span style={{ fontSize: 12.5 }}>{x.question}</span>
+                  <span className="hud" style={{ fontSize: 9.5 }}>
+                    {x.system ?? ""}
+                    {x.owner ? ` · ask ${x.owner}` : " · owner unknown"}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </View>
+      </Panel>
     </div>
   );
 }
 
 // ------------------------------------------------------------------ Impact explorer
+
+/** The impact paths as a graph: the root in the middle, every hop an edge. */
+function blastGraph(d: Impact): Graph {
+  const nodes = new Map<string, Graph["nodes"][number]>();
+  const kindOf = new Map(d.affected.map((a) => [a.id, a.kind]));
+  const edges = new Map<string, Graph["edges"][number]>();
+  nodes.set(d.root, { id: d.root, kind: "Component", label: d.root, status: "current" });
+  for (const a of d.affected) {
+    nodes.set(a.id, { id: a.id, kind: a.kind, label: a.id, status: "current" });
+    for (let i = 1; i < a.path.length; i++) {
+      const from = a.path[i - 1]!;
+      const to = a.path[i]!;
+      if (!nodes.has(from))
+        nodes.set(from, {
+          id: from,
+          kind: kindOf.get(from) ?? "Component",
+          label: from,
+          status: "current",
+        });
+      edges.set(`${from}>${to}`, {
+        id: `${from}>${to}`,
+        from,
+        to,
+        via: "",
+        confidence: "verified",
+        status: "current",
+      });
+    }
+  }
+  return { nodes: [...nodes.values()], edges: [...edges.values()] };
+}
 
 interface Impact {
   root: string;
@@ -120,6 +299,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
   if (imp.state === "ready")
     for (const a of imp.data.affected)
       byHop.set(a.path.length - 1, (byHop.get(a.path.length - 1) ?? 0) + 1);
+  const blast: Graph | undefined = imp.state === "ready" ? blastGraph(imp.data) : undefined;
   return (
     <div className="bento">
       <Panel title="What breaks if this changes" span="1 / -1">
@@ -153,6 +333,15 @@ export function ImpactExplorer({ hash }: { hash: string }) {
       </Panel>
       {!q ? null : (
         <>
+          <Panel title={`Blast radius of ${q}`} kind="hero" span="span 9">
+            <View
+              of={imp}
+              empty={(d) => d.affected.length === 0}
+              emptyText="Nothing depends on it."
+            >
+              {() => <GraphView g={blast!} focus={q} height={380} />}
+            </View>
+          </Panel>
           <Panel title="Blast radius" span="span 3" kind="dark">
             <View of={imp}>
               {(d) => (
@@ -182,7 +371,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
               )}
             </View>
           </Panel>
-          <Panel title="Affected" span="span 6">
+          <Panel title="Affected" span="span 8">
             <View
               of={imp}
               empty={(d) => d.affected.length === 0}
@@ -199,14 +388,21 @@ export function ImpactExplorer({ hash }: { hash: string }) {
                     { label: "Why", cell: (a) => a.reason },
                     {
                       label: "Owner",
-                      cell: (a) => a.owner ?? <span className="chip warn">UNKNOWN</span>,
+                      cell: (a) =>
+                        a.owner ? (
+                          <span className="chip dim" style={{ whiteSpace: "nowrap" }}>
+                            {a.owner}
+                          </span>
+                        ) : (
+                          <span className="chip warn">UNKNOWN</span>
+                        ),
                     },
                   ]}
                 />
               )}
             </View>
           </Panel>
-          <Panel title="What would sharpen this" span="span 3">
+          <Panel title="What would sharpen this" span="span 4">
             <View
               of={imp}
               empty={(d) => d.gaps.length === 0}
@@ -253,6 +449,30 @@ interface FeatureShow {
   feature: Feature;
   system?: string;
   looseEnds: { kind: string; record: string; text: string }[];
+}
+
+function FeatureGraph({ records }: { records: string[] }) {
+  const g = useApi<Graph>("/api/graph");
+  const lit = new Set(records.flatMap((r) => [r, r.split(".")[0]!]));
+  return (
+    <View of={g} empty={(x) => x.nodes.length === 0} emptyText="">
+      {(x) => (
+        <div
+          style={{
+            border: "1px solid var(--line)",
+            borderRadius: 10,
+            background: "rgba(7,11,15,0.6)",
+          }}
+        >
+          <GraphView
+            g={x}
+            highlight={x.nodes.filter((n) => lit.has(n.id)).map((n) => n.id)}
+            height={300}
+          />
+        </div>
+      )}
+    </View>
+  );
 }
 
 export function Features({ hash }: { hash: string }) {
@@ -362,6 +582,7 @@ export function Features({ hash }: { hash: string }) {
                     ))}
                   </ul>
                 </div>
+                <FeatureGraph records={[...d.feature.records, ...d.feature.entryPoints]} />
                 <div>
                   <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
                     Records in the flow ({d.feature.records.length})
@@ -561,11 +782,106 @@ interface Triage {
   }[];
 }
 
+function TriageOptions(p: { item: string; options: { label: string }[]; done: () => void }) {
+  const act = useAction();
+  if (p.options.length === 0) return null;
+  return (
+    <div className="stack" style={{ gap: 4 }}>
+      <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+        {p.options.map((o, i) => (
+          <button
+            key={i}
+            type="button"
+            className="btn"
+            disabled={act.busy}
+            onClick={() =>
+              void act.run(
+                () =>
+                  api(`/api/triage/${encodeURIComponent(p.item)}/decide`, {
+                    method: "POST",
+                    body: { option: i + 1 },
+                  }).then(p.done),
+                `Decided: ${o.label}.`,
+              )
+            }
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <Note note={act.note} />
+    </div>
+  );
+}
+
+const DOC_COLOR: Record<string, string> = {
+  read: "#3DDC97",
+  "needs-reading": "#2EE6F6",
+  "no-reader": "#8F7BFF",
+  unresolved: "#FFB547",
+  duplicate: "#5B6B7A",
+  superseded: "#5B6B7A",
+  failed: "#FF4FA3",
+};
+
 export function IntakeScreen() {
   const intake = useView<Intake>("intake");
   const triage = useView<Triage>("triage");
+  const docs = intake.state === "ready" ? intake.data.documents : [];
+  const byStatus = [...new Set(docs.map((d) => d.status))];
+  const facts = docs.reduce((a, d) => a + d.records.length, 0);
   return (
     <div className="bento">
+      <Panel title="Files" span="span 3" kind="dark">
+        <View of={intake}>
+          {() => (
+            <div className="stack">
+              <span className="big">{docs.length}</span>
+              <span className="hud" style={{ fontSize: 10 }}>
+                files in inputs/
+              </span>
+            </div>
+          )}
+        </View>
+      </Panel>
+      <Panel title="Facts taken" span="span 2" kind="dark">
+        <span className="big">{facts}</span>
+      </Panel>
+      <Panel title="What happened to them" span="span 3">
+        <View of={intake} empty={() => docs.length === 0} emptyText="Nothing yet.">
+          {() => (
+            <Donut
+              title="Files by status"
+              parts={byStatus.map((st) => ({
+                label: st,
+                value: docs.filter((d) => d.status === st).length,
+                color: DOC_COLOR[st] ?? "#BFEFF7",
+              }))}
+            />
+          )}
+        </View>
+      </Panel>
+      <Panel title="Defences" span="span 4">
+        <View of={intake}>
+          {() => {
+            const flagged = docs.filter((d) => d.defences && d.defences.risk !== "cleared");
+            return flagged.length === 0 ? (
+              <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                Nothing hidden or aimed at an AI reader. Ingested content is data, never
+                instructions.
+              </p>
+            ) : (
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5 }}>
+                {flagged.map((d) => (
+                  <li key={d.path}>
+                    <span className="mono">{d.path}</span>: {d.defences!.reason}
+                  </li>
+                ))}
+              </ul>
+            );
+          }}
+        </View>
+      </Panel>
       <Panel title="Intake" span="span 8" meta="inputs/">
         <View
           of={intake}
@@ -629,18 +945,12 @@ export function IntakeScreen() {
                     {t.id} · {t.source.path}
                     {t.source.line ? `:${t.source.line}` : ""}
                   </span>
-                  {t.options.length > 0 && (
-                    <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
-                      {t.options.map((o, i) => (
-                        <li key={i}>{o.label}</li>
-                      ))}
-                    </ol>
-                  )}
+                  <TriageOptions item={t.id} options={t.options} done={() => triage.reload()} />
                 </div>
               ))}
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                Decide each with <span className="mono">atticus triage decide &lt;id&gt; …</span>;
-                code always wins over a document until a person decides.
+                Each choice is saved as a curated decision in your name. Code always wins over a
+                document until a person decides.
               </p>
             </div>
           )}

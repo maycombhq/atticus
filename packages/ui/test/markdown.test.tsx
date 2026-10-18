@@ -24,6 +24,13 @@ describe("the artifact Markdown view", () => {
     expect(out).toContain("&lt;script&gt;");
   });
 
+  it("joins a paragraph wrapped over several lines, and keeps lists after it in order", () => {
+    const out = html("Portal customers can send\nany amount in one day.\n- first\n- second");
+    expect(out).toContain("<p");
+    expect(out).toContain("Portal customers can send any amount in one day.");
+    expect(out.indexOf("any amount")).toBeLessThan(out.indexOf("<li>first"));
+  });
+
   it("keeps fenced code as code", () => {
     expect(html("```\nflowchart LR\n  a --> b\n```")).toContain("<pre");
   });

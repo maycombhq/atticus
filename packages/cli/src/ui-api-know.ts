@@ -1,3 +1,4 @@
+import { Api } from "@maycombhq/core";
 import { initiativeStatus, readView } from "@maycombhq/initiatives";
 import {
   badRequest,
@@ -82,6 +83,30 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
     return { code, text: out.join("\n"), problems: err };
   };
   return r
+    .add("POST", "/api/triage/{itemId}/decide", async ({ params, body }) => {
+      const b = Api.TriageDecideRequest.safeParse(body ?? {});
+      if (!b.success)
+        throw badRequest("Some fields aren't right.", {
+          errors: b.error.issues.map((i) => ({ path: i.path.join("."), message: i.message })),
+        });
+      const { triageDecide } = await import("./intake-commands.js");
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await triageDecide(
+        ctx.root,
+        params.itemId!,
+        b.data.option,
+        { by: ctx.user, ...(b.data.reason ? { reason: b.data.reason } : {}) },
+        { out: (l) => out.push(l), err: (l) => err.push(l) },
+      );
+      if (code !== 0) {
+        const detail = [...err, ...out].join("\n") || "Atticus refused.";
+        if (/There is no open triage item/.test(detail)) throw notFound(detail);
+        throw code === 2 ? badRequest(detail) : new HttpError(422, "Atticus refused", detail);
+      }
+      ctx.events.publish({ type: "file.changed", path: "catalog/curated" });
+      return { status: 200, body: { item: params.itemId, option: b.data.option, lines: out } };
+    })
     .add("GET", "/api/initiatives", async () => {
       const v = await readView(ctx.root);
       const body = [];

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useApi } from "../api/client.js";
 import { SCREEN_COMPONENTS } from "../screens/registry.js";
 import { NotBuilt } from "../screens/NotBuilt.js";
+import { ScreenBoundary } from "./boundary.js";
 import { GROUPS, SCREENS, screenOf, type ScreenDef } from "./screens.js";
 
 interface Health {
@@ -127,7 +128,13 @@ export function App() {
         <h1 className="sr">{current.label}</h1>
         {(() => {
           const S = SCREEN_COMPONENTS[current.id];
-          return S ? <S hash={hash} /> : <NotBuilt screen={current} />;
+          return S ? (
+            <ScreenBoundary key={current.id} name={current.label}>
+              <S hash={hash} />
+            </ScreenBoundary>
+          ) : (
+            <NotBuilt screen={current} />
+          );
         })()}
       </main>
     </div>

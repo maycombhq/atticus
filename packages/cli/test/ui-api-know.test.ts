@@ -17,6 +17,7 @@ beforeAll(async () => {
   const root = await mkdtemp(join(tmpdir(), "atticus-ui-views-"));
   await cp(join(FIXTURES, "forge/metarepo"), root, { recursive: true });
   await cp(join(FIXTURES, "forge-change/openspec"), join(root, "openspec"), { recursive: true });
+  await cp(join(FIXTURES, "forge/inputs"), join(root, "inputs"), { recursive: true });
   for (const r of parse(readFileSync(join(FIXTURES, "forge/expected/scan.yaml"), "utf8")) as Record<
     string,
     unknown
@@ -72,5 +73,25 @@ describe("read-only views run the CLI's --json commands", () => {
     expect(body.text).toMatch(/^(flowchart|graph|C4Context)/m);
     expect((await get("/api/diagram/everything")).status).toBe(400);
     expect((await get("/api/diagram/container?focus=..%2Fx")).status).toBe(400);
+  });
+
+  it("decides a triage item as the signed-in person, and refuses an unknown item or a bad body", async () => {
+    const before = (await get("/api/view/triage")).body.data as { items: { id: string }[] };
+    const item = before.items.find((i) => i.id.startsWith("alias-needed."));
+    expect(item).toBeDefined();
+    const post = (path: string, body: unknown) =>
+      fetch(srv.url + path, {
+        method: "POST",
+        headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const ok = await post(`/api/triage/${item!.id}/decide`, { option: 1 });
+    expect(ok.status).toBe(200);
+    const after = (await get("/api/view/triage")).body.data as { items: { id: string }[] };
+    expect(after.items.map((i) => i.id)).not.toContain(item!.id);
+    expect((await post("/api/triage/no-such-item/decide", { option: 1 })).status).toBe(404);
+    expect((await post(`/api/triage/${before.items[0]!.id}/decide`, { option: 0 })).status).toBe(
+      400,
+    );
   });
 });

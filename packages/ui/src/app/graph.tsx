@@ -25,7 +25,7 @@ function layout(g: Graph, w: number, h: number, focus?: string) {
     const others = g.nodes.filter((n) => n.id !== focus);
     others.forEach((n, i) => {
       const a = (i / Math.max(others.length, 1)) * Math.PI * 2 - Math.PI / 2;
-      pos.set(n.id, { x: cx + Math.cos(a) * w * 0.36, y: cy + Math.sin(a) * h * 0.36 });
+      pos.set(n.id, { x: cx + Math.cos(a) * w * 0.34, y: cy + Math.sin(a) * h * 0.38 });
     });
     return pos;
   }
@@ -35,10 +35,14 @@ function layout(g: Graph, w: number, h: number, focus?: string) {
     const sx = cx + Math.cos(a) * (w * 0.33);
     const sy = cy + Math.sin(a) * (h * 0.33);
     const members = g.nodes.filter((n) => (n.system ?? n.id) === s);
-    members.forEach((n, j) => {
-      const b = (j / Math.max(members.length, 1)) * Math.PI * 2;
-      const r = members.length > 1 ? 30 + members.length * 4 : 0;
-      pos.set(n.id, { x: sx + Math.cos(b) * r, y: sy + Math.sin(b) * r * 0.7 });
+    // The system sits in the middle of its cluster, its components on a ring around it.
+    const centre = members.find((n) => n.kind === "System");
+    if (centre) pos.set(centre.id, { x: sx, y: sy });
+    const ring = members.filter((n) => n !== centre);
+    ring.forEach((n, j) => {
+      const b = (j / Math.max(ring.length, 1)) * Math.PI * 2 - Math.PI / 2;
+      const r = ring.length > 1 || centre ? 34 + ring.length * 4 : 0;
+      pos.set(n.id, { x: sx + Math.cos(b) * r, y: sy + Math.sin(b) * r * 0.75 });
     });
   });
   return pos;
@@ -61,6 +65,19 @@ export function GraphView({
   const H = height;
   const pos = useMemo(() => layout(g, W, H, focus), [g, H, focus]);
   const hot = new Set([...(focus ? [focus] : []), ...highlight]);
+  const halos =
+    focus && g.nodes.some((n) => n.id === focus)
+      ? []
+      : g.nodes
+          .filter(
+            (n) => n.kind === "System" && g.nodes.some((m) => m.system === n.id && m.id !== n.id),
+          )
+          .map((n) => {
+            const c = pos.get(n.id)!;
+            const ms = g.nodes.filter((m) => m.system === n.id).map((m) => pos.get(m.id)!);
+            const r = Math.max(28, ...ms.map((m) => Math.hypot(m.x - c.x, m.y - c.y))) + 22;
+            return { id: n.id, x: c.x, y: c.y, r };
+          });
   const labelled = new Set(
     g.nodes
       .filter((n) => hot.has(n.id) || n.kind === "Component" || g.nodes.length < 30)
@@ -82,6 +99,18 @@ export function GraphView({
           </feMerge>
         </filter>
       </defs>
+      {halos.map((h) => (
+        <circle
+          key={`halo-${h.id}`}
+          cx={h.x}
+          cy={h.y}
+          r={h.r}
+          fill="rgba(46,230,246,0.03)"
+          stroke="#2EE6F6"
+          strokeOpacity={0.18}
+          strokeDasharray="2 5"
+        />
+      ))}
       <g strokeWidth={0.9}>
         {g.edges.map((e) => {
           const a = pos.get(e.from);
@@ -127,17 +156,37 @@ export function GraphView({
                 aria-hidden="true"
               />
             )}
-            {labelled.has(n.id) && (
-              <text
-                x={p.x + 8}
-                y={p.y - 7}
-                fontFamily="JetBrains Mono, monospace"
-                fontSize={lit ? 12 : 10.5}
-                fill={lit ? "#E9F6FA" : "#BFEFF7"}
-              >
-                {n.label}
-              </text>
-            )}
+            {(() => {
+              const h = halos.find((x) => x.id === n.id);
+              if (h)
+                return (
+                  <text
+                    x={h.x}
+                    y={h.y + h.r + 13}
+                    textAnchor="middle"
+                    fontFamily="Rajdhani, sans-serif"
+                    fontWeight={700}
+                    fontSize={11}
+                    letterSpacing="0.18em"
+                    fill={lit ? "#7FF4FF" : "#5FD8E6"}
+                  >
+                    {n.label.toUpperCase()}
+                  </text>
+                );
+              if (!labelled.has(n.id)) return null;
+              return (
+                <text
+                  x={p.x > W * 0.62 ? p.x - 8 : p.x + 8}
+                  y={p.y - 7}
+                  textAnchor={p.x > W * 0.62 ? "end" : "start"}
+                  fontFamily="JetBrains Mono, monospace"
+                  fontSize={lit ? 12 : 10.5}
+                  fill={lit ? "#E9F6FA" : "#BFEFF7"}
+                >
+                  {n.label}
+                </text>
+              );
+            })()}
           </g>
         );
       })}

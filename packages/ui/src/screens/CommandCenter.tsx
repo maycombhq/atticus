@@ -53,6 +53,7 @@ export function CommandCenter() {
   const changes = useApi<ChangeSummary[]>("/api/changes");
   const findings = useApi<Finding[]>("/api/findings?state=open");
   const kinds = useApi<KindCount[]>("/api/catalog/kinds");
+  const qs = useApi<{ data: { questions?: unknown[] } | null }>("/api/view/questions");
   const graph = useApi<Graph>("/api/graph");
   useLiveEvents((e) => {
     if (e.type === "index.rebuilt" || e.type === "file.changed") {
@@ -68,6 +69,7 @@ export function CommandCenter() {
   const open = findings.state === "ready" ? findings.data : [];
   const blocking = open.filter((f) => f.severity === "blocking");
   const gaps = open.filter((f) => f.severity === "gap");
+  const questions = qs.state === "ready" ? (qs.data.data?.questions?.length ?? 0) : 0;
   const facts = kinds.state === "ready" ? kinds.data.reduce((a, k) => a + k.count, 0) : 0;
   const interfaces =
     kinds.state === "ready" ? (kinds.data.find((k) => k.kind === "Interface")?.count ?? 0) : 0;
@@ -96,9 +98,9 @@ export function CommandCenter() {
             color: blocking.length ? "var(--magenta)" : "var(--text)",
           },
           {
-            label: "Open knowledge gaps",
-            value: gaps.length,
-            color: gaps.length ? "var(--amber)" : "var(--text)",
+            label: "Open owner questions",
+            value: questions,
+            color: questions ? "var(--amber)" : "var(--text)",
           },
           { label: "Facts in the catalog", value: facts, color: "var(--accent)" },
         ].map((k) => (

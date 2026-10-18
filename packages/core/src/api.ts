@@ -293,6 +293,12 @@ export const CheckLessonRequest = z.strictObject({
 });
 export const SandboxRequest = z.strictObject({ dir: z.string().trim().min(1) });
 
+/** ADR 0043: choose one of a triage item's numbered options; it writes a curated decision. */
+export const TriageDecideRequest = z.strictObject({
+  option: z.number().int().min(1),
+  reason: z.string().trim().min(1).optional(),
+});
+
 export const ReconcileRequest = z.strictObject({ diagram: z.string().min(1) });
 
 // ------------------------------------------------------------------ live events
@@ -464,6 +470,17 @@ const OPS: Record<string, Record<string, Op>> = {
         p("id"),
       ],
       ok: { status: 200, schema: VIEW_RESULT, description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/triage/{itemId}/decide": {
+    post: {
+      id: "decideTriage",
+      summary: "Choose a triage item's option as the signed-in person; writes a curated decision",
+      tag: "views",
+      params: [p("itemId")],
+      body: TriageDecideRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Decided" },
       errors: [400, 404, 422],
     },
   },

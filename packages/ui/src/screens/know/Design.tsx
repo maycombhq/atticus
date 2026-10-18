@@ -173,7 +173,9 @@ function ContractDetail({ r }: { r: Rec }) {
 export function Contracts() {
   const kinds = useApi<{ kind: string; count: number }[]>("/api/catalog/kinds");
   const iface = useApi<{ items: Rec[] }>("/api/catalog/Interface?limit=500");
-  const [picked, setPicked] = useState<Rec | undefined>();
+  const [chosen, setPicked] = useState<Rec | undefined>();
+  const first = useApi<{ items: Rec[] }>("/api/catalog/Endpoint?limit=1");
+  const picked = chosen ?? (first.state === "ready" ? first.data.items[0] : undefined);
   const n = (k: string) =>
     kinds.state === "ready" ? (kinds.data.find((x) => x.kind === k)?.count ?? 0) : 0;
   const verified =
@@ -340,6 +342,37 @@ export function Reconcile({ hash }: { hash: string }) {
               <button type="button" className="btn" onClick={() => r.reload()}>
                 Check again
               </button>
+              {d && (
+                <div className="stack" style={{ gap: 12, marginTop: 10 }}>
+                  <div className="row">
+                    <Ring
+                      value={d.matches.length}
+                      max={Math.max(d.edges, 1)}
+                      size={72}
+                      label={`${d.matches.length} of ${d.edges} drawn edges agree with code`}
+                    />
+                    <span className="muted" style={{ fontSize: 12.5 }}>
+                      drawn edges agree with the code
+                    </span>
+                  </div>
+                  <Donut
+                    title="Items to resolve by kind"
+                    parts={types.map((t, i) => ({
+                      label: t,
+                      value: d.items.filter((x) => x.type === t).length,
+                      color: ["#FF4FA3", "#FFB547", "#2EE6F6", "#8F7BFF", "#3DDC97", "#BFEFF7"][
+                        i % 6
+                      ]!,
+                    }))}
+                  />
+                  {d.names.length > 0 && (
+                    <span className="hud" style={{ fontSize: 10 }}>
+                      {d.names.filter((x) => x.id).length}/{d.names.length} labels matched to the
+                      catalog
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </View>
@@ -594,8 +627,10 @@ interface InitiativeStatus {
   targetRelease?: string;
   projectedRelease?: string;
   status: string;
+  today: string;
   items: {
     key: string;
+    start: string;
     kind: string;
     what: string;
     party?: string;
@@ -619,6 +654,99 @@ interface InitiativeStatus {
   notes: string[];
 }
 
+const STATUS_COLOR: Record<string, string> = {
+  done: "#3DDC97",
+  open: "#2EE6F6",
+  "at-risk": "#FFB547",
+  slipped: "#FF4FA3",
+};
+
+/** Plan items as bars from start to forecast, with the due date marked and today as a line. */
+function Timeline({ s }: { s: InitiativeStatus }) {
+  const day = (d: string) => Date.parse(`${d}T00:00:00Z`) / 86400000;
+  const items = s.items;
+  if (items.length === 0) return <div className="state">Nothing planned yet.</div>;
+  const lo = Math.min(day(s.today), ...items.map((i) => day(i.start)));
+  const hi = Math.max(...items.map((i) => Math.max(day(i.due), day(i.projectedFinish))), lo + 1);
+  const W = 760;
+  const L = 230;
+  const x = (d: string) => L + ((day(d) - lo) / (hi - lo)) * (W - L - 10);
+  const H = items.length * 26 + 30;
+  return (
+    <svg
+      role="img"
+      aria-label={`Timeline of ${items.length} plan items from ${items[0]!.start}; today ${s.today}`}
+      viewBox={`0 0 ${W} ${H}`}
+      style={{ width: "100%", display: "block" }}
+    >
+      {items.map((i, k) => {
+        const y = 10 + k * 26;
+        const c = STATUS_COLOR[i.status] ?? "#2EE6F6";
+        return (
+          <g key={i.key}>
+            <text
+              x={0}
+              y={y + 13}
+              fill={i.critical ? "#E9F6FA" : "#8FA3B3"}
+              fontSize={11}
+              fontFamily="IBM Plex Sans, sans-serif"
+            >
+              {i.what.length > 34 ? `${i.what.slice(0, 33)}…` : i.what}
+            </text>
+            <rect
+              x={x(i.start)}
+              y={y + 3}
+              width={Math.max(x(i.projectedFinish) - x(i.start), 3)}
+              height={12}
+              rx={3}
+              fill={c}
+              opacity={0.75}
+              style={{ filter: `drop-shadow(0 0 4px ${c})` }}
+            />
+            <line
+              x1={x(i.due)}
+              x2={x(i.due)}
+              y1={y}
+              y2={y + 18}
+              stroke="#E9F6FA"
+              strokeWidth={1.5}
+            />
+          </g>
+        );
+      })}
+      <line
+        x1={x(s.today)}
+        x2={x(s.today)}
+        y1={0}
+        y2={H - 16}
+        stroke="#FF4FA3"
+        strokeDasharray="3 3"
+      />
+      <text
+        x={x(s.today) + 4}
+        y={H - 4}
+        fill="#FF9BCB"
+        fontSize={10}
+        fontFamily="JetBrains Mono, monospace"
+      >
+        today {s.today}
+      </text>
+      {s.targetRelease && (
+        <text
+          x={W - 10}
+          y={H - 4}
+          textAnchor="end"
+          fill="#8FA3B3"
+          fontSize={10}
+          fontFamily="JetBrains Mono, monospace"
+        >
+          target {s.targetRelease}
+        </text>
+      )}
+    </svg>
+  );
+}
+
 const STATUS_CHIP: Record<string, string> = {
   "on-track": "done",
   done: "done",
@@ -635,7 +763,7 @@ export function Initiatives({ hash }: { hash: string }) {
     all.state === "ready" ? (all.data.find((i) => i.initiative === id) ?? all.data[0]) : undefined;
   return (
     <div className="bento">
-      <Panel title="Initiatives" span="span 4" rows="span 2">
+      <Panel title="Initiatives" span="span 4">
         <View of={all} empty={(a) => a.length === 0} emptyText="No initiatives yet.">
           {(a) => (
             <div className="stack" style={{ gap: 6 }}>
@@ -677,7 +805,7 @@ export function Initiatives({ hash }: { hash: string }) {
         </p>
       </Panel>
       {one ? (
-        <>
+        <div className="column" style={{ gridColumn: "span 8" }}>
           <Panel
             title={one.title}
             kind="hero"
@@ -726,6 +854,9 @@ export function Initiatives({ hash }: { hash: string }) {
               />
             </div>
           </Panel>
+          <Panel title="Timeline" span="span 8" kind="dark">
+            <Timeline s={one} />
+          </Panel>
           <Panel title="Who owes what" span="span 8">
             {one.commitments.length === 0 ? (
               <div className="state">No commitments yet.</div>
@@ -755,7 +886,7 @@ export function Initiatives({ hash }: { hash: string }) {
               </p>
             ))}
           </Panel>
-        </>
+        </div>
       ) : null}
     </div>
   );

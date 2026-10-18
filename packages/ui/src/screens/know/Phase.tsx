@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
-import { Bar, Panel, Ring, View } from "../../app/ui.js";
+import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
 import {
   ArtifactEditor,
   FindingActions,
@@ -23,6 +23,7 @@ const SEV_CHIP: Record<string, string> = {
 
 /** The change a phase screen works on, its phase, the gate and what to do next. */
 function GateHeader(p: {
+  part: "hero" | "gate";
   id: string;
   title: string;
   picker: ReactNode;
@@ -37,77 +38,44 @@ function GateHeader(p: {
     status.reload();
     p.reload();
   };
-  return (
-    <>
-      <Panel title={p.title} kind="hero" span="span 8" meta={p.picker}>
-        <View of={detail}>
-          {(d) => (
-            <div className="stack" style={{ gap: 14 }}>
-              <div className="stack" style={{ gap: 4 }}>
-                <span style={{ fontSize: 18, fontWeight: 600 }}>{d.title}</span>
-                <span className="hud" style={{ fontSize: 10 }}>
-                  {d.id} · {d.type}
-                  {d.handoff ? ` · hand-off ${d.handoff.phase} ${d.handoff.state}` : ""}
-                </span>
-              </div>
-              <Pipeline state={d.state} />
+  const hero = (
+    <Panel title={p.title} kind="hero" meta={p.picker}>
+      <View of={detail}>
+        {(d) => (
+          <div className="stack" style={{ gap: 14 }}>
+            <div className="stack" style={{ gap: 4 }}>
+              <span style={{ fontSize: 18, fontWeight: 600 }}>{d.title}</span>
+              <span className="hud" style={{ fontSize: 10 }}>
+                {d.id} · {d.type}
+                {d.handoff ? ` · hand-off ${d.handoff.phase} ${d.handoff.state}` : ""}
+              </span>
             </div>
-          )}
-        </View>
-      </Panel>
-      <Panel title="Gate" span="span 4" kind="dark">
-        <View of={status}>
-          {(s) => (
-            <div className="stack" style={{ gap: 10 }}>
-              <p style={{ margin: 0, lineHeight: 1.5 }}>{s.nextStep}</p>
-              {s.blockers.length > 0 && (
-                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: "#FF9BCB" }}>
-                  {s.blockers.map((b, i) => (
-                    <li key={i}>{b.message}</li>
-                  ))}
-                </ul>
-              )}
-              {s.required.length > 0 && (
-                <span className="muted" style={{ fontSize: 12 }}>
-                  Approval: {s.required.map((r) => r.label).join("; ")}
-                </span>
-              )}
-              <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
-                {p.critic && (
-                  <button
-                    type="button"
-                    className="btn"
-                    disabled={act.busy}
-                    onClick={() =>
-                      void act.run(
-                        () =>
-                          api(`/api/changes/${p.id}/runs`, {
-                            method: "POST",
-                            body: { agent: p.critic, runtime: "hand-off" },
-                          }).then(done),
-                        "The critic's prompts are ready for your assistant. Mark the run done on the Changes screen when it has answered.",
-                      )
-                    }
-                  >
-                    Run the critic
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="btn primary"
-                  disabled={act.busy}
-                  onClick={() =>
-                    void act.run(
-                      () =>
-                        api(`/api/changes/${p.id}/handoff`, { method: "POST", body: {} }).then(
-                          done,
-                        ),
-                      "Hand-off PR raised. A person approves and merges it.",
-                    )
-                  }
-                >
-                  Raise hand-off
-                </button>
+            <Pipeline state={d.state} />
+          </div>
+        )}
+      </View>
+    </Panel>
+  );
+  const gate = (
+    <Panel title="Gate" kind="dark">
+      <View of={status}>
+        {(s) => (
+          <div className="stack" style={{ gap: 10 }}>
+            <p style={{ margin: 0, lineHeight: 1.5 }}>{s.nextStep}</p>
+            {s.blockers.length > 0 && (
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: "#FF9BCB" }}>
+                {s.blockers.map((b, i) => (
+                  <li key={i}>{b.message}</li>
+                ))}
+              </ul>
+            )}
+            {s.required.length > 0 && (
+              <span className="muted" style={{ fontSize: 12 }}>
+                Approval: {s.required.map((r) => r.label).join("; ")}
+              </span>
+            )}
+            <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+              {p.critic && (
                 <button
                   type="button"
                   className="btn"
@@ -115,21 +83,52 @@ function GateHeader(p: {
                   onClick={() =>
                     void act.run(
                       () =>
-                        api(`/api/changes/${p.id}/sync`, { method: "POST", body: {} }).then(done),
-                      "Synced with the hand-off PR.",
+                        api(`/api/changes/${p.id}/runs`, {
+                          method: "POST",
+                          body: { agent: p.critic, runtime: "hand-off" },
+                        }).then(done),
+                      "The critic's prompts are ready for your assistant. Mark the run done on the Changes screen when it has answered.",
                     )
                   }
                 >
-                  Sync
+                  Run the critic
                 </button>
-              </div>
-              <Note note={act.note} />
+              )}
+              <button
+                type="button"
+                className="btn primary"
+                disabled={act.busy}
+                onClick={() =>
+                  void act.run(
+                    () =>
+                      api(`/api/changes/${p.id}/handoff`, { method: "POST", body: {} }).then(done),
+                    "Hand-off PR raised. A person approves and merges it.",
+                  )
+                }
+              >
+                Raise hand-off
+              </button>
+              <button
+                type="button"
+                className="btn"
+                disabled={act.busy}
+                onClick={() =>
+                  void act.run(
+                    () => api(`/api/changes/${p.id}/sync`, { method: "POST", body: {} }).then(done),
+                    "Synced with the hand-off PR.",
+                  )
+                }
+              >
+                Sync
+              </button>
             </div>
-          )}
-        </View>
-      </Panel>
-    </>
+            <Note note={act.note} />
+          </div>
+        )}
+      </View>
+    </Panel>
   );
+  return p.part === "hero" ? hero : gate;
 }
 
 /** One artifact, rendered; Edit opens the editor in place. */
@@ -140,7 +139,7 @@ function ArtifactPanel({
 }: {
   change: string;
   artifact: string;
-  span: string;
+  span?: string;
 }) {
   const a = useApi<Artifact & { artifact: string }>(`/api/changes/${change}/artifacts/${artifact}`);
   const [edit, setEdit] = useState(false);
@@ -200,7 +199,7 @@ function FindingsPanel({
 }: {
   change: string;
   artifacts: string[];
-  span: string;
+  span?: string;
   rows?: string;
 }) {
   const f = useApi<Finding[]>(`/api/findings?change=${change}&state=open`);
@@ -305,25 +304,26 @@ function PhaseScreen(p: {
         </Panel>
       </div>
     );
+  const header = {
+    id: c.id,
+    title: p.title,
+    picker: c.picker,
+    ...(p.critic ? { critic: p.critic } : {}),
+    reload: () => setTick(tick + 1),
+  };
   return (
     <div className="bento" key={`${c.id}/${tick}`}>
-      <GateHeader
-        id={c.id}
-        title={p.title}
-        picker={c.picker}
-        {...(p.critic ? { critic: p.critic } : {})}
-        reload={() => setTick(tick + 1)}
-      />
-      {p.artifacts.map((a) => (
-        <ArtifactPanel key={a} change={c.id!} artifact={a} span="span 8" />
-      ))}
-      <FindingsPanel
-        change={c.id}
-        artifacts={p.artifacts}
-        span="span 4"
-        rows={p.artifacts.length > 1 ? `span ${p.artifacts.length}` : undefined}
-      />
-      {p.extra?.(c.id)}
+      <div className="column" style={{ gridColumn: "span 8" }}>
+        <GateHeader part="hero" {...header} />
+        {p.artifacts.map((a) => (
+          <ArtifactPanel key={a} change={c.id!} artifact={a} />
+        ))}
+      </div>
+      <div className="column" style={{ gridColumn: "span 4" }}>
+        <GateHeader part="gate" {...header} />
+        <FindingsPanel change={c.id} artifacts={p.artifacts} />
+        {p.extra?.(c.id)}
+      </div>
     </div>
   );
 }
@@ -768,9 +768,9 @@ interface Trace {
     key: string;
   }[];
   rows: {
-    requirement: string;
+    requirement?: { requirement: string; scenario?: string; key: string };
     story?: string;
-    criterion?: string;
+    criterion?: { n: number; text: string };
     tests: string[];
     code: string[];
     records: string[];
@@ -790,99 +790,154 @@ export function TestTrace({ hash }: { hash: string }) {
   const total = t.state === "ready" ? t.data.rows.length : 0;
   return (
     <div className="bento">
-      <Panel title="Test trace" span="span 8" kind="hero" meta={c.picker}>
-        <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5 }}>
-          Every requirement should reach a story, a test, code and a release. Gaps are flagged
-          before QA sign-off.
-        </p>
-        <View
-          of={t}
-          empty={(d) => d.rows.length === 0}
-          emptyText="Nothing to trace yet: the change has no requirements with scenarios."
+      <div className="column" style={{ gridColumn: "span 8" }}>
+        <Panel title="Test trace" kind="hero" meta={c.picker}>
+          <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5 }}>
+            Every requirement should reach a story, a test, code and a release. Gaps are flagged
+            before QA sign-off.
+          </p>
+          <View
+            of={t}
+            empty={(d) => d.rows.length === 0}
+            emptyText="Nothing to trace yet: the change has no requirements with scenarios."
+          >
+            {(d) => (
+              <Table
+                caption="Requirement to code"
+                rows={d.rows}
+                rowKey={(r) =>
+                  `${r.requirement?.key ?? ""}/${r.story ?? ""}/${r.criterion?.n ?? ""}`
+                }
+                cols={[
+                  {
+                    label: "Requirement",
+                    cell: (r) =>
+                      r.requirement ? (
+                        <span className="stack" style={{ gap: 2 }}>
+                          <span>{r.requirement.requirement}</span>
+                          {r.requirement.scenario && (
+                            <span className="muted" style={{ fontSize: 11.5 }}>
+                              {r.requirement.scenario}
+                            </span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="stack" style={{ gap: 2 }}>
+                          <span className="chip warn" style={{ width: "fit-content" }}>
+                            NO REQUIREMENT
+                          </span>
+                          {r.criterion && (
+                            <span className="muted" style={{ fontSize: 11.5 }}>
+                              {r.criterion.text}
+                            </span>
+                          )}
+                        </span>
+                      ),
+                  },
+                  {
+                    label: "Story",
+                    cell: (r) => r.story ?? <span className="chip warn">NO STORY</span>,
+                    mono: true,
+                  },
+                  {
+                    label: "Test",
+                    cell: (r) =>
+                      r.tests.length ? (
+                        r.tests.join(", ")
+                      ) : (
+                        <span className="chip blocking">NO TEST</span>
+                      ),
+                    mono: true,
+                  },
+                  { label: "Code", cell: (r) => r.code.slice(0, 3).join(", "), mono: true },
+                ]}
+              />
+            )}
+          </View>
+        </Panel>
+        <Panel
+          title="Gaps before QA sign-off"
+          meta={t.state === "ready" ? t.data.gaps.length : undefined}
         >
-          {(d) => (
-            <Table
-              caption="Requirement to code"
-              rows={d.rows}
-              rowKey={(r) => `${r.requirement}/${r.story ?? ""}/${r.criterion ?? ""}`}
-              cols={[
-                { label: "Requirement", cell: (r) => r.requirement },
-                {
-                  label: "Story",
-                  cell: (r) => r.story ?? <span className="chip warn">NO STORY</span>,
-                  mono: true,
-                },
-                {
-                  label: "Test",
-                  cell: (r) =>
-                    r.tests.length ? (
-                      r.tests.join(", ")
-                    ) : (
-                      <span className="chip blocking">NO TEST</span>
-                    ),
-                  mono: true,
-                },
-                { label: "Code", cell: (r) => r.code.slice(0, 3).join(", "), mono: true },
-              ]}
-            />
-          )}
-        </View>
-      </Panel>
-      <Panel title="Scenario coverage" span="span 4" kind="dark">
-        <View of={t}>
-          {(d) => (
-            <div className="stack" style={{ gap: 10 }}>
-              <div className="row">
-                <Ring
-                  value={covered}
-                  max={Math.max(total, 1)}
-                  size={72}
-                  label={`${covered} of ${total} rows have a test`}
-                  text={total ? `${Math.round((covered / total) * 100)}%` : "–"}
+          <View
+            of={t}
+            empty={(d) => d.gaps.length === 0}
+            emptyText="No gaps: every requirement reaches a story and a test."
+          >
+            {(d) => (
+              <Table
+                caption="Trace gaps"
+                rows={d.gaps}
+                rowKey={(g) => `${g.kind}/${g.subject}`}
+                cols={[
+                  {
+                    label: "Gap",
+                    cell: (g) => <span className="chip warn">{g.kind}</span>,
+                    width: "190px",
+                  },
+                  { label: "What", cell: (g) => g.summary },
+                ]}
+              />
+            )}
+          </View>
+        </Panel>
+      </div>
+      <div className="column" style={{ gridColumn: "span 4" }}>
+        <Panel title="Scenario coverage" kind="dark">
+          <View of={t}>
+            {(d) => (
+              <div className="stack" style={{ gap: 10 }}>
+                <div className="row">
+                  <Ring
+                    value={covered}
+                    max={Math.max(total, 1)}
+                    size={72}
+                    label={`${covered} of ${total} rows have a test`}
+                    text={total ? `${Math.round((covered / total) * 100)}%` : "–"}
+                  />
+                  <span className="muted" style={{ fontSize: 12.5 }}>
+                    {covered} of {total} traced to a test
+                  </span>
+                </div>
+                <Donut
+                  title="Gaps by kind"
+                  parts={[...new Set(d.gaps.map((g) => g.kind))].map((k, i) => ({
+                    label: k,
+                    value: d.gaps.filter((g) => g.kind === k).length,
+                    color: ["#FFB547", "#FF4FA3", "#8F7BFF", "#2EE6F6"][i % 4]!,
+                  }))}
                 />
-                <span className="muted" style={{ fontSize: 12.5 }}>
-                  {covered} of {total} traced to a test
-                </span>
               </div>
-              {d.gaps.length > 0 && (
-                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
-                  {d.gaps.map((g, i) => (
-                    <li key={i}>
-                      <span className="chip warn">{g.kind}</span> {g.summary}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-        </View>
-      </Panel>
-      <Panel title="Test kinds this change needs" span="span 4">
-        <View
-          of={status}
-          empty={(s) => !s.tests?.required?.length}
-          emptyText="The test strategy asks for nothing extra here."
-        >
-          {(s) => (
-            <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
-              {s.tests!.required.map((k) => (
-                <span key={String(k)} className="chip">
-                  {String(k).toUpperCase()}
-                </span>
-              ))}
-              {s.tests!.note && (
-                <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  {s.tests!.note}
-                </p>
-              )}
-            </div>
-          )}
-        </View>
-        <p className="muted" style={{ margin: "10px 0 0", fontSize: 11.5 }}>
-          Required kinds come from the change type and risk in the org pack's test strategy. Tests
-          are generated from story scenarios, then reviewed by a person.
-        </p>
-      </Panel>
+            )}
+          </View>
+        </Panel>
+        <Panel title="Test kinds this change needs">
+          <View
+            of={status}
+            empty={(s) => !s.tests?.required?.length}
+            emptyText="The test strategy asks for nothing extra here."
+          >
+            {(s) => (
+              <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
+                {s.tests!.required.map((k) => (
+                  <span key={String(k)} className="chip">
+                    {String(k).toUpperCase()}
+                  </span>
+                ))}
+                {s.tests!.note && (
+                  <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                    {s.tests!.note}
+                  </p>
+                )}
+              </div>
+            )}
+          </View>
+          <p className="muted" style={{ margin: "10px 0 0", fontSize: 11.5 }}>
+            Required kinds come from the change type and risk in the org pack's test strategy. Tests
+            are generated from story scenarios, then reviewed by a person.
+          </p>
+        </Panel>
+      </div>
     </div>
   );
 }
