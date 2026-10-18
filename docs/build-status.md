@@ -17,7 +17,7 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 | 8c     | Contract C5: agent definitions, context packs (data wrapping, classification, budget, manifest), the hand-off runtime with `atticus handoff done`, model runtime, mock and recorded-replay runtimes, run summaries and retention                           | `packages/ai`, `packages/core`, ADR 0014                                      |
 | 9      | The local API as an OpenAPI 3.1 document generated from zod, validated, committed at `docs/api/openapi.json`; the synthetic estate generator (300 repos by default) with a scale test proving exact counts and cached rescans                              | `packages/core`, `packages/synth`, ADR 0015                                   |
 
-## Done (M1)
+## Done (M1, exit met: see `docs/m1-exit.md`)
 
 | Ticket | What                                                                                                                                                                                                                                                                                                                                       | Where                                                                                 |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
@@ -25,11 +25,12 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 | 12     | Merge and identity (canonical endpoint ids, interface ids, loose ends resolved through the gateway, by host and within a system, events, table access, inferred patterns, systems from the profile); the estate scan with dialect self-tests and cache; `atticus scan` and `atticus catalog diff`; catalog files written in canonical form | `packages/core`, `packages/scanner`, `packages/cli`, ADR 0017                         |
 | 13     | Local SQLite index (rebuilt from files when they change), reference fields read from C1, the catalog query language, graph and impact with gaps; `atticus query`, `atticus impact`, `atticus index rebuild`; minimum Node 22.13                                                                                                            | `packages/index`, `packages/core`, `packages/cli`, ADR 0018, `docs/query-language.md` |
 | 14     | draw.io reader and ingestor (compressed pages, HTML labels, legends), aliases (curated decisions, ids, profile), reconcile with ten item types and suggested curated decisions; `atticus reconcile`, `atticus alias`; scan-then-reconcile finds d01–d06                                                                                    | `packages/reconcile`, `packages/cli`, ADR 0019                                        |
+| 15     | M1 exit check on 300 synthetic repos: full pipeline, catalog files and index; one-repo change rescanned and reindexed in about 5 s; index 5 MB. Merge splits a store claimed by two owners; the synthetic estate's Spring repos call through the gateway with Feign                                                                        | `packages/scanner`, `packages/synth`, `packages/core`, ADR 0020, `docs/m1-exit.md`    |
 
 ## Next
 
-1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0019; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
-2. **M1:** the M1 exit check (ticket 15): 300-repo incremental scan timing and index size. Exit criteria met so far: a scan of `fixtures/forge` matches `expected/scan.yaml` (apart from facts waiting for M2 intake), and reconcile finds d01–d06.
+1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0020; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
+2. **M2:** intake of documents (partner specs, wiki pages, tickets) and the remaining ingestors; triage of reconcile items into curated decisions; the dialect build kit. Exit: golden tests for every extractor and ingestor; a fresh session writes a second Forge dialect from the build kit in 4 of 5 runs, also with a small model.
 
 ## How to work
 

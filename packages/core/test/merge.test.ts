@@ -104,3 +104,75 @@ describe("endpointId", () => {
     expect(endpointId("ledger-api", "POST", "/transfers")).toBe("ledger-api.post-transfer");
   });
 });
+
+describe("mergeCatalog: data stores", () => {
+  const rec = (repo: string, r: Record<string, unknown>) =>
+    ({ ...base, evidence: [{ ...ev[0], repo }], ...r }) as unknown as CatalogRecord;
+  const storeOf = (repo: string, owner: string, store: string) => [
+    rec(repo, {
+      kind: "DataStore",
+      id: store,
+      storeType: "unknown",
+      ownerComponent: owner,
+      entitiesHeld: [],
+    }),
+    rec(repo, {
+      kind: "Migration",
+      id: `${store}.v1`,
+      dataStore: store,
+      version: "1",
+      tool: "flyway",
+      file: "V1__init.sql",
+      operations: [],
+    }),
+    rec(repo, {
+      kind: "Table",
+      id: `${store}.t_${owner}`,
+      dataStore: store,
+      name: `t_${owner}`,
+      tableKind: "table",
+      ownerComponent: owner,
+      readers: [owner],
+      writers: [owner],
+    }),
+    rec(repo, {
+      kind: "Column",
+      id: `${store}.t_${owner}.id`,
+      table: `${store}.t_${owner}`,
+      name: "id",
+      type: "varchar",
+    }),
+  ];
+
+  it("splits one store name claimed by two owning components into a store per owner", () => {
+    const r = mergeCatalog({
+      records: [
+        component("a", "s"),
+        component("b", "s"),
+        ...storeOf("repo-a", "a", "s-db"),
+        ...storeOf("repo-b", "b", "s-db"),
+      ],
+      repos: [],
+      systems: [],
+    });
+    expect(r.invalid.map((i) => JSON.stringify(i.issues))).toEqual([]);
+    const ids = (k: string) =>
+      r.records
+        .filter((x) => x.kind === k)
+        .map((x) => x.id)
+        .sort();
+    expect(ids("DataStore")).toEqual(["a-db", "b-db"]);
+    expect(ids("Migration")).toEqual(["a-db.v1", "b-db.v1"]);
+    expect(ids("Table")).toEqual(["a-db.t_a", "b-db.t_b"]);
+    expect(r.records.find((x) => x.id === "b-db.t_b.id")).toMatchObject({ table: "b-db.t_b" });
+  });
+
+  it("keeps a store with one owner as it is", () => {
+    const r = mergeCatalog({
+      records: [component("a", "s"), ...storeOf("repo-a", "a", "s-db")],
+      repos: [],
+      systems: [],
+    });
+    expect(r.records.filter((x) => x.kind === "DataStore").map((x) => x.id)).toEqual(["s-db"]);
+  });
+});

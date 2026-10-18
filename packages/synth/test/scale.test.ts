@@ -79,6 +79,8 @@ describe(`synthetic estate (${SIZE} repos)`, () => {
     expect(m.repos).toHaveLength(SIZE);
     expect(new Set(m.repos.map((r) => r.id)).size).toBe(SIZE);
     expect(e.expected.endpoints).toBe(e.expected.services * 4);
+    expect(e.expected.directCalls + e.expected.gatewayCalls).toBe(e.expected.calls);
+    expect(e.expected.gatewayCalls).toBeGreaterThan(0);
   });
 
   it(
@@ -111,7 +113,9 @@ describe(`synthetic estate (${SIZE} repos)`, () => {
       const records = first.flatMap((s) => s.records);
       expect(first.flatMap((s) => s.rejected)).toEqual([]);
       expect(records.filter((r) => r.kind === "Endpoint")).toHaveLength(estate.expected.endpoints);
-      expect(records.filter((r) => r.kind === "Unresolved")).toHaveLength(estate.expected.calls);
+      expect(records.filter((r) => r.kind === "Unresolved")).toHaveLength(
+        estate.expected.directCalls,
+      );
 
       const t1 = performance.now();
       const second = await scanAll();

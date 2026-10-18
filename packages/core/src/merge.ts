@@ -136,8 +136,43 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   const loose: Rec[] = [];
   const dialectInterfaces: Rec[] = [];
 
+  // ---- 0. a store name claimed by two owning components (e.g. the <system>-db fallback for two
+  //         services of one system) is two stores: each becomes <owner>-db, with its tables,
+  //         columns, keys and migrations renamed to match.
+  const owners = new Map<string, Set<string>>();
+  for (const r of input.records as unknown as Rec[])
+    if (r.kind === "DataStore" && typeof r.ownerComponent === "string")
+      owners.set(r.id, (owners.get(r.id) ?? new Set()).add(r.ownerComponent));
+  const renames = new Map<string, Map<string, string>>(); // repo → old store → new store
+  for (const r of input.records as unknown as Rec[]) {
+    if (r.kind !== "DataStore" || (owners.get(r.id)?.size ?? 0) < 2) continue;
+    const repo = String(r.evidence[0]?.repo ?? "");
+    renames.set(
+      repo,
+      (renames.get(repo) ?? new Map<string, string>()).set(r.id, `${String(r.ownerComponent)}-db`),
+    );
+  }
+  const renameStore = (r: Rec): Rec => {
+    const m = renames.get(String(r.evidence[0]?.repo ?? ""));
+    if (!m) return r;
+    const fix = (v: unknown) => {
+      if (typeof v !== "string") return v;
+      for (const [from, to] of m)
+        if (v === from || v.startsWith(`${from}.`)) return to + v.slice(from.length);
+      return v;
+    };
+    const out: Rec = { ...r };
+    if (["DataStore", "Table", "Column", "IndexConstraint", "Migration"].includes(r.kind))
+      out.id = fix(r.id) as string;
+    for (const f of ["dataStore", "table"]) if (f in out) out[f] = fix(out[f]);
+    if (out.references && typeof out.references === "object")
+      out.references = { ...(out.references as Rec), table: fix((out.references as Rec).table) };
+    return out;
+  };
+
   // ---- 1. collect: endpoints keyed by identity, loose ends aside, everything else by kind/id
-  for (const raw of input.records as unknown as Rec[]) {
+  for (const raw0 of input.records as unknown as Rec[]) {
+    const raw = renameStore(raw0);
     const r = { ...raw, evidence: raw.evidence.map((e) => ({ ...e })) } as Rec;
     if (r.kind === "Unresolved") loose.push(r);
     else if (r.kind === "Interface") dialectInterfaces.push(r);

@@ -32,7 +32,12 @@ export interface Estate {
   expected: {
     services: number;
     endpoints: number;
+    /** All calls: direct Forge client calls plus Feign calls through the gateway. */
     calls: number;
+    /** Calls from Forge services with @ForgeCall (direct). */
+    directCalls: number;
+    /** Calls from Spring Boot apps and batch jobs with Feign clients (through the gateway). */
+    gatewayCalls: number;
     topics: number;
     migrations: number;
     deployments: number;
@@ -156,25 +161,52 @@ export function generateEstate(o: EstateOptions): Estate {
   });
 
   // Wire calls: every non-shared repo calls a few services that come before it, so the
-  // graph is acyclic and the expected count is exact.
+  // graph is acyclic and the expected count is exact. Forge services call directly with
+  // @ForgeClient; Spring Boot apps and batch jobs call through the gateway with Feign.
+  let directCalls = 0;
+  let gatewayCalls = 0;
   repos.forEach((r, i) => {
     const targets = services.filter((s) => s.id !== r.id).slice(0, Math.min(nCalls, i));
     if (targets.length === 0) return;
     const pkg = `synth.s${pad(i)}`;
-    const lines = [`package ${pkg};`, "", "import forge.framework.*;", ""];
-    targets.forEach((t, k) => {
-      const ep = t.endpoints[k % t.endpoints.length]!;
-      lines.push(
-        `@ForgeClient(service = "${t.id}", baseUrl = "\${gateway.url}")`,
-        `interface Client${k} {`,
-        `  @ForgeCall(method = "${ep.method}", path = "${ep.path}")`,
-        `  Object call${k}();`,
-        "}",
-        "",
-      );
-      calls++;
-    });
-    r.files[`src/main/java/${pkg.replace(/\./g, "/")}/Clients.java`] = lines.join("\n");
+    const dir = `src/main/java/${pkg.replace(/\./g, "/")}`;
+    if (r.type === "forge-service") {
+      const lines = [`package ${pkg};`, "", "import forge.framework.*;", ""];
+      targets.forEach((t, k) => {
+        const ep = t.endpoints[k % t.endpoints.length]!;
+        lines.push(
+          `@ForgeClient(service = "${t.id}", baseUrl = "\${${t.id}.url}")`,
+          `interface Client${k} {`,
+          `  @ForgeCall(method = "${ep.method}", path = "${ep.path}")`,
+          `  Object call${k}();`,
+          "}",
+          "",
+        );
+        directCalls++;
+      });
+      r.files[`${dir}/Clients.java`] = lines.join("\n");
+    } else {
+      targets.forEach((t, k) => {
+        const ep = t.endpoints[k % t.endpoints.length]!;
+        r.files[`${dir}/Client${k}.java`] = [
+          `package ${pkg};`,
+          "",
+          "import org.springframework.cloud.openfeign.FeignClient;",
+          "import org.springframework.web.bind.annotation.*;",
+          "",
+          `@FeignClient(name = "${t.id}", url = "\${gateway.url}/${t.id}")`,
+          `public interface Client${k} {`,
+          `  @${ep.method === "GET" ? "Get" : "Post"}Mapping("${ep.path}")`,
+          `  Object call${k}();`,
+          "}",
+          "",
+        ].join("\n");
+        gatewayCalls++;
+      });
+      r.files["src/main/resources/application.yml"] +=
+        "gateway:\n  url: https://gateway.synth.example\n";
+    }
+    calls += targets.length;
   });
 
   // Shared repos.
@@ -183,9 +215,15 @@ export function generateEstate(o: EstateOptions): Estate {
     type: "gateway",
     system: "sys-gateway",
     files: Object.fromEntries(
-      services.map((s) => [
-        `proxies/${s.id}/apiproxy/proxies/default.xml`,
-        `<ProxyEndpoint name="default">\n  <HTTPProxyConnection>\n    <BasePath>/${s.id}</BasePath>\n  </HTTPProxyConnection>\n</ProxyEndpoint>\n`,
+      services.flatMap((s) => [
+        [
+          `proxies/${s.id}/apiproxy/proxies/default.xml`,
+          `<ProxyEndpoint name="default">\n  <HTTPProxyConnection>\n    <BasePath>/${s.id}</BasePath>\n  </HTTPProxyConnection>\n  <RouteRule name="default">\n    <TargetEndpoint>default</TargetEndpoint>\n  </RouteRule>\n</ProxyEndpoint>\n`,
+        ],
+        [
+          `proxies/${s.id}/apiproxy/targets/default.xml`,
+          `<TargetEndpoint name="default">\n  <HTTPTargetConnection>\n    <URL>http://${s.id}.synth.internal</URL>\n  </HTTPTargetConnection>\n</TargetEndpoint>\n`,
+        ],
       ]),
     ),
   });
@@ -239,6 +277,8 @@ export function generateEstate(o: EstateOptions): Estate {
       services: services.length,
       endpoints: services.length * nEndpoints,
       calls,
+      directCalls,
+      gatewayCalls,
       topics: topics.size,
       migrations,
       deployments: deployed.length,

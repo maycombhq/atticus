@@ -27,6 +27,8 @@
     "@maycombhq/workspace": "workspace:*"
   },
   "devDependencies": {
+    "@maycombhq/index": "workspace:*",
+    "@maycombhq/synth": "workspace:*",
     "yaml": "^2.9.1"
   }
 }

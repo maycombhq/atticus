@@ -169,6 +169,12 @@ importers:
         specifier: workspace:*
         version: link:../workspace
     devDependencies:
+      '@maycombhq/index':
+        specifier: workspace:*
+        version: link:../index
+      '@maycombhq/synth':
+        specifier: workspace:*
+        version: link:../synth
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
