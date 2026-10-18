@@ -1,0 +1,38 @@
+{
+  "name": "@maycombhq/evals",
+  "version": "0.0.1",
+  "description": "The AI eval harness: datasets of graded cases per agent, graders bounded by evidence, mock, replay and live runners, the 4-of-5 live bar, regression comparison and the AI-quality summary.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "datasets"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=120000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/ai": "workspace:*",
+    "@maycombhq/assistant-kit": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/features": "workspace:*",
+    "@maycombhq/glossary": "workspace:*",
+    "@maycombhq/knowledge": "workspace:*",
+    "@maycombhq/naysayer": "workspace:*",
+    "@maycombhq/planner": "workspace:*",
+    "@maycombhq/testgen": "workspace:*",
+    "@maycombhq/workspace": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

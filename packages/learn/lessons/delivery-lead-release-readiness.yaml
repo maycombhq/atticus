@@ -1,0 +1,44 @@
+schemaVersion: 1
+id: delivery-lead-release-readiness
+role: delivery-lead
+title: Is it ready to release?
+summary: Read a change's state and blockers, see the critic's gate, and ask the archive gate whether it may be archived.
+minutes: 10
+setup: [scan]
+intro: |
+  As release manager you need one honest answer: can this go? Atticus reads it from the
+  change's state, its hand-off PRs, the critic's open findings at each gate and the code.
+steps:
+  - id: status
+    title: Where is the change?
+    body: |
+      Ask for the seeded change's status: its state, the next step, its risk and what blocks it.
+    do: [[change, status, add-transfer-limit]]
+    solution: { answer: plan }
+    check:
+      type: answer
+      question: Which state is add-transfer-limit in?
+      truth: { from: change-state, change: add-transfer-limit }
+    hint: Read the State line.
+  - id: critic
+    title: What does the plan gate say?
+    body: |
+      Run the critic: blocking findings and open knowledge gaps keep the plan gate closed, and
+      the hand-off can't open until they are fixed, answered or (where allowed) waived.
+    do: [[critic, add-transfer-limit]]
+    check: { type: findings, change: add-transfer-limit, gate: plan, min: 1 }
+    hint: atticus critic add-transfer-limit
+  - id: archive
+    title: Ask the archive gate
+    body: |
+      The archive gate runs before a change is archived: released, no open blocking finding at
+      any gate it was reviewed at, PRs merged and builds passed, no unplanned drift.
+    do: [[ci, archive-gate, add-transfer-limit]]
+    solution: { answer: "no" }
+    check:
+      type: answer
+      question: May add-transfer-limit be archived now? (yes or no)
+      truth: { from: fixed, values: ["no"] }
+    hint: The first line says whether it can.
+outro: |
+  You read readiness from files alone: no status meetings needed to know what blocks a release.

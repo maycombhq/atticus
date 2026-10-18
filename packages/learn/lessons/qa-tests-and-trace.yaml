@@ -1,0 +1,53 @@
+schemaVersion: 1
+id: qa-tests-and-trace
+role: qa
+title: Tests from stories, and what they cover
+summary: Generate tests from a story's acceptance criteria and the API spec, then trace requirements to stories, tests and code.
+minutes: 15
+setup: [scan]
+intro: |
+  Atticus decides a story's tests without AI: one scenario per acceptance criterion, API cases
+  from the spec, contract and data cases from the design. Traceability then links every
+  requirement to its stories, tests, code and catalog records, and its gaps are findings.
+steps:
+  - id: generate
+    title: Generate the tests for the first story
+    body: |
+      Generate tests for story `s1-refuse-over-limit` of the seeded change. Without a change
+      worktree they are written into the change folder: Gherkin, a JSON test-case file and, for
+      the Java repo, JUnit with RestAssured.
+    do: [[tests, generate, add-transfer-limit, s1-refuse-over-limit]]
+    check:
+      {
+        type: files,
+        dir: openspec/changes/add-transfer-limit/tests/s1-refuse-over-limit,
+        suffix: .feature,
+      }
+    hint: atticus tests generate add-transfer-limit s1-refuse-over-limit
+  - id: trace
+    title: Trace the change
+    body: |
+      Trace the change: requirement → story → criterion → test → code → records → feature. The
+      gaps are written as findings on the built-in trace gate.
+    do: [[trace, add-transfer-limit]]
+    solution: { answer: "s2-show-remaining, s3-audit-refusals, s4-velocity-check" }
+    check:
+      type: all
+      checks:
+        - { type: findings, change: add-transfer-limit, gate: trace, min: 1 }
+        - type: answer
+          question: Which stories still have no test?
+          truth: { from: fixed, values: [s2-show-remaining, s3-audit-refusals, s4-velocity-check] }
+    hint: Read the story-without-test gaps.
+  - id: requirement
+    title: A requirement with no story
+    body: |
+      One spec scenario has no story at all, so nothing will test it. Find it in the gaps.
+    solution: { answer: Remaining limit after transfers }
+    check:
+      type: answer
+      question: Which spec scenario has no story?
+      truth: { from: fixed, values: [Remaining limit after transfers] }
+    hint: Look for requirement-without-story.
+outro: |
+  Generate tests for the other stories and trace again: the gaps close as tests appear.

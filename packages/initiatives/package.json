@@ -1,0 +1,32 @@
+{
+  "name": "@maycombhq/initiatives",
+  "version": "0.0.1",
+  "description": "Initiatives and guided journeys: changes, parties and commitments toward one outcome, plans worked back from a target release, critical path and system-card requests to other teams.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000"
+  },
+  "dependencies": {
+    "@maycombhq/adapters": "workspace:*",
+    "@maycombhq/changes": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/intake": "workspace:*",
+    "@maycombhq/scanner": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

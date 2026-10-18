@@ -1,0 +1,36 @@
+# Where the initiative stands on Wednesday 2027-01-13, worked out by hand. Situation: the
+# vendor's sandbox access was recorded done; the vendor's v3 spec (due 2027-01-11) has not
+# arrived; the Ledger change is in design; a system card was sent to Northwind Pay on
+# 2027-01-04 (reply due 2027-01-11) with no reply. Unfinished items need their whole lead
+# time from the later of today and their planned start, after the items before them.
+today: 2027-01-13
+status: at-risk
+projectedRelease: 2027-03-24
+criticalPath: [vendor-spec, impact, design.ledger, build.ledger, vendor-certification, release]
+items:
+  - { key: vendor-spec, status: slipped, projectedFinish: 2027-02-03, float: 0, critical: true }
+  - { key: vendor-sandbox, status: done, projectedFinish: 2027-01-13, float: 0, critical: false }
+  - { key: impact, status: at-risk, projectedFinish: 2027-02-08, float: 0, critical: true }
+  - { key: design.ledger, status: at-risk, projectedFinish: 2027-02-15, float: 0, critical: true }
+  - { key: gateway-route, status: at-risk, projectedFinish: 2027-02-19, float: 6, critical: false }
+  - { key: firewall-rule, status: at-risk, projectedFinish: 2027-03-01, float: 0, critical: true }
+  - { key: build.ledger, status: at-risk, projectedFinish: 2027-03-01, float: 0, critical: true }
+  - { key: vendor-certification, status: at-risk, projectedFinish: 2027-03-22, float: 0, critical: true }
+  - { key: release, status: at-risk, projectedFinish: 2027-03-24, float: 0, critical: true }
+commitments:
+  - { id: northwind-pay-v3-migration.firewall-rule, status: at-risk }
+  - { id: northwind-pay-v3-migration.gateway-route, status: at-risk }
+  - { id: northwind-pay-v3-migration.request.northwind-pay, status: slipped }
+  - { id: northwind-pay-v3-migration.vendor-certification, status: at-risk }
+  - { id: northwind-pay-v3-migration.vendor-sandbox, status: done }
+  - { id: northwind-pay-v3-migration.vendor-spec, status: slipped }
+changes:
+  - id: northwind-pay-v3-migration-ledger
+    state: design
+    milestones:
+      - { milestone: design, due: 2027-01-21, reached: false }
+      - { milestone: build, due: 2027-02-04, reached: false }
+whys:
+  impact: Projected to finish 2027-02-08, after its due date 2027-01-14, because vendor-spec is late.
+  vendor-spec: Due 2027-01-11 and not done.
+  gateway-route: Projected to finish 2027-02-19, after its due date 2027-02-04, because design.ledger is late.

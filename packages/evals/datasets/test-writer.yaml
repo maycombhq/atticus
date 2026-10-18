@@ -1,0 +1,18 @@
+# The test writer naming the tests generated for story s1 of the testgen fixture (planned
+# stories and change worktrees from packages/testgen/test/fixtures). Answers: the hand-written
+# recording in packages/testgen/test/fixtures/recordings.
+schemaVersion: 1
+suite: test-writer
+description: Scenario, test and data names from the test writer; names for ids it wasn't given are thrown away.
+cases:
+  - id: test-writer-s1
+    agent: test-writer
+    description: Story s1's tests get readable names; the made-up id in the answer is thrown away.
+    params: { story: s1-daily-transfer-limit }
+    expect:
+      maxDiscarded: 1
+      names:
+        acceptance.c1: A transfer that would pass the daily limit is refused
+        api.post-transfers.happy: Creates a transfer within the limit
+    reference: { recordings: packages/testgen/test/fixtures/recordings }
+    recordings: packages/testgen/test/fixtures/recordings

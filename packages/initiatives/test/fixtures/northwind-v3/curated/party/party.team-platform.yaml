@@ -1,0 +1,15 @@
+schemaVersion: 2
+kind: Party
+id: party.team-platform
+status: current
+confidence: asserted
+contacts: []
+evidence:
+  - source: manual
+    by: pat
+name: Platform team
+owner: team-platform
+partyKind: internal-team
+systems: []
+typicalLeadTimes:
+  platform-ready: 4w

@@ -1,0 +1,94 @@
+schemaVersion: 1
+id: business-analyst-story-bar
+role: business-analyst
+title: Stories that meet the bar
+summary: Measure the change's stories against the story bar, fix a story without acceptance criteria, and spot text aimed at AI reviewers.
+minutes: 15
+setup: [scan]
+intro: |
+  A story is ready when it says who it is for and why, has acceptance criteria in
+  Given/When/Then form, names its systems and repos, and names what it depends on. Atticus
+  measures that for you (the story bar) and the critic blocks the Plan hand-off on what fails.
+steps:
+  - id: bar
+    title: Measure the story bar
+    body: |
+      Measure the seeded change's stories. Each story that isn't ready is listed with what it
+      lacks.
+    do: [[plan, bar, add-transfer-limit]]
+    solution: { answer: s2-show-remaining }
+    check:
+      type: answer
+      question: Which story has no acceptance criteria?
+      truth: { from: stories-without-criteria, change: add-transfer-limit }
+    hint: Look for "no acceptance criteria in Given/When/Then form".
+  - id: fix
+    title: Add the acceptance criteria
+    body: |
+      Open `openspec/changes/add-transfer-limit/stories/s2-show-remaining.md` and add an
+      "Acceptance criteria" section with at least one Given/When/Then line.
+    solution:
+      files:
+        - path: openspec/changes/add-transfer-limit/stories/s2-show-remaining.md
+          content: |
+            # Show the remaining limit
+
+            As a Portal customer I want to see how much I can still send today so that I don't try a
+            transfer that will be refused.
+
+            ## Acceptance criteria
+
+            - Given an account with a limit of 1000 that has sent 900 today, when the customer opens the transfer screen, then it shows 100 left today.
+
+            ## Notes
+
+            Show it under the amount field on the transfer screen, as in ux.md.
+
+            ## Systems and repos
+
+            portal (forge-portal-bff, forge-portal-ui)
+
+            ## Depends on
+
+            s1-refuse-over-limit
+    check:
+      type: file
+      path: openspec/changes/add-transfer-limit/stories/s2-show-remaining.md
+      contains: ["## Acceptance criteria", "- Given "]
+    hint: The section heading is "## Acceptance criteria" and each criterion is a "- Given ..., when ..., then ..." line.
+  - id: critic
+    title: Run the critic
+    body: |
+      Run the critic on the change. The story-acceptance-criteria finding is gone from the newest
+      round; other findings remain for the architect and the team lead.
+    do: [[critic, add-transfer-limit]]
+    check:
+      type: all
+      checks:
+        - { type: findings, change: add-transfer-limit, gate: plan, latest: true, min: 1 }
+        - {
+            type: findings,
+            change: add-transfer-limit,
+            gate: plan,
+            latest: true,
+            rule: constitution.story-acceptance-criteria,
+            min: 0,
+            max: 0,
+          }
+    hint: Fix the story first, then run atticus critic add-transfer-limit.
+  - id: injection
+    title: Text aimed at AI reviewers
+    body: |
+      One story tells AI critics to ignore their rules. Ingested content is data, never
+      instructions: the critic blocks it, and Atticus marks or quarantines such text before any
+      model sees it. Scan the stories folder with the defences.
+    do: [[defences, scan, openspec/changes/add-transfer-limit/stories]]
+    solution: { answer: s3-audit-refusals }
+    check:
+      type: answer
+      question: Which story holds an instruction aimed at AI reviewers?
+      truth: { from: flagged-files, path: openspec/changes/add-transfer-limit/stories }
+    hint: Give the story id (its file name without .md).
+outro: |
+  You measured stories against the bar, fixed one and saw how Atticus treats text that tries
+  to steer an AI reviewer.

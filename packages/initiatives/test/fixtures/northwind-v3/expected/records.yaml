@@ -1,0 +1,97 @@
+# The curated records the golden journey must leave (hand-written).
+initiative:
+  schemaVersion: 2
+  kind: Initiative
+  id: northwind-pay-v3-migration
+  status: current
+  confidence: asserted
+  evidence:
+    - { source: manual, by: pat }
+  title: Northwind Pay v3 migration
+  journey: vendor-api-change
+  changes: [northwind-pay-v3-migration-ledger]
+  parties: [party.northwind-pay, party.gateway-team, party.network-team]
+  commitments:
+    - northwind-pay-v3-migration.vendor-spec
+    - northwind-pay-v3-migration.vendor-sandbox
+    - northwind-pay-v3-migration.gateway-route
+    - northwind-pay-v3-migration.firewall-rule
+    - northwind-pay-v3-migration.vendor-certification
+  targetRelease: 2027-03-01
+commitments:
+  - schemaVersion: 2
+    kind: Commitment
+    id: northwind-pay-v3-migration.vendor-spec
+    status: current
+    confidence: asserted
+    evidence:
+      - { source: manual, by: pat }
+    initiative: northwind-pay-v3-migration
+    party: party.northwind-pay
+    what: Northwind Pay publishes the new API spec and changelog
+    owner: Northwind Pay partner desk
+    neededBy: 2027-01-11
+    blocks: [impact]
+    commitmentStatus: open
+  - schemaVersion: 2
+    kind: Commitment
+    id: northwind-pay-v3-migration.vendor-sandbox
+    status: current
+    confidence: asserted
+    evidence:
+      - { source: manual, by: pat }
+    initiative: northwind-pay-v3-migration
+    party: party.northwind-pay
+    what: Northwind Pay gives sandbox access to the new API
+    owner: Northwind Pay partner desk
+    neededBy: 2027-02-04
+    blocks: [vendor-certification]
+    commitmentStatus: open
+  - schemaVersion: 2
+    kind: Commitment
+    id: northwind-pay-v3-migration.gateway-route
+    status: current
+    confidence: asserted
+    evidence:
+      - { source: manual, by: pat }
+    initiative: northwind-pay-v3-migration
+    party: party.gateway-team
+    what: Gateway proxy for the new Northwind Pay API
+    owner: gateway-team
+    neededBy: 2027-02-04
+    blocks: [vendor-certification]
+    commitmentStatus: open
+  - schemaVersion: 2
+    kind: Commitment
+    id: northwind-pay-v3-migration.firewall-rule
+    status: current
+    confidence: asserted
+    evidence:
+      - { source: manual, by: pat }
+    initiative: northwind-pay-v3-migration
+    party: party.network-team
+    what: Firewall rule to the new Northwind Pay host
+    owner: network-team
+    neededBy: 2027-02-04
+    blocks: [vendor-certification]
+    commitmentStatus: open
+  - schemaVersion: 2
+    kind: Commitment
+    id: northwind-pay-v3-migration.vendor-certification
+    status: current
+    confidence: asserted
+    evidence:
+      - { source: manual, by: pat }
+    initiative: northwind-pay-v3-migration
+    party: party.northwind-pay
+    what: Northwind Pay certifies the integration in its sandbox
+    owner: Northwind Pay partner desk
+    neededBy: 2027-02-25
+    blocks: [release]
+    commitmentStatus: open
+proposedChanges:
+  - id: northwind-pay-v3-migration-ledger
+    title: "Northwind Pay v3 migration: Ledger"
+    type: feature
+    system: ledger
+    command: 'atticus change new "Northwind Pay v3 migration: Ledger" --type feature --id northwind-pay-v3-migration-ledger --system ledger --by pat'

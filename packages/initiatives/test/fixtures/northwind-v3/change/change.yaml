@@ -1,0 +1,31 @@
+schemaVersion: 1
+id: northwind-pay-v3-migration-ledger
+title: "Northwind Pay v3 migration: Ledger"
+type: feature
+template: feature
+state: design
+authors:
+  brief:
+    - pat
+createdAt: 2026-12-15T09:00:00Z
+createdBy: pat
+handoffs: []
+history:
+  - from: draft
+    to: define
+    at: 2026-12-15T09:00:00Z
+    by: pat
+    reason: Created from the feature template
+  - from: define
+    to: design
+    at: 2027-01-08T15:00:00Z
+    by: pat
+    reason: Send to architecture merged
+owners:
+  architect:
+    - ari
+  product-owner:
+    - pat
+systems:
+  - ledger
+  - northwind-pay

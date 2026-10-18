@@ -1,0 +1,14 @@
+schemaVersion: 2
+kind: Party
+id: party.network-team
+status: current
+confidence: asserted
+contacts: []
+evidence:
+  - source: manual
+    by: pat
+name: Network team
+owner: network-team
+partyKind: internal-team
+systems: []
+typicalLeadTimes: {}

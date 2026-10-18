@@ -1,0 +1,165 @@
+schemaVersion: 1
+id: product-owner-first-change
+role: product-owner
+title: Start a change and send it to architecture
+summary: Start a change from a template, write the brief, proposal and spec, and hand it to the architect.
+minutes: 20
+setup: []
+intro: |
+  Every change starts in Define with you. Atticus gives you a brief to fill in from your change
+  type's template, tells you what still blocks the hand-off, and opens the hand-off pull
+  request when you are ready. Approving that PR is the approval: nothing moves without it.
+steps:
+  - id: new
+    title: Start the change
+    body: |
+      Start a feature that shows customers their transfer history. You own it as product owner;
+      it touches Portal and Ledger.
+    do:
+      - [
+          change,
+          new,
+          Show transfer history,
+          --type,
+          feature,
+          --by,
+          pat,
+          --owner,
+          product-owner=pat,
+          --owner,
+          architect=ari,
+          --system,
+          portal,
+          --system,
+          ledger,
+        ]
+    check: { type: change-state, change: show-transfer-history, atLeast: define }
+    hint: atticus change new "Show transfer history" --type feature --by <you> --owner product-owner=<you>
+  - id: write
+    title: Write the brief, proposal and spec
+    body: |
+      Open `openspec/changes/show-transfer-history/brief.md` and replace every comment with your
+      own words. Then write `proposal.md` and one spec under `specs/transfer-history/spec.md`.
+      The worked solution shows one way to write them.
+    solution:
+      files:
+        - path: openspec/changes/show-transfer-history/brief.md
+          content: |
+            # Show transfer history
+
+            ## Problem
+
+            Portal customers can't see the transfers they sent last month, so they call support to ask.
+
+            ## Outcome
+
+            A customer sees their transfers for the last 90 days, newest first, with amount, payee and status.
+
+            ## Scope
+
+            In scope: a list of the customer's own transfers for 90 days. Out of scope: exports and search.
+
+            ## Ledger impact
+
+            Ledger offers the list of an account's transfers; no balances or entries change.
+
+            ## Partners
+
+            None.
+
+            ## Success measures
+
+            Support calls about past transfers drop by half within a month.
+
+            ## Open questions
+
+            - Should failed transfers be listed? (product owner)
+        - path: openspec/changes/show-transfer-history/proposal.md
+          content: |
+            # Proposal
+
+            ## Why
+
+            Customers can't see their past transfers and call support instead.
+
+            ## What Changes
+
+            - Ledger lists an account's transfers for a period.
+            - The Portal shows the last 90 days of transfers.
+
+            ## Capabilities
+
+            ### New Capabilities
+            - `transfer-history`: a customer's past transfers
+
+            ## Systems
+
+            | System (catalog id) | New, modified or retired | Why |
+            | --- | --- | --- |
+            | ledger | modified | lists an account's transfers |
+            | portal | modified | shows the history |
+
+            ## Impact
+
+            A new read-only operation on the ledger. No partner changes.
+
+            ## Open questions
+
+            - Failed transfers in the list — product owner
+        - path: openspec/changes/show-transfer-history/specs/transfer-history/spec.md
+          content: |
+            ## ADDED Requirements
+
+            ### Requirement: Transfer history
+            The system SHALL show a customer the transfers sent from their accounts in the last 90 days, newest first.
+
+            #### Scenario: Recent transfers
+            - **WHEN** a customer who sent three transfers this month opens the history
+            - **THEN** the three transfers are listed newest first with amount, payee and status
+    check:
+      type: all
+      checks:
+        - {
+            type: file,
+            path: openspec/changes/show-transfer-history/brief.md,
+            contains: ["## Outcome"],
+            notContains: ["<!--"],
+          }
+        - {
+            type: file,
+            path: openspec/changes/show-transfer-history/proposal.md,
+            contains: ["## Why"],
+          }
+        - {
+            type: file,
+            path: openspec/changes/show-transfer-history/specs/transfer-history/spec.md,
+            contains: ["#### Scenario:"],
+          }
+    hint: Every "<!-- ... -->" comment in the brief must be replaced; the proposal and spec must exist.
+  - id: status
+    title: What does the hand-off need?
+    body: |
+      Ask for the change's status. It shows the next step, what still blocks it and who must
+      approve the hand-off.
+    do: [[change, status, show-transfer-history]]
+    solution: { answer: product-owner }
+    check:
+      type: answer
+      question: Which role must approve the hand-off to architecture?
+      truth: { from: fixed, values: [product-owner] }
+    hint: Read the "Approvals needed" line.
+  - id: handoff
+    title: Send it to architecture
+    body: |
+      Raise "Send to architecture": Atticus opens the hand-off pull request (when it can't reach
+      the Git host, `atticus todo` shows you the step to open it by hand and record its URL).
+      When the product owner has approved the PR, sync the change: Atticus merges the PR and the
+      change moves to Design.
+    do:
+      - [change, handoff, show-transfer-history, --by, pat]
+      - [change, sync, show-transfer-history, --by, pat]
+    check: { type: change-state, change: show-transfer-history, atLeast: design }
+    hint: Hand off, get the product owner's approval on the PR, then run atticus change sync.
+outro: |
+  Your change is with the architect. From here the critic reviews each phase's work, and each
+  hand-off is a PR the right people approve.

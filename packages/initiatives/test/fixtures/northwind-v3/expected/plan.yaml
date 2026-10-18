@@ -1,0 +1,126 @@
+# The plan for "Northwind Pay v3 migration" (vendor-api-change, target northwind-pay, release
+# Monday 2027-03-01), worked out by hand: lead times from the parties, the closed-request
+# export and the journey defaults; each item due when the earliest item after it starts;
+# working days Monday to Friday. Hand-written: never regenerate it from planJourney output.
+schemaVersion: 1
+initiative: northwind-pay-v3-migration
+journey: vendor-api-change
+journeySource: built-in
+target: northwind-pay
+targetRelease: 2027-03-01
+createdAt: 2026-12-14T09:00:00Z
+by: pat
+items:
+  - key: vendor-spec
+    step: vendor-spec
+    phase: discover
+    kind: commitment
+    what: Northwind Pay publishes the new API spec and changelog
+    party: party.northwind-pay
+    commitment: northwind-pay-v3-migration.vendor-spec
+    days: 15
+    leadTime: party.northwind-pay typicalLeadTimes.api-spec (15d)
+    after: []
+    start: 2026-12-21
+    due: 2027-01-11
+  - key: vendor-sandbox
+    step: vendor-sandbox
+    phase: discover
+    kind: commitment
+    what: Northwind Pay gives sandbox access to the new API
+    party: party.northwind-pay
+    commitment: northwind-pay-v3-migration.vendor-sandbox
+    days: 10
+    leadTime: party.northwind-pay typicalLeadTimes.sandbox-access (10d)
+    after: []
+    start: 2027-01-21
+    due: 2027-02-04
+  - key: impact
+    step: impact
+    phase: design
+    kind: task
+    what: Impact of the new Northwind Pay API on every caller
+    owner: architect
+    days: 3
+    leadTime: journey vendor-api-change step impact (3 working days)
+    after: [vendor-spec]
+    start: 2027-01-11
+    due: 2027-01-14
+  - key: design.ledger
+    step: design
+    phase: design
+    kind: change
+    what: Design approved for moving Ledger to the new Northwind Pay API
+    system: ledger
+    change: northwind-pay-v3-migration-ledger
+    milestone: design
+    days: 5
+    leadTime: journey vendor-api-change step design (5 working days)
+    after: [impact]
+    start: 2027-01-14
+    due: 2027-01-21
+  - key: gateway-route
+    step: gateway-route
+    phase: build
+    kind: request
+    what: Gateway proxy for the new Northwind Pay API
+    party: party.gateway-team
+    commitment: northwind-pay-v3-migration.gateway-route
+    template: gateway-route
+    days: 4
+    leadTime: party.gateway-team typicalLeadTimes.gateway-route (4d)
+    after: [design.ledger]
+    start: 2027-01-29
+    due: 2027-02-04
+  - key: firewall-rule
+    step: firewall-rule
+    phase: build
+    kind: request
+    what: Firewall rule to the new Northwind Pay host
+    party: party.network-team
+    commitment: northwind-pay-v3-migration.firewall-rule
+    template: firewall-rule
+    days: 10
+    leadTime: inputs/tickets/closed-service-requests.json (median 9.5 working days over 2 requests, rounded up)
+    after: [design.ledger]
+    start: 2027-01-21
+    due: 2027-02-04
+  - key: build.ledger
+    step: build
+    phase: build
+    kind: change
+    what: Ledger moved to the new Northwind Pay API
+    system: ledger
+    change: northwind-pay-v3-migration-ledger
+    milestone: build
+    days: 10
+    leadTime: journey vendor-api-change step build (10 working days)
+    after: [design.ledger]
+    start: 2027-01-21
+    due: 2027-02-04
+  - key: vendor-certification
+    step: vendor-certification
+    phase: test
+    kind: commitment
+    what: Northwind Pay certifies the integration in its sandbox
+    party: party.northwind-pay
+    commitment: northwind-pay-v3-migration.vendor-certification
+    days: 15
+    leadTime: party.northwind-pay typicalLeadTimes.certification (3w)
+    after: [build.ledger, vendor-sandbox, gateway-route, firewall-rule]
+    start: 2027-02-04
+    due: 2027-02-25
+  - key: release
+    step: release
+    phase: release
+    kind: task
+    what: Go/no-go and release
+    owner: delivery-lead
+    days: 2
+    leadTime: journey vendor-api-change step release (2 working days)
+    after: [vendor-certification]
+    start: 2027-02-25
+    due: 2027-03-01
+done: {}
+started: {}
+notes: []

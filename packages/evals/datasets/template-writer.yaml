@@ -1,0 +1,16 @@
+# The template writer drafting Forge's firewall-rule template from the how-to page and past
+# tickets. Ground truth: the org pack's own fixtures/forge/metarepo/org-pack/process/snow/
+# firewall-rule.yaml (read in place). Answers: packages/planner/test/fixtures/recordings.
+schemaVersion: 1
+suite: template-writer
+description: The drafted template matches the organisation's own, with every value cited.
+cases:
+  - id: template-writer-firewall
+    agent: template-writer
+    description: The firewall-rule template is drafted field for field, with a plain summary.
+    expect:
+      template: firewall-rule
+      expectedFile: fixtures/forge/metarepo/org-pack/process/snow/firewall-rule.yaml
+      maxDiscarded: 0
+    reference: { recordings: packages/planner/test/fixtures/recordings }
+    recordings: packages/planner/test/fixtures/recordings
