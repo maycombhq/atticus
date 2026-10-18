@@ -1,0 +1,21 @@
+{
+  "name": "@maycombhq/cli",
+  "version": "0.0.1",
+  "description": "The atticus command line.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "atticus": "./dist/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@maycombhq/core": "workspace:*"
+  }
+}

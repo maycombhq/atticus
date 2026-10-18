@@ -1,0 +1,6 @@
+# SHA-256 hashes of lowercase words and two-word phrases that must never appear in this repo.
+# The words themselves are kept private on purpose. Add one with: node scripts/check-denylist.mjs --hash "word"
+c97202cf253c73e6132794507aa4170aa3cf23ab16cc6ee3a838df9edca5c9a5
+d1948b485d6d789837abab8c661c1d2061d885d78a47e4199c75625049952037
+3b1a498ee5f5c681a8bd0d97b46a0a27c336806af7e14f72f255a2d8704ef297
+59ce5ddac0240a292671f54bfc920c4a6e03fdc2f86829a28c397bd006c25677
