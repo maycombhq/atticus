@@ -201,14 +201,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     T,
   );
 
-  gap(
-    "GAP manual-git-host: with gitHost type manual in runtime.yaml (ADR 0032), the hand-off becomes a step for a person instead of an error",
+  it(
+    "manual-git-host: with gitHost type manual in runtime.yaml (ADR 0032), the hand-off becomes a step for a person instead of an error",
     async () => {
-      // packages/cli/src/change-commands.ts gitHostFor() calls createAdapters(op.runtime) with no
-      // ManualContext, so a manual Git host throws "a manual adapter writes steps into the
-      // metarepo" (uncaught: it is called before the try block). The same call without a
-      // ManualContext is in run-commands.ts specHandUp() and packages/taskrun/src/run.ts (level
-      // pr). Through the CLI the change commands can only use the mock Git host.
       const root = await probeCopy();
       const rt = join(root, "org-pack/runtime.yaml");
       await writeFile(
