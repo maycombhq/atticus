@@ -68,10 +68,34 @@ export function useChange(hash: string, screen: string) {
   return { id, picker, none: list.state === "ready" && list.data.length === 0 };
 }
 
-/** A small, safe Markdown view: headings, lists, tables as text and paragraphs; never HTML. */
+/** Inline `code` spans and **bold**, as React nodes (never HTML). */
+function inline(s: string): ReactNode[] {
+  return s.split(/(`[^`]+`|\*\*[^*]+\*\*)/).map((part, i) =>
+    part.startsWith("`") && part.endsWith("`") && part.length > 1 ? (
+      <code key={i} className="mono" style={{ fontSize: "0.92em", color: "var(--accent)" }}>
+        {part.slice(1, -1)}
+      </code>
+    ) : part.startsWith("**") && part.endsWith("**") && part.length > 3 ? (
+      <strong key={i}>{part.slice(2, -2)}</strong>
+    ) : (
+      part
+    ),
+  );
+}
+
+const cells = (row: string) =>
+  row
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((c) => c.trim());
+
+/** A small, safe Markdown view: headings, lists, pipe tables and paragraphs; never HTML. */
 export function Markdown({ text }: { text: string }) {
   const out: ReactNode[] = [];
   let list: string[] = [];
+  let table: string[] = [];
   const flush = () => {
     if (list.length)
       out.push(
@@ -80,16 +104,96 @@ export function Markdown({ text }: { text: string }) {
           style={{ margin: "4px 0 8px", paddingLeft: 20, lineHeight: 1.6 }}
         >
           {list.map((l, i) => (
-            <li key={i}>{l}</li>
+            <li key={i}>{inline(l)}</li>
           ))}
         </ul>,
       );
     list = [];
+    if (table.length) {
+      const [head, ...rest] = table;
+      const body = rest.filter((r) => !/^\s*\|?\s*:?-{2,}/.test(r));
+      out.push(
+        <div key={`t${out.length}`} style={{ overflowX: "auto", margin: "6px 0 10px" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
+            <thead>
+              <tr>
+                {cells(head!).map((c, i) => (
+                  <th
+                    key={i}
+                    className="hud"
+                    style={{
+                      textAlign: "left",
+                      fontWeight: 400,
+                      fontSize: 10,
+                      padding: "4px 10px 6px 0",
+                    }}
+                  >
+                    {c}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {body.map((r, i) => (
+                <tr key={i} style={{ borderTop: "1px solid #18202A", verticalAlign: "top" }}>
+                  {cells(r).map((c, j) => (
+                    <td key={j} style={{ padding: "6px 10px 6px 0", color: "var(--text-2)" }}>
+                      {inline(c)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+    }
+    table = [];
   };
+  let fence = false;
+  let code: string[] = [];
   for (const raw of text.split("\n")) {
     const line = raw.trimEnd();
+    if (/^```/.test(line)) {
+      if (fence) {
+        out.push(
+          <pre
+            key={`c${out.length}`}
+            className="mono"
+            style={{
+              fontSize: 11.5,
+              background: "#0B1016",
+              border: "1px solid var(--line)",
+              borderRadius: 8,
+              padding: 10,
+              overflowX: "auto",
+            }}
+          >
+            {code.join("\n")}
+          </pre>,
+        );
+        code = [];
+      } else flush();
+      fence = !fence;
+      continue;
+    }
+    if (fence) {
+      code.push(raw);
+      continue;
+    }
     const h = /^(#{1,4})\s+(.*)$/.exec(line);
-    const li = /^\s*[-*]\s+(?:\[[ xX]\]\s+)?(.*)$/.exec(line);
+    const li = /^\s*(?:[-*]|\d+\.)\s+(?:\[[ xX]\]\s+)?(.*)$/.exec(line);
+    if (line.trimStart().startsWith("|")) {
+      if (list.length) {
+        const keep = table;
+        table = [];
+        flush();
+        table = keep;
+      }
+      table.push(line);
+      continue;
+    }
+    if (table.length) flush();
     if (h) {
       flush();
       const level = h[1]!.length;
@@ -99,7 +203,7 @@ export function Markdown({ text }: { text: string }) {
           className={level <= 2 ? "h" : "hud"}
           style={{ margin: "12px 0 6px", fontSize: level <= 1 ? 16 : level === 2 ? 14 : 11 }}
         >
-          {h[2]}
+          {inline(h[2]!)}
         </div>,
       );
     } else if (li) list.push(li[1]!);
@@ -107,17 +211,8 @@ export function Markdown({ text }: { text: string }) {
     else {
       flush();
       out.push(
-        <p
-          key={out.length}
-          style={{
-            margin: "4px 0",
-            lineHeight: 1.6,
-            color: "var(--text-2)",
-            fontFamily: line.startsWith("|") ? "var(--mono)" : undefined,
-            fontSize: line.startsWith("|") ? 11.5 : undefined,
-          }}
-        >
-          {line}
+        <p key={out.length} style={{ margin: "4px 0", lineHeight: 1.6, color: "var(--text-2)" }}>
+          {inline(line)}
         </p>,
       );
     }

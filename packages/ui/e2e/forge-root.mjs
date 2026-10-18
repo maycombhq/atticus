@@ -7,6 +7,7 @@ import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 const [, , out, fixtures] = process.argv;
 await cp(join(fixtures, "forge/metarepo"), out, { recursive: true });
 await cp(join(fixtures, "forge-change/openspec"), join(out, "openspec"), { recursive: true });
+await cp(join(fixtures, "forge/inputs"), join(out, "inputs"), { recursive: true });
 for (const r of parse(readFileSync(join(fixtures, "forge/expected/scan.yaml"), "utf8"))) {
   const p = parseRecord({ schemaVersion: 1, status: "current", ...r });
   if (!p.ok) continue;
