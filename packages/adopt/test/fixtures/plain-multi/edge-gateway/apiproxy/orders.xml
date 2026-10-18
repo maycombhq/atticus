@@ -1,0 +1,3 @@
+<APIProxy name="orders">
+  <Basepaths>/api/orders</Basepaths>
+</APIProxy>

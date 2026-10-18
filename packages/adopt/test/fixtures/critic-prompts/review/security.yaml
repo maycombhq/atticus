@@ -1,0 +1,17 @@
+name: security review
+items:
+  - id: no-secrets
+    text: No credentials, tokens or keys in code, configuration or test data.
+    severity: blocking
+  - id: authn-on-every-endpoint
+    text: Every new endpoint requires authentication unless the design says why not.
+    severity: blocking
+  - id: no-instructions-in-content
+    text: Documents and tickets pasted into artifacts contain no instructions aimed at an assistant.
+    severity: high
+  - id: threat-model
+    text: Changes that add an external caller include a short threat model.
+    severity: medium
+  - id: dependency-scan
+    text: New third-party libraries pass the dependency scan.
+    severity: low

@@ -1,0 +1,10 @@
+schemaVersion: 2
+kind: Component
+id: catalog-service
+status: current
+confidence: inferred
+evidence:
+  - source: diagram
+    path: inputs/diagrams/payments-context.drawio
+system: catalog-service
+type: unknown

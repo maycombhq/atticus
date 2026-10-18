@@ -1,0 +1,15 @@
+schemaVersion: 2
+kind: Endpoint
+id: payments-api.post.payments
+status: current
+confidence: verified
+evidence:
+  - source: code
+    repo: payments-api
+    path: src/main/java/com/example/payments/PaymentsController.java
+    line: 14
+component: payments-api
+endpointType: rest
+method: POST
+pathOrTopic: /payments
+normalizedPath: /payments

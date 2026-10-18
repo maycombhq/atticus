@@ -1,0 +1,11 @@
+schemaVersion: 1
+platform: payments
+name: Payments platform
+systems:
+  - id: payments
+    name: Payments
+    boundary: product
+    owner: team-payments
+  - id: northwind-pay
+    name: Northwind Pay
+    boundary: vendor
