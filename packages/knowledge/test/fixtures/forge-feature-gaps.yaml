@@ -1,0 +1,127 @@
+# Knowledge gaps about the Forge features (ADR 0031), with the four features detection finds
+# (packages/features/test/fixtures/forge-features.yaml) added to the expected catalog.
+# Hand-written ground truth: never generate it from the checks' output.
+#
+# Each question goes to the feature's owner, else the owner of the system where its first
+# entry point starts work: the balance starts in the portal, the job in reports, the
+# payment event and the transfer call in the ledger. Order: check, then feature id.
+- check: feature-flow-complete
+  system: ledger
+  owner: team-ledger
+  records: [feature.payments, if-32d38aecd11b86b1]
+  question: Where does Payments (feature.payments) really start or end? Nothing Atticus found makes portal-bff publish payments.initiated.
+  neededFact: what starts or ends the flow of feature.payments at if-32d38aecd11b86b1
+- check: feature-flow-complete
+  system: ledger
+  owner: team-ledger
+  records: [feature.transfers, if-d99f508a2ac9b6e0]
+  question: Where does Transfers (feature.transfers) really start or end? Nothing Atticus found makes portal-bff call POST /transfers.
+  neededFact: what starts or ends the flow of feature.transfers at if-d99f508a2ac9b6e0
+
+- check: feature-confirmed
+  system: portal
+  owner: team-portal
+  records: [feature.account-balance]
+  question: What do people call the feature Atticus detected as "Account balance" (feature.account-balance), and who owns it?
+  neededFact: a confirmed name and an owner for feature.account-balance
+- check: feature-confirmed
+  system: reports
+  owner: team-reports
+  records: [feature.daily-entries-report]
+  question: What do people call the feature Atticus detected as "Daily entries report" (feature.daily-entries-report), and who owns it?
+  neededFact: a confirmed name and an owner for feature.daily-entries-report
+- check: feature-confirmed
+  system: ledger
+  owner: team-ledger
+  records: [feature.payments]
+  question: What do people call the feature Atticus detected as "Payments" (feature.payments), and who owns it?
+  neededFact: a confirmed name and an owner for feature.payments
+- check: feature-confirmed
+  system: ledger
+  owner: team-ledger
+  records: [feature.transfers]
+  question: What do people call the feature Atticus detected as "Transfers" (feature.transfers), and who owns it?
+  neededFact: a confirmed name and an owner for feature.transfers
+
+- check: feature-work-item-linked
+  system: portal
+  owner: team-portal
+  records: [feature.account-balance]
+  question: Which epic or feature in the work tracker built Account balance (feature.account-balance)?
+  neededFact: the work item that built feature.account-balance
+- check: feature-work-item-linked
+  system: reports
+  owner: team-reports
+  records: [feature.daily-entries-report]
+  question: Which epic or feature in the work tracker built Daily entries report (feature.daily-entries-report)?
+  neededFact: the work item that built feature.daily-entries-report
+- check: feature-work-item-linked
+  system: ledger
+  owner: team-ledger
+  records: [feature.payments]
+  question: Which epic or feature in the work tracker built Payments (feature.payments)?
+  neededFact: the work item that built feature.payments
+- check: feature-work-item-linked
+  system: ledger
+  owner: team-ledger
+  records: [feature.transfers]
+  question: Which epic or feature in the work tracker built Transfers (feature.transfers)?
+  neededFact: the work item that built feature.transfers
+
+- check: feature-tested
+  system: portal
+  owner: team-portal
+  records: [feature.account-balance]
+  question: Which tests cover Account balance (feature.account-balance)? Atticus found none for portal-bff.get-balance, ledger-api.get-balance.
+  neededFact: tests for portal-bff.get-balance, ledger-api.get-balance
+- check: feature-tested
+  system: reports
+  owner: team-reports
+  records: [feature.daily-entries-report]
+  question: Which tests cover Daily entries report (feature.daily-entries-report)? Atticus found none for reports-job.
+  neededFact: tests for reports-job
+- check: feature-tested
+  system: ledger
+  owner: team-ledger
+  records: [feature.payments]
+  question: Which tests cover Payments (feature.payments)? Atticus found none for if-32d38aecd11b86b1.
+  neededFact: tests for if-32d38aecd11b86b1
+- check: feature-tested
+  system: ledger
+  owner: team-ledger
+  records: [feature.transfers]
+  question: Which tests cover Transfers (feature.transfers)? Atticus found none for ledger-api.post-transfer, if-f1cd1f189eaa4b7b.
+  neededFact: tests for ledger-api.post-transfer, if-f1cd1f189eaa4b7b
+
+# Only reports-job has no alert: every other feature reaches ledger-api, which has one.
+- check: feature-monitored
+  system: reports
+  owner: team-reports
+  records: [feature.daily-entries-report]
+  question: Which alert or dashboard watches Daily entries report (feature.daily-entries-report)? None of its components (reports-job) has one.
+  neededFact: an alert or dashboard for reports-job
+
+- check: feature-described
+  system: portal
+  owner: team-portal
+  records: [feature.account-balance]
+  question: Is there a spec or wiki page that describes Account balance (feature.account-balance)? Only its code shows it.
+  neededFact: a document that describes feature.account-balance
+- check: feature-described
+  system: reports
+  owner: team-reports
+  records: [feature.daily-entries-report]
+  question: Is there a spec or wiki page that describes Daily entries report (feature.daily-entries-report)? Only its code shows it.
+  neededFact: a document that describes feature.daily-entries-report
+- check: feature-described
+  system: ledger
+  owner: team-ledger
+  records: [feature.payments]
+  question: Is there a spec or wiki page that describes Payments (feature.payments)? Only its code shows it.
+  neededFact: a document that describes feature.payments
+- check: feature-described
+  system: ledger
+  owner: team-ledger
+  records: [feature.transfers]
+  question: Is there a spec or wiki page that describes Transfers (feature.transfers)? Only its code shows it.
+  neededFact: a document that describes feature.transfers

@@ -1,0 +1,4 @@
+ID,Work Item Type,Title,State,Tags,Parent
+8001,Feature,Daily entries report,Active,reporting,
+8002,User Story,"Download the report as CSV, with totals",New,reporting; export,8001
+8003,Bug,"Report shows ""yesterday"" twice",Closed,,8001

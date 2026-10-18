@@ -1,0 +1,85 @@
+import { readdir, readFile, writeFile } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
+import { parse } from "yaml";
+import { parseRecord } from "./catalog.js";
+import { SCHEMA_VERSION } from "./schema/common.js";
+import { RECORD_KINDS } from "./schema/kinds.js";
+import { serializeRecord } from "./serialize.js";
+
+export interface MigrationResult {
+  /** Files rewritten at the current schema version (relative to the folder, "/"-separated). */
+  migrated: string[];
+  /** Record files already at the current version, left alone. */
+  current: string[];
+  /** Old record files that don't pass C1: left exactly as they are, with why. */
+  problems: { file: string; message: string }[];
+}
+
+const isRecordKind = (k: unknown): boolean =>
+  typeof k === "string" && (RECORD_KINDS as string[]).includes(k);
+
+async function yamlFiles(dir: string): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(d: string) {
+    let entries;
+    try {
+      entries = await readdir(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      const full = join(d, e.name);
+      if (e.isDirectory()) await walk(full);
+      else if (/\.ya?ml$/.test(e.name)) out.push(full);
+    }
+  }
+  await walk(dir);
+  return out.sort();
+}
+
+/**
+ * Rewrite every older record file under a catalog folder (generated and curated) at the
+ * current schema version, in canonical form. Readers accept old files anyway; migrating once
+ * keeps diffs clean afterwards. A file that isn't a catalog record (no known `kind`) is not
+ * touched, nor is an old one that fails C1: it is reported, so nothing is half-migrated.
+ * Version 1 → 2 (ADR 0031) changes only `schemaVersion`; the canonical form also writes list
+ * defaults the hand-written file left out, exactly as a scan would write the record.
+ */
+export async function migrateCatalog(
+  dir: string,
+  o: { dryRun?: boolean } = {},
+): Promise<MigrationResult> {
+  const res: MigrationResult = { migrated: [], current: [], problems: [] };
+  for (const full of await yamlFiles(dir)) {
+    const file = relative(dir, full).split(sep).join("/");
+    const text = await readFile(full, "utf8");
+    let data: unknown;
+    try {
+      data = parse(text);
+    } catch {
+      continue;
+    }
+    if (
+      typeof data !== "object" ||
+      data === null ||
+      !isRecordKind((data as { kind?: unknown }).kind)
+    )
+      continue;
+    const version = (data as { schemaVersion?: unknown }).schemaVersion;
+    if (version === SCHEMA_VERSION) {
+      res.current.push(file);
+      continue;
+    }
+    const p = parseRecord(data);
+    if (!p.ok) {
+      res.problems.push({
+        file,
+        message: p.issues.map((i) => `${i.path}: ${i.message}`).join("; "),
+      });
+      continue;
+    }
+    if (!o.dryRun) await writeFile(full, serializeRecord(p.record), "utf8");
+    res.migrated.push(file);
+  }
+  return res;
+}

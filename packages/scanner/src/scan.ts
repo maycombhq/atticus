@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { featuresForScan } from "@maycombhq/features";
 import {
   configHash,
   fsRepo,
@@ -217,7 +218,19 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     if (inputs.records.length > 0)
       merged = mergeCatalog(mergeInput([...codeRecords, ...inputs.records]));
   }
-  const applied = applyCurated(merged.records, curated.records);
+  // Features found in code (ADR 0031) join the catalog before curated decisions, so people's
+  // names, tags, merges and splits apply over detection on every scan.
+  const found = await featuresForScan({
+    records: merged.records,
+    decisions: curated.records,
+    proposalsDir: join(dirname(curatedDir), "proposals"),
+  });
+  for (const p of found.problems)
+    problems.push({ source: "features", message: `${p.decision}: ${p.message}` });
+  const withFeatures = [...merged.records, ...found.features].sort((a, b) =>
+    a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
+  );
+  const applied = applyCurated(withFeatures, curated.records);
   for (const p of applied.problems)
     problems.push({ source: "curated", message: JSON.stringify(p) });
   merged = { ...merged, records: applied.records };

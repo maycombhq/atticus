@@ -1,0 +1,31 @@
+{
+  "name": "@maycombhq/features",
+  "version": "0.0.1",
+  "description": "Features found in code (ADR 0031): detection in every scan, AI naming outside it, people's names, merges, splits and links as curated decisions, work-item link suggestions and OpenSpec drafts.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000"
+  },
+  "dependencies": {
+    "@maycombhq/adapters": "workspace:*",
+    "@maycombhq/ai": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/intake": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

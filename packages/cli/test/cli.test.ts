@@ -11,7 +11,7 @@ function capture() {
   return { io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l) }, out, err };
 }
 
-const SYSTEM = `schemaVersion: 1
+const SYSTEM = `schemaVersion: 2
 kind: System
 id: ledger
 status: current
@@ -55,7 +55,7 @@ describe("atticus CLI", () => {
     const dir = await mkdtemp(join(tmpdir(), "atticus-schema-"));
     const c = capture();
     expect(await main(["schema", "export", dir], c.io)).toBe(0);
-    expect(await readdir(join(dir, "catalog"))).toHaveLength(29);
+    expect(await readdir(join(dir, "catalog"))).toHaveLength(30);
     expect(await readdir(join(dir, "orgpack"))).toHaveLength(12);
     expect(JSON.parse(await readFile(join(dir, "api", "openapi.json"), "utf8")).openapi).toBe(
       "3.1.0",
@@ -104,8 +104,8 @@ describe("atticus CLI", () => {
 
   it("flags invalid, misplaced and non-canonical files with exit code 1", async () => {
     const reordered = SYSTEM.replace("name: Ledger\n", "").replace(
-      "schemaVersion: 1\n",
-      "name: Ledger\nschemaVersion: 1\n",
+      "schemaVersion: 2\n",
+      "name: Ledger\nschemaVersion: 2\n",
     );
     const dir = await catalogWith({
       "system/ledger.yaml": reordered,
@@ -122,8 +122,8 @@ describe("atticus CLI", () => {
 
   it("rewrites non-canonical files with --fix", async () => {
     const reordered = SYSTEM.replace("name: Ledger\n", "").replace(
-      "schemaVersion: 1\n",
-      "name: Ledger\nschemaVersion: 1\n",
+      "schemaVersion: 2\n",
+      "name: Ledger\nschemaVersion: 2\n",
     );
     const dir = await catalogWith({ "system/ledger.yaml": reordered });
     const c = capture();

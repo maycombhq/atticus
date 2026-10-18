@@ -1,4 +1,4 @@
-import type { CatalogRecord, OrgPack, RecordKind } from "@maycombhq/core";
+import type { CatalogRecord, OrgPack, RecordKind, RecordOf } from "@maycombhq/core";
 import { knowledgeGaps, type KnowledgeGap } from "./gaps.js";
 
 /**
@@ -50,10 +50,44 @@ export interface AreaCoverage {
   expected: number;
 }
 
+/** Features (ADR 0031): named by a person, only detected (or AI-named), and code no feature covers. */
+export interface FeatureCoverage {
+  confirmed: string[];
+  detectedOnly: string[];
+  /** Components of our own that no feature spans: what they do for users is unknown. */
+  unknown: string[];
+}
+
 export interface CoverageResult {
   systems: SystemCoverage[];
   areas: AreaCoverage[];
   gaps: KnowledgeGap[];
+  features: FeatureCoverage;
+}
+
+/** The features view of coverage. */
+export function featureCoverage(records: CatalogRecord[]): FeatureCoverage {
+  const features = records.filter(
+    (r): r is RecordOf<"Capability"> => r.kind === "Capability" && r.status !== "retired",
+  );
+  const spanned = new Set(features.flatMap((f) => f.records));
+  const vendor = new Set(
+    records.filter((r) => r.kind === "System" && r.boundary === "vendor").map((r) => r.id),
+  );
+  const ids = (l: { id: string }[]) => l.map((x) => x.id).sort();
+  return {
+    confirmed: ids(features.filter((f) => f.namedBy === "person")),
+    detectedOnly: ids(features.filter((f) => f.namedBy !== "person")),
+    unknown: ids(
+      records.filter(
+        (r) =>
+          r.kind === "Component" &&
+          r.status !== "retired" &&
+          !vendor.has(r.system) &&
+          !spanned.has(r.id),
+      ),
+    ),
+  };
 }
 
 export interface CoverageInput {
@@ -187,7 +221,7 @@ export function coverage(input: CoverageInput): CoverageResult {
       expected: states.length,
     };
   });
-  return { systems, areas, gaps };
+  return { systems, areas, gaps, features: featureCoverage(records) };
 }
 
 /** The C4 local API's Coverage shape: known counts only what is verified, never document-only. */

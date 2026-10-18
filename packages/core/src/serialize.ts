@@ -1,5 +1,6 @@
 import { parse, stringify } from "yaml";
 import { parseRecord, type CatalogRecord, type ParseResult } from "./catalog.js";
+import { SCHEMA_VERSION } from "./schema/common.js";
 
 /** Keys printed first, in this order; everything else follows alphabetically. */
 const LEADING_KEYS = ["schemaVersion", "kind", "id", "status", "confidence"];
@@ -36,10 +37,11 @@ export function canonicalize(value: unknown, leading: readonly string[] = LEADIN
 /**
  * Canonical YAML for a record: fixed key order, two-space indent, no line folding,
  * LF line endings and exactly one trailing newline. Serializing the parsed output
- * again gives byte-identical text, so diffs only ever show real changes.
+ * again gives byte-identical text, so diffs only ever show real changes. Always written at
+ * the current schema version (a record built in memory as version 1 is the same record).
  */
 export function serializeRecord(record: CatalogRecord): string {
-  return toCanonicalYaml(record);
+  return toCanonicalYaml({ ...record, schemaVersion: SCHEMA_VERSION });
 }
 
 /**

@@ -6,3 +6,4 @@ export * from "./patterns.js";
 export * from "./gaps.js";
 export * from "./coverage.js";
 export * from "./freshness.js";
+export * from "./feature-checks.js";

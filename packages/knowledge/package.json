@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@maycombhq/core": "workspace:*",
+    "@maycombhq/features": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",
     "yaml": "^2.9.1"
   }

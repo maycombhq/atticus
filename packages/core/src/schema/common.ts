@@ -1,7 +1,25 @@
 import { z } from "zod";
 
-/** Current catalog schema version. Bumping it requires an ADR and a migration. */
-export const SCHEMA_VERSION = 1 as const;
+/**
+ * Current catalog schema version. Bumping it requires an ADR and a migration.
+ * Version 2 (ADR 0031) added the Capability kind and changed no existing field.
+ */
+export const SCHEMA_VERSION = 2 as const;
+
+/** Every catalog schema version a reader accepts, oldest first. */
+export const SUPPORTED_SCHEMA_VERSIONS = [1, 2] as const;
+
+/**
+ * A record's schema version. Version-1 files differ from version 2 only in this number, so
+ * they are read as they are and come back as version 2 in memory; writers always write the
+ * current version, and `migrateCatalog` rewrites old files. The type stays `1 | 2` so code that
+ * builds version-1 records in memory keeps compiling until it is updated.
+ */
+export const SchemaVersion = z
+  .union([z.literal(1), z.literal(2)], {
+    error: "schemaVersion must be 1 or 2 (version 1 files are read as version 2)",
+  })
+  .overwrite((): 1 | 2 => SCHEMA_VERSION);
 
 /**
  * Stable record id. Lowercase slug, safe as a file name on Linux, macOS and Windows
@@ -70,7 +88,7 @@ export const IsoDateTime = z.iso.datetime({ offset: true });
 
 /** Fields every record carries. `kind` is added per record type. */
 export const commonFields = {
-  schemaVersion: z.literal(SCHEMA_VERSION),
+  schemaVersion: SchemaVersion,
   id: RecordId,
   status: Status,
   confidence: Confidence,
