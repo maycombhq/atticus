@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
+    "test": "vitest run --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000"
   },
   "dependencies": {
     "@maycombhq/core": "workspace:*",
