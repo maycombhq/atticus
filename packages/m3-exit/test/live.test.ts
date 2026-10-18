@@ -98,7 +98,7 @@ describe("M3 exit live runs: prepare.mjs", () => {
         join(metarepoOf(runDir, "task"), "org-pack/profiles/forge/repos.manifest.yaml"),
         "utf8",
       );
-      expect(manifest).toMatch(/build: node ".*fake-build\.mjs"/);
+      expect(manifest).toMatch(/build: '?node ".*fake-build\.mjs"/);
     },
     T,
   );
