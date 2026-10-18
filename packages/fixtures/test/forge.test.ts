@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { parseRecord, type CatalogRecord } from "@maycombhq/core";
+import { loadRepos } from "@maycombhq/workspace";
+import { readdirSync } from "node:fs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/forge");
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
@@ -149,5 +151,19 @@ describe("Forge inputs and seeded problems", () => {
     expect(sha("inputs/diagrams/forge-context.drawio")).toBe(
       "19afb74146568c497c0151388d7ab8d07713187feb99d6d0cf93f4185ae1ecbf",
     );
+  });
+});
+
+describe("Forge repo manifest", () => {
+  it("lists exactly the fixture repos, with systems and components that match the catalog", async () => {
+    const repos = await loadRepos(join(ROOT, "metarepo"));
+    expect(repos.map((r) => r.id).sort()).toEqual(readdirSync(join(ROOT, "repos")).sort());
+    for (const r of repos) {
+      if (r.system) expect(byId.get(r.system)?.kind, r.id).toBe("System");
+    }
+    const ids = new Set(repos.map((r) => r.id));
+    for (const rec of records) {
+      if (rec.kind === "Component" && rec.repo) expect(ids.has(rec.repo), rec.id).toBe(true);
+    }
   });
 });

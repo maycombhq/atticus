@@ -1,0 +1,28 @@
+{
+  "name": "@maycombhq/openspec-adapter",
+  "version": "0.0.1",
+  "description": "Atticus's only door to OpenSpec: a wrapper over OpenSpec's stable CLI, the org-flow workflow schema, and contract tests.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fission-ai/openspec": "1.14.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

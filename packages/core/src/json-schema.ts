@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
+import { ChangeRepos, RepoManifest } from "./schema/workspace.js";
 
 /**
  * JSON Schema for every record kind, generated from the zod source of truth, for editors,
@@ -16,4 +17,17 @@ export function catalogJsonSchemas(): Record<RecordKind, object> {
     };
   }
   return out;
+}
+
+/** JSON Schema for the workspace files: repos.manifest.yaml and a change's repos.yaml. */
+export function workspaceJsonSchemas(): Record<"RepoManifest" | "ChangeRepos", object> {
+  const gen = (name: string, schema: z.ZodType) => ({
+    $id: `https://maycombhq.github.io/atticus/schema/workspace/v1/${name}.json`,
+    title: name,
+    ...z.toJSONSchema(schema, { io: "input", unrepresentable: "any" }),
+  });
+  return {
+    RepoManifest: gen("RepoManifest", RepoManifest),
+    ChangeRepos: gen("ChangeRepos", ChangeRepos),
+  };
 }

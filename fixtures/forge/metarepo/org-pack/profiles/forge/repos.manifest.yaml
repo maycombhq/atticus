@@ -1,0 +1,39 @@
+# The Forge platform's repos. Hand-written; matches fixtures/forge/repos.
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-portal-ui
+    url: https://git.example.com/forge/forge-portal-ui.git
+    type: spa
+    owner: team-portal
+    system: portal
+  - id: forge-portal-bff
+    url: https://git.example.com/forge/forge-portal-bff.git
+    type: spring-boot
+    owner: team-portal
+    system: portal
+  - id: forge-ledger
+    url: https://git.example.com/forge/forge-ledger.git
+    type: forge-service
+    owner: team-ledger
+    system: ledger
+    dialects: [forge]
+  - id: forge-reports-job
+    url: https://git.example.com/forge/forge-reports-job.git
+    type: batch-job
+    owner: team-reports
+    system: reports
+  - id: forge-gateway
+    url: https://git.example.com/forge/forge-gateway.git
+    type: gateway
+    owner: team-platform
+    sparse: [proxies/ledger-v1]
+  - id: forge-events
+    url: https://git.example.com/forge/forge-events.git
+    type: event-config
+    owner: team-platform
+  - id: forge-infra
+    url: https://git.example.com/forge/forge-infra.git
+    defaultBranch: main
+    type: infra
+    owner: team-platform

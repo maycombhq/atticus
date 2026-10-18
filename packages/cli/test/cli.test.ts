@@ -50,13 +50,16 @@ describe("atticus CLI", () => {
     expect(await main(["frobnicate"], c.io)).toBe(2);
   });
 
-  it("exports one JSON Schema per kind", async () => {
+  it("exports one JSON Schema per kind and the workspace schemas", async () => {
     const dir = await mkdtemp(join(tmpdir(), "atticus-schema-"));
     const c = capture();
     expect(await main(["schema", "export", dir], c.io)).toBe(0);
-    const files = await readdir(dir);
-    expect(files).toHaveLength(29);
-    const system = JSON.parse(await readFile(join(dir, "System.json"), "utf8"));
+    expect(await readdir(join(dir, "catalog"))).toHaveLength(29);
+    expect((await readdir(join(dir, "workspace"))).sort()).toEqual([
+      "ChangeRepos.json",
+      "RepoManifest.json",
+    ]);
+    const system = JSON.parse(await readFile(join(dir, "catalog", "System.json"), "utf8"));
     expect(system.title).toBe("System");
   });
 

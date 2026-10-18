@@ -4,7 +4,7 @@
 
 Atticus is an open-source, configurable framework for teams whose systems span many repositories, gateways, event streams and vendors. It builds on [OpenSpec](https://github.com/Fission-AI/openspec) and works with the AI assistant you already use (GitHub Copilot or Claude Code).
 
-> **Status: early build (M0).** The catalog contracts, canonical file format and plugin SDK basics are in place. Scanning, the critic and Atticus Studio (the local UI) are being built in the stages described below. Nothing here is ready for production use yet.
+> **Status: early build (M0).** The catalog contracts, canonical file format, plugin SDK basics, OpenSpec adapter and workspace manager are in place. Scanning, the critic and Atticus Studio (the local UI) are being built in the stages described below. Nothing here is ready for production use yet.
 
 ## What it does
 
@@ -22,10 +22,14 @@ AI teaches and drafts; deterministic code does the repeated work. Scans never ca
 
 ```
 packages/
-  core/   catalog record contracts (C1), canonical YAML, identity rules
-  sdk/    plugin SDK (C4): extractors, ingestors, test helpers
-  cli/    the `atticus` command
-docs/adr/ architecture decision records
+  core/              catalog record contracts (C1), workspace file schemas, canonical YAML, identity and branch rules
+  sdk/               plugin SDK (C4): extractors, ingestors, test helpers
+  openspec-adapter/  the only door to OpenSpec: pinned CLI wrapper, org-flow schema, contract tests
+  workspace/         base clones, change worktrees, repos files, VS Code and IntelliJ workspaces
+  cli/               the `atticus` command
+  fixtures/          tests that keep the Forge fixture consistent
+fixtures/forge/      an invented ecosystem with a hand-written expected catalog
+docs/adr/            architecture decision records
 ```
 
 ## Try it

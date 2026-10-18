@@ -4,9 +4,13 @@ import { parseRecord, type CatalogRecord, type ParseResult } from "./catalog.js"
 /** Keys printed first, in this order; everything else follows alphabetically. */
 const LEADING_KEYS = ["schemaVersion", "kind", "id", "status", "confidence"];
 
-function compareKeys(a: string, b: string): number {
-  const ia = LEADING_KEYS.indexOf(a);
-  const ib = LEADING_KEYS.indexOf(b);
+function keyComparator(leading: readonly string[]) {
+  return (a: string, b: string): number => compareKeys(a, b, leading);
+}
+
+function compareKeys(a: string, b: string, leading: readonly string[] = LEADING_KEYS): number {
+  const ia = leading.indexOf(a);
+  const ib = leading.indexOf(b);
   if (ia !== -1 || ib !== -1) {
     if (ia === -1) return 1;
     if (ib === -1) return -1;
@@ -16,13 +20,13 @@ function compareKeys(a: string, b: string): number {
 }
 
 /** Recursively drop undefined values and order object keys canonically. Arrays keep their order. */
-export function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
+export function canonicalize(value: unknown, leading: readonly string[] = LEADING_KEYS): unknown {
+  if (Array.isArray(value)) return value.map((v) => canonicalize(v, leading));
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const key of Object.keys(value).sort(compareKeys)) {
+    for (const key of Object.keys(value).sort(keyComparator(leading))) {
       const v = (value as Record<string, unknown>)[key];
-      if (v !== undefined) out[key] = canonicalize(v);
+      if (v !== undefined) out[key] = canonicalize(v, leading);
     }
     return out;
   }
@@ -35,7 +39,15 @@ export function canonicalize(value: unknown): unknown {
  * again gives byte-identical text, so diffs only ever show real changes.
  */
 export function serializeRecord(record: CatalogRecord): string {
-  const text = stringify(canonicalize(record), {
+  return toCanonicalYaml(record);
+}
+
+/**
+ * Canonical YAML for any Atticus file (records, repos files, org-pack files): keys in
+ * `leading` first in that order, the rest alphabetical; same formatting as records.
+ */
+export function toCanonicalYaml(value: unknown, leading: readonly string[] = LEADING_KEYS): string {
+  const text = stringify(canonicalize(value, leading), {
     indent: 2,
     lineWidth: 0,
     minContentWidth: 0,

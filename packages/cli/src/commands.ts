@@ -3,6 +3,7 @@ import { join, relative, sep } from "node:path";
 import {
   catalogJsonSchemas,
   deserializeRecord,
+  workspaceJsonSchemas,
   recordPath,
   serializeRecord,
 } from "@maycombhq/core";
@@ -12,15 +13,29 @@ export interface Output {
   err(line: string): void;
 }
 
-/** Write one JSON Schema file per record kind. Returns the number written. */
+/**
+ * Write JSON Schema files: one per record kind under `<dir>/catalog/`, and the workspace
+ * files under `<dir>/workspace/`. Returns the number written.
+ */
 export async function schemaExport(dir: string, io: Output): Promise<number> {
-  await mkdir(dir, { recursive: true });
-  const schemas = catalogJsonSchemas();
-  for (const [kind, schema] of Object.entries(schemas)) {
-    await writeFile(join(dir, `${kind}.json`), JSON.stringify(schema, null, 2) + "\n", "utf8");
+  const groups: [string, Record<string, object>][] = [
+    ["catalog", catalogJsonSchemas()],
+    ["workspace", workspaceJsonSchemas()],
+  ];
+  let n = 0;
+  for (const [group, schemas] of groups) {
+    await mkdir(join(dir, group), { recursive: true });
+    for (const [name, schema] of Object.entries(schemas)) {
+      await writeFile(
+        join(dir, group, `${name}.json`),
+        JSON.stringify(schema, null, 2) + "\n",
+        "utf8",
+      );
+      n++;
+    }
   }
-  io.out(`Wrote ${Object.keys(schemas).length} schemas to ${dir}`);
-  return Object.keys(schemas).length;
+  io.out(`Wrote ${n} schemas to ${dir}`);
+  return n;
 }
 
 async function* yamlFiles(dir: string): AsyncGenerator<string> {

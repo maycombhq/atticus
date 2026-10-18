@@ -6,6 +6,6 @@ coverage/
 .DS_Store
 
 # Atticus local state (never committed in a metarepo either)
-.index/
-.runs/
-workspace/
+/.index/
+/.runs/
+/workspace/
