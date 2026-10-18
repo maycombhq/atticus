@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SCHEMA_VERSION } from "./schema/common.js";
 import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
 import { ChangeRepos, RepoManifest } from "./schema/workspace.js";
 import { ChangeLifecycle } from "./schema/change.js";
@@ -16,7 +17,7 @@ export function catalogJsonSchemas(): Record<RecordKind, object> {
   for (const kind of RECORD_KINDS) {
     const schema = z.toJSONSchema(RECORD_SCHEMAS[kind], { io: "input", unrepresentable: "any" });
     out[kind] = {
-      $id: `https://maycombhq.github.io/atticus/schema/catalog/v1/${kind}.json`,
+      $id: `https://maycombhq.github.io/atticus/schema/catalog/v${SCHEMA_VERSION}/${kind}.json`,
       title: kind,
       ...schema,
     };

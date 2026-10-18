@@ -1,0 +1,95 @@
+# Features a correct detection finds in the Forge catalog (fixtures/forge/expected/scan.yaml),
+# ADR 0031. Hand-written ground truth, written before the detector: never generate it from
+# the detector's output.
+#
+# Rows omit schemaVersion and status: current; the test adds them. entryPoints start with
+# the outermost entry point (the one no other entry point's flow reaches), then the rest in
+# id order; records are sorted by id; evidence is the entry points' evidence, compared as a
+# set of (repo, path, line, side).
+#
+# Why each feature is what it is:
+# - Account balance: the UI calls the BFF's balance endpoint, the BFF calls the ledger's
+#   balance endpoint through the gateway (the call shares "balance" with where the flow
+#   started), and the ledger reads the account table (shares "account" with the call). The
+#   BFF's transfer call, audit call and payment event share nothing with "balance", so they
+#   are not part of this flow. The longest resource wins the name: /accounts/{id}/balance.
+# - Transfers: POST /transfers through the gateway; the ledger writes the entry table (no
+#   table shares a word with "transfers", and account is claimed by the balance call, so the
+#   one it writes that nobody claims is taken), and publishes transfers.completed (shares
+#   "transfers"), which reports-job consumes. That consumer is an entry point of its own
+#   (an event from another system), and is in this flow, so it joins this feature.
+# - Payments: the payments.initiated event from the portal starts work in the ledger, which
+#   calls Northwind Pay (shares "payments") and writes the entry table nobody claims.
+# - Daily entries report: reports-job is a batch job (its own entry point); its class is
+#   DailyEntriesJob and its system is Reports; it reads the entry table (shares "entries").
+- kind: Capability
+  id: feature.account-balance
+  confidence: inferred
+  name: Account balance
+  namedBy: detected
+  entryPoints: [portal-bff.get-balance, ledger-api.get-balance]
+  records:
+    - if-75b5e8d8aa780837
+    - if-f5c8b4b06d75284f
+    - ledger-api
+    - ledger-api.get-balance
+    - ledger-db.account
+    - portal-bff
+    - portal-bff.get-balance
+    - portal-ui
+  evidence:
+    - { source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/BalanceController.java, line: 12, side: callee }
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEndpoints.java, line: 8, side: callee }
+    - { source: spec, repo: forge-ledger, path: api/ledger-openapi.yaml, line: 6, side: definition }
+
+- kind: Capability
+  id: feature.daily-entries-report
+  confidence: inferred
+  name: Daily entries report
+  namedBy: detected
+  entryPoints: [reports-job]
+  records: [ledger-db.entry, reports-job]
+  evidence:
+    - { source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java }
+
+- kind: Capability
+  id: feature.payments
+  confidence: inferred
+  name: Payments
+  namedBy: detected
+  entryPoints: [if-32d38aecd11b86b1]
+  records:
+    - if-32d38aecd11b86b1
+    - if-e7344c9455608119
+    - ledger-api
+    - ledger-db.entry
+    - northwind-pay
+    - northwind-pay.post-payment
+    - portal-bff
+    - topic.payments-initiated
+  evidence:
+    - { source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/PaymentEvents.java, line: 11, side: caller }
+    - { source: event-config, repo: forge-events, path: topics/payments.initiated.yaml, line: 1, side: definition }
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEvents.java, line: 6, side: callee }
+
+- kind: Capability
+  id: feature.transfers
+  confidence: inferred
+  name: Transfers
+  namedBy: detected
+  entryPoints: [ledger-api.post-transfer, if-f1cd1f189eaa4b7b]
+  records:
+    - if-d99f508a2ac9b6e0
+    - if-f1cd1f189eaa4b7b
+    - ledger-api
+    - ledger-api.post-transfer
+    - ledger-db.entry
+    - portal-bff
+    - reports-job
+    - topic.transfers-completed
+  evidence:
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEndpoints.java, line: 11, side: callee }
+    - { source: spec, repo: forge-ledger, path: api/ledger-openapi.yaml, line: 14, side: definition }
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEvents.java, line: 9, side: caller }
+    - { source: event-config, repo: forge-events, path: topics/transfers.completed.yaml, line: 1, side: definition }
+    - { source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java, line: 17, side: callee }

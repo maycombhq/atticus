@@ -54,7 +54,7 @@ function bare(r: CatalogRecord): Rec {
 
 function expected(name: string): Rec[] {
   return (parse(readFileSync(join(FIX, `${name}.expected.yaml`), "utf8")) as Rec[]).map((r) => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     status: "current",
     ...r,
   }));

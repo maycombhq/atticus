@@ -22,6 +22,7 @@
     "@maycombhq/changes": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/diagrams": "workspace:*",
+    "@maycombhq/features": "workspace:*",
     "@maycombhq/index": "workspace:*",
     "@maycombhq/ingestors": "workspace:*",
     "@maycombhq/intake": "workspace:*",

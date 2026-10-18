@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "agent": "feature-namer",
+  "promptSha256": "b4a89a6300f57d5118e01e092bb8e27346869aa37f512553ff32f9a820c4a561",
+  "output": "features:\n  - id: feature.account-balance\n    name: Account balance\n    description: Shows a customer the balance of one of their accounts in the portal; the portal asks the ledger, which reads the account.\n    tags: [accounts]\n    evidence: [portal-bff.get-balance, ledger-api.get-balance, ledger-db.account]\n  - id: feature.daily-entries-report\n    name: Daily ledger entries report\n    description: A batch job in Reports that reads the ledger's entries every day to build a report.\n    tags: [reporting]\n    evidence: [reports-job, ledger-db.entry]\n  - id: feature.payments\n    name: Vendor payments\n    description: When the portal starts a payment, the ledger sends it to Northwind Pay and records the entry.\n    tags: [payments]\n    evidence: [if-32d38aecd11b86b1, if-e7344c9455608119]\n  - id: feature.transfers\n    name: Money transfers\n    description: Moves money between accounts through the ledger and tells reporting when a transfer completes.\n    tags: [payments]\n    evidence: [ledger-api.post-transfer, topic.transfers-completed]\n",
+  "usage": {
+    "inputTokens": 1460,
+    "outputTokens": 260
+  },
+  "model": "hand-written",
+  "recordedAt": "2026-10-18T12:00:00Z"
+}

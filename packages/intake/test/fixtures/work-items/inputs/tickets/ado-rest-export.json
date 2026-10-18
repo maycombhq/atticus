@@ -1,0 +1,48 @@
+{
+  "count": 3,
+  "value": [
+    {
+      "id": 7001,
+      "fields": {
+        "System.WorkItemType": "Epic",
+        "System.Title": "Move money between accounts",
+        "System.State": "Active",
+        "System.Tags": "payments; ledger"
+      },
+      "relations": [
+        {
+          "rel": "ArtifactLink",
+          "url": "vstfs:///Git/PullRequestId/payments%2Fforge-ledger%2F42",
+          "attributes": { "name": "Pull Request" }
+        }
+      ],
+      "pullRequests": [
+        { "id": "42", "repo": "forge-ledger", "paths": ["src/main/java/forge/ledger/LedgerEndpoints.java"] }
+      ],
+      "url": "https://dev.example.com/contoso/payments/_workitems/edit/7001"
+    },
+    {
+      "id": 7002,
+      "fields": {
+        "System.WorkItemType": "Feature",
+        "System.Title": "Account balance in the portal",
+        "System.State": "Closed",
+        "System.Description": "<p>Customers see their balance.</p>"
+      },
+      "relations": [
+        {
+          "rel": "System.LinkTypes.Hierarchy-Reverse",
+          "url": "https://dev.example.com/contoso/_apis/wit/workItems/7001"
+        }
+      ]
+    },
+    {
+      "id": 7003,
+      "fields": {
+        "System.WorkItemType": "Task",
+        "System.Title": "Write release notes",
+        "System.State": "New"
+      }
+    }
+  ]
+}

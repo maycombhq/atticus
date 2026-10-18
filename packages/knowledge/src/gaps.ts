@@ -7,6 +7,7 @@ import {
   type RecordKind,
   type RecordOf,
 } from "@maycombhq/core";
+import { FEATURE_CHECKS } from "./feature-checks.js";
 import { newestEvidence } from "./freshness.js";
 import { daysBetween } from "./sources.js";
 
@@ -39,13 +40,15 @@ export interface KnowledgeGap {
   question: OwnerQuestionRecord;
 }
 
-interface GapDraft {
+export interface GapDraft {
   system: string;
   records: string[];
   question: string;
   neededFact: string;
   evidence: EvidenceT[];
   stale?: string[];
+  /** Who takes the question when it isn't the system's owner (a feature's own owner). */
+  owner?: string;
 }
 
 export interface CheckContext {
@@ -258,11 +261,12 @@ const sourceKnown: KnowledgeCheck = {
   },
 };
 
-/** The built-in checks, in the order their gaps are listed. */
+/** The built-in checks, in the order their gaps are listed; feature checks (ADR 0031) last. */
 export const KNOWLEDGE_CHECKS: KnowledgeCheck[] = [
   callResilience,
   unattendedMonitored,
   sourceKnown,
+  ...FEATURE_CHECKS,
 ];
 
 export interface KnowledgeGapsInput {
@@ -335,7 +339,7 @@ export function knowledgeGaps(input: KnowledgeGapsInput): KnowledgeGap[] {
   const out: KnowledgeGap[] = [];
   for (const check of [...KNOWLEDGE_CHECKS, ...(input.checks ?? [])]) {
     for (const g of check.run(ctx)) {
-      const owner = ownerOf(g.system) ?? orgPack.pack?.owner ?? "unassigned";
+      const owner = g.owner ?? ownerOf(g.system) ?? orgPack.pack?.owner ?? "unassigned";
       const routeTo = owner === "unassigned" ? "architect" : undefined;
       const id = `q.${check.id}.${g.records[0]}`.slice(0, 120);
       const prior = existing.get(id);

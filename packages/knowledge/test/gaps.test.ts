@@ -40,7 +40,7 @@ describe("knowledge gaps on the expected Forge catalog", () => {
     const gaps = knowledgeGaps({ records: forgeRecords(), orgPack: await forgePack() });
     expect(gaps.map((g) => g.question)).toEqual([
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         kind: "OwnerQuestion",
         id: "q.call-resilience-known.if-e7344c9455608119",
         status: "current",
@@ -70,7 +70,7 @@ describe("knowledge gaps on the expected Forge catalog", () => {
         ],
       },
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         kind: "OwnerQuestion",
         id: "q.unattended-workload-monitored.reports-job",
         status: "current",
@@ -91,7 +91,7 @@ describe("knowledge gaps on the expected Forge catalog", () => {
         ],
       },
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         kind: "OwnerQuestion",
         id: "q.component-source-known.audit-svc",
         status: "current",

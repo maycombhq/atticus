@@ -23,6 +23,7 @@
   "dependencies": {
     "@maycombhq/core": "workspace:*",
     "@maycombhq/extractors": "workspace:*",
+    "@maycombhq/features": "workspace:*",
     "@maycombhq/ingestors": "workspace:*",
     "@maycombhq/intake": "workspace:*",
     "@maycombhq/sdk": "workspace:*",

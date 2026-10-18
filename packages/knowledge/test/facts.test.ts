@@ -54,7 +54,7 @@ describe("mapFacts on the Forge wiki against the expected catalog", () => {
     ).toEqual(expected.documentOnlyFacts);
     expect(res.documentOnlyFacts.map((f) => f.record)).toEqual([
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         kind: "Obligation",
         id: "ledger.slo.99-9-monthly-availability",
         status: "current",
@@ -73,7 +73,7 @@ describe("mapFacts on the Forge wiki against the expected catalog", () => {
         ],
       },
       {
-        schemaVersion: 1,
+        schemaVersion: 2,
         kind: "Obligation",
         id: "ledger.volume.200-requests-per-second",
         status: "current",

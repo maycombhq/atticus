@@ -19,3 +19,4 @@ export { API_VERSION, DEFAULT_PORT, openApiDocument } from "./api.js";
 export * from "./merge.js";
 export * from "./refs.js";
 export * from "./curated.js";
+export * from "./migrate.js";

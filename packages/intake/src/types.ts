@@ -62,7 +62,9 @@ export type TriageKind =
   /** On the diagram but not in code, or the other way round. */
   | "diagram-gap"
   /** Marked new, modify or retire: work for a change. */
-  | "planned";
+  | "planned"
+  /** A work item that looks like what built a feature (ADR 0031): someone confirms the link. */
+  | "feature-link";
 
 export const KIND_ORDER: TriageKind[] = [
   "conflict",
@@ -72,6 +74,7 @@ export const KIND_ORDER: TriageKind[] = [
   "version-unclear",
   "diagram-gap",
   "planned",
+  "feature-link",
 ];
 
 export type DecisionAction = "alias" | "assert" | "suppress" | "resolve-conflict" | "classify";

@@ -351,6 +351,33 @@ export const ProcessArtifact = record("ProcessArtifact", {
   linkedRecords: list(Ref),
 });
 
+/** A work item, wiki page or spec a feature is linked to (outside the catalog). */
+export const ExternalRef = z.strictObject({
+  system: z.enum(["ado", "jira", "wiki", "openspec", "other"]),
+  id: str(),
+  url: z.string().optional(),
+  title: z.string().optional(),
+});
+
+/**
+ * A feature (ADR 0031): what a set of entry points and the records their flows span add up
+ * to. Detected from code on every scan (`namedBy: detected`, confidence `inferred`), named by
+ * an AI proposal (`ai`, still `inferred`) or confirmed by a person (`person`, `asserted`
+ * through a curated decision). Ids are `feature.<slug>` of the primary resource.
+ */
+export const Capability = record("Capability", {
+  name: str(),
+  description: z.string().optional(),
+  /** Where the feature starts: UI routes, public or gateway endpoints, jobs, event consumers. */
+  entryPoints: list(Ref),
+  /** Everything its flows reach: components, endpoints, interfaces, topics, tables. */
+  records: list(Ref),
+  owner: z.string().optional(),
+  tags: list(str()),
+  externalRefs: list(ExternalRef),
+  namedBy: z.enum(["detected", "ai", "person"]),
+});
+
 // ---------- housekeeping ----------
 
 export const Unresolved = record("Unresolved", {
@@ -405,6 +432,7 @@ export const RECORD_SCHEMAS = {
   Commitment,
   OwnerQuestion,
   ProcessArtifact,
+  Capability,
   Unresolved,
   CuratedDecision,
 } as const;
