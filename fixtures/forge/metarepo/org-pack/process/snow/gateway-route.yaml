@@ -1,0 +1,13 @@
+schemaVersion: 1
+id: gateway-route
+name: New gateway proxy
+requestType: Gateway proxy deployment
+fields:
+  - { name: Proxy name, required: true, from: "${record}" }
+  - { name: Base path, required: true }
+  - { name: Target, required: true }
+approvers: [gateway team]
+leadTimeDays: 5
+triggers:
+  - { kind: GatewayRoute, change: planned-new }
+alsoNeeds: [firewall-rule]

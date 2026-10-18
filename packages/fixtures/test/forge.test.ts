@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { ChecklistPack, Dialect, parseRecord, type CatalogRecord } from "@maycombhq/core";
+import { ChecklistPack, Dialect, loadOrgPack, parseRecord, type CatalogRecord } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import { readdirSync } from "node:fs";
 
@@ -193,5 +193,33 @@ describe("Forge org pack samples (C2, C3)", () => {
     const ruleIds = pack.rules.map((r) => r.id);
     expect(ruleIds).toContain("vendor-calls-through-gateway");
     expect(pack.rules.filter((r) => r.needs.length > 0).length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("Forge org pack (C6)", () => {
+  it("loads with no problems, defaulting only the files it leaves out", async () => {
+    const op = await loadOrgPack(join(ROOT, "metarepo/org-pack"));
+    expect(op.problems).toEqual([]);
+    expect(op.defaulted).toEqual(["change-types.yaml", "test-strategy.yaml"]);
+    expect(op.dialects.map((d) => d.name)).toEqual(["forge"]);
+    expect(op.checklists.map((c) => c.name)).toEqual(["forge-architecture"]);
+    expect(op.skills.map((s) => s.id)).toEqual(["add-forge-endpoint"]);
+    expect(op.serviceRequests.map((s) => s.id).sort()).toEqual(["firewall-rule", "gateway-route"]);
+  });
+
+  it("has exactly the pattern codes of the patterns wiki page", async () => {
+    const op = await loadOrgPack(join(ROOT, "metarepo/org-pack"));
+    expect(op.patterns.map((p) => p.code).sort()).toEqual([...inputs.patterns].sort());
+  });
+
+  it("names every diagram box as a system or alias in the profile", async () => {
+    const op = await loadOrgPack(join(ROOT, "metarepo/org-pack"));
+    const profile = op.profiles.find((p) => p.platform === "forge")!.profile!;
+    const names = new Set(profile.systems.flatMap((s) => [s.name, ...s.aliases]).map((n) => n.toLowerCase()));
+    for (const [box, id] of Object.entries(inputs.aliases)) {
+      if (id === null) continue; // planned, not in the catalog yet
+      const system = byId.get(id)?.kind === "System" ? id : (byId.get(id) as { system?: string } | undefined)?.system;
+      expect(names.has(box.toLowerCase()) || profile.systems.some((s) => s.id === system), box).toBe(true);
+    }
   });
 });

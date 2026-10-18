@@ -1,0 +1,12 @@
+schemaVersion: 1
+code: D.JDBC
+name: Direct database access
+definition: A component reads or writes another component's database directly.
+interaction: data-access
+route: jdbc
+targetType: data-store
+controls: [Read-only account, owner approval]
+detection: { hints: [JdbcTemplate, DataSource] }
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: to-review

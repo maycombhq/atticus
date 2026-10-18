@@ -1,0 +1,14 @@
+schemaVersion: 1
+id: firewall-rule
+name: Network firewall rule
+requestType: Network firewall rule
+fields:
+  - { name: Source app, required: true, from: "${record}" }
+  - { name: Destination host, required: true }
+  - { name: Port, required: true }
+  - { name: Protocol, required: true }
+  - { name: Business justification, required: true }
+approvers: [network team]
+leadTimeDays: 10
+triggers:
+  - { kind: Interface, change: planned-new, where: { via: direct } }

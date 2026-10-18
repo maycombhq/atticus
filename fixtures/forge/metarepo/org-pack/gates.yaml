@@ -1,0 +1,22 @@
+schemaVersion: 1
+gates:
+  - id: design
+    phase: design
+    approvers: [architect]
+    checklists: [forge-architecture]
+    checks: [{ check: openspec-validate }]
+  - id: plan
+    phase: plan
+    approvers: [team-lead]
+    checklists: [forge-architecture]
+    checks: [{ check: openspec-validate }]
+  - id: build
+    phase: build
+    approvers: [developer]
+    checks: [{ check: tests-pass }, { check: coverage, params: { minPercent: 80 } }]
+  - id: release
+    phase: release
+    approvers: [delivery-lead, sre]
+    minApprovals: 2
+    checklists: [forge-architecture]
+    checks: [{ check: snow-requests-closed }]

@@ -3,6 +3,7 @@ import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js
 import { ChangeRepos, RepoManifest } from "./schema/workspace.js";
 import { Dialect } from "./schema/dialect.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
+import * as C6 from "./schema/orgpack.js";
 
 /**
  * JSON Schema for every record kind, generated from the zod source of truth, for editors,
@@ -46,4 +47,30 @@ export function rulesJsonSchemas(): Record<"Dialect" | "ChecklistPack" | "Findin
     ChecklistPack: gen("ChecklistPack", ChecklistPack),
     Finding: gen("Finding", Finding),
   };
+}
+
+/** JSON Schema for every org-pack file (C6). */
+export function orgPackJsonSchemas(): Record<string, object> {
+  const files: Record<string, z.ZodType> = {
+    PackManifest: C6.PackManifest,
+    Roles: C6.Roles,
+    ChangeTypes: C6.ChangeTypes,
+    Gates: C6.Gates,
+    IntegrationPattern: C6.IntegrationPattern,
+    Sources: C6.Sources,
+    Runtime: C6.Runtime,
+    SkillMeta: C6.SkillMeta,
+    ServiceRequestTemplate: C6.ServiceRequestTemplate,
+    TestStrategy: C6.TestStrategy,
+    Profile: C6.Profile,
+  };
+  const out: Record<string, object> = {};
+  for (const [name, schema] of Object.entries(files)) {
+    out[name] = {
+      $id: `https://maycombhq.github.io/atticus/schema/orgpack/v1/${name}.json`,
+      title: name,
+      ...z.toJSONSchema(schema, { io: "input", unrepresentable: "any" }),
+    };
+  }
+  return out;
 }

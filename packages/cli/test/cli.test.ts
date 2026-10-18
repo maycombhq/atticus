@@ -1,6 +1,7 @@
 import { mkdtemp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { main } from "../src/main.js";
 
@@ -55,6 +56,7 @@ describe("atticus CLI", () => {
     const c = capture();
     expect(await main(["schema", "export", dir], c.io)).toBe(0);
     expect(await readdir(join(dir, "catalog"))).toHaveLength(29);
+    expect(await readdir(join(dir, "orgpack"))).toHaveLength(11);
     expect((await readdir(join(dir, "rules"))).sort()).toEqual([
       "ChecklistPack.json",
       "Dialect.json",
@@ -66,6 +68,22 @@ describe("atticus CLI", () => {
     ]);
     const system = JSON.parse(await readFile(join(dir, "catalog", "System.json"), "utf8"));
     expect(system.title).toBe("System");
+  });
+
+  it("validates the Forge org pack and reports problems in a broken one", async () => {
+    const forge = join(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../../fixtures/forge/metarepo/org-pack",
+    );
+    const ok = capture();
+    expect(await main(["orgpack", "validate", forge], ok.io)).toBe(0);
+    expect(ok.out.at(-1)).toBe("Org pack is valid");
+    const bad = await catalogWith({
+      "org-pack/roles.yaml": "schemaVersion: 1\nmappings: [{ group: g, role: wizard }]\n",
+    });
+    const c = capture();
+    expect(await main(["orgpack", "validate", "--root", bad], c.io)).toBe(1);
+    expect(c.err[0]).toBe("roles.yaml (mappings.0.role): unknown role wizard");
   });
 
   it("passes a valid, canonical, correctly placed catalog", async () => {

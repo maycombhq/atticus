@@ -1,0 +1,14 @@
+schemaVersion: 1
+assistants: { allowed: [copilot, claude-code], default: copilot }
+editors: [vscode, intellij]
+modes: { allowed: [hand-off, headless-claude-code], default: hand-off }
+autonomy:
+  default: draft
+  capPerRepo: { forge-gateway: plan-only, forge-infra: plan-only }
+budgets: { defaultTokens: 150000 }
+retention: { runsDays: 30 }
+adapters:
+  workTracker: { type: mock }
+  serviceDesk: { type: mock }
+  gitHost: { type: mock }
+  notify: { type: mock }

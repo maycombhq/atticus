@@ -3,6 +3,8 @@ import { join, relative, sep } from "node:path";
 import {
   catalogJsonSchemas,
   deserializeRecord,
+  loadOrgPack,
+  orgPackJsonSchemas,
   rulesJsonSchemas,
   workspaceJsonSchemas,
   recordPath,
@@ -23,6 +25,7 @@ export async function schemaExport(dir: string, io: Output): Promise<number> {
     ["catalog", catalogJsonSchemas()],
     ["workspace", workspaceJsonSchemas()],
     ["rules", rulesJsonSchemas()],
+    ["orgpack", orgPackJsonSchemas()],
   ];
   let n = 0;
   for (const [group, schemas] of groups) {
@@ -108,4 +111,21 @@ export async function catalogValidate(
       (summary.fixed ? `, ${summary.fixed} fixed` : ""),
   );
   return summary;
+}
+
+/** Validate an org pack: every file against C6, C2 and C3, plus cross-file references. */
+export async function orgPackValidate(dir: string, io: Output): Promise<number> {
+  const op = await loadOrgPack(dir);
+  for (const p of op.problems) io.err(`${p.file}${p.path ? ` (${p.path})` : ""}: ${p.message}`);
+  const counts = [
+    `${op.profiles.length} profiles`,
+    `${op.patterns.length} patterns`,
+    `${op.dialects.length} dialects`,
+    `${op.checklists.length} checklist packs`,
+    `${op.skills.length} skills`,
+    `${op.serviceRequests.length} request templates`,
+  ].join(", ");
+  io.out(`${counts}${op.defaulted.length ? `; defaults used for ${op.defaulted.join(", ")}` : ""}`);
+  io.out(op.problems.length === 0 ? "Org pack is valid" : `${op.problems.length} problems`);
+  return op.problems.length === 0 ? 0 : 1;
 }

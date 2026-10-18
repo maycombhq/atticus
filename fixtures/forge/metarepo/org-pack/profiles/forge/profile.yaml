@@ -1,0 +1,12 @@
+schemaVersion: 1
+platform: forge
+name: Forge payments platform
+systems:
+  - { id: portal, name: Customer Portal, boundary: product, owner: team-portal, aliases: [Portal UI, Portal BFF] }
+  - { id: ledger, name: Ledger, boundary: product, owner: team-ledger, aliases: [Ledger Platform] }
+  - { id: reports, name: Reports, boundary: product, owner: team-reports, aliases: [Reports Job] }
+  - { id: audit, name: Audit, boundary: internal }
+  - { id: northwind-pay, name: Northwind Pay, boundary: vendor }
+environments: [dev, test, prod]
+legend: { new: [New], modify: [Modify, Changed], retire: [Retire] }
+gates: [design, release]

@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { SCHEMA_VERSION } from "@maycombhq/core";
-import { resolve } from "node:path";
-import { catalogValidate, schemaExport, type Output } from "./commands.js";
+import { join, resolve } from "node:path";
+import { catalogValidate, orgPackValidate, schemaExport, type Output } from "./commands.js";
 import {
   openspecCheck,
   openspecSetup,
@@ -18,6 +18,7 @@ Usage:
   atticus schema export [dir]          Write JSON Schema for catalog records and workspace files (default: ./schema)
   atticus catalog validate <dir>       Check record files: schema, location and canonical form
           [--fix]                      Rewrite files that aren't in canonical form
+  atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
@@ -81,6 +82,8 @@ export async function main(argv: string[], io: Output): Promise<number> {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
+  if (group === "orgpack" && command === "validate")
+    return orgPackValidate(arg ? resolve(arg) : join(root, "org-pack"), io);
   if (group === "openspec" && command === "setup") return openspecSetup(root, io);
   if (group === "openspec" && command === "check") return openspecCheck(root, io);
   if (group === "workspace" && command === "sync") return workspaceSync(root, repoIds, io);

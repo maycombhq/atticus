@@ -1,0 +1,12 @@
+schemaVersion: 1
+code: A.EB.PUB
+name: Asynchronous publish to the event bus
+definition: A service publishes an event to a topic on the event bus.
+interaction: async
+route: event-bus
+targetType: product
+controls: [Schema in the registry, dead-letter topic]
+detection: { via: [event-bus], sync: async, hints: [kafka.send, "@ForgePublish"] }
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: confirmed

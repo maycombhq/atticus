@@ -1,0 +1,14 @@
+schemaVersion: 1
+code: S.GW.VND
+name: Synchronous via the gateway to a vendor
+definition: A synchronous call to an external vendor that passes through the gateway.
+interaction: sync
+route: gateway
+targetType: vendor
+controls: [OAuth2 or mTLS at the gateway, timeout, retry with idempotency key]
+resilience: { retries: 2 }
+detection: { via: [gateway], sync: sync, targetBoundary: vendor }
+checklist: [vendor-calls-through-gateway, vendor-timeouts-set]
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: confirmed

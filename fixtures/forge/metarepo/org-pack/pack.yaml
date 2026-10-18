@@ -1,0 +1,11 @@
+# The Forge org pack (fixture). Contract C6. change-types.yaml and test-strategy.yaml are
+# left out on purpose: the built-in defaults apply until a team writes its own.
+schemaVersion: 1
+name: forge
+version: 0.1.0
+owner: team-platform
+reviewWindowDays: 90
+freshness:
+  Setting: 180
+  ObservabilityAsset: 180
+  Pattern: 365

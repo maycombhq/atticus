@@ -1,0 +1,12 @@
+schemaVersion: 1
+code: S.DIR.BFF
+name: Synchronous, direct from a UI to its own BFF
+definition: A browser application calling its own backend-for-frontend directly.
+interaction: sync
+route: direct
+targetType: product
+controls: [Session auth]
+detection: { via: [direct], sync: sync, hints: [fetch, axios] }
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: confirmed

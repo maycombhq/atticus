@@ -1,0 +1,13 @@
+schemaVersion: 1
+code: S.GW.SOR
+name: Synchronous via the gateway to a system of record
+definition: A synchronous call that passes through the gateway to an internal system of record.
+interaction: sync
+route: gateway
+targetType: product
+controls: [OAuth2 at the gateway, timeout under 3 s, circuit breaker]
+resilience: { timeoutMs: 3000, circuitBreaker: true }
+detection: { via: [gateway], sync: sync, targetBoundary: product }
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: confirmed
