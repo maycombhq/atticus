@@ -188,6 +188,13 @@ describe("atticus change", () => {
     await cp(join(CHANGE_FIXTURES, "design"), join(root, "openspec/changes/add-transfer-limit"), {
       recursive: true,
     });
+    // The Forge profile makes the design gate mandatory: a passed critic round (ADR 0041).
+    const round = join(root, "openspec/changes/add-transfer-limit/review/design/1/meta");
+    await mkdir(round, { recursive: true });
+    await writeFile(
+      join(round, "round.yaml"),
+      "schemaVersion: 1\nchange: add-transfer-limit\ngate: design\nround: 1\ncreatedAt: 2026-10-19T00:00:00Z\nfindings: []\n",
+    );
     c = capture();
     expect(
       await changeHandoff(root, "add-transfer-limit", { by: "ari", repo: REPO }, c.io, deps),
@@ -217,9 +224,7 @@ describe("atticus change", () => {
         deps,
       ),
     ).toBe(0);
-    expect(c.out).toEqual([
-      "Returned add-transfer-limit to the product owner. Close PR #2 on the Git host by hand; this Git host adapter can't close pull requests.",
-    ]);
+    expect(c.out).toEqual(["Returned add-transfer-limit to the product owner and closed PR #2."]);
 
     c = capture();
     expect(await changeArchive(root, "add-transfer-limit", { by: "dana" }, c.io, deps)).toBe(1);

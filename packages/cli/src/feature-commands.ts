@@ -27,6 +27,7 @@ import {
   featureToSpec,
   FlowGraph,
   nameFeatures,
+  parseFinishedNamingRun,
   parseExternalRef,
   suggestFeatureLinks,
   workItemsFromTracker,
@@ -490,12 +491,45 @@ export async function featureSuggestNames(
       io.err(`Discarded${d.feature ? ` ${d.feature}` : ""}: ${d.reason}`);
     for (const r of res.runs.filter((x) => x.state === "failed"))
       io.err(`The ${r.agent} run failed: ${r.reason ?? "no reason given"}`);
+    for (const r of res.runs.filter((x) => x.state === "waiting"))
+      io.out(
+        `Handed the names of ${r.features.length} feature${r.features.length === 1 ? "" : "s"} to your assistant. When it is done, run: atticus handoff done ${r.runId}`,
+      );
     const n = res.proposals.length;
     io.out(
       `${n} proposal${n === 1 ? "" : "s"} from ${res.runs[0]?.agent ?? "feature-namer"}; confirm one with: atticus feature name <feature> <name>`,
     );
   }
   return res.runs.some((r) => r.state === "failed") ? 1 : 0;
+}
+
+/**
+ * The end of `feature suggest-names` in hand-off mode: `atticus handoff done` validated the
+ * assistant's answer, so read it against today's features and write the proposals, as a
+ * model run's answer would have been.
+ */
+export async function completeFeatureNaming(
+  root: string,
+  run: Parameters<typeof parseFinishedNamingRun>[0],
+  io: Output,
+  o: { now?: Date } = {},
+): Promise<number> {
+  const l = await load(root, io);
+  const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const res = parseFinishedNamingRun(run, l.features, at);
+  const written = await writeNameProposals(join(l.catalogDir, "proposals"), res.proposals);
+  res.proposals.forEach((p, i) =>
+    io.out(
+      `Wrote ${l.catalogRel}/proposals/${written[i]}: ${p.feature} could be called "${p.name}".`,
+    ),
+  );
+  for (const d of res.discarded)
+    io.err(`Discarded${d.feature ? ` ${d.feature}` : ""}: ${d.reason}`);
+  const n = res.proposals.length;
+  io.out(
+    `${n} proposal${n === 1 ? "" : "s"} from ${run.request.agent.id}; confirm one with: atticus feature name <feature> <name>`,
+  );
+  return 0;
 }
 
 /**

@@ -1,10 +1,9 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { CHANGES_DIR } from "@maycombhq/changes";
 import type { Finding } from "@maycombhq/core";
 import { fingerprint, readRound, reviewedGates, roundsOf } from "./findings.js";
 import { linePatch } from "./patch.js";
-import { orgPackDirOf } from "@maycombhq/core";
+import { changesDirOf, orgPackDirOf } from "@maycombhq/core";
 
 /**
  * Override rates per rule across every change (open and archived): how often people dismiss
@@ -66,7 +65,7 @@ async function dirs(path: string): Promise<string[]> {
 /** Every finding of a change, newest state per problem (a problem carried across rounds counts once). */
 async function changeFindings(root: string, changeRoot: string, id: string): Promise<Finding[]> {
   const out = new Map<string, Finding>();
-  const base = relative(join(root, CHANGES_DIR), changeRoot).split(sep).join("/");
+  const base = relative(changesDirOf(root), changeRoot).split(sep).join("/");
   const rel = base ? `${base}/${id}` : id;
   for (const gate of await reviewedGates(root, rel)) {
     for (const round of await roundsOf(root, rel, gate)) {
@@ -114,7 +113,7 @@ export async function overrideStats(
   o: { threshold?: number } = {},
 ): Promise<OverrideStats> {
   const threshold = o.threshold ?? 3;
-  const open = join(root, CHANGES_DIR);
+  const open = changesDirOf(root);
   const archive = join(open, "archive");
   const all: Finding[] = [];
   let changes = 0;

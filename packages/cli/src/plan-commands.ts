@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { Approval, WorkTracker, ServiceDesk } from "@maycombhq/adapters";
-import { runtimeForCli, type AiRuntime } from "@maycombhq/ai";
+import { runtimeForCli, type AiRuntime, type Run } from "@maycombhq/ai";
+import { changesRelOf } from "@maycombhq/core";
 import {
   draftTemplates,
   metarepoAdapters,
@@ -180,7 +181,7 @@ export async function snowDraft(
       return 0;
     }
     io.out(
-      `Wrote ${plural(r.drafts.length, "service-desk draft")} to openspec/changes/${changeId}/snow.md.`,
+      `Wrote ${plural(r.drafts.length, "service-desk draft")} to ${changesRelOf(root)}/${changeId}/snow.md.`,
     );
     for (const d of r.drafts) {
       io.out(
@@ -363,6 +364,39 @@ export async function templatesDraft(
       ...(runtime ? { runtime } : {}),
       ...(deps.now ? { now: deps.now() } : {}),
     });
+    return reportTemplates(r, o, io);
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/**
+ * The end of `templates draft` in hand-off mode: `atticus handoff done` validated the
+ * template writer's answer, so the proposal is drafted again with that prose.
+ */
+export async function completeTemplatesDraft(
+  root: string,
+  run: Run,
+  io: Output,
+  deps: PlanDeps = {},
+): Promise<number> {
+  try {
+    const r = await draftTemplates(root, {
+      finished: run,
+      ...(deps.now ? { now: deps.now() } : {}),
+    });
+    return reportTemplates(r, {}, io);
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+function reportTemplates(
+  r: Awaited<ReturnType<typeof draftTemplates>>,
+  o: { json?: boolean },
+  io: Output,
+): number {
+  {
     if (o.json) {
       io.out(
         JSON.stringify(
@@ -399,7 +433,5 @@ export async function templatesDraft(
       `Wrote the proposal to proposals/templates/ (${plural(r.files.length, "file")}); read SUMMARY.md, then copy what you accept into org-pack/ in a pull request.`,
     );
     return 0;
-  } catch (e) {
-    return fail(io, e);
   }
 }

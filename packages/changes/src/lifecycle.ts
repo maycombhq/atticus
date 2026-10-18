@@ -230,6 +230,38 @@ export async function checkFindings(
   return reasons;
 }
 
+/** Gate ids the platform profiles make mandatory (profile.yaml `gates`). */
+export function mandatoryGates(ctx: ChangeContext): string[] {
+  return [...new Set(ctx.orgPack.profiles.flatMap((p) => p.profile?.gates ?? []))].sort();
+}
+
+/**
+ * A gate the platform makes mandatory needs a critic round before the hand-off that leaves
+ * it: an empty `review/<gate>/` means nobody ran the critic there. (Whether the newest round
+ * passes is `checkFindings`'s job.)
+ */
+export async function checkMandatoryRounds(
+  root: string,
+  change: ChangeLifecycle,
+  gates: string[],
+): Promise<Reason[]> {
+  const reasons: Reason[] = [];
+  for (const gate of gates) {
+    const rounds = await readdir(join(changeFolder(root, change.id), "review", gate), {
+      withFileTypes: true,
+    }).then(
+      (ds) => ds.filter((d) => d.isDirectory() && /^\d+$/.test(d.name)),
+      () => [],
+    );
+    if (rounds.length === 0)
+      reasons.push({
+        code: "critic-round-missing",
+        message: `The ${gate} gate is mandatory on this platform and the critic hasn't reviewed it yet: run atticus critic ${change.id} --gate ${gate}.`,
+      });
+  }
+  return reasons;
+}
+
 /** Gate ids from gates.yaml that sit on this phase. */
 export function phaseGates(ctx: ChangeContext, phase: PhaseId): string[] {
   return ctx.orgPack.gates.gates.filter((g) => g.phase === phase).map((g) => g.id);

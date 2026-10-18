@@ -13,7 +13,13 @@ import {
   type RecordOf,
   orgPackDirOf,
 } from "@maycombhq/core";
-import { buildContextPack, toRunSummary, type AiRuntime, type SourceInput } from "@maycombhq/ai";
+import {
+  buildContextPack,
+  toRunSummary,
+  type AiRuntime,
+  type Run,
+  type SourceInput,
+} from "@maycombhq/ai";
 import { writeFileAtomic } from "@maycombhq/changes";
 import { readDocument } from "@maycombhq/ingestors";
 import {
@@ -634,12 +640,21 @@ async function writeTemplateProse(
     now,
   });
   const prepared = await runtime.prepare({
-    change: "org-pack",
+    change: TEMPLATE_PROSE_CHANGE,
     agent,
     pack,
-    outputPath: `${PROPOSALS_DIR}/prose.yaml`,
+    outputPath: TEMPLATE_PROSE_OUTPUT,
   });
   const run = await runtime.run(prepared.runId);
+  return { ...readTemplateProse(run, drafts), promptSha256: pack.manifest.promptSha256 };
+}
+
+/** What the template writer's run is sent as, so a finished hand-off run is recognised. */
+export const TEMPLATE_PROSE_CHANGE = "org-pack";
+export const TEMPLATE_PROSE_OUTPUT = `${PROPOSALS_DIR}/prose.yaml`;
+
+/** The prose in a template writer's run, for the drafts it was asked about. */
+function readTemplateProse(run: Run, drafts: TemplateDraft[]) {
   const prose = new Map<string, { summary: string; steps: string[] }>();
   const problems: string[] = [];
   if (run.output && (run.state === "validated" || run.state === "produced")) {
@@ -656,10 +671,10 @@ async function writeTemplateProse(
     }
   } else if (run.state === "waiting")
     problems.push(
-      `the template writer is waiting for your assistant (run ${run.runId}); the drafts have no prose yet`,
+      `the template writer is waiting for your assistant; the drafts have no prose yet. When it is done, run: atticus handoff done ${run.runId}`,
     );
   else problems.push(`the template writer ${run.state}: ${run.errors.join("; ")}`);
-  return { prose, problems, run: toRunSummary(run), promptSha256: pack.manifest.promptSha256 };
+  return { prose, problems, run: toRunSummary(run) };
 }
 
 // ------------------------------------------------------------------ writing the proposal
@@ -812,7 +827,16 @@ async function uploads(root: string, inputsDir: string, skip: string[]): Promise
  */
 export async function draftTemplates(
   root: string,
-  o: { runtime?: AiRuntime; now?: Date; inputsDir?: string } = {},
+  o: {
+    runtime?: AiRuntime;
+    now?: Date;
+    inputsDir?: string;
+    /**
+     * A template writer run finished in hand-off mode (`atticus handoff done`): its answer is
+     * the prose, so the draft is written again with it instead of asking anyone.
+     */
+    finished?: Run;
+  } = {},
 ): Promise<DraftTemplatesResult> {
   const orgPackDir = join(orgPackDirOf(root));
   const orgPack = await loadOrgPack(orgPackDir);
@@ -904,7 +928,12 @@ export async function draftTemplates(
   // Prose.
   let run: RunSummary | undefined;
   const prose = new Map<string, { summary: string; steps: string[] }>();
-  if (o.runtime && drafts.length) {
+  if (o.finished && drafts.length) {
+    const r = readTemplateProse(o.finished, drafts);
+    for (const [k, v] of r.prose) prose.set(k, v);
+    problems.push(...r.problems);
+    run = r.run;
+  } else if (o.runtime && drafts.length) {
     const r = await writeTemplateProse(o.runtime, orgPack, drafts, howTos, now);
     for (const [k, v] of r.prose) prose.set(k, v);
     problems.push(...r.problems);

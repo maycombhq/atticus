@@ -204,6 +204,7 @@ export const ALLOW = [
   // --- the service-desk artifact, named after one product (debt, see SNOW_ARTIFACT)
   { file: "packages/changes/src/lifecycle.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/changes/src/policy.ts", names: ["snow"], reason: SNOW_ARTIFACT },
+  { file: "packages/naysayer/src/index.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/naysayer/src/ai.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/naysayer/src/artifacts.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/naysayer/src/checks/catalog.ts", names: ["snow"], reason: SNOW_ARTIFACT },

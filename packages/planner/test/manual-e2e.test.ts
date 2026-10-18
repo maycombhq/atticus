@@ -1,4 +1,4 @@
-import { readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ReplayRuntime } from "@maycombhq/ai";
@@ -215,6 +215,13 @@ describe("the forge change from Plan to Release with every outside system manual
         at: "2026-10-22T10:00:00Z",
       }),
     ).toBe("release-ready");
+    // The Forge profile makes the release gate mandatory: the critic reviewed it (ADR 0041).
+    const round = join(changeDir(root), "review/release/1/meta");
+    await mkdir(round, { recursive: true });
+    await writeFile(
+      join(round, "round.yaml"),
+      `schemaVersion: 1\nchange: ${CHANGE}\ngate: release\nround: 1\ncreatedAt: 2026-10-23T09:00:00Z\nfindings: []\n`,
+    );
     expect(
       await walkPhase(root, a, store, {
         by: "tia",

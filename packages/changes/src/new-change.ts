@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   ChangeTouches,
+  openspecDirOf,
   RecordId,
   type ChangeLifecycle,
   type ChangeTouches as Touches,
@@ -55,10 +56,10 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
-/** The schema OpenSpec would use: openspec/config.yaml's default, else spec-driven. */
+/** The schema OpenSpec would use: the OpenSpec folder's config.yaml default, else spec-driven. */
 async function defaultSchema(root: string): Promise<string> {
   try {
-    const cfg = parse(await readFile(join(root, "openspec/config.yaml"), "utf8")) as {
+    const cfg = parse(await readFile(join(openspecDirOf(root), "config.yaml"), "utf8")) as {
       schema?: unknown;
     } | null;
     if (cfg && typeof cfg.schema === "string") return cfg.schema;

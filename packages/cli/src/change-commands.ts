@@ -1,21 +1,32 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createAdapters, fileStepStore, type Approval, type GitHost } from "@maycombhq/adapters";
-import { handoffBranch, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import { changesRelOf, handoffBranch, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import {
   ChangeError,
   archiveChange,
+  changeFootprint,
   changeReport,
   changeStore,
   detectConflicts,
   handoff,
+  loadChangeContext,
   newChange,
   returnToPo,
   syncHandoff,
   type HandoffPublisher,
   type Reason,
 } from "@maycombhq/changes";
+import {
+  baseClonePath,
+  createWorkspace,
+  isInPlace,
+  loadRepos,
+  type GitRunner,
+} from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { table } from "./index-commands.js";
+import { scanCommand } from "./scan-commands.js";
 
 /**
  * atticus change …: the change lifecycle. Every write to the Git host (opening, merging or
@@ -28,6 +39,8 @@ export interface ChangeDeps {
   publisher?: HandoffPublisher;
   /** ISO timestamp used for every time this command records. */
   now?: string;
+  /** Git for updating base clones after archive. */
+  git?: GitRunner;
 }
 
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -122,7 +135,7 @@ export async function changeNew(
       ...(deps.now ? { now: deps.now } : {}),
     });
     io.out(`Created ${c.id} (${c.type}, from the ${c.template} template). It is in ${c.state}.`);
-    io.out(`Write the brief: openspec/changes/${c.id}/brief.md`);
+    io.out(`Write the brief: ${changesRelOf(root)}/${c.id}/brief.md`);
     return 0;
   } catch (e) {
     return fail(io, e);
@@ -322,10 +335,73 @@ export async function changeReturn(
 }
 
 /** atticus change archive <id> --by <you>: archive a released change. */
+/**
+ * After archive, the released code is the truth: the change's repos are brought up to date
+ * where their base clones are here (in-place repos are already current) and the estate is
+ * rescanned, so the catalog shows what was built. When none of them is here, the exact
+ * commands to run are printed instead. Exit 1 only when the rescan itself had problems.
+ */
+async function rescanAfterArchive(
+  root: string,
+  id: string,
+  io: Output,
+  deps: ChangeDeps,
+): Promise<number> {
+  const ctx = await loadChangeContext(root);
+  const change = await changeStore(root).read(id);
+  const fp = await changeFootprint(ctx, change);
+  const all = await loadRepos(root);
+  const manifest = new Map(all.map((r) => [r.id, r]));
+  // Repos the footprint names, and the manifest's repos for its components and systems (the
+  // catalog may not say which repo builds a component yet).
+  const wanted = [
+    ...new Set([
+      ...fp.repos,
+      ...all
+        .filter(
+          (r) =>
+            fp.components.includes(r.component ?? r.id) ||
+            (r.system !== undefined && fp.systems.includes(r.system)),
+        )
+        .map((r) => r.id),
+    ]),
+  ].sort();
+  const here = wanted.filter((r) => {
+    const m = manifest.get(r);
+    return !!m && (isInPlace(m.url) || existsSync(baseClonePath(root, r)));
+  });
+  const away = wanted.filter((r) => !here.includes(r));
+  const command = (ids: string[]) =>
+    `atticus workspace sync --repos ${ids.join(",")} && atticus scan`;
+  if (wanted.length === 0) {
+    io.out("The change names no repos; run atticus scan to refresh the catalog.");
+    return 0;
+  }
+  if (here.length === 0) {
+    io.out(
+      `The change's repos aren't in base clones here, so the catalog wasn't rescanned. Run: ${command(away)}`,
+    );
+    return 0;
+  }
+  const clones = here.map((r) => manifest.get(r)!).filter((m) => !isInPlace(m.url));
+  if (clones.length) {
+    const synced = await createWorkspace(root, deps.git).sync(clones);
+    for (const s of synced.filter((x) => x.action === "failed" || x.action === "skipped"))
+      io.out(
+        `Couldn't update the base clone of ${s.id} (${s.reason ?? s.action}); scanning what is there.`,
+      );
+  }
+  io.out(`Rescanning for ${id}'s repos: ${here.join(", ")}.`);
+  const code = await scanCommand(root, {}, io);
+  if (away.length)
+    io.out(`Not in a base clone here: ${away.join(", ")}. To add them, run: ${command(away)}`);
+  return code;
+}
+
 export async function changeArchive(
   root: string,
   id: string,
-  o: { by?: string },
+  o: { by?: string; rescan?: boolean },
   io: Output,
   deps: ChangeDeps = {},
 ): Promise<number> {
@@ -336,7 +412,8 @@ export async function changeArchive(
   try {
     await archiveChange(root, id, { by: o.by, ...(deps.now ? { now: deps.now } : {}) });
     io.out(`Archived ${id}.`);
-    return 0;
+    if (o.rescan === false) return 0;
+    return await rescanAfterArchive(root, id, io, deps);
   } catch (e) {
     if (e instanceof Error && e.name === "ChangeFileError") {
       io.err(e.message);

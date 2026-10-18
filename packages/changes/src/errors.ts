@@ -8,6 +8,7 @@ export type ReasonCode =
   | "blocking-finding"
   | "open-gap"
   | "bad-finding"
+  | "critic-round-missing"
   | "privacy-role-missing"
   | "approval-missing"
   | "self-approval"

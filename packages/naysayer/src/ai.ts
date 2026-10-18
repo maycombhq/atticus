@@ -2,6 +2,7 @@ import { parse } from "yaml";
 import { z } from "zod";
 import {
   AgentDefinition,
+  changesRelOf,
   Lens,
   toCanonicalYaml,
   type CatalogRecord,
@@ -450,7 +451,7 @@ export async function runLenses(
       sources.push({
         id: d.path,
         kind: "artifact",
-        origin: `openspec/changes/${ctx.change.id}/${d.path}`,
+        origin: `${changesRelOf(ctx.root)}/${ctx.change.id}/${d.path}`,
         text: numbered(d),
         classification: "internal",
         priority: 10,

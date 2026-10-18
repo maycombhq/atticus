@@ -41,6 +41,24 @@ export async function forgeMetarepo(
   return root;
 }
 
+/**
+ * A critic round with no findings at a gate, as `atticus critic` leaves it when everything
+ * passes: the Forge profile makes the design and release gates mandatory (ADR 0041).
+ */
+export async function passedRound(
+  root: string,
+  change: string,
+  gate: string,
+  round = 1,
+): Promise<void> {
+  const dir = join(root, "openspec/changes", change, "review", gate, String(round), "meta");
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    join(dir, "round.yaml"),
+    `schemaVersion: 1\nchange: ${change}\ngate: ${gate}\nround: ${round}\ncreatedAt: 2026-10-19T00:00:00Z\nfindings: []\n`,
+  );
+}
+
 /** Copy a fixture phase folder (e.g. add-transfer-limit/define) into the change folder. */
 export async function copyPhase(root: string, change: string, fixture: string): Promise<void> {
   await cp(join(FIXTURES, fixture), join(root, "openspec/changes", change), { recursive: true });

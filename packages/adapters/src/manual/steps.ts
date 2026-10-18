@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/p
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import {
+  changesDirOf,
   ManualStep,
   toCanonicalYaml,
   type ManualStepInput,
@@ -141,9 +142,6 @@ export function memoryStepStore(seed: ManualStep[] = []): StepStore {
   };
 }
 
-/** The metarepo folder that holds OpenSpec changes (the changes package owns the constant). */
-const CHANGES_DIR = "openspec/changes";
-
 async function writeAtomic(path: string, text: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.tmp`;
@@ -172,15 +170,15 @@ export class StepFileError extends Error {
  */
 export function fileStepStore(root: string): StepStore & { pathOf(step: ManualStep): string } {
   const dirFor = (change?: string) =>
-    change ? join(root, CHANGES_DIR, change, "steps") : join(root, "steps");
+    change ? join(changesDirOf(root), change, "steps") : join(root, "steps");
   const pathOf = (s: ManualStep) => join(dirFor(s.change), `${s.id}.yaml`);
 
   async function folders(): Promise<string[]> {
     const out = [join(root, "steps")];
     try {
-      for (const d of await readdir(join(root, CHANGES_DIR), { withFileTypes: true }))
+      for (const d of await readdir(changesDirOf(root), { withFileTypes: true }))
         if (d.isDirectory() && d.name !== "archive")
-          out.push(join(root, CHANGES_DIR, d.name, "steps"));
+          out.push(join(changesDirOf(root), d.name, "steps"));
     } catch {
       // no changes yet
     }

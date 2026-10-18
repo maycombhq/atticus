@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { catalogDirOf } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
+import { driftAfterScan, type DriftAfterScan } from "@maycombhq/speckit";
 import {
   diffCatalogs,
   diffIsEmpty,
@@ -28,6 +29,16 @@ export interface ScanCommandOptions {
   full?: boolean;
   dryRun?: boolean;
   json?: boolean;
+  /** Skip the drift check for open changes in build or qa that runs after the catalog is written. */
+  noDrift?: boolean;
+}
+
+function driftLine(d: DriftAfterScan): string {
+  const head = `Drift check for ${d.change} (${d.state})`;
+  if (d.error) return `${head} couldn't run: ${d.error}`;
+  if (d.round === undefined) return `${head}: no drift.`;
+  const what = `${d.open} open finding${d.open === 1 ? "" : "s"}${d.blocking ? ` (${d.blocking} blocking)` : ""}`;
+  return `${head}: ${what} in review/drift/${d.round}${d.unchanged ? ", nothing new" : ""}.`;
 }
 
 /**
@@ -57,6 +68,8 @@ export async function scanCommand(
   });
   const diff = diffCatalogs(before.records, scan.records);
   const write = o.dryRun ? undefined : await writeCatalog(out, scan.records);
+  // The drift check reads the catalog just written, so it runs only when one was.
+  const drift = write && !o.noDrift ? await driftAfterScan(root) : [];
   const problems = [
     ...before.problems.map((p) => ({ source: `catalog/generated/${p.file}`, message: p.message })),
     ...scan.problems,
@@ -71,6 +84,7 @@ export async function scanCommand(
           notes: scan.notes,
           written: write !== undefined,
           files: write ?? null,
+          drift,
         },
         null,
         2,
@@ -90,6 +104,7 @@ export async function scanCommand(
         `catalog/generated: ${write.written} written, ${write.unchanged} unchanged, ${write.removed} removed`,
       );
     else io.out("Dry run: nothing written.");
+    for (const d of drift) io.out(driftLine(d));
     for (const n of scan.notes) io.out(`note: ${n}`);
     for (const p of problems)
       io.err(`${"repo" in p && p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`);

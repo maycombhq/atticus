@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { AgentDefinition, taskBranch } from "@maycombhq/core";
+import { AgentDefinition, changesRelOf, taskBranch } from "@maycombhq/core";
 import { buildContextPack, type ContextPack, type SourceInput } from "@maycombhq/ai";
 import type { TaskContext } from "@maycombhq/speckit";
 import type { GitRunner } from "@maycombhq/workspace";
@@ -138,7 +138,7 @@ export async function taskPack(p: PackInput): Promise<ContextPack> {
       sources.push({
         id: rel,
         kind: "artifact",
-        origin: `openspec/changes/${t.change.id}/${rel}`,
+        origin: `${changesRelOf(t.root)}/${t.change.id}/${rel}`,
         text: d.raw,
         classification: "internal",
         priority,

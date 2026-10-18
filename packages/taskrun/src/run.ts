@@ -20,7 +20,7 @@ import {
   type RuntimeMode,
 } from "@maycombhq/ai";
 import { writeFileAtomic, changeFolder } from "@maycombhq/changes";
-import { changeBranch } from "@maycombhq/core";
+import { changeBranch, changesRelOf } from "@maycombhq/core";
 import { writeQuarantineItems } from "@maycombhq/naysayer";
 import {
   buildEngineFor,
@@ -165,7 +165,7 @@ async function aiStep(
 }
 
 function handoffPrompt(c: Ctx, run: Run): string {
-  const out = `openspec/changes/${c.t.change.id}/${run.request.outputPath}`;
+  const out = `${changesRelOf(c.root)}/${c.t.change.id}/${run.request.outputPath}`;
   return [
     `# ${run.request.agent.id}: task ${c.t.task.id} of change ${c.t.change.id}`,
     "",

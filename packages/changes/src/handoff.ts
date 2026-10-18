@@ -6,9 +6,9 @@ import {
   requireApproval,
   type Approval,
   type GitHost,
-  type PullRequest,
 } from "@maycombhq/adapters";
 import {
+  changesRelOf,
   handoffBranch,
   type ChangeHandoff,
   type ChangeLifecycle,
@@ -29,16 +29,11 @@ import {
   sha256,
 } from "./lifecycle.js";
 import type { HandoffPublisher } from "./publish.js";
-import { CHANGES_DIR, changeFolder, changeStore } from "./store.js";
+import { changeFolder, changeStore } from "./store.js";
 import type { Artifact, PhaseId } from "./types.js";
 
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 const strip = (h: string) => (h.startsWith("@") ? h.slice(1) : h);
-
-/** A Git host that can also close PRs. The C4 interface has no close yet; a host may offer one. */
-type MaybeClosable = GitHost & {
-  closePullRequest?: (repo: string, number: number, approval: Approval) => Promise<PullRequest>;
-};
 
 interface HostOptions {
   gitHost: GitHost;
@@ -128,7 +123,8 @@ function prBody(
   a: Assessment,
   phase: PhaseId,
   next: LifecycleState,
-  files: string[],
+  /** The hand-off's files, relative to the metarepo root. */
+  paths: string[],
   reviewers: string[],
 ): string {
   const c = a.change;
@@ -141,7 +137,7 @@ function prBody(
     "",
     "### Files",
     "",
-    ...(files.length ? files.map((f) => `- ${CHANGES_DIR}/${c.id}/${f}`) : ["- None"]),
+    ...(paths.length ? paths.map((f) => `- ${f}`) : ["- None"]),
     "",
     "### Required approvals",
     "",
@@ -223,13 +219,11 @@ export async function handoff(
     authors[art] = [...new Set([...(authors[art] ?? []), ...people])];
   }
   const branch = handoffBranch(id, phase);
-  const metaFiles = [
-    ...files.map((f) => `${CHANGES_DIR}/${id}/${f}`),
-    `${CHANGES_DIR}/${id}/change.yaml`,
-  ];
+  const rel = changesRelOf(root);
+  const metaFiles = [...files.map((f) => `${rel}/${id}/${f}`), `${rel}/${id}/change.yaml`];
   const reviewers = [
     ...new Set([
-      ...files.flatMap((f) => ownersFor(ctx.codeowners, `${CHANGES_DIR}/${id}/${f}`)),
+      ...files.flatMap((f) => ownersFor(ctx.codeowners, `${rel}/${id}/${f}`)),
       ...a.required.flatMap((r) => r.roles.flatMap((role) => holders(change, role))),
     ]),
   ]
@@ -299,7 +293,7 @@ export async function handoff(
         a,
         phase,
         change.state === "returned" ? nextAfterResubmit(a, phase) : next,
-        files,
+        files.map((f) => `${rel}/${id}/${f}`),
         reviewers,
       ),
     },
@@ -372,6 +366,11 @@ export async function syncHandoff(
     ]);
   const a = await assess(ctx, change);
   const pr = await opts.gitHost.getPullRequest(repo, live.pr.number);
+  // The host knows the PR best: a link recorded since (manual:// until a person records it).
+  const current: ChangeHandoff =
+    pr.url !== live.pr.url || pr.number !== live.pr.number
+      ? { ...live, pr: { number: pr.number, url: pr.url } }
+      : live;
   const store = changeStore(root);
   const save = async (h: ChangeHandoff, extra: Partial<ChangeLifecycle> = {}) => {
     const updated = {
@@ -384,7 +383,7 @@ export async function syncHandoff(
   };
 
   if (pr.state === "closed") {
-    const h = { ...live, state: "closed" as const, updatedAt: now };
+    const h = { ...current, state: "closed" as const, updatedAt: now };
     await save(h);
     return {
       merged: false,
@@ -414,7 +413,7 @@ export async function syncHandoff(
   const approvals = result.counted.map((c) => ({ ...c, at: now }));
 
   const advance = async (by: string) => {
-    const h: ChangeHandoff = { ...live, state: "merged", updatedAt: now, approvals };
+    const h: ChangeHandoff = { ...current, state: "merged", updatedAt: now, approvals };
     const next = a.next!;
     const history = [
       ...change.history,
@@ -445,7 +444,7 @@ export async function syncHandoff(
   if (pr.state === "merged") return advance(strip(opts.approval?.by ?? live.by));
 
   if (requested.length > 0) {
-    const h: ChangeHandoff = { ...live, state: "changes-requested", updatedAt: now, approvals };
+    const h: ChangeHandoff = { ...current, state: "changes-requested", updatedAt: now, approvals };
     await save(h);
     return {
       merged: false,
@@ -460,7 +459,7 @@ export async function syncHandoff(
     };
   }
 
-  const h: ChangeHandoff = { ...live, state: "open", updatedAt: now, approvals };
+  const h: ChangeHandoff = { ...current, state: "open", updatedAt: now, approvals };
   const reasons: Reason[] = [...result.reasons];
   if (reasons.length === 0) {
     // Artifacts or findings may have changed since the hand-off was raised.
@@ -520,18 +519,18 @@ export async function returnToPo(
   const repo = metarepo(ctx, opts.repo);
   const now = opts.now ?? nowIso();
   const by = strip(opts.by);
-  const host = opts.gitHost as MaybeClosable;
+  const host = opts.gitHost;
   await host.comment(
     repo,
     live.pr.number,
     `Returned to the product owner by ${by}: ${opts.reason}`,
     opts.approval,
   );
-  let closedOnHost = false;
-  if (typeof host.closePullRequest === "function") {
-    await host.closePullRequest(repo, live.pr.number, opts.approval);
-    closedOnHost = true;
-  }
+  // C4 closePullRequest (ADR 0041) where the host has it; the comment asks a person otherwise.
+  // A host where a person closes PRs (manual) answers with the PR open until they have.
+  const closedOnHost = host.closePullRequest
+    ? (await host.closePullRequest(repo, live.pr.number, opts.approval)).state === "closed"
+    : false;
   const h: ChangeHandoff = { ...live, state: "closed", updatedAt: now };
   await changeStore(root).write({
     ...change,

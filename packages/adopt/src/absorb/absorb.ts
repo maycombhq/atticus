@@ -5,7 +5,7 @@ import { loadOrgPack, RecordId, type Sources } from "@maycombhq/core";
 import type { GitRunner } from "@maycombhq/workspace";
 import type { z } from "zod";
 import { AdoptError } from "../errors.js";
-import { isDir, listFiles, slug, toPosix } from "../files.js";
+import { isDir, listFiles, sha256, slug, toPosix } from "../files.js";
 import { resolveMetarepo, type MetarepoPaths } from "../layout.js";
 import {
   markdownItems,
@@ -83,6 +83,8 @@ export interface AbsorbResult {
   files: string[];
   problems: string[];
   ms: number;
+  /** sha-256 of every file read from the source, so a refresh can say which changed. */
+  sourceFiles: Record<string, string>;
 }
 
 const DOC =
@@ -774,6 +776,9 @@ export async function absorb(
     files: [],
     problems,
     ms: 0,
+    sourceFiles: Object.fromEntries(
+      await Promise.all(files.map(async (f) => [f, sha256(await readFile(join(dir, f)))] as const)),
+    ),
   };
   if (!o.dryRun) {
     const out = join(p.proposalsDir, "absorb", o.id);
@@ -844,6 +849,7 @@ async function writeProposal(
           ...i,
           ...(artifact ? { artifact: artifact.path } : {}),
         })),
+        sources: r.sourceFiles,
       },
       null,
       2,

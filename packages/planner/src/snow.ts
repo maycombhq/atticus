@@ -1,5 +1,10 @@
 import type { RecordOf, ServiceRequestTemplate } from "@maycombhq/core";
-import { hopRoutes, readSnowDrafts, type Hop } from "@maycombhq/naysayer";
+import {
+  matchServiceRequestTriggers,
+  readSnowDrafts,
+  triggerReason,
+  type Hop,
+} from "@maycombhq/naysayer";
 import type { z } from "zod";
 import type { PlanContext } from "./context.js";
 
@@ -41,74 +46,23 @@ export function snowNeeds(ctx: PlanContext): SnowNeed[] {
   const add = (n: SnowNeed) => {
     if (!needs.some((x) => x.template.id === n.template.id && x.record === n.record)) needs.push(n);
   };
-  for (const t of templates) {
-    for (const trig of t.triggers) {
-      const matches: {
-        record: string;
-        fields: Record<string, string>;
-        hop?: Hop;
-        line?: number;
-      }[] = [];
-      if (trig.kind === "Interface")
-        for (const h of ctx.hops) {
-          if (h.status !== trig.change) continue;
-          const p = ctx.patterns.get(h.pattern);
-          const rec = h.id.startsWith("if-") ? ctx.get("Interface", h.id) : undefined;
-          const via = p?.route ?? rec?.via;
-          if (!via) continue;
-          matches.push({
-            record: h.id !== "new" ? h.id : `${h.caller}-${h.callee}`,
-            fields: { via, method: h.method ?? "", from: h.caller, to: h.callee },
-            hop: h,
-            line: h.line,
-          });
-        }
-      if (trig.kind === "GatewayRoute")
-        for (const h of ctx.hops)
-          for (const route of hopRoutes(ctx.files, h)) {
-            const exists = !!ctx.get("GatewayRoute", route);
-            if ((trig.change === "planned-new") === exists) continue;
-            if (trig.change !== "planned-new" && h.status !== trig.change) continue;
-            matches.push({ record: route, fields: {}, hop: h, line: h.line });
-          }
-      if ((trig.kind === "Table" || trig.kind === "Column") && trig.change === "planned-new")
-        for (const d of ctx.data) {
-          if (trig.kind === "Table" && d.newTable)
-            matches.push({ record: d.tableId, fields: {}, line: d.line });
-          if (trig.kind === "Column")
-            for (const c of d.newColumns)
-              matches.push({ record: `${d.tableId}.${c.name}`, fields: {}, line: d.line });
-        }
-      for (const m of matches) {
-        if (!Object.entries(trig.where).every(([k, v]) => m.fields[k] === v)) continue;
-        const why = `${m.record} is ${trig.change} (${trig.kind}${
-          Object.keys(trig.where).length
-            ? `, ${Object.entries(trig.where)
-                .map(([k, v]) => `${k} ${v}`)
-                .join(", ")}`
-            : ""
-        })`;
-        add({
-          template: t,
-          record: m.record,
-          why,
-          ...(m.hop ? { hop: m.hop } : {}),
-          ...(m.line ? { line: m.line } : {}),
-        });
-        for (const also of t.alsoNeeds) {
-          const at = templates.find((x) => x.id === also);
-          if (at)
-            add({
-              template: at,
-              record: m.record,
-              why: `the ${t.name.toLowerCase()} for ${m.record} also needs a ${at.name.toLowerCase()}`,
-              ...(m.hop ? { hop: m.hop } : {}),
-              ...(m.line ? { line: m.line } : {}),
-            });
-        }
-      }
-    }
-  }
+  for (const m of matchServiceRequestTriggers({
+    templates,
+    hops: ctx.hops,
+    data: ctx.data,
+    files: ctx.files,
+    patterns: ctx.patterns,
+    get: (kind, id) => ctx.get(kind, id),
+  }))
+    add({
+      template: m.template,
+      record: m.record,
+      why: m.alongside
+        ? `the ${m.alongside.name.toLowerCase()} for ${m.record} also needs a ${m.template.name.toLowerCase()}`
+        : triggerReason(m.record, m.trigger),
+      ...(m.hop ? { hop: m.hop } : {}),
+      ...(m.line ? { line: m.line } : {}),
+    });
   return needs;
 }
 

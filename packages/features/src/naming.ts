@@ -70,8 +70,10 @@ const Proposal = z.object({
 export interface NamingRun {
   agent: string;
   features: string[];
-  state: "ran" | "failed";
+  /** waiting: handed to the person's assistant; `atticus handoff done <runId>` finishes it. */
+  state: "ran" | "failed" | "waiting";
   reason?: string;
+  runId?: string;
   promptSha256?: string;
   summary?: RunSummary;
 }
@@ -205,6 +207,31 @@ export function parseNamerOutput(
   return { proposals, discarded };
 }
 
+/** What `nameFeatures` sends as the change and output path, so a finished hand-off is recognised. */
+export const NAMING_CHANGE = "features";
+export const NAMING_OUTPUT = "catalog/proposals/feature-names.yaml";
+
+/**
+ * Proposals from a feature-namer run finished in hand-off mode (`atticus handoff done`): the
+ * features it was sent are the context pack's sources, read against today's features.
+ */
+export function parseFinishedNamingRun(
+  run: {
+    runId: string;
+    output?: string;
+    request: { pack: { manifest: { sources: { id: string }[] } }; agent: { id: string } };
+  },
+  features: readonly Capability[],
+  at: string,
+): { proposals: FeatureNameProposal[]; discarded: { feature?: string; reason: string }[] } {
+  const sent = new Set(run.request.pack.manifest.sources.map((s) => s.id));
+  return parseNamerOutput(
+    run.output ?? "",
+    features.filter((f) => sent.has(f.id)),
+    { agent: run.request.agent.id, at, runId: run.runId },
+  );
+}
+
 /** Ask the feature namer for names of the features no person has named yet. */
 export async function nameFeatures(
   features: readonly Capability[],
@@ -251,7 +278,7 @@ export async function nameFeatures(
     ];
     try {
       const pack = buildContextPack({
-        change: "features",
+        change: NAMING_CHANGE,
         agent: agent.id,
         budget,
         sources,
@@ -267,10 +294,10 @@ export async function nameFeatures(
           reason: "left out of the context pack (budget or classification)",
         });
       const prepared = await runtime.prepare({
-        change: "features",
+        change: NAMING_CHANGE,
         agent,
         pack,
-        outputPath: "catalog/proposals/feature-names.yaml",
+        outputPath: NAMING_OUTPUT,
       });
       const run = await runtime.run(prepared.runId);
       const summary = toRunSummary(run);
@@ -280,6 +307,15 @@ export async function nameFeatures(
         promptSha256: pack.manifest.promptSha256,
         summary,
       };
+      if (run.state === "waiting") {
+        out.runs.push({
+          ...base,
+          state: "waiting",
+          runId: run.runId,
+          reason: `handed to your assistant; finish with atticus handoff done ${run.runId}`,
+        });
+        continue;
+      }
       if (run.state !== "validated" || run.output === undefined) {
         out.runs.push({
           ...base,

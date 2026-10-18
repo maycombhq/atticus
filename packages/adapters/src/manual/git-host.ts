@@ -67,8 +67,11 @@ export class ManualGitHost extends ManualBase implements GitHost {
       ...list(last?.approvers).map((by) => ({ by, state: "approved" as const })),
       ...list(last?.changesRequestedBy).map((by) => ({ by, state: "changes-requested" as const })),
     ];
+    const closed = (await this.related(repo, number, "close-pull-request")).some(
+      (s) => s.state === "done",
+    );
     let state: PrState = open.state === "done" ? (open.inputs.draft ? "draft" : "open") : "draft";
-    if (open.state === "skipped") state = "closed";
+    if (open.state === "skipped" || closed) state = "closed";
     if (merged) state = "merged";
     return {
       repo,
@@ -241,6 +244,38 @@ export class ManualGitHost extends ManualBase implements GitHost {
     );
     // A comment means the PR was updated or returned: reviews must be reported again.
     if ((await this.toPr(open)).state !== "merged") await this.askForReviews(open, change);
+  }
+
+  /**
+   * Closing is a step for a person (once per PR); the PR reads closed when they have done
+   * it, so until then it is returned as it is.
+   */
+  async closePullRequest(repo: string, number: number, approval: Approval): Promise<PullRequest> {
+    const a = this.approve(approval);
+    const open = await this.find(repo, number);
+    const pr = await this.toPr(open);
+    if (pr.state === "merged")
+      throw new AdapterError(this.name, "conflict", `PR ${number} is merged and can't be closed`);
+    if (pr.state === "closed") return pr;
+    await this.step(
+      "closePullRequest",
+      {
+        slug: `close-pr-${number}`,
+        action: "close-pull-request",
+        key: `git-host|close|${repo}|${number}`,
+        title: `Close PR ${number} (${open.inputs.title}) without merging`,
+        where: `Git host: ${repo}, ${pr.url}`,
+        ...(open.change ? { change: open.change } : {}),
+        inputs: { repo, number },
+        fields: [{ name: "Pull request", value: pr.url }],
+        instructions: [
+          "The change went back to the product owner: close the pull request on the Git host without merging it, then mark this step done.",
+        ],
+        dependsOn: [open.id],
+      },
+      a,
+    );
+    return this.toPr(open);
   }
 
   async merge(repo: string, number: number, approval: Approval): Promise<PullRequest> {

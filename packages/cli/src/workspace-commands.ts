@@ -11,8 +11,15 @@ import {
   intellijProjectPath,
   type LoadedRepo,
 } from "@maycombhq/workspace";
+import { readFile } from "node:fs/promises";
+import { parse } from "yaml";
 import { HandoffRuntime } from "@maycombhq/ai";
+import { NAMING_CHANGE, NAMING_OUTPUT } from "@maycombhq/features";
+import { TEMPLATE_PROSE_CHANGE, TEMPLATE_PROSE_OUTPUT } from "@maycombhq/planner";
+import { completeHandUpLens, handUpLensTask } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
+import { completeFeatureNaming } from "./feature-commands.js";
+import { completeTemplatesDraft } from "./plan-commands.js";
 
 function pick(
   all: LoadedRepo[],
@@ -112,14 +119,47 @@ export async function openspecCheck(root: string, io: Output): Promise<number> {
 }
 
 /**
- * atticus handoff done <runId>: the assistant (or person) says the artifact is written.
- * Atticus checks it with openspec validate on the change and records the result.
+ * Which command a hand-off run finishes: a change artifact (checked with openspec validate),
+ * a hand-up's code-and-test lens, `feature suggest-names` or `templates draft`.
  */
-export async function handoffDone(root: string, runId: string, io: Output): Promise<number> {
+export function completionOf(request: {
+  change: string;
+  outputPath: string;
+}): "artifact" | "hand-up" | "feature-names" | "templates" {
+  if (handUpLensTask(request.outputPath)) return "hand-up";
+  if (request.change === NAMING_CHANGE && request.outputPath === NAMING_OUTPUT)
+    return "feature-names";
+  if (request.change === TEMPLATE_PROSE_CHANGE && request.outputPath === TEMPLATE_PROSE_OUTPUT)
+    return "templates";
+  return "artifact";
+}
+
+/**
+ * atticus handoff done <runId>: the assistant (or person) says the artifact is written.
+ * Atticus checks it (openspec validate on the change for change artifacts) and records the
+ * result; for a run that finishes another command (hand-up's lens, feature suggest-names,
+ * templates draft) it then parses the answer and applies it as that command would have.
+ */
+export async function handoffDone(
+  root: string,
+  runId: string,
+  io: Output,
+  deps: { now?: () => Date } = {},
+): Promise<number> {
   const os = createOpenSpec({ root });
   const rt = new HandoffRuntime({
     root,
     validate: async (_file, request) => {
+      // Answers that aren't change artifacts (a lens review, name proposals, template prose)
+      // are checked as YAML here and read in full by the command they finish.
+      if (completionOf(request) !== "artifact") {
+        try {
+          parse(await readFile(_file, "utf8"));
+          return [];
+        } catch (e) {
+          return [`${request.outputPath} isn't YAML: ${(e as Error).message.split("\n")[0]}`];
+        }
+      }
       const report = await os.validate({ item: request.change, type: "change" });
       return report.items.flatMap((i) =>
         i.issues.filter((x) => x.level === "ERROR").map((x) => x.message),
@@ -128,6 +168,25 @@ export async function handoffDone(root: string, runId: string, io: Output): Prom
   });
   const run = await rt.done(runId);
   if (run.state === "validated") {
+    const kind = completionOf(run.request);
+    const now = deps.now?.();
+    if (kind === "hand-up") {
+      const r = await completeHandUpLens(root, run, {
+        ...(now ? { now: now.toISOString().replace(/\.\d{3}Z$/, "Z") } : {}),
+      });
+      const n = r.review?.findings.filter((f) =>
+        f.finding.artifact.startsWith(`tasks/${r.task}/`),
+      ).length;
+      io.out(
+        r.lens.state === "ran"
+          ? `The code-and-test lens on task ${r.task} of ${r.change} raised ${n ?? 0} finding${n === 1 ? "" : "s"} (review/hand-up/${r.review?.round ?? "-"}).`
+          : `The code-and-test lens on task ${r.task} was ${r.lens.state}: ${r.lens.reason ?? ""}`,
+      );
+      for (const d of r.lens.discarded) io.err(`Discarded: ${d.reason}`);
+      return r.lens.state === "ran" ? 0 : 1;
+    }
+    if (kind === "feature-names") return completeFeatureNaming(root, run, io, now ? { now } : {});
+    if (kind === "templates") return completeTemplatesDraft(root, run, io, deps);
     io.out(`${run.request.outputPath} for ${run.request.change} is valid`);
     return 0;
   }

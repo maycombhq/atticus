@@ -1,5 +1,5 @@
 import { stringify } from "yaml";
-import { taskBranch, type RecordOf } from "@maycombhq/core";
+import { changesRelOf, taskBranch, type RecordOf } from "@maycombhq/core";
 import { docOf, sectionMatching } from "@maycombhq/naysayer";
 import { mappingSections, readStory, viaOf, type TaskContext } from "./change.js";
 
@@ -26,7 +26,7 @@ export function renderSpec(t: TaskContext): string {
     "**Status**: Draft",
     `**Input**: Task ${t.task.id} of change ${t.change.id} (${t.change.title})`,
     "",
-    `<!-- Handed down by Atticus from openspec/changes/${t.change.id}: ${stories.length ? stories.map((s) => s.path).join(", ") : "tasks.md"}. Refine it with /speckit.specify and /speckit.clarify. A question that needs the change's design goes back up, never into this repo alone. -->`,
+    `<!-- Handed down by Atticus from ${changesRelOf(t.root)}/${t.change.id}: ${stories.length ? stories.map((s) => s.path).join(", ") : "tasks.md"}. Refine it with /speckit.specify and /speckit.clarify. A question that needs the change's design goes back up, never into this repo alone. -->`,
     "",
     "## User Scenarios & Testing *(mandatory)*",
     "",

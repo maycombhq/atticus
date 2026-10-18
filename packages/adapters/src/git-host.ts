@@ -46,6 +46,13 @@ export interface GitHost {
    * a check is failing or pending.
    */
   merge(repo: string, number: number, approval: Approval): Promise<PullRequest>;
+  /**
+   * Close a PR without merging it (Return to PO). Returns the PR as the host now has it: a
+   * host where a person closes PRs (the manual host) returns it still open until they do.
+   * Optional, so Git host plugins written before it still conform (ADR 0041); callers fall
+   * back to a comment asking a person to close the PR.
+   */
+  closePullRequest?(repo: string, number: number, approval: Approval): Promise<PullRequest>;
 }
 
 /** Whether a PR may be merged, and why not. Shared by mocks and real adapters. */
@@ -176,6 +183,16 @@ export class MockGitHost extends MockBase implements GitHost {
     if (blockers.length > 0)
       throw new AdapterError(this.name, "conflict", `can't merge: ${blockers.join("; ")}`);
     pr.state = "merged";
+    return structuredClone(pr);
+  }
+
+  async closePullRequest(repo: string, number: number, approval: Approval) {
+    const a = requireApproval(this.name, approval);
+    this.call("closePullRequest", [repo, number], a);
+    const pr = this.prs.get(this.key(repo, number)) ?? this.notFound(`PR ${repo}#${number}`);
+    if (pr.state === "merged")
+      throw new AdapterError(this.name, "conflict", `PR ${number} is merged and can't be closed`);
+    pr.state = "closed";
     return structuredClone(pr);
   }
 

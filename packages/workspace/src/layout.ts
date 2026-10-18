@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import { RecordId } from "@maycombhq/core";
+import { changesDirOf, RecordId } from "@maycombhq/core";
 
 /**
  * Where things live in a metarepo (see the plan's folder layout):
@@ -10,6 +10,7 @@ import { RecordId } from "@maycombhq/core";
  *   workspace/<change>.code-workspace        VS Code workspace for the change
  *   workspace/.intellij/<change>/            IntelliJ project for the change
  *   openspec/changes/<change>/repos.yaml     the change's branch, worktree, PR and build per repo
+ *                                            (the change folder follows sources.yaml layout.openspec)
  *
  * workspace/, .index/ and .runs/ are git-ignored and never committed.
  */
@@ -36,7 +37,7 @@ export function worktreePath(root: string, change: string, repo: string): string
 }
 
 export function changeDir(root: string, change: string): string {
-  return join(root, "openspec", "changes", id("change id", change));
+  return join(changesDirOf(root), id("change id", change));
 }
 
 export function changeReposPath(root: string, change: string): string {

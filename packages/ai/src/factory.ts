@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  changesRelOf,
   loadOrgPack,
   RuntimeKind,
   type OrgPack,
@@ -170,7 +171,10 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     const dir = join(this.h.root, ".runs", request.change, run.runId);
     await mkdir(dir, { recursive: true });
     const promptFile = join(dir, "prompt.md");
-    const prompt = HandoffRuntime.promptFor(run).replace(/\nWhen the file is complete.*\n$/s, "\n");
+    const prompt = HandoffRuntime.promptFor(run, changesRelOf(this.h.root)).replace(
+      /\nWhen the file is complete.*\n$/s,
+      "\n",
+    );
     await writeFile(promptFile, prompt, "utf8");
     await writeFile(
       join(dir, "context-manifest.json"),

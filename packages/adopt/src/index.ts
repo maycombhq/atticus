@@ -13,5 +13,6 @@ export * from "./absorb/speckit.js";
 export * from "./absorb/translate.js";
 export * from "./absorb/source.js";
 export * from "./absorb/absorb.js";
+export * from "./absorb/refresh.js";
 export * from "./federation.js";
 export * from "./zero-install.js";

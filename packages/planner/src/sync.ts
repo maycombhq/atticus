@@ -11,7 +11,7 @@ import {
   type WorkTracker,
 } from "@maycombhq/adapters";
 import { writeFileAtomic } from "@maycombhq/changes";
-import { toCanonicalYaml } from "@maycombhq/core";
+import { changesRelOf, toCanonicalYaml } from "@maycombhq/core";
 import { readTasks } from "@maycombhq/naysayer";
 import { loadPlanContext, type PlanContext } from "./context.js";
 import { PlannerError } from "./errors.js";
@@ -125,7 +125,7 @@ export async function desiredItems(
     title: ctx.change.title,
     description: [
       whyText,
-      `Change ${ctx.change.id} in the metarepo: openspec/changes/${ctx.change.id}/.`,
+      `Change ${ctx.change.id} in the metarepo: ${changesRelOf(ctx.root)}/${ctx.change.id}/.`,
     ]
       .filter(Boolean)
       .join("\n\n"),

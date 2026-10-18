@@ -19,6 +19,7 @@ import {
   approval,
   copyPhase,
   forgeMetarepo,
+  passedRound,
   host,
 } from "./helpers.js";
 
@@ -55,6 +56,7 @@ async function inDesign(
     now: T("11:00"),
   });
   await copyPhase(root, ID, `${ID}/design`);
+  await passedRound(root, ID, "design");
 }
 
 function finding(over: Record<string, unknown>) {
@@ -363,6 +365,15 @@ describe("refusals", () => {
   it("returns a change when the host can't close PRs, and says so", async () => {
     const root = await forgeMetarepo();
     const gh = host();
+    // A Git host plugin from before C4 closePullRequest (ADR 0041) has no close.
+    const noClose: GitHost = {
+      getRepo: (r) => gh.getRepo(r),
+      getPullRequest: (r, n) => gh.getPullRequest(r, n),
+      listPullRequests: (r, q) => gh.listPullRequests(r, q),
+      createPullRequest: (i, a) => gh.createPullRequest(i, a),
+      comment: (r, n, b, a) => gh.comment(r, n, b, a),
+      merge: (r, n, a) => gh.merge(r, n, a),
+    };
     await inDesign(root, gh);
     await handoff(root, ID, {
       gitHost: gh,
@@ -372,7 +383,7 @@ describe("refusals", () => {
       now: T("12:30"),
     });
     const r = await returnToPo(root, ID, {
-      gitHost: gh,
+      gitHost: noClose,
       repo: REPO,
       by: "ari",
       reason: "Scope unclear",

@@ -1,0 +1,199 @@
+# Hand-written: what the migrations extractor must produce for fixtures/data/alter-migrations
+# (component payouts-api, system payouts, no datasource config, so the store is payouts-db).
+# Tables and columns are the latest state after every migration in version order: added
+# columns appear, dropped columns and tables are gone, altered columns carry the new type,
+# nullability and default, and each change adds its line to the column's evidence.
+- kind: DataStore
+  id: payouts-db
+  confidence: verified
+  storeType: unknown
+  ownerComponent: payouts-api
+  entitiesHeld: []
+  evidence: [{ source: migration, path: db/migration/V1__create_payouts.sql, line: 1 }]
+
+# ---- migrations, one per file, with their operations
+- kind: Migration
+  id: payouts-db.v1
+  confidence: verified
+  dataStore: payouts-db
+  version: "1"
+  tool: flyway
+  file: db/migration/V1__create_payouts.sql
+  operations:
+    - create table payout_batch
+    - create table payout
+    - create table payout_audit
+    - create index ix_payout_memo
+  evidence: [{ source: migration, path: db/migration/V1__create_payouts.sql, line: 1 }]
+- kind: Migration
+  id: payouts-db.v2
+  confidence: verified
+  dataStore: payouts-db
+  version: "2"
+  tool: flyway
+  file: db/migration/V2__change_payout.sql
+  operations:
+    - alter table payout add column currency
+    - alter table payout drop column legacy_code
+    - alter table payout alter column amount
+    - alter table payout alter column memo
+    - alter table payout alter column status
+  evidence: [{ source: migration, path: db/migration/V2__change_payout.sql, line: 1 }]
+- kind: Migration
+  id: payouts-db.v3
+  confidence: verified
+  dataStore: payouts-db
+  version: "3"
+  tool: flyway
+  file: db/migration/V3__payees.sql
+  operations:
+    - alter table payout add column payee_ref
+    - alter table payout add column batch_id
+    - alter table payout drop column status
+    - alter table payout alter column memo
+    - alter table payout rename column payee_ref to payee_reference
+    - drop index ix_payout_memo
+    - drop table payout_audit
+  evidence: [{ source: migration, path: db/migration/V3__payees.sql, line: 1 }]
+- kind: Migration
+  id: payouts-db.v10
+  confidence: verified
+  dataStore: payouts-db
+  version: "10"
+  tool: flyway
+  file: db/migration/V10__other_dialects.sql
+  operations:
+    - alter table payout alter column currency
+    - alter table payout alter column payee_reference
+    - alter table payout add column fee
+    - alter table payout add column fee_currency
+  evidence: [{ source: migration, path: db/migration/V10__other_dialects.sql, line: 1 }]
+
+# ---- payout_batch: unchanged since V1
+- kind: Table
+  id: payouts-db.payout-batch
+  confidence: verified
+  dataStore: payouts-db
+  name: payout_batch
+  tableKind: table
+  ownerComponent: payouts-api
+  readers: [payouts-api]
+  writers: [payouts-api]
+  evidence: [{ source: migration, path: db/migration/V1__create_payouts.sql, line: 2 }]
+- kind: Column
+  id: payouts-db.payout-batch.id
+  confidence: verified
+  table: payouts-db.payout-batch
+  name: id
+  type: bigint
+  nullable: false
+  evidence: [{ source: migration, path: db/migration/V1__create_payouts.sql, line: 3 }]
+- kind: IndexConstraint
+  id: payouts-db.payout-batch.pk
+  confidence: verified
+  table: payouts-db.payout-batch
+  constraintKind: primary-key
+  columns: [id]
+  evidence: [{ source: migration, path: db/migration/V1__create_payouts.sql, line: 3 }]
+
+# ---- payout: legacy_code (V2) and status (V3) dropped; ix_payout_memo dropped (V3)
+- kind: Table
+  id: payouts-db.payout
+  confidence: verified
+  dataStore: payouts-db
+  name: payout
+  tableKind: table
+  ownerComponent: payouts-api
+  readers: [payouts-api]
+  writers: [payouts-api]
+  evidence: [{ source: migration, path: db/migration/V1__create_payouts.sql, line: 6 }]
+- kind: Column
+  id: payouts-db.payout.id
+  confidence: verified
+  table: payouts-db.payout
+  name: id
+  type: bigint
+  nullable: false
+  evidence: [{ source: migration, path: db/migration/V1__create_payouts.sql, line: 7 }]
+- kind: Column
+  id: payouts-db.payout.amount
+  confidence: verified
+  table: payouts-db.payout
+  name: amount
+  type: numeric(18,2)
+  nullable: false
+  evidence:
+    - { source: migration, path: db/migration/V1__create_payouts.sql, line: 8 }
+    - { source: migration, path: db/migration/V2__change_payout.sql, line: 3 }
+- kind: Column
+  id: payouts-db.payout.memo
+  confidence: verified
+  table: payouts-db.payout
+  name: memo
+  type: varchar(80)
+  nullable: true
+  evidence:
+    - { source: migration, path: db/migration/V1__create_payouts.sql, line: 9 }
+    - { source: migration, path: db/migration/V2__change_payout.sql, line: 4 }
+    - { source: migration, path: db/migration/V3__payees.sql, line: 6 }
+- kind: Column
+  id: payouts-db.payout.currency
+  confidence: verified
+  table: payouts-db.payout
+  name: currency
+  type: varchar(3)
+  nullable: true
+  default: "'USD'"
+  evidence:
+    - { source: migration, path: db/migration/V2__change_payout.sql, line: 1 }
+    - { source: migration, path: db/migration/V10__other_dialects.sql, line: 2 }
+- kind: Column
+  id: payouts-db.payout.payee-reference
+  confidence: verified
+  table: payouts-db.payout
+  name: payee_reference
+  type: varchar(60)
+  nullable: false
+  evidence:
+    - { source: migration, path: db/migration/V3__payees.sql, line: 3 }
+    - { source: migration, path: db/migration/V3__payees.sql, line: 7 }
+    - { source: migration, path: db/migration/V10__other_dialects.sql, line: 3 }
+- kind: Column
+  id: payouts-db.payout.batch-id
+  confidence: verified
+  table: payouts-db.payout
+  name: batch_id
+  type: bigint
+  nullable: true
+  evidence: [{ source: migration, path: db/migration/V3__payees.sql, line: 4 }]
+- kind: Column
+  id: payouts-db.payout.fee
+  confidence: verified
+  table: payouts-db.payout
+  name: fee
+  type: numeric(8,2)
+  nullable: true
+  evidence: [{ source: migration, path: db/migration/V10__other_dialects.sql, line: 4 }]
+- kind: Column
+  id: payouts-db.payout.fee-currency
+  confidence: verified
+  table: payouts-db.payout
+  name: fee_currency
+  type: char(3)
+  nullable: false
+  evidence: [{ source: migration, path: db/migration/V10__other_dialects.sql, line: 4 }]
+- kind: IndexConstraint
+  id: payouts-db.payout.pk
+  confidence: verified
+  table: payouts-db.payout
+  constraintKind: primary-key
+  columns: [id]
+  evidence: [{ source: migration, path: db/migration/V1__create_payouts.sql, line: 7 }]
+- kind: IndexConstraint
+  id: payouts-db.payout.fk-payout-batch
+  confidence: verified
+  table: payouts-db.payout
+  constraintKind: foreign-key
+  columns: [batch_id]
+  references: { table: payouts-db.payout-batch, columns: [id] }
+  evidence: [{ source: migration, path: db/migration/V3__payees.sql, line: 4 }]

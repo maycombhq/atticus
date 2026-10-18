@@ -41,6 +41,14 @@ export interface WorkspaceManager {
   ): Promise<{ removed: string[]; kept: { id: string; reason: string }[] }>;
 }
 
+/**
+ * A manifest url of `.` or `./<path>` names a repo already in place under the metarepo root
+ * (an adopted repo, or a folder of clones): scans read it there, so there is no base clone.
+ */
+export function isInPlace(url: string): boolean {
+  return url === "." || url.startsWith("./");
+}
+
 export function createWorkspace(root: string, git: GitRunner = createGit()): WorkspaceManager {
   const g = (args: string[], cwd = root) => git(args, cwd);
   const head = async (cwd: string) => (await g(["rev-parse", "HEAD"], cwd)).stdout.trim();
@@ -57,6 +65,12 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
 
   async function syncOne(repo: ManifestRepo): Promise<SyncResult> {
     if (repo.archived) return { id: repo.id, action: "skipped", reason: "archived" };
+    if (isInPlace(repo.url))
+      return {
+        id: repo.id,
+        action: "skipped",
+        reason: `in place at ${repo.url}, nothing to clone`,
+      };
     const dest = baseClonePath(root, repo.id);
     const branch = repo.defaultBranch;
     try {
@@ -134,7 +148,9 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
     root,
 
     async sync(repos) {
-      await ensureGitignore(root);
+      // Only base clones need workspace/ ignored; a root of in-place repos (an adopted repo)
+      // must stay untouched.
+      if (repos.some((r) => !r.archived && !isInPlace(r.url))) await ensureGitignore(root);
       const out: SyncResult[] = [];
       for (const repo of repos) out.push(await syncOne(repo));
       return out;

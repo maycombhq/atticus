@@ -45,6 +45,8 @@ import {
 import { executorsCheck, todoDone, todoList, todoRun, todoShow } from "./todo-commands.js";
 import {
   absorbCommand,
+  absorbRefreshCommand,
+  sourcesRefreshCommand,
   adoptCommand,
   initCommand,
   reposDiscoverCommand,
@@ -120,7 +122,7 @@ Usage:
   atticus catalog validate <dir>       Check record files: schema, location and canonical form
           [--fix]                      Rewrite files that aren't in canonical form
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
-  atticus scan                         Scan every repo's base clone and write catalog/generated
+  atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated
           [--repos a,b]                Only these repos
           [--full]                     Ignore the scan cache
           [--dry-run]                  Show what would change; write nothing
@@ -134,6 +136,7 @@ Usage:
           [--json]
   atticus sources add <type> <location> Print the sources.yaml entry for a wiki (markdown-folder, ado-wiki, ...)
   atticus sources sync [--json]        Read the wikis: pages, stale pages, conflicts with code, document-only facts
+  atticus sources refresh [--json]     Fetch every absorbed source again and show what changed
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
   atticus questions [--json]           Knowledge gaps and the owner questions that close them
@@ -158,7 +161,7 @@ Usage:
   atticus change handoff <id> --by <you>  Open the phase's hand-off PR for approval [--repo]
   atticus change sync <id> [--by <you>]   Merge an approved hand-off and advance the state [--repo]
   atticus change return <id> --by <you> --reason "<why>"  Return the change to the product owner
-  atticus change archive <id> --by <you>  Archive a released change
+  atticus change archive <id> --by <you> [--no-rescan]  Archive a released change and rescan its repos
   atticus change list [--json]         Every change and its state
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
   atticus critic <change> [--gate g] [--lens l] [--json]  Review a change at a gate: rule checks, then AI lenses
@@ -198,6 +201,7 @@ Usage:
   atticus unadopt <path>               Remove Atticus from an adopted repo, leaving it as it was
   atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
   atticus absorb <git-url|path> --id <id>  Translate another team's prompts, agents, checklists, Spec Kit or Atticus repo
+  atticus absorb --refresh <id>        Fetch an absorbed source again and update its proposal
           [--mode adopt|link|ignore] [--ref r] [--dry-run]
   atticus tests generate <change> <story>  Generate tests from a story [--framework id] [--force] [--check] [--mode m]
   atticus trace <change> [--json] [--csv] [--no-write]  Requirement → story → test → code → records → feature
@@ -304,6 +308,9 @@ export async function main(argv: string[], io: Output): Promise<number> {
       eval: { type: "string" },
       epic: { type: "string" },
       "no-ai": { type: "boolean" },
+      "no-drift": { type: "boolean" },
+      "no-rescan": { type: "boolean" },
+      refresh: { type: "string" },
       export: { type: "string" },
       result: { type: "string", multiple: true },
       skip: { type: "boolean" },
@@ -384,6 +391,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
         full: values.full === true,
         dryRun: values["dry-run"] === true,
         json: values.json === true,
+        noDrift: values["no-drift"] === true,
       },
       io,
     );
@@ -641,6 +649,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
       io,
     );
   if (group === "absorb") {
+    if (str(values.refresh)) return absorbRefreshCommand(root, str(values.refresh), { json }, io);
     if (!command) {
       io.err(
         "absorb needs a git URL or a folder, for example: atticus absorb ../payments-metarepo --id payments",
@@ -1008,7 +1017,13 @@ export async function main(argv: string[], io: Output): Promise<number> {
       );
     if (command === "archive" && (await ciArchiveGate(root, arg, { json: false }, io)) !== 0)
       return 1;
-    if (command === "archive") return changeArchive(root, arg, { ...(by ? { by } : {}) }, io);
+    if (command === "archive")
+      return changeArchive(
+        root,
+        arg,
+        { ...(by ? { by } : {}), ...(values["no-rescan"] === true ? { rescan: false } : {}) },
+        io,
+      );
   }
   if (group === "intake" && command === "add")
     return intakeAdd(
@@ -1139,6 +1154,8 @@ export async function main(argv: string[], io: Output): Promise<number> {
     }
     return sourcesAdd(root, kind, location, io);
   }
+  if (group === "sources" && command === "refresh")
+    return sourcesRefreshCommand(root, { json }, io);
   if (group === "sources" && command === "sync")
     return sourcesSync(root, io, { json: values.json === true });
   if (group === "patterns" && command === "scan")
