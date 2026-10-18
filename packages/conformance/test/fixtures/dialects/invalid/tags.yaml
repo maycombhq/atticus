@@ -1,0 +1,7 @@
+# Deliberately invalid C2: an unknown field and no tests.
+schemaVersion: 1
+name: tags
+version: "1.0"
+colour: blue
+rules: []
+tests: []

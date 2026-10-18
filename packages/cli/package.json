@@ -23,6 +23,7 @@
     "@maycombhq/assistant-kit": "workspace:*",
     "@maycombhq/changes": "workspace:*",
     "@maycombhq/ci": "workspace:*",
+    "@maycombhq/conformance": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/diagrams": "workspace:*",
     "@maycombhq/evals": "workspace:*",

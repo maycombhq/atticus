@@ -1,0 +1,7 @@
+# Deliberately broken: an approver role nobody defined and a checklist pack that doesn't exist.
+schemaVersion: 1
+gates:
+  - id: design
+    phase: design
+    approvers: [wizard]
+    checklists: [missing-pack]

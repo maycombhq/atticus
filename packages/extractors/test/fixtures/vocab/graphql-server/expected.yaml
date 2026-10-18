@@ -1,0 +1,134 @@
+# Hand-written expected output of the graphql extractor over ./repo
+# (repo "harbor-catalog", component "catalog-api"). schemaVersion and status default to 2 and
+# current; the runner's commit, scannedAt and extractor stamps are left out of evidence.
+# Ids are <component>.graphql.<root>.<field>, lower-cased; pathOrTopic uses the standard root
+# names even where the schema renames a root (RootQuery is the query root here).
+records:
+  # SDL files: renamed root followed, descriptions, directives and non-root types skipped.
+  - kind: Endpoint
+    id: catalog-api.graphql.query.product
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: QUERY
+    pathOrTopic: Query.product
+    schemaRefs: []
+    evidence:
+      - { source: spec, repo: harbor-catalog, path: schema/catalog.graphqls, line: 9, side: definition }
+  - kind: Endpoint
+    id: catalog-api.graphql.query.search
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: QUERY
+    pathOrTopic: Query.search
+    schemaRefs: []
+    evidence:
+      - { source: spec, repo: harbor-catalog, path: schema/catalog.graphqls, line: 11, side: definition }
+  - kind: Endpoint
+    id: catalog-api.graphql.mutation.addreview
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: MUTATION
+    pathOrTopic: Mutation.addReview
+    schemaRefs: []
+    evidence:
+      - { source: spec, repo: harbor-catalog, path: schema/catalog.graphqls, line: 20, side: definition }
+  # `extend type Query` and a Subscription root.
+  - kind: Endpoint
+    id: catalog-api.graphql.query.reviews
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: QUERY
+    pathOrTopic: Query.reviews
+    schemaRefs: []
+    evidence:
+      - { source: spec, repo: harbor-catalog, path: schema/reviews.graphql, line: 2, side: definition }
+  - kind: Endpoint
+    id: catalog-api.graphql.subscription.reviewadded
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: SUBSCRIPTION
+    pathOrTopic: Subscription.reviewAdded
+    schemaRefs: []
+    evidence:
+      - { source: spec, repo: harbor-catalog, path: schema/reviews.graphql, line: 6, side: definition }
+  # Apollo typeDefs in a gql tag (the commented-out one is ignored; the test file is never read).
+  - kind: Endpoint
+    id: catalog-api.graphql.query.categories
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: QUERY
+    pathOrTopic: Query.categories
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-catalog, path: src/server.ts, line: 7, side: definition }
+  # Spring for GraphQL: the method name, or the annotation's name; @SchemaMapping on a non-root type is not an operation.
+  - kind: Endpoint
+    id: catalog-api.graphql.query.stock
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: QUERY
+    pathOrTopic: Query.stock
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-catalog, path: src/main/java/harbor/catalog/InventoryController.java, line: 9, side: definition }
+  - kind: Endpoint
+    id: catalog-api.graphql.mutation.reservestock
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: MUTATION
+    pathOrTopic: Mutation.reserveStock
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-catalog, path: src/main/java/harbor/catalog/InventoryController.java, line: 14, side: definition }
+  # Strawberry: annotated attributes and decorated methods, camel-cased; _helper is not a field.
+  - kind: Endpoint
+    id: catalog-api.graphql.query.bestsellers
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: QUERY
+    pathOrTopic: Query.bestSellers
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-catalog, path: app/schema.py, line: 6, side: definition }
+  - kind: Endpoint
+    id: catalog-api.graphql.query.giftcards
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: QUERY
+    pathOrTopic: Query.giftCards
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-catalog, path: app/schema.py, line: 9, side: definition }
+  - kind: Endpoint
+    id: catalog-api.graphql.mutation.redeemgiftcard
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: MUTATION
+    pathOrTopic: Mutation.redeemGiftCard
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-catalog, path: app/schema.py, line: 19, side: definition }
+  # Graphene: field attributes; resolve_ methods are not extra fields.
+  - kind: Endpoint
+    id: catalog-api.graphql.query.storehours
+    confidence: verified
+    component: catalog-api
+    endpointType: graphql
+    method: QUERY
+    pathOrTopic: Query.storeHours
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-catalog, path: legacy/schema.py, line: 5, side: definition }
+  # schema/ops/health.graphql queries `categories`, which this repo serves: no loose end.
+warnings: []

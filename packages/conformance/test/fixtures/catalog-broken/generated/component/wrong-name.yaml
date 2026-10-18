@@ -1,0 +1,11 @@
+schemaVersion: 2
+kind: Component
+id: ledger-web
+status: current
+confidence: verified
+evidence:
+  - path: package.json
+    repo: forge-ledger-web
+    source: config
+system: missing-system
+type: spa

@@ -1,0 +1,33 @@
+# Hand-written expected output of the ingress extractor over ./repo (repo "harbor-k8s", type infra).
+# Routes become Deployment.ingress of the workload the backend Service selects; routes are
+# sorted by host and path. Evidence: the route object, the Service, then any parent Gateway.
+records:
+  # An Ingress with a TLS host and a plain one.
+  - kind: Deployment
+    id: storefront.prod
+    confidence: verified
+    component: storefront
+    env: prod
+    platform: kubernetes
+    networkPolicies: []
+    ingress:
+      - { host: admin.harbor.internal, path: /admin, tls: false }
+      - { host: shop.harbor.example, path: /, tls: true }
+    evidence:
+      - { source: infrastructure, repo: harbor-k8s, path: k8s/storefront.yaml, line: 22 }
+      - { source: infrastructure, repo: harbor-k8s, path: k8s/storefront.yaml, line: 14 }
+  # A Gateway API HTTPRoute whose parent Gateway listens on HTTPS.
+  - kind: Deployment
+    id: orders.prod
+    confidence: verified
+    component: orders
+    env: prod
+    platform: kubernetes
+    networkPolicies: []
+    ingress:
+      - { host: api.harbor.example, path: /orders, tls: true }
+    evidence:
+      - { source: infrastructure, repo: harbor-k8s, path: k8s/routes.yaml, line: 32 }
+      - { source: infrastructure, repo: harbor-k8s, path: k8s/routes.yaml, line: 12 }
+      - { source: infrastructure, repo: harbor-k8s, path: k8s/routes.yaml, line: 20 }
+warnings: []

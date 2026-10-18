@@ -1,0 +1,4 @@
+name: harbor_analytics
+version: "1.0.0"
+profile: harbor
+model-paths: ["models"]

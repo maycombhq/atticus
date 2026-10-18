@@ -1,0 +1,21 @@
+# Catalog schema
+schema {
+  query: RootQuery
+  mutation: Mutation
+}
+
+"""The root query"""
+type RootQuery {
+  product(id: ID!): Product
+  "Search by text"
+  search(text: String!, first: Int = 10): [Product!]!
+}
+
+type Product {
+  id: ID!
+  name: String @deprecated(reason: "use title")
+}
+
+type Mutation {
+  addReview(productId: ID!, stars: Int!): Review
+}

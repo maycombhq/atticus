@@ -2602,7 +2602,13 @@
               "event-topic",
               "file-drop",
               "mq-queue",
-              "batch-job"
+              "batch-job",
+              "graphql",
+              "websocket",
+              "sse",
+              "webhook",
+              "function",
+              "transaction"
             ]
           },
           "method": {
@@ -2796,7 +2802,9 @@
               "pubsub",
               "sftp",
               "mq",
-              "other"
+              "other",
+              "mesh",
+              "webhook"
             ]
           },
           "route": {
@@ -4417,6 +4425,28 @@
           },
           "backupAndFailover": {
             "type": "string"
+          },
+          "ingress": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "host": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "path": {
+                  "type": "string"
+                },
+                "tls": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "host"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -4570,7 +4600,8 @@
               "pool",
               "cache-ttl",
               "feature-flag",
-              "config"
+              "config",
+              "schedule"
             ]
           },
           "key": {

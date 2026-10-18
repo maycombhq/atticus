@@ -1,0 +1,6 @@
+{
+  "bindings": [
+    { "type": "queueTrigger", "direction": "in", "name": "msg", "queueName": "receipts" },
+    { "type": "blob", "direction": "out", "name": "copy", "path": "receipts-archive/{rand-guid}" }
+  ]
+}

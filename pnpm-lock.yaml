@@ -201,6 +201,9 @@ importers:
       '@maycombhq/ci':
         specifier: workspace:*
         version: link:../ci
+      '@maycombhq/conformance':
+        specifier: workspace:*
+        version: link:../conformance
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
@@ -271,6 +274,27 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+
+  packages/conformance:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/executors':
+        specifier: workspace:*
+        version: link:../executors
+      '@maycombhq/extractors':
+        specifier: workspace:*
+        version: link:../extractors
+      '@maycombhq/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
 
   packages/core:
     dependencies:

@@ -1,0 +1,149 @@
+# Hand-written expected output of the data-pipelines extractor over ./repo
+# (repo "harbor-data", component "analytics", system "harbor").
+records:
+  # Airflow: two DAGs (a `with DAG(...)` and a `@dag` function), each a component with its
+  # schedule; the literal SQL of the first is table access.
+  - kind: Component
+    id: nightly-orders
+    confidence: verified
+    system: harbor
+    repo: harbor-data
+    type: data-pipeline
+    runtime: airflow
+    evidence:
+      - { source: code, repo: harbor-data, path: dags/orders.py, line: 7 }
+  - kind: Setting
+    id: nightly-orders.schedule-nightly-orders
+    confidence: verified
+    component: nightly-orders
+    settingKind: schedule
+    key: schedule.nightly_orders
+    valueOrRef: 0 2 * * *
+    evidence:
+      - { source: code, repo: harbor-data, path: dags/orders.py, line: 7 }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: db-access
+    raw: write daily_orders
+    owner: nightly-orders
+    evidence:
+      - { source: code, repo: harbor-data, path: dags/orders.py, line: 10, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: db-access
+    raw: read orders
+    owner: nightly-orders
+    evidence:
+      - { source: code, repo: harbor-data, path: dags/orders.py, line: 10, side: caller }
+  - kind: Component
+    id: refresh-stock
+    confidence: verified
+    system: harbor
+    repo: harbor-data
+    type: data-pipeline
+    runtime: airflow
+    evidence:
+      - { source: code, repo: harbor-data, path: dags/orders.py, line: 14 }
+  - kind: Setting
+    id: refresh-stock.schedule-refresh-stock
+    confidence: verified
+    component: refresh-stock
+    settingKind: schedule
+    key: schedule.refresh_stock
+    valueOrRef: "@hourly"
+    evidence:
+      - { source: code, repo: harbor-data, path: dags/orders.py, line: 14 }
+
+  # dbt: the project is the repo's component; models are tables it writes on the profile's
+  # warehouse (a view unless configured otherwise); a source is a table it reads.
+  - kind: Component
+    id: analytics
+    confidence: verified
+    system: harbor
+    repo: harbor-data
+    type: data-pipeline
+    runtime: dbt
+    evidence:
+      - { source: config, repo: harbor-data, path: analytics/dbt_project.yml, line: 1 }
+  - kind: DataStore
+    id: harbor-warehouse
+    confidence: verified
+    storeType: warehouse
+    entitiesHeld: []
+    evidence:
+      - { source: config, repo: harbor-data, path: analytics/dbt_project.yml, line: 3 }
+  - kind: Table
+    id: harbor-warehouse.daily-sales
+    confidence: verified
+    dataStore: harbor-warehouse
+    name: daily_sales
+    tableKind: table
+    ownerComponent: analytics
+    readers: []
+    writers: [analytics]
+    evidence:
+      - { source: code, repo: harbor-data, path: analytics/models/marts/daily_sales.sql, line: 1 }
+  - kind: Table
+    id: harbor-warehouse.stg-orders
+    confidence: verified
+    dataStore: harbor-warehouse
+    name: stg_orders
+    tableKind: view
+    ownerComponent: analytics
+    readers: []
+    writers: [analytics]
+    evidence:
+      - { source: code, repo: harbor-data, path: analytics/models/staging/stg_orders.sql, line: 1 }
+  - kind: Table
+    id: harbor-warehouse.orders
+    confidence: verified
+    dataStore: harbor-warehouse
+    name: orders
+    tableKind: table
+    readers: [analytics]
+    writers: []
+    evidence:
+      - { source: code, repo: harbor-data, path: analytics/models/staging/stg_orders.sql, line: 2 }
+
+  # Spark: a scheduled application manifest, and PySpark table reads and writes.
+  - kind: Component
+    id: sales-rollup
+    confidence: verified
+    system: harbor
+    repo: harbor-data
+    type: data-pipeline
+    runtime: spark
+    evidence:
+      - { source: infrastructure, repo: harbor-data, path: jobs/spark/rollup-app.yaml, line: 2 }
+  - kind: Setting
+    id: sales-rollup.prod.schedule-sales-rollup
+    confidence: verified
+    component: sales-rollup
+    env: prod
+    settingKind: schedule
+    key: schedule.sales-rollup
+    valueOrRef: "@every 6h"
+    evidence:
+      - { source: infrastructure, repo: harbor-data, path: jobs/spark/rollup-app.yaml, line: 7 }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: db-access
+    raw: read orders
+    owner: analytics
+    evidence:
+      - { source: code, repo: harbor-data, path: jobs/spark/sales_rollup.py, line: 4, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: db-access
+    raw: read stock
+    owner: analytics
+    evidence:
+      - { source: code, repo: harbor-data, path: jobs/spark/sales_rollup.py, line: 5, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: db-access
+    raw: write sales_rollup
+    owner: analytics
+    evidence:
+      - { source: code, repo: harbor-data, path: jobs/spark/sales_rollup.py, line: 6, side: caller }
+warnings: []

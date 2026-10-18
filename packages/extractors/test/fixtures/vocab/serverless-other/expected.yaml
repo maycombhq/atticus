@@ -1,0 +1,221 @@
+# Hand-written expected output of the serverless extractor over ./repo
+# (repo "harbor-notify", component "notify-fns", system "harbor").
+# Azure function.json bindings and isolated-worker attributes make the repo's function app;
+# the Terraform functions and the Knative service in the same repo are components by name.
+records:
+  - kind: Component
+    id: notify-fns
+    confidence: verified
+    system: harbor
+    repo: harbor-notify
+    type: function
+    runtime: azure-functions
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: CleanUp/function.json, line: 2 }
+      - { source: infrastructure, repo: harbor-notify, path: Lookup/function.json, line: 2 }
+      - { source: infrastructure, repo: harbor-notify, path: SendReceipt/function.json, line: 2 }
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 5 }
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 8 }
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 11 }
+  - kind: Deployment
+    id: notify-fns.default
+    confidence: verified
+    component: notify-fns
+    env: default
+    platform: azure-functions
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: CleanUp/function.json, line: 2 }
+      - { source: infrastructure, repo: harbor-notify, path: Lookup/function.json, line: 2 }
+      - { source: infrastructure, repo: harbor-notify, path: SendReceipt/function.json, line: 2 }
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 5 }
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 8 }
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 11 }
+
+  # function.json: a timer, an HTTP route under the default /api prefix, a queue.
+  - kind: Endpoint
+    id: notify-fns.function.cleanup.schedule-0-0-2
+    confidence: verified
+    component: notify-fns
+    endpointType: function
+    pathOrTopic: schedule:0 0 2 * * *
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: CleanUp/function.json, line: 2, side: definition }
+  - kind: Setting
+    id: notify-fns.schedule-cleanup
+    confidence: verified
+    component: notify-fns
+    settingKind: schedule
+    key: schedule.CleanUp
+    valueOrRef: 0 0 2 * * *
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: CleanUp/function.json, line: 2 }
+  - kind: Endpoint
+    id: notify-fns.function.lookup.http-api-lookup-id
+    confidence: verified
+    component: notify-fns
+    endpointType: function
+    method: GET
+    pathOrTopic: http:/api/lookup/{id}
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: Lookup/function.json, line: 3, side: definition }
+  - kind: Endpoint
+    id: notify-fns.function.sendreceipt.queue-receipts
+    confidence: verified
+    component: notify-fns
+    endpointType: function
+    pathOrTopic: queue:receipts
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: SendReceipt/function.json, line: 3, side: definition }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: event-subscribe
+    raw: receipts
+    owner: notify-fns
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: SendReceipt/function.json, line: 3, side: caller }
+
+  # Isolated worker: [Function] names (also nameof) with trigger attributes; a Service Bus
+  # trigger with a subscription is a topic.
+  - kind: Endpoint
+    id: notify-fns.function.getorder.http-api-orders-id
+    confidence: verified
+    component: notify-fns
+    endpointType: function
+    method: GET
+    pathOrTopic: http:/api/orders/{id}
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 6, side: definition }
+  - kind: Endpoint
+    id: notify-fns.function.reindex.schedule-0-30
+    confidence: verified
+    component: notify-fns
+    endpointType: function
+    pathOrTopic: schedule:0 */30 * * * *
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 9, side: definition }
+  - kind: Setting
+    id: notify-fns.schedule-reindex
+    confidence: verified
+    component: notify-fns
+    settingKind: schedule
+    key: schedule.Reindex
+    valueOrRef: 0 */30 * * * *
+    evidence:
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 9 }
+  - kind: Endpoint
+    id: notify-fns.function.onpayment.topic-payments
+    confidence: verified
+    component: notify-fns
+    endpointType: function
+    pathOrTopic: topic:payments
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 12, side: definition }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: event-subscribe
+    raw: payments
+    owner: notify-fns
+    evidence:
+      - { source: code, repo: harbor-notify, path: Functions/OrderFunctions.cs, line: 12, side: caller }
+
+  # Terraform: a function triggered by a Pub/Sub topic, and an HTTP function.
+  - kind: Component
+    id: daily-report
+    confidence: verified
+    system: harbor
+    repo: harbor-notify
+    type: function
+    runtime: cloud-functions
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: infra/prod/functions.tf, line: 5 }
+  - kind: Deployment
+    id: daily-report.prod
+    confidence: verified
+    component: daily-report
+    env: prod
+    platform: cloud-functions
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: infra/prod/functions.tf, line: 5 }
+  - kind: Endpoint
+    id: daily-report.function.daily-report.topic-report-requests
+    confidence: verified
+    component: daily-report
+    endpointType: function
+    pathOrTopic: topic:report-requests
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: infra/prod/functions.tf, line: 13, side: definition }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: event-subscribe
+    raw: report-requests
+    owner: daily-report
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: infra/prod/functions.tf, line: 13, side: caller }
+  - kind: Component
+    id: quote-api
+    confidence: verified
+    system: harbor
+    repo: harbor-notify
+    type: function
+    runtime: cloud-functions
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: infra/prod/functions.tf, line: 19 }
+  - kind: Deployment
+    id: quote-api.prod
+    confidence: verified
+    component: quote-api
+    env: prod
+    platform: cloud-functions
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: infra/prod/functions.tf, line: 19 }
+  - kind: Endpoint
+    id: quote-api.function.quote-api.http
+    confidence: verified
+    component: quote-api
+    endpointType: function
+    method: ANY
+    pathOrTopic: http:/
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: infra/prod/functions.tf, line: 19, side: definition }
+
+  # Knative Service: environment from the namespace.
+  - kind: Component
+    id: pricing-fn
+    confidence: verified
+    system: harbor
+    repo: harbor-notify
+    type: function
+    runtime: knative
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: knative/pricing.yaml, line: 2 }
+  - kind: Deployment
+    id: pricing-fn.prod
+    confidence: verified
+    component: pricing-fn
+    env: prod
+    platform: knative
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: knative/pricing.yaml, line: 2 }
+  - kind: Endpoint
+    id: pricing-fn.function.pricing-fn.http
+    confidence: verified
+    component: pricing-fn
+    endpointType: function
+    method: ANY
+    pathOrTopic: http:/
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-notify, path: knative/pricing.yaml, line: 2, side: definition }
+warnings: []

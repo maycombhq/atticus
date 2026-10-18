@@ -334,7 +334,7 @@ describe("DATA_EXTRACTORS", () => {
       "orm@1.0.0",
       "observability@1.0.0",
       "asyncapi@1.0.1",
-      "mainframe@1.0.0",
+      "mainframe@1.1.0",
     ]);
   });
 

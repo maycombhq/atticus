@@ -1,0 +1,25 @@
+# Deliberately broken: its test expects a component the rule doesn't produce.
+schemaVersion: 1
+name: tags
+version: 0.1.0
+appliesTo: {}
+rules:
+  - id: tag-service
+    description: A line "SERVICE <name>" in services.txt names a component.
+    match:
+      regex: "SERVICE (\\w+)"
+      files: ["services.txt"]
+    emit:
+      kind: Component
+      id: "${match.1 | slug}"
+      fields:
+        system: "${match.1 | slug}"
+        type: service
+      evidence: { source: config }
+    confidence: verified
+tests:
+  - name: names the billing service
+    files:
+      services.txt: "SERVICE billing\n"
+    expect:
+      - { kind: Component, id: invoicing }

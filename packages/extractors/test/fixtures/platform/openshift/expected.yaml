@@ -12,11 +12,17 @@ records:
     resources: { cpu: 500m, memory: 768Mi }
     autoscaling: { min: 3, max: 8 }
     networkPolicies: [allow-from-gateway, deny-all]
+    # A Route is not an API gateway route (C1 GatewayRoute): it is an ingress entry (ADR 0040)
+    # of the deployment behind the Service it points to, with the Route and Service as evidence.
+    ingress:
+      - { host: ledger.apps.forge.example, path: /ledger, tls: true }
     evidence:
       - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 2 }
       - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 27 }
       - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/network-policies.yaml, line: 2 }
       - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/network-policies.yaml, line: 17 }
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 51 }
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 40 }
 
   # A plain Kubernetes Deployment outside the folders the infra extractor reads, and not the
   # first document in its file: the infra extractor can't see it, so this one emits it whole.
@@ -48,20 +54,6 @@ records:
     evidence:
       - { source: infrastructure, repo: forge-ocp, path: ocp/templates/notify-svc-template.yaml, line: 19 }
       - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/network-policies.yaml, line: 36 }
-
-  # A Route is not an API gateway route (C1 GatewayRoute), so its public URL is kept as a
-  # config Setting of the component behind the Service it points to.
-  - kind: Setting
-    id: ledger-api.prod.route-ledger-public
-    confidence: verified
-    component: ledger-api
-    env: prod
-    settingKind: config
-    key: route.ledger-public
-    valueOrRef: https://ledger.apps.forge.example/ledger
-    evidence:
-      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 51 }
-      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 40 }
 
 warnings:
   - path: ocp/overlays/dev/broken.yaml

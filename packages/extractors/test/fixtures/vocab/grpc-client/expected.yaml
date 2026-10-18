@@ -1,0 +1,26 @@
+# Hand-written expected output of the grpc extractor over ./repo
+# (repo "harbor-checkout", component "checkout-svc"): generated clients in Java, Node and Python.
+# Node names the package in the loaded definition; the others name the service only.
+records:
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: grpc-call
+    raw: LedgerService
+    owner: checkout-svc
+    evidence:
+      - { source: code, repo: harbor-checkout, path: src/main/java/harbor/checkout/LedgerClient.java, line: 9, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: grpc-call
+    raw: harbor.ledger.v1.LedgerService
+    owner: checkout-svc
+    evidence:
+      - { source: code, repo: harbor-checkout, path: web/quote.js, line: 5, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: grpc-call
+    raw: LedgerService
+    owner: checkout-svc
+    evidence:
+      - { source: code, repo: harbor-checkout, path: worker/settle.py, line: 7, side: caller }
+warnings: []

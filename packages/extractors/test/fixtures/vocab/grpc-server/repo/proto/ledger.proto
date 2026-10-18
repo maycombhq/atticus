@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+// The ledger API.
+package harbor.ledger.v1;
+
+option go_package = "harbor/ledger/v1;ledgerpb";
+
+service LedgerService {
+  // Balance of one account.
+  rpc GetBalance(GetBalanceRequest) returns (Balance);
+  rpc WatchPostings(WatchRequest) returns (stream Posting) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+message GetBalanceRequest { string account = 1; }

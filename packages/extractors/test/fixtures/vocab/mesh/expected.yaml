@@ -1,0 +1,116 @@
+# Hand-written expected output of the mesh extractor over ./repo (repo "harbor-platform",
+# type infra, no component of its own).
+records:
+  # Membership: Settings with key "mesh" naming the mesh. ledger is in a namespace annotated for
+  # Linkerd injection; cart and checkout in one labelled for Istio injection. legacy is not meshed.
+  - kind: Setting
+    id: ledger.prod.mesh
+    confidence: verified
+    component: ledger
+    env: prod
+    settingKind: config
+    key: mesh
+    valueOrRef: linkerd
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: linkerd/ledger.yaml, line: 2 }
+      - { source: infrastructure, repo: harbor-platform, path: linkerd/ledger.yaml, line: 9 }
+      - { source: infrastructure, repo: harbor-platform, path: linkerd/ledger.yaml, line: 17 }
+  - kind: Setting
+    id: cart.prod.mesh
+    confidence: verified
+    component: cart
+    env: prod
+    settingKind: config
+    key: mesh
+    valueOrRef: istio
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: mesh/namespaces.yaml, line: 2 }
+      - { source: infrastructure, repo: harbor-platform, path: mesh/workloads.yaml, line: 2 }
+      - { source: infrastructure, repo: harbor-platform, path: mesh/cart-dr.yaml, line: 2 }
+      - { source: infrastructure, repo: harbor-platform, path: mesh/cart-vs.yaml, line: 2 }
+  - kind: Setting
+    id: checkout.prod.mesh
+    confidence: verified
+    component: checkout
+    env: prod
+    settingKind: config
+    key: mesh
+    valueOrRef: istio
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: mesh/namespaces.yaml, line: 2 }
+      - { source: infrastructure, repo: harbor-platform, path: mesh/workloads.yaml, line: 10 }
+
+  # Linkerd ServiceProfile: a route timeout, a retryable route and the retry budget.
+  - kind: Setting
+    id: ledger.prod.mesh-get-balance-timeout
+    confidence: verified
+    component: ledger
+    env: prod
+    settingKind: timeout
+    key: mesh.GET /balance.timeout
+    valueOrRef: 300ms
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: linkerd/ledger.yaml, line: 27 }
+  - kind: Setting
+    id: ledger.prod.mesh-get-balance-retry
+    confidence: verified
+    component: ledger
+    env: prod
+    settingKind: retry
+    key: mesh.GET /balance.retry
+    valueOrRef: retryable
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: linkerd/ledger.yaml, line: 28 }
+  - kind: Setting
+    id: ledger.prod.mesh-retry-budget
+    confidence: verified
+    component: ledger
+    env: prod
+    settingKind: retry
+    key: mesh.retry-budget
+    valueOrRef: retryRatio=0.2 minRetriesPerSecond=10 ttl=10s
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: linkerd/ledger.yaml, line: 29 }
+
+  # Istio DestinationRule and VirtualService for cart.
+  - kind: Setting
+    id: cart.prod.mesh-pool
+    confidence: verified
+    component: cart
+    env: prod
+    settingKind: pool
+    key: mesh.pool
+    valueOrRef: tcp.maxConnections=100 http.http1MaxPendingRequests=10
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: mesh/cart-dr.yaml, line: 9 }
+  - kind: Setting
+    id: cart.prod.mesh-outlier
+    confidence: verified
+    component: cart
+    env: prod
+    settingKind: circuit-breaker
+    key: mesh.outlier
+    valueOrRef: consecutive5xxErrors=5 interval=30s baseEjectionTime=60s
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: mesh/cart-dr.yaml, line: 14 }
+  - kind: Setting
+    id: cart.prod.mesh-timeout
+    confidence: verified
+    component: cart
+    env: prod
+    settingKind: timeout
+    key: mesh.timeout
+    valueOrRef: 2s
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: mesh/cart-vs.yaml, line: 10 }
+  - kind: Setting
+    id: cart.prod.mesh-retry
+    confidence: verified
+    component: cart
+    env: prod
+    settingKind: retry
+    key: mesh.retry
+    valueOrRef: attempts=3 perTryTimeout=500ms retryOn=5xx,reset
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: mesh/cart-vs.yaml, line: 11 }
+warnings: []

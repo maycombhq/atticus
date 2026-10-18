@@ -1,0 +1,15 @@
+schemaVersion: 2
+kind: System
+id: ledger
+status: current
+confidence: verified
+accessGroup: everyone
+boundary: product
+evidence:
+  - path: forge.yaml
+    repo: forge-ledger
+    source: config
+name: Ledger
+repos:
+  - forge-ledger
+tags: []

@@ -60,7 +60,7 @@ describe("exportKit", () => {
     for (const k of RECORD_KINDS.filter((k) => k !== "CuratedDecision"))
       expect(kinds).toContain(`## ${k}\n`);
     expect(kinds).toContain(
-      "| `endpointType` | yes | one of `rest`, `grpc`, `soap`, `event-topic`, `file-drop`, `mq-queue`, `batch-job` |",
+      "| `endpointType` | yes | one of `rest`, `grpc`, `soap`, `event-topic`, `file-drop`, `mq-queue`, `batch-job`, `graphql`, `websocket`, `sse`, `webhook`, `function`, `transaction` |",
     );
     expect(kinds).not.toContain("CuratedDecision");
   });

@@ -21,15 +21,37 @@ export const System = record("System", {
   boundary: z.enum(["product", "internal", "vendor"]),
   owner: z.string().optional(),
   repos: list(str()),
+  /** Free labels. By convention (ADR 0040) `saas` marks a SaaS product used as a system, with boundary `vendor`. */
   tags: list(str()),
   /** Who may see this system. "everyone" systems are the only ones on the catalog site. */
   accessGroup: z.string().default("everyone"),
 });
 
+/**
+ * Documented `Component.type` values (ADR 0040). The field stays free text so an ecosystem can
+ * name a shape this list doesn't have; tools treat these values as known.
+ */
+export const COMPONENT_TYPES = [
+  "service",
+  "spa",
+  "bff",
+  "mobile-app",
+  "desktop-app",
+  "function",
+  "batch-job",
+  "data-pipeline",
+  "ml-model",
+  "gateway",
+  "worker",
+  "library",
+  "mainframe-program",
+] as const;
+
 export const Component = record("Component", {
   system: Ref,
   repo: z.string().optional(),
   path: z.string().optional(),
+  /** What the component is. Free text; the documented values are COMPONENT_TYPES (ADR 0040). */
   type: str(),
   /** Where it runs today, e.g. kubernetes, openshift, cloud-run, vm. */
   runtime: z.string().optional(),
@@ -40,6 +62,13 @@ export const Auth = z.enum(["none", "oauth2", "mtls", "api-key", "basic", "other
 
 export const Endpoint = record("Endpoint", {
   component: Ref,
+  /**
+   * What kind of entry point this is. ADR 0040 added graphql (method QUERY, MUTATION or
+   * SUBSCRIPTION; pathOrTopic the field, e.g. Query.account), websocket and sse (pathOrTopic the
+   * path), webhook (receives callbacks from another system), function (a serverless or scheduled
+   * function's trigger) and transaction (an online transaction in a transaction monitor;
+   * pathOrTopic the transaction id).
+   */
   endpointType: z.enum([
     "rest",
     "grpc",
@@ -48,8 +77,16 @@ export const Endpoint = record("Endpoint", {
     "file-drop",
     "mq-queue",
     "batch-job",
+    "graphql",
+    "websocket",
+    "sse",
+    "webhook",
+    "function",
+    "transaction",
   ]),
+  /** HTTP method (rest, webhook), QUERY, MUTATION or SUBSCRIPTION (graphql), the RPC method (grpc). */
   method: z.string().optional(),
+  /** The path, topic, queue, field (graphql), Service/Method (grpc), trigger (function) or transaction id. */
   pathOrTopic: str(),
   normalizedPath: z.string().optional(),
   schemaRefs: list(Ref),
@@ -60,7 +97,18 @@ export const Interface = record("Interface", {
   from: Ref,
   to: Ref,
   endpoint: Ref.optional(),
-  via: z.enum(["gateway", "direct", "event-bus", "pubsub", "sftp", "mq", "other"]),
+  /** How the call travels. ADR 0040 added mesh (through a service mesh sidecar) and webhook (a callback registered with another system). */
+  via: z.enum([
+    "gateway",
+    "direct",
+    "event-bus",
+    "pubsub",
+    "sftp",
+    "mq",
+    "other",
+    "mesh",
+    "webhook",
+  ]),
   /** GatewayRoute id when the call goes through a gateway. */
   route: Ref.optional(),
   method: z.string().optional(),
@@ -118,7 +166,27 @@ export const FieldMapping = record("FieldMapping", {
 
 // ---------- data ----------
 
+/**
+ * Documented `DataStore.storeType` values (ADR 0040). Free text stays allowed (older catalogs use
+ * engine names); tools treat these values as known.
+ */
+export const STORE_TYPES = [
+  "relational",
+  "document",
+  "key-value",
+  "cache",
+  "warehouse",
+  "lake",
+  "object-storage",
+  "search",
+  "feature-store",
+  "queue",
+  "stream",
+  "file-share",
+] as const;
+
 export const DataStore = record("DataStore", {
+  /** What kind of store. Free text; the documented values are STORE_TYPES (ADR 0040). */
   storeType: str(),
   ownerComponent: Ref.optional(),
   entitiesHeld: list(str()),
@@ -180,6 +248,20 @@ export const Deployment = record("Deployment", {
     .optional(),
   networkPolicies: list(str()),
   backupAndFailover: z.string().optional(),
+  /**
+   * Public or internal routes to the deployment (ADR 0040): an ingress, a gateway-API route or a
+   * platform route. Replaces the older `route.<name>` Setting convention, which stays readable.
+   */
+  ingress: z
+    .array(
+      z.strictObject({
+        host: str(),
+        path: z.string().optional(),
+        /** True when the route terminates TLS. */
+        tls: z.boolean().optional(),
+      }),
+    )
+    .optional(),
 });
 
 export const Setting = record("Setting", {
@@ -194,7 +276,9 @@ export const Setting = record("Setting", {
     "cache-ttl",
     "feature-flag",
     "config",
+    "schedule",
   ]),
+  /** The setting's name. A schedule keeps the `schedule.<job>` key (ADR 0024) with settingKind schedule (ADR 0040). */
   key: str(),
   /** The value, or a reference to where a secret value lives. Never a secret itself. */
   valueOrRef: z.string(),
