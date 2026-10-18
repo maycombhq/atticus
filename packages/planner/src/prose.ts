@@ -1,6 +1,6 @@
 import { parse } from "yaml";
 import { z } from "zod";
-import { AgentDefinition, toCanonicalYaml } from "@maycombhq/core";
+import { AgentDefinition, changesRelOf, toCanonicalYaml } from "@maycombhq/core";
 import {
   buildContextPack,
   toRunSummary,
@@ -163,7 +163,7 @@ export function storyPack(
       sources.push({
         id: rel,
         kind: "artifact",
-        origin: `openspec/changes/${ctx.change.id}/${rel}`,
+        origin: `${changesRelOf(ctx.root)}/${ctx.change.id}/${rel}`,
         text,
         classification: "internal",
         priority,

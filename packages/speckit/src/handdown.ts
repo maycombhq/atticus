@@ -9,7 +9,12 @@ import {
 } from "@maycombhq/assistant-files";
 import { createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
 import { changeWorktree, loadTask, type TaskContext } from "./change.js";
-import { renderConstitution, rulesForRepo } from "./constitution.js";
+import {
+  constitutionPlan,
+  renderConstitution,
+  renderConstitutionSection,
+  rulesForRepo,
+} from "./constitution.js";
 import {
   contractFile,
   renderAsyncApi,
@@ -148,33 +153,43 @@ export async function handDown(
     await putIfFree(dir, ".specify/feature.json", featureJson(t), true, r);
     const rules = await rulesForRepo(root, t.repo.owner);
     r.problems.push(...rules.problems);
-    const text = renderConstitution({
+    const input = {
       repo: t.repo.id,
       rules: rules.rules,
       orgPack: t.ctx.orgPack,
       constitutionVersion: rules.constitutionVersion,
       team: t.repo.owner,
-    });
-    const c = await writeAssistantFiles(
-      dir,
-      [
-        {
-          path: ".specify/memory/constitution.md",
-          content: text,
-          source: "org-pack checklists and the Atticus constitution",
-          mode: "file",
-          style: "html",
-        },
-      ],
-      { ...(o.force ? { force: true } : {}) },
-    );
-    for (const x of c.results)
-      (x.action === "created" || x.action === "updated"
-        ? r.written
-        : x.action === "unchanged"
-          ? r.unchanged
-          : r.kept
-      ).push(x.path);
+    };
+    const path = ".specify/memory/constitution.md";
+    // A constitution the team wrote itself is never replaced, even with force: Atticus's
+    // rules go into a marked section of it, or nowhere when the section can't be placed.
+    const plan = constitutionPlan(await readFile(join(dir, path), "utf8").catch(() => undefined));
+    if (plan.mode === "refuse") {
+      r.kept.push(path);
+      r.problems.push(plan.reason);
+    } else {
+      const c = await writeAssistantFiles(
+        dir,
+        [
+          {
+            path,
+            content:
+              plan.mode === "file" ? renderConstitution(input) : renderConstitutionSection(input),
+            source: "org-pack checklists and the Atticus constitution",
+            mode: plan.mode,
+            style: "html",
+          },
+        ],
+        { ...(o.force ? { force: true } : {}) },
+      );
+      for (const x of c.results)
+        (x.action === "created" || x.action === "updated"
+          ? r.written
+          : x.action === "unchanged"
+            ? r.unchanged
+            : r.kept
+        ).push(x.path);
+    }
   }
 
   const af = await generateAssistantFiles(root, {

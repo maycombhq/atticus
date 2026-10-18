@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { parse } from "yaml";
 import { join } from "node:path";
 import { changeFolder, changeFootprint, changeTypeOf, writeFileAtomic } from "@maycombhq/changes";
 import {
@@ -10,7 +11,13 @@ import {
   type RunSummary,
 } from "@maycombhq/core";
 import type { GitHost } from "@maycombhq/adapters";
-import { buildContextPack, toRunSummary, type AiRuntime, type SourceInput } from "@maycombhq/ai";
+import {
+  buildContextPack,
+  toRunSummary,
+  type AiRuntime,
+  type Run,
+  type SourceInput,
+} from "@maycombhq/ai";
 import { buildEngineFor } from "@maycombhq/assistant-files";
 import {
   buildContext,
@@ -121,6 +128,156 @@ async function findPr(
   return undefined;
 }
 
+/** Where the code-and-test lens writes its answer for a task, in the change folder. */
+export const handUpLensOutput = (task: string) => `tasks/${task}/review-code-and-test.yaml`;
+
+/** The task whose hand-up lens a run's output path belongs to, if it is one. */
+export function handUpLensTask(outputPath: string): string | undefined {
+  return /^tasks\/([^/]+)\/review-code-and-test\.yaml$/.exec(outputPath)?.[1];
+}
+
+type Task = Awaited<ReturnType<typeof loadTask>>;
+
+/** The critic context and the code-and-test AI rules for a task's hand-up review. */
+async function lensSetup(root: string, t: Task, now: string) {
+  const gate = {
+    id: HAND_UP_GATE,
+    phase: "build" as const,
+    approvers: ["developer"],
+    minApprovals: 1,
+    checklists: [],
+    checks: [],
+    maxAuthorRounds: 2,
+  };
+  const criticCtx = buildContext({
+    root,
+    change: t.change,
+    type: changeTypeOf(t.ctx, t.change.type),
+    lifecycle: t.ctx,
+    footprint: await changeFootprint(t.ctx, t.change),
+    files: t.files,
+    gate,
+    now,
+  });
+  const { rules: all } = await rulesForRepo(root, t.repo.owner);
+  const rules: EffectiveRule[] = all.filter(
+    (r) => r.lens === "code-and-test" && r.check.type === "ai",
+  );
+  return { criticCtx, rules };
+}
+
+/** Parse a finished lens run against the evidence it was given and write the hand-up round. */
+async function applyLensRun(
+  root: string,
+  a: {
+    t: Task;
+    criticCtx: Awaited<ReturnType<typeof lensSetup>>["criticCtx"];
+    rules: EffectiveRule[];
+    docs: Doc[];
+    run: Run;
+    pr?: number;
+    now: string;
+  },
+): Promise<{ discarded: Discarded[]; review: RoundWrite }> {
+  const { t, now } = a;
+  const left = new Set(a.run.request.pack.manifest.dropped.map((d) => d.id));
+  const parsed = parseLensOutput(
+    a.criticCtx,
+    "code-and-test",
+    a.run.output ?? "",
+    a.rules,
+    a.docs.filter((d) => !left.has(d.path)),
+  );
+  const taken = new Set<string>();
+  const prefix = `t${t.task.id.replace(/[^a-z0-9]+/g, "-")}-`;
+  const fresh: Finding[] = parsed.hits.map((h) =>
+    toFinding(h, {
+      id: `${prefix}${findingIdFor(h, taken)}`.slice(0, 120),
+      change: t.change.id,
+      gate: HAND_UP_GATE,
+      round: 1,
+      now,
+    }),
+  );
+  const review = await writeFullRound(root, t.change.id, HAND_UP_GATE, fresh, {
+    now,
+    carry: (f) => !f.artifact.startsWith(`tasks/${t.task.id}/`),
+    meta: {
+      task: t.task.id,
+      repo: t.repo.id,
+      ...(a.pr !== undefined ? { pr: a.pr } : {}),
+      runId: a.run.runId,
+    },
+  });
+  return { discarded: parsed.discarded, review };
+}
+
+export interface CompletedHandUpLens {
+  change: string;
+  task: string;
+  lens: LensOutcome;
+  review?: RoundWrite;
+}
+
+/**
+ * Finish a hand-up whose code-and-test lens was handed to the person's assistant: once
+ * `atticus handoff done <run>` has the answer, it is read against the evidence hand-up
+ * attached (`tasks/<task>/evidence/`) and written as the hand-up round, exactly as a model
+ * run's answer would have been.
+ */
+export async function completeHandUpLens(
+  root: string,
+  run: Run,
+  o: { now?: string } = {},
+): Promise<CompletedHandUpLens> {
+  const task = handUpLensTask(run.request.outputPath);
+  if (!task)
+    throw new SpecKitError("refused", `Run ${run.runId} isn't a hand-up review of a task.`);
+  const now = o.now ?? new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  const t = await loadTask(root, run.request.change, task);
+  const folder = changeFolder(root, t.change.id);
+  const evidenceDir = join(folder, `tasks/${task}/evidence`);
+  const docs: Doc[] = [];
+  for (const name of (await readdir(evidenceDir).catch(() => [] as string[])).sort())
+    if (name.endsWith(".md"))
+      docs.push(
+        parseDoc(`tasks/${task}/evidence/${name}`, await readFile(join(evidenceDir, name), "utf8")),
+      );
+  const source = parse(
+    await readFile(join(evidenceDir, "source.yaml"), "utf8").catch(() => "{}"),
+  ) as { pr?: { number?: number } } | null;
+  const { criticCtx, rules } = await lensSetup(root, t, now);
+  const summary = toRunSummary(run);
+  await writeFileAtomic(
+    join(folder, `tasks/${task}/runs/${run.runId}.yaml`),
+    toCanonicalYaml(summary, ["schemaVersion", "runId"]),
+  );
+  const lens: LensOutcome = {
+    state: "ran",
+    runId: run.runId,
+    agent: run.request.agent.id,
+    rules: rules.map((r) => r.id),
+    discarded: [],
+    summary,
+  };
+  if (run.state !== "validated" || run.output === undefined) {
+    lens.state = "failed";
+    lens.reason = run.errors.join("; ") || `the run ended ${run.state}`;
+    return { change: t.change.id, task, lens };
+  }
+  const applied = await applyLensRun(root, {
+    t,
+    criticCtx,
+    rules,
+    docs,
+    run,
+    ...(source?.pr?.number !== undefined ? { pr: source.pr.number } : {}),
+    now,
+  });
+  lens.discarded = applied.discarded;
+  return { change: t.change.id, task, lens, review: applied.review };
+}
+
 export async function handUp(
   root: string,
   changeId: string,
@@ -190,30 +347,7 @@ export async function handUp(
   // The critic's code-and-test lens on the evidence.
   const lens: LensOutcome = { state: "skipped", rules: [], discarded: [] };
   let review: RoundWrite | undefined;
-  const type = changeTypeOf(t.ctx, t.change.type);
-  const gate = {
-    id: HAND_UP_GATE,
-    phase: "build" as const,
-    approvers: ["developer"],
-    minApprovals: 1,
-    checklists: [],
-    checks: [],
-    maxAuthorRounds: 2,
-  };
-  const criticCtx = buildContext({
-    root,
-    change: t.change,
-    type,
-    lifecycle: t.ctx,
-    footprint: await changeFootprint(t.ctx, t.change),
-    files: t.files,
-    gate,
-    now,
-  });
-  const { rules: all } = await rulesForRepo(root, t.repo.owner);
-  const rules: EffectiveRule[] = all.filter(
-    (r) => r.lens === "code-and-test" && r.check.type === "ai",
-  );
+  const { criticCtx, rules } = await lensSetup(root, t, now);
   lens.rules = rules.map((r) => r.id);
   const agent = lensAgent(criticCtx, "code-and-test");
   lens.agent = agent.id;
@@ -273,7 +407,7 @@ export async function handUp(
         change: t.change.id,
         agent,
         pack,
-        outputPath: `tasks/${t.task.id}/review-code-and-test.yaml`,
+        outputPath: handUpLensOutput(t.task.id),
       });
       const run = await o.runtime.run(prepared.runId);
       lens.runId = run.runId;
@@ -289,37 +423,18 @@ export async function handUp(
         lens.state = "failed";
         lens.reason = run.errors.join("; ") || `the run ended ${run.state}`;
       } else {
-        const left = new Set(pack.manifest.dropped.map((d) => d.id));
-        const parsed = parseLensOutput(
+        const applied = await applyLensRun(root, {
+          t,
           criticCtx,
-          "code-and-test",
-          run.output,
           rules,
-          docs.filter((d) => !left.has(d.path)),
-        );
-        lens.state = "ran";
-        lens.discarded = parsed.discarded;
-        const taken = new Set<string>();
-        const prefix = `t${t.task.id.replace(/[^a-z0-9]+/g, "-")}-`;
-        const fresh: Finding[] = parsed.hits.map((h) =>
-          toFinding(h, {
-            id: `${prefix}${findingIdFor(h, taken)}`.slice(0, 120),
-            change: t.change.id,
-            gate: HAND_UP_GATE,
-            round: 1,
-            now,
-          }),
-        );
-        review = await writeFullRound(root, t.change.id, HAND_UP_GATE, fresh, {
+          docs,
+          run,
+          pr: pr.number,
           now,
-          carry: (f) => !f.artifact.startsWith(`tasks/${t.task.id}/`),
-          meta: {
-            task: t.task.id,
-            repo: t.repo.id,
-            pr: pr.number,
-            ...(lens.runId ? { runId: lens.runId } : {}),
-          },
         });
+        lens.state = "ran";
+        lens.discarded = applied.discarded;
+        review = applied.review;
       }
     } catch (e) {
       lens.state = "failed";

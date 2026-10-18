@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { createAdapters, type Approval, type GitHost } from "@maycombhq/adapters";
-import { handoffBranch, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import { changesRelOf, handoffBranch, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import {
   ChangeError,
   archiveChange,
@@ -117,7 +117,7 @@ export async function changeNew(
       ...(deps.now ? { now: deps.now } : {}),
     });
     io.out(`Created ${c.id} (${c.type}, from the ${c.template} template). It is in ${c.state}.`);
-    io.out(`Write the brief: openspec/changes/${c.id}/brief.md`);
+    io.out(`Write the brief: ${changesRelOf(root)}/${c.id}/brief.md`);
     return 0;
   } catch (e) {
     return fail(io, e);

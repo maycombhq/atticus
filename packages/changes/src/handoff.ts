@@ -9,6 +9,7 @@ import {
   type PullRequest,
 } from "@maycombhq/adapters";
 import {
+  changesRelOf,
   handoffBranch,
   type ChangeHandoff,
   type ChangeLifecycle,
@@ -29,7 +30,7 @@ import {
   sha256,
 } from "./lifecycle.js";
 import type { HandoffPublisher } from "./publish.js";
-import { CHANGES_DIR, changeFolder, changeStore } from "./store.js";
+import { changeFolder, changeStore } from "./store.js";
 import type { Artifact, PhaseId } from "./types.js";
 
 const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -128,7 +129,8 @@ function prBody(
   a: Assessment,
   phase: PhaseId,
   next: LifecycleState,
-  files: string[],
+  /** The hand-off's files, relative to the metarepo root. */
+  paths: string[],
   reviewers: string[],
 ): string {
   const c = a.change;
@@ -141,7 +143,7 @@ function prBody(
     "",
     "### Files",
     "",
-    ...(files.length ? files.map((f) => `- ${CHANGES_DIR}/${c.id}/${f}`) : ["- None"]),
+    ...(paths.length ? paths.map((f) => `- ${f}`) : ["- None"]),
     "",
     "### Required approvals",
     "",
@@ -223,13 +225,11 @@ export async function handoff(
     authors[art] = [...new Set([...(authors[art] ?? []), ...people])];
   }
   const branch = handoffBranch(id, phase);
-  const metaFiles = [
-    ...files.map((f) => `${CHANGES_DIR}/${id}/${f}`),
-    `${CHANGES_DIR}/${id}/change.yaml`,
-  ];
+  const rel = changesRelOf(root);
+  const metaFiles = [...files.map((f) => `${rel}/${id}/${f}`), `${rel}/${id}/change.yaml`];
   const reviewers = [
     ...new Set([
-      ...files.flatMap((f) => ownersFor(ctx.codeowners, `${CHANGES_DIR}/${id}/${f}`)),
+      ...files.flatMap((f) => ownersFor(ctx.codeowners, `${rel}/${id}/${f}`)),
       ...a.required.flatMap((r) => r.roles.flatMap((role) => holders(change, role))),
     ]),
   ]
@@ -299,7 +299,7 @@ export async function handoff(
         a,
         phase,
         change.state === "returned" ? nextAfterResubmit(a, phase) : next,
-        files,
+        files.map((f) => `${rel}/${id}/${f}`),
         reviewers,
       ),
     },

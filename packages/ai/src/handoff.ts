@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { RuntimeKind } from "@maycombhq/core";
+import { changesDirOf, changesRelOf, type RuntimeKind } from "@maycombhq/core";
 import {
   checkAllowed,
   makeRunId,
@@ -40,7 +40,7 @@ export class HandoffRuntime implements AiRuntime {
   private now = () => this.o.now?.() ?? new Date();
   private runDir = (change: string, runId: string) => join(this.o.root, ".runs", change, runId);
   private outputFile = (r: Run) =>
-    join(this.o.root, "openspec", "changes", r.request.change, r.request.outputPath);
+    join(changesDirOf(this.o.root), r.request.change, r.request.outputPath);
 
   private async save(run: Run): Promise<Run> {
     const dir = this.runDir(run.request.change, run.runId);
@@ -50,14 +50,14 @@ export class HandoffRuntime implements AiRuntime {
   }
 
   /** The prompt the person's assistant gets. It ends with the completion command. */
-  static promptFor(run: Run): string {
+  static promptFor(run: Run, changesRel = "openspec/changes"): string {
     const { agent, pack, outputPath, change } = run.request;
     return [
       `# ${agent.id}: write ${outputPath} for change ${change}`,
       "",
       agent.description,
       "",
-      `Write the result to openspec/changes/${change}/${outputPath}. Change no other files.`,
+      `Write the result to ${changesRel}/${change}/${outputPath}. Change no other files.`,
       "",
       pack.prompt.trimEnd(),
       "",
@@ -85,7 +85,11 @@ export class HandoffRuntime implements AiRuntime {
     };
     const dir = this.runDir(request.change, run.runId);
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "prompt.md"), HandoffRuntime.promptFor(run), "utf8");
+    await writeFile(
+      join(dir, "prompt.md"),
+      HandoffRuntime.promptFor(run, changesRelOf(this.o.root)),
+      "utf8",
+    );
     await writeFile(
       join(dir, "context-manifest.json"),
       JSON.stringify(request.pack.manifest, null, 2) + "\n",

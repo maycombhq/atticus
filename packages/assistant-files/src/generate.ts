@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 import {
+  changesDirOf,
   loadOrgPack,
   RecordId,
   type BuildEngine,
@@ -122,7 +123,7 @@ export interface GenerateResult extends WriteReport {
 async function worktreeFor(root: string, repo: string, change?: string): Promise<string> {
   let changes: string[] = [];
   try {
-    changes = (await readdir(join(root, "openspec", "changes"), { withFileTypes: true }))
+    changes = (await readdir(changesDirOf(root), { withFileTypes: true }))
       .filter((d) => d.isDirectory() && d.name !== "archive")
       .map((d) => d.name)
       .sort();

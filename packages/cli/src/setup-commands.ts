@@ -4,11 +4,14 @@ import {
   adopt,
   AdoptError,
   init,
+  refreshAbsorbed,
+  refreshAllAbsorbed,
   reposDiscover,
   unadopt,
   zeroInstallFiles,
   checkZeroInstall,
   type Action,
+  type RefreshResult,
   type RepoListing,
 } from "@maycombhq/adopt";
 import type { Output } from "./commands.js";
@@ -222,6 +225,98 @@ export async function reposDiscoverCommand(
         `${plural(r.questions.length, "question")} need a person${r.questionsFile ? `: ${r.questionsFile}` : ""}.`,
       );
     return 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+function reportRefresh(r: RefreshResult, io: Output): void {
+  const s = r.source;
+  const i = r.items;
+  if (
+    !s.added.length &&
+    !s.removed.length &&
+    !s.changed.length &&
+    !i.added.length &&
+    !i.removed.length &&
+    !i.changed.length
+  ) {
+    io.out(`Refreshed ${r.id} from ${r.entry.url}: nothing changed since the last absorb.`);
+    return;
+  }
+  io.out(
+    `Refreshed ${r.id} from ${r.entry.url}: ${plural(s.added.length, "file")} added, ${s.removed.length} removed and ${s.changed.length} changed in the source.`,
+  );
+  for (const f of s.added) io.out(`  + ${f}`);
+  for (const f of s.removed) io.out(`  - ${f}`);
+  for (const f of s.changed) io.out(`  ~ ${f}`);
+  io.out(
+    `Items: ${i.added.length} new, ${i.removed.length} gone, ${i.changed.length} with a different action.`,
+  );
+  for (const x of i.added) io.out(`  + ${x}`);
+  for (const x of i.removed) io.out(`  - ${x}`);
+  for (const x of i.changed) io.out(`  ~ ${x.id}: ${x.from} to ${x.to}`);
+  if (r.result.proposal)
+    io.out(`Rewrote the proposal in ${r.result.proposal}/; review it as before.`);
+}
+
+/** atticus absorb --refresh <id>: fetch a linked source again and say what changed. */
+export async function absorbRefreshCommand(
+  root: string,
+  id: string | undefined,
+  o: { json?: boolean },
+  io: Output,
+): Promise<number> {
+  if (!id) {
+    io.err("Usage: atticus absorb --refresh <id>");
+    return 2;
+  }
+  try {
+    const r = await refreshAbsorbed(root, id);
+    if (o.json)
+      io.out(
+        JSON.stringify(
+          {
+            id: r.id,
+            entry: r.entry,
+            source: r.source,
+            files: r.files,
+            items: r.items,
+            proposal: r.result.proposal,
+          },
+          null,
+          2,
+        ),
+      );
+    else reportRefresh(r, io);
+    for (const p of r.result.problems) io.err(`  ${p}`);
+    return r.result.problems.length ? 1 : 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/** atticus sources refresh: refresh every source sources.yaml absorbs with mode link. */
+export async function sourcesRefreshCommand(
+  root: string,
+  o: { json?: boolean },
+  io: Output,
+): Promise<number> {
+  try {
+    const all = await refreshAllAbsorbed(root);
+    if (o.json)
+      io.out(
+        JSON.stringify(
+          all.map((r) => ({ id: r.id, source: r.source, files: r.files, items: r.items })),
+          null,
+          2,
+        ),
+      );
+    else if (!all.length) io.out("No linked absorbed sources in sources.yaml; nothing to refresh.");
+    else for (const r of all) reportRefresh(r, io);
+    const problems = all.flatMap((r) => r.result.problems.map((p) => `${r.id}: ${p}`));
+    for (const p of problems) io.err(`  ${p}`);
+    return problems.length ? 1 : 0;
   } catch (e) {
     return fail(io, e);
   }

@@ -164,6 +164,13 @@ describe("drift check (pipeline)", () => {
       },
       { kind: "removed", subject: "call", id: "if-e7344c9455608119" },
       { kind: "unknown", subject: "loose-end", id: "(loose end)" },
+      // ALTER TABLE ... ADD COLUMN gives a column record (migrations extractor 1.1.0).
+      {
+        kind: "planned",
+        subject: "column",
+        id: "ledger-db.account.daily-limit",
+        change: "add-transfer-limit",
+      },
       ...LIMIT_CHANGE_COLUMNS.map((c) => ({
         kind: "planned",
         subject: "column",
@@ -176,7 +183,6 @@ describe("drift check (pipeline)", () => {
         id: "ledger-api.get-limit",
         change: "add-transfer-limit",
       },
-      // ALTER TABLE ... ADD COLUMN is read as a migration operation, not as a column record.
       { kind: "planned", subject: "migration", id: "ledger-db.v3", change: "add-transfer-limit" },
       { kind: "planned", subject: "migration", id: "ledger-db.v4", change: "add-transfer-limit" },
       {
@@ -192,7 +198,7 @@ describe("drift check (pipeline)", () => {
     expect(r.items.find((i) => i.kind === "removed")!.summary).toBe(
       "ledger-api calls northwind-pay POST /v2/payments is in the catalog but no longer in the code.",
     );
-    expect(r.counts).toEqual({ added: 1, changed: 1, removed: 1, unknown: 1, planned: 10 });
+    expect(r.counts).toEqual({ added: 1, changed: 1, removed: 1, unknown: 1, planned: 11 });
     expect(r.drift).toBe(true);
     expect(driftExitCode(r)).toBe(1);
   });
@@ -201,7 +207,7 @@ describe("drift check (pipeline)", () => {
     const root = await metarepo();
     const r = await runBuilt(root, await buildLedger(root));
     expect(r.changes).toEqual([]);
-    expect(r.counts).toEqual({ added: 11, changed: 1, removed: 1, unknown: 1, planned: 0 });
+    expect(r.counts).toEqual({ added: 12, changed: 1, removed: 1, unknown: 1, planned: 0 });
   });
 
   it("only warns when the org pack or the pipeline says so, and ignores what the org pack lists", async () => {

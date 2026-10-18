@@ -7,3 +7,4 @@ export * from "./worktree.js";
 export * from "./rounds.js";
 export * from "./drift.js";
 export * from "./handup.js";
+export * from "./after-scan.js";

@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
-import { RecordId, RunSummary, RuntimeKind, toCanonicalYaml } from "@maycombhq/core";
+import { changesDirOf, RecordId, RunSummary, RuntimeKind, toCanonicalYaml } from "@maycombhq/core";
 
 /**
  * A task run's record, `openspec/changes/<change>/tasks/<task>/task-run.yaml`, next to the
@@ -129,7 +129,7 @@ export async function findWaitingTaskRun(
   root: string,
   runId: string,
 ): Promise<TaskRunRecord | undefined> {
-  const changes = join(root, "openspec", "changes");
+  const changes = changesDirOf(root);
   for (const c of (await readdir(changes, { withFileTypes: true }).catch(() => [])).filter((d) =>
     d.isDirectory(),
   )) {

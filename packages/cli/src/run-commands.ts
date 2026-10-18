@@ -9,7 +9,7 @@ import {
   type RuntimeMode,
 } from "@maycombhq/ai";
 import { generateAssistantFiles, smokeCheck } from "@maycombhq/assistant-files";
-import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import { changesRelOf, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import { driftCheck, handDown, handUp } from "@maycombhq/speckit";
 import {
   completeTaskHandoff,
@@ -62,9 +62,9 @@ function fail(io: Output, e: unknown): number {
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-function describeRun(r: TaskRunRecord, io: Output): number {
+function describeRun(root: string, r: TaskRunRecord, io: Output): number {
   const what: Record<TaskRunRecord["state"], string> = {
-    planned: `Wrote the plan for task ${r.task}: openspec/changes/${r.change}/tasks/${r.task}/plan.md.`,
+    planned: `Wrote the plan for task ${r.task}: ${changesRelOf(root)}/${r.change}/tasks/${r.task}/plan.md.`,
     waiting: `Handed task ${r.task} to your assistant. The prompt is in .runs/${r.change}/${r.waiting}/prompt.md; it ends with: atticus handoff done ${r.waiting}`,
     built: `Task ${r.task} is drafted on ${r.branch} and the build passes (${plural(r.attempts.length, "attempt")}); committed ${r.commit?.slice(0, 12) ?? ""}.`,
     unverified: `Task ${r.task} is drafted on ${r.branch} but wasn't built: ${r.repo} has no build command.`,
@@ -133,7 +133,7 @@ export async function taskRun(
       io.out(JSON.stringify(r, null, 2));
       return r.state === "failed" || r.state === "needs-person" ? 1 : 0;
     }
-    return describeRun(r, io);
+    return describeRun(root, r, io);
   } catch (e) {
     return fail(io, e);
   }
@@ -167,7 +167,7 @@ export async function taskHandoff(
       io.out(
         `The build still fails; fix it in ${r.worktree} and run atticus handoff done ${runId} again.`,
       );
-    else return describeRun(r, io);
+    else return describeRun(root, r, io);
     return r.state === "waiting" ? 1 : 0;
   } catch (e) {
     return fail(io, e);
@@ -270,7 +270,7 @@ export async function specHandUp(
     io.out(
       `Task ${r.task} is handed up from PR ${r.pr.url}${r.markedDone ? " and marked done in tasks.md" : ""}.`,
     );
-    for (const e of r.evidence) io.out(`  evidence: openspec/changes/${r.change}/${e}`);
+    for (const e of r.evidence) io.out(`  evidence: ${changesRelOf(root)}/${r.change}/${e}`);
     const lens =
       r.lens.state === "ran"
         ? `the code-and-test lens raised ${plural(r.review?.findings.filter((f) => f.finding.artifact.startsWith(`tasks/${r.task}/`)).length ?? 0, "finding")}`

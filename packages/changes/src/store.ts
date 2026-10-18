@@ -1,9 +1,13 @@
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
-import { ChangeLifecycle, toCanonicalYaml } from "@maycombhq/core";
+import { ChangeLifecycle, changesDirOf, toCanonicalYaml } from "@maycombhq/core";
 
-/** Where OpenSpec keeps changes in the metarepo; `archive/` under it holds archived ones. */
+/**
+ * Where OpenSpec keeps changes in a metarepo made by `atticus init`; `archive/` under it
+ * holds archived ones. Code resolves the real folder through the layout (`changesDirOf` and
+ * `changesRelOf` in core), which a repo adopted in place may move (e.g. into `.atticus/`).
+ */
 export const CHANGES_DIR = "openspec/changes";
 export const CHANGE_FILE = "change.yaml";
 
@@ -21,7 +25,7 @@ const LEADING = [
 ];
 
 export function changeFolder(root: string, id: string): string {
-  return join(root, CHANGES_DIR, id);
+  return join(changesDirOf(root), id);
 }
 
 export function changeFilePath(root: string, id: string): string {
@@ -117,7 +121,7 @@ export function changeStore(root: string): ChangeStore {
     async list() {
       let names: string[];
       try {
-        names = (await readdir(join(root, CHANGES_DIR), { withFileTypes: true }))
+        names = (await readdir(changesDirOf(root), { withFileTypes: true }))
           .filter((d) => d.isDirectory() && d.name !== "archive")
           .map((d) => d.name)
           .sort();
