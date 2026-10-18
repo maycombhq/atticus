@@ -56,6 +56,9 @@ importers:
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+      '@maycombhq/diagrams':
+        specifier: workspace:*
+        version: link:../diagrams
       '@maycombhq/index':
         specifier: workspace:*
         version: link:../index
@@ -74,6 +77,9 @@ importers:
       '@maycombhq/scanner':
         specifier: workspace:*
         version: link:../scanner
+      '@maycombhq/stubs':
+        specifier: workspace:*
+        version: link:../stubs
       '@maycombhq/workspace':
         specifier: workspace:*
         version: link:../workspace
@@ -94,6 +100,19 @@ importers:
       '@apidevtools/swagger-parser':
         specifier: 13.1.0
         version: 13.1.0(openapi-types@12.1.3)
+
+  packages/diagrams:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/reconcile':
+        specifier: workspace:*
+        version: link:../reconcile
+    devDependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   packages/extractors:
     dependencies:
@@ -218,6 +237,15 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
+  packages/stubs:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
       yaml:
         specifier: ^2.9.1
         version: 2.9.1

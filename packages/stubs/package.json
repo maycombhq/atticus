@@ -1,0 +1,27 @@
+{
+  "name": "@maycombhq/stubs",
+  "version": "0.0.1",
+  "description": "Deterministic stub servers from OpenAPI and Swagger specs, or from the endpoints in the catalog.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000"
+  },
+  "dependencies": {
+    "@maycombhq/core": "workspace:*",
+    "yaml": "^2.9.1"
+  }
+}

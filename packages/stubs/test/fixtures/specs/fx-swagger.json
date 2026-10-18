@@ -1,0 +1,71 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "Forge FX Rates", "version": "1.0" },
+  "basePath": "/fx",
+  "produces": ["application/json"],
+  "paths": {
+    "/rates/{base}": {
+      "get": {
+        "operationId": "getRates",
+        "parameters": [
+          { "name": "base", "in": "path", "required": true, "type": "string", "enum": ["EUR", "USD"] },
+          { "name": "date", "in": "query", "type": "string", "format": "date" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rates",
+            "schema": { "$ref": "#/definitions/Rates" },
+            "examples": { "application/json": { "base": "EUR", "rates": { "USD": 1.08 } } }
+          }
+        }
+      }
+    },
+    "/quotes": {
+      "post": {
+        "operationId": "createQuote",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": { "$ref": "#/definitions/QuoteRequest" }
+          }
+        ],
+        "responses": {
+          "201": { "description": "Quote", "schema": { "$ref": "#/definitions/Quote" } },
+          "default": { "description": "Error", "schema": { "$ref": "#/definitions/Error" } }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Rates": {
+      "type": "object",
+      "properties": {
+        "base": { "type": "string" },
+        "rates": { "type": "object" }
+      }
+    },
+    "QuoteRequest": {
+      "type": "object",
+      "required": ["from", "to", "amount"],
+      "properties": {
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "amount": { "type": "number", "minimum": 0.01 }
+      }
+    },
+    "Quote": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "rate": { "type": "number", "example": 1.08 },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Error": {
+      "type": "object",
+      "properties": { "message": { "type": "string", "default": "Something went wrong" } }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+%% Event view. Generated from the catalog by Atticus: change the catalog, not this file.
+flowchart LR
+  ledger_api["ledger-api"]
+  portal_bff["portal-bff"]
+  reports_job["reports-job"]
+  topic_payments_initiated>"payments.initiated"]
+  topic_transfers_completed>"transfers.completed"]
+  portal_bff -.->|"publishes"| topic_payments_initiated
+  topic_payments_initiated -.->|"delivers to"| ledger_api
+  ledger_api -.->|"publishes"| topic_transfers_completed
+  topic_transfers_completed -.->|"delivers to"| reports_job
+  classDef product fill:#dae8fc,stroke:#6c8ebf
+  class ledger_api,portal_bff,reports_job product

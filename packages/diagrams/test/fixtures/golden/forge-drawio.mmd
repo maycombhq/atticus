@@ -1,0 +1,27 @@
+%% Diagram view. Rendered by Atticus from inputs/diagrams/forge-context.drawio.
+flowchart LR
+  ui["Portal UI"]
+  bff["Portal BFF"]
+  ledger["Ledger Platform"]
+  reports["Reports Job"]
+  northwind["Northwind Pay"]
+  notify["Notifications Service"]
+  ui --> bff
+  bff -->|"S.GW.SOR GET /ledger/v1/accounts/{id}/balance"| ledger
+  bff -->|"S.GW.SOR POST /ledger/v1/transfers"| ledger
+  ledger -->|"S.GW.VND POST /v2/payments"| northwind
+  reports -->|"S.GW.SRO GET /ledger/v1/entries"| ledger
+  bff -.->|"A.EB.PUB payments.initiated"| ledger
+  bff -.->|"A.EB.PUB notifications.requested"| notify
+  subgraph legend["Legend"]
+    legend_new["New"]
+    legend_modify["Modify"]
+    legend_retire["Retire"]
+  end
+  classDef plannedNew stroke:#2e7d32,stroke-width:3px,stroke-dasharray:6 3
+  classDef plannedModify stroke:#ed6c02,stroke-width:3px
+  classDef plannedRetire stroke:#b71c1c,stroke-width:3px,stroke-dasharray:2 2
+  class legend_new,notify plannedNew
+  class legend_modify plannedModify
+  class legend_retire plannedRetire
+  linkStyle 6 stroke:#2e7d32,stroke-width:2px,stroke-dasharray:6 3

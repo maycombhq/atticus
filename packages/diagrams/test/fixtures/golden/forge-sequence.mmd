@@ -1,0 +1,11 @@
+%% Sequence view: portal-ui, portal-bff, ledger-api, northwind-pay. Generated from the catalog by Atticus: change the catalog, not this file.
+sequenceDiagram
+  participant portal_ui as portal-ui
+  participant portal_bff as portal-bff
+  participant ledger_api as ledger-api
+  participant northwind_pay as Northwind Pay
+  portal_ui->>portal_bff: S.DIR.BFF GET /api/balance/{accountId}
+  portal_bff-)ledger_api: A.EB.PUB payments.initiated
+  portal_bff->>ledger_api: S.GW.SOR GET /accounts/{id}/balance
+  portal_bff->>ledger_api: S.GW.SOR POST /transfers
+  ledger_api->>northwind_pay: POST /v2/payments
