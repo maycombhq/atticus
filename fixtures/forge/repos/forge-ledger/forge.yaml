@@ -1,0 +1,4 @@
+# Forge service descriptor (the invented in-house framework)
+service: ledger-api
+system: ledger
+framework: forge

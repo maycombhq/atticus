@@ -1,0 +1,54 @@
+# Seeded problems. Each later stage must find every one of these.
+# found_by: the feature that must report it.
+- id: d01-vendor-direct
+  found_by: reconcile
+  what: Diagram edge e4 says Ledger → Northwind Pay via the gateway (S.GW.VND); code calls the vendor directly.
+  refs: [if-e7344c9455608119]
+- id: d02-reports-reads-db
+  found_by: reconcile
+  what: Diagram edge e5 says Reports calls the Ledger API; code reads table ledger-db.entry directly (pattern D.JDBC, not S.GW.SOR).
+  refs: [ledger-db.entry]
+- id: d03-undocumented-audit
+  found_by: reconcile
+  what: Code-only edge Portal BFF → audit-svc is missing from the diagram.
+  refs: [if-5c55930b735276a9]
+- id: d04-undocumented-transfers-event
+  found_by: reconcile
+  what: Code-only edge ledger-api → reports-job (transfers.completed) is missing from the diagram.
+  refs: [if-f1cd1f189eaa4b7b]
+- id: d05-planned-notifications
+  found_by: reconcile
+  what: Diagram-only edge to Notifications Service is marked New; it becomes a planned-new interface in a change.
+  refs: []
+- id: d06-name-mismatch
+  found_by: reconcile
+  what: Diagram box "Ledger Platform" must be aliased to ledger-api before edges match.
+  refs: [ledger-api]
+- id: d07-pattern-typo
+  found_by: critic
+  what: Edge e5 uses unknown pattern code S.GW.SRO, a likely typo of S.GW.SOR.
+  refs: []
+- id: d08-unlabelled-hop
+  found_by: critic
+  what: Edge e1 (Portal UI → Portal BFF) has no pattern code.
+  refs: [if-f5c8b4b06d75284f]
+- id: d09-no-vendor-timeouts
+  found_by: knowledge-gap
+  what: No timeout or retry settings are known for ledger-api's Northwind client, so the vendor call can't be checked against S.GW.VND controls.
+  refs: [if-e7344c9455608119]
+- id: d10-no-reports-alerts
+  found_by: knowledge-gap
+  what: reports-job has no alert or dashboard definitions.
+  refs: [reports-job]
+- id: d11-audit-unknown-owner
+  found_by: knowledge-gap
+  what: audit-svc is known only from a caller; it has no repo, owner or spec.
+  refs: [audit-svc]
+- id: d12-doc-conflicts
+  found_by: intake
+  what: The ledger solution spec contradicts code twice (see inputs.yaml documentConflicts); code wins and the conflicts go to triage.
+  refs: [if-e7344c9455608119, ledger-db.entry]
+- id: d13-poor-story
+  found_by: critic
+  what: ADO story 102 ("Transfers") has no acceptance criteria.
+  refs: []

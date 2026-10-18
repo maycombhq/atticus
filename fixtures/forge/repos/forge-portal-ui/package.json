@@ -1,0 +1,1 @@
+{ "name": "forge-portal-ui", "private": true, "dependencies": { "react": "18.3.1" } }

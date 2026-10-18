@@ -48,6 +48,15 @@ importers:
         specifier: ^4.6.0
         version: 4.6.7
 
+  packages/fixtures:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
   packages/sdk:
     dependencies:
       '@maycombhq/core':

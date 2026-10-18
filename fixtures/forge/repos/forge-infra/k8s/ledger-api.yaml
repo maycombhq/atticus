@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger-api
+  namespace: prod
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: ledger-api
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi

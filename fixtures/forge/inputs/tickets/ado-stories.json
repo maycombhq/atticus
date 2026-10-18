@@ -1,0 +1,4 @@
+[
+  { "id": 101, "type": "User Story", "title": "As a customer I can see my available balance", "acceptanceCriteria": "Given an account with holds, when I open the balance, then I see ledger balance minus holds.", "rating": "good" },
+  { "id": 102, "type": "User Story", "title": "Transfers", "acceptanceCriteria": "", "rating": "poor" }
+]

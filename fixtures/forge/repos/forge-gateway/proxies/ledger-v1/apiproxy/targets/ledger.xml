@@ -1,0 +1,5 @@
+<TargetEndpoint name="ledger">
+  <HTTPTargetConnection>
+    <URL>http://ledger-api.forge.internal</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

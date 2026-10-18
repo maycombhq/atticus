@@ -1,0 +1,14 @@
+<ProxyEndpoint name="default">
+  <PreFlow>
+    <Request>
+      <Step><Name>VerifyOAuth</Name></Step>
+      <Step><Name>SpikeArrest</Name></Step>
+    </Request>
+  </PreFlow>
+  <HTTPProxyConnection>
+    <BasePath>/ledger/v1</BasePath>
+  </HTTPProxyConnection>
+  <RouteRule name="default">
+    <TargetEndpoint>ledger</TargetEndpoint>
+  </RouteRule>
+</ProxyEndpoint>

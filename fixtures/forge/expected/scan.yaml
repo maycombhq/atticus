@@ -1,0 +1,339 @@
+# Expected catalog from scanning fixtures/forge/repos plus the partner spec, once the
+# M1 extractors (OpenAPI, gateway, Spring) and the Forge dialect exist.
+# Hand-written ground truth. Do not generate it from extractor output.
+# Records omit `schemaVersion` and `status: current`; the test adds them.
+- kind: System
+  id: portal
+  confidence: verified
+  name: Portal
+  boundary: product
+  repos: [forge-portal-ui, forge-portal-bff]
+  evidence: [{ source: config, repo: forge-portal-bff, path: pom.xml }]
+- kind: System
+  id: ledger
+  confidence: verified
+  name: Ledger
+  boundary: product
+  repos: [forge-ledger]
+  evidence: [{ source: config, repo: forge-ledger, path: forge.yaml, line: 3 }]
+- kind: System
+  id: reports
+  confidence: verified
+  name: Reports
+  boundary: product
+  repos: [forge-reports-job]
+  evidence: [{ source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java }]
+- kind: System
+  id: audit
+  confidence: inferred
+  name: Audit
+  boundary: internal
+  evidence: [{ source: config, repo: forge-portal-bff, path: src/main/resources/application.yml, line: 4, side: caller }]
+- kind: System
+  id: northwind-pay
+  confidence: verified
+  name: Northwind Pay
+  boundary: vendor
+  evidence: [{ source: spec, path: inputs/partner-specs/northwind-pay-openapi.yaml, side: definition }]
+
+- kind: Component
+  id: portal-ui
+  confidence: verified
+  system: portal
+  repo: forge-portal-ui
+  type: spa
+  evidence: [{ source: config, repo: forge-portal-ui, path: package.json }]
+- kind: Component
+  id: portal-bff
+  confidence: verified
+  system: portal
+  repo: forge-portal-bff
+  type: spring-boot
+  runtime: kubernetes
+  evidence: [{ source: config, repo: forge-portal-bff, path: pom.xml }]
+- kind: Component
+  id: ledger-api
+  confidence: verified
+  system: ledger
+  repo: forge-ledger
+  type: forge-service
+  runtime: kubernetes
+  evidence: [{ source: config, repo: forge-ledger, path: forge.yaml, line: 2 }]
+- kind: Component
+  id: reports-job
+  confidence: verified
+  system: reports
+  repo: forge-reports-job
+  type: spring-batch
+  evidence: [{ source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java }]
+- kind: Component
+  id: audit-svc
+  confidence: inferred
+  system: audit
+  type: service
+  evidence: [{ source: config, repo: forge-portal-bff, path: src/main/resources/application.yml, line: 4, side: caller }]
+
+- kind: Endpoint
+  id: portal-bff.get-balance
+  confidence: verified
+  component: portal-bff
+  endpointType: rest
+  method: GET
+  pathOrTopic: /api/balance/{accountId}
+  normalizedPath: /api/balance/{}
+  evidence: [{ source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/BalanceController.java, line: 12, side: callee }]
+- kind: Endpoint
+  id: ledger-api.get-balance
+  confidence: verified
+  component: ledger-api
+  endpointType: rest
+  method: GET
+  pathOrTopic: /accounts/{id}/balance
+  normalizedPath: /accounts/{}/balance
+  auth: oauth2
+  evidence:
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEndpoints.java, line: 8, side: callee, dialect: forge@0.1.0 }
+    - { source: spec, repo: forge-ledger, path: api/ledger-openapi.yaml, line: 6, side: definition }
+- kind: Endpoint
+  id: ledger-api.post-transfer
+  confidence: verified
+  component: ledger-api
+  endpointType: rest
+  method: POST
+  pathOrTopic: /transfers
+  normalizedPath: /transfers
+  auth: oauth2
+  evidence:
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEndpoints.java, line: 11, side: callee, dialect: forge@0.1.0 }
+    - { source: spec, repo: forge-ledger, path: api/ledger-openapi.yaml, line: 14, side: definition }
+- kind: Endpoint
+  id: northwind-pay.post-payment
+  confidence: verified
+  component: northwind-pay
+  endpointType: rest
+  method: POST
+  pathOrTopic: /v2/payments
+  normalizedPath: /v2/payments
+  evidence: [{ source: spec, path: inputs/partner-specs/northwind-pay-openapi.yaml, line: 6, side: definition }]
+- kind: Endpoint
+  id: topic.payments-initiated
+  confidence: verified
+  component: portal-bff
+  endpointType: event-topic
+  pathOrTopic: payments.initiated
+  evidence: [{ source: event-config, repo: forge-events, path: topics/payments.initiated.yaml, line: 1, side: definition }]
+- kind: Endpoint
+  id: topic.transfers-completed
+  confidence: verified
+  component: ledger-api
+  endpointType: event-topic
+  pathOrTopic: transfers.completed
+  evidence: [{ source: event-config, repo: forge-events, path: topics/transfers.completed.yaml, line: 1, side: definition }]
+
+- kind: GatewayRoute
+  id: gw-ledger-v1
+  confidence: verified
+  proxy: ledger-v1
+  basepath: /ledger/v1
+  target: http://ledger-api.forge.internal
+  policies: [VerifyOAuth, SpikeArrest]
+  scopes: [ledger.read, ledger.write]
+  evidence:
+    - { source: gateway, repo: forge-gateway, path: proxies/ledger-v1/apiproxy/proxies/default.xml, line: 9, side: gateway }
+    - { source: gateway, repo: forge-gateway, path: proxies/ledger-v1/apiproxy/targets/ledger.xml, line: 3, side: gateway }
+
+- kind: Interface
+  id: if-f5c8b4b06d75284f
+  confidence: verified
+  from: portal-ui
+  to: portal-bff
+  endpoint: portal-bff.get-balance
+  via: direct
+  method: GET
+  normalizedPath: /api/balance/{}
+  sync: sync
+  pattern: { code: S.DIR.BFF, source: inferred }
+  evidence:
+    - { source: code, repo: forge-portal-ui, path: src/api/balance.ts, line: 3, side: caller }
+    - { source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/BalanceController.java, line: 12, side: callee }
+- kind: Interface
+  id: if-75b5e8d8aa780837
+  confidence: verified
+  from: portal-bff
+  to: ledger-api
+  endpoint: ledger-api.get-balance
+  via: gateway
+  route: gw-ledger-v1
+  method: GET
+  normalizedPath: /accounts/{}/balance
+  auth: oauth2
+  sync: sync
+  pattern: { code: S.GW.SOR, source: inferred }
+  evidence:
+    - { source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/LedgerClient.java, line: 8, side: caller }
+    - { source: gateway, repo: forge-gateway, path: proxies/ledger-v1/apiproxy/proxies/default.xml, line: 9, side: gateway }
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEndpoints.java, line: 8, side: callee, dialect: forge@0.1.0 }
+- kind: Interface
+  id: if-d99f508a2ac9b6e0
+  confidence: verified
+  from: portal-bff
+  to: ledger-api
+  endpoint: ledger-api.post-transfer
+  via: gateway
+  route: gw-ledger-v1
+  method: POST
+  normalizedPath: /transfers
+  auth: oauth2
+  sync: sync
+  pattern: { code: S.GW.SOR, source: inferred }
+  evidence:
+    - { source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/LedgerClient.java, line: 11, side: caller }
+    - { source: gateway, repo: forge-gateway, path: proxies/ledger-v1/apiproxy/proxies/default.xml, line: 9, side: gateway }
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEndpoints.java, line: 11, side: callee, dialect: forge@0.1.0 }
+- kind: Interface
+  id: if-e7344c9455608119
+  confidence: verified
+  from: ledger-api
+  to: northwind-pay
+  endpoint: northwind-pay.post-payment
+  via: direct
+  method: POST
+  normalizedPath: /v2/payments
+  sync: sync
+  evidence:
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/NorthwindClient.java, line: 8, side: caller, dialect: forge@0.1.0 }
+    - { source: spec, path: inputs/partner-specs/northwind-pay-openapi.yaml, line: 6, side: callee }
+- kind: Interface
+  id: if-5c55930b735276a9
+  confidence: inferred
+  from: portal-bff
+  to: audit-svc
+  via: direct
+  method: POST
+  normalizedPath: /audit/events
+  sync: sync
+  evidence: [{ source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/AuditPublisher.java, line: 10, side: caller }]
+- kind: Interface
+  id: if-32d38aecd11b86b1
+  confidence: verified
+  from: portal-bff
+  to: ledger-api
+  endpoint: topic.payments-initiated
+  via: event-bus
+  normalizedPath: payments.initiated
+  sync: async
+  pattern: { code: A.EB.PUB, source: inferred }
+  evidence:
+    - { source: code, repo: forge-portal-bff, path: src/main/java/forge/portal/PaymentEvents.java, line: 11, side: caller }
+    - { source: event-config, repo: forge-events, path: topics/payments.initiated.yaml, line: 1, side: definition }
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEvents.java, line: 6, side: callee, dialect: forge@0.1.0 }
+- kind: Interface
+  id: if-f1cd1f189eaa4b7b
+  confidence: verified
+  from: ledger-api
+  to: reports-job
+  endpoint: topic.transfers-completed
+  via: event-bus
+  normalizedPath: transfers.completed
+  sync: async
+  pattern: { code: A.EB.PUB, source: inferred }
+  evidence:
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEvents.java, line: 9, side: caller, dialect: forge@0.1.0 }
+    - { source: event-config, repo: forge-events, path: topics/transfers.completed.yaml, line: 1, side: definition }
+    - { source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java, line: 17, side: callee }
+
+- kind: DataStore
+  id: ledger-db
+  confidence: verified
+  storeType: postgresql
+  ownerComponent: ledger-api
+  entitiesHeld: [account, entry]
+  evidence:
+    - { source: infrastructure, repo: forge-infra, path: terraform/ledger-db.tf, line: 1 }
+    - { source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V1__create_account.sql, line: 1 }
+- kind: Table
+  id: ledger-db.account
+  confidence: verified
+  dataStore: ledger-db
+  name: account
+  tableKind: table
+  ownerComponent: ledger-api
+  writers: [ledger-api]
+  readers: [ledger-api]
+  evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V1__create_account.sql, line: 1 }]
+- kind: Table
+  id: ledger-db.entry
+  confidence: verified
+  dataStore: ledger-db
+  name: entry
+  tableKind: table
+  ownerComponent: ledger-api
+  writers: [ledger-api]
+  readers: [ledger-api, reports-job]
+  evidence:
+    - { source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 1 }
+    - { source: code, repo: forge-reports-job, path: src/main/java/forge/reports/DailyEntriesJob.java, line: 14, side: caller }
+- { kind: Column, id: ledger-db.account.id, confidence: verified, table: ledger-db.account, name: id, type: bigint, nullable: false, evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V1__create_account.sql, line: 2 }] }
+- { kind: Column, id: ledger-db.account.account-number, confidence: verified, table: ledger-db.account, name: account_number, type: varchar(34), nullable: false, evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V1__create_account.sql, line: 3 }] }
+- { kind: Column, id: ledger-db.account.holder-name, confidence: verified, table: ledger-db.account, name: holder_name, type: varchar(200), nullable: false, evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V1__create_account.sql, line: 4 }] }
+- { kind: Column, id: ledger-db.entry.id, confidence: verified, table: ledger-db.entry, name: id, type: bigint, nullable: false, evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 2 }] }
+- { kind: Column, id: ledger-db.entry.account-id, confidence: verified, table: ledger-db.entry, name: account_id, type: bigint, nullable: false, evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 3 }] }
+- { kind: Column, id: ledger-db.entry.amount, confidence: verified, table: ledger-db.entry, name: amount, type: "numeric(18,2)", nullable: false, evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 4 }] }
+- { kind: Column, id: ledger-db.entry.posted-at, confidence: verified, table: ledger-db.entry, name: posted_at, type: timestamp, nullable: false, evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 5 }] }
+- { kind: IndexConstraint, id: ledger-db.account.pk, confidence: verified, table: ledger-db.account, constraintKind: primary-key, columns: [id], evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V1__create_account.sql, line: 2 }] }
+- { kind: IndexConstraint, id: ledger-db.entry.pk, confidence: verified, table: ledger-db.entry, constraintKind: primary-key, columns: [id], evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 2 }] }
+- { kind: IndexConstraint, id: ledger-db.entry.fk-account, confidence: verified, table: ledger-db.entry, constraintKind: foreign-key, columns: [account_id], references: { table: ledger-db.account, columns: [id] }, evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 3 }] }
+- { kind: IndexConstraint, id: ledger-db.entry.idx-entry-account, confidence: verified, table: ledger-db.entry, constraintKind: index, columns: [account_id], evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 7 }] }
+- { kind: Migration, id: ledger-db.v1, confidence: verified, dataStore: ledger-db, version: "1", tool: flyway, file: src/main/resources/db/migration/V1__create_account.sql, operations: [create table account], evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V1__create_account.sql, line: 1 }] }
+- { kind: Migration, id: ledger-db.v2, confidence: verified, dataStore: ledger-db, version: "2", tool: flyway, file: src/main/resources/db/migration/V2__create_entry.sql, operations: [create table entry, create index idx_entry_account], evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 1 }] }
+
+- kind: Deployment
+  id: ledger-api.prod
+  confidence: verified
+  component: ledger-api
+  env: prod
+  platform: kubernetes
+  replicas: 3
+  resources: { cpu: "1", memory: 1Gi }
+  evidence: [{ source: infrastructure, repo: forge-infra, path: k8s/ledger-api.yaml, line: 7 }]
+- kind: Deployment
+  id: portal-bff.prod
+  confidence: verified
+  component: portal-bff
+  env: prod
+  platform: kubernetes
+  replicas: 2
+  evidence: [{ source: infrastructure, repo: forge-infra, path: k8s/portal-bff.yaml, line: 7 }]
+- kind: Setting
+  id: portal-bff.ledger-read-timeout
+  confidence: verified
+  component: portal-bff
+  settingKind: timeout
+  key: ledger.client.read-timeout
+  valueOrRef: 2000ms
+  target: ledger-api
+  evidence: [{ source: config, repo: forge-portal-bff, path: src/main/resources/application.yml, line: 7 }]
+- kind: Setting
+  id: portal-bff.ledger-connect-timeout
+  confidence: verified
+  component: portal-bff
+  settingKind: timeout
+  key: ledger.client.connect-timeout
+  valueOrRef: 500ms
+  target: ledger-api
+  evidence: [{ source: config, repo: forge-portal-bff, path: src/main/resources/application.yml, line: 8 }]
+- kind: ObservabilityAsset
+  id: ledger-api.alert.error-rate
+  confidence: verified
+  component: ledger-api
+  assetKind: alert
+  name: Ledger API error rate
+  evidence: [{ source: infrastructure, repo: forge-infra, path: alerts/ledger-api.yaml, line: 3 }]
+- kind: AccessGrant
+  id: gw-ledger-v1.oauth-scopes
+  confidence: inferred
+  subjectKind: oauth-client
+  subject: portal-bff
+  resource: ledger-v1
+  scopesOrPermissions: [ledger.read, ledger.write]
+  evidence: [{ source: gateway, repo: forge-gateway, path: proxies/ledger-v1/apiproxy/policies/VerifyOAuth.xml, line: 3, side: gateway }]

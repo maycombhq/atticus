@@ -1,0 +1,5 @@
+[
+  { "type": "network-firewall-rule", "number": "SR-0001", "fields": { "source": "ledger-api", "destination": "api.northwind.example", "port": 443 }, "opened": "2026-03-02", "closed": "2026-03-16", "approvalGroup": "network-team" },
+  { "type": "network-firewall-rule", "number": "SR-0002", "fields": { "source": "reports-job", "destination": "ledger-db.forge.internal", "port": 5432 }, "opened": "2026-04-06", "closed": "2026-04-17", "approvalGroup": "network-team" },
+  { "type": "gateway-route-review", "number": "SR-0003", "fields": { "proxy": "ledger-v1" }, "opened": "2026-02-10", "closed": "2026-02-13", "approvalGroup": "gateway-team" }
+]

@@ -1,0 +1,4 @@
+topic: transfers.completed
+producers: [ledger-api]
+consumers: [reports-job]
+schema: schemas/transfer-completed.avsc

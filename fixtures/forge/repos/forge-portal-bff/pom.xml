@@ -1,0 +1,1 @@
+<project><groupId>forge</groupId><artifactId>forge-portal-bff</artifactId><parent><artifactId>spring-boot-starter-parent</artifactId><version>3.3.4</version></parent></project>

@@ -1,0 +1,38 @@
+# Expected results from reading fixtures/forge/inputs (diagram, wiki, partner spec).
+# Hand-written ground truth for the diagram ingestor, intake and pattern scan.
+
+# Edges the draw.io ingestor must read from inputs/diagrams/forge-context.drawio.
+diagramEdges:
+  - { cell: e1, from: Portal UI, to: Portal BFF, label: "", pattern: null }
+  - { cell: e2, from: Portal BFF, to: Ledger Platform, pattern: S.GW.SOR, method: GET, path: "/ledger/v1/accounts/{id}/balance" }
+  - { cell: e3, from: Portal BFF, to: Ledger Platform, pattern: S.GW.SOR, method: POST, path: /ledger/v1/transfers }
+  - { cell: e4, from: Ledger Platform, to: Northwind Pay, pattern: S.GW.VND, method: POST, path: /v2/payments }
+  - { cell: e5, from: Reports Job, to: Ledger Platform, pattern: S.GW.SRO, method: GET, path: /ledger/v1/entries }
+  - { cell: e6, from: Portal BFF, to: Ledger Platform, pattern: A.EB.PUB, topic: payments.initiated }
+  - { cell: e7, from: Portal BFF, to: Notifications Service, pattern: A.EB.PUB, topic: notifications.requested, legend: new }
+
+# Diagram names that need an alias to match catalog ids (found by name matching or a person).
+aliases:
+  Portal UI: portal-ui
+  Portal BFF: portal-bff
+  Ledger Platform: ledger-api
+  Reports Job: reports-job
+  Northwind Pay: northwind-pay
+  Notifications Service: null # planned, not in code yet
+
+# Pattern codes the pattern scan must find in inputs/wiki/integration-patterns.md.
+patterns: [S.GW.SOR, S.GW.VND, S.DIR.BFF, A.EB.PUB, D.JDBC]
+
+# Facts in documents that conflict with code (the document never overrides code).
+documentConflicts:
+  - doc: inputs/wiki/ledger-solution-spec.md
+    claim: Payments to Northwind Pay go out through the gateway
+    code: interface if-e7344c9455608119 is via direct
+  - doc: inputs/wiki/ledger-solution-spec.md
+    claim: Reports read entries through the Ledger API
+    code: reports-job reads table ledger-db.entry directly
+
+# Facts only documents give; they need an owner to confirm before they become asserted.
+documentOnlyFacts:
+  - { system: ledger, fact: "SLO 99.9% monthly availability", becomes: Obligation }
+  - { system: ledger, fact: "Peak load 200 requests per second", becomes: Obligation }

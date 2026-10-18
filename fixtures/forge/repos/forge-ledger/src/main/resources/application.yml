@@ -1,0 +1,3 @@
+northwind:
+  url: https://api.northwind.example
+# No timeout or retry settings for the Northwind client (seeded knowledge gap).

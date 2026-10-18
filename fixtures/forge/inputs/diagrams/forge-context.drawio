@@ -1,0 +1,23 @@
+<mxfile host="drawio">
+  <diagram id="ctx" name="Forge context (as the architect drew it)">
+    <mxGraphModel>
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="ui" value="Portal UI" style="rounded=1;" vertex="1" parent="1"/>
+        <mxCell id="bff" value="Portal BFF" style="rounded=1;" vertex="1" parent="1"/>
+        <mxCell id="ledger" value="Ledger Platform" style="rounded=1;" vertex="1" parent="1"/>
+        <mxCell id="reports" value="Reports Job" style="rounded=1;" vertex="1" parent="1"/>
+        <mxCell id="northwind" value="Northwind Pay" style="shape=cloud;" vertex="1" parent="1"/>
+        <mxCell id="notify" value="Notifications Service" style="rounded=1;dashed=1;legend=new;" vertex="1" parent="1"/>
+        <mxCell id="e1" value="" edge="1" source="ui" target="bff" parent="1"/>
+        <mxCell id="e2" value="S.GW.SOR GET /ledger/v1/accounts/{id}/balance" edge="1" source="bff" target="ledger" parent="1"/>
+        <mxCell id="e3" value="S.GW.SOR POST /ledger/v1/transfers" edge="1" source="bff" target="ledger" parent="1"/>
+        <mxCell id="e4" value="S.GW.VND POST /v2/payments" edge="1" source="ledger" target="northwind" parent="1"/>
+        <mxCell id="e5" value="S.GW.SRO GET /ledger/v1/entries" edge="1" source="reports" target="ledger" parent="1"/>
+        <mxCell id="e6" value="A.EB.PUB payments.initiated" edge="1" source="bff" target="ledger" parent="1"/>
+        <mxCell id="e7" value="A.EB.PUB notifications.requested" style="legend=new;" edge="1" source="bff" target="notify" parent="1"/>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

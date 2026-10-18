@@ -1,0 +1,5 @@
+# Alert definitions kept as code. reports-job has none (seeded gap).
+alerts:
+  - name: Ledger API error rate
+    component: ledger-api
+    expr: rate(http_errors_total{service="ledger-api"}[5m]) > 0.05

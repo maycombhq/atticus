@@ -1,0 +1,4 @@
+<OAuthV2 name="VerifyOAuth">
+  <Operation>VerifyAccessToken</Operation>
+  <Scope>ledger.read ledger.write</Scope>
+</OAuthV2>

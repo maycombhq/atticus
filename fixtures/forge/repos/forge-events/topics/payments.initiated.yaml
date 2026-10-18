@@ -1,0 +1,4 @@
+topic: payments.initiated
+producers: [portal-bff]
+consumers: [ledger-api]
+schema: schemas/payment-initiated.avsc

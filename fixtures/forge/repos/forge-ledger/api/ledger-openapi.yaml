@@ -1,0 +1,31 @@
+openapi: 3.0.3
+info:
+  title: Ledger API
+  version: 1.0.0
+paths:
+  /accounts/{id}/balance:
+    get:
+      operationId: getBalance
+      security:
+        - oauth2: [ledger.read]
+      responses:
+        "200":
+          description: Balance
+  /transfers:
+    post:
+      operationId: createTransfer
+      security:
+        - oauth2: [ledger.write]
+      responses:
+        "201":
+          description: Created
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.forge.example/token
+          scopes:
+            ledger.read: read balances
+            ledger.write: create transfers
