@@ -25,4 +25,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm check
+      - run: pnpm denylist
+      - run: pnpm lint
+      - run: pnpm typecheck
+      # Windows runners are slower; fewer packages testing at once keeps timing-sensitive tests honest.
+      - run: pnpm turbo run test --concurrency=${{ matrix.os == 'windows-latest' && '2' || '10' }}
