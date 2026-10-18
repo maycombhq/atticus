@@ -1,0 +1,13 @@
+# The story writer on the forge-change fixture's approved design. Ground truth: the story bar's
+# eval set, fixtures/forge-change/expected/stories.yaml (read in place). Answers: the
+# hand-written recording in fixtures/forge-change/recordings/story-writer.
+schemaVersion: 1
+suite: story-writer
+description: "Generated stories meet the story bar: ready, every seeded gap covered, nothing invented."
+cases:
+  - id: story-writer-forge-change
+    agent: story-writer
+    description: Stories for add-transfer-limit meet the story bar on the fixture's eval set.
+    expect: { storyEval: fixtures/forge-change/expected/stories.yaml, maxDiscarded: 0 }
+    reference: { recordings: fixtures/forge-change/recordings }
+    recordings: fixtures/forge-change/recordings

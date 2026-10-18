@@ -1,0 +1,14 @@
+# Dialect writing from the kit (the M2 exit, ADR 0028): an agent given the task, the kit's
+# references and the Forge Messaging repos writes a dialect, graded by the M2 exit grader against
+# fixtures/forge-dialect-eval (held-out repo included). The mock answer is the grader's own
+# reference solution; it never goes into a live run's prompt.
+schemaVersion: 1
+suite: dialect-writer
+description: A dialect written from the kit gives exactly the expected records on every repo.
+cases:
+  - id: dialect-writer-forge-messaging
+    agent: dialect-writer
+    description: The Forge Messaging dialect passes the grader, held-out repo included.
+    modes: [mock, live]
+    params: { evalDir: fixtures/forge-dialect-eval }
+    reference: { file: packages/assistant-kit/test/reference/forge-messaging.yaml }

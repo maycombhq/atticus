@@ -1,0 +1,57 @@
+schemaVersion: 1
+id: designer-features-in-user-words
+role: designer
+title: Features in your users' words
+summary: Find the features Atticus detected in code, name one the way customers say it, and draw the context view.
+minutes: 10
+setup: [scan]
+intro: |
+  Atticus finds features in code from their entry points (screens, public endpoints, jobs,
+  event consumers) and gives them provisional names from paths and class names. People name
+  them properly; the name survives every scan.
+steps:
+  - id: list
+    title: List the features
+    body: |
+      List the detected features. Each starts at entry points such as an endpoint or an event.
+    do: [[feature, list]]
+    solution: { answer: feature.transfers }
+    check:
+      type: answer
+      question: Which feature starts at the endpoint ledger-api.post-transfer?
+      truth: { from: feature-of, entryPoint: ledger-api.post-transfer }
+    hint: atticus feature show <id> lists a feature's entry points.
+  - id: name
+    title: Name it in your users' words
+    body: |
+      Customers say "Money transfers". Record that name; it becomes a curated decision.
+    do: [[feature, name, feature.transfers, Money transfers, --by, dee]]
+    check:
+      {
+        type: curated-decision,
+        action: assert,
+        target: feature.transfers,
+        includes: Money transfers,
+      }
+    hint: atticus feature name feature.transfers "Money transfers" --by <you>
+  - id: diagram
+    title: Draw the context view
+    body: |
+      Draw the systems and the calls between them as Mermaid, from the catalog (never by hand).
+    do: [[diagram, render, context, --format, mermaid, --out, diagrams/context.mmd]]
+    check: { type: file, path: diagrams/context.mmd, contains: ["flowchart", "Northwind Pay"] }
+    hint: atticus diagram render context --format mermaid --out diagrams/context.mmd
+  - id: ux
+    title: Where the screens live in a change
+    body: |
+      Each change keeps the screens it touches in its own file next to the design. Look at the
+      seeded change's folder.
+    solution: { answer: ux.md }
+    check:
+      type: answer
+      question: Which file of a change describes its screens and their states?
+      truth: { from: fixed, values: [ux.md] }
+    hint: openspec/changes/add-transfer-limit/ holds it.
+outro: |
+  Named features and generated views keep everyone talking about the same things in the same
+  words.

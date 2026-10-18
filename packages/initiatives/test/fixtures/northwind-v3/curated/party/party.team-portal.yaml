@@ -1,0 +1,16 @@
+schemaVersion: 2
+kind: Party
+id: party.team-portal
+status: current
+confidence: asserted
+contacts: []
+evidence:
+  - source: manual
+    by: pat
+name: Portal team
+owner: team-portal
+partyKind: internal-team
+systems:
+  - portal
+typicalLeadTimes:
+  system-card: 4d

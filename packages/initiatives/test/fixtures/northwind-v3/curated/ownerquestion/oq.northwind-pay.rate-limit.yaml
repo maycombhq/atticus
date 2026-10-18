@@ -1,0 +1,14 @@
+schemaVersion: 2
+kind: OwnerQuestion
+id: oq.northwind-pay.rate-limit
+status: current
+confidence: asserted
+channel: email
+evidence:
+  - source: manual
+    by: ari
+neededFact: rate limit of POST /v2/payments
+owner: Northwind Pay partner desk
+question: What rate limit applies to POST /v2/payments per merchant?
+questionState: sent
+system: northwind-pay

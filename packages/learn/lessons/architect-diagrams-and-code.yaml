@@ -1,0 +1,69 @@
+schemaVersion: 1
+id: architect-diagrams-and-code
+role: architect
+title: Diagrams against code
+summary: Compare the architect's draw.io diagram with the code, settle a name with an alias, and see the critic catch a pattern typo.
+minutes: 15
+setup: [scan]
+intro: |
+  Diagrams drift. Atticus compares them with what the code says and lists every difference as
+  an item for a person: edges that go another way, edges only one side knows, names that need
+  an alias. Code always wins; a person decides what to do about the drawing. The sandbox was
+  scanned for you.
+steps:
+  - id: reconcile
+    title: Reconcile the diagram
+    body: |
+      Run reconcile on the Forge context diagram in `inputs/diagrams/`. Read each item: it says
+      what differs and what to do about it.
+    do: [[reconcile]]
+    solution: { answer: Ledger Platform }
+    check:
+      type: answer
+      question: Which name on the diagram needs an alias before its edges match the code?
+      truth: { from: fixed, values: [Ledger Platform] }
+    hint: Look for the alias-needed item.
+  - id: alias
+    title: Confirm the alias
+    body: |
+      Record that the diagram's "Ledger Platform" is the component `ledger-api`. The decision is a
+      file in `catalog/curated/`: commit it and every later reconcile uses it.
+    do: [[alias, Ledger Platform, ledger-api, --by, ari]]
+    check: { type: curated-decision, action: alias, target: ledger-api, includes: Ledger Platform }
+    hint: atticus alias "Ledger Platform" ledger-api --by <you>
+  - id: critic
+    title: Let the critic read the change
+    body: |
+      The seeded change `add-transfer-limit` is in Plan. Run the critic on it: the rule checks
+      run first, cost nothing and give the same answer every time. One finding is about a
+      pattern code in `interfaces.md` that the org pack doesn't have.
+    do: [[critic, add-transfer-limit]]
+    solution: { answer: S.GW.SRO }
+    check:
+      type: all
+      checks:
+        - {
+            type: findings,
+            change: add-transfer-limit,
+            gate: plan,
+            rule: constitution.interface-approved-pattern,
+          }
+        - type: answer
+          question: Which pattern code in the change's interfaces.md is not in the org pack?
+          truth: { from: unknown-pattern, change: add-transfer-limit }
+    hint: Run the critic first, then read the interface-approved-pattern finding.
+  - id: waivable
+    title: Can it be waived?
+    body: |
+      Explain the finding. Rules from the built-in constitution are never waivable: the change
+      must be fixed.
+    do: [[explain, interface-approved-pattern-interfaces-l6]]
+    solution: { answer: "no" }
+    check:
+      type: answer
+      question: Can the pattern finding be waived? (yes or no)
+      truth: { from: fixed, values: ["no"] }
+    hint: The last line of the explanation says what you can do with it.
+outro: |
+  You reconciled a diagram, settled a name for good and saw a typo caught before review. Fix
+  the typo in interfaces.md and run the critic again to see the finding go.

@@ -1,0 +1,21 @@
+schemaVersion: 2
+kind: Party
+id: party.northwind-pay
+status: current
+confidence: asserted
+channel: email
+contacts:
+  - partners@northwind.example
+evidence:
+  - source: manual
+    by: pat
+name: Northwind Pay
+owner: Northwind Pay partner desk
+partyKind: vendor
+systems:
+  - northwind-pay
+typicalLeadTimes:
+  api-spec: 15d
+  certification: 3w
+  sandbox-access: 10d
+  system-card: 5d

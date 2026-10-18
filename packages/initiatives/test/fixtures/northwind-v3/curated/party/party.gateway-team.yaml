@@ -1,0 +1,15 @@
+schemaVersion: 2
+kind: Party
+id: party.gateway-team
+status: current
+confidence: asserted
+contacts: []
+evidence:
+  - source: manual
+    by: pat
+name: Gateway team
+owner: gateway-team
+partyKind: internal-team
+systems: []
+typicalLeadTimes:
+  gateway-route: 4d

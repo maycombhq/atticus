@@ -1,0 +1,146 @@
+schemaVersion: 1
+id: team-lead-initiative
+role: team-lead
+title: Plan work across teams and a vendor
+summary: Record a vendor as a party, start an initiative on the vendor-API-change journey, plan it back from a release date, and send the vendor a system card.
+minutes: 20
+setup: [scan]
+intro: |
+  Some outcomes take several changes and other people's work: a vendor's new API, a firewall
+  rule from the network team. An initiative groups them, plans them back from a target release
+  with each party's lead times, and shows the critical path and what slipped.
+steps:
+  - id: party
+    title: Record the vendor and the teams
+    body: |
+      Parties are curated records: who they are, which systems they own and how long their
+      usual requests take. Write Northwind Pay, the network team and the gateway team into
+      `catalog/curated/party/`.
+    solution:
+      files:
+        - path: catalog/curated/party/party.northwind-pay.yaml
+          content: |
+            schemaVersion: 2
+            kind: Party
+            id: party.northwind-pay
+            status: current
+            confidence: asserted
+            channel: email
+            contacts:
+              - partners@northwind.example
+            evidence:
+              - source: manual
+                by: tia
+            name: Northwind Pay
+            owner: Northwind Pay partner desk
+            partyKind: vendor
+            systems:
+              - northwind-pay
+            typicalLeadTimes:
+              api-spec: 15d
+              certification: 3w
+              sandbox-access: 10d
+              system-card: 5d
+        - path: catalog/curated/party/party.network-team.yaml
+          content: |
+            schemaVersion: 2
+            kind: Party
+            id: party.network-team
+            status: current
+            confidence: asserted
+            contacts: []
+            evidence:
+              - source: manual
+                by: tia
+            name: Network team
+            owner: network-team
+            partyKind: internal-team
+            systems: []
+            typicalLeadTimes: {}
+        - path: catalog/curated/party/party.gateway-team.yaml
+          content: |
+            schemaVersion: 2
+            kind: Party
+            id: party.gateway-team
+            status: current
+            confidence: asserted
+            contacts: []
+            evidence:
+              - source: manual
+                by: tia
+            name: Gateway team
+            owner: gateway-team
+            partyKind: internal-team
+            systems: []
+            typicalLeadTimes:
+              gateway-route: 4d
+    check:
+      type: all
+      checks:
+        - { type: record, kind: Party, id: party.northwind-pay, where: { partyKind: vendor } }
+        - { type: record, kind: Party, id: party.network-team }
+        - { type: record, kind: Party, id: party.gateway-team }
+    hint: One YAML file per party under catalog/curated/party/, named <id>.yaml.
+  - id: new
+    title: Start the initiative
+    body: |
+      Start "Northwind Pay v3 migration" on the vendor-api-change journey, aiming to release on
+      1 March 2027.
+    do:
+      - [
+          initiative,
+          new,
+          Northwind Pay v3 migration,
+          --journey,
+          vendor-api-change,
+          --release,
+          "2027-03-01",
+          --by,
+          tia,
+        ]
+    check:
+      {
+        type: record,
+        kind: Initiative,
+        id: northwind-pay-v3-migration,
+        where: { journey: vendor-api-change },
+      }
+    hint: atticus initiative new "Northwind Pay v3 migration" --journey vendor-api-change --release 2027-03-01 --by <you>
+  - id: plan
+    title: Plan it back from the release
+    body: |
+      Plan the journey for Northwind Pay. Atticus finds who calls the vendor in the catalog,
+      proposes one change per caller, and gives every commitment a date from the party's lead
+      time, the closed requests in `inputs/` or the request template.
+    do: [[initiative, plan, northwind-pay-v3-migration, --target, northwind-pay, --by, tia]]
+    solution: { answer: northwind-pay-v3-migration-ledger }
+    check:
+      type: all
+      checks:
+        - { type: file, path: initiatives/northwind-pay-v3-migration/plan.yaml }
+        - { type: record, kind: Commitment, id: northwind-pay-v3-migration.vendor-spec }
+        - type: answer
+          question: Which change does the plan propose?
+          truth: { from: fixed, values: [northwind-pay-v3-migration-ledger] }
+    hint: The plan prints the change to create with its atticus change new command.
+  - id: request
+    title: Ask the vendor to check what we know
+    body: |
+      Send Northwind Pay a system card: what the catalog knows about their API and who calls
+      it, and the open questions. The reply goes into intake; the request is tracked as a
+      commitment, and the message is a manual step for you to send.
+    do: [[initiative, request, northwind-pay-v3-migration, party.northwind-pay, --by, tia]]
+    check:
+      type: all
+      checks:
+        - {
+            type: file,
+            path: initiatives/northwind-pay-v3-migration/requests/northwind-pay.md,
+            contains: ["# System card: Northwind Pay"],
+          }
+        - { type: record, kind: Commitment, id: northwind-pay-v3-migration.request.northwind-pay }
+        - { type: steps, action: send-notification, state: open }
+    hint: atticus initiative request northwind-pay-v3-migration party.northwind-pay --by <you>
+outro: |
+  Run atticus initiative status northwind-pay-v3-migration any day to see the critical path and
+  which commitments slipped or are at risk.

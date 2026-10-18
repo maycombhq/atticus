@@ -1,0 +1,18 @@
+schemaVersion: 2
+kind: Party
+id: party.team-ledger
+status: current
+confidence: asserted
+channel: teams
+contacts:
+  - ari
+evidence:
+  - source: manual
+    by: pat
+name: Ledger team
+owner: team-ledger
+partyKind: internal-team
+systems:
+  - ledger
+typicalLeadTimes:
+  system-card: 3d

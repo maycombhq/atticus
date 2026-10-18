@@ -1,0 +1,60 @@
+schemaVersion: 1
+id: developer-find-your-way
+role: developer
+title: Find your way around the catalog
+summary: Scan the Forge repos, find who calls a service and who reads a table, and read a record in plain words.
+minutes: 10
+setup: []
+intro: |
+  Atticus reads code and config (it never runs them) and writes what it finds as **catalog
+  records**: systems, components, endpoints, the interfaces between them, tables and settings.
+  This sandbox holds the invented Forge estate: a portal, a ledger, a reports job, an audit
+  service and a payments vendor, Northwind Pay.
+steps:
+  - id: scan
+    title: Scan the estate
+    body: |
+      Run a scan. Atticus reads every repo's base clone in `workspace/` and writes one file per
+      record under `catalog/generated/`. Look at the list it prints: every line is a record.
+    do: [[scan]]
+    check: { type: catalog-has, kind: Interface, min: 7 }
+    hint: Run `atticus scan` from the sandbox's metarepo folder (or add --root).
+  - id: callers
+    title: Who calls the ledger through the gateway?
+    body: |
+      Interfaces record who calls whom and how. Ask the catalog for the interfaces that end at
+      `ledger-api` and go through the gateway. The NAME column shows `caller → callee`.
+    do: [[query, "kind:interface to:ledger-api via:gateway"]]
+    solution: { answer: portal-bff }
+    check:
+      type: answer
+      question: Which components call ledger-api through the gateway?
+      truth: { from: interface-callers, to: ledger-api, via: gateway }
+    hint: The callers are on the left of the arrow. Give component ids, separated by commas.
+  - id: readers
+    title: Who reads the entry table?
+    body: |
+      Before you change a table, find who reads it. `atticus impact` follows the catalog from a
+      record to everything that depends on it, with owners. Some readers aren't the table's owner.
+    do: [[impact, ledger-db.entry]]
+    solution: { answer: "ledger-api, reports-job" }
+    check:
+      type: answer
+      question: Which components read ledger-db.entry?
+      truth: { from: table-readers, id: ledger-db.entry }
+    hint: Look for "reads ledger-db.entry" in the WHY column.
+  - id: explain
+    title: Read a record in plain words
+    body: |
+      `atticus explain` turns any record, finding or command into plain sentences. Explain the
+      interface from the ledger to Northwind Pay.
+    do: [[explain, if-e7344c9455608119]]
+    solution: { answer: direct }
+    check:
+      type: answer
+      question: Does ledger-api call Northwind Pay through the gateway or direct? (answer gateway or direct)
+      truth: { from: fixed, values: [direct] }
+    hint: The first sentence says how the call goes.
+outro: |
+  You scanned an estate, queried it, followed impact and read a record. Next, try the
+  architect's lesson to see where the diagrams disagree with this code.
