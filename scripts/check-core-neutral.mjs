@@ -258,7 +258,7 @@ export const ALLOW = [
   },
   // --- generic words that collide with a product name
   {
-    file: "packages/naysayer/src/critic.ts",
+    file: "packages/naysayer/src/round.ts",
     names: ["teams"],
     reason: "the org pack's teams/ folder (team rule layer), not the chat product",
   },

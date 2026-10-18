@@ -1,6 +1,6 @@
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { runtimeForCli, type AiRuntime } from "@maycombhq/ai";
+import { runtimeForCli, type AiRuntime, type Run } from "@maycombhq/ai";
 import {
   archiveGate,
   driftExitCode,
@@ -14,6 +14,7 @@ import {
 } from "@maycombhq/ci";
 import {
   aliasDecision,
+  completeGlossaryDefinitions,
   defineDecision,
   GlossaryError,
   linkDecision,
@@ -21,6 +22,7 @@ import {
   resolveTermId,
   scanGlossary,
   writeDecisions,
+  type ScanGlossaryResult,
 } from "@maycombhq/glossary";
 import {
   generateTests,
@@ -389,9 +391,8 @@ export async function glossaryScan(
       ...(runtime ? { runtime } : {}),
       ...(deps.now ? { now: deps.now() } : {}),
     });
-    for (const p of r.problems) io.err(p);
-    const open = r.build.conflicts.filter((c) => !c.resolved);
     if (o.json) {
+      for (const p of r.problems) io.err(p);
       io.out(
         JSON.stringify(
           {
@@ -410,17 +411,45 @@ export async function glossaryScan(
       );
       return 0;
     }
+    printGlossaryScan(r, io);
+    return 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+function printGlossaryScan(r: ScanGlossaryResult, io: Output): void {
+  for (const p of r.problems) io.err(p);
+  const open = r.build.conflicts.filter((c) => !c.resolved);
+  io.out(
+    `The glossary has ${plural(r.terms.length, "term")}; ${plural(r.written.length, "file")} written and ${plural(r.removed.length, "file")} removed in catalog/generated.`,
+  );
+  if (r.propose)
     io.out(
-      `The glossary has ${plural(r.terms.length, "term")}; ${plural(r.written.length, "file")} written and ${plural(r.removed.length, "file")} removed in catalog/generated.`,
+      r.propose.waiting
+        ? `The glossary definer is with your assistant (run ${r.propose.waiting}). When it is done, run: atticus handoff done ${r.propose.waiting}`
+        : `The glossary definer proposed ${plural(r.propose.proposals.length, "definition")} (kept inferred until a person defines the term).`,
     );
-    if (r.propose)
-      io.out(
-        r.propose.waiting
-          ? `The glossary definer is with your assistant (run ${r.propose.waiting}).`
-          : `The glossary definer proposed ${plural(r.propose.proposals.length, "definition")} (kept inferred until a person defines the term).`,
-      );
-    for (const c of open) io.out(`Conflict: ${c.message}`);
-    for (const h of r.build.hints) io.out(`Naming: ${h.message}`);
+  for (const d of r.propose?.discarded ?? [])
+    if (d.term && !r.propose?.waiting) io.err(`Discarded ${d.term}: ${d.reason}`);
+  for (const c of open) io.out(`Conflict: ${c.message}`);
+  for (const h of r.build.hints) io.out(`Naming: ${h.message}`);
+}
+
+/**
+ * The end of `glossary scan` in hand-off mode: `atticus handoff done` validated the glossary
+ * definer's answer, so its definitions are saved as proposals and the glossary rebuilt, as a
+ * model run's answer would have been.
+ */
+export async function completeGlossaryScan(
+  root: string,
+  run: Run,
+  io: Output,
+  deps: { now?: Date } = {},
+): Promise<number> {
+  try {
+    const r = await completeGlossaryDefinitions(root, run, deps.now ? { now: deps.now } : {});
+    printGlossaryScan(r, io);
     return 0;
   } catch (e) {
     return fail(io, e);

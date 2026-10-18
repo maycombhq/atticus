@@ -24,6 +24,10 @@ import type { TermEntry } from "./build.js";
 
 export const GLOSSARY_DEFINER = "glossary-definer";
 
+/** What `proposeDefinitions` sends as the change and output path, so a finished hand-off is recognised. */
+export const GLOSSARY_CHANGE = "glossary";
+export const GLOSSARY_OUTPUT = "catalog/proposals/glossary-definitions.yaml";
+
 export const DefinitionProposalFile = z.strictObject({
   schemaVersion: z.literal(1),
   term: RecordId,
@@ -263,7 +267,7 @@ export async function proposeDefinitions(
     })),
   ];
   const pack = buildContextPack({
-    change: "glossary",
+    change: GLOSSARY_CHANGE,
     agent: agent.id,
     budget: o.orgPack?.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget,
     sources,
@@ -279,10 +283,10 @@ export async function proposeDefinitions(
       reason: "left out of the context pack (budget or classification)",
     }));
   const prepared = await runtime.prepare({
-    change: "glossary",
+    change: GLOSSARY_CHANGE,
     agent,
     pack,
-    outputPath: "catalog/proposals/glossary-definitions.yaml",
+    outputPath: GLOSSARY_OUTPUT,
   });
   const run = await runtime.run(prepared.runId);
   if (run.state === "waiting" || run.state === "prepared")

@@ -7,7 +7,7 @@ import {
 } from "@maycombhq/changes";
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { CriticError } from "./errors.js";
-import { readRound, roundsOf, type StoredFinding } from "./findings.js";
+import { readRound, readRoundMeta, roundsOf, type StoredFinding } from "./findings.js";
 
 export interface SeverityCounts {
   blocking: number;
@@ -25,10 +25,15 @@ export interface GateStatus {
   open: SeverityCounts;
   /** Every finding in the newest round, whatever its state. */
   total: SeverityCounts;
-  /** Same answer as the lifecycle's hand-off check: no open blocking finding, no open gap, no unreadable file. */
+  /**
+   * Same answer as the lifecycle's hand-off check: no open blocking finding, no open gap, no
+   * unreadable file; and no AI lens still waiting for the person's assistant.
+   */
   mayProceed: boolean;
   /** The rounds are used up and something still blocks: a person decides (waive, fix by hand, or return). */
   humanDecides: boolean;
+  /** AI lenses of the newest round that are still with the person's assistant (hand-off). */
+  waiting: { lens: string; runId: string }[];
   /** Why the hand-off may not proceed, as the lifecycle reports it. */
   reasons: string[];
   findings: StoredFinding[];
@@ -57,7 +62,21 @@ export async function gateStatusOf(
   const { findings } = round ? await readRound(root, change.id, gate, round) : { findings: [] };
   const open = findings.filter((f) => f.finding.state === "open");
   // The lifecycle's own reading decides: one answer for the critic and for the hand-off.
-  const reasons = (await checkFindings(root, change, [gate])).map((r) => r.message);
+  const blocking = (await checkFindings(root, change, [gate])).map((r) => r.message);
+  // A lens the person's assistant hasn't answered yet is a review that hasn't happened: the
+  // gate doesn't open on layer 1 alone while one is out.
+  const waiting = round
+    ? ((await readRoundMeta(root, change.id, gate, round))?.lenses ?? [])
+        .filter((l) => l.state === "waiting" && l.runId)
+        .map((l) => ({ lens: l.lens, runId: l.runId! }))
+    : [];
+  const reasons = [
+    ...blocking,
+    ...waiting.map(
+      (w) =>
+        `The ${w.lens} lens is still with your assistant: run atticus handoff done ${w.runId}.`,
+    ),
+  ];
   const maxRounds = maxRoundsOf(lifecycle, gate);
   return {
     gate,
@@ -66,7 +85,8 @@ export async function gateStatusOf(
     open: count(open),
     total: count(findings),
     mayProceed: reasons.length === 0,
-    humanDecides: reasons.length > 0 && (round ?? 0) >= maxRounds,
+    humanDecides: blocking.length > 0 && (round ?? 0) >= maxRounds,
+    waiting,
     reasons,
     findings,
   };

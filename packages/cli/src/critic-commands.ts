@@ -1,18 +1,28 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
+import {
+  HandoffRuntime,
+  RuntimeConfigError,
+  runtimeForCli,
+  type AiRuntime,
+  type Run,
+} from "@maycombhq/ai";
 import { changeStore } from "@maycombhq/changes";
-import { Lens } from "@maycombhq/core";
+import { Lens, runsDirOf, runsRelOf } from "@maycombhq/core";
 import {
   CriticError,
   act,
+  completeLensRun,
   gateStatus,
   overrideStats,
   reviewedGates,
   runCritic,
+  waitingLenses,
+  type CompletedLens,
   type GateStatus,
 } from "@maycombhq/naysayer";
 import type { Output } from "./commands.js";
+import { yamlAnswerProblems } from "./handoff-yaml.js";
 import { table } from "./index-commands.js";
 
 /**
@@ -51,7 +61,11 @@ function fail(io: Output, e: unknown): number {
 
 const where = (artifact: string, line?: number) => (line ? `${artifact}:${line}` : artifact);
 
+const plural = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
+
 function statusLine(s: GateStatus): string {
+  if (s.waiting.length)
+    return `The ${s.gate} gate is not decided: ${plural(s.waiting.length, "AI lens", "AI lenses")} ${s.waiting.length === 1 ? "is" : "are"} with your assistant. Run atticus handoff done <run> for each, then look at the findings again.`;
   const counts = `${s.open.blocking} blocking, ${s.open.gaps} open gap${s.open.gaps === 1 ? "" : "s"}`;
   if (s.mayProceed) return `The ${s.gate} gate may proceed: nothing blocking is open.`;
   if (s.humanDecides)
@@ -75,20 +89,21 @@ async function runtimeOf(
   return (await runtimeForCli(root, { ...(mode ? { mode } : {}), env })).runtime;
 }
 
-/** atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] */
+/** atticus critic <change> [--gate g] [--lens l] [--mode m] [--resume] [--json] */
 export async function critic(
   root: string,
   changeId: string | undefined,
-  o: { gate?: string; lens?: string; mode?: string; json?: boolean },
+  o: { gate?: string; lens?: string; mode?: string; json?: boolean; resume?: boolean },
   io: Output,
   deps: CriticDeps = {},
 ): Promise<number> {
   if (!changeId) {
     io.err(
-      "Usage: atticus critic <change> [--gate <gate>] [--lens <lens>] [--mode <mode>] [--json]",
+      "Usage: atticus critic <change> [--gate <gate>] [--lens <lens>] [--mode <mode>] [--resume] [--json]",
     );
     return 2;
   }
+  if (o.resume) return resumeLenses(root, changeId, o, io, deps);
   if (o.lens && !Lens.safeParse(o.lens).success) {
     io.err(`Unknown lens ${o.lens}. Use one of: ${Lens.options.join(", ")}.`);
     return 2;
@@ -132,7 +147,9 @@ export async function critic(
           })),
           lenses: r.lenses.map((l) => ({
             lens: l.lens,
+            agent: l.agent,
             state: l.state,
+            ...(l.runId ? { runId: l.runId } : {}),
             ...(l.reason ? { reason: l.reason } : {}),
           })),
           skipped: r.rules.skipped,
@@ -177,6 +194,105 @@ export async function critic(
     );
   io.out(statusLine(s));
   return s.mayProceed ? 0 : 1;
+}
+
+/** Say a lens read in from a hand-off run, and what is still out. */
+function printCompleted(c: CompletedLens, io: Output): boolean {
+  const where = `The ${c.lens.lens} lens of round ${c.round} at the ${c.gate} gate`;
+  io.out(
+    c.lens.state === "ran"
+      ? `${where} raised ${plural(c.findings.length, "finding", "findings")}.`
+      : `${where} ${c.lens.state}: ${c.lens.reason ?? ""}`.trimEnd(),
+  );
+  for (const d of c.discarded) io.err(`Discarded: ${d.reason}`);
+  if (c.lens.state === "ran" && c.lens.reason) io.out(`  ${c.lens.reason}`);
+  if (c.waiting.length)
+    io.out(
+      `${plural(c.waiting.length, "AI lens", "AI lenses")} ${c.waiting.length === 1 ? "is" : "are"} still with your assistant: ${c.waiting.map((w) => `${w.lens} (atticus handoff done ${w.runId})`).join(", ")}.`,
+    );
+  else io.out(statusLine(c.status));
+  return c.waiting.length === 0;
+}
+
+/**
+ * The end of a critic AI lens in hand-off mode: `atticus handoff done` validated the assistant's
+ * answer, so it is read into the round that was waiting for it, with the critic's own parser,
+ * and the round's verdict follows.
+ */
+export async function completeCriticLens(
+  root: string,
+  run: Run,
+  io: Output,
+  o: { now?: string } = {},
+): Promise<number> {
+  try {
+    const c = await completeLensRun(root, run, o.now ? { now: o.now } : {});
+    printCompleted(c, io);
+    return c.lens.state === "ran" ? 0 : 1;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/**
+ * atticus critic <change> [--gate g] --resume: read in every AI lens answer that is there. A
+ * lens whose answer file is written is checked and read in (as `handoff done` would); the rest
+ * stay waiting. Exit 0 when the gate may proceed, else 1.
+ */
+async function resumeLenses(
+  root: string,
+  changeId: string,
+  o: { gate?: string; json?: boolean },
+  io: Output,
+  deps: CriticDeps,
+): Promise<number> {
+  try {
+    await changeStore(root)
+      .read(changeId)
+      .catch((e: Error) => {
+        throw new CriticError("not-found", e.message);
+      });
+    const gates = o.gate ? [o.gate] : await reviewedGates(root, changeId);
+    const rt = new HandoffRuntime({ root, validate: yamlAnswerProblems });
+    let any = false;
+    let statusPrinted = false;
+    for (const gate of gates) {
+      for (const w of await waitingLenses(root, changeId, gate)) {
+        any = true;
+        let run = await rt.result(w.runId);
+        const file = join(runsDirOf(root), changeId, w.runId, `findings-${w.lens}.yaml`);
+        const written = await stat(file).then(
+          () => true,
+          () => false,
+        );
+        if (written && run.state !== "validated") run = await rt.done(w.runId);
+        if (run.state === "failed" && written) {
+          for (const e of run.errors) io.err(e);
+          io.err(
+            `${w.lens} lens: ${runsRelOf(root)}/${changeId}/${w.runId}/findings-${w.lens}.yaml needs fixing; run atticus handoff done ${w.runId} when it's fixed.`,
+          );
+        } else if (run.state === "validated") {
+          statusPrinted = printCompleted(
+            await completeLensRun(root, run, deps.now ? { now: deps.now } : {}),
+            io,
+          );
+        }
+      }
+    }
+    if (!any)
+      io.out(
+        `No AI lens of ${o.gate ? `the ${o.gate} gate` : "this change"} is waiting for your assistant.`,
+      );
+    let mayProceed = false;
+    for (const gate of gates) {
+      const s = await gateStatus(root, changeId, gate);
+      if (!statusPrinted && (any || s.round !== undefined)) io.out(statusLine(s));
+      mayProceed = s.mayProceed && s.round !== undefined;
+    }
+    return mayProceed ? 0 : 1;
+  } catch (e) {
+    return fail(io, e);
+  }
 }
 
 /** atticus findings <change> [--json]: the newest round at each gate. */

@@ -12,6 +12,13 @@ export interface AiRequest {
   pack: ContextPack;
   /** Change-folder-relative path the output is written to, e.g. "stories.md". */
   outputPath: string;
+  /**
+   * Where `outputPath` is relative to. "change" (the default) is the change folder; "run" is the
+   * run's own folder (`.runs/<change>/<runId>/`), for a hand-off answer that a command reads back
+   * and that must not land among the change's files (the story writer's prose would collide with
+   * the `stories.md` the plan writes).
+   */
+  outputIn?: "change" | "run";
 }
 
 export interface Usage {

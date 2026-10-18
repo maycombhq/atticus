@@ -11,15 +11,22 @@ import {
   intellijProjectPath,
   type LoadedRepo,
 } from "@maycombhq/workspace";
-import { readFile } from "node:fs/promises";
-import { parse } from "yaml";
 import { HandoffRuntime } from "@maycombhq/ai";
 import { NAMING_CHANGE, NAMING_OUTPUT } from "@maycombhq/features";
-import { TEMPLATE_PROSE_CHANGE, TEMPLATE_PROSE_OUTPUT } from "@maycombhq/planner";
+import { GLOSSARY_CHANGE, GLOSSARY_OUTPUT } from "@maycombhq/glossary";
+import { lensRunOf } from "@maycombhq/naysayer";
+import {
+  STORY_PROSE_OUTPUT,
+  TEMPLATE_PROSE_CHANGE,
+  TEMPLATE_PROSE_OUTPUT,
+} from "@maycombhq/planner";
 import { completeHandUpLens, handUpLensTask } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
+import { completeCriticLens } from "./critic-commands.js";
 import { completeFeatureNaming } from "./feature-commands.js";
+import { yamlAnswerProblems } from "./handoff-yaml.js";
 import { completeTemplatesDraft } from "./plan-commands.js";
+import { completeGlossaryScan } from "./quality-commands.js";
 
 function pick(
   all: LoadedRepo[],
@@ -120,13 +127,26 @@ export async function openspecCheck(root: string, io: Output): Promise<number> {
 
 /**
  * Which command a hand-off run finishes: a change artifact (checked with openspec validate),
- * a hand-up's code-and-test lens, `feature suggest-names` or `templates draft`.
+ * a hand-up's code-and-test lens, a critic AI lens, `feature suggest-names`, `glossary scan`,
+ * `templates draft`, or the story writer of `plan stories` (finished by `--resume`).
  */
 export function completionOf(request: {
   change: string;
   outputPath: string;
-}): "artifact" | "hand-up" | "feature-names" | "templates" {
+  outputIn?: string;
+}):
+  | "artifact"
+  | "hand-up"
+  | "critic-lens"
+  | "feature-names"
+  | "glossary"
+  | "templates"
+  | "story-prose" {
   if (handUpLensTask(request.outputPath)) return "hand-up";
+  if (lensRunOf(request)) return "critic-lens";
+  if (request.change === GLOSSARY_CHANGE && request.outputPath === GLOSSARY_OUTPUT)
+    return "glossary";
+  if (request.outputIn === "run" && request.outputPath === STORY_PROSE_OUTPUT) return "story-prose";
   if (request.change === NAMING_CHANGE && request.outputPath === NAMING_OUTPUT)
     return "feature-names";
   if (request.change === TEMPLATE_PROSE_CHANGE && request.outputPath === TEMPLATE_PROSE_OUTPUT)
@@ -137,8 +157,10 @@ export function completionOf(request: {
 /**
  * atticus handoff done <runId>: the assistant (or person) says the artifact is written.
  * Atticus checks it (openspec validate on the change for change artifacts) and records the
- * result; for a run that finishes another command (hand-up's lens, feature suggest-names,
- * templates draft) it then parses the answer and applies it as that command would have.
+ * result; for a run that finishes another command (hand-up's lens, a critic lens, feature
+ * suggest-names, glossary scan, templates draft) it then parses the answer and applies it as
+ * that command would have. The story writer's answer is only checked; `plan stories --resume`
+ * writes the plan from it.
  */
 export async function handoffDone(
   root: string,
@@ -150,16 +172,10 @@ export async function handoffDone(
   const rt = new HandoffRuntime({
     root,
     validate: async (_file, request) => {
-      // Answers that aren't change artifacts (a lens review, name proposals, template prose)
-      // are checked as YAML here and read in full by the command they finish.
-      if (completionOf(request) !== "artifact") {
-        try {
-          parse(await readFile(_file, "utf8"));
-          return [];
-        } catch (e) {
-          return [`${request.outputPath} isn't YAML: ${(e as Error).message.split("\n")[0]}`];
-        }
-      }
+      // Answers that aren't change artifacts (a lens review, name proposals, definitions,
+      // template or story prose) are checked as YAML here and read in full by the command
+      // they finish.
+      if (completionOf(request) !== "artifact") return yamlAnswerProblems(_file, request);
       const report = await os.validate({ item: request.change, type: "change" });
       return report.items.flatMap((i) =>
         i.issues.filter((x) => x.level === "ERROR").map((x) => x.message),
@@ -184,6 +200,17 @@ export async function handoffDone(
       );
       for (const d of r.lens.discarded) io.err(`Discarded: ${d.reason}`);
       return r.lens.state === "ran" ? 0 : 1;
+    }
+    if (kind === "critic-lens")
+      return completeCriticLens(root, run, io, {
+        ...(now ? { now: now.toISOString().replace(/\.\d{3}Z$/, "Z") } : {}),
+      });
+    if (kind === "glossary") return completeGlossaryScan(root, run, io, now ? { now } : {});
+    if (kind === "story-prose") {
+      io.out(
+        `The story prose for ${run.request.change} is valid. Next: atticus plan stories ${run.request.change} --resume ${runId}`,
+      );
+      return 0;
     }
     if (kind === "feature-names") return completeFeatureNaming(root, run, io, now ? { now } : {});
     if (kind === "templates") return completeTemplatesDraft(root, run, io, deps);

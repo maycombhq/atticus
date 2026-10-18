@@ -223,6 +223,57 @@ export async function reviewedGates(root: string, change: string): Promise<strin
   }
 }
 
+/** One lens entry of a round's `meta/round.yaml`. */
+export interface RoundLens {
+  lens: string;
+  agent: string;
+  state: "ran" | "skipped" | "failed" | "waiting";
+  reason?: string;
+  rules: string[];
+  artifacts: string[];
+  promptSha256?: string;
+  /** The hand-off run a waiting (or read-in) lens was with. */
+  runId?: string;
+}
+
+/** A round's `meta/round.yaml`, as written by the critic (keys it doesn't know are kept). */
+export interface RoundMeta extends Record<string, unknown> {
+  change: string;
+  gate: string;
+  round: number;
+  createdAt: string;
+  findings: { id: string; layer: Layer; rule: string; severity: string; carried?: boolean }[];
+  rules: { ran: string[]; skipped: { rule: string; reason: string }[] };
+  lenses: RoundLens[];
+  discarded: { lens: string; reason: string; summary?: string }[];
+}
+
+/** `meta/round.yaml` of one round, or undefined when there is none or it can't be read. */
+export async function readRoundMeta(
+  root: string,
+  change: string,
+  gate: string,
+  round: number,
+): Promise<RoundMeta | undefined> {
+  try {
+    const text = await readFile(
+      join(changeFolder(root, change), "review", gate, String(round), "meta", "round.yaml"),
+      "utf8",
+    );
+    const m = parse(text) as Partial<RoundMeta> | null;
+    if (!m || typeof m !== "object") return undefined;
+    return {
+      ...m,
+      findings: m.findings ?? [],
+      rules: m.rules ?? { ran: [], skipped: [] },
+      lenses: m.lenses ?? [],
+      discarded: m.discarded ?? [],
+    } as RoundMeta;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Every finding file in one round, valid or not. */
 export async function readRound(
   root: string,

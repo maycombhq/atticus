@@ -96,8 +96,16 @@ function instructions(p: PackInput): string {
   ].join("\n");
 }
 
+/**
+ * A file of the task worktree as the pack sees it. Git may check it out with CRLF line endings
+ * (Windows' default `core.autocrlf=true`); the pack, and with it the prompt hash a recorded
+ * answer is found by, must not depend on that, so line endings are LF here.
+ */
 async function readIf(path: string): Promise<string | undefined> {
-  return readFile(path, "utf8").catch(() => undefined);
+  return readFile(path, "utf8").then(
+    (t) => t.replace(/\r\n/g, "\n"),
+    () => undefined,
+  );
 }
 
 export async function taskPack(p: PackInput): Promise<ContextPack> {

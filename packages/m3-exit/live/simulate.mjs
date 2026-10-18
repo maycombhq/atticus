@@ -2,7 +2,8 @@
 // A perfect agent, for dry runs: does exercises A to E of a run's TASK.md by answering every
 // hand-off prompt with the hand-written recording the repository keeps for that agent (the
 // replay recordings the exit suite uses). It goes through the run's own `bin/atticus` shim,
-// reads only what a real agent reads (the prompt files), and writes only where the prompt says.
+// reads only what a real agent reads (the prompt files), writes only where the prompt says, and
+// finishes every run with `atticus handoff done <run>` (or `--resume`), the paths a person uses.
 //
 //   node packages/m3-exit/live/simulate.mjs <outDir>      every run-N in the folder
 //
@@ -63,14 +64,21 @@ async function promptsMatching(root, pattern) {
 async function answer(runDir, root, run, { expectDone = [0] } = {}) {
   const dir = join(root, ".runs", run.change, run.id);
   const info = JSON.parse(await readFile(join(dir, "run.json"), "utf8"));
-  const { agent, outputPath, pack } = info.request;
+  const { agent, outputPath, pack, outputIn } = info.request;
   const sha = pack.manifest.promptSha256;
   // A lens answers from its recording only when the prompt is the recorded one; otherwise the
   // perfect agent finds nothing wrong. Every other agent falls back to its only recording.
   const text = /findings-|review-code-and-test/.test(outputPath)
     ? ((await recordingsOf(agent.id)).find((r) => r.promptSha256 === sha)?.output ?? NOTHING_WRONG)
     : await recordedAnswer(agent.id, sha);
-  await writeText(join(root, "openspec/changes", info.request.change, outputPath), text);
+  // The prompt names the file: in the run's own folder for a lens and the story writer, in the
+  // change folder for the rest.
+  await writeText(
+    outputIn === "run"
+      ? join(dir, outputPath)
+      : join(root, "openspec/changes", info.request.change, outputPath),
+    text,
+  );
   const done = await shim(runDir, root, ["handoff", "done", run.id]);
   if (!expectDone.includes(done.code))
     throw new Error(`handoff done ${run.id} (${agent.id}) exited ${done.code}:\n${done.text}`);
@@ -82,11 +90,9 @@ function step(r, what, codes = [0]) {
   return r;
 }
 
-async function lenses(runDir, root, gate) {
-  const prompts = await promptsMatching(
-    root,
-    new RegExp(`^# [a-z-]+-critic: write review/${gate}/findings-`),
-  );
+/** Answer every AI lens the critic handed over; `handoff done` reads each into its round. */
+async function lenses(runDir, root) {
+  const prompts = await promptsMatching(root, /^# [a-z-]+-critic: write findings-/);
   for (const p of prompts) await answer(runDir, root, p);
   return prompts.length;
 }
@@ -102,10 +108,10 @@ async function exerciseA(runDir) {
   );
   const id = runIdOf(first.text);
   await answer(runDir, root, { change: CHANGE, id });
-  step(await run("plan", "stories", CHANGE, "--resume", id, "--force"), "plan stories --resume");
+  step(await run("plan", "stories", CHANGE, "--resume", id), "plan stories --resume");
   step(await run("plan", "snow", CHANGE), "plan snow", [0, 1]);
   step(await run("critic", CHANGE, "--gate", "plan", "--mode", "hand-off"), "critic", [1]);
-  await lenses(runDir, root, "plan");
+  await lenses(runDir, root);
   step(await run("plan", "bar", CHANGE), "plan bar", [0, 1]);
 }
 
@@ -117,7 +123,7 @@ async function exerciseB(runDir) {
     "critic",
     [1],
   );
-  const n = await lenses(runDir, root, "plan");
+  const n = await lenses(runDir, root);
   if (n === 0) throw new Error("the critic prepared no lens prompt");
 }
 
@@ -199,13 +205,7 @@ async function exerciseE(runDir) {
     "tests generate --resume",
   );
   const glossary = step(await run("glossary", "scan", "--mode", "hand-off"), "glossary scan");
-  // `handoff done` for the glossary definer is expected to fail (see TASK.md); the answer file stays.
-  await answer(
-    runDir,
-    root,
-    { change: "glossary", id: runIdOf(glossary.text) },
-    { expectDone: [0, 1] },
-  );
+  await answer(runDir, root, { change: "glossary", id: runIdOf(glossary.text) });
   const templates = step(await run("templates", "draft", "--mode", "hand-off"), "templates draft");
   await answer(runDir, root, {
     change: "org-pack",

@@ -142,6 +142,9 @@ describe("M3 exit live runs: prepare.mjs", () => {
         "handoff done",
       ])
         expect(task, cmd).toContain(cmd);
+      // The hand-offs finish on their own: no --force, no expected failure to wave through.
+      expect(task).not.toContain("--force");
+      expect(task).not.toContain("at least one delta");
       expect(task).toContain(`Work only inside \`${runDir}\``);
       expect(task).toContain("NOTES.md");
     },
@@ -168,8 +171,8 @@ describe("M3 exit live runs: grade.mjs", () => {
         return g.exits[id].results[0]!.reason;
       });
       expect(reasons).toEqual([
-        "no tasks.md: `plan stories --resume … --force` did not complete",
-        "no lens answer files (review/plan/findings-<lens>.yaml): the lenses were not answered",
+        "no tasks.md: `plan stories --resume` did not complete",
+        "the critic was never run at the plan gate (no review/plan/1/meta/round.yaml)",
         "task 1.2 was never run (no tasks/1.2/task-run.yaml)",
         "the code-and-test lens never ran (spec hand-up not run, or its hand-off not finished)",
       ]);
@@ -228,10 +231,17 @@ describe("M3 exit live runs: grade.mjs", () => {
   it(
     "broken answers fail: empty lens answers, placeholder stories, a failed task run and a blocking hand-up finding",
     async () => {
-      // b: every lens finds nothing wrong, so the AI-only seeded problems are missed.
-      const lensDir = join(changeDirOf(metarepoOf(runDir, "critic")), "review/plan");
-      for (const f of (await readdir(lensDir)).filter((n) => /^findings-.+\.yaml$/.test(n)))
-        await writeFile(join(lensDir, f), "findings: []\n");
+      // b: every lens found nothing wrong, so the AI-only seeded problems are missed: take what
+      // the lenses read into round 1 out of it, leaving the findings of the rule checks.
+      const round = join(changeDirOf(metarepoOf(runDir, "critic")), "review/plan/1");
+      const meta = await readYaml<{ lenses: { rules: string[] }[] }>(
+        join(round, "meta/round.yaml"),
+      );
+      const lensRules = new Set(meta.lenses.flatMap((l) => l.rules));
+      for (const f of (await readdir(round)).filter((n) => n.endsWith(".yaml"))) {
+        const finding = await readYaml<{ rule: string }>(join(round, f));
+        if (lensRules.has(finding.rule)) await rm(join(round, f));
+      }
       // a: stories that are placeholders.
       const storyDir = join(changeDirOf(metarepoOf(runDir, "stories")), "stories");
       for (const f of await readdir(storyDir))

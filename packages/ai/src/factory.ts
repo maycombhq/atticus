@@ -5,6 +5,7 @@ import {
   changesRelOf,
   loadOrgPack,
   runsDirOf,
+  runsRelOf,
   RuntimeKind,
   type OrgPack,
   type Recording,
@@ -172,10 +173,11 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     const dir = join(runsDirOf(this.h.root), request.change, run.runId);
     await mkdir(dir, { recursive: true });
     const promptFile = join(dir, "prompt.md");
-    const prompt = HandoffRuntime.promptFor(run, changesRelOf(this.h.root)).replace(
-      /\nWhen the file is complete.*\n$/s,
-      "\n",
-    );
+    const prompt = HandoffRuntime.promptFor(
+      run,
+      changesRelOf(this.h.root),
+      runsRelOf(this.h.root),
+    ).replace(/\nWhen the file is complete.*\n$/s, "\n");
     await writeFile(promptFile, prompt, "utf8");
     await writeFile(
       join(dir, "context-manifest.json"),

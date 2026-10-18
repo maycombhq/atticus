@@ -1,6 +1,12 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { changesDirOf, changesRelOf, runsDirOf, type RuntimeKind } from "@maycombhq/core";
+import {
+  changesDirOf,
+  changesRelOf,
+  runsDirOf,
+  runsRelOf,
+  type RuntimeKind,
+} from "@maycombhq/core";
 import {
   checkAllowed,
   makeRunId,
@@ -40,7 +46,9 @@ export class HandoffRuntime implements AiRuntime {
   private now = () => this.o.now?.() ?? new Date();
   private runDir = (change: string, runId: string) => join(runsDirOf(this.o.root), change, runId);
   private outputFile = (r: Run) =>
-    join(changesDirOf(this.o.root), r.request.change, r.request.outputPath);
+    r.request.outputIn === "run"
+      ? join(this.runDir(r.request.change, r.runId), r.request.outputPath)
+      : join(changesDirOf(this.o.root), r.request.change, r.request.outputPath);
 
   private async save(run: Run): Promise<Run> {
     const dir = this.runDir(run.request.change, run.runId);
@@ -50,14 +58,18 @@ export class HandoffRuntime implements AiRuntime {
   }
 
   /** The prompt the person's assistant gets. It ends with the completion command. */
-  static promptFor(run: Run, changesRel = "openspec/changes"): string {
+  static promptFor(run: Run, changesRel = "openspec/changes", runsRel = ".runs"): string {
     const { agent, pack, outputPath, change } = run.request;
+    const where =
+      run.request.outputIn === "run"
+        ? `${runsRel}/${change}/${run.runId}/${outputPath}`
+        : `${changesRel}/${change}/${outputPath}`;
     return [
       `# ${agent.id}: write ${outputPath} for change ${change}`,
       "",
       agent.description,
       "",
-      `Write the result to ${changesRel}/${change}/${outputPath}. Change no other files.`,
+      `Write the result to ${where}. Change no other files.`,
       "",
       pack.prompt.trimEnd(),
       "",
@@ -87,7 +99,7 @@ export class HandoffRuntime implements AiRuntime {
     await mkdir(dir, { recursive: true });
     await writeFile(
       join(dir, "prompt.md"),
-      HandoffRuntime.promptFor(run, changesRelOf(this.o.root)),
+      HandoffRuntime.promptFor(run, changesRelOf(this.o.root), runsRelOf(this.o.root)),
       "utf8",
     );
     await writeFile(
@@ -110,7 +122,16 @@ export class HandoffRuntime implements AiRuntime {
 
   /** `atticus handoff done <runId>` or Mark done: the output is there, check it now. */
   async done(runId: string): Promise<Run> {
-    const run = await this.load(runId);
+    let run = await this.load(runId);
+    // A run whose last check failed (the file was missing or didn't validate) is looked at
+    // again: the person fixed the file and says done once more ("run it again when it's fixed").
+    if (run.state === "failed") {
+      run = transition(
+        transition(run, "prepared", this.now(), { attempt: run.attempt + 1, errors: [] }),
+        "waiting",
+        this.now(),
+      );
+    }
     const file = this.outputFile(run);
     if (!(await stat(file).catch(() => undefined))) {
       return this.save(

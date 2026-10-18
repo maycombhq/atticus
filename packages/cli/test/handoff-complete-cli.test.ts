@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,8 @@ import { parse } from "yaml";
 import { HandoffRuntime } from "@maycombhq/ai";
 import { changesDirOf, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { featureSuggestNames } from "../src/feature-commands.js";
-import { templatesDraft } from "../src/plan-commands.js";
+import { planStories, templatesDraft } from "../src/plan-commands.js";
+import { glossaryScan } from "../src/quality-commands.js";
 import { completionOf, handoffDone } from "../src/workspace-commands.js";
 
 /**
@@ -146,5 +147,81 @@ describe("atticus handoff done finishes other commands' hand-off runs", () => {
     const d = io();
     expect(await handoffDone(root, runId, d.io)).toBe(1);
     expect(d.err[0]).toMatch(/^catalog\/proposals\/feature-names.yaml isn't YAML: /);
+  });
+
+  it("saves the glossary definer's definitions as proposals, as the model path does", async () => {
+    const root = await forgeRoot();
+    const runtime = new HandoffRuntime({ root, validate, now: () => new Date(NOW) });
+    const a = io();
+    expect(await glossaryScan(root, {}, a.io, { runtime, now: () => new Date(NOW) })).toBe(0);
+    const runId = await runIdIn(root, "glossary");
+    expect(a.out).toContain(
+      `The glossary definer is with your assistant (run ${runId}). When it is done, run: atticus handoff done ${runId}`,
+    );
+
+    const out = join(changesDirOf(root), "glossary", "catalog/proposals/glossary-definitions.yaml");
+    await mkdir(dirname(out), { recursive: true });
+    await writeFile(
+      out,
+      "terms:\n  - id: term.balance\n    definition: How much money an account holds.\n    evidence: [ledger-api.get-balance]\n  - id: term.nothing\n    definition: Not a term.\n    evidence: [ledger-api.get-balance]\n",
+    );
+    const d = io();
+    expect(await handoffDone(root, runId, d.io, { now: () => new Date(NOW) })).toBe(0);
+    expect(d.out).toContain(
+      "The glossary definer proposed 1 definition (kept inferred until a person defines the term).",
+    );
+    expect(d.err).toContain(
+      "Discarded term.nothing: term.nothing isn't one of the terms it was given",
+    );
+    const saved = parse(
+      await readFile(join(root, "catalog/proposals/glossaryterm/term.balance.yaml"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(saved).toMatchObject({
+      term: "term.balance",
+      definition: "How much money an account holds.",
+      agent: "glossary-definer",
+      runId,
+    });
+    const term = parse(
+      await readFile(join(root, "catalog/generated/glossaryterm/term.balance.yaml"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(term).toMatchObject({ definition: "How much money an account holds." });
+  });
+
+  it("plan stories finishes with --resume and no --force after handoff done", async () => {
+    const root = await forgeRoot({ changeOrgPack: true });
+    await cp(
+      join(FORGE_CHANGE, "openspec/changes/add-transfer-limit"),
+      join(changesDirOf(root), "add-transfer-limit"),
+      { recursive: true },
+    );
+    for (const f of ["stories.md", "tasks.md", "snow.md", "stories"])
+      await rm(join(changesDirOf(root), "add-transfer-limit", f), { recursive: true, force: true });
+    const runtime = new HandoffRuntime({ root, validate, now: () => new Date(NOW) });
+    const a = io();
+    expect(await planStories(root, "add-transfer-limit", {}, a.io, { runtime })).toBe(1);
+    const runId = await runIdIn(root, "add-transfer-limit");
+    expect(a.out[0]).toBe(
+      `Handed the story prose to your assistant (run ${runId}). When it is done, run: atticus plan stories add-transfer-limit --resume ${runId}`,
+    );
+    const recording = join(
+      FORGE_CHANGE,
+      "recordings/story-writer/1ddb00eac2aaf91a5ec5d9dfd220116be9f75aec6546a4a3a3b050ed89af2864.json",
+    );
+    const answer = (JSON.parse(await readFile(recording, "utf8")) as { output: string }).output;
+    await writeFile(join(root, ".runs/add-transfer-limit", runId, "story-prose.yaml"), answer);
+    const d = io();
+    expect(await handoffDone(root, runId, d.io)).toBe(0);
+    expect(d.out).toEqual([
+      `The story prose for add-transfer-limit is valid. Next: atticus plan stories add-transfer-limit --resume ${runId}`,
+    ]);
+    const r = io();
+    expect(
+      await planStories(root, "add-transfer-limit", { resume: runId }, r.io, {
+        runtime: new HandoffRuntime({ root, validate, now: () => new Date(NOW) }),
+      }),
+    ).toBe(0);
+    expect(r.err).toEqual([]);
+    expect(r.out[0]).toMatch(/^Planned 5 stories and \d+ tasks for add-transfer-limit/);
   });
 });

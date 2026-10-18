@@ -8,21 +8,19 @@
 // the repository (fixtures/forge-change/expected), never from a run.
 //
 //   a  story writer          `plan bar --eval fixtures/forge-change/expected/stories.yaml`
-//   b  critic AI lenses      the critic re-run over the lens answers the agent wrote, round 1
-//                            compared with expected/findings.yaml by the suite's match rule
+//   b  critic AI lenses      round 1 at the plan gate as the agent's own `handoff done` runs left
+//                            it, compared with expected/findings.yaml by the suite's match rule
 //   c  task runner           task 1.2 built, `drift` says "No drift.", `trace` links code to s2
 //   d  code-and-test lens    the lens ran at hand-up and raised no blocking finding
 //   e  namers, glossary,     collected into for-a-person.md; no pass or fail
 //      templates
 //
-// Why b re-runs the critic: `atticus critic --mode hand-off` prepares the lens prompts and
-// records each lens as failed ("the run ended waiting"); nothing reads the answer files back
-// (unlike hand-up's lens, `plan stories` and `tests generate`, which finish on `handoff done` or
-// `--resume`). The grader feeds the agent's answer files to the critic's own lens parser (which
-// drops findings whose quotes are not on the cited line) in a throw-away copy of the sandbox.
-import { cp, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+// Why b reads the round as it is: `atticus handoff done <run>` on a critic lens parses the
+// answer with the critic's own lens parser (findings whose quotes are not on the cited line are
+// dropped, defences apply) and writes the findings into the round that was waiting, so the grader
+// needs no critic run of its own.
+import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
 import {
@@ -34,7 +32,6 @@ import {
   metarepoOf,
   readYaml,
   runFolders,
-  SANDBOXES,
 } from "./common.mjs";
 import { FORGE_CHANGE } from "./estate.mjs";
 
@@ -65,7 +62,7 @@ async function gradeStories(runDir) {
   const root = metarepoOf(runDir, "stories");
   if (!(await exists(root))) return fail("the sandbox is missing");
   if (!(await exists(join(changeDirOf(root), "tasks.md"))))
-    return fail("no tasks.md: `plan stories --resume … --force` did not complete");
+    return fail("no tasks.md: `plan stories --resume` did not complete");
   const r = await atticus(root, [
     ...["plan", "bar", CHANGE, "--eval", join(FORGE_CHANGE, "expected/stories.yaml"), "--json"],
   ]);
@@ -90,113 +87,58 @@ async function gradeStories(runDir) {
 
 // ------------------------------------------------------------------ b: critic AI lenses
 
-/**
- * A runtime that answers each lens with the file the agent wrote for it (the path the hand-off
- * prompt named). A missing file fails that lens.
- */
-async function answerFileRuntime(root) {
-  const { OneShotRuntime } = await import("@maycombhq/ai");
-  class AnswerFiles extends OneShotRuntime {
-    constructor() {
-      super({});
-      this.kind = "replay";
-    }
-    async produce(run) {
-      const file = join(changeDirOf(root), run.request.outputPath);
-      const output = await readFile(file, "utf8").catch(() => {
-        throw new Error(`no answer file at ${run.request.outputPath}`);
-      });
-      return { output, usage: { inputTokens: 0, outputTokens: 0 } };
-    }
-  }
-  return new AnswerFiles();
-}
-
-const SKIP = new Set(["workspace", "repos", "remotes", ".git", ".runs"]);
-
 async function gradeCritic(runDir) {
-  const top = join(runDir, SANDBOXES.critic);
-  if (!(await exists(top))) return fail("the sandbox is missing");
-  const tmp = await mkdtemp(join(tmpdir(), "atticus-live-grade-"));
-  try {
-    await cp(top, tmp, {
-      recursive: true,
-      filter: (p) =>
-        !relative(top, p)
-          .split(sep)
-          .some((s) => SKIP.has(s)),
-    });
-    const root = join(tmp, "metarepo");
-    // Round 1 again: drop the rounds the agent's own critic run wrote; keep its lens answers.
-    const gateDir = join(changeDirOf(root), "review/plan");
-    for (const n of await readdir(gateDir).catch(() => []))
-      if (/^\d+$/.test(n)) await rm(join(gateDir, n), { recursive: true, force: true });
-    const answers = (await readdir(gateDir).catch(() => [])).filter((n) =>
-      /^findings-.+\.yaml$/.test(n),
-    );
-    if (answers.length === 0)
-      return fail(
-        "no lens answer files (review/plan/findings-<lens>.yaml): the lenses were not answered",
-      );
-
-    const { critic } = await import("@maycombhq/cli/dist/critic-commands.js");
-    const out = [];
-    const err = [];
-    await critic(
-      root,
-      CHANGE,
-      { gate: "plan", json: true },
-      { out: (l) => out.push(l), err: (l) => err.push(l) },
-      { runtime: await answerFileRuntime(root), now: "2026-10-20T09:00:00Z" },
-    );
-    let res;
-    try {
-      res = JSON.parse(out.join("\n"));
-    } catch {
-      return fail(`the critic printed no result: ${[...out, ...err][0] ?? ""}`);
-    }
-    const found = (await yamlFiles(join(gateDir, "1"))).map(([, f]) => f);
-    const ex = await readYaml(join(FORGE_CHANGE, "expected/findings.yaml"));
-    const caught = (list) => list.filter((s) => found.some((f) => matches(s, f)));
-    const blocking = ex.seeded.filter((s) => s.severity === "blocking");
-    const gaps = ex.seeded.filter((s) => s.kind === "knowledge-gap");
-    const blockingHit = caught(blocking);
-    const gapsHit = caught(gaps);
-    const listed = [...ex.seeded, ...ex.alsoExpected];
-    const unlisted = found.filter((f) => !listed.some((s) => matches(s, f))).map((f) => f.summary);
-    const lenses = res.lenses.filter((l) => l.lens !== "release");
-    const ranLenses = lenses.filter((l) => l.state === "ran").length;
-    const missedBlocking = blocking.filter((s) => !blockingHit.includes(s)).map((s) => s.id);
-    const gapRate = gapsHit.length / gaps.length;
-    const parts = [
-      `${blockingHit.length} of ${blocking.length} blocking${missedBlocking.length ? ` (missed ${missedBlocking.join(", ")})` : ""}`,
-      `${gapsHit.length} of ${gaps.length} gaps (${Math.round(gapRate * 100)}%)`,
-      `${ranLenses} of ${lenses.length} lenses ran${
-        lenses.some((l) => l.state === "failed")
-          ? ` (failed: ${lenses
-              .filter((l) => l.state === "failed")
-              .map((l) => l.lens)
-              .join(", ")})`
+  const root = metarepoOf(runDir, "critic");
+  if (!(await exists(root))) return fail("the sandbox is missing");
+  const roundDir = join(changeDirOf(root), "review/plan/1");
+  const meta = await readYaml(join(roundDir, "meta/round.yaml")).catch(() => undefined);
+  if (!meta)
+    return fail("the critic was never run at the plan gate (no review/plan/1/meta/round.yaml)");
+  const found = (await yamlFiles(roundDir)).map(([, f]) => f);
+  const ex = await readYaml(join(FORGE_CHANGE, "expected/findings.yaml"));
+  const caught = (list) => list.filter((s) => found.some((f) => matches(s, f)));
+  const blocking = ex.seeded.filter((s) => s.severity === "blocking");
+  const gaps = ex.seeded.filter((s) => s.kind === "knowledge-gap");
+  const blockingHit = caught(blocking);
+  const gapsHit = caught(gaps);
+  const listed = [...ex.seeded, ...ex.alsoExpected];
+  const unlisted = found.filter((f) => !listed.some((s) => matches(s, f))).map((f) => f.summary);
+  const lenses = (meta.lenses ?? []).filter((l) => l.lens !== "release");
+  if (lenses.length === 0) return fail("round 1 has no AI lens (the critic ran without --mode)");
+  const ranLenses = lenses.filter((l) => l.state === "ran").length;
+  const named = (state) =>
+    lenses
+      .filter((l) => l.state === state)
+      .map((l) => l.lens)
+      .join(", ");
+  const missedBlocking = blocking.filter((s) => !blockingHit.includes(s)).map((s) => s.id);
+  const gapRate = gapsHit.length / gaps.length;
+  const discarded = meta.discarded ?? [];
+  const parts = [
+    `${blockingHit.length} of ${blocking.length} blocking${missedBlocking.length ? ` (missed ${missedBlocking.join(", ")})` : ""}`,
+    `${gapsHit.length} of ${gaps.length} gaps (${Math.round(gapRate * 100)}%)`,
+    `${ranLenses} of ${lenses.length} lenses ran${
+      lenses.some((l) => l.state === "failed")
+        ? ` (failed: ${named("failed")})`
+        : lenses.some((l) => l.state === "waiting")
+          ? ` (still waiting, handoff done not run: ${named("waiting")})`
           : ""
-      }`,
-      `${unlisted.length} unlisted`,
-    ];
-    if (res.discarded.length)
-      parts.push(
-        `${res.discarded.length} AI finding(s) discarded (quote not on the line, unknown rule, …)`,
-      );
-    const details = {
-      blockingMissed: missedBlocking,
-      gapsMissed: gaps.filter((s) => !gapsHit.includes(s)).map((s) => s.id),
-      unlisted,
-      discarded: res.discarded,
-      lenses: res.lenses,
-    };
-    const ok = missedBlocking.length === 0 && gapRate >= 0.9 && unlisted.length === 0;
-    return (ok ? pass : fail)(parts.join("; "), details);
-  } finally {
-    await rm(tmp, { recursive: true, force: true });
-  }
+    }`,
+    `${unlisted.length} unlisted`,
+  ];
+  if (discarded.length)
+    parts.push(
+      `${discarded.length} AI finding(s) discarded (quote not on the line, unknown rule, …)`,
+    );
+  const details = {
+    blockingMissed: missedBlocking,
+    gapsMissed: gaps.filter((s) => !gapsHit.includes(s)).map((s) => s.id),
+    unlisted,
+    discarded,
+    lenses,
+  };
+  const ok = missedBlocking.length === 0 && gapRate >= 0.9 && unlisted.length === 0;
+  return (ok ? pass : fail)(parts.join("; "), details);
 }
 
 // ------------------------------------------------------------------ c: task runner
@@ -336,7 +278,7 @@ function forAPerson(collected) {
       (c) => (c.names ? fence(c.names) : undefined),
     ],
     [
-      "Glossary definer (the answer file; `handoff done` has no completion for it)",
+      "Glossary definer (the answer file; `handoff done` saves its definitions as proposals)",
       (c) => (c.glossary ? fence(c.glossary) : undefined),
     ],
     ["Template drafter (prose.yaml)", (c) => (c.prose ? fence(c.prose) : undefined)],
