@@ -1,0 +1,6 @@
+{
+  "bindings": [
+    { "type": "httpTrigger", "direction": "in", "name": "req", "methods": ["get"], "route": "lookup/{id}" },
+    { "type": "http", "direction": "out", "name": "res" }
+  ]
+}

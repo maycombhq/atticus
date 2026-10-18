@@ -1,0 +1,152 @@
+# Hand-written expected output of the serverless extractor over ./repo
+# (repo "harbor-media", component "media-fns", system "harbor").
+# The repo's templates describe one function app: the repo's component, type function. Each
+# trigger is a function Endpoint <component>.function.<function>.<kind>-<value>; schedules are
+# also schedule Settings; queue and topic triggers are also event-subscribe loose ends.
+records:
+  - kind: Component
+    id: media-fns
+    confidence: verified
+    system: harbor
+    repo: harbor-media
+    type: function
+    runtime: lambda
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: cdk.out/MediaStack.template.json, line: 4 }
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 7 }
+      - { source: infrastructure, repo: harbor-media, path: template.yaml, line: 8 }
+
+  # SAM and CDK templates name no stage; serverless.yml says prod.
+  - kind: Deployment
+    id: media-fns.default
+    confidence: verified
+    component: media-fns
+    env: default
+    platform: lambda
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: cdk.out/MediaStack.template.json, line: 4 }
+      - { source: infrastructure, repo: harbor-media, path: template.yaml, line: 8 }
+  - kind: Deployment
+    id: media-fns.prod
+    confidence: verified
+    component: media-fns
+    env: prod
+    platform: lambda
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 7 }
+
+  # CDK synth: an Events rule targeting the function by Fn::GetAtt.
+  - kind: Endpoint
+    id: media-fns.function.audit-log.schedule-rate-15-minutes
+    confidence: verified
+    component: media-fns
+    endpointType: function
+    pathOrTopic: schedule:rate(15 minutes)
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: cdk.out/MediaStack.template.json, line: 7, side: definition }
+  - kind: Setting
+    id: media-fns.schedule-audit-log
+    confidence: verified
+    component: media-fns
+    settingKind: schedule
+    key: schedule.audit-log
+    valueOrRef: rate(15 minutes)
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: cdk.out/MediaStack.template.json, line: 10 }
+
+  # Serverless Framework.
+  - kind: Endpoint
+    id: media-fns.function.thumbnail.http-thumbs-key
+    confidence: verified
+    component: media-fns
+    endpointType: function
+    method: GET
+    pathOrTopic: http:/thumbs/{key}
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 10, side: definition }
+  - kind: Endpoint
+    id: media-fns.function.thumbnail.topic-image-uploaded
+    confidence: verified
+    component: media-fns
+    endpointType: function
+    pathOrTopic: topic:image-uploaded
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 13, side: definition }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: event-subscribe
+    raw: image-uploaded
+    owner: media-fns
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 13, side: caller }
+  - kind: Endpoint
+    id: media-fns.function.thumbnail.schedule-rate-1-hour
+    confidence: verified
+    component: media-fns
+    endpointType: function
+    pathOrTopic: schedule:rate(1 hour)
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 14, side: definition }
+  - kind: Setting
+    id: media-fns.prod.schedule-thumbnail
+    confidence: verified
+    component: media-fns
+    env: prod
+    settingKind: schedule
+    key: schedule.thumbnail
+    valueOrRef: rate(1 hour)
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 14 }
+
+  # SAM: an API event, a schedule and an SQS queue named by the referenced queue.
+  - kind: Endpoint
+    id: media-fns.function.resize-image.http-images-id-resize
+    confidence: verified
+    component: media-fns
+    endpointType: function
+    method: POST
+    pathOrTopic: http:/images/{id}/resize
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: template.yaml, line: 13, side: definition }
+  - kind: Endpoint
+    id: media-fns.function.resize-image.schedule-cron-0-3
+    confidence: verified
+    component: media-fns
+    endpointType: function
+    pathOrTopic: schedule:cron(0 3 * * ? *)
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: template.yaml, line: 18, side: definition }
+  - kind: Setting
+    id: media-fns.schedule-resize-image
+    confidence: verified
+    component: media-fns
+    settingKind: schedule
+    key: schedule.resize-image
+    valueOrRef: cron(0 3 * * ? *)
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: template.yaml, line: 21 }
+  - kind: Endpoint
+    id: media-fns.function.resize-image.queue-resize-jobs
+    confidence: verified
+    component: media-fns
+    endpointType: function
+    pathOrTopic: queue:resize-jobs
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: template.yaml, line: 22, side: definition }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: event-subscribe
+    raw: resize-jobs
+    owner: media-fns
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: template.yaml, line: 25, side: caller }
+warnings: []

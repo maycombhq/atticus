@@ -1,6 +1,6 @@
 # Hand-written expected output of the batch extractor over ./repo
 # (repo "forge-reports-batch", component "reports-job", type spring-batch).
-# A schedule is a config Setting with key "schedule.<job>"; a time zone is written as a
+# A schedule is a Setting of kind schedule (ADR 0040; ids unchanged) with key "schedule.<job>"; a time zone is written as a
 # CRON_TZ= prefix so the value stays one string.
 records:
   # Kubernetes CronJobs: the batch component's deployment and its schedule. The app label
@@ -21,7 +21,7 @@ records:
     confidence: verified
     component: reports-job
     env: prod
-    settingKind: config
+    settingKind: schedule
     key: schedule.reports-job-nightly
     valueOrRef: CRON_TZ=Europe/London 30 1 * * *
     evidence:
@@ -42,7 +42,7 @@ records:
     confidence: verified
     component: statement-export
     env: prod
-    settingKind: config
+    settingKind: schedule
     key: schedule.statement-export
     valueOrRef: 0 6 1 * *
     evidence:
@@ -53,7 +53,7 @@ records:
     id: reports-job.schedule-statementjob-exportdaily
     confidence: verified
     component: reports-job
-    settingKind: config
+    settingKind: schedule
     key: schedule.StatementJob.exportDaily
     valueOrRef: 0 0 2 * * *
     evidence:
@@ -64,7 +64,7 @@ records:
     id: reports-job.schedule-statementjob-refreshcache
     confidence: verified
     component: reports-job
-    settingKind: config
+    settingKind: schedule
     key: schedule.StatementJob.refreshCache
     valueOrRef: CRON_TZ=Europe/London 0 */15 * * * *
     evidence:
@@ -74,7 +74,7 @@ records:
     id: reports-job.schedule-statementjob-pollinbox
     confidence: verified
     component: reports-job
-    settingKind: config
+    settingKind: schedule
     key: schedule.StatementJob.pollInbox
     valueOrRef: fixedDelay=PT30S
     evidence:
@@ -85,7 +85,7 @@ records:
     id: reports-job.schedule-reconcile-trigger
     confidence: verified
     component: reports-job
-    settingKind: config
+    settingKind: schedule
     key: schedule.reconcile-trigger
     valueOrRef: 0 0 6 ? * MON-FRI
     evidence:
@@ -95,7 +95,7 @@ records:
     id: reports-job.schedule-quartzconfig-purgetrigger
     confidence: verified
     component: reports-job
-    settingKind: config
+    settingKind: schedule
     key: schedule.QuartzConfig.purgeTrigger
     valueOrRef: 0 0 1 1 * ?
     evidence:
@@ -108,7 +108,7 @@ records:
     confidence: verified
     component: reports-job
     env: prod
-    settingKind: config
+    settingKind: schedule
     key: schedule.month-end-close
     valueOrRef: CRON_TZ=Europe/London 0 22 28-31 * *
     evidence:
@@ -119,7 +119,7 @@ records:
     confidence: verified
     component: reports-job
     env: prod
-    settingKind: config
+    settingKind: schedule
     key: schedule.payments-tick
     valueOrRef: "*/5 * * * *"
     target: topic.payments-tick

@@ -18,9 +18,10 @@ import { slug } from "./common.js";
  * OCCURS. Group items, FILLER, 66 and 88 levels are not fields. Fixed format (sequence area,
  * indicator column, columns 8-72) and free format are both read.
  *
- * CICS resource definitions (CSD extract text, DEFINE ...). C1 has no endpoint type for a
- * terminal transaction ("other" isn't allowed), so a TRANSACTION is a Setting
- * (cics.transaction.<id> → its program) rather than a mislabelled Endpoint. A URIMAP with
+ * CICS resource definitions (CSD extract text, DEFINE ...). A TRANSACTION is an Endpoint of type
+ * `transaction` (ADR 0040) with the transaction id as pathOrTopic; it keeps the id it had as a
+ * Setting before (<component>.cics.transaction.<id>). C1 has no field for the program it runs,
+ * which is the component's own code, so the program is not recorded. A URIMAP with
  * USAGE(SERVER) is an HTTP entry point, so a REST Endpoint (no method: a URIMAP matches any);
  * USAGE(CLIENT) is an outbound HTTP call. Web service pipelines, MQ triggers, BMS maps and the
  * COBOL programs themselves (CALL, EXEC SQL, EXEC CICS) are out of scope.
@@ -302,15 +303,15 @@ function* csd(
     if (type === "TRANSACTION") {
       yield {
         schemaVersion: 1,
-        kind: "Setting",
+        kind: "Endpoint",
         id: `${component}.cics.transaction.${slug(name)}`,
         status: "current",
         confidence: "verified",
         component,
-        settingKind: "config",
-        key: `cics.transaction.${name}`,
-        valueOrRef: kv.get("PROGRAM") ?? "",
-        evidence: [evidence(repo, { source: "config", path, line: d.line })],
+        endpointType: "transaction",
+        pathOrTopic: name,
+        schemaRefs: [],
+        evidence: [evidence(repo, { source: "config", path, line: d.line, side: "definition" })],
       } as unknown as CatalogRecord;
     } else if (type === "URIMAP" && kv.get("PATH")) {
       const usage = (kv.get("USAGE") ?? "SERVER").toUpperCase();
@@ -344,7 +345,7 @@ function* csd(
 
 export const mainframeExtractor = defineExtractor({
   id: "mainframe",
-  version: "1.0.0",
+  version: "1.1.0",
   claims: [
     "**/*.jcl",
     "**/*.JCL",

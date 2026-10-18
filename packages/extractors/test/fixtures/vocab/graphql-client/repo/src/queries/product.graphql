@@ -1,0 +1,18 @@
+# Product page
+query ProductPage($id: ID!) {
+  product(id: $id) {
+    name
+    ...ProductBits
+  }
+  related: search(text: "shoes") {
+    id
+  }
+}
+
+fragment ProductBits on Product {
+  id
+}
+
+mutation Review($id: ID!) {
+  addReview(productId: $id, stars: 5) { id }
+}

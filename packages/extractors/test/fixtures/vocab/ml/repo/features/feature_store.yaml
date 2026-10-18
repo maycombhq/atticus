@@ -1,0 +1,5 @@
+project: harbor_features
+registry: data/registry.db
+provider: local
+online_store:
+  type: redis

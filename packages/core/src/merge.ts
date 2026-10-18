@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { parseRecord, type CatalogRecord, type RecordIssue } from "./catalog.js";
 import { interfaceId, normalizePath } from "./identity.js";
+import { COMPONENT_TYPES } from "./schema/kinds.js";
 
 /**
  * Merge and identity: turns the records every repo's scan produced into one catalog.
@@ -9,7 +10,9 @@ import { interfaceId, normalizePath } from "./identity.js";
  * - REST endpoints are keyed by component, method and normalised path and get a canonical id.
  * - Loose ends (Unresolved records, ADR 0016) are resolved: HTTP calls into Interfaces
  *   (through the gateway when a route's base path matches), publishes and subscribes into
- *   event Interfaces, database access into Tables' readers and writers.
+ *   event Interfaces, database access into Tables' readers and writers; GraphQL, gRPC and
+ *   webhook loose ends (ADR 0040) into Interfaces to the matching typed endpoints.
+ * - A direct synchronous call between two components with a `mesh` Setting goes via mesh.
  * - Interfaces are verified only when both ends are seen; otherwise inferred.
  * - Whatever can't be resolved stays as an Unresolved record with its owner.
  *
@@ -79,6 +82,21 @@ function unionEvidence(...lists: Evidence[][]): Evidence[] {
 }
 
 const RANK: Record<string, number> = { verified: 3, asserted: 2, inferred: 1 };
+const DOCUMENTED_TYPES = new Set<string>(COMPONENT_TYPES);
+
+/**
+ * Endpoint types keyed by their id rather than by path or topic (ADR 0040): two services can
+ * both serve `Query.product` or a `/ws` path, so these never merge across components.
+ */
+const BY_ID_ENDPOINTS = new Set([
+  "graphql",
+  "grpc",
+  "websocket",
+  "sse",
+  "webhook",
+  "function",
+  "transaction",
+]);
 
 /** Merge two records of the same identity: union evidence, keep the stronger confidence, fill gaps. */
 function combine(a: Rec, b: Rec): Rec {
@@ -90,6 +108,14 @@ function combine(a: Rec, b: Rec): Rec {
       out[k] = v;
     else if (Array.isArray(cur) && Array.isArray(v) && v.every((x) => typeof x === "string"))
       out[k] = [...new Set([...(cur as string[]), ...(v as string[])])].sort();
+    // A documented component type (ADR 0040) says more than a repo type from the manifest.
+    else if (
+      a.kind === "Component" &&
+      k === "type" &&
+      !DOCUMENTED_TYPES.has(String(cur)) &&
+      DOCUMENTED_TYPES.has(String(v))
+    )
+      out[k] = v;
   }
   // Code is the source of truth: a record seen as current wins over a planned one of the same identity.
   if (a.status !== b.status && (a.status === "current" || b.status === "current"))
@@ -185,7 +211,9 @@ export function mergeCatalog(input: MergeInput): MergeResult {
         ...r,
         normalizedPath: norm,
       });
-    } else if (r.kind === "Endpoint") put(`Topic|${r.pathOrTopic}`, r);
+    } else if (r.kind === "Endpoint" && BY_ID_ENDPOINTS.has(String(r.endpointType)))
+      put(`Typed|${r.id}`, r);
+    else if (r.kind === "Endpoint") put(`Topic|${r.pathOrTopic}`, r);
     else put(`${r.kind}|${r.id}`, r);
   }
 
@@ -372,6 +400,17 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     });
   }
 
+  // ---- 4b. GraphQL, gRPC and webhook loose ends (ADR 0040)
+  resolveTypedCalls({
+    loose,
+    endpoints: [...byKey.values()].filter((r) => r.kind === "Endpoint"),
+    systemOf,
+    resolveComponent,
+    calleeEvidence,
+    addInterface,
+    unresolved,
+  });
+
   // ---- 5. events
   const topics = new Map<string, { pub: Map<string, Evidence[]>; sub: Map<string, Evidence[]> }>();
   for (const l of loose.filter(
@@ -491,6 +530,22 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     if (c && !c.runtime) c.runtime = d.platform;
   }
 
+  // ---- 7a. a direct synchronous call between two services in a service mesh goes through
+  //          their sidecars: via mesh (ADR 0040). Mesh membership is a `mesh` Setting.
+  const meshed = new Set(
+    [...byKey.values()]
+      .filter((r) => r.kind === "Setting" && r.key === MESH_KEY)
+      .map((r) => String(r.component)),
+  );
+  for (const i of interfaces.values())
+    if (
+      i.via === "direct" &&
+      i.sync === "sync" &&
+      meshed.has(String(i.from)) &&
+      meshed.has(String(i.to))
+    )
+      i.via = "mesh";
+
   // ---- 7b. interface auth from the callee endpoint, and the integration pattern each hop fits
   const epById = new Map(restEndpoints.map((e) => [e.id, e]));
   const boundaryOf = (id: string) => {
@@ -584,4 +639,164 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       unresolved: records.filter((r) => r.kind === "Unresolved").length,
     },
   };
+}
+
+/** The Setting key that says a component runs in a service mesh (ADR 0040); its value names the mesh. */
+export const MESH_KEY = "mesh";
+
+interface TypedCallContext {
+  loose: Rec[];
+  endpoints: Rec[];
+  systemOf: (componentId: string) => string | undefined;
+  resolveComponent: (name: string, ev: Evidence) => string | undefined;
+  calleeEvidence: (e: Rec | undefined) => Evidence[];
+  addInterface: (r: Rec) => void;
+  unresolved: Rec[];
+}
+
+/**
+ * Loose ends of the ADR 0040 vocabulary:
+ * - `graphql-call "QUERY Query.field"`: the graphql Endpoint serving that operation and field
+ *   (matched by field name, so a renamed root type still matches), in exactly one other
+ *   component, preferring the caller's own system when several serve it. Subscriptions are async.
+ * - `grpc-call "pkg.Service[/Method]"`: the grpc Endpoints of that service (by full name when
+ *   the package is given, else by the service's short name), in exactly one other component.
+ *   With a method, the interface points at that endpoint; without, at the service as a whole.
+ * - `webhook-callback "METHOD /path REGISTRAR"` (a URL or a name): the system behind it calls
+ *   the owner back: an Interface from it to the owner, via webhook, at the owner's webhook
+ *   endpoint for that path when there is one.
+ * Anything that doesn't resolve to exactly one component stays a loose end.
+ */
+function resolveTypedCalls(c: TypedCallContext): void {
+  const typed = (t: string) => c.endpoints.filter((e) => e.endpointType === t);
+  const pick = (owner: string, hits: Rec[]): Rec[] | undefined => {
+    let h = hits.filter((e) => e.component !== owner);
+    if (new Set(h.map((e) => e.component)).size > 1) {
+      const sys = c.systemOf(owner);
+      const same = h.filter((e) => sys !== undefined && c.systemOf(String(e.component)) === sys);
+      if (new Set(same.map((e) => e.component)).size === 1) h = same;
+    }
+    return new Set(h.map((e) => e.component)).size === 1 ? h : undefined;
+  };
+  const link = (
+    l: Rec,
+    from: string,
+    to: string,
+    method: string | undefined,
+    path: string,
+    ep: Rec | undefined,
+    callee: Evidence[],
+    via: string,
+    sync: string,
+  ) =>
+    c.addInterface({
+      schemaVersion: 1,
+      kind: "Interface",
+      id: interfaceId(from, to, method, path),
+      status: "current",
+      confidence: callee.length > 0 ? "verified" : "inferred",
+      from,
+      to,
+      ...(ep ? { endpoint: ep.id } : {}),
+      via,
+      ...(method ? { method } : {}),
+      normalizedPath: path,
+      sync,
+      direction: "outbound",
+      conflicts: [],
+      evidence: unionEvidence(l.evidence, callee),
+    });
+
+  const graphql = typed("graphql");
+  for (const l of c.loose.filter((x) => x.unresolvedKind === "graphql-call")) {
+    const [op = "", field = ""] = String(l.raw).split(" ");
+    const name = field.split(".").pop();
+    const owner = String(l.owner ?? "");
+    const hits = pick(
+      owner,
+      graphql.filter(
+        (e) =>
+          String(e.method ?? "").toUpperCase() === op.toUpperCase() &&
+          String(e.pathOrTopic).split(".").pop() === name,
+      ),
+    );
+    if (!hits) {
+      c.unresolved.push(l);
+      continue;
+    }
+    const ep = hits[0]!;
+    link(
+      l,
+      owner,
+      String(ep.component),
+      op.toUpperCase(),
+      String(ep.pathOrTopic),
+      ep,
+      c.calleeEvidence(ep),
+      "direct",
+      op.toUpperCase() === "SUBSCRIPTION" ? "async" : "sync",
+    );
+  }
+
+  const grpc = typed("grpc");
+  for (const l of c.loose.filter((x) => x.unresolvedKind === "grpc-call")) {
+    const [svc = "", method] = String(l.raw).split("/");
+    const owner = String(l.owner ?? "");
+    const serviceOf = (e: Rec) => String(e.pathOrTopic).split("/")[0]!;
+    const sameService = (e: Rec) =>
+      svc.includes(".") ? serviceOf(e) === svc : serviceOf(e).split(".").pop() === svc;
+    const hits = pick(
+      owner,
+      grpc.filter(
+        (e) => sameService(e) && (!method || String(e.pathOrTopic).split("/")[1] === method),
+      ),
+    );
+    if (!hits) {
+      c.unresolved.push(l);
+      continue;
+    }
+    const ep = method ? hits[0] : undefined;
+    const callee = method
+      ? c.calleeEvidence(ep)
+      : unionEvidence(...hits.map((h) => c.calleeEvidence(h)));
+    link(
+      l,
+      owner,
+      String(hits[0]!.component),
+      method,
+      method ? String(ep!.pathOrTopic) : serviceOf(hits[0]!),
+      ep,
+      callee,
+      "direct",
+      "sync",
+    );
+  }
+
+  const hooks = typed("webhook");
+  for (const l of c.loose.filter((x) => x.unresolvedKind === "webhook-callback")) {
+    const [method = "POST", path = "/", registrar = ""] = String(l.raw).split(" ");
+    const owner = String(l.owner ?? "");
+    // The registrar is a URL (its host's labels are tried in order) or a plain name.
+    const host = splitUrl(registrar).host;
+    const labels = host
+      ? host.split(".").slice(0, -1)
+      : /^[a-z0-9][a-z0-9-]*$/i.test(registrar)
+        ? [registrar.toLowerCase()]
+        : [];
+    let from: string | undefined;
+    for (const label of labels) {
+      from = c.resolveComponent(label, l.evidence[0]!);
+      if (from) break;
+    }
+    if (!from || from === owner) {
+      c.unresolved.push(l);
+      continue;
+    }
+    const norm = normalizePath(path);
+    const ep = hooks.find(
+      (e) =>
+        e.component === owner && normalizePath(String(e.normalizedPath ?? e.pathOrTopic)) === norm,
+    );
+    link(l, from, owner, method.toUpperCase(), norm, ep, c.calleeEvidence(ep), "webhook", "async");
+  }
 }

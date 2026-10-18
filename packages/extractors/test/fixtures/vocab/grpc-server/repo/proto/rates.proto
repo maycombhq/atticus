@@ -1,0 +1,6 @@
+syntax = "proto3";
+package harbor.rates.v1;
+
+service RatesService {
+  rpc Quote(QuoteRequest) returns (QuoteReply);
+}

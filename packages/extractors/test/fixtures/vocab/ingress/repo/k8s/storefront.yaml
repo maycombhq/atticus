@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storefront
+  namespace: shop-prod
+spec:
+  selector:
+    matchLabels: { app: storefront }
+  template:
+    metadata:
+      labels: { app: storefront }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storefront-svc
+  namespace: shop-prod
+spec:
+  selector: { app: storefront }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: storefront
+  namespace: shop-prod
+spec:
+  tls:
+    - hosts: [shop.harbor.example]
+      secretName: shop-tls
+  rules:
+    - host: shop.harbor.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: storefront-svc, port: { number: 80 } }
+    - host: admin.harbor.internal
+      http:
+        paths:
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service: { name: storefront-svc, port: { number: 80 } }

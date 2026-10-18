@@ -11,7 +11,6 @@ import {
 import {
   at,
   componentFor,
-  configSetting,
   deployment,
   envOf,
   ev,
@@ -20,6 +19,7 @@ import {
   resourcesOf,
   slug,
   str,
+  type IngressRoute,
 } from "./util.js";
 
 const RELEVANT =
@@ -67,11 +67,13 @@ const labelsOf = (v: unknown): Record<string, string> => {
  * Templates are processed with their parameter defaults first.
  *
  * A Route is an ingress host, not an API gateway route, so it doesn't fit C1's GatewayRoute;
- * its public URL is kept as a config Setting (`route.<name>`) of the component behind it.
+ * it is a `Deployment.ingress` entry (ADR 0040; before that a `route.<name>` config Setting) of
+ * the deployment behind the Service it points to. A Route whose workload isn't in this repo
+ * gives a Deployment with only its ingress, which merge joins to the full one by id.
  */
 export const openshiftExtractor = defineExtractor({
   id: "openshift",
-  version: "0.1.0",
+  version: "0.2.0",
   claims: MANIFEST_GLOBS,
   async *scan(repo, ctx) {
     const set = await loadManifests(repo, ctx, RELEVANT);
@@ -101,37 +103,12 @@ export const openshiftExtractor = defineExtractor({
       });
     }
 
-    const hpas = of("HorizontalPodAutoscaler");
-    const policies = of("NetworkPolicy");
-    for (const w of workloads) {
-      const hpa = hpas.filter(
-        (h) =>
-          str(at(h.obj, "spec", "scaleTargetRef", "kind")) === w.o.kind &&
-          str(at(h.obj, "spec", "scaleTargetRef", "name")) === w.o.name &&
-          sameScope(h, w.o),
-      );
-      const nps = policies.filter(
-        (p) => sameScope(p, w.o) && selects(at(p.obj, "spec", "podSelector"), w.podLabels),
-      );
-      if (w.o.kind === "Deployment" && infraSees(w.o) && hpa.length === 0 && nps.length === 0)
-        continue;
-      const max = int(at(hpa[0]?.obj, "spec", "maxReplicas"));
-      const min = int(at(hpa[0]?.obj, "spec", "minReplicas")) ?? 1;
-      const replicas = int(at(w.o.obj, "spec", "replicas"));
-      const resources = resourcesOf(at(w.o.obj, "spec", "template", "spec", "containers", 0));
-      yield deployment({
-        component: w.component,
-        env: w.env,
-        platform: w.o.kind === "DeploymentConfig" ? "openshift" : "kubernetes",
-        ...(replicas !== undefined ? { replicas } : {}),
-        ...(resources ? { resources } : {}),
-        ...(max ? { autoscaling: { min, max } } : {}),
-        networkPolicies: nps.map((p) => p.name),
-        evidence: [w.o, ...hpa, ...nps].map((x) => ev(repo, "infrastructure", x.file, x.line())),
-      });
-    }
-
-    // Routes: the public URL of the component behind the Service a Route points to.
+    // Routes: the ingress of the workload behind the Service a Route points to.
+    const routed = new Map<Workload, { routes: IngressRoute[]; objs: K8sObject[] }>();
+    const orphans = new Map<
+      string,
+      { component: string; env: string; routes: IngressRoute[]; objs: K8sObject[] }
+    >();
     const services = of("Service").filter((s) => s.apiVersion === "v1");
     for (const r of of("Route")) {
       const host = str(at(r.obj, "spec", "host"));
@@ -145,19 +122,76 @@ export const openshiftExtractor = defineExtractor({
         (svc && isObj(selector) && Object.keys(selector).length > 0
           ? workloads.find((x) => sameScope(x.o, svc) && selects(selector, x.podLabels))
           : undefined) ?? workloads.find((x) => x.o.name === toName && sameScope(x.o, r));
-      const env = w?.env ?? envOf({ namespace: r.namespace, path: r.file });
-      const component = w?.component ?? componentFor(ctx, [toName]);
-      const path = str(at(r.obj, "spec", "path")) ?? "";
-      const scheme = isObj(at(r.obj, "spec", "tls")) ? "https" : "http";
-      yield configSetting({
-        component,
-        ...(env ? { env } : {}),
-        key: `route.${r.name}`,
-        value: `${scheme}://${host}${path}`,
-        evidence: [r, ...(svc ? [svc] : [])].map((x) =>
+      const path = str(at(r.obj, "spec", "path"));
+      const route: IngressRoute = {
+        host,
+        ...(path ? { path } : {}),
+        tls: isObj(at(r.obj, "spec", "tls")),
+      };
+      const objs = [r, ...(svc ? [svc] : [])];
+      if (w) {
+        const e = routed.get(w) ?? { routes: [], objs: [] };
+        e.routes.push(route);
+        e.objs.push(...objs);
+        routed.set(w, e);
+      } else {
+        const env = envOf({ namespace: r.namespace, path: r.file }) ?? "default";
+        const component = componentFor(ctx, [toName]);
+        const key = `${component}|${env}`;
+        const e = orphans.get(key) ?? { component, env, routes: [], objs: [] };
+        e.routes.push(route);
+        e.objs.push(...objs);
+        orphans.set(key, e);
+      }
+    }
+
+    const hpas = of("HorizontalPodAutoscaler");
+    const policies = of("NetworkPolicy");
+    for (const w of workloads) {
+      const ingress = routed.get(w);
+      const hpa = hpas.filter(
+        (h) =>
+          str(at(h.obj, "spec", "scaleTargetRef", "kind")) === w.o.kind &&
+          str(at(h.obj, "spec", "scaleTargetRef", "name")) === w.o.name &&
+          sameScope(h, w.o),
+      );
+      const nps = policies.filter(
+        (p) => sameScope(p, w.o) && selects(at(p.obj, "spec", "podSelector"), w.podLabels),
+      );
+      if (
+        w.o.kind === "Deployment" &&
+        infraSees(w.o) &&
+        hpa.length === 0 &&
+        nps.length === 0 &&
+        !ingress
+      )
+        continue;
+      const max = int(at(hpa[0]?.obj, "spec", "maxReplicas"));
+      const min = int(at(hpa[0]?.obj, "spec", "minReplicas")) ?? 1;
+      const replicas = int(at(w.o.obj, "spec", "replicas"));
+      const resources = resourcesOf(at(w.o.obj, "spec", "template", "spec", "containers", 0));
+      yield deployment({
+        component: w.component,
+        env: w.env,
+        platform: w.o.kind === "DeploymentConfig" ? "openshift" : "kubernetes",
+        ...(replicas !== undefined ? { replicas } : {}),
+        ...(resources ? { resources } : {}),
+        ...(max ? { autoscaling: { min, max } } : {}),
+        networkPolicies: nps.map((p) => p.name),
+        ...(ingress ? { ingress: ingress.routes } : {}),
+        evidence: [w.o, ...hpa, ...nps, ...(ingress?.objs ?? [])].map((x) =>
           ev(repo, "infrastructure", x.file, x.line()),
         ),
       });
     }
+
+    for (const o of orphans.values())
+      yield deployment({
+        component: o.component,
+        env: o.env,
+        platform: "openshift",
+        ingress: o.routes,
+        evidence: o.objs.map((x) => ev(repo, "infrastructure", x.file, x.line())),
+      });
   },
 });

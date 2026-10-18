@@ -28,17 +28,21 @@ const CONFIG = ["**/application*.yml", "**/application*.yaml", "**/application*.
 /** A time zone goes in front as CRON_TZ=, a convention cron and Kubernetes both know, so the value stays one string. */
 const withZone = (cron: string, zone?: string) => (zone ? `CRON_TZ=${zone} ${cron}` : cron);
 
+/** A schedule Setting (ADR 0040). */
+const scheduleSetting = (f: Parameters<typeof configSetting>[0]) =>
+  configSetting({ ...f, settingKind: "schedule" });
+
 /**
- * Batch jobs and their schedules. A schedule is a config Setting with key `schedule.<job>`
- * and the cron expression as its value (C1 has no schedule field, and a Setting keeps the
- * value with its provenance): Kubernetes CronJobs (also a Deployment of the batch component),
+ * Batch jobs and their schedules. A schedule is a Setting of kind `schedule` (ADR 0040; before
+ * that a `config` Setting) with key `schedule.<job>`, so ids are unchanged, and the cron
+ * expression as its value: Kubernetes CronJobs (also a Deployment of the batch component),
  * Spring @Scheduled methods (cron, with placeholders resolved from application config, or a
  * fixed rate or delay), Quartz cron triggers and Cloud Scheduler jobs in Terraform. Control-M
  * and Autosys exports are out of scope.
  */
 export const batchExtractor = defineExtractor({
   id: "batch",
-  version: "0.1.0",
+  version: "0.2.0",
   claims: [...MANIFEST_GLOBS, ...JAVA, ...TF_GLOBS],
   async *scan(repo, ctx) {
     yield* cronJobs(repo, ctx);
@@ -82,7 +86,7 @@ async function* cronJobs(repo: RepoHandle, ctx: ScanContext): AsyncGenerator<Cat
         },
       });
     settings.push(
-      configSetting({
+      scheduleSetting({
         component,
         env,
         key: `schedule.${o.name}`,
@@ -137,7 +141,7 @@ async function* springAndQuartz(repo: RepoHandle, ctx: ScanContext): AsyncGenera
       if (cron !== undefined) {
         const r = await resolveValue(cron);
         if (r.value === "-") continue; // Spring's "disabled"
-        yield configSetting({
+        yield scheduleSetting({
           component,
           key,
           value: withZone(r.value, attr(a, "zone")),
@@ -149,7 +153,7 @@ async function* springAndQuartz(repo: RepoHandle, ctx: ScanContext): AsyncGenera
         const raw = attr(a, kind) ?? attr(a, `${kind}String`);
         if (raw === undefined) continue;
         const r = await resolveValue(raw);
-        yield configSetting({
+        yield scheduleSetting({
           component,
           key,
           value: `${kind}=${r.value}`,
@@ -170,7 +174,7 @@ async function* springAndQuartz(repo: RepoHandle, ctx: ScanContext): AsyncGenera
         named?.args[0] ??
         [c.inType?.name, c.inMethod?.name].filter((x): x is string => !!x).join(".");
       const r = await resolveValue(c.args[0]);
-      yield configSetting({
+      yield scheduleSetting({
         component,
         key: `schedule.${job || "quartz"}`,
         value: r.value,
@@ -224,7 +228,7 @@ async function* cloudScheduler(repo: RepoHandle, ctx: ScanContext): AsyncGenerat
       const component = candidate
         ? componentFor(ctx, [candidate])
         : (ownComponent(ctx) ?? "unknown");
-      yield configSetting({
+      yield scheduleSetting({
         component,
         ...(env ? { env } : {}),
         key: `schedule.${name}`,

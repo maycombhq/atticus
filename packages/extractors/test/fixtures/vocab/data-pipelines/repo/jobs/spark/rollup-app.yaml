@@ -1,0 +1,10 @@
+apiVersion: sparkoperator.k8s.io/v1beta2
+kind: ScheduledSparkApplication
+metadata:
+  name: sales-rollup
+  namespace: data-prod
+spec:
+  schedule: "@every 6h"
+  template:
+    type: Python
+    mainApplicationFile: local:///opt/jobs/sales_rollup.py

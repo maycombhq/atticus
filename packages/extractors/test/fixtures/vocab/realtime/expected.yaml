@@ -1,0 +1,104 @@
+# Hand-written expected output of the realtime extractor over ./repo
+# (repo "harbor-live", component "live-svc"). Ids are <component>.ws.<path slug> or
+# <component>.sse.<path slug>; SSE endpoints carry their HTTP method and normalized path.
+records:
+  # Spring: a STOMP destination with the application prefix from WsConfig, an SSE mapping
+  # under the class's @RequestMapping (the plain GET mapping is not SSE), a STOMP endpoint and
+  # a WebSocket handler.
+  - kind: Endpoint
+    id: live-svc.ws.app-quotes.subscribe
+    confidence: verified
+    component: live-svc
+    endpointType: websocket
+    pathOrTopic: /app/quotes.subscribe
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: src/main/java/harbor/live/QuoteController.java, line: 7, side: definition }
+  - kind: Endpoint
+    id: live-svc.sse.api-events
+    confidence: verified
+    component: live-svc
+    endpointType: sse
+    method: GET
+    pathOrTopic: /api/events
+    normalizedPath: /api/events
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: src/main/java/harbor/live/QuoteController.java, line: 10, side: definition }
+  - kind: Endpoint
+    id: live-svc.ws.stomp
+    confidence: verified
+    component: live-svc
+    endpointType: websocket
+    pathOrTopic: /stomp
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: src/main/java/harbor/live/WsConfig.java, line: 7, side: definition }
+  - kind: Endpoint
+    id: live-svc.ws.ticker
+    confidence: verified
+    component: live-svc
+    endpointType: websocket
+    pathOrTopic: /ticker
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: src/main/java/harbor/live/WsConfig.java, line: 15, side: definition }
+  # Node: a ws server, a socket.io server with its path and a namespace, an Express SSE route.
+  - kind: Endpoint
+    id: live-svc.ws.prices
+    confidence: verified
+    component: live-svc
+    endpointType: websocket
+    pathOrTopic: /prices
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: server/ws.ts, line: 3, side: definition }
+  - kind: Endpoint
+    id: live-svc.ws.rt
+    confidence: verified
+    component: live-svc
+    endpointType: websocket
+    pathOrTopic: /rt
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: server/rt.js, line: 3, side: definition }
+  - kind: Endpoint
+    id: live-svc.ws.orders
+    confidence: verified
+    component: live-svc
+    endpointType: websocket
+    pathOrTopic: /orders
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: server/rt.js, line: 4, side: definition }
+  - kind: Endpoint
+    id: live-svc.sse.stream-orders
+    confidence: verified
+    component: live-svc
+    endpointType: sse
+    method: GET
+    pathOrTopic: /stream/orders
+    normalizedPath: /stream/orders
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: server/events.js, line: 4, side: definition }
+  # SignalR hub (the commented-out one is ignored) and a FastAPI websocket route.
+  - kind: Endpoint
+    id: live-svc.ws.hubs-chat
+    confidence: verified
+    component: live-svc
+    endpointType: websocket
+    pathOrTopic: /hubs/chat
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: Hubs/Program.cs, line: 2, side: definition }
+  - kind: Endpoint
+    id: live-svc.ws.ws-basket
+    confidence: verified
+    component: live-svc
+    endpointType: websocket
+    pathOrTopic: /ws/basket
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-live, path: api/ws.py, line: 6, side: definition }
+warnings: []

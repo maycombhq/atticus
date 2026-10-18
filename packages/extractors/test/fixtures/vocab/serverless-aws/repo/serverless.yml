@@ -1,0 +1,14 @@
+service: harbor-thumbs
+provider:
+  name: aws
+  runtime: python3.12
+  stage: prod
+functions:
+  thumbnail:
+    handler: thumbs.handler
+    events:
+      - httpApi:
+          path: /thumbs/{key}
+          method: get
+      - sns: image-uploaded
+      - schedule: rate(1 hour)

@@ -1,0 +1,83 @@
+# Hand-written expected output of the webhooks extractor over ./repo
+# (repo "harbor-orders", component "orders-svc").
+records:
+  # OpenAPI 3.1 webhooks: callback contracts the Orders API documents, by name.
+  - kind: Endpoint
+    id: orders-svc.webhook.ordershipped
+    confidence: verified
+    component: orders-svc
+    endpointType: webhook
+    method: POST
+    pathOrTopic: orderShipped
+    schemaRefs: []
+    evidence:
+      - { source: spec, repo: harbor-orders, path: api/openapi.yaml, line: 8, side: definition }
+  - kind: Endpoint
+    id: orders-svc.webhook.ordercancelled
+    confidence: verified
+    component: orders-svc
+    endpointType: webhook
+    method: POST
+    pathOrTopic: orderCancelled
+    schemaRefs: []
+    evidence:
+      - { source: spec, repo: harbor-orders, path: api/openapi.yaml, line: 14, side: definition }
+
+  # Registrations: this component receives the callbacks at these paths.
+  - kind: Endpoint
+    id: orders-svc.webhook.hooks-payments
+    confidence: verified
+    component: orders-svc
+    endpointType: webhook
+    method: POST
+    pathOrTopic: /hooks/payments
+    normalizedPath: /hooks/payments
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-orders, path: src/payments.ts, line: 6, side: definition }
+  - kind: Endpoint
+    id: orders-svc.webhook.hooks-contoso
+    confidence: verified
+    component: orders-svc
+    endpointType: webhook
+    method: POST
+    pathOrTopic: /hooks/contoso
+    normalizedPath: /hooks/contoso
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-orders, path: src/payments.ts, line: 10, side: definition }
+  - kind: Endpoint
+    id: orders-svc.webhook.hooks-shipping-order-id
+    confidence: verified
+    component: orders-svc
+    endpointType: webhook
+    method: POST
+    pathOrTopic: /hooks/shipping/{order_id}
+    normalizedPath: /hooks/shipping/{}
+    schemaRefs: []
+    evidence:
+      - { source: code, repo: harbor-orders, path: app/shipping.py, line: 7, side: definition }
+
+  # Who calls back: the URL the registration is sent to, else the client's name.
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: webhook-callback
+    raw: POST /hooks/payments https://api.northwind-pay.example/v1/webhooks
+    owner: orders-svc
+    evidence:
+      - { source: code, repo: harbor-orders, path: src/payments.ts, line: 6, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: webhook-callback
+    raw: POST /hooks/contoso contoso
+    owner: orders-svc
+    evidence:
+      - { source: code, repo: harbor-orders, path: src/payments.ts, line: 10, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: webhook-callback
+    raw: POST /hooks/shipping/{order_id} https://hooks.contoso-ship.example/subscriptions
+    owner: orders-svc
+    evidence:
+      - { source: code, repo: harbor-orders, path: app/shipping.py, line: 7, side: caller }
+warnings: []

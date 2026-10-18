@@ -1,0 +1,15 @@
+{
+  "Resources": {
+    "AuditFn1A2B3C": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": { "FunctionName": "audit-log", "Runtime": "nodejs20.x" }
+    },
+    "AuditSchedule9F8E": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "ScheduleExpression": "rate(15 minutes)",
+        "Targets": [{ "Arn": { "Fn::GetAtt": ["AuditFn1A2B3C", "Arn"] }, "Id": "t1" }]
+      }
+    }
+  }
+}

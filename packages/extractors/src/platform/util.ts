@@ -195,8 +195,13 @@ export function deployment(f: {
   resources?: Resources;
   autoscaling?: { min: number; max: number };
   networkPolicies?: string[];
+  /** Routes to the deployment (ADR 0040), sorted by host and path so output is stable. */
+  ingress?: IngressRoute[];
   evidence: Ev[];
 }): CatalogRecord {
+  const ingress = [...(f.ingress ?? [])].sort((a, b) =>
+    `${a.host}|${a.path ?? ""}`.localeCompare(`${b.host}|${b.path ?? ""}`),
+  );
   return {
     schemaVersion: 1,
     kind: "Deployment",
@@ -210,8 +215,16 @@ export function deployment(f: {
     ...(f.resources ? { resources: f.resources } : {}),
     ...(f.autoscaling && f.autoscaling.max > 0 ? { autoscaling: f.autoscaling } : {}),
     networkPolicies: [...new Set(f.networkPolicies ?? [])].sort(),
+    ...(ingress.length > 0 ? { ingress } : {}),
     evidence: f.evidence,
   } as unknown as CatalogRecord;
+}
+
+/** One route to a deployment (C1 `Deployment.ingress`, ADR 0040). */
+export interface IngressRoute {
+  host: string;
+  path?: string;
+  tls?: boolean;
 }
 
 /**
@@ -230,6 +243,8 @@ export function configSetting(f: {
   key: string;
   value: string;
   target?: string;
+  /** `config` unless said otherwise; schedules are `schedule` (ADR 0040). */
+  settingKind?: "config" | "schedule" | "timeout" | "retry";
   evidence: Ev[];
 }): CatalogRecord {
   const env = f.env && f.env !== "default" ? f.env : undefined;
@@ -241,7 +256,7 @@ export function configSetting(f: {
     confidence: "verified",
     component: slug(f.component),
     ...(env ? { env } : {}),
-    settingKind: "config",
+    settingKind: f.settingKind ?? "config",
     key: f.key,
     valueOrRef: f.value,
     ...(f.target ? { target: f.target } : {}),

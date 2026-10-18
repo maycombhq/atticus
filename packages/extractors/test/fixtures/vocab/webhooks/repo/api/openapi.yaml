@@ -1,0 +1,15 @@
+openapi: 3.1.0
+info:
+  title: Orders
+  version: 1.0.0
+paths: {}
+webhooks:
+  orderShipped:
+    post:
+      summary: Sent when an order ships
+      requestBody:
+        content:
+          application/json: {}
+  orderCancelled:
+    post:
+      summary: Sent when an order is cancelled

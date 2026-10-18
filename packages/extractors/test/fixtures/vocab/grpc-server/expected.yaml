@@ -1,0 +1,36 @@
+# Hand-written expected output of the grpc extractor over ./repo
+# (repo "harbor-ledger", component "ledger-svc").
+# LedgerService is registered in Go, so its RPCs are this component's endpoints, with the proto
+# as definition and the registration as callee evidence. RatesService is only called (its proto
+# is a vendored copy): no endpoint, and the call is a loose end with the package from the proto.
+records:
+  - kind: Endpoint
+    id: ledger-svc.grpc.harbor.ledger.v1.ledgerservice.getbalance
+    confidence: verified
+    component: ledger-svc
+    endpointType: grpc
+    method: GetBalance
+    pathOrTopic: harbor.ledger.v1.LedgerService/GetBalance
+    schemaRefs: []
+    evidence:
+      - { source: spec, repo: harbor-ledger, path: proto/ledger.proto, line: 10, side: definition }
+      - { source: code, repo: harbor-ledger, path: cmd/server/main.go, line: 11, side: callee }
+  - kind: Endpoint
+    id: ledger-svc.grpc.harbor.ledger.v1.ledgerservice.watchpostings
+    confidence: verified
+    component: ledger-svc
+    endpointType: grpc
+    method: WatchPostings
+    pathOrTopic: harbor.ledger.v1.LedgerService/WatchPostings
+    schemaRefs: []
+    evidence:
+      - { source: spec, repo: harbor-ledger, path: proto/ledger.proto, line: 11, side: definition }
+      - { source: code, repo: harbor-ledger, path: cmd/server/main.go, line: 11, side: callee }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: grpc-call
+    raw: harbor.rates.v1.RatesService
+    owner: ledger-svc
+    evidence:
+      - { source: code, repo: harbor-ledger, path: cmd/server/main.go, line: 13, side: caller }
+warnings: []

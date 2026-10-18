@@ -1,0 +1,6 @@
+# A query this service sends to itself in a health check: it serves the field, so no loose end.
+query Health {
+  categories {
+    id
+  }
+}

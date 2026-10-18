@@ -78,19 +78,21 @@ async function golden(
     ),
   );
   expect(
-    s.records.every((r) => r.evidence.every((e) => e.extractor === `${extractor.id}@0.1.0`)),
+    s.records.every((r) =>
+      r.evidence.every((e) => e.extractor === `${extractor.id}@${extractor.version}`),
+    ),
   ).toBe(true);
   return s.records;
 }
 
 describe("platform extractors: identity", () => {
-  it("are versioned 0.1.0 with the agreed ids", () => {
+  it("are versioned with the agreed ids (openshift and batch 0.2.0 for the ADR 0040 values)", () => {
     expect(PLATFORM_EXTRACTORS.map((x) => `${x.id}@${x.version}`)).toEqual([
-      "openshift@0.1.0",
+      "openshift@0.2.0",
       "gcp@0.1.0",
       "pipelines@0.1.0",
       "access@0.1.0",
-      "batch@0.1.0",
+      "batch@0.2.0",
     ]);
   });
 });
@@ -142,7 +144,7 @@ describe("openshift", () => {
     // Only the Deployment with something to add, and with the infra extractor's id.
     expect(byExtractor("openshift")).toEqual(["payments.forge-prod"]);
     const mine = s.records.find(
-      (r) => r.id === "payments.forge-prod" && r.evidence[0]!.extractor === "openshift@0.1.0",
+      (r) => r.id === "payments.forge-prod" && r.evidence[0]!.extractor === "openshift@0.2.0",
     ) as unknown as Rec;
     expect(mine).toMatchObject({
       component: "payments",

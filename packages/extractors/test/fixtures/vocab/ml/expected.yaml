@@ -1,0 +1,94 @@
+# Hand-written expected output of the ml extractor over ./repo
+# (repo "harbor-ml", component "price-model", system "harbor").
+records:
+  # The MLflow project and the KServe service are one model; serving decides the runtime.
+  - kind: Component
+    id: price-model
+    confidence: verified
+    system: harbor
+    repo: harbor-ml
+    type: ml-model
+    runtime: kserve
+    evidence:
+      - { source: config, repo: harbor-ml, path: MLproject, line: 1 }
+      - { source: infrastructure, repo: harbor-ml, path: serving/inference.yaml, line: 2 }
+  - kind: Deployment
+    id: price-model.prod
+    confidence: verified
+    component: price-model
+    env: prod
+    platform: kserve
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: harbor-ml, path: serving/inference.yaml, line: 2 }
+  - kind: Endpoint
+    id: price-model.inference.predict
+    confidence: verified
+    component: price-model
+    endpointType: rest
+    method: POST
+    pathOrTopic: /v1/models/price-model:predict
+    normalizedPath: /v1/models/price-model:predict
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-ml, path: serving/inference.yaml, line: 2, side: definition }
+
+  # A SageMaker endpoint in Terraform.
+  - kind: Component
+    id: churn-model
+    confidence: verified
+    system: harbor
+    repo: harbor-ml
+    type: ml-model
+    runtime: sagemaker
+    evidence:
+      - { source: infrastructure, repo: harbor-ml, path: infra/sagemaker.tf, line: 1 }
+  - kind: Deployment
+    id: churn-model.default
+    confidence: verified
+    component: churn-model
+    env: default
+    platform: sagemaker
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: harbor-ml, path: infra/sagemaker.tf, line: 1 }
+  - kind: Endpoint
+    id: churn-model.inference.invocations
+    confidence: verified
+    component: churn-model
+    endpointType: rest
+    method: POST
+    pathOrTopic: /endpoints/churn-model/invocations
+    normalizedPath: /endpoints/churn-model/invocations
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-ml, path: infra/sagemaker.tf, line: 1, side: definition }
+
+  # Feast: the feature store, a feature view as its table, and the model reading it.
+  - kind: DataStore
+    id: harbor-features-feature-store
+    confidence: verified
+    storeType: feature-store
+    ownerComponent: price-model
+    entitiesHeld: []
+    evidence:
+      - { source: config, repo: harbor-ml, path: features/feature_store.yaml, line: 1 }
+  - kind: Table
+    id: harbor-features-feature-store.customer-stats
+    confidence: verified
+    dataStore: harbor-features-feature-store
+    name: customer_stats
+    tableKind: table
+    ownerComponent: price-model
+    readers: []
+    writers: [price-model]
+    evidence:
+      - { source: code, repo: harbor-ml, path: features/views.py, line: 3 }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: db-access
+    raw: read customer_stats
+    owner: price-model
+    evidence:
+      - { source: code, repo: harbor-ml, path: predict.py, line: 4, side: caller }
+warnings: []

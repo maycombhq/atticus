@@ -1,0 +1,17 @@
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: cart
+  namespace: shop-prod
+spec:
+  hosts:
+    - cart.shop-prod.svc.cluster.local
+  http:
+    - timeout: 2s
+      retries:
+        attempts: 3
+        perTryTimeout: 500ms
+        retryOn: 5xx,reset
+      route:
+        - destination:
+            host: cart.shop-prod.svc.cluster.local

@@ -1,0 +1,29 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Globals:
+  Function:
+    Runtime: nodejs20.x
+Resources:
+  ResizeImage:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: resize-image
+      Handler: src/resize.handler
+      Events:
+        Upload:
+          Type: Api
+          Properties:
+            Path: /images/{id}/resize
+            Method: post
+        Nightly:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 3 * * ? *)
+        Jobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt ResizeQueue.Arn
+  ResizeQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: resize-jobs

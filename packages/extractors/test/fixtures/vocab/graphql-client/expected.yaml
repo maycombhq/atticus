@@ -1,0 +1,50 @@
+# Hand-written expected output of the graphql extractor over ./repo
+# (repo "harbor-storefront", component "storefront-web"): client operations only.
+# Each top-level field of an operation is a graphql-call loose end "<OPERATION> <Root>.<field>";
+# aliases name the field after the colon; fragments are not operations. Unresolved ids are
+# checked by pattern, not listed.
+records:
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: graphql-call
+    raw: QUERY Query.product
+    owner: storefront-web
+    evidence:
+      - { source: code, repo: harbor-storefront, path: src/queries/product.graphql, line: 3, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: graphql-call
+    raw: QUERY Query.search
+    owner: storefront-web
+    evidence:
+      - { source: code, repo: harbor-storefront, path: src/queries/product.graphql, line: 7, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: graphql-call
+    raw: MUTATION Mutation.addReview
+    owner: storefront-web
+    evidence:
+      - { source: code, repo: harbor-storefront, path: src/queries/product.graphql, line: 17, side: caller }
+  # Apollo gql tags, with and without parentheses; an anonymous subscription.
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: graphql-call
+    raw: QUERY Query.cart
+    owner: storefront-web
+    evidence:
+      - { source: code, repo: harbor-storefront, path: src/hooks/useCart.tsx, line: 5, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: graphql-call
+    raw: QUERY Query.stock
+    owner: storefront-web
+    evidence:
+      - { source: code, repo: harbor-storefront, path: src/hooks/useCart.tsx, line: 6, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: graphql-call
+    raw: SUBSCRIPTION Subscription.reviewAdded
+    owner: storefront-web
+    evidence:
+      - { source: code, repo: harbor-storefront, path: src/hooks/useCart.tsx, line: 11, side: caller }
+warnings: []

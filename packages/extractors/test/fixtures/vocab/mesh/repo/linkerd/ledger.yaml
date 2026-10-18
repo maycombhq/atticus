@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: money-prod
+  annotations:
+    linkerd.io/inject: enabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ledger
+  namespace: money-prod
+  labels:
+    app: ledger
+---
+apiVersion: linkerd.io/v1alpha2
+kind: ServiceProfile
+metadata:
+  name: ledger.money-prod.svc.cluster.local
+  namespace: money-prod
+spec:
+  routes:
+    - name: GET /balance
+      condition:
+        method: GET
+        pathRegex: /balance
+      timeout: 300ms
+      isRetryable: true
+  retryBudget:
+    retryRatio: 0.2
+    minRetriesPerSecond: 10
+    ttl: 10s

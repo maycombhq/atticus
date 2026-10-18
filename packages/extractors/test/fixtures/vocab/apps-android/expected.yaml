@@ -1,0 +1,36 @@
+# Hand-written expected output of the apps extractor over ./repo
+# (repo "harbor-android", component "shop-android", system "harbor").
+# Retrofit paths join the one literal baseUrl (the commented-out one is ignored); a path
+# starting with "/" replaces the base URL's path.
+records:
+  - kind: Component
+    id: shop-android
+    confidence: verified
+    system: harbor
+    repo: harbor-android
+    type: mobile-app
+    runtime: android
+    evidence:
+      - { source: config, repo: harbor-android, path: app/src/main/AndroidManifest.xml, line: 4 }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: http-call
+    raw: GET https://api.harbor.example/v2/products/{id}
+    owner: shop-android
+    evidence:
+      - { source: code, repo: harbor-android, path: app/src/main/java/harbor/shop/api/CatalogApi.kt, line: 6, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: http-call
+    raw: POST https://api.harbor.example/v2/baskets/{id}/items
+    owner: shop-android
+    evidence:
+      - { source: code, repo: harbor-android, path: app/src/main/java/harbor/shop/api/CatalogApi.kt, line: 9, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: http-call
+    raw: GET https://api.harbor.example/health
+    owner: shop-android
+    evidence:
+      - { source: code, repo: harbor-android, path: app/src/main/java/harbor/shop/api/CatalogApi.kt, line: 12, side: caller }
+warnings: []

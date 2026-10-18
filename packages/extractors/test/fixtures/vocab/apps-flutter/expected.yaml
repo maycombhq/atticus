@@ -1,0 +1,53 @@
+# Hand-written expected output of the apps extractor over ./repo
+# (repo "harbor-shop-app", component "shop-app", system "harbor").
+# A Flutter app with Android and iOS shells: one mobile-app component, runtime flutter, with
+# every marker as evidence. Dio paths join the BaseOptions baseUrl; Dart interpolation
+# becomes {x}; a Swift URL is POST when httpMethod says so.
+records:
+  - kind: Component
+    id: shop-app
+    confidence: verified
+    system: harbor
+    repo: harbor-shop-app
+    type: mobile-app
+    runtime: flutter
+    evidence:
+      - { source: config, repo: harbor-shop-app, path: pubspec.yaml, line: 3 }
+      - { source: config, repo: harbor-shop-app, path: android/app/src/main/AndroidManifest.xml, line: 4 }
+      - { source: config, repo: harbor-shop-app, path: ios/Runner/Info.plist, line: 4 }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: http-call
+    raw: POST https://events.harbor.example/track
+    owner: shop-app
+    evidence:
+      - { source: code, repo: harbor-shop-app, path: ios/Runner/Native.swift, line: 5, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: http-call
+    raw: GET https://api.harbor.example/v2/stores
+    owner: shop-app
+    evidence:
+      - { source: code, repo: harbor-shop-app, path: ios/Runner/Native.swift, line: 8, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: http-call
+    raw: GET https://cms.harbor.example/banners
+    owner: shop-app
+    evidence:
+      - { source: code, repo: harbor-shop-app, path: lib/api.dart, line: 9, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: http-call
+    raw: GET https://api.harbor.example/v2/products/{id}
+    owner: shop-app
+    evidence:
+      - { source: code, repo: harbor-shop-app, path: lib/api.dart, line: 7, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: http-call
+    raw: POST https://api.harbor.example/v2/baskets/{id}/items
+    owner: shop-app
+    evidence:
+      - { source: code, repo: harbor-shop-app, path: lib/api.dart, line: 8, side: caller }
+warnings: []
