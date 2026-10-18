@@ -3,8 +3,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { initCommand } from "@maycombhq/cli/dist/setup-commands.js";
-import { ADOPT_FIXTURES, atticus, fingerprint, gap, json, sh, T, walk } from "./helpers.js";
+import { ADOPT_FIXTURES, atticus, fingerprint, json, sh, T, walk } from "./helpers.js";
 
 /**
  * M3 exit: "the adopt and absorb bars are met".
@@ -122,14 +121,9 @@ describe("M3 exit step 4: the adopt bar", () => {
     T,
   );
 
-  gap(
-    "GAP change-folder-layout: in a repo adopted in place, change new writes the change under .atticus/openspec (the layout), not openspec/changes at the repo root",
+  it(
+    "change-folder-layout: in a repo adopted in place, change new writes the change under .atticus/openspec (the layout), not openspec/changes at the repo root",
     async () => {
-      // packages/changes/src/store.ts changeFolder() joins the fixed CHANGES_DIR
-      // "openspec/changes" to the root and never reads layoutOf(root) (packages/core/src/
-      // metarepo.ts), whose openspec is ".atticus/openspec" for a repo without OpenSpec. So the
-      // first change written in an adopted Spec Kit repo lands outside .atticus/ (ADR 0038:
-      // "every command resolves through the layout"; ADR 0039 lists it as not yet done).
       const dir = await copy("speckit-repo", "order-export");
       sh(dir, "init", "-q", "-b", "main");
       sh(dir, "add", "-A");
@@ -186,10 +180,7 @@ describe("M3 exit step 4: the absorb bar", () => {
         const top = await mkdtemp(join(tmpdir(), "atticus-m3-absorb-"));
         made.push(top);
         const root = join(top, "shop-meta");
-        // `atticus init <path>` takes the raw argument as the org pack's name (see the gap
-        // init-path below), so the metarepo is created through the init command function.
-        const io = { out: () => undefined, err: () => undefined };
-        expect(await initCommand(root, { name: "shop-meta", platform: "shop" }, io)).toBe(0);
+        expect((await atticus(undefined, "init", root, "--platform", "shop")).code).toBe(0);
         const pack = await fingerprint(join(root, "org-pack"));
 
         const src = join(ADOPT_FIXTURES, fixture);
@@ -225,12 +216,9 @@ describe("M3 exit step 4: the absorb bar", () => {
 });
 
 describe("atticus init through the command line", () => {
-  gap(
-    "GAP init-path: atticus init <path> --platform shop names the org pack after the folder, not the whole path",
+  it(
+    "init-path: atticus init <path> --platform shop names the org pack after the folder, not the whole path",
     async () => {
-      // packages/cli/src/main.ts, the "init" branch, passes the raw positional as `name`
-      // (`...(command ? { name: command } : {})`), so any path but a bare folder name in the
-      // current directory is refused: '"/tmp/x/shop-meta" can't be an org pack name'.
       const top = await mkdtemp(join(tmpdir(), "atticus-m3-init-"));
       made.push(top);
       const r = await atticus(undefined, "init", join(top, "shop-meta"), "--platform", "shop");

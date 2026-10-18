@@ -113,6 +113,30 @@ describe("traceability", () => {
     expect(calls.some((a) => a.join(" ").includes("task/add-transfer-limit/1.1"))).toBe(true);
   });
 
+  it("says one quiet line about tasks that have no branch yet, not Git's error for each", async () => {
+    const root = await prepared();
+    const m = await traceMatrix(root, CHANGE, { git });
+    expect(m.problems.filter((p) => /no diff for task|unknown revision/.test(p))).toEqual([]);
+    expect(m.problems).toHaveLength(1);
+    expect(m.problems[0]).toMatch(/^Not started yet \(no task branch\): forge-ledger 1\.2/);
+    expect(m.problems[0]).not.toMatch(/\bgit\b/i);
+    // A task with a run record is not "not started", whatever happened to its branch.
+    expect(m.problems[0]).not.toMatch(/\b1\.1\b/);
+  });
+
+  it("still reports a real failure to read a task branch that exists", async () => {
+    const root = await prepared();
+    const broken: GitRunner = async (args) => {
+      if (args[0] === "rev-parse") return { stdout: "abc\n", stderr: "" };
+      throw new Error("fatal: bad object\nmore");
+    };
+    const m = await traceMatrix(root, CHANGE, { git: broken });
+    expect(
+      m.problems.some((p) => p.startsWith("forge-ledger: no diff for task 1.1 (fatal: bad object")),
+    ).toBe(true);
+    expect(m.problems.some((p) => /Not started/.test(p))).toBe(false);
+  });
+
   it("reports the gaps: untested story and endpoints, tests with no requirement", async () => {
     const root = await prepared();
     const m = await traceMatrix(root, CHANGE, { git });

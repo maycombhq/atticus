@@ -7,7 +7,6 @@ import { critic } from "@maycombhq/cli/dist/critic-commands.js";
 import { Finding } from "@maycombhq/core";
 import {
   atticus,
-  gap,
   CHANGE,
   changeDir,
   FORGE_CHANGE,
@@ -135,12 +134,9 @@ describe("M3 exit: the critic on the seeded fixture change (plan gate, round 1)"
     T,
   );
 
-  gap(
-    "GAP critic-ai-wiring: atticus critic --mode replay runs the AI lenses, so the CLI alone catches 14 of 14 blocking and 13 of 13 gaps",
+  it(
+    "critic-ai-wiring: atticus critic --mode replay runs the AI lenses, so the CLI alone catches 14 of 14 blocking and 13 of 13 gaps",
     async () => {
-      // main() passes no AI runtime to critic() (packages/cli/src/main.ts, the "critic" branch,
-      // and packages/cli/src/critic-commands.ts critic(): CriticDeps.runtime is only injectable),
-      // and has no --mode for it. From the command line layer 2 never runs.
       const e = await seededEstate();
       made.push(e);
       const env = { ...process.env };

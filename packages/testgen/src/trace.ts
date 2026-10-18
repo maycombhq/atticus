@@ -163,6 +163,7 @@ async function codeOf(
   dirOf: (repo: string) => string | undefined,
   git: GitRunner | undefined,
   problems: string[],
+  notStarted: Set<string>,
 ): Promise<string[]> {
   const out = new Set<string>();
   for (const t of story.tasks) {
@@ -191,7 +192,17 @@ async function codeOf(
         .filter(Boolean))
         out.add(`${t.repo}:${f}`);
     } catch (e) {
-      problems.push(`${t.repo}: no diff for task ${t.id} (${(e as Error).message.split("\n")[0]})`);
+      // A task whose branch doesn't exist yet hasn't been started: that is not a problem.
+      const branch = `refs/heads/${taskBranch(ctx.change.id, t.id)}`;
+      const exists = await git(["rev-parse", "--verify", "--quiet", branch], dir).then(
+        () => true,
+        () => false,
+      );
+      if (exists)
+        problems.push(
+          `${t.repo}: no diff for task ${t.id} (${(e as Error).message.split("\n")[0]})`,
+        );
+      else if (!text) notStarted.add(`${t.repo} ${t.id}`);
     }
   }
   return [...out].sort();
@@ -208,6 +219,7 @@ export async function traceMatrix(
     },
   );
   const problems: string[] = [];
+  const notStarted = new Set<string>();
   const requirements = requirementsOf(ctx);
   const stories: StoryContext[] = [];
   for (const id of await storyIds(ctx.dir)) stories.push(await loadStory(ctx, id));
@@ -310,7 +322,7 @@ export async function traceMatrix(
       .filter((c) => [...c.entryPoints, ...c.records].some((r) => ids.has(r)))
       .map((c) => c.id)
       .sort();
-    const code = await codeOf(ctx, s, (r) => dirs.get(r), o.git, problems);
+    const code = await codeOf(ctx, s, (r) => dirs.get(r), o.git, problems, notStarted);
     const storyFound = found.filter((f) => f.refs!.stories.includes(s.id));
     for (const c of s.criteria) {
       const req = c.trace
@@ -427,6 +439,8 @@ export async function traceMatrix(
     });
   }
 
+  if (notStarted.size)
+    problems.push(`Not started yet (no task branch): ${[...notStarted].sort().join(", ")}.`);
   return {
     change: ctx.change.id,
     requirements,

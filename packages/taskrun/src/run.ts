@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   AdapterError,
   createAdapters,
+  fileStepStore,
   requireApproval,
   type Approval,
   type GitHost,
@@ -20,7 +21,7 @@ import {
   type RuntimeMode,
 } from "@maycombhq/ai";
 import { writeFileAtomic, changeFolder } from "@maycombhq/changes";
-import { changeBranch, changesRelOf } from "@maycombhq/core";
+import { changeBranch, changesRelOf, runsDirOf, runsRelOf } from "@maycombhq/core";
 import { writeQuarantineItems } from "@maycombhq/naysayer";
 import {
   buildEngineFor,
@@ -82,6 +83,8 @@ export interface RunTaskOptions {
   approval?: Approval;
   /** Use this runtime instead of building one from runtime.yaml (tests: mock or replay). */
   runtime?: AiRuntime;
+  /** Replay mode: the folder of recordings (the CLI passes ATTICUS_REPLAY_DIR). */
+  replayDir?: string;
   /** Extra runtime-factory options (model providers, a headless runner). */
   runtimeOptions?: Omit<CreateRuntimeOptions, "root" | "mode">;
   commands?: CommandRunner;
@@ -98,6 +101,15 @@ const AUTONOMY: Record<"plan-only" | "draft" | "draft-and-pr", RunLevel> = {
 };
 
 const stamp = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/** The Git host runtime.yaml names; a manual one writes its steps into the metarepo (ADR 0032). */
+function gitHostOf(root: string, t: TaskContext): GitHost | undefined {
+  return createAdapters(
+    t.ctx.orgPack.runtime,
+    {},
+    { store: fileStepStore(root), root, procedures: t.ctx.orgPack.procedures },
+  ).gitHost;
+}
 
 interface Ctx {
   root: string;
@@ -154,7 +166,7 @@ async function aiStep(
     // The generic hand-off prompt says "change no other files"; a task run works in its
     // worktree, so it gets its own prompt with the same completion command.
     await writeFile(
-      join(c.root, ".runs", request.change, prepared.runId, "prompt.md"),
+      join(runsDirOf(c.root), request.change, prepared.runId, "prompt.md"),
       handoffPrompt(c, prepared),
       "utf8",
     );
@@ -185,8 +197,8 @@ async function build(c: Ctx, runId: string, fixRun?: string): Promise<BuildAttem
   if (!command) return undefined;
   const n = c.record.attempts.length + 1;
   const res = await c.commands(command, c.worktree);
-  const logRel = `.runs/${c.t.change.id}/${runId}/build-${n}.log`;
-  await mkdir(join(c.root, ".runs", c.t.change.id, runId), { recursive: true });
+  const logRel = `${runsRelOf(c.root)}/${c.t.change.id}/${runId}/build-${n}.log`;
+  await mkdir(join(runsDirOf(c.root), c.t.change.id, runId), { recursive: true });
   await writeFile(
     join(c.root, logRel),
     `$ ${command}\n${res.stdout}${res.stderr ? `\n${res.stderr}` : ""}\n(exit ${res.exitCode ?? "none"})\n`,
@@ -439,6 +451,7 @@ export async function runTask(
     (await createRuntime(t.ctx.orgPack, {
       root,
       ...(o.mode ? { mode: o.mode } : {}),
+      ...(o.replayDir ? { replayDir: o.replayDir } : {}),
       now,
       ...o.runtimeOptions,
       headless: {
@@ -453,7 +466,7 @@ export async function runTask(
       },
     }));
   let gitHost = o.gitHost;
-  if (!gitHost && level === "pr") gitHost = createAdapters(rt).gitHost;
+  if (!gitHost && level === "pr") gitHost = gitHostOf(root, t);
   const record: TaskRunRecord = {
     schemaVersion: 1,
     change: t.change.id,
@@ -518,7 +531,7 @@ export async function completeTaskHandoff(
   const rt = t.ctx.orgPack.runtime;
   const commands = o.commands ?? shellCommandRunner();
   let gitHost = o.gitHost;
-  if (!gitHost && record.level === "pr") gitHost = createAdapters(rt).gitHost;
+  if (!gitHost && record.level === "pr") gitHost = gitHostOf(root, t);
   const c: Ctx = {
     root,
     t,

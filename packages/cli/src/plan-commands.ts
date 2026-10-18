@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { Approval, WorkTracker, ServiceDesk } from "@maycombhq/adapters";
 import { runtimeForCli, type AiRuntime, type Run } from "@maycombhq/ai";
-import { changesRelOf } from "@maycombhq/core";
+import { changesRelOf, proposalsRelOf } from "@maycombhq/core";
 import {
   draftTemplates,
   metarepoAdapters,
@@ -364,7 +364,7 @@ export async function templatesDraft(
       ...(runtime ? { runtime } : {}),
       ...(deps.now ? { now: deps.now() } : {}),
     });
-    return reportTemplates(r, o, io);
+    return reportTemplates(root, r, o, io);
   } catch (e) {
     return fail(io, e);
   }
@@ -385,13 +385,14 @@ export async function completeTemplatesDraft(
       finished: run,
       ...(deps.now ? { now: deps.now() } : {}),
     });
-    return reportTemplates(r, {}, io);
+    return reportTemplates(root, r, {}, io);
   } catch (e) {
     return fail(io, e);
   }
 }
 
 function reportTemplates(
+  root: string,
   r: Awaited<ReturnType<typeof draftTemplates>>,
   o: { json?: boolean },
   io: Output,
@@ -430,7 +431,7 @@ function reportTemplates(
     for (const t of r.triage) io.out(`  Needs a decision: ${t.summary}`);
     for (const p of r.problems) io.err(`  ${p}`);
     io.out(
-      `Wrote the proposal to proposals/templates/ (${plural(r.files.length, "file")}); read SUMMARY.md, then copy what you accept into org-pack/ in a pull request.`,
+      `Wrote the proposal to ${proposalsRelOf(root)}/templates/ (${plural(r.files.length, "file")}); read SUMMARY.md, then copy what you accept into org-pack/ in a pull request.`,
     );
     return 0;
   }

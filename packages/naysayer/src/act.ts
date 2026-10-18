@@ -4,7 +4,13 @@ import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@
 import { Finding, FindingAction } from "@maycombhq/core";
 import { z } from "zod";
 import { CriticError } from "./errors.js";
-import { readRound, reviewedGates, roundsOf, writeFinding } from "./findings.js";
+import {
+  readRound,
+  reviewedGates,
+  roundsOf,
+  writeFinding,
+  type StoredFinding,
+} from "./findings.js";
 import { applyPatch, PatchError, patchTarget } from "./patch.js";
 
 export type Action = z.infer<typeof FindingAction>;
@@ -33,9 +39,17 @@ export interface ActResult {
 
 const bare = (h: string) => h.replace(/^@/, "").toLowerCase();
 
-/** Find a finding by id in the newest round of each gate. */
+/**
+ * Find a finding by id in the newest round of a gate. A problem several gates raised under one
+ * id is taken from the gate that ran most recently (the later gate in gates.yaml when they ran
+ * at the same moment), unless a gate is named. A copy left in an older round is refused only
+ * when no gate has the finding in its newest round.
+ */
 async function locate(root: string, change: string, id: string, gate?: string) {
   const gates = gate ? [gate] : await reviewedGates(root, change);
+  const order = (await loadChangeContext(root)).orgPack.gates.gates.map((g) => g.id);
+  const current: { hit: StoredFinding; gate: string }[] = [];
+  let stale: string | undefined;
   for (const g of gates) {
     const rounds = await roundsOf(root, change, g);
     const newest = rounds.at(-1);
@@ -44,15 +58,24 @@ async function locate(root: string, change: string, id: string, gate?: string) {
       const { findings } = await readRound(root, change, g, r);
       const hit = findings.find((f) => f.finding.id === id);
       if (!hit) continue;
-      if (r !== newest)
-        throw new CriticError(
-          "refused",
-          `Finding ${id} is from round ${r} of the ${g} gate; act on round ${newest}, the newest.`,
-        );
-      return hit;
+      if (r === newest) current.push({ hit, gate: g });
+      else
+        stale ??= `Finding ${id} is from round ${r} of the ${g} gate; act on round ${newest}, the newest.`;
+      break;
     }
   }
-  return undefined;
+  if (current.length === 0) {
+    if (stale) throw new CriticError("refused", stale);
+    return undefined;
+  }
+  const rank = (g: string) => (order.includes(g) ? order.indexOf(g) : order.length);
+  current.sort(
+    (a, b) =>
+      b.hit.finding.createdAt.localeCompare(a.hit.finding.createdAt) ||
+      rank(b.gate) - rank(a.gate) ||
+      a.gate.localeCompare(b.gate),
+  );
+  return current[0]!.hit;
 }
 
 /**
@@ -90,7 +113,7 @@ export async function act(
   if (f.state !== "open")
     throw new CriticError(
       "refused",
-      `Finding ${f.id} is already ${f.state} (by ${f.resolution?.by ?? "someone"}).`,
+      `Finding ${f.id} is already ${f.state} (by ${f.resolution?.by ?? "someone"}).${f.state === "asked" && f.resolution?.reason ? ` ${f.resolution.reason}` : ""}`,
     );
   const gap = f.kind === "knowledge-gap";
   const act = a.data;

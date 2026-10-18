@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createAdapters, type GitHost } from "@maycombhq/adapters";
+import { createAdapters, fileStepStore, type GitHost } from "@maycombhq/adapters";
 import {
   runtimeForCli,
   RUNTIME_MODES,
@@ -9,7 +9,7 @@ import {
   type RuntimeMode,
 } from "@maycombhq/ai";
 import { generateAssistantFiles, smokeCheck } from "@maycombhq/assistant-files";
-import { changesRelOf, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import { changesRelOf, loadOrgPack, orgPackDirOf, runsRelOf } from "@maycombhq/core";
 import { driftCheck, handDown, handUp } from "@maycombhq/speckit";
 import {
   completeTaskHandoff,
@@ -62,10 +62,10 @@ function fail(io: Output, e: unknown): number {
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-function describeRun(root: string, r: TaskRunRecord, io: Output): number {
+export function describeRun(root: string, r: TaskRunRecord, io: Output): number {
   const what: Record<TaskRunRecord["state"], string> = {
     planned: `Wrote the plan for task ${r.task}: ${changesRelOf(root)}/${r.change}/tasks/${r.task}/plan.md.`,
-    waiting: `Handed task ${r.task} to your assistant. The prompt is in .runs/${r.change}/${r.waiting}/prompt.md; it ends with: atticus handoff done ${r.waiting}`,
+    waiting: `Handed task ${r.task} to your assistant. The prompt is in ${runsRelOf(root)}/${r.change}/${r.waiting}/prompt.md; it ends with: atticus handoff done ${r.waiting}`,
     built: `Task ${r.task} is drafted on ${r.branch} and the build passes (${plural(r.attempts.length, "attempt")}); committed ${r.commit?.slice(0, 12) ?? ""}.`,
     unverified: `Task ${r.task} is drafted on ${r.branch} but wasn't built: ${r.repo} has no build command.`,
     "pr-open": `Opened PR ${r.pr?.url ?? ""} from ${r.branch} for review.`,
@@ -100,11 +100,15 @@ export async function taskRun(
     io.err(`Unknown level ${o.level}. Use one of: plan, draft, pr.`);
     return 2;
   }
+  // As every AI command: --mode, else ATTICUS_RUNTIME, else runtime.yaml's default; replay reads
+  // its recordings from ATTICUS_REPLAY_DIR.
+  const env = deps.env ?? process.env;
+  const mode = o.mode ?? env.ATTICUS_RUNTIME;
   if (
-    o.mode !== undefined &&
-    (!(RUNTIME_MODES as readonly string[]).includes(o.mode) || o.mode === "mock")
+    mode !== undefined &&
+    (!(RUNTIME_MODES as readonly string[]).includes(mode) || mode === "mock")
   ) {
-    io.err(`Unknown mode ${o.mode}. Use one of: hand-off, model, headless-claude-code, replay.`);
+    io.err(`Unknown mode ${mode}. Use one of: hand-off, model, headless-claude-code, replay.`);
     return 2;
   }
   const now = deps.now ?? (() => new Date());
@@ -112,7 +116,8 @@ export async function taskRun(
     const r = await runTask(root, changeId, taskId, {
       by: o.by,
       ...(o.level ? { level: o.level as RunLevel } : {}),
-      ...(o.mode ? { mode: o.mode as RuntimeMode } : {}),
+      ...(mode ? { mode: mode as RuntimeMode } : {}),
+      ...(env.ATTICUS_REPLAY_DIR ? { replayDir: env.ATTICUS_REPLAY_DIR } : {}),
       ...(o.approve
         ? {
             approval: {
@@ -246,7 +251,12 @@ export async function specHandUp(
     let gitHost = deps.gitHost;
     if (!gitHost && o.pr === undefined) {
       const op = await loadOrgPack(join(orgPackDirOf(root)));
-      gitHost = createAdapters(op.runtime).gitHost;
+      // A manual Git host writes its steps into the metarepo (ADR 0032).
+      gitHost = createAdapters(
+        op.runtime,
+        {},
+        { store: fileStepStore(root), root, procedures: op.procedures },
+      ).gitHost;
     }
     const r = await handUp(root, changeId, taskId, {
       by: o.by,

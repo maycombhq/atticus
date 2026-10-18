@@ -14,6 +14,7 @@ const FORGE = join(HERE, "../../../fixtures/forge");
 const FORGE_CHANGE = join(HERE, "../../../fixtures/forge-change");
 const CHANGE = "add-transfer-limit";
 const NOW = "2026-10-20T09:00:00Z";
+const LATER = "2026-10-21T10:00:00Z";
 
 function capture() {
   const out: string[] = [];
@@ -43,6 +44,91 @@ async function root(): Promise<string> {
 
 const replay = () =>
   ReplayRuntime.fromDir(join(FORGE_CHANGE, "recordings"), { now: () => new Date(NOW) });
+
+describe("atticus critic --mode", () => {
+  const env = { ATTICUS_REPLAY_DIR: join(FORGE_CHANGE, "recordings") };
+
+  it("runs the AI lenses from the command line in replay mode", async () => {
+    const r = await root();
+    const c = capture();
+    expect(await critic(r, CHANGE, { mode: "replay", json: true }, c.io, { env, now: NOW })).toBe(
+      1,
+    );
+    const j = JSON.parse(c.out.join("\n")) as {
+      open: { blocking: number; gaps: number };
+      lenses: { lens: string; state: string }[];
+    };
+    expect(j.open).toMatchObject({ blocking: 14, gaps: 13 });
+    expect(j.lenses.filter((l) => l.state === "ran").length).toBeGreaterThan(0);
+  });
+
+  it("runs only the deterministic layer when no --mode is given, whatever ATTICUS_RUNTIME says", async () => {
+    const r = await root();
+    for (const e of [{}, { ...env, ATTICUS_RUNTIME: "replay" }]) {
+      const c = capture();
+      expect(await critic(r, CHANGE, { gate: "plan" }, c.io, { env: e, now: NOW })).toBe(1);
+      expect(c.out.some((l) => /lens skipped: .*layer 1 ran alone/.test(l))).toBe(true);
+      expect(c.out[0]).not.toMatch(/14 blocking/);
+    }
+  });
+
+  it("says plainly when replay has no recordings or the mode is unknown", async () => {
+    const r = await root();
+    let c = capture();
+    expect(await critic(r, CHANGE, { mode: "replay" }, c.io, { env: {}, now: NOW })).toBe(2);
+    expect(c.err[0]).toMatch(/ATTICUS_REPLAY_DIR/);
+    c = capture();
+    expect(await critic(r, CHANGE, { mode: "mock" }, c.io, { env: {}, now: NOW })).toBe(2);
+    expect(c.err[0]).toMatch(/Mock mode is for tests/);
+  });
+
+  it("finding --gate picks the gate; without it the latest round across gates is used", async () => {
+    const r = await root();
+    const gap = "gap-slo-known-ledger";
+    const issue = "data-retention-stated-data-l8";
+    await critic(r, CHANGE, { gate: "design" }, capture().io, { now: NOW });
+    // Asked at the design gate; the plan gate asks nothing new and links to that question.
+    let c = capture();
+    expect(await findingAction(r, CHANGE, gap, "ask", { by: "ari" }, c.io, { now: NOW })).toBe(0);
+    await critic(r, CHANGE, { gate: "plan" }, capture().io, { now: LATER });
+    c = capture();
+    expect(await findingAction(r, CHANGE, gap, "ask", { by: "tia" }, c.io)).toBe(1);
+    expect(c.err[0]).toMatch(/already asked \(by ari\)\. Already asked at the design gate/);
+    // An issue raised at both gates: the plan gate's copy by default, the design copy on request.
+    c = capture();
+    expect(
+      await findingAction(r, CHANGE, issue, "not-relevant", { by: "ari", reason: "x" }, c.io),
+    ).toBe(0);
+    c = capture();
+    expect(
+      await findingAction(
+        r,
+        CHANGE,
+        issue,
+        "not-relevant",
+        { by: "ari", reason: "x", gate: "design" },
+        c.io,
+      ),
+    ).toBe(0);
+    c = capture();
+    expect(
+      await findingAction(
+        r,
+        CHANGE,
+        issue,
+        "not-relevant",
+        { by: "ari", reason: "x", gate: "design" },
+        c.io,
+      ),
+    ).toBe(1);
+    expect(c.err[0]).toMatch(/already dismissed/);
+    c = capture();
+    expect(
+      await findingAction(r, CHANGE, issue, "not-relevant", { by: "ari", gate: "nowhere" }, c.io),
+    ).toBe(1);
+    expect(c.err[0]).toMatch(/No finding/);
+  });
+});
 
 describe("atticus critic", () => {
   it("runs the critic, lists findings, acts on one and reports stats", async () => {

@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { catalogValidate, orgPackValidate, schemaExport, type Output } from "./commands.js";
 import {
   handoffDone,
@@ -164,11 +164,11 @@ Usage:
   atticus change archive <id> --by <you> [--no-rescan]  Archive a released change and rescan its repos
   atticus change list [--json]         Every change and its state
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
-  atticus critic <change> [--gate g] [--lens l] [--json]  Review a change at a gate: rule checks, then AI lenses
+  atticus critic <change> [--gate g] [--lens l] [--mode m] [--json]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
   atticus findings <change> [--json]   The change's findings by gate and round
   atticus finding <change> <id> <action> --by <you>  apply | edit-and-apply | not-relevant | waive | ask
-          [--reason text] [--asked-of who] [--edit patch-file]
+          [--gate g] [--reason text] [--asked-of who] [--edit patch-file]
   atticus feature list [--json]        Features found in code, named by people or proposed by AI
   atticus feature show <id> [--json]   A feature's entry points, flow, owner, links and gaps
   atticus feature name <id> "<name>"   Confirm or correct a feature's name [--description] [--owner] [--by]
@@ -196,7 +196,7 @@ Usage:
   atticus todo done <step> --by <you>  Record a manual step's result [--result k=v]... [--skip --note why]
   atticus todo run <step> --with <executor>  Run a step with a team's own tool [--approve --by you --inputs sha] [--fill-only]
   atticus executors check              Ping configured executors and show what each covers
-  atticus init <name> --platform <p>  Create a new metarepo [--from pack] [--owner who]
+  atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who]
   atticus adopt <path>                 Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]
   atticus unadopt <path>               Remove Atticus from an adopted repo, leaving it as it was
   atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
@@ -616,7 +616,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
     return initCommand(
       resolve(command ?? "."),
       {
-        ...(command ? { name: command } : {}),
+        ...(command ? { name: basename(resolve(command)) } : {}),
         ...(str(values.platform) ? { platform: str(values.platform)! } : {}),
         ...(str(values.from) ? { packFrom: resolve(str(values.from)!) } : {}),
         ...(owner ? { owner } : {}),
@@ -929,6 +929,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
       {
         ...(str(values.gate) ? { gate: str(values.gate)! } : {}),
         ...(str(values.lens) ? { lens: str(values.lens)! } : {}),
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
         json,
       },
       io,
@@ -959,6 +960,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
         ...(str(values.reason) ? { reason: str(values.reason)! } : {}),
         ...(str(values["asked-of"]) ? { askedOf: str(values["asked-of"])! } : {}),
         ...(str(values.edit) ? { edit: str(values.edit)! } : {}),
+        ...(str(values.gate) ? { gate: str(values.gate)! } : {}),
       },
       io,
     );

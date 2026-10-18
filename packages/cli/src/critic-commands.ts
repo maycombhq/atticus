@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
-import type { AiRuntime } from "@maycombhq/ai";
+import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
 import { changeStore } from "@maycombhq/changes";
 import { Lens } from "@maycombhq/core";
 import {
@@ -28,10 +28,16 @@ export interface CriticDeps {
   now?: string;
   /** The model that wrote the artifacts, so the critic can pick another family. */
   authorModel?: string;
+  /** The environment to read ATTICUS_RUNTIME and ATTICUS_REPLAY_DIR from (default: the process's). */
+  env?: Record<string, string | undefined>;
 }
 
 /** Map a critic error to its exit code: 2 for usage, 1 for everything else. */
 function fail(io: Output, e: unknown): number {
+  if (e instanceof RuntimeConfigError) {
+    io.err(e.message);
+    return 2;
+  }
   if (e instanceof CriticError) {
     io.err(e.message);
     return e.code === "invalid" || e.code === "no-gate" ? 2 : 1;
@@ -53,16 +59,34 @@ function statusLine(s: GateStatus): string {
   return `The ${s.gate} gate is closed: ${counts}. Act on each with atticus finding <id> <action> --by <you>.`;
 }
 
-/** atticus critic <change> [--gate g] [--lens l] [--json] */
+/**
+ * The AI runtime for the critic's layer 2. It is built only when --mode asks for it (a hand-off
+ * run waits for an assistant and a live one costs money, so a mode left in the environment for
+ * other commands doesn't turn it on); otherwise the critic runs its deterministic checks alone.
+ */
+async function runtimeOf(
+  root: string,
+  mode: string | undefined,
+  deps: CriticDeps,
+): Promise<AiRuntime | undefined> {
+  if (deps.runtime) return deps.runtime;
+  const env = deps.env ?? process.env;
+  if (!mode) return undefined;
+  return (await runtimeForCli(root, { ...(mode ? { mode } : {}), env })).runtime;
+}
+
+/** atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] */
 export async function critic(
   root: string,
   changeId: string | undefined,
-  o: { gate?: string; lens?: string; json?: boolean },
+  o: { gate?: string; lens?: string; mode?: string; json?: boolean },
   io: Output,
   deps: CriticDeps = {},
 ): Promise<number> {
   if (!changeId) {
-    io.err("Usage: atticus critic <change> [--gate <gate>] [--lens <lens>] [--json]");
+    io.err(
+      "Usage: atticus critic <change> [--gate <gate>] [--lens <lens>] [--mode <mode>] [--json]",
+    );
     return 2;
   }
   if (o.lens && !Lens.safeParse(o.lens).success) {
@@ -71,10 +95,11 @@ export async function critic(
   }
   let r;
   try {
+    const runtime = await runtimeOf(root, o.mode, deps);
     r = await runCritic(root, changeId, {
       ...(o.gate ? { gate: o.gate } : {}),
       ...(o.lens ? { lenses: [Lens.parse(o.lens)] } : {}),
-      ...(deps.runtime ? { runtime: deps.runtime } : {}),
+      ...(runtime ? { runtime } : {}),
       ...(deps.now ? { now: deps.now } : {}),
       ...(deps.authorModel ? { authorModel: deps.authorModel } : {}),
     });
@@ -217,19 +242,19 @@ export async function findings(
   return 0;
 }
 
-/** atticus finding <change> <id> <action> --by <you> [--reason r] [--asked-of x] [--edit patch-file] */
+/** atticus finding <change> <id> <action> --by <you> [--gate g] [--reason r] [--asked-of x] [--edit patch-file] */
 export async function findingAction(
   root: string,
   changeId: string | undefined,
   findingId: string | undefined,
   action: string | undefined,
-  o: { by?: string; reason?: string; askedOf?: string; edit?: string },
+  o: { by?: string; reason?: string; askedOf?: string; edit?: string; gate?: string },
   io: Output,
   deps: CriticDeps = {},
 ): Promise<number> {
   if (!changeId || !findingId || !action || !o.by) {
     io.err(
-      "Usage: atticus finding <change> <finding> <apply|edit-and-apply|not-relevant|waive|ask> --by <you> [--reason <why>] [--asked-of <who>] [--edit <patch file>]",
+      "Usage: atticus finding <change> <finding> <apply|edit-and-apply|not-relevant|waive|ask> --by <you> [--gate <gate>] [--reason <why>] [--asked-of <who>] [--edit <patch file>]",
     );
     return 2;
   }
@@ -248,6 +273,7 @@ export async function findingAction(
       ...(o.reason ? { reason: o.reason } : {}),
       ...(o.askedOf ? { askedOf: o.askedOf } : {}),
       ...(edit ? { edit } : {}),
+      ...(o.gate ? { gate: o.gate } : {}),
       ...(deps.now ? { now: deps.now } : {}),
     });
     io.out(r.message);

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
-import type { ChangeRepos } from "@maycombhq/core";
+import { runsDirOf, type ChangeRepos } from "@maycombhq/core";
 import { intellijProjectPath, vscodeWorkspacePath, WORKSPACE_DIR } from "./layout.js";
 
 /**
@@ -28,7 +28,7 @@ export function vscodeWorkspace(root: string, repos: ChangeRepos): object {
   ];
   for (const r of repos.repos)
     folders.push({ name: r.id, path: posix(relative(from, join(root, r.worktree))) });
-  const runs = join(root, ".runs", repos.change);
+  const runs = join(runsDirOf(root), repos.change);
   if (existsSync(runs)) folders.push({ name: "context pack", path: posix(relative(from, runs)) });
   return {
     folders,
@@ -51,7 +51,7 @@ export function intellijProject(root: string, repos: ChangeRepos): Record<string
     { name: "metarepo", dir: root, excludes: [join(root, WORKSPACE_DIR), join(root, ".index")] },
     ...repos.repos.map((r) => ({ name: r.id, dir: join(root, r.worktree), excludes: [] })),
   ];
-  const runs = join(root, ".runs", repos.change);
+  const runs = join(runsDirOf(root), repos.change);
   if (existsSync(runs)) modules.push({ name: "context-pack", dir: runs, excludes: [] });
 
   const files: Record<string, string> = {};

@@ -18,6 +18,7 @@ import { checkRegistry } from "./checks/index.js";
 import { buildContext, type CriticContext } from "./context.js";
 import { CriticError } from "./errors.js";
 import {
+  askedElsewhere,
   findingIdFor,
   fingerprint,
   markNeedHit,
@@ -300,6 +301,10 @@ export async function runCritic(
         prior.set(fingerprint(s.finding), s.finding);
   }
 
+  // An owner question asked at another gate and still open is not asked again: the same gap
+  // here is asked too, and its reason points at the first question.
+  const elsewhere = await askedElsewhere(root, change.id, gate.id);
+
   const taken = new Set<string>();
   const findings: CriticFinding[] = [];
   for (const h of all) {
@@ -309,6 +314,14 @@ export async function runCritic(
     let carried = false;
     if (before?.resolution) {
       const next = Finding.safeParse({ ...f, state: before.state, resolution: before.resolution });
+      if (next.success) {
+        f = next.data;
+        carried = true;
+      }
+    }
+    const first = f.kind === "knowledge-gap" && f.state === "open" && elsewhere.get(fingerprint(f));
+    if (first) {
+      const next = Finding.safeParse({ ...f, state: "asked", resolution: first });
       if (next.success) {
         f = next.data;
         carried = true;

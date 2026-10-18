@@ -257,3 +257,33 @@ export async function readRound(
   }
   return { findings, bad };
 }
+
+/**
+ * Owner questions already asked at the other gates and still open there, by fingerprint: the
+ * newest round of each other gate, knowledge gaps in state asked. The resolution says who asked
+ * and of whom, and its reason links to the first question (an earlier link is kept, not stacked).
+ */
+export async function askedElsewhere(
+  root: string,
+  change: string,
+  gate: string,
+): Promise<Map<string, NonNullable<Finding["resolution"]>>> {
+  const out = new Map<string, NonNullable<Finding["resolution"]>>();
+  for (const g of await reviewedGates(root, change)) {
+    if (g === gate) continue;
+    const round = (await roundsOf(root, change, g)).at(-1);
+    if (round === undefined) continue;
+    for (const s of (await readRound(root, change, g, round)).findings) {
+      const f = s.finding;
+      if (f.kind !== "knowledge-gap" || f.state !== "asked" || !f.resolution) continue;
+      const linked = f.resolution.reason?.startsWith("Already asked at");
+      const resolution = linked
+        ? f.resolution
+        : { ...f.resolution, reason: `Already asked at the ${g} gate: see ${s.path}.` };
+      const key = fingerprint(f);
+      const had = out.get(key);
+      if (!had || resolution.at < had.at) out.set(key, resolution);
+    }
+  }
+  return out;
+}

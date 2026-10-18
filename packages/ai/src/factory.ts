@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   changesRelOf,
   loadOrgPack,
+  runsDirOf,
   RuntimeKind,
   type OrgPack,
   type Recording,
@@ -168,7 +169,7 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
   protected async produce(run: Run, signal?: AbortSignal) {
     const { request } = run;
     const inv = this.h.invocation?.(request) ?? { cwd: this.h.root };
-    const dir = join(this.h.root, ".runs", request.change, run.runId);
+    const dir = join(runsDirOf(this.h.root), request.change, run.runId);
     await mkdir(dir, { recursive: true });
     const promptFile = join(dir, "prompt.md");
     const prompt = HandoffRuntime.promptFor(run, changesRelOf(this.h.root)).replace(

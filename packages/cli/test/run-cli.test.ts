@@ -1,4 +1,5 @@
-import { cp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { MockGitHost } from "@maycombhq/adapters";
@@ -47,6 +48,54 @@ describe("atticus task run", () => {
       expect(c.err).toEqual([
         "forge-ledger has no worktree for add-transfer-limit yet. Open it first: atticus workspace open add-transfer-limit --repos forge-ledger",
       ]);
+    },
+    T,
+  );
+
+  it(
+    "--mode replay reads the recordings folder named by ATTICUS_REPLAY_DIR, like every other command",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const recordings = await mkdtemp(join(tmpdir(), "atticus-replay-"));
+      let c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.2", { by: "dev", level: "plan", mode: "replay" }, c.io, {
+          git,
+          now,
+          env: {},
+        }),
+      ).toBe(1);
+      expect(c.err).toEqual(["Replay mode needs a folder of recordings (ATTICUS_REPLAY_DIR)."]);
+      // With the folder named, replay runs and says what is missing, not that it has no folder.
+      c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.2", { by: "dev", level: "plan", mode: "replay" }, c.io, {
+          git,
+          now,
+          env: { ATTICUS_REPLAY_DIR: recordings },
+        }),
+      ).toBe(1);
+      expect(c.err).toEqual([]);
+      expect(c.out.join("\n")).toMatch(/no recording for agent/);
+      expect(c.out.join("\n")).not.toMatch(/needs a folder/);
+      // ATTICUS_RUNTIME picks the mode when --mode is not given.
+      c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.2", { by: "dev", level: "plan" }, c.io, {
+          git,
+          now,
+          env: { ATTICUS_RUNTIME: "replay", ATTICUS_REPLAY_DIR: recordings },
+        }),
+      ).toBe(1);
+      expect(c.out.join("\n")).toMatch(/no recording for agent/);
+      c = capture();
+      expect(
+        await taskRun(root, CHANGE, "1.2", { by: "dev", level: "plan" }, c.io, {
+          git,
+          now,
+          env: { ATTICUS_RUNTIME: "mock" },
+        }),
+      ).toBe(2);
     },
     T,
   );
@@ -161,6 +210,34 @@ describe("atticus spec hand-down, hand-up and drift", () => {
       );
       expect(c.out).toContain("  The code-and-test lens raised 0 findings.");
       expect(c.out.at(-1)).toBe("  Drift: 6 findings.");
+    },
+    T,
+  );
+});
+
+describe("atticus spec hand-up with a manual Git host", () => {
+  it(
+    "builds the Git host with the metarepo's step store instead of failing",
+    async () => {
+      const { root } = await speckitRoot({ repos: ["forge-ledger"] });
+      const rt = join(root, "org-pack/runtime.yaml");
+      await writeFile(
+        rt,
+        (await readFile(rt, "utf8")).replace(
+          "gitHost: { type: mock }",
+          "gitHost: { type: manual }",
+        ),
+      );
+      expect(await specHandDown(root, CHANGE, "1.2", {}, capture().io, { git })).toBe(0);
+      const c = capture();
+      // No --pr: the PR is looked up on the Git host, which here is the manual one.
+      const code = await specHandUp(root, CHANGE, "1.2", { by: "dev" }, c.io, {
+        git,
+        now,
+        runtime: new MockRuntime(() => "findings: []", { now }),
+      });
+      expect(c.err.join("\n")).not.toMatch(/manual adapter writes steps/);
+      expect(code).not.toBe(2);
     },
     T,
   );
