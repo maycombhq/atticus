@@ -1,0 +1,26 @@
+{
+  "name": "@maycombhq/ai",
+  "version": "0.0.1",
+  "description": "Atticus AI runtime (contract C5): context packs, the hand-off, model, mock and recorded-replay runtimes.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@maycombhq/core": "workspace:*"
+  }
+}

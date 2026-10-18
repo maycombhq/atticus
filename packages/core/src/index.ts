@@ -12,3 +12,4 @@ export * from "./schema/review.js";
 export * from "./schema/orgpack.js";
 export * from "./orgpack-defaults.js";
 export * from "./orgpack-load.js";
+export * from "./schema/ai.js";

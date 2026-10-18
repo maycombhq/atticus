@@ -1,0 +1,187 @@
+import type { AgentDefinition, RunState, RunSummary, RuntimeKind } from "@maycombhq/core";
+import { sha256, type ContextPack } from "./context.js";
+
+/**
+ * The runtime interface (contract C5): prepare → run → result. Implemented by the hand-off,
+ * model, headless Claude Code, mock and recorded-replay runtimes. Every runtime refuses an
+ * agent that doesn't allow it.
+ */
+export interface AiRequest {
+  change: string;
+  agent: AgentDefinition;
+  pack: ContextPack;
+  /** Change-folder-relative path the output is written to, e.g. "stories.md". */
+  outputPath: string;
+}
+
+export interface Usage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface Run {
+  runId: string;
+  request: AiRequest;
+  runtime: RuntimeKind;
+  state: RunState;
+  attempt: number;
+  startedAt: string;
+  finishedAt?: string;
+  output?: string;
+  usage?: Usage;
+  errors: string[];
+}
+
+export interface AiRuntime {
+  readonly kind: RuntimeKind;
+  prepare(request: AiRequest): Promise<Run>;
+  /** Start or perform the run. Hand-off returns in "waiting"; the others finish. */
+  run(runId: string, signal?: AbortSignal): Promise<Run>;
+  result(runId: string): Promise<Run>;
+}
+
+/** Allowed hand-off transitions; anything else is a bug and throws. */
+const NEXT: Record<RunState, RunState[]> = {
+  prepared: ["waiting", "produced", "failed", "cancelled"],
+  waiting: ["produced", "failed", "cancelled"],
+  produced: ["validated", "failed"],
+  validated: [],
+  failed: ["prepared"],
+  cancelled: [],
+};
+
+export function transition(run: Run, to: RunState, now: Date, patch: Partial<Run> = {}): Run {
+  if (!NEXT[run.state].includes(to)) throw new Error(`a run can't go from ${run.state} to ${to}`);
+  const done = to === "validated" || to === "failed" || to === "cancelled";
+  return { ...run, ...patch, state: to, ...(done ? { finishedAt: now.toISOString() } : {}) };
+}
+
+export class RuntimeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RuntimeError";
+  }
+}
+
+export function checkAllowed(kind: RuntimeKind, agent: AgentDefinition): void {
+  if (!agent.allowedRuntimes.includes(kind)) {
+    throw new RuntimeError(
+      `agent ${agent.id} may not run on the ${kind} runtime (allowed: ${agent.allowedRuntimes.join(", ")})`,
+    );
+  }
+  if (agent.tokenBudget <= 0) throw new RuntimeError(`agent ${agent.id} has no token budget`);
+}
+
+/** Make a run id: deterministic when a counter is supplied (tests), unique otherwise. */
+export function makeRunId(now: Date, seq?: number): string {
+  const stamp = now
+    .toISOString()
+    .replace(/[-:TZ.]/g, "")
+    .slice(0, 14);
+  const tail =
+    seq !== undefined ? String(seq).padStart(4, "0") : Math.random().toString(36).slice(2, 8);
+  return `run-${stamp}-${tail}`;
+}
+
+/** The summary that goes into review/; full packs and transcripts stay in .runs/. */
+export function toRunSummary(run: Run): RunSummary {
+  return {
+    schemaVersion: 1,
+    runId: run.runId,
+    change: run.request.change,
+    agent: run.request.agent.id,
+    runtime: run.runtime,
+    state: run.state,
+    startedAt: run.startedAt,
+    ...(run.finishedAt ? { finishedAt: run.finishedAt } : {}),
+    ...(run.state === "validated" || run.state === "produced"
+      ? { output: run.request.outputPath }
+      : {}),
+    ...(run.usage ? { usage: run.usage } : {}),
+    contextManifestSha256: sha256(JSON.stringify(run.request.pack.manifest)),
+    errors: run.errors,
+    attempt: run.attempt,
+  };
+}
+
+/**
+ * Shared base for runtimes that finish in one call (mock, replay, model): keeps runs in
+ * memory, enforces the agent's allowed runtimes and token budget, and validates output.
+ */
+export abstract class OneShotRuntime implements AiRuntime {
+  abstract readonly kind: RuntimeKind;
+  protected runs = new Map<string, Run>();
+  private seq = 0;
+
+  constructor(
+    protected readonly opts: {
+      now?: () => Date;
+      /** Check the output (e.g. openspec validate); returns problems, empty when fine. */
+      validate?: (output: string, request: AiRequest) => Promise<string[]>;
+    } = {},
+  ) {}
+
+  protected now(): Date {
+    return this.opts.now?.() ?? new Date();
+  }
+
+  protected abstract produce(
+    run: Run,
+    signal?: AbortSignal,
+  ): Promise<{ output: string; usage: Usage }>;
+
+  async prepare(request: AiRequest): Promise<Run> {
+    checkAllowed(this.kind, request.agent);
+    if (request.pack.manifest.totalTokens > request.agent.tokenBudget) {
+      throw new RuntimeError(
+        `context pack (${request.pack.manifest.totalTokens} tokens) is over agent ${request.agent.id}'s budget of ${request.agent.tokenBudget}`,
+      );
+    }
+    const now = this.now();
+    const run: Run = {
+      runId: makeRunId(now, ++this.seq),
+      request,
+      runtime: this.kind,
+      state: "prepared",
+      attempt: 1,
+      startedAt: now.toISOString(),
+      errors: [],
+    };
+    this.runs.set(run.runId, run);
+    return run;
+  }
+
+  async run(runId: string, signal?: AbortSignal): Promise<Run> {
+    let run = this.get(runId);
+    if (signal?.aborted) {
+      run = transition(run, "cancelled", this.now());
+      this.runs.set(runId, run);
+      return run;
+    }
+    try {
+      const { output, usage } = await this.produce(run, signal);
+      run = transition(run, "produced", this.now(), { output, usage });
+      const problems = (await this.opts.validate?.(output, run.request)) ?? [];
+      run =
+        problems.length === 0
+          ? transition(run, "validated", this.now())
+          : transition(run, "failed", this.now(), { errors: problems });
+    } catch (e) {
+      run = transition(run, signal?.aborted ? "cancelled" : "failed", this.now(), {
+        errors: [(e as Error).message],
+      });
+    }
+    this.runs.set(runId, run);
+    return run;
+  }
+
+  async result(runId: string): Promise<Run> {
+    return this.get(runId);
+  }
+
+  protected get(runId: string): Run {
+    const r = this.runs.get(runId);
+    if (!r) throw new RuntimeError(`no run ${runId}`);
+    return r;
+  }
+}

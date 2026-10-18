@@ -1,0 +1,9 @@
+schemaVersion: 1
+id: architecture-critic
+role: architect
+description: Reviews interfaces and design against the catalog and the architecture checklist, looking for reasons they are wrong.
+inputs: [interfaces, design, data, catalog-slice, patterns, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 80000
+allowedRuntimes: [hand-off, mock, replay]

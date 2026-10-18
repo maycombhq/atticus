@@ -205,6 +205,7 @@ describe("Forge org pack (C6)", () => {
     expect(op.checklists.map((c) => c.name)).toEqual(["forge-architecture"]);
     expect(op.skills.map((s) => s.id)).toEqual(["add-forge-endpoint"]);
     expect(op.serviceRequests.map((s) => s.id).sort()).toEqual(["firewall-rule", "gateway-route"]);
+    expect(op.agents.map((a) => a.id).sort()).toEqual(["architecture-critic", "story-writer"]);
   });
 
   it("has exactly the pattern codes of the patterns wiki page", async () => {

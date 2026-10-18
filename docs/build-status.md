@@ -14,12 +14,12 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 | 7      | Contracts C2 (dialect rule file) and C3 (checklist packs and findings) with one shared template grammar; JSON Schema; the Forge dialect and an architecture checklist as samples in the fixture org pack                                                   | `packages/core`, `fixtures/forge/metarepo/org-pack`, ADR 0011                 |
 | 8a     | Contract C6: every org-pack file as a schema, built-in defaults (13 roles, 6 change types, a gate per phase), `loadOrgPack` with cross-file checks, `atticus orgpack validate`; a full Forge org pack in the fixture                                       | `packages/core`, `packages/cli`, `fixtures/forge/metarepo/org-pack`, ADR 0012 |
 | 8b     | Adapters (C4): work tracker, service desk, Git host, wiki, design tool, notifications; approval required on every write; merge gated by reviews and checks; mocks with journals, injected failures and fixture loaders; `createAdapters` from runtime.yaml | `packages/adapters`, ADR 0013                                                 |
+| 8c     | Contract C5: agent definitions, context packs (data wrapping, classification, budget, manifest), the hand-off runtime with `atticus handoff done`, model runtime, mock and recorded-replay runtimes, run summaries and retention                           | `packages/ai`, `packages/core`, ADR 0014                                      |
 
 ## Next
 
-1. **Ticket 8c: AI runtime (C5).** Agent definitions, context packs, the runtime interface, and the mock and recorded-replay runtimes.
-2. **Remaining M0:** the local API's OpenAPI document (C4), the 300-repo synthetic generator, CI green on both platforms.
-3. **M1:** OpenAPI, gateway and Spring extractors; the Forge dialect; merge and identity; scan and diff; SQLite index; draw.io ingestor; reconcile. Exit: a scan of `fixtures/forge` matches `expected/scan.yaml`, and reconcile finds d01–d06.
+1. **Remaining M0:** the local API's OpenAPI document (C4), the 300-repo synthetic generator, CI green on both platforms.
+2. **M1:** OpenAPI, gateway and Spring extractors; the Forge dialect; merge and identity; scan and diff; SQLite index; draw.io ingestor; reconcile. Exit: a scan of `fixtures/forge` matches `expected/scan.yaml`, and reconcile finds d01–d06.
 
 ## How to work
 

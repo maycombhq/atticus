@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { AgentDefinition } from "@maycombhq/core";
+import { buildContextPack, HandoffRuntime } from "@maycombhq/ai";
+import { createOpenSpec } from "@maycombhq/openspec-adapter";
 import { main } from "../src/main.js";
 
 const T = 60_000;
@@ -113,4 +116,71 @@ describe("atticus workspace", () => {
     expect(await main(["workspace", "sync", "--root", root], c.io)).toBe(1);
     expect(c.err[0]).toContain("repos.manifest.yaml");
   });
+});
+
+describe("atticus handoff done", () => {
+  it(
+    "validates the hand-off artifact with OpenSpec and reports the result",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "atticus-cli-handoff-"));
+      expect(await main(["openspec", "setup", "--root", root], capture().io)).toBe(0);
+      const os = createOpenSpec({ root });
+      const agent = AgentDefinition.parse({
+        schemaVersion: 1,
+        id: "proposal-writer",
+        role: "product-owner",
+        description: "Writes the proposal from the brief.",
+        inputs: ["brief"],
+        outputArtifact: "proposal",
+        tokenBudget: 5000,
+        allowedRuntimes: ["hand-off"],
+      });
+      const pack = buildContextPack({
+        change: "x",
+        agent: agent.id,
+        budget: 5000,
+        levels: ["internal"],
+        maxClassification: "internal",
+        now: new Date(),
+        sources: [
+          {
+            id: "brief",
+            kind: "artifact",
+            origin: "brief.md",
+            text: "Tidy logs.",
+            classification: "internal",
+          },
+        ],
+      });
+      const rt = new HandoffRuntime({ root, validate: async () => [] });
+
+      for (const [change, skip, expected] of [
+        ["tidy-logging", true, 0],
+        ["add-limit", false, 1],
+      ] as const) {
+        await os.newChange(change);
+        const dir = join(root, "openspec/changes", change);
+        if (skip)
+          await writeFile(
+            join(dir, ".openspec.yaml"),
+            (await readFile(join(dir, ".openspec.yaml"), "utf8")) + "skip_specs: true\n",
+          );
+        const run = await rt.prepare({
+          change,
+          agent,
+          pack: { ...pack, manifest: { ...pack.manifest, change } },
+          outputPath: "proposal.md",
+        });
+        await rt.run(run.runId);
+        await writeFile(join(dir, "proposal.md"), "# Proposal\n\n## Why\n\nNoise.\n");
+        const c = capture();
+        expect(await main(["handoff", "done", run.runId, "--root", root], c.io), change).toBe(
+          expected,
+        );
+        if (expected === 0) expect(c.out[0]).toBe("proposal.md for tidy-logging is valid");
+        else expect(c.err.join("\n")).toMatch(/delta/i);
+      }
+    },
+    T,
+  );
 });

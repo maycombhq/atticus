@@ -10,6 +10,7 @@ import {
   DEFAULT_SOURCES,
   DEFAULT_TEST_STRATEGY,
 } from "./orgpack-defaults.js";
+import { AgentDefinition } from "./schema/ai.js";
 import { Dialect } from "./schema/dialect.js";
 import {
   BUILT_IN_ROLES,
@@ -49,6 +50,7 @@ export interface OrgPack {
   checklists: ChecklistPack[];
   skills: (z.infer<typeof SkillMeta> & { body: string })[];
   serviceRequests: z.infer<typeof ServiceRequestTemplate>[];
+  agents: AgentDefinition[];
   /** Files that came from built-in defaults because the pack doesn't have them. */
   defaulted: string[];
   problems: OrgPackProblem[];
@@ -177,6 +179,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   const dialects = await many("dialects", /\.ya?ml$/, Dialect);
   const checklists = await many("checklists", /\.ya?ml$/, ChecklistPack);
   const serviceRequests = await many("process/snow", /\.ya?ml$/, ServiceRequestTemplate);
+  const agents = await many("agents", /\.ya?ml$/, AgentDefinition);
 
   const skills: OrgPack["skills"] = [];
   for (const f of await listFiles(join(dir, "process", "skills"), /^SKILL\.md$/)) {
@@ -295,6 +298,28 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
           message: `no template ${a}`,
         });
   }
+  const allowedModes = new Set<string>([...runtime.modes.allowed, "mock", "replay"]);
+  for (const a of agents) {
+    if (a.checklist && !packNames.has(a.checklist))
+      problems.push({
+        file: `agents/${a.id}.yaml`,
+        path: "checklist",
+        message: `no checklist pack named ${a.checklist}`,
+      });
+    if (!a.allowedRuntimes.some((r) => allowedModes.has(r))) {
+      problems.push({
+        file: `agents/${a.id}.yaml`,
+        path: "allowedRuntimes",
+        message: "none of its runtimes is allowed by runtime.yaml",
+      });
+    }
+    if (!roleIds.has(a.role))
+      problems.push({
+        file: `agents/${a.id}.yaml`,
+        path: "role",
+        message: `unknown role ${a.role}`,
+      });
+  }
   for (const s of skills) {
     for (const t of s.appliesTo.repoTypes) {
       if (repoTypes.size > 0 && !repoTypes.has(t))
@@ -320,6 +345,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     checklists,
     skills,
     serviceRequests,
+    agents,
     defaulted,
     problems,
   };

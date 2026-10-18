@@ -3,6 +3,7 @@ import { SCHEMA_VERSION } from "@maycombhq/core";
 import { join, resolve } from "node:path";
 import { catalogValidate, orgPackValidate, schemaExport, type Output } from "./commands.js";
 import {
+  handoffDone,
   openspecCheck,
   openspecSetup,
   workspaceOpen,
@@ -21,6 +22,7 @@ Usage:
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
+  atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
   atticus workspace open <change>      Create the change's worktrees, repos.yaml and editor workspaces
@@ -84,6 +86,15 @@ export async function main(argv: string[], io: Output): Promise<number> {
       : undefined;
   if (group === "orgpack" && command === "validate")
     return orgPackValidate(arg ? resolve(arg) : join(root, "org-pack"), io);
+  if (group === "handoff" && command === "done") {
+    if (!arg) {
+      io.err(
+        "handoff done needs the run id from the prompt, for example: atticus handoff done run-20261018060000-0001",
+      );
+      return 2;
+    }
+    return handoffDone(root, arg, io);
+  }
   if (group === "openspec" && command === "setup") return openspecSetup(root, io);
   if (group === "openspec" && command === "check") return openspecCheck(root, io);
   if (group === "workspace" && command === "sync") return workspaceSync(root, repoIds, io);

@@ -1,0 +1,10 @@
+# Contract C5 agent definition (fixture sample).
+schemaVersion: 1
+id: story-writer
+role: business-analyst
+description: Writes user stories with Given/When/Then acceptance criteria that trace to the brief and the spec scenarios.
+inputs: [brief, proposal, specs, design, catalog-slice]
+outputArtifact: stories
+checklist: forge-architecture
+tokenBudget: 60000
+allowedRuntimes: [hand-off, headless-claude-code, mock, replay]

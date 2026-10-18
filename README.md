@@ -27,6 +27,7 @@ packages/
   openspec-adapter/  the only door to OpenSpec: pinned CLI wrapper, org-flow schema, contract tests
   workspace/         base clones, change worktrees, repos files, VS Code and IntelliJ workspaces
   adapters/          work tracker, service desk, Git host, wiki, design tool, notifications; each with a mock
+  ai/                AI runtime (C5): context packs, hand-off, model, mock and replay runtimes
   cli/               the `atticus` command
   fixtures/          tests that keep the Forge fixture consistent
 fixtures/forge/      an invented ecosystem with a hand-written expected catalog

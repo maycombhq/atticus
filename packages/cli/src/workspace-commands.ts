@@ -11,6 +11,7 @@ import {
   intellijProjectPath,
   type LoadedRepo,
 } from "@maycombhq/workspace";
+import { HandoffRuntime } from "@maycombhq/ai";
 import type { Output } from "./commands.js";
 
 function pick(
@@ -108,4 +109,31 @@ export async function openspecCheck(root: string, io: Output): Promise<number> {
   const t = report.summary.totals;
   io.out(`OpenSpec ${v}: ${t.items} checked, ${t.passed} passed, ${t.failed} failed`);
   return t.failed > 0 ? 1 : 0;
+}
+
+/**
+ * atticus handoff done <runId>: the assistant (or person) says the artifact is written.
+ * Atticus checks it with openspec validate on the change and records the result.
+ */
+export async function handoffDone(root: string, runId: string, io: Output): Promise<number> {
+  const os = createOpenSpec({ root });
+  const rt = new HandoffRuntime({
+    root,
+    validate: async (_file, request) => {
+      const report = await os.validate({ item: request.change, type: "change" });
+      return report.items.flatMap((i) =>
+        i.issues.filter((x) => x.level === "ERROR").map((x) => x.message),
+      );
+    },
+  });
+  const run = await rt.done(runId);
+  if (run.state === "validated") {
+    io.out(`${run.request.outputPath} for ${run.request.change} is valid`);
+    return 0;
+  }
+  for (const e of run.errors) io.err(e);
+  io.err(
+    `${run.request.outputPath} needs fixing; run atticus handoff done ${runId} again when it's fixed`,
+  );
+  return 1;
 }
