@@ -1,0 +1,17 @@
+# Harbor runs Jira and GitHub. Atticus can't reach Harbor's Jira from where it runs, so the work
+# tracker is manual (ADR 0032): a person files the items and records the keys; exports of
+# Jira and GitHub issues in inputs/tickets/ are what Atticus reads.
+schemaVersion: 1
+assistants: { allowed: [claude-code, copilot], default: claude-code }
+editors: [vscode]
+modes: { allowed: [hand-off, model], default: hand-off }
+autonomy:
+  default: draft
+  capPerRepo: { harbor-platform: plan-only }
+budgets: { defaultTokens: 120000 }
+retention: { runsDays: 14 }
+adapters:
+  workTracker: { type: manual, settings: { kind: jira, project: HRB } }
+  serviceDesk: { type: manual }
+  gitHost: { type: github, settings: { owner: harbor, baseUrl: https://github.example.com } }
+  notify: { type: slack, settings: { channel: "#harbor-architecture" } }

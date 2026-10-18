@@ -1,0 +1,17 @@
+<mxfile host="drawio">
+  <diagram id="data" name="Harbor data and ML platform">
+    <mxGraphModel>
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="pipeline" value="Warehouse Pipeline" style="rounded=1;" vertex="1" parent="1"/>
+        <mxCell id="orders" value="Orders Svc" style="rounded=1;" vertex="1" parent="1"/>
+        <mxCell id="catalog" value="Catalog Svc" style="rounded=1;" vertex="1" parent="1"/>
+        <mxCell id="recs" value="Recs&lt;br&gt;Model" style="shape=hexagon;" vertex="1" parent="1"/>
+        <mxCell id="d1" value="HB.SYNC.MESH GET /orders/export" edge="1" source="pipeline" target="orders" parent="1"/>
+        <mxCell id="d2" value="HB.DATA.ELT" edge="1" source="pipeline" target="catalog" parent="1"/>
+        <mxCell id="d3" value="HB.DATA.FEAT" edge="1" source="recs" target="pipeline" parent="1"/>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

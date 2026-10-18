@@ -1,0 +1,13 @@
+schemaVersion: 1
+code: HB.ASYNC.EVENT
+name: Domain event on Kafka
+definition: A service publishes a domain event to a Kafka topic described in its AsyncAPI document; other services consume it.
+interaction: async
+route: event-bus
+targetType: product
+controls: [AsyncAPI document, schema in the registry, idempotent consumer]
+technology: [Kafka, AsyncAPI]
+detection: { via: [event-bus], sync: async, hints: [kafkajs, kafka-go, outbox.publish] }
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: confirmed

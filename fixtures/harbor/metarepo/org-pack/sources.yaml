@@ -1,0 +1,3 @@
+schemaVersion: 1
+wikis:
+  - { id: harbor-wiki, type: markdown-folder, location: ../../inputs/wiki, owner: team-platform }

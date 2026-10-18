@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info:
+  title: Tidewater Payments API
+  version: 1.4.0
+servers:
+  - url: https://api.tidewater.example
+paths:
+  /v1/payments:
+    post:
+      operationId: createPayment
+      deprecated: true
+      responses:
+        "201":
+          description: Payment created

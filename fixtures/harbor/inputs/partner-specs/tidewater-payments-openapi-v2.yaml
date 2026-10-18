@@ -1,0 +1,42 @@
+openapi: 3.1.0
+info:
+  title: Tidewater Payments API
+  version: 2.1.0
+servers:
+  - url: https://api.tidewater.example
+security:
+  - apiKey: []
+paths:
+  /v1/charges:
+    post:
+      operationId: createCharge
+      responses:
+        "201":
+          description: Charge authorized
+  /v1/charges/{chargeId}:
+    get:
+      operationId: getCharge
+      parameters:
+        - { name: chargeId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: The charge
+  /v1/refunds:
+    post:
+      operationId: createRefund
+      responses:
+        "201":
+          description: Refund accepted
+webhooks:
+  chargeSettled:
+    post:
+      summary: Tidewater calls the subscriber's endpoint when a charge settles.
+      responses:
+        "204":
+          description: Received
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: Tidewater-Key

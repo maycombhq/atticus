@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-svc
+  namespace: prod
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: catalog-svc
+  template:
+    metadata:
+      labels:
+        app: catalog-svc
+    spec:
+      containers:
+        - name: catalog-svc
+          image: registry.harbor.example/catalog-svc:2026.10.4
+          ports:
+            - containerPort: 8080
+            - containerPort: 9090
+          resources:
+            limits:
+              cpu: "1"
+              memory: 256Mi

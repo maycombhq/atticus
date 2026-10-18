@@ -1,0 +1,11 @@
+project: harbor_recs
+registry: s3://harbor-ml-registry/registry.db
+provider: aws
+online_store:
+  type: redis
+  connection_string: harbor-features.c1harbor.cache.example:6379
+offline_store:
+  type: redshift
+  cluster_id: harbor-warehouse
+  region: us-east-1
+  database: analytics

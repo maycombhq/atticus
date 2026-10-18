@@ -1,0 +1,107 @@
+schemaVersion: 1
+id: add-gift-cards
+title: Pay with a gift card
+type: feature
+template: feature
+state: plan
+authors:
+  brief:
+    - priya
+  design:
+    - arlo
+  interfaces:
+    - arlo
+  mappings:
+    - arlo
+  proposal:
+    - priya
+  specs:
+    - priya
+  stories:
+    - bea
+  tasks:
+    - bea
+createdAt: 2026-10-12T09:00:00Z
+createdBy: priya
+handoffs:
+  - phase: define
+    state: merged
+    approvals:
+      - at: 2026-10-13T10:00:00Z
+        by: priya
+        roles:
+          - product-owner
+    artifacts: []
+    branch: handoff/add-gift-cards/define
+    by: priya
+    openedAt: 2026-10-13T09:00:00Z
+    pr:
+      number: 31
+      url: https://github.example.com/harbor/harbor-architecture/pull/31
+    reviewers:
+      - harbor/architects
+    updatedAt: 2026-10-13T10:00:00Z
+  - phase: design
+    state: merged
+    approvals:
+      - at: 2026-10-15T16:00:00Z
+        by: avery
+        roles:
+          - architect
+    artifacts: []
+    branch: handoff/add-gift-cards/design
+    by: arlo
+    openedAt: 2026-10-15T11:00:00Z
+    pr:
+      number: 34
+      url: https://github.example.com/harbor/harbor-architecture/pull/34
+    reviewers:
+      - avery
+    updatedAt: 2026-10-15T16:00:00Z
+history:
+  - from: draft
+    to: define
+    at: 2026-10-12T09:00:00Z
+    by: priya
+    reason: Created from the feature template
+  - from: define
+    to: design
+    at: 2026-10-13T10:00:00Z
+    by: priya
+    pr: 31
+    reason: Send to architecture merged
+  - from: design
+    to: plan
+    at: 2026-10-15T16:00:00Z
+    by: avery
+    pr: 34
+    reason: Approve design merged
+owners:
+  architect:
+    - arlo
+    - avery
+  business-analyst:
+    - bea
+  delivery-lead:
+    - dev-lead
+  developer:
+    - dina
+  product-owner:
+    - priya
+  qa:
+    - quinn
+  sre:
+    - sol
+  team-lead:
+    - tomas
+systems:
+  - orders
+  - payments
+  - storefront
+  - tidewater-payments
+touches:
+  interfaces: []
+  dataStores: []
+  tables: []
+  records: []
+  repos: []

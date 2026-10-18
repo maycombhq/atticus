@@ -1,0 +1,79 @@
+# Expected results from reading fixtures/harbor/inputs (two diagrams, wiki, partner specs,
+# ticket exports). Hand-written ground truth for the diagram readers, intake, the pattern
+# scan and the wiki facts.
+
+# Edges each diagram reader must read. The Mermaid file numbers its edges e1, e2, ... in
+# order (e14 has its own id for the legend class); the draw.io cells are d1-d3.
+diagrams:
+  - file: inputs/diagrams/harbor-architecture.mmd
+    page: Harbor platform (architecture overview)
+    boxes: [Web App, Mobile App, Shop Graph, Product Catalog, Orders Svc, Payments Svc, Payment Webhook, Cart Reminder, Recs Model, Tidewater Payments, Lantern Mail, Loyalty Service]
+    edges:
+      - { cell: e1, from: Web App, to: Shop Graph, label: HB.GQL.CLIENT, pattern: HB.GQL.CLIENT }
+      - { cell: e2, from: Mobile App, to: Shop Graph, label: HB.GQL.CLIENT, pattern: HB.GQL.CLIENT }
+      - { cell: e3, from: Shop Graph, to: Product Catalog, label: HB.SYNC.MESH, pattern: HB.SYNC.MESH }
+      - { cell: e4, from: Shop Graph, to: Orders Svc, label: HB.SYNC.MESH, pattern: HB.SYNC.MESH }
+      - { cell: e5, from: Orders Svc, to: Product Catalog, label: HB.SYNC.MESH POST /harbor.inventory.v1.Inventory/CheckStock, pattern: HB.SYNC.MESH, method: POST, path: /harbor.inventory.v1.Inventory/CheckStock }
+      - { cell: e6, from: Orders Svc, to: Payments Svc, label: HB.SYNC.MESH, pattern: HB.SYNC.MESH }
+      - { cell: e7, from: Payments Svc, to: Tidewater Payments, label: HB.VND.EGRESS, pattern: HB.VND.EGRESS }
+      - { cell: e8, from: Tidewater Payments, to: Payment Webhook, label: HB.VND.HOOK POST /webhooks/tidewater, pattern: HB.VND.HOOK, method: POST, path: /webhooks/tidewater }
+      - { cell: e9, from: Payment Webhook, to: Orders Svc, label: HB.ASYNC.EVENT payments.settled, pattern: HB.ASYNC.EVENT, topic: payments.settled }
+      - { cell: e10, from: Payments Svc, to: Orders Svc, label: HB.ASYNC.EVNT payments.authorized, pattern: HB.ASYNC.EVNT, topic: payments.authorized }
+      - { cell: e11, from: Cart Reminder, to: Orders Svc, label: GET /carts/abandoned, pattern: null, method: GET, path: /carts/abandoned }
+      - { cell: e12, from: Cart Reminder, to: Lantern Mail, label: HB.VND.EGRESS POST /v3/messages, pattern: HB.VND.EGRESS, method: POST, path: /v3/messages }
+      - { cell: e13, from: Recs Model, to: Shop Graph, label: POST /v1/models/recommendations:predict, pattern: null, method: POST, path: /v1/models/recommendations:predict }
+      - { cell: e14, from: Shop Graph, to: Loyalty Service, label: HB.SYNC.MESH GET /points, pattern: HB.SYNC.MESH, method: GET, path: /points, legend: new }
+  - file: inputs/diagrams/harbor-data-platform.drawio
+    page: Harbor data and ML platform
+    boxes: [Warehouse Pipeline, Orders Svc, Catalog Svc, Recs Model]
+    edges:
+      - { cell: d1, from: Warehouse Pipeline, to: Orders Svc, label: HB.SYNC.MESH GET /orders/export, pattern: HB.SYNC.MESH, method: GET, path: /orders/export }
+      - { cell: d2, from: Warehouse Pipeline, to: Catalog Svc, label: HB.DATA.ELT, pattern: HB.DATA.ELT }
+      - { cell: d3, from: Recs Model, to: Warehouse Pipeline, label: HB.DATA.FEAT, pattern: HB.DATA.FEAT }
+
+# Diagram names and the catalog ids they stand for (null: planned, not in code yet).
+aliases:
+  Web App: web-app
+  Mobile App: mobile-app
+  Shop Graph: shop-graph
+  Product Catalog: catalog-svc # through the profile: a person confirms the alias
+  Catalog Svc: catalog-svc
+  Orders Svc: orders-svc
+  Payments Svc: payments-svc
+  Payment Webhook: payment-webhook
+  Cart Reminder: cart-reminder
+  Recs Model: recs-model
+  Warehouse Pipeline: warehouse-pipeline
+  Tidewater Payments: tidewater-payments
+  Lantern Mail: lantern-mail
+  Loyalty Service: null # planned (legend New), not in code yet
+
+# Harbor's own pattern codes, in the order of inputs/wiki/integration-patterns.md.
+patterns: [HB.GQL.CLIENT, HB.SYNC.MESH, HB.ASYNC.EVENT, HB.VND.EGRESS, HB.VND.HOOK, HB.DATA.ELT, HB.DATA.FEAT]
+
+# Facts in documents that conflict with code (the document never overrides code).
+documentConflicts:
+  - doc: inputs/wiki/checkout-solution-spec.md
+    claim: The Orders Service calls the Payments Service through the gateway
+    code: interface if-a24c46bb442ec4b3 is via mesh
+  - doc: inputs/wiki/checkout-solution-spec.md
+    claim: The warehouse pipeline loads orders through the Orders API
+    code: warehouse-pipeline reads table orders-db.orders directly
+
+# Facts only documents give; they need an owner to confirm before they become asserted.
+documentOnlyFacts:
+  - { system: orders, fact: "SLO 99.95% monthly availability", becomes: Obligation }
+  - { system: orders, fact: "Peak load 120 requests per second", becomes: Obligation }
+
+# What intake must make of each file in inputs/ (the wiki folder belongs to the wiki reader).
+documents:
+  - { path: inputs/diagrams/harbor-architecture.mmd, classification: diagram, status: read, systems: [catalog, engagement, lantern-mail, orders, payments, recommendations, storefront, tidewater-payments] }
+  - { path: inputs/diagrams/harbor-data-platform.drawio, classification: diagram, status: read, systems: [analytics, catalog, orders, recommendations] }
+  - { path: inputs/partner-specs/tidewater-payments-openapi-v1.yaml, classification: openapi, status: superseded, systems: [tidewater-payments], supersededBy: doc.tidewater-payments-openapi-v2 }
+  - { path: inputs/partner-specs/tidewater-payments-openapi-v2.yaml, classification: openapi, status: read, systems: [tidewater-payments] }
+  - { path: inputs/tickets/github-issues-harbor-platform.json, classification: ticket-export, status: no-reader, systems: [] }
+  - { path: inputs/tickets/jira-hrb-export.json, classification: ticket-export, status: no-reader, systems: [] }
+
+# What intake leaves for a person: the partner spec's title matched only through the profile.
+triage:
+  - { id: alias-needed.tidewater-payments-api, kind: alias-needed, records: [tidewater-payments] }

@@ -1,0 +1,14 @@
+version: 2
+
+# Service databases, read through their read replicas.
+sources:
+  - name: orders
+    database: orders-db
+    schema: public
+    tables:
+      - name: orders
+  - name: catalog
+    database: catalog-db
+    schema: public
+    tables:
+      - name: products

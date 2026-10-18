@@ -1,0 +1,86 @@
+# Seeded problems in Harbor. Each later stage must find every one of these.
+# found_by: the feature that must report it. refs: catalog ids in expected/scan.yaml.
+- id: h01-vendor-calls-direct
+  found_by: reconcile
+  what: Mermaid edges e7 and e12 say Payments Svc → Tidewater Payments and Cart Reminder → Lantern Mail go through the egress gateway (HB.VND.EGRESS); the code calls both vendors directly.
+  refs: [if-a4ccfcea11eeebf0, if-018d1416ec04a61a, if-10465a7b9c85231e]
+- id: h02-pipeline-reads-orders-db
+  found_by: reconcile
+  what: draw.io edge d1 says the warehouse pipeline calls the Orders service (GET /orders/export); the code reads table orders-db.orders directly through a dbt source (HB.DATA.ELT).
+  refs: [orders-db.orders]
+- id: h03-undocumented-fraud-call
+  found_by: reconcile
+  what: Code-only edge orders-svc → fraud-score is missing from the architecture diagram.
+  refs: [if-86fee9e6f849eb46]
+- id: h04-undocumented-orders-placed
+  found_by: reconcile
+  what: Code-only event orders-svc → catalog-svc (orders.placed) is missing from the architecture diagram.
+  refs: [if-2a8d8dd6ededf292]
+- id: h05-planned-loyalty
+  found_by: reconcile
+  what: Diagram-only edge e14 to Loyalty Service is marked New; it becomes a planned-new interface in a change.
+  refs: []
+- id: h06-product-catalog-alias
+  found_by: reconcile
+  what: Diagram box "Product Catalog" matches catalog-svc only through the profile; a person confirms the alias.
+  refs: [catalog-svc]
+- id: h07-recs-arrow-reversed
+  found_by: reconcile
+  what: Mermaid edge e13 is drawn Recs Model → Shop Graph; in code shop-graph calls recs-model, so the call is also missing as drawn.
+  refs: [if-9c51c4944979e455]
+- id: h08-event-pattern-typo
+  found_by: reconcile
+  what: Mermaid edge e10 names unknown pattern code HB.ASYNC.EVNT, a likely typo of HB.ASYNC.EVENT.
+  refs: []
+- id: h09-no-vendor-timeouts
+  found_by: knowledge-gap
+  what: No timeout or retry settings are known for payments-svc's two Tidewater calls or cart-reminder's Lantern Mail call (the 5 s timeout payments-svc sets in code isn't catalogued), so they can't be checked against HB.VND.EGRESS.
+  refs: [if-a4ccfcea11eeebf0, if-018d1416ec04a61a, if-10465a7b9c85231e]
+- id: h10-catalog-consumer-unmonitored
+  found_by: knowledge-gap
+  what: catalog-svc consumes orders.placed but has no alert or dashboard.
+  refs: [catalog-svc]
+- id: h11-schedules-unmonitored
+  found_by: knowledge-gap
+  what: cart-reminder (every two hours) and warehouse-pipeline (daily at 03:00) run on schedules with nobody waiting, and have no alert or dashboard.
+  refs: [cart-reminder, warehouse-pipeline]
+- id: h12-fraud-score-unknown-owner
+  found_by: knowledge-gap
+  what: fraud-score is known only from the Orders service's call; it has no repo, owner or spec.
+  refs: [fraud-score]
+- id: h13-doc-conflicts
+  found_by: intake
+  what: The checkout solution spec contradicts code twice (see inputs.yaml documentConflicts); code wins and the conflicts go to triage.
+  refs: [if-a24c46bb442ec4b3, orders-db.orders]
+- id: h14-superseded-partner-spec
+  found_by: intake
+  what: An older Tidewater spec (v1.4.0, POST /v1/payments) lies next to v2.1.0; intake marks it superseded so its retired operation never reaches the catalog.
+  refs: [tidewater-payments]
+- id: h15-partner-spec-alias
+  found_by: intake
+  what: The partner spec's title "Tidewater Payments API" matches tidewater-payments only through the profile; a person confirms the alias.
+  refs: [tidewater-payments]
+- id: h16-ticket-exports
+  found_by: intake
+  what: The Jira export (REST search shape) and the GitHub issues export are ticket exports, not API payloads; no reader takes facts from them yet.
+  refs: []
+- id: h17-pattern-typo-in-change
+  found_by: critic
+  what: The add-gift-cards change's interfaces.md names pattern HB.SYNC.MSH, a likely typo of HB.SYNC.MESH.
+  refs: []
+- id: h18-unlabelled-hop
+  found_by: critic
+  what: The add-gift-cards change's interfaces.md has a hop (cart-reminder → lantern-mail) with no pattern code.
+  refs: [if-10465a7b9c85231e]
+- id: h19-vendor-direct-in-change
+  found_by: critic
+  what: The change touches payments-svc → Tidewater (POST /v1/charges), which goes direct in the code; HB.VND.EGRESS requires the egress gateway.
+  refs: [if-a4ccfcea11eeebf0]
+- id: h20-unknown-vendor-operation
+  found_by: critic
+  what: The change plans payments-svc → Tidewater POST /v1/gift-cards/{code}/redeem, which Tidewater's published spec doesn't have.
+  refs: [tidewater-payments]
+- id: h21-story-without-acceptance-criteria
+  found_by: critic
+  what: Story s2 (Jira HRB-118, "Gift cards") has no acceptance criteria.
+  refs: []

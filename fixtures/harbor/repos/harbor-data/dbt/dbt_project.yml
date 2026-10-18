@@ -1,0 +1,10 @@
+name: harbor_warehouse
+version: "1.0.0"
+profile: harbor-warehouse
+model-paths: ["models"]
+models:
+  harbor_warehouse:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table

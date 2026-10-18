@@ -1,0 +1,22 @@
+schemaVersion: 1
+gates:
+  - id: design
+    phase: design
+    approvers: [architect]
+    checklists: [harbor-architecture]
+    checks: [{ check: openspec-validate }]
+  - id: plan
+    phase: plan
+    approvers: [team-lead]
+    checklists: [harbor-architecture]
+    checks: [{ check: openspec-validate }]
+  - id: build
+    phase: build
+    approvers: [developer]
+    checks: [{ check: tests-pass }, { check: coverage, params: { minPercent: 70 } }]
+  - id: release
+    phase: release
+    approvers: [delivery-lead, sre]
+    minApprovals: 2
+    checklists: [harbor-architecture]
+    checks: [{ check: tests-pass }]

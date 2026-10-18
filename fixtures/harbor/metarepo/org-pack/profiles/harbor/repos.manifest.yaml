@@ -1,0 +1,69 @@
+# The Harbor platform's repos. Hand-written; matches fixtures/harbor/repos.
+schemaVersion: 1
+platform: harbor
+repos:
+  - id: harbor-web
+    url: https://github.example.com/harbor/harbor-web.git
+    type: spa
+    owner: team-storefront
+    component: web-app
+    system: storefront
+  - id: harbor-mobile
+    url: https://github.example.com/harbor/harbor-mobile.git
+    type: mobile-app
+    owner: team-storefront
+    component: mobile-app
+    system: storefront
+  - id: harbor-graph
+    url: https://github.example.com/harbor/harbor-graph.git
+    type: bff
+    owner: team-storefront
+    component: shop-graph
+    system: storefront
+  - id: harbor-catalog
+    url: https://github.example.com/harbor/harbor-catalog.git
+    type: service
+    owner: team-catalog
+    component: catalog-svc
+    system: catalog
+  - id: harbor-orders
+    url: https://github.example.com/harbor/harbor-orders.git
+    type: service
+    owner: team-checkout
+    component: orders-svc
+    system: orders
+  - id: harbor-payments
+    url: https://github.example.com/harbor/harbor-payments.git
+    type: service
+    owner: team-payments
+    component: payments-svc
+    system: payments
+  - id: harbor-payment-webhook
+    url: https://github.example.com/harbor/harbor-payment-webhook.git
+    type: function
+    owner: team-payments
+    component: payment-webhook
+    system: payments
+  - id: harbor-cart-reminder
+    url: https://github.example.com/harbor/harbor-cart-reminder.git
+    type: function
+    owner: team-growth
+    component: cart-reminder
+    system: engagement
+  - id: harbor-data
+    url: https://github.example.com/harbor/harbor-data.git
+    type: data-pipeline
+    owner: team-data
+    component: warehouse-pipeline
+    system: analytics
+  - id: harbor-recs
+    url: https://github.example.com/harbor/harbor-recs.git
+    type: ml-model
+    owner: team-ml
+    component: recs-model
+    system: recommendations
+  - id: harbor-platform
+    url: https://github.example.com/harbor/harbor-platform.git
+    defaultBranch: main
+    type: infra
+    owner: team-platform

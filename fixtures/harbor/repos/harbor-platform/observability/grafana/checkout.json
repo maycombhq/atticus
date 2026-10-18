@@ -1,0 +1,18 @@
+{
+  "uid": "checkout",
+  "title": "Checkout",
+  "tags": ["team:checkout", "service:orders-svc"],
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Orders placed per minute",
+      "targets": [{ "expr": "sum(rate(orders_placed_total[1m])) * 60" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Payment settlements lag",
+      "targets": [{ "expr": "kafka_consumergroup_lag{group=\"orders-svc\",topic=\"payments.settled\"}" }]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+name: Orders CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - uses: codecov/codecov-action@v4
+        with:
+          files: coverage/lcov.info
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - run: kubectl apply -f k8s/

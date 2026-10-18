@@ -1,0 +1,17 @@
+schemaVersion: 1
+platform: harbor
+name: Harbor online retail
+systems:
+  - { id: storefront, name: Storefront, boundary: product, owner: team-storefront, aliases: [Harbor Storefront] }
+  - { id: catalog, name: Catalog, boundary: product, owner: team-catalog, aliases: [Product Catalog, Catalog Service] }
+  - { id: orders, name: Orders, boundary: product, owner: team-checkout, aliases: [Orders Service, Checkout] }
+  - { id: payments, name: Payments, boundary: product, owner: team-payments, aliases: [Payments Service] }
+  - { id: engagement, name: Engagement, boundary: product, owner: team-growth, aliases: [Growth] }
+  - { id: analytics, name: Analytics, boundary: internal, owner: team-data, aliases: [Data Platform] }
+  - { id: recommendations, name: Recommendations, boundary: product, owner: team-ml, aliases: [Recommender] }
+  - { id: fraud, name: Fraud, boundary: internal }
+  - { id: tidewater-payments, name: Tidewater Payments, boundary: vendor, aliases: [Tidewater, Tidewater Payments API] }
+  - { id: lantern-mail, name: Lantern Mail, boundary: vendor, aliases: [Lantern] }
+environments: [dev, staging, prod]
+legend: { new: [New, Planned], modify: [Modify, Changing], retire: [Retire, Sunset] }
+gates: [design, release]

@@ -1,0 +1,19 @@
+{
+  "name": "@harbor/shop-graph",
+  "version": "5.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node dist/server.js",
+    "build": "tsc -p .",
+    "test": "vitest run --coverage"
+  },
+  "dependencies": {
+    "fastify": "4.28.1",
+    "mercurius": "14.1.0"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "vitest": "2.1.4"
+  }
+}

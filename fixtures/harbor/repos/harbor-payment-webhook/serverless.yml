@@ -1,0 +1,19 @@
+service: harbor-payment-webhook
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  stage: prod
+  region: us-east-1
+  environment:
+    TIDEWATER_SIGNING_SECRET_REF: ssm:/harbor/payments/tidewater-signing-secret
+
+functions:
+  tidewaterWebhook:
+    handler: src/handler.handle
+    timeout: 10
+    events:
+      - httpApi:
+          method: POST
+          path: /webhooks/tidewater

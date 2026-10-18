@@ -1,0 +1,17 @@
+service: harbor-cart-reminder
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: python3.12
+  stage: prod
+  region: us-east-1
+  environment:
+    LANTERN_API_KEY_REF: ssm:/harbor/growth/lantern-api-key
+
+functions:
+  remindAbandonedCarts:
+    handler: reminder/handler.handler
+    timeout: 120
+    events:
+      - schedule: cron(0 */2 * * ? *)

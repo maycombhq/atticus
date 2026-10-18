@@ -1,0 +1,13 @@
+schemaVersion: 1
+enabledOptional: [data-architect, sre]
+mappings:
+  - { group: "harbor/architects", role: architect }
+  - { group: "harbor/checkout", role: developer }
+  - { group: "harbor/platform", role: platform-lead }
+approvals:
+  release-go-no-go: { roles: [delivery-lead] }
+  waiver: { roles: [architect], groups: ["harbor/architects"] }
+  org-pack-change: { roles: [platform-lead] }
+separation:
+  - actions: ["author:design", "approve:design"]
+    reason: The author of a design can't approve it.

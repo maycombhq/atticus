@@ -1,0 +1,42 @@
+# Features a correct detection finds in the Harbor catalog (expected/scan.yaml), ADR 0031:
+# which entry points belong to one feature. Hand-written; never generate it from the detector.
+#
+# Entry points are an endpoint called from a UI or another system, an event consumed in
+# another system, and a schedule. Names are what a person would confirm; detection only
+# proposes names, so they are not compared. adr0040: entry points that need ADR 0040 endpoint
+# types (graphql, webhook) to be detected; the rest are detected on today's rules.
+#
+# Why each feature is what it is:
+# - Product catalog: the apps' products and product queries reach the catalog's two product
+#   endpoints (the calls share "product"); both endpoints name products.
+# - Orders: the order query and the place-order mutation reach the Orders endpoints, which
+#   publish orders.placed (shares "order"), consumed by the catalog in another system.
+# - Payments: POST /payments publishes payments.authorized through the outbox (shares
+#   "payment"); the Orders service consumes it and payments.settled and calls POST /payments
+#   again (shares "payment"); Tidewater's webhook is the only start in its function, so its
+#   flow follows the function's one call: the payments.settled publish.
+# - Abandoned cart reminders: the function's schedule calls GET /carts/abandoned (shares
+#   "abandoned" and "cart").
+# - Stock check: the gRPC CheckStock shares no word with what calls it (the Orders service
+#   places orders), so it starts a feature of its own.
+# - Recommendations: the recommendations query calls the model's
+#   /v1/models/recommendations:predict (shares "recommendation").
+# - Daily sales: the warehouse pipeline's daily schedule; it calls nothing.
+- name: Product catalog
+  entryPoints: [catalog-svc.get-product-b5f716, catalog-svc.get-product-d66ca1]
+  adr0040: [shop-graph.query-product, shop-graph.query-products]
+- name: Orders
+  entryPoints: [if-2a8d8dd6ededf292, orders-svc.get-order, orders-svc.post-order]
+  adr0040: [shop-graph.mutation-place-order, shop-graph.query-order]
+- name: Payments
+  entryPoints: [if-9799eee043a9c9bc, if-9c9b1e808fbaac38, payments-svc.post-payment]
+  adr0040: [payment-webhook.post-tidewater]
+- name: Abandoned cart reminders
+  entryPoints: [cart-reminder.schedule-remindabandonedcarts, orders-svc.get-abandoned]
+- name: Stock check
+  entryPoints: [catalog-svc.check-stock]
+- name: Recommendations
+  entryPoints: [recs-model.post-recommendations-predict]
+  adr0040: [shop-graph.query-recommendations]
+- name: Daily sales
+  entryPoints: [warehouse-pipeline.schedule-orders-daily]

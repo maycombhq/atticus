@@ -1,0 +1,13 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: catalog-svc
+  namespace: prod
+spec:
+  hosts:
+    - catalog-svc.prod.svc.cluster.local
+  http:
+    - route:
+        - destination:
+            host: catalog-svc.prod.svc.cluster.local
+            subset: stable

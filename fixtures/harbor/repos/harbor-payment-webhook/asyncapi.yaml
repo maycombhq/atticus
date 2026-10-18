@@ -1,0 +1,14 @@
+asyncapi: 3.0.0
+info:
+  title: Payment webhook events
+  version: 1.0.0
+channels:
+  paymentsSettled:
+    address: payments.settled
+    messages:
+      PaymentSettled:
+        payload: { type: object }
+operations:
+  publishPaymentSettled:
+    action: send
+    channel: { $ref: "#/channels/paymentsSettled" }

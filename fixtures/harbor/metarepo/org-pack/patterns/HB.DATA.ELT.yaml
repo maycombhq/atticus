@@ -1,0 +1,13 @@
+schemaVersion: 1
+code: HB.DATA.ELT
+name: Service tables into the warehouse
+definition: The warehouse pipeline reads a service's tables from its read replica and loads them into the warehouse.
+interaction: data-access
+route: jdbc
+targetType: data-store
+controls: [Read replica only, column allow-list, owner approval]
+technology: [Airflow, dbt]
+detection: { hints: [dbt source, airflow] }
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: confirmed
