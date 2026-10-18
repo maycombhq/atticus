@@ -1,0 +1,41 @@
+import type { Extractor } from "@maycombhq/sdk";
+import { apigeeExtractor } from "./apigee.js";
+import {
+  componentExtractor,
+  frontendExtractor,
+  infraExtractor,
+  migrationsExtractor,
+  topicsExtractor,
+} from "./more.js";
+import { openapiExtractor } from "./openapi.js";
+import { springExtractor } from "./spring.js";
+
+export * from "./facts.js";
+export * from "./dialect.js";
+export * from "./lang/java.js";
+export * from "./lang/config.js";
+export * from "./lang/xml.js";
+export * from "./lang/sql.js";
+export {
+  apigeeExtractor,
+  componentExtractor,
+  frontendExtractor,
+  infraExtractor,
+  migrationsExtractor,
+  openapiExtractor,
+  springExtractor,
+  topicsExtractor,
+};
+export { settingSlug } from "./spring.js";
+
+/** Every built-in extractor, in a stable order. Dialect engines are added by the scanner. */
+export const BUILT_IN_EXTRACTORS: readonly Extractor[] = [
+  componentExtractor,
+  openapiExtractor,
+  apigeeExtractor,
+  springExtractor,
+  frontendExtractor,
+  topicsExtractor,
+  migrationsExtractor,
+  infraExtractor,
+];

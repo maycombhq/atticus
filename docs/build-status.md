@@ -17,10 +17,16 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 | 8c     | Contract C5: agent definitions, context packs (data wrapping, classification, budget, manifest), the hand-off runtime with `atticus handoff done`, model runtime, mock and recorded-replay runtimes, run summaries and retention                           | `packages/ai`, `packages/core`, ADR 0014                                      |
 | 9      | The local API as an OpenAPI 3.1 document generated from zod, validated, committed at `docs/api/openapi.json`; the synthetic estate generator (300 repos by default) with a scale test proving exact counts and cached rescans                              | `packages/core`, `packages/synth`, ADR 0015                                   |
 
+## Done (M1)
+
+| Ticket | What                                                                                                                                                                                                                                                                      | Where                           |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| 10–11  | Built-in extractors (component, OpenAPI, Apigee, Spring, frontend, topics, SQL migrations, infrastructure) with Java, YAML, XML and SQL readers; loose ends as Unresolved records; the C2 dialect rule engine and dialect test runner; the Forge dialect passes its tests | `packages/extractors`, ADR 0016 |
+
 ## Next
 
 1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0015; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
-2. **M1:** OpenAPI, gateway and Spring extractors; the Forge dialect; merge and identity; scan and diff; SQLite index; draw.io ingestor; reconcile. Exit: a scan of `fixtures/forge` matches `expected/scan.yaml`, and reconcile finds d01–d06.
+2. **M1:** merge and identity; scan and diff; SQLite index; draw.io ingestor; reconcile. Exit: a scan of `fixtures/forge` matches `expected/scan.yaml`, and reconcile finds d01–d06.
 
 ## How to work
 

@@ -60,6 +60,8 @@ export const ManifestRepo = z.strictObject({
   type: RecordId,
   /** Owning team id (roles.yaml). */
   owner: RecordId,
+  /** The component this repo builds, when its id differs from the repo id (ADR 0016). */
+  component: RecordId.optional(),
   /** The catalog System this repo belongs to, when one repo maps to one system. */
   system: RecordId.optional(),
   /** Extractor ids to run on this repo; empty means the profile's defaults for the type. */

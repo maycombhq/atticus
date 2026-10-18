@@ -137,11 +137,11 @@ describe("C2 dialect file", () => {
       issues(withRule({ emit: { ...dialect.rules[0]!.emit, id: "${attr.x | yell}" } })).join(),
     ).toContain("unknown filter");
     expect(issues(withRule({ match: { configKey: "a.b", files: ["*.yml"] } })).join()).toContain(
-      "${attr.*} needs an annotation or methodCall match",
+      "${attr.*} needs an annotation, methodCall, xpath or jsonPath match",
     );
     expect(
       issues(withRule({ emit: { ...dialect.rules[0]!.emit, id: "${match.1}" } })).join(),
-    ).toContain("${match.N} needs a regex match");
+    ).toContain("${match.N} needs a regex, configKey, xpath or jsonPath match");
     expect(
       issues(withRule({ emit: { ...dialect.rules[0]!.emit, id: "${system}" } })).join(),
     ).toContain("only for checklist questions");

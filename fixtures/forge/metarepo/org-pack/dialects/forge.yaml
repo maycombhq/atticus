@@ -61,6 +61,7 @@ rules:
       fields:
         unresolvedKind: event-publish
         raw: "${attr.topic}"
+        owner: "${yaml:forge.yaml#service}"
       evidence: { source: code, side: caller }
     confidence: inferred
 
@@ -76,6 +77,7 @@ rules:
       fields:
         unresolvedKind: event-subscribe
         raw: "${attr.topic}"
+        owner: "${yaml:forge.yaml#service}"
       evidence: { source: code, side: callee }
     confidence: inferred
 

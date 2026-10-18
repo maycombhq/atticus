@@ -231,18 +231,24 @@ export const Dialect = z
               path: ["rules", i],
               message: `\${${s.name}} is only for checklist questions`,
             });
-          if (s.type === "match" && matchType(r.match) !== "regex") {
+          if (
+            s.type === "match" &&
+            !["regex", "configKey", "xpath", "jsonPath"].includes(matchType(r.match))
+          ) {
             ctx.addIssue({
               code: "custom",
               path: ["rules", i],
-              message: "${match.N} needs a regex match",
+              message: "${match.N} needs a regex, configKey, xpath or jsonPath match",
             });
           }
-          if (s.type === "attr" && !["annotation", "methodCall"].includes(matchType(r.match))) {
+          if (
+            s.type === "attr" &&
+            !["annotation", "methodCall", "xpath", "jsonPath"].includes(matchType(r.match))
+          ) {
             ctx.addIssue({
               code: "custom",
               path: ["rules", i],
-              message: "${attr.*} needs an annotation or methodCall match",
+              message: "${attr.*} needs an annotation, methodCall, xpath or jsonPath match",
             });
           }
         }

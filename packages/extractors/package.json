@@ -1,0 +1,29 @@
+{
+  "name": "@maycombhq/extractors",
+  "version": "0.0.1",
+  "description": "Atticus's built-in extractors: OpenAPI, Apigee-style gateways, Spring, frontend calls, topic configs and SQL migrations.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/sdk": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

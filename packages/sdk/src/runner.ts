@@ -14,6 +14,8 @@ export interface ScanRepoOptions {
   dirty?: boolean;
   /** Hash of configuration that changes an extractor's output, e.g. its dialect rule files. */
   configFor?: (extractor: Extractor) => string | undefined;
+  /** What the manifest says about the repo; passed to extractors and part of the cache key. */
+  repoInfo?: { component?: string; system?: string; repoType?: string };
 }
 
 export type RunStatus = "ran" | "cached" | "skipped" | "failed";
@@ -144,7 +146,9 @@ export async function scanRepo(options: ScanRepoOptions): Promise<RepoScan> {
       extractor: extractor.id,
       version: extractor.version,
       dialects,
-      config: options.configFor?.(extractor) ?? "",
+      config: [options.configFor?.(extractor) ?? "", JSON.stringify(options.repoInfo ?? {})].join(
+        "|",
+      ),
     };
 
     try {
@@ -163,8 +167,12 @@ export async function scanRepo(options: ScanRepoOptions): Promise<RepoScan> {
         const warnings: { message: string; path?: string }[] = [];
         const ids = new Set<string>();
         let rejected = 0;
+        const info = options.repoInfo ?? {};
         const ctx: ScanContext = {
           dialects,
+          ...(info.component ? { component: info.component } : {}),
+          ...(info.system ? { system: info.system } : {}),
+          ...(info.repoType ? { repoType: info.repoType } : {}),
           scannedAt,
           warn: (message, path) =>
             warnings.push(path === undefined ? { message } : { message, path }),

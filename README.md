@@ -28,6 +28,7 @@ packages/
   workspace/         base clones, change worktrees, repos files, VS Code and IntelliJ workspaces
   adapters/          work tracker, service desk, Git host, wiki, design tool, notifications; each with a mock
   ai/                AI runtime (C5): context packs, hand-off, model, mock and replay runtimes
+  extractors/        built-in extractors and the dialect rule engine
   synth/             synthetic estate generator for scale tests
   cli/               the `atticus` command
   fixtures/          tests that keep the Forge fixture consistent

@@ -1,0 +1,264 @@
+import type { CatalogRecord } from "@maycombhq/core";
+import { defineExtractor } from "@maycombhq/sdk";
+import { componentOf, looseEnd, repoConfig, restEndpoint } from "./facts.js";
+import { resolvePlaceholders, type ConfigValue } from "./lang/config.js";
+import { attr, attrs, findAnnotation, parseJava, type Annotation, type Decl } from "./lang/java.js";
+import { looksLikeSql, tablesInQuery } from "./lang/sql.js";
+
+const MAPPINGS: Record<string, string | undefined> = {
+  GetMapping: "GET",
+  PostMapping: "POST",
+  PutMapping: "PUT",
+  DeleteMapping: "DELETE",
+  PatchMapping: "PATCH",
+  RequestMapping: undefined,
+};
+
+/** The HTTP method and path of a mapping annotation. RequestMapping without a method means any. */
+function mapping(a: Annotation): { method: string; paths: string[] } | undefined {
+  if (!(a.name in MAPPINGS)) return undefined;
+  const fixed = MAPPINGS[a.name];
+  const methods = attrs(a, "method").map((m) => m.replace(/^.*\./, "").toUpperCase());
+  const paths = [...attrs(a, "value"), ...attrs(a, "path")];
+  return { method: fixed ?? methods[0] ?? "ANY", paths: paths.length > 0 ? paths : [""] };
+}
+
+const join = (a: string, b: string) => {
+  const s = `${a.replace(/\/+$/, "")}/${b.replace(/^\/+/, "")}`.replace(/\/+$/, "");
+  return s === ""
+    ? "/"
+    : s.startsWith("/") || /^[a-z]+:\/\//i.test(s) || s.startsWith("${")
+      ? s
+      : `/${s}`;
+};
+
+const REST_TEMPLATE: Record<string, string> = {
+  getForObject: "GET",
+  getForEntity: "GET",
+  postForObject: "POST",
+  postForEntity: "POST",
+  postForLocation: "POST",
+  put: "PUT",
+  delete: "DELETE",
+  patchForObject: "PATCH",
+  exchange: "ANY",
+};
+
+const SETTING_KIND: [RegExp, string][] = [
+  [/timeout/i, "timeout"],
+  [/retr(y|ies)|max-?attempts/i, "retry"],
+  [/circuit-?breaker|failure-?rate/i, "circuit-breaker"],
+  [/rate-?limit|limit-?for-?period/i, "rate-limit"],
+  [/pool|max-?connections/i, "pool"],
+];
+const GENERIC = new Set([
+  "client",
+  "clients",
+  "config",
+  "http",
+  "feign",
+  "rest",
+  "spring",
+  "resilience4j",
+  "instances",
+  "default",
+  "properties",
+]);
+
+/** "ledger.client.read-timeout" → "ledger-read-timeout": stable ids for settings. */
+export function settingSlug(key: string): string {
+  return key
+    .split(".")
+    .filter((s) => !GENERIC.has(s.toLowerCase()))
+    .join("-")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Spring and Spring Boot: REST controllers (Endpoint, side callee); Feign clients,
+ * RestTemplate and WebClient calls (http-call loose ends, with ${...} placeholders resolved
+ * from application config); Kafka publish and @KafkaListener; SQL in JdbcTemplate calls and
+ * @Query; the datasource URL; and resilience settings (timeouts, retries, circuit breakers).
+ */
+export const springExtractor = defineExtractor({
+  id: "spring",
+  version: "1.0.0",
+  claims: [
+    "**/*.java",
+    "**/*.kt",
+    "**/application*.yml",
+    "**/application*.yaml",
+    "**/application*.properties",
+  ],
+  async *scan(repo, ctx) {
+    const component = componentOf(repo, ctx);
+    const config = await repoConfig(repo);
+    const resolve = (s: string) => resolvePlaceholders(s, config);
+
+    for await (const path of repo.listFiles(["**/*.java", "**/*.kt"])) {
+      if (/(^|\/)src\/test\//.test(path)) continue;
+      const src = await repo.readText(path);
+      if (!/springframework|@FeignClient|KafkaTemplate|JdbcTemplate|@KafkaListener/.test(src))
+        continue;
+      const file = parseJava(src);
+      const lines = src.split("\n");
+
+      // ---- serving side: controllers
+      for (const d of file.decls.filter((x) => x.kind === "method" && x.parent)) {
+        const type = d.parent as Decl;
+        const isController = !!findAnnotation(type, "RestController", "Controller");
+        const feign = findAnnotation(type, "FeignClient");
+        for (const a of d.annotations) {
+          const m = mapping(a);
+          if (!m) continue;
+          const classMap = findAnnotation(type, "RequestMapping");
+          const prefixes = classMap ? (mapping(classMap)?.paths ?? [""]) : [""];
+          for (const prefix of prefixes) {
+            for (const p of m.paths) {
+              const full = join(prefix, p);
+              if (isController && !feign) {
+                yield restEndpoint(repo, component, m.method, full, {
+                  source: "code",
+                  path,
+                  line: a.line,
+                  side: "callee",
+                });
+              } else if (feign) {
+                const base =
+                  attr(feign, "url") ??
+                  `http://${attr(feign, "name") ?? attr(feign, "value") ?? "unknown"}`;
+                yield looseEnd(repo, ctx, "http-call", `${m.method} ${resolve(join(base, full))}`, {
+                  source: "code",
+                  path,
+                  line: a.line,
+                  side: "caller",
+                });
+              }
+            }
+          }
+        }
+        // Spring Data @Query on repository methods.
+        const q = findAnnotation(d, "Query");
+        const qs = attr(q, "value");
+        if (q && qs && looksLikeSql(qs)) {
+          for (const t of tablesInQuery(qs))
+            yield looseEnd(repo, ctx, "db-access", `${t.access} ${t.table}`, {
+              source: "code",
+              path,
+              line: q.line,
+              side: "caller",
+            });
+        }
+        // Kafka listeners.
+        const listener = findAnnotation(d, "KafkaListener");
+        for (const topic of attrs(listener, "topics")) {
+          yield looseEnd(repo, ctx, "event-subscribe", resolve(topic), {
+            source: "code",
+            path,
+            line: listener!.line,
+            side: "callee",
+          });
+        }
+      }
+
+      // ---- calling side: RestTemplate, WebClient, Kafka publish, JDBC
+      const usesRest = /RestTemplate|RestClient/.test(src);
+      const usesKafka = /KafkaTemplate/.test(src);
+      const found: CatalogRecord[] = [];
+      file.calls.forEach((c, i) => {
+        const url = c.args[0];
+        if (usesRest && REST_TEMPLATE[c.method] && url && /^(\/|https?:|\$\{)/.test(url)) {
+          let method = REST_TEMPLATE[c.method]!;
+          if (method === "ANY")
+            method = /HttpMethod\.(\w+)/.exec(lines[c.line - 1] ?? "")?.[1] ?? "ANY";
+          found.push(
+            looseEnd(repo, ctx, "http-call", `${method} ${resolve(url)}`, {
+              source: "code",
+              path,
+              line: c.line,
+              side: "caller",
+            }),
+          );
+        }
+        if (c.method === "uri" && url) {
+          const verb = file.calls
+            .slice(Math.max(0, i - 3), i)
+            .reverse()
+            .find(
+              (x) =>
+                ["get", "post", "put", "delete", "patch"].includes(x.method) && x.args.length <= 1,
+            );
+          if (verb)
+            found.push(
+              looseEnd(repo, ctx, "http-call", `${verb.method.toUpperCase()} ${resolve(url)}`, {
+                source: "code",
+                path,
+                line: c.line,
+                side: "caller",
+              }),
+            );
+        }
+        if (usesKafka && c.method === "send" && url && !/\s/.test(url)) {
+          found.push(
+            looseEnd(repo, ctx, "event-publish", resolve(url), {
+              source: "code",
+              path,
+              line: c.line,
+              side: "caller",
+            }),
+          );
+        }
+        for (const a of c.args) {
+          if (a && looksLikeSql(a)) {
+            for (const t of tablesInQuery(a))
+              found.push(
+                looseEnd(repo, ctx, "db-access", `${t.access} ${t.table}`, {
+                  source: "code",
+                  path,
+                  line: c.line,
+                  side: "caller",
+                }),
+              );
+          }
+        }
+      });
+      yield* found;
+    }
+
+    // ---- configuration: datasource and resilience settings
+    const ds = config.get("spring.datasource.url") ?? config.get("spring.datasource.jdbc-url");
+    if (ds)
+      yield looseEnd(repo, ctx, "db-connection", ds.value, {
+        source: "config",
+        path: ds.file,
+        line: ds.line,
+        side: "caller",
+      });
+    yield* settings(repo.name, component, config);
+  },
+});
+
+function* settings(
+  repoName: string,
+  component: string,
+  config: Map<string, ConfigValue>,
+): Generator<CatalogRecord> {
+  for (const [key, v] of [...config.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const kind = SETTING_KIND.find(([re]) => re.test(key.split(".").pop() ?? ""))?.[1];
+    if (!kind || v.value === "") continue;
+    yield {
+      schemaVersion: 1,
+      kind: "Setting",
+      id: `${component}.${settingSlug(key)}`,
+      status: "current",
+      confidence: "verified",
+      component,
+      settingKind: kind,
+      key,
+      valueOrRef: /password|secret|token|key$/i.test(key) ? "(secret)" : v.value,
+      evidence: [{ source: "config", repo: repoName, path: v.file, line: v.line }],
+    } as unknown as CatalogRecord;
+  }
+}

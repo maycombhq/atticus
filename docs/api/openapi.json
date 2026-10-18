@@ -8041,6 +8041,12 @@
             "maxLength": 120,
             "pattern": "^[a-z0-9][a-z0-9._-]*$"
           },
+          "component": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
           "system": {
             "type": "string",
             "minLength": 1,

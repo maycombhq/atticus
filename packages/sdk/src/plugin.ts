@@ -19,6 +19,12 @@ export interface RepoHandle {
 export interface ScanContext {
   /** Dialects that apply to this repo, by name. */
   readonly dialects: readonly string[];
+  /** The component this repo builds (repos.manifest.yaml, else the repo id). */
+  readonly component?: string;
+  /** The catalog System the repo belongs to. */
+  readonly system?: string;
+  /** The repo type from the manifest, e.g. spring-boot, gateway. */
+  readonly repoType?: string;
   /** ISO timestamp of this scan, for evidence. */
   readonly scannedAt: string;
   /** Report a problem without failing the scan. */

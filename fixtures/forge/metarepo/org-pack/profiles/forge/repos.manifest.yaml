@@ -6,22 +6,26 @@ repos:
     url: https://git.example.com/forge/forge-portal-ui.git
     type: spa
     owner: team-portal
+    component: portal-ui
     system: portal
   - id: forge-portal-bff
     url: https://git.example.com/forge/forge-portal-bff.git
     type: spring-boot
     owner: team-portal
+    component: portal-bff
     system: portal
   - id: forge-ledger
     url: https://git.example.com/forge/forge-ledger.git
     type: forge-service
     owner: team-ledger
+    component: ledger-api
     system: ledger
     dialects: [forge]
   - id: forge-reports-job
     url: https://git.example.com/forge/forge-reports-job.git
     type: batch-job
     owner: team-reports
+    component: reports-job
     system: reports
   - id: forge-gateway
     url: https://git.example.com/forge/forge-gateway.git
