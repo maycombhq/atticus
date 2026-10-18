@@ -1,0 +1,59 @@
+# Hand-written: the drift findings for the seeded drifting plan in drift/forge-ledger/specs/1.2/
+# (laid over the hand-down of task 1.2 of add-transfer-limit). Gate drift, round 1, every
+# finding open and never waivable. Compared on these fields; why and fix are checked to exist.
+- id: plan-adds-data-ledger-db.velocity-cache
+  rule: drift.plan-adds-data
+  lens: architecture
+  severity: risk
+  artifact: data.md
+  locator: { record: ledger-db.velocity-cache }
+  summary: specs/1.2/data-model.md in forge-ledger adds table ledger-db.velocity-cache, which data.md doesn't have.
+  evidence:
+    - { source: spec, repo: forge-ledger, path: specs/1.2/data-model.md, line: 21, quote: "### velocity_cache (new table)" }
+- id: plan-adds-interface-if-ceffd642df78ee78
+  rule: drift.plan-adds-interface
+  lens: architecture
+  severity: risk
+  artifact: interfaces.md
+  locator: { record: if-ceffd642df78ee78 }
+  summary: specs/1.2/plan.md in forge-ledger adds ledger-api to audit-svc (publish limit-refused), which the design doesn't have.
+  evidence:
+    - { source: spec, repo: forge-ledger, path: specs/1.2/plan.md, line: 30, quote: "| audit-svc | publish limit-refused | event-bus | A.EB.PUB | planned-new |" }
+- id: plan-adds-interface-ledger-api.get.61ca50afac
+  rule: drift.plan-adds-interface
+  lens: architecture
+  severity: risk
+  artifact: interfaces.md
+  locator: { record: ledger-api.get.61ca50afac }
+  summary: specs/1.2/contracts/ledger-api.yaml in forge-ledger serves GET /accounts/{id}/limit-history, which the design doesn't have.
+  evidence:
+    - { source: spec, repo: forge-ledger, path: specs/1.2/contracts/ledger-api.yaml, line: 19, quote: "/accounts/{id}/limit-history:" }
+- id: plan-adds-system-if-2a90dcd73ab60d91
+  rule: drift.plan-adds-system
+  lens: architecture
+  severity: risk
+  artifact: interfaces.md
+  locator: { record: if-2a90dcd73ab60d91 }
+  summary: specs/1.2/plan.md in forge-ledger calls fraud-scorer (POST /scores), a system the design doesn't include.
+  evidence:
+    - { source: spec, repo: forge-ledger, path: specs/1.2/plan.md, line: 29, quote: "| fraud-scorer | POST /scores | gateway | S.GW.SOR | planned-new |" }
+- id: plan-contradicts-design-if-6315f15d109e6f96
+  rule: drift.plan-contradicts-design
+  lens: architecture
+  severity: blocking
+  artifact: interfaces.md
+  locator: { line: 7 }
+  summary: specs/1.2/plan.md in forge-ledger calls northwind-pay POST /v2/velocity-checks direct; the approved design says gateway (S.GW.VND).
+  evidence:
+    - { source: artifact, path: interfaces.md, line: 7, quote: "| new | ledger-api | northwind-pay | S.GW.VND | POST /v2/velocity-checks | inputs/partner-specs/northwind-pay-openapi.yaml | planned-new |" }
+    - { source: spec, repo: forge-ledger, path: specs/1.2/plan.md, line: 27, quote: "| northwind-pay | POST /v2/velocity-checks | direct | S.GW.VND | planned-new |" }
+- id: plan-contradicts-design-ledger-db.account.daily-limit
+  rule: drift.plan-contradicts-design
+  lens: architecture
+  severity: blocking
+  artifact: data.md
+  locator: { line: 7 }
+  summary: specs/1.2/data-model.md in forge-ledger makes account.daily_limit numeric(12,2); data.md says numeric(18,2).
+  evidence:
+    - { source: artifact, path: data.md, line: 7, quote: "| ledger-db | account | add column daily_limit numeric(18,2) not null default 1000 | V3__add_daily_limit.sql |" }
+    - { source: spec, repo: forge-ledger, path: specs/1.2/data-model.md, line: 11, quote: "| daily_limit | numeric(12,2) | no | the developer narrowed the type |" }

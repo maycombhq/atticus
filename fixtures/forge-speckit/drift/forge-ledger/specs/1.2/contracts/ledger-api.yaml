@@ -1,0 +1,24 @@
+openapi: 3.0.3
+info:
+  title: ledger-api, as the developer now plans it
+  version: 0.0.1
+paths:
+  /transfers:
+    post:
+      operationId: post-transfers
+      x-atticus-status: planned-modify
+      responses:
+        default:
+          description: Created or refused
+  /accounts/{id}/limit:
+    get:
+      operationId: get-accounts-id-limit
+      responses:
+        default:
+          description: The limit
+  /accounts/{id}/limit-history:
+    get:
+      operationId: get-limit-history
+      responses:
+        default:
+          description: Every change to the limit

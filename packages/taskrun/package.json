@@ -1,0 +1,33 @@
+{
+  "name": "@maycombhq/taskrun",
+  "version": "0.0.1",
+  "description": "Run with AI: one task of a change at plan-only, draft or PR level, in hand-off, model or headless Claude Code mode, with build-fix attempts and run summaries.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/adapters": "workspace:*",
+    "@maycombhq/ai": "workspace:*",
+    "@maycombhq/changes": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/speckit": "workspace:*",
+    "@maycombhq/workspace": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

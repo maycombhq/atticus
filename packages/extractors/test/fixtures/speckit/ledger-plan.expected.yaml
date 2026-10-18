@@ -1,0 +1,210 @@
+# Hand-written: what the speckit extractor must find in ledger-plan (repo forge-ledger,
+# component ledger-api, system ledger). Every record is planned and inferred, with evidence on
+# the Spec Kit file and line. Ids follow the other extractors: rest endpoints
+# <component>.<method>.<sha256(normalizedPath)[0..10]>, topics topic.<slug>, interfaces
+# interfaceId(from, to, method, path), tables <store>.<table>, columns <table>.<column>.
+- kind: Endpoint
+  id: ledger-api.post.afe0d8aa47
+  status: planned-modify
+  confidence: inferred
+  component: ledger-api
+  endpointType: rest
+  method: POST
+  pathOrTopic: /transfers
+  normalizedPath: /transfers
+  schemaRefs: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/contracts/ledger-api.yaml, line: 6, side: definition }]
+- kind: Endpoint
+  id: ledger-api.get.934c9a62bd
+  status: planned-new
+  confidence: inferred
+  component: ledger-api
+  endpointType: rest
+  method: GET
+  pathOrTopic: /accounts/{id}/limit
+  normalizedPath: /accounts/{}/limit
+  schemaRefs: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/contracts/ledger-api.yaml, line: 15, side: definition }]
+- kind: Endpoint
+  id: topic.ledger-limit-refused
+  status: planned-new
+  confidence: inferred
+  component: ledger-api
+  endpointType: event-topic
+  pathOrTopic: ledger.limit-refused
+  schemaRefs: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/contracts/limit-events.yaml, line: 6, side: definition }]
+- kind: Interface
+  id: if-6315f15d109e6f96
+  status: planned-new
+  confidence: inferred
+  from: ledger-api
+  to: northwind-pay
+  via: direct
+  method: POST
+  normalizedPath: /v2/velocity-checks
+  sync: sync
+  direction: outbound
+  pattern: { code: S.GW.VND, source: inferred }
+  conflicts: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/plan.md, line: 27, side: caller }]
+- kind: Interface
+  id: if-42e47aaae4d20e61
+  status: planned-new
+  confidence: inferred
+  from: ledger-api
+  to: risk-engine
+  via: gateway
+  method: POST
+  normalizedPath: /risk/assess
+  sync: sync
+  direction: outbound
+  pattern: { code: S.GW.SOR, source: inferred }
+  conflicts: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/plan.md, line: 28, side: caller }]
+- kind: Interface
+  id: if-2a90dcd73ab60d91
+  status: planned-new
+  confidence: inferred
+  from: ledger-api
+  to: fraud-scorer
+  via: gateway
+  method: POST
+  normalizedPath: /scores
+  sync: sync
+  direction: outbound
+  conflicts: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/plan.md, line: 29, side: caller }]
+- kind: Interface
+  id: if-ceffd642df78ee78
+  status: planned-new
+  confidence: inferred
+  from: ledger-api
+  to: audit-svc
+  via: event-bus
+  normalizedPath: limit-refused
+  sync: async
+  direction: outbound
+  pattern: { code: A.EB.PUB, source: inferred }
+  conflicts: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/plan.md, line: 30, side: caller }]
+- kind: Table
+  id: ledger-db.account
+  status: planned-modify
+  confidence: inferred
+  dataStore: ledger-db
+  name: account
+  tableKind: table
+  ownerComponent: ledger-api
+  readers: []
+  writers: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 7, side: definition }]
+- kind: Column
+  id: ledger-db.account.daily-limit
+  status: planned-new
+  confidence: inferred
+  table: ledger-db.account
+  name: daily_limit
+  type: numeric(18,2)
+  nullable: false
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 12, side: definition }]
+- kind: Table
+  id: ledger-db.limit-change
+  status: planned-new
+  confidence: inferred
+  dataStore: ledger-db
+  name: limit_change
+  tableKind: table
+  ownerComponent: ledger-api
+  readers: []
+  writers: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 14, side: definition }]
+- kind: Column
+  id: ledger-db.limit-change.id
+  status: planned-new
+  confidence: inferred
+  table: ledger-db.limit-change
+  name: id
+  type: bigint
+  nullable: false
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 18, side: definition }]
+- kind: Column
+  id: ledger-db.limit-change.account-id
+  status: planned-new
+  confidence: inferred
+  table: ledger-db.limit-change
+  name: account_id
+  type: bigint
+  nullable: false
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 19, side: definition }]
+- kind: Column
+  id: ledger-db.limit-change.new-limit
+  status: planned-new
+  confidence: inferred
+  table: ledger-db.limit-change
+  name: new_limit
+  type: numeric(18,2)
+  nullable: false
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 20, side: definition }]
+- kind: Table
+  id: ledger-db.velocity-cache
+  status: planned-new
+  confidence: inferred
+  dataStore: ledger-db
+  name: velocity_cache
+  tableKind: table
+  ownerComponent: ledger-api
+  readers: []
+  writers: []
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 22, side: definition }]
+- kind: Column
+  id: ledger-db.velocity-cache.account-id
+  status: planned-new
+  confidence: inferred
+  table: ledger-db.velocity-cache
+  name: account_id
+  type: bigint
+  nullable: false
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 24, side: definition }]
+- kind: Column
+  id: ledger-db.velocity-cache.checked-at
+  status: planned-new
+  confidence: inferred
+  table: ledger-db.velocity-cache
+  name: checked_at
+  type: timestamp
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 25, side: definition }]
+- kind: Column
+  id: ledger-db.velocity-cache.answer
+  status: planned-new
+  confidence: inferred
+  table: ledger-db.velocity-cache
+  name: answer
+  type: varchar(20)
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/data-model.md, line: 26, side: definition }]
+- kind: ProcessArtifact
+  id: speckit.forge-ledger.1.2-transfer-limit
+  status: planned-new
+  confidence: inferred
+  artifactType: change
+  ref: forge-ledger:specs/1.2-transfer-limit
+  processStatus: 2 of 5 tasks done
+  linkedRecords:
+    - if-2a90dcd73ab60d91
+    - if-42e47aaae4d20e61
+    - if-6315f15d109e6f96
+    - if-ceffd642df78ee78
+    - ledger-api.get.934c9a62bd
+    - ledger-api.post.afe0d8aa47
+    - ledger-db.account
+    - ledger-db.account.daily-limit
+    - ledger-db.limit-change
+    - ledger-db.limit-change.account-id
+    - ledger-db.limit-change.id
+    - ledger-db.limit-change.new-limit
+    - ledger-db.velocity-cache
+    - ledger-db.velocity-cache.account-id
+    - ledger-db.velocity-cache.answer
+    - ledger-db.velocity-cache.checked-at
+    - topic.ledger-limit-refused
+  evidence: [{ source: spec, path: specs/1.2-transfer-limit/tasks.md, line: 1, side: definition }]

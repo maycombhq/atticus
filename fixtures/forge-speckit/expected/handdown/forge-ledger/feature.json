@@ -1,0 +1,6 @@
+{
+  "feature_directory": "specs/1.2",
+  "change": "add-transfer-limit",
+  "task": "1.2",
+  "branch": "task/add-transfer-limit/1.2"
+}

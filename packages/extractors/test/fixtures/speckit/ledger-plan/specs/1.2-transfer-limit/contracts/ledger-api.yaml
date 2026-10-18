@@ -1,0 +1,20 @@
+openapi: 3.0.3
+info:
+  title: Ledger API (planned for task 1.2)
+  version: 1.1.0
+paths:
+  /transfers:
+    post:
+      operationId: createTransfer
+      x-atticus-status: planned-modify
+      responses:
+        "201":
+          description: Created
+        "422":
+          description: LIMIT_EXCEEDED
+  /accounts/{id}/limit:
+    get:
+      operationId: getLimit
+      responses:
+        "200":
+          description: The limit and what is left today
