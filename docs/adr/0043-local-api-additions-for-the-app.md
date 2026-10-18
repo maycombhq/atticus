@@ -39,4 +39,4 @@ Registered by the CLI (`uiRunRoutes` in `packages/cli/src/ui-api-run.ts`). Reads
 
 ## Consequences
 
-The OpenAPI document (`pnpm api:doc`) carries the new calls and fields, and the C4 request schemas (`NewChangeRequest`, `HandoffRequest`, `SyncRequest`, `FindingActionRequest`) are the ones the server parses. Plugins and assistants that only used the first contract are unaffected.
+The OpenAPI document (`pnpm api:doc`) carries the new calls and fields, and the C4 request schemas (`NewChangeRequest`, `HandoffRequest`, `SyncRequest`, `FindingActionRequest`, and the Release and Run bodies `StepDoneRequest`, `StepRunRequest`, `ArchiveRequest`, `DraftRequestsRequest`, `EvalRunRequest`, `StartLessonRequest`, `CheckLessonRequest`, `SandboxRequest`) are the ones the server parses. Index reads are serialised per metarepo, so calls made together on a fresh metarepo don't race the first index build. Plugins and assistants that only used the first contract are unaffected.

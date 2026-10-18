@@ -24,14 +24,26 @@ export interface Context {
   version: string;
 }
 
+/** Index work runs one call at a time per root: a first build or a rebuild must not race. */
+const queues = new Map<string, Promise<unknown>>();
+
 /** Open the index for one request; it rebuilds itself when catalog files changed (ADR 0003). */
 async function withIndex<T>(root: string, f: (ix: CatalogIndex) => T): Promise<T> {
-  const ix = await openIndex(root);
-  try {
-    return f(ix);
-  } finally {
-    ix.close();
-  }
+  const before = queues.get(root) ?? Promise.resolve();
+  const mine = before.then(async () => {
+    const ix = await openIndex(root);
+    try {
+      return f(ix);
+    } finally {
+      ix.close();
+    }
+  });
+  const settled = mine.catch(() => undefined);
+  queues.set(root, settled);
+  void settled.then(() => {
+    if (queues.get(root) === settled) queues.delete(root);
+  });
+  return mine;
 }
 
 function kindParam(kind: string): string {

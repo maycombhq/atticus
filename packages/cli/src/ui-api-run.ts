@@ -9,6 +9,7 @@ import {
   type ServiceDesk,
 } from "@maycombhq/adapters";
 import {
+  Api,
   inputsDirOf,
   loadOrgPack,
   orgPackDirOf,
@@ -415,17 +416,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         throw refused(res);
       })
       .add("POST", "/api/todo/{stepId}/done", async ({ params, body }) => {
-        const b = parseBody(
-          z
-            .object({
-              change: z.string().optional(),
-              values: z.record(z.string(), z.string()).default({}),
-              skip: z.boolean().optional(),
-              note: z.string().trim().min(1).optional(),
-            })
-            .refine((x) => !x.skip || x.note, { message: "Say why you skip it.", path: ["note"] }),
-          body,
-        );
+        const b = parseBody(Api.StepDoneRequest, body);
         const ref = stepRef(params.stepId!, b.change);
         const res = await run((io) =>
           todoDone(
@@ -471,15 +462,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         };
       })
       .add("POST", "/api/todo/{stepId}/run", async ({ params, body }) => {
-        const b = parseBody(
-          z.object({
-            with: z.string().min(1),
-            inputsSha256: z.string().regex(/^[0-9a-f]{64}$/, "the sha-256 the preview showed"),
-            fillOnly: z.boolean().optional(),
-            change: z.string().optional(),
-          }),
-          body,
-        );
+        const b = parseBody(Api.StepRunRequest, body);
         const res = await run((io) =>
           todoRun(
             root,
@@ -540,7 +523,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
       })
       .add("POST", "/api/service-desk/{changeId}/draft", async ({ params, body }) => {
         await readChange(root, params.changeId!);
-        const b = parseBody(z.object({ force: z.boolean().optional() }), body);
+        const b = parseBody(Api.DraftRequestsRequest, body);
         const res = await run((io) =>
           snowDraft(root, params.changeId!, b.force ? { force: true } : {}, io),
         );
@@ -673,7 +656,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
       .add("POST", "/api/release/{changeId}/archive", async ({ params, body }) => {
         const id = params.changeId!;
         await readChange(root, id);
-        const b = parseBody(z.object({ rescan: z.boolean().optional() }), body);
+        const b = parseBody(Api.ArchiveRequest, body);
         const gate = await run((io) => ciArchiveGate(root, id, {}, io));
         if (gate.code !== 0) throw refused(gate);
         const res = await run((io) =>
@@ -803,14 +786,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         };
       })
       .add("POST", "/api/evals/run", async ({ body }) => {
-        const b = parseBody(
-          z.object({
-            mode: z.string().default("mock"),
-            agents: z.array(z.string().min(1)).optional(),
-            runs: z.number().int().min(1).max(10).optional(),
-          }),
-          body,
-        );
+        const b = parseBody(Api.EvalRunRequest, body);
         if (b.mode === "live")
           throw badRequest(
             "Live evals call a real model, so the app doesn't start them. Run atticus eval run --mode live in a terminal.",
@@ -923,7 +899,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         };
       })
       .add("POST", "/api/learning/start", async ({ body }) => {
-        const b = parseBody(z.object({ lesson: z.string().min(1) }), body);
+        const b = parseBody(Api.StartLessonRequest, body);
         const res = await run((io) =>
           learnStart(root, b.lesson, { json: true }, io, nowDate ? { now: nowDate() } : {}),
         );
@@ -932,14 +908,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         return { status: 200, body: out };
       })
       .add("POST", "/api/learning/check", async ({ body }) => {
-        const b = parseBody(
-          z.object({
-            answer: z.string().optional(),
-            lesson: z.string().optional(),
-            step: z.string().optional(),
-          }),
-          body,
-        );
+        const b = parseBody(Api.CheckLessonRequest, body);
         const res = await run((io) =>
           learnCheck(
             root,
@@ -963,7 +932,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         return { status: 200, body: { ...out, ...(hint ? { hint } : {}) } };
       })
       .add("POST", "/api/learning/sandbox", async ({ body }) => {
-        const b = parseBody(z.object({ dir: z.string().trim().min(1) }), body);
+        const b = parseBody(Api.SandboxRequest, body);
         const res = await run((io) =>
           sandboxCreate(resolve(b.dir), { json: true }, io, nowDate ? { now: nowDate() } : {}),
         );

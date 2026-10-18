@@ -364,3 +364,32 @@ describe("the app's files", () => {
     }
   });
 });
+
+describe("the index on a fresh metarepo", () => {
+  it("answers calls made at once while it builds the index the first time", async () => {
+    const root = await forgeMetarepo();
+    const s = await startServer({ root, port: 0 });
+    try {
+      const calls = [
+        "kind:interface",
+        "ledger",
+        "kind:table",
+        "portal",
+        "kind:column",
+        "audit",
+      ].map((q) =>
+        fetch(`${s.url}/api/search?q=${encodeURIComponent(q)}`, {
+          headers: { "X-Atticus-Token": s.token },
+        }).then((r) => r.status),
+      );
+      calls.push(
+        fetch(`${s.url}/api/catalog/kinds`, { headers: { "X-Atticus-Token": s.token } }).then(
+          (r) => r.status,
+        ),
+      );
+      expect(await Promise.all(calls)).toEqual([200, 200, 200, 200, 200, 200, 200]);
+    } finally {
+      await s.close();
+    }
+  });
+});

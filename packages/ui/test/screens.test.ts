@@ -16,12 +16,7 @@ describe("the app's screens", () => {
     expect(screenOf("#/nope").id).toBe("home");
   });
 
-  it("builds every screen of the Know, Define, Design, Plan and Build groups", () => {
-    const groups = new Set(["Know", "Define", "Design", "Plan", "Build"]);
-    // The to-do screen ships with the Release and Run screens.
-    const missing = SCREENS.filter(
-      (s) => groups.has(s.group) && s.id !== "todo" && !SCREEN_COMPONENTS[s.id],
-    ).map((s) => s.id);
-    expect(missing).toEqual([]);
+  it("builds every one of the 27 screens", () => {
+    expect(SCREENS.filter((s) => !SCREEN_COMPONENTS[s.id]).map((s) => s.id)).toEqual([]);
   });
 });

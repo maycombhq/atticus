@@ -262,6 +262,37 @@ export const HandoffRequest = z.strictObject({
 /** ADR 0043: refresh a change from its hand-off PR. */
 export const SyncRequest = z.strictObject({ repo: z.string().optional() });
 
+/** ADR 0043, Release and Run screens: request bodies the CLI's uiRunRoutes parse. */
+export const StepDoneRequest = z
+  .strictObject({
+    values: z.record(z.string(), z.string()).default({}),
+    skip: z.boolean().optional(),
+    note: z.string().trim().min(1).optional(),
+    change: z.string().optional(),
+  })
+  .refine((x) => !x.skip || x.note, { message: "Say why you skip it.", path: ["note"] });
+export const StepRunRequest = z.strictObject({
+  with: z.string().min(1),
+  inputsSha256: z.string().regex(/^[0-9a-f]{64}$/, "the sha-256 the preview showed"),
+  fillOnly: z.boolean().optional(),
+  change: z.string().optional(),
+});
+export const ArchiveRequest = z.strictObject({ rescan: z.boolean().optional() });
+export const DraftRequestsRequest = z.strictObject({ force: z.boolean().optional() });
+/** Live mode is part of the shape so the server can refuse it in words: it calls a real model. */
+export const EvalRunRequest = z.strictObject({
+  mode: z.enum(["mock", "replay", "live"]).default("mock"),
+  agents: z.array(z.string().min(1)).optional(),
+  runs: z.number().int().min(1).max(10).optional(),
+});
+export const StartLessonRequest = z.strictObject({ lesson: z.string().min(1) });
+export const CheckLessonRequest = z.strictObject({
+  answer: z.string().optional(),
+  lesson: z.string().optional(),
+  step: z.string().optional(),
+});
+export const SandboxRequest = z.strictObject({ dir: z.string().trim().min(1) });
+
 export const ReconcileRequest = z.strictObject({ diagram: z.string().min(1) });
 
 // ------------------------------------------------------------------ live events
@@ -761,6 +792,204 @@ const OPS: Record<string, Record<string, Op>> = {
       body: FindingActionRequest,
       ok: { status: 200, schema: "Finding", description: "Recorded" },
       errors: [400, 403, 404, 409, 422],
+    },
+  },
+  "/api/todo": {
+    get: {
+      id: "listSteps",
+      summary: "Manual steps, where they come from, and procedures with their executors",
+      tag: "release",
+      params: [q("change"), q("all", { type: "boolean" })],
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+  },
+  "/api/todo/{stepId}/export": {
+    get: {
+      id: "exportStep",
+      summary: "One step for copying: text, CSV or an import row",
+      tag: "release",
+      params: [p("stepId"), q("format", { type: "string", enum: ["text", "csv", "import"] })],
+      ok: { status: 200, schema: { type: "object", properties: { text: str } }, description: "OK" },
+      errors: [404],
+    },
+  },
+  "/api/todo/{stepId}/done": {
+    post: {
+      id: "recordStep",
+      summary: "Record a manual step's result, or skip it with a reason",
+      tag: "release",
+      params: [p("stepId")],
+      body: StepDoneRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/todo/{stepId}/run": {
+    get: {
+      id: "previewStepRun",
+      summary: "The exact inputs an executor would get, with their sha-256, before any run",
+      tag: "release",
+      params: [p("stepId"), q("with")],
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [400, 404],
+    },
+    post: {
+      id: "runStep",
+      summary: "Run a step with a team's own tool; the shown inputs' sha-256 is the approval",
+      tag: "release",
+      params: [p("stepId")],
+      body: StepRunRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/release": {
+    get: {
+      id: "listReleases",
+      summary: "Changes, those at go / no-go first",
+      tag: "release",
+      ok: { status: 200, schema: { type: "array", items: { type: "object" } }, description: "OK" },
+    },
+  },
+  "/api/release/{changeId}": {
+    get: {
+      id: "getRelease",
+      summary:
+        "Release readiness: gates, approvers, requests, repos, rollout, conflicts and evidence",
+      tag: "release",
+      params: [p("changeId")],
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [404],
+    },
+  },
+  "/api/release/{changeId}/archive": {
+    post: {
+      id: "archiveChange",
+      summary: "Run the archive gate, then archive the released change",
+      tag: "release",
+      params: [p("changeId")],
+      body: ArchiveRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/service-desk": {
+    get: {
+      id: "listServiceRequests",
+      summary: "Service-request drafts matched to templates, with what is missing",
+      tag: "release",
+      params: [q("change")],
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+  },
+  "/api/service-desk/{changeId}/draft": {
+    post: {
+      id: "draftServiceRequests",
+      summary: "Draft the service requests a change needs",
+      tag: "release",
+      params: [p("changeId")],
+      body: DraftRequestsRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/service-desk/{changeId}/submit": {
+    post: {
+      id: "submitServiceRequests",
+      summary: "File the drafts through the manual desk: each becomes a step a person does",
+      tag: "release",
+      params: [p("changeId")],
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/governance": {
+    get: {
+      id: "getGovernance",
+      summary:
+        "Org-pack conformance, rule layers, waivers, override rates and separation of duties",
+      tag: "run",
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+  },
+  "/api/evals": {
+    get: {
+      id: "getEvals",
+      summary: "AI quality: eval runs, pass rates and how people resolved critic findings",
+      tag: "run",
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+  },
+  "/api/evals/run": {
+    post: {
+      id: "runEvals",
+      summary: "Run evals in mock or replay mode (live stays in the terminal)",
+      tag: "run",
+      body: EvalRunRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [400, 422],
+    },
+  },
+  "/api/evals/defences": {
+    get: {
+      id: "getDefences",
+      summary: "What the ingested-content defences found, and each change's quarantine",
+      tag: "run",
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+  },
+  "/api/learning": {
+    get: {
+      id: "getLearning",
+      summary: "Lessons by role, progress and the current step",
+      tag: "run",
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+  },
+  "/api/learning/start": {
+    post: {
+      id: "startLesson",
+      summary: "Start a lesson or a role's path",
+      tag: "run",
+      body: StartLessonRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [400, 422],
+    },
+  },
+  "/api/learning/check": {
+    post: {
+      id: "checkLesson",
+      summary: "Check the current step; a miss is pass false with the hint",
+      tag: "run",
+      body: CheckLessonRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [400],
+    },
+  },
+  "/api/learning/sandbox": {
+    post: {
+      id: "createSandbox",
+      summary: "Create a throwaway practice metarepo",
+      tag: "run",
+      body: SandboxRequest,
+      ok: { status: 201, schema: { type: "object" }, description: "OK" },
+      errors: [400, 422],
+    },
+  },
+  "/api/settings": {
+    get: {
+      id: "getSettings",
+      summary: "Runtime settings, adapters, executors, org pack and gates (read-only)",
+      tag: "run",
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+  },
+  "/api/settings/executors/check": {
+    get: {
+      id: "checkExecutors",
+      summary: "Ping the executors set up here; nothing runs",
+      tag: "run",
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
     },
   },
   "/api/orgpack": {
