@@ -9,3 +9,6 @@ coverage/
 /.index/
 /.runs/
 /workspace/
+
+# Local AI session worktrees
+/.claude/worktrees/
