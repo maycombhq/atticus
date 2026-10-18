@@ -18,6 +18,7 @@ import {
   Gates,
   IntegrationPattern,
   PackManifest,
+  Procedure,
   Profile,
   Roles,
   Runtime,
@@ -50,6 +51,8 @@ export interface OrgPack {
   checklists: ChecklistPack[];
   skills: (z.infer<typeof SkillMeta> & { body: string })[];
   serviceRequests: z.infer<typeof ServiceRequestTemplate>[];
+  /** Procedures (ADR 0033), from process/procedures/. */
+  procedures: Procedure[];
   agents: AgentDefinition[];
   /** Files that came from built-in defaults because the pack doesn't have them. */
   defaulted: string[];
@@ -179,6 +182,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   const dialects = await many("dialects", /\.ya?ml$/, Dialect);
   const checklists = await many("checklists", /\.ya?ml$/, ChecklistPack);
   const serviceRequests = await many("process/snow", /\.ya?ml$/, ServiceRequestTemplate);
+  const procedures = await many("process/procedures", /\.ya?ml$/, Procedure);
   const agents = await many("agents", /\.ya?ml$/, AgentDefinition);
 
   const skills: OrgPack["skills"] = [];
@@ -298,6 +302,22 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
           message: `no template ${a}`,
         });
   }
+  const procedureIds = new Set<string>();
+  for (const p of procedures) {
+    if (procedureIds.has(p.id))
+      problems.push({
+        file: `process/procedures/${p.id}.yaml`,
+        path: "id",
+        message: `duplicate procedure ${p.id}`,
+      });
+    procedureIds.add(p.id);
+    if (p.template && !snowIds.has(p.template))
+      problems.push({
+        file: `process/procedures/${p.id}.yaml`,
+        path: "template",
+        message: `no template ${p.template}`,
+      });
+  }
   const allowedModes = new Set<string>([...runtime.modes.allowed, "mock", "replay"]);
   for (const a of agents) {
     if (a.checklist && !packNames.has(a.checklist))
@@ -345,6 +365,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     checklists,
     skills,
     serviceRequests,
+    procedures,
     agents,
     defaulted,
     problems,

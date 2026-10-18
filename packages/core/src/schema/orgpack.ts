@@ -2,6 +2,7 @@ import { z } from "zod";
 import { RecordId } from "./common.js";
 import { RECORD_KINDS, type RecordKind } from "./kinds.js";
 import { Lens } from "./review.js";
+import { MANUAL_SYSTEMS } from "./executors.js";
 
 /**
  * Contract C6: org-pack schemas. Everything about how an organisation, platform or team
@@ -503,6 +504,76 @@ export const ServiceRequestTemplate = z
     alsoNeeds: Ids.default([]),
   })
   .superRefine((t, ctx) => unique(t.fields, (f) => f.name, ctx, "fields"));
+
+// ------------------------------------------------------------------ process/procedures/<id>.yaml
+
+/**
+ * A JSON Schema for a step's inputs or outputs. Kept as data; Atticus validates values
+ * against it when a person or an executor records them.
+ */
+const StepSchema = z
+  .record(z.string(), z.unknown())
+  .refine(
+    (s) => s.type === undefined || s.type === "object",
+    "a step's inputs and outputs are an object",
+  )
+  .default({ type: "object" });
+
+/**
+ * A procedure (ADR 0033): a named, ordered list of steps in an outside system, each with typed
+ * inputs and outputs, whether it writes, and where the knowledge came from. Drafted from the
+ * organisation's how-to pages, uploads and past tickets, reviewed by a person, kept here.
+ * Additive C6 file kind: no schema version bump. `executors.allowed` is the allowlist: an
+ * executor may run this procedure only if it is named here (off by default).
+ */
+export const Procedure = z
+  .strictObject({
+    schemaVersion: V,
+    id: RecordId,
+    name: z.string().min(1),
+    description: z.string().optional(),
+    system: z.enum([...MANUAL_SYSTEMS, "other"]),
+    /** The service-desk template (process/snow) this procedure raises, if any. */
+    template: RecordId.optional(),
+    steps: z
+      .array(
+        z.strictObject({
+          id: RecordId,
+          name: z.string().min(1),
+          /** The kind of write or read, matching manual steps' `action` (submit-request, …). */
+          kind: RecordId,
+          writes: z.boolean(),
+          inputs: StepSchema,
+          outputs: StepSchema,
+          instructions: z.string().optional(),
+          evidence: z
+            .array(
+              z.strictObject({
+                source: z.string().min(1),
+                line: z.number().int().positive().optional(),
+                note: z.string().optional(),
+              }),
+            )
+            .default([]),
+        }),
+      )
+      .min(1),
+    executors: z
+      .strictObject({
+        /** Executors allowed to run this procedure, by name. Empty: none (the default). */
+        allowed: Ids.default([]),
+        /** Hosts an http executor may be on besides 127.0.0.1. Empty: local only. */
+        remoteHosts: z.array(z.string().min(1)).default([]),
+      })
+      .default({ allowed: [], remoteHosts: [] }),
+    /** Where the procedure was drafted from (page, upload or ticket export). */
+    source: z.string().min(1),
+    status: z.enum(["draft", "active", "retired"]).default("draft"),
+    reviewedBy: z.string().optional(),
+    reviewedAt: z.iso.date().optional(),
+  })
+  .superRefine((p, ctx) => unique(p.steps, (s) => s.id, ctx, "steps"));
+export type Procedure = z.infer<typeof Procedure>;
 
 // ------------------------------------------------------------------ test-strategy.yaml
 

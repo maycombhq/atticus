@@ -1,0 +1,30 @@
+{
+  "name": "@maycombhq/executors",
+  "version": "0.0.1",
+  "description": "Pluggable step executors (ADR 0033): the run protocol over local http, command and MCP, approvals per write run, fallbacks to the manual step, and a reference executor.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "reference"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/adapters": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}
