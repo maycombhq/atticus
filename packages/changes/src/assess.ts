@@ -16,6 +16,7 @@ import {
   mandatoryGates,
   handoffName,
   nextState,
+  phaseFindingGates,
   phaseGates,
   phaseState,
   requiredArtifacts,
@@ -82,7 +83,7 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
   const required = requiredApprovals(ctx, type, phase, privacy, risk);
   const blockers: Reason[] = [
     ...(await checkArtifacts(ctx.root, change, requiredArtifacts(ctx, type, phase, footprint))),
-    ...(await checkFindings(ctx.root, change, phaseGates(ctx, phase))),
+    ...(await checkFindings(ctx.root, change, phaseFindingGates(ctx, phase))),
     ...(await checkMandatoryRounds(
       ctx.root,
       change,

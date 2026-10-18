@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
+  inputsDirOf,
   loadOrgPack,
   recordPath,
   serializeRecord,
@@ -23,7 +24,11 @@ import { readCatalog } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 import { table } from "./index-commands.js";
 
-const INBOX = "inputs/inbox";
+/** The inbox relative to the root, with forward slashes: inputs/inbox, or .atticus/inputs/inbox when adopted. */
+const inboxRelOf = (root: string) =>
+  relative(root, join(inputsDirOf(root), "inbox"))
+    .split(sep)
+    .join("/");
 
 async function filesUnder(dir: string): Promise<string[]> {
   const out: string[] = [];
@@ -57,9 +62,10 @@ export async function intakeAdd(root: string, files: string[], io: Output): Prom
     io.err("Name at least one file to add.");
     return 2;
   }
+  const INBOX = inboxRelOf(root);
   const inbox = join(root, ...INBOX.split("/"));
   const known = new Map<string, string>();
-  for (const f of await filesUnder(join(root, "inputs")))
+  for (const f of await filesUnder(inputsDirOf(root)))
     known.set(sha256(new Uint8Array(await readFile(f))), rel(root, f));
   let problems = false;
   let added = 0;
@@ -118,6 +124,7 @@ async function context(root: string, io: Output): Promise<Context> {
     root,
     orgPack: op,
     records: [...generated.records, ...curated.records],
+    inputsDir: inputsDirOf(root),
   });
   return { op, records: generated.records, curated: curated.records, inputs };
 }

@@ -1,4 +1,4 @@
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,9 @@ import { changeFolder, changeStore } from "@maycombhq/changes";
 import { changesDirOf } from "@maycombhq/core";
 import { changeDir, loadRepos, writeChangeRepos } from "@maycombhq/workspace";
 import { changeNew } from "../src/change-commands.js";
+import { intakeAdd, intakeList } from "../src/intake-commands.js";
+import { templatesDraft } from "../src/plan-commands.js";
+import { describeRun } from "../src/run-commands.js";
 
 /**
  * A repo adopted in place without an OpenSpec folder of its own keeps OpenSpec inside
@@ -20,6 +23,7 @@ import { changeNew } from "../src/change-commands.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "../../adopt/test/fixtures");
+const NOW = "2026-10-20T09:00:00Z";
 const made: string[] = [];
 afterAll(async () => {
   while (made.length) await rm(made.pop()!, { recursive: true, force: true });
@@ -94,6 +98,96 @@ describe("change folders through the layout on an adopted repo", () => {
     });
     expect(steps.pathOf(s).startsWith(join(changes, "add-note-tags", "steps"))).toBe(true);
 
+    await unadopt(dir);
+    expect(await hashTree(dir)).toEqual(before);
+  });
+
+  it("intake add drops files into .atticus/inputs/inbox, and intake list reads them there", async () => {
+    const base = await mkdtemp(join(tmpdir(), "atticus-layout-"));
+    made.push(base);
+    const dir = join(base, "notes-service");
+    await cp(join(FIXTURES, "assistant-repo"), dir, { recursive: true });
+    const before = await hashTree(dir);
+    await adopt(dir);
+    const spec = join(
+      HERE,
+      "../../../fixtures/forge/inputs/partner-specs/northwind-pay-openapi.yaml",
+    );
+    const a = io();
+    expect(await intakeAdd(dir, [spec], a.io)).toBe(0);
+    expect(a.out[0]).toMatch(
+      /^Added \.atticus\/inputs\/inbox\/northwind-pay-openapi\.yaml \(openapi\)\.$/,
+    );
+    expect(await exists(join(dir, ".atticus/inputs/inbox/northwind-pay-openapi.yaml"))).toBe(true);
+    expect(await exists(join(dir, "inputs"))).toBe(false);
+    // Added again, it is recognised as already there.
+    const again = io();
+    expect(await intakeAdd(dir, [spec], again.io)).toBe(1);
+    expect(again.err[0]).toMatch(/is already in inputs as \.atticus\/inputs\/inbox\//);
+    const l = io();
+    expect(await intakeList(dir, l.io, {})).toBe(0);
+    expect(l.out.join("\n")).toContain("northwind-pay-openapi.yaml");
+    await unadopt(dir);
+    expect(await hashTree(dir)).toEqual(before);
+  });
+
+  it("keeps template proposals, the inputs it reads, and run messages inside .atticus", async () => {
+    const base = await mkdtemp(join(tmpdir(), "atticus-layout-"));
+    made.push(base);
+    const dir = join(base, "notes-service");
+    await cp(join(FIXTURES, "assistant-repo"), dir, { recursive: true });
+    const before = await hashTree(dir);
+    await adopt(dir);
+    const inside = await hashTree(dir);
+
+    // templates draft reads .atticus/inputs and writes .atticus/proposals/templates.
+    await mkdir(join(dir, ".atticus/inputs/tickets"), { recursive: true });
+    await cp(
+      join(HERE, "../../../fixtures/forge/inputs/tickets/closed-service-requests.json"),
+      join(dir, ".atticus/inputs/tickets/closed-service-requests.json"),
+    );
+    const t = io();
+    expect(await templatesDraft(dir, { noAi: true }, t.io, { now: () => new Date(NOW) })).toBe(0);
+    expect(t.out[0]).toMatch(/^Read 0 how-to sources, 1 ticket export and 0 work-item exports\./);
+    expect(t.out.at(-1)).toMatch(/^Wrote the proposal to \.atticus\/proposals\/templates\/ \(/);
+    expect(await exists(join(dir, ".atticus/proposals/templates/SUMMARY.md"))).toBe(true);
+    expect(await exists(join(dir, "proposals"))).toBe(false);
+    expect(await exists(join(dir, "inputs"))).toBe(false);
+
+    // A waiting task run points at the run folder inside .atticus.
+    const r = io();
+    describeRun(
+      dir,
+      {
+        schemaVersion: 1,
+        change: "add-note-tags",
+        task: "1.1",
+        repo: "notes-service",
+        level: "draft",
+        runtime: "hand-off",
+        engine: "atticus",
+        by: "dev",
+        branch: "task/add-note-tags/1.1",
+        worktree: ".atticus/workspace/.worktrees/add-note-tags/.tasks/1.1/notes-service",
+        state: "waiting",
+        runs: ["run-1"],
+        waiting: "run-1",
+        attempts: [],
+        changed: [],
+        startedAt: "2026-10-20T09:00:00Z",
+        notes: [],
+      },
+      r.io,
+    );
+    expect(r.out[0]).toBe(
+      "Handed task 1.1 to your assistant. The prompt is in .atticus/.runs/add-note-tags/run-1/prompt.md; it ends with: atticus handoff done run-1",
+    );
+
+    // Nothing outside .atticus changed, and unadopt leaves the repo as it was.
+    const after = await hashTree(dir);
+    const outside = (h: Record<string, string>) =>
+      Object.fromEntries(Object.entries(h).filter(([k]) => !k.startsWith(".atticus")));
+    expect(outside(after)).toEqual(outside(inside));
     await unadopt(dir);
     expect(await hashTree(dir)).toEqual(before);
   });

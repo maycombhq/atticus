@@ -35,6 +35,31 @@ export function stateDirOf(root: string): string {
   return isAdopted(root) ? join(root, ".atticus") : root;
 }
 
+/** Run folders (`.runs/<change>/<runId>/`: prompts, packs, build logs): under the state folder. */
+export function runsDirOf(root: string): string {
+  return join(stateDirOf(root), ".runs");
+}
+
+/** The run folders relative to the root with forward slashes, for messages and stored paths. */
+export function runsRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/.runs" : ".runs";
+}
+
+/** Where intake looks for what people drop in: `inputs/`, or `.atticus/inputs/` when adopted. */
+export function inputsDirOf(root: string): string {
+  return join(stateDirOf(root), "inputs");
+}
+
+/** Where Atticus writes proposals for people to review, relative to the root with forward slashes. */
+export function proposalsRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/proposals" : "proposals";
+}
+
+/** The proposals folder: `proposals/`, or `.atticus/proposals/` when adopted. */
+export function proposalsDirOf(root: string): string {
+  return join(root, ...proposalsRelOf(root).split("/"));
+}
+
 // Change folders resolve through the layout on every call, so the parsed file is kept until
 // sources.yaml changes (size or time).
 const layouts = new Map<string, { key: string; layout: { catalog: string; openspec: string } }>();

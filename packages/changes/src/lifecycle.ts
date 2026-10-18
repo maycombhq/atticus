@@ -267,6 +267,25 @@ export function phaseGates(ctx: ChangeContext, phase: PhaseId): string[] {
   return ctx.orgPack.gates.gates.filter((g) => g.phase === phase).map((g) => g.id);
 }
 
+/**
+ * Gates Atticus itself writes findings to, whether or not gates.yaml lists them: the drift
+ * check, the Spec Kit hand-up and traceability (ADR 0039).
+ */
+export const BUILT_IN_GATES: readonly string[] = ["drift", "hand-up", "trace"];
+
+/** The phases whose hand-offs the built-in gates hold back: Build, QA and Go/no-go. */
+const BUILT_IN_GATE_PHASES: readonly PhaseId[] = ["build", "qa", "release"];
+
+/**
+ * The gates whose findings stop this phase's hand-off: its gates.yaml gates, and for the
+ * Build, QA and Go/no-go phases the built-in gates too ("read by the lifecycle like any gate").
+ */
+export function phaseFindingGates(ctx: ChangeContext, phase: PhaseId): string[] {
+  const own = phaseGates(ctx, phase);
+  if (!BUILT_IN_GATE_PHASES.includes(phase)) return own;
+  return [...own, ...BUILT_IN_GATES.filter((g) => !own.includes(g))];
+}
+
 export function sha256(text: string | Buffer): string {
   return createHash("sha256").update(text).digest("hex");
 }

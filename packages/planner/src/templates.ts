@@ -6,7 +6,10 @@ import {
   AgentDefinition,
   Procedure,
   ServiceRequestTemplate,
+  inputsDirOf,
   loadOrgPack,
+  proposalsDirOf,
+  proposalsRelOf,
   toCanonicalYaml,
   type CatalogRecord,
   type OrgPack,
@@ -844,7 +847,7 @@ export async function draftTemplates(
     .records;
   const now = o.now ?? new Date();
   const problems: string[] = [];
-  const inputsDir = o.inputsDir ?? join(root, "inputs");
+  const inputsDir = o.inputsDir ?? inputsDirOf(root);
 
   const wiki = await syncSources({ root, orgPack, orgPackDir, records });
   for (const p of wiki.problems) problems.push(`${p.source}: ${p.message}`);
@@ -983,8 +986,8 @@ export async function draftTemplates(
   // Write the proposal.
   const files: string[] = [];
   const write = async (rel: string, text: string) => {
-    await writeFileAtomic(join(root, PROPOSALS_DIR, rel), text);
-    files.push(`${PROPOSALS_DIR}/${rel}`);
+    await writeFileAtomic(join(proposalsDirOf(root), "templates", rel), text);
+    files.push(`${proposalsRelOf(root)}/templates/${rel}`);
   };
   for (const d of drafts)
     if (d.existing !== "matches") await write(`process/snow/${d.id}.yaml`, templateYaml(d));

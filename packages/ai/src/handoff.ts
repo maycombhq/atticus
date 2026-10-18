@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { changesDirOf, changesRelOf, type RuntimeKind } from "@maycombhq/core";
+import { changesDirOf, changesRelOf, runsDirOf, type RuntimeKind } from "@maycombhq/core";
 import {
   checkAllowed,
   makeRunId,
@@ -12,7 +12,7 @@ import {
 } from "./runtime.js";
 
 export interface HandoffOptions {
-  /** The metarepo root; runs go to .runs/<change>/<runId>/ and output to the change folder. */
+  /** The metarepo root; runs go to .runs/<change>/<runId>/ (under .atticus/ when adopted) and output to the change folder. */
   root: string;
   /** Check the produced file (openspec validate on it). Returns problems, empty when fine. */
   validate: (outputFile: string, request: AiRequest) => Promise<string[]>;
@@ -38,7 +38,7 @@ export class HandoffRuntime implements AiRuntime {
   constructor(private readonly o: HandoffOptions) {}
 
   private now = () => this.o.now?.() ?? new Date();
-  private runDir = (change: string, runId: string) => join(this.o.root, ".runs", change, runId);
+  private runDir = (change: string, runId: string) => join(runsDirOf(this.o.root), change, runId);
   private outputFile = (r: Run) =>
     join(changesDirOf(this.o.root), r.request.change, r.request.outputPath);
 
@@ -157,7 +157,7 @@ export class HandoffRuntime implements AiRuntime {
 
   private async load(runId: string): Promise<Run> {
     if (!/^run-[0-9a-z-]+$/.test(runId)) throw new RuntimeError(`not a run id: ${runId}`);
-    const runs = join(this.o.root, ".runs");
+    const runs = runsDirOf(this.o.root);
     for (const change of await readdir(runs).catch(() => [] as string[])) {
       const f = join(runs, change, runId, "run.json");
       const text = await readFile(f, "utf8").catch(() => undefined);
@@ -173,7 +173,7 @@ export class HandoffRuntime implements AiRuntime {
  */
 export async function pruneRuns(root: string, days: number, now = new Date()): Promise<string[]> {
   const removed: string[] = [];
-  const runs = join(root, ".runs");
+  const runs = runsDirOf(root);
   const cutoff = now.getTime() - days * 86_400_000;
   for (const change of await readdir(runs).catch(() => [] as string[])) {
     for (const runId of await readdir(join(runs, change)).catch(() => [] as string[])) {

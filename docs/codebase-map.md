@@ -5,7 +5,7 @@ Read this before exploring the repo: it says where things live, so you can open 
 ## Rules of the road
 
 - Contracts (frozen, change only by ADR): `packages/core/src/schema/`: `kinds.ts` (C1 catalog records, schema v2), `dialect.ts` (C2), `review.ts` (C3 rules and findings), `orgpack.ts` (C6), `ai.ts` (C5), `workspace.ts`, `change.ts` and `executors.ts` (C4 files). The local API document is `packages/core/src/api.ts`, written to `docs/api/openapi.json` by `pnpm api:doc`.
-- Paths in a metarepo or adopted repo: always resolve with `orgPackDirOf`, `catalogDirOf`, `stateDirOf`, `layoutOf` (and `changesDirOf` once merged) from `packages/core/src/metarepo.ts`; never `join(root, "org-pack")`.
+- Paths in a metarepo or adopted repo: always resolve with `orgPackDirOf`, `catalogDirOf`, `stateDirOf`, `layoutOf`, `changesDirOf`, `runsDirOf`, `inputsDirOf`, `proposalsDirOf` (and `runsRelOf`, `proposalsRelOf` for messages and stored paths) from `packages/core/src/metarepo.ts`; never `join(root, "org-pack")`, `join(root, ".runs")`, `join(root, "inputs")` or `join(root, "proposals")`. In a repo adopted in place they are all under `.atticus/`.
 - Records: parse with `parseRecord`, write with `serializeRecord` (canonical YAML), file path `recordPath` (`<kind>/<id>.yaml`).
 - Merge and identity: `packages/core/src/merge.ts` (`mergeCatalog`); curated decisions: `packages/core/src/curated.ts` (`applyCurated`); references: `packages/core/src/refs.ts`.
 - The whole scan: `packages/scanner/src/scan.ts` (`scanEstate`: repos, extractors and dialects, merge, intake, features, glossary, federation, curated decisions); catalog files: `packages/scanner/src/files.ts`.

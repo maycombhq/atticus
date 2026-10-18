@@ -8,6 +8,7 @@ import { createGit } from "@maycombhq/workspace";
 import { changeList, changeNew } from "../src/change-commands.js";
 import { critic } from "../src/critic-commands.js";
 import { orgPackValidate } from "../src/commands.js";
+import { main } from "../src/main.js";
 import { scanCommand } from "../src/scan-commands.js";
 import {
   absorbCommand,
@@ -73,6 +74,20 @@ describe("atticus init", () => {
     const again = io();
     expect(await initCommand(dir, { name: "shop", platform: "shop" }, again.io)).toBe(1);
     expect(again.err[0]).toMatch(/already a metarepo/);
+  });
+
+  it("names the org pack after the folder's base name, whatever path it is given", async () => {
+    const dir = await temp("shop-meta");
+    const t = io();
+    expect(await main(["init", dir, "--platform", "shop"], t.io)).toBe(0);
+    expect(t.err).toEqual([]);
+    expect(t.out[0]).toMatch(/^Created the shop-meta metarepo in /);
+    // A trailing slash is the same folder.
+    const slash = io();
+    expect(
+      await main(["init", `${await temp("trail-meta")}/`, "--platform", "shop"], slash.io),
+    ).toBe(0);
+    expect(slash.out[0]).toMatch(/^Created the trail-meta metarepo/);
   });
 });
 

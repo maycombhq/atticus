@@ -1,4 +1,5 @@
 import {
+  BUILT_IN_GATES,
   changeStore,
   checkFindings,
   loadChangeContext,
@@ -72,7 +73,7 @@ export async function gateStatusOf(
 }
 
 /** Gates Atticus itself writes findings to (drift check, Spec Kit hand-up, traceability), whether or not gates.yaml lists them. */
-export const BUILT_IN_GATES: readonly string[] = ["drift", "hand-up", "trace"];
+export { BUILT_IN_GATES };
 
 /** Counts for a gate and whether its hand-off may proceed. */
 export async function gateStatus(

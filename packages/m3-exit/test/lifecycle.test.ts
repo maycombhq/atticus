@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,15 +10,12 @@ import {
   type Adapters,
   type JournalEntry,
 } from "@maycombhq/adapters";
-import { taskRun } from "@maycombhq/cli/dist/run-commands.js";
-import { act } from "@maycombhq/naysayer";
 import {
   atticus,
   CHANGE,
   changeDir,
   FORGE_CHANGE,
   forgeEstate,
-  gap,
   json,
   METAREPO,
   OWN,
@@ -44,9 +40,8 @@ import {
  * createAdapters still runs for every command (runtime.yaml → adapter → command); only the
  * instance is the shared one. Reviews on the Git host are what reviewers would do there.
  *
- * Steps share state and run in order. Steps named "GAP ..." assert what the exit needs where the
- * product falls short today; they are expected to fail (see `gap` in helpers.ts) and never
- * change the shared state when they fail.
+ * Steps share state and run in order. A step written with `gap()` (helpers.ts) asserts what the
+ * exit needs where the product falls short today and is expected to fail; none is left here.
  */
 
 const shared = vi.hoisted(() => ({ adapters: {} as Record<string, unknown> }));
@@ -363,12 +358,16 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   );
 
   it(
-    "Plan critic round: nothing blocking (no story without criteria, no instruction in a story, both service-desk drafts complete); the eleven gaps come back at the plan gate",
+    "Plan critic round: nothing blocking (no story without criteria, no instruction in a story, both service-desk drafts complete); the eleven gaps come back at the plan gate, already asked at the design gate",
     async () => {
-      const r = json<{ open: { blocking: number; gaps: number }; findings: { rule: string }[] }>(
-        await run("critic", CHANGE, "--gate", "plan", "--json"),
-      );
-      expect(r.open).toEqual({ blocking: 0, gaps: 11, risks: 0, ideas: 0 });
+      const r = json<{
+        open: { blocking: number; gaps: number };
+        findings: { rule: string; severity: string; state: string }[];
+      }>(await run("critic", CHANGE, "--gate", "plan", "--json"));
+      expect(r.open).toEqual({ blocking: 0, gaps: 0, risks: 0, ideas: 0 });
+      const gaps = r.findings.filter((f) => f.severity === "gap");
+      expect(gaps).toHaveLength(11);
+      expect(gaps.every((f) => f.state === "asked")).toBe(true);
       for (const rule of [
         "constitution.story-acceptance-criteria",
         "constitution.no-embedded-instructions",
@@ -380,13 +379,32 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     T,
   );
 
-  gap(
-    "GAP finding-gate: atticus finding --gate plan acts on a knowledge gap the plan gate raised again",
+  it(
+    "finding-gate: the questions asked at the design gate come back at the plan gate already asked, linked to the first; atticus finding acts on the plan gate's copy, and --gate picks one",
     async () => {
-      // The same gap id exists at the design gate (asked) and the plan gate (open). act() looks
-      // in reviewedGates() order and finds the design one; main() has no --gate for `finding`
-      // and packages/cli/src/critic-commands.ts findingAction() never passes ActOptions.gate.
-      const r = await run(
+      const gaps = (await findingFiles(e.root, "plan", 1)).filter((f) => f.severity === "gap");
+      expect(gaps).toHaveLength(11);
+      expect(gaps.map((f) => f.state)).toEqual(Array(11).fill("asked"));
+      expect(
+        parse(
+          await readFile(
+            join(changeDir(e.root), "review/plan/1/gap-slo-known-ledger.yaml"),
+            "utf8",
+          ),
+        ).resolution,
+      ).toMatchObject({
+        action: "ask",
+        by: "ari",
+        reason: "Already asked at the design gate: see review/design/2/gap-slo-known-ledger.yaml.",
+      });
+      // No gate named: the latest round across gates, the plan gate's copy, with its link.
+      const r = await run("finding", CHANGE, "gap-slo-known-ledger", "ask", "--by", "tia");
+      expect(r.code).toBe(1);
+      expect(r.err[0]).toBe(
+        "Finding gap-slo-known-ledger is already asked (by ari). Already asked at the design gate: see review/design/2/gap-slo-known-ledger.yaml.",
+      );
+      // --gate design reaches the design gate's own copy.
+      const d = await run(
         "finding",
         CHANGE,
         "gap-slo-known-ledger",
@@ -394,21 +412,10 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
         "--by",
         "tia",
         "--gate",
-        "plan",
+        "design",
       );
-      expect(r.text).not.toMatch(/already asked/);
-      expect(r.code).toBe(0);
-    },
-    T,
-  );
-
-  it(
-    "workaround for finding-gate: the team lead asks each plan-gate gap through the critic's own act() with gate plan",
-    async () => {
-      const open = (await findingFiles(e.root, "plan", 1)).filter(
-        (f) => f.severity === "gap" && f.state === "open",
-      );
-      for (const f of open) await act(e.root, CHANGE, f.id, "ask", { by: "tia", gate: "plan" });
+      expect(d.err[0]).toBe("Finding gap-slo-known-ledger is already asked (by ari).");
+      // Nothing is left for the team lead to ask: only the hand-off itself is missing.
       const s = json<{ reasons: { code: string }[] }>(
         await run("change", "status", CHANGE, "--json"),
       );
@@ -487,13 +494,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     T,
   );
 
-  gap(
-    "GAP task-run-replay: atticus task run --mode replay reads the recordings named by ATTICUS_REPLAY_DIR",
+  it(
+    "task-run-replay: atticus task run --mode replay reads the recordings named by ATTICUS_REPLAY_DIR, applies the recorded answer on the task branch and the fake build runner passes",
     async () => {
-      // packages/taskrun/src/run.ts runTask() builds the runtime with createRuntime() and never
-      // passes replayDir; packages/cli/src/run-commands.ts taskRun() doesn't map
-      // ATTICUS_REPLAY_DIR either (runtimeForCli does, but task run doesn't use it). From the
-      // command line it answers "Replay mode needs a folder of recordings".
       const r = await run(
         "task",
         "run",
@@ -507,33 +510,11 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
         "replay",
       );
       expect(r.text).not.toMatch(/needs a folder of recordings/);
+      expect(r.out[0]).toMatch(
+        /^Task 1\.2 is drafted on task\/add-transfer-limit\/1\.2 and the build passes \(1 attempt\); committed [0-9a-f]{12}\.$/,
+      );
       expect(r.code).toBe(0);
-    },
-    T,
-  );
-
-  it(
-    "Run with AI (draft, replay): the hand-written recorded answer is applied on the task branch and the fake build runner passes",
-    async () => {
       const state = join(changeDir(e.root), "tasks/1.2/task-run.yaml");
-      const done =
-        existsSync(state) && (await readYaml<{ state: string }>(state)).state === "built";
-      if (!done) {
-        // The run command with the recordings folder passed in, as the CLI should from the env.
-        const out: string[] = [];
-        const code = await taskRun(
-          e.root,
-          CHANGE,
-          "1.2",
-          { by: "dev", level: "draft", mode: "replay" },
-          { out: (l: string) => out.push(l), err: (l: string) => out.push(l) },
-          { runtimeOptions: { replayDir: e.replayDir } },
-        );
-        expect(out[0]).toMatch(
-          /^Task 1\.2 is drafted on task\/add-transfer-limit\/1\.2 and the build passes \(1 attempt\); committed [0-9a-f]{12}\.$/,
-        );
-        expect(code).toBe(0);
-      }
       expect((await readYaml<{ state: string }>(state)).state).toBe("built");
       const log = await readFile(e.buildLog, "utf8");
       expect(log).toMatch(/\.tasks[\\/]1\.2[\\/]forge-ledger/);
@@ -589,12 +570,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     T,
   );
 
-  gap(
-    "GAP trace-gate-lifecycle: open blocking findings on the built-in trace gate stop the Build hand-off (ADR 0039: read by the lifecycle like any gate)",
+  it(
+    "trace-gate-lifecycle: open blocking findings on the built-in trace gate stop the Build hand-off (ADR 0039: read by the lifecycle like any gate)",
     async () => {
-      // packages/changes/src/lifecycle.ts checkFindings() is called with phaseGates(ctx, phase),
-      // which reads only gates.yaml; the built-in trace (and drift) gates are never checked, so
-      // a change reaches release with untested stories and only `ci archive-gate` stops it.
       const s = json<{ reasons: { code: string; message: string }[] }>(
         await run("change", "status", CHANGE, "--json"),
       );
@@ -625,13 +603,12 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
     T,
   );
 
-  gap(
-    "GAP trace-noise: trace says nothing about tasks that were never run (no raw git errors)",
+  it(
+    "trace-noise: trace says one quiet line about tasks that were never run, not Git's error for each",
     async () => {
-      // packages/testgen trace runs `git diff change/<id>...task/<id>/<task>` for every task in
-      // tasks.md and prints Git's own error for each task branch that doesn't exist yet.
       const t = await run("trace", CHANGE, "--no-write");
-      expect(t.err.filter((l) => /git diff failed/.test(l))).toEqual([]);
+      expect(t.err.filter((l) => /git diff failed|no diff for task/.test(l))).toEqual([]);
+      expect(t.err.length).toBeLessThanOrEqual(1);
     },
     T,
   );
@@ -668,6 +645,10 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       expect(st.out).toContain(
         "Approvals needed: delivery-lead (change type feature); 2 of delivery-lead, sre (gate release); architect (high risk)",
       );
+      // The release gate is mandatory on the Forge platform: the critic reviews it first.
+      const c = await run("critic", CHANGE, "--gate", "release");
+      expect(c.text).toMatch(/Critic round 1 of 2 at the release gate/);
+      expect(c.code, c.text).toBe(0);
       expect((await run("change", "handoff", CHANGE, "--by", "tia")).code).toBe(0);
       gh.review(METAREPO, 6, "dana", "approved");
       gh.review(METAREPO, 6, "ari", "approved");
@@ -697,7 +678,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       ]);
       expect(g.code).toBe(0);
       const a = await run("change", "archive", CHANGE, "--by", "dana");
-      expect(a.out.at(-1)).toBe("Archived add-transfer-limit.");
+      expect(a.out).toContain("Archived add-transfer-limit.");
       expect(a.code).toBe(0);
       const l = json<{ id: string; state: string }[]>(await run("change", "list", "--json"));
       expect(l).toEqual([
