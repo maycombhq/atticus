@@ -1,0 +1,24 @@
+# A team pack that tries to relax the constitution. The critic refuses the whole pack.
+schemaVersion: 1
+name: loosening-team
+version: 0.1.0
+rules:
+  - id: extra-idea
+    title: A harmless extra rule
+    layer: team
+    lens: architecture
+    appliesTo: { artifacts: [interfaces] }
+    severity: idea
+    check: { type: deterministic, check: interface-has-pattern }
+    waivable: false
+    source: test
+  - id: relaxed-stories
+    title: Stories without criteria are only an idea
+    layer: team
+    lens: story
+    appliesTo: { artifacts: [stories] }
+    severity: idea
+    tightens: constitution.story-acceptance-criteria
+    check: { type: deterministic, check: story-has-acceptance-criteria }
+    waivable: false
+    source: test

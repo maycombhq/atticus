@@ -1,0 +1,10 @@
+# Contract C5 agent definition (fixture). The critic's delivery lens, run in a fresh session.
+schemaVersion: 1
+id: delivery-critic
+role: delivery-lead
+description: Reviews rollout, rollback, task order and lead times for anything that would stall delivery.
+inputs: [design, tasks, snow, catalog-slice, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 60000
+allowedRuntimes: [hand-off, mock, replay]

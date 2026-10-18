@@ -1,0 +1,10 @@
+# Contract C5 agent definition (fixture). The critic's business lens, run in a fresh session.
+schemaVersion: 1
+id: business-critic
+role: product-owner
+description: Reviews the brief, proposal and specs for unanswered questions, missing behaviour and scope the brief doesn't ask for.
+inputs: [brief, proposal, specs, catalog-slice, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 60000
+allowedRuntimes: [hand-off, mock, replay]

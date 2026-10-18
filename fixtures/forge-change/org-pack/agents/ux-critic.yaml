@@ -1,0 +1,10 @@
+# Contract C5 agent definition (fixture). The critic's UX lens, run in a fresh session.
+schemaVersion: 1
+id: ux-critic
+role: designer
+description: Reviews the UX notes for missing states, unclear messages and accessibility gaps.
+inputs: [ux, specs, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 40000
+allowedRuntimes: [hand-off, mock, replay]

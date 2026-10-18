@@ -1,0 +1,120 @@
+schemaVersion: 1
+id: add-transfer-limit
+title: Add a daily transfer limit
+type: feature
+template: feature
+state: plan
+authors:
+  brief:
+    - pat
+  data:
+    - ari
+  design:
+    - ari
+  interfaces:
+    - ari
+  mappings:
+    - ari
+  proposal:
+    - pat
+  snow:
+    - bao
+  specs:
+    - pat
+  stories:
+    - bao
+  tasks:
+    - bao
+  ux:
+    - ari
+createdAt: 2026-10-19T09:00:00Z
+createdBy: pat
+handoffs:
+  - phase: define
+    state: merged
+    approvals:
+      - at: 2026-10-19T11:00:00Z
+        by: pat
+        roles:
+          - product-owner
+    artifacts: []
+    branch: handoff/add-transfer-limit/define
+    by: pat
+    openedAt: 2026-10-19T10:00:00Z
+    pr:
+      number: 1
+      url: https://git.example.com/forge/forge-metarepo/pull/1
+    reviewers:
+      - forge/platform
+    updatedAt: 2026-10-19T11:00:00Z
+  - phase: design
+    state: merged
+    approvals:
+      - at: 2026-10-19T14:00:00Z
+        by: avery
+        roles:
+          - architect
+    artifacts: []
+    branch: handoff/add-transfer-limit/design
+    by: ari
+    openedAt: 2026-10-19T12:30:00Z
+    pr:
+      number: 2
+      url: https://git.example.com/forge/forge-metarepo/pull/2
+    reviewers:
+      - avery
+    updatedAt: 2026-10-19T14:00:00Z
+history:
+  - from: draft
+    to: define
+    at: 2026-10-19T09:00:00Z
+    by: pat
+    reason: Created from the feature template
+  - from: define
+    to: design
+    at: 2026-10-19T11:00:00Z
+    by: pat
+    pr: 1
+    reason: Send to architecture merged
+  - from: design
+    to: plan
+    at: 2026-10-19T14:00:00Z
+    by: avery
+    pr: 2
+    reason: Approve design merged
+owners:
+  architect:
+    - ari
+    - avery
+  business-analyst:
+    - bao
+  delivery-lead:
+    - dana
+  developer:
+    - dev
+    - dee
+  product-owner:
+    - pat
+  qa:
+    - quinn
+  sre:
+    - sam
+  team-lead:
+    - tia
+systems:
+  - audit
+  - ledger
+  - northwind-pay
+  - portal
+touches:
+  dataStores:
+    - ledger-db
+  interfaces:
+    - id: if-5c55930b735276a9
+      status: planned-modify
+    - id: if-d99f508a2ac9b6e0
+      status: planned-modify
+  records: []
+  repos: []
+  tables:
+    - ledger-db.account

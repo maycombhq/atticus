@@ -1,0 +1,10 @@
+# Contract C5 agent definition (fixture). The critic's code and test lens, run in a fresh session.
+schemaVersion: 1
+id: code-and-test-critic
+role: developer
+description: Reviews code and tests against the specs and tasks.
+inputs: [specs, tasks, repo-code, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 80000
+allowedRuntimes: [hand-off, mock, replay]

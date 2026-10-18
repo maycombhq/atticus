@@ -1,0 +1,10 @@
+# Contract C5 agent definition (fixture). The critic's release lens, run in a fresh session.
+schemaVersion: 1
+id: release-critic
+role: delivery-lead
+description: Reviews service-desk requests and release readiness.
+inputs: [snow, tasks, catalog-slice, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 40000
+allowedRuntimes: [hand-off, mock, replay]
