@@ -1,0 +1,21 @@
+%% Container view of Portal. Generated from the catalog by Atticus: change the catalog, not this file.
+flowchart LR
+  subgraph portal["Portal"]
+    portal_bff["portal-bff"]
+    portal_ui["portal-ui"]
+  end
+  subgraph audit["Audit"]
+    audit_svc["audit-svc"]
+  end
+  subgraph ledger["Ledger"]
+    ledger_api["ledger-api"]
+  end
+  portal_bff -->|"POST /audit/events"| audit_svc
+  portal_bff -.->|"A.EB.PUB payments.initiated"| ledger_api
+  portal_bff -->|"S.GW.SOR GET /accounts/{id}/balance"| ledger_api
+  portal_bff -->|"S.GW.SOR POST /transfers"| ledger_api
+  portal_ui -->|"S.DIR.BFF GET /api/balance/{accountId}"| portal_bff
+  classDef product fill:#dae8fc,stroke:#6c8ebf
+  classDef internal fill:#d5e8d4,stroke:#82b366
+  class ledger,ledger_api,portal,portal_bff,portal_ui product
+  class audit,audit_svc internal

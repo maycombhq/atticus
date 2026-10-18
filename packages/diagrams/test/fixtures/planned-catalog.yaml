@@ -1,0 +1,141 @@
+# Hand-written catalog for the diagram tests: a small invented Forge estate with planned
+# records (new, modify, retire), a system whose name doesn't slug to its id ("notify"),
+# and a vendor system that owns its endpoints directly. Records omit schemaVersion; the
+# test adds it.
+- kind: System
+  id: portal
+  status: current
+  confidence: verified
+  name: Portal
+  boundary: product
+  evidence: [{ source: manual, by: fixture }]
+- kind: System
+  id: ledger
+  status: planned-modify
+  confidence: asserted
+  name: Ledger
+  boundary: product
+  evidence: [{ source: manual, by: fixture }]
+- kind: System
+  id: notify
+  status: planned-new
+  confidence: asserted
+  name: Notifications Service
+  boundary: internal
+  evidence: [{ source: manual, by: fixture }]
+- kind: System
+  id: contoso-kyc
+  status: planned-retire
+  confidence: asserted
+  name: Contoso KYC
+  boundary: vendor
+  evidence: [{ source: manual, by: fixture }]
+
+- kind: Component
+  id: portal-bff
+  status: current
+  confidence: verified
+  system: portal
+  type: spring-boot
+  evidence: [{ source: manual, by: fixture }]
+- kind: Component
+  id: ledger-api
+  status: planned-modify
+  confidence: verified
+  system: ledger
+  type: forge-service
+  evidence: [{ source: manual, by: fixture }]
+- kind: Component
+  id: notify-svc
+  status: planned-new
+  confidence: asserted
+  system: notify
+  type: service
+  evidence: [{ source: manual, by: fixture }]
+
+- kind: Endpoint
+  id: ledger-api.get-balance
+  status: current
+  confidence: verified
+  component: ledger-api
+  endpointType: rest
+  method: GET
+  pathOrTopic: /accounts/{id}/balance
+  normalizedPath: /accounts/{}/balance
+  evidence: [{ source: manual, by: fixture }]
+- kind: Endpoint
+  id: topic.notifications-requested
+  status: planned-new
+  confidence: asserted
+  component: portal-bff
+  endpointType: event-topic
+  pathOrTopic: notifications.requested
+  evidence: [{ source: manual, by: fixture }]
+
+- kind: Interface
+  id: if-75b5e8d8aa780837
+  status: current
+  confidence: verified
+  from: portal-bff
+  to: ledger-api
+  endpoint: ledger-api.get-balance
+  via: gateway
+  method: GET
+  normalizedPath: /accounts/{}/balance
+  sync: sync
+  pattern: { code: S.GW.SOR, source: inferred }
+  evidence: [{ source: manual, by: fixture }]
+- kind: Interface
+  id: if-598c22ef7274546a
+  status: planned-new
+  confidence: asserted
+  from: portal-bff
+  to: notify-svc
+  endpoint: topic.notifications-requested
+  via: event-bus
+  normalizedPath: notifications.requested
+  sync: async
+  pattern: { code: A.EB.PUB, source: asserted }
+  evidence: [{ source: manual, by: fixture }]
+- kind: Interface
+  id: if-ac5205eb0a051483
+  status: current
+  confidence: verified
+  from: ledger-api
+  to: contoso-kyc
+  via: gateway
+  method: POST
+  normalizedPath: /v1/checks
+  sync: sync
+  pattern: { code: S.GW.VND, source: inferred }
+  evidence: [{ source: manual, by: fixture }]
+
+- kind: DataStore
+  id: ledger-db
+  status: current
+  confidence: verified
+  storeType: postgresql
+  ownerComponent: ledger-api
+  evidence: [{ source: manual, by: fixture }]
+- kind: Table
+  id: ledger-db.account
+  status: current
+  confidence: verified
+  dataStore: ledger-db
+  name: account
+  tableKind: table
+  ownerComponent: ledger-api
+  readers: [ledger-api]
+  writers: [ledger-api]
+  evidence: [{ source: manual, by: fixture }]
+- kind: Table
+  id: ledger-db.hold
+  status: planned-new
+  confidence: asserted
+  dataStore: ledger-db
+  name: hold
+  tableKind: table
+  ownerComponent: ledger-api
+  readers: []
+  writers: [ledger-api]
+  evidence: [{ source: manual, by: fixture }]

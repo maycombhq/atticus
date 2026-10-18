@@ -1,0 +1,20 @@
+%% Context view. Generated from the catalog by Atticus: change the catalog, not this file.
+flowchart LR
+  audit["Audit"]
+  ledger["Ledger"]
+  northwind_pay["Northwind Pay"]
+  portal["Portal"]
+  reports["Reports"]
+  ledger -->|"POST /v2/payments"| northwind_pay
+  ledger -.->|"A.EB.PUB transfers.completed"| reports
+  portal -->|"POST /audit/events"| audit
+  portal -.->|"A.EB.PUB payments.initiated"| ledger
+  portal -->|"S.GW.SOR GET /accounts/{id}/balance"| ledger
+  portal -->|"S.GW.SOR POST /transfers"| ledger
+  portal -->|"S.DIR.BFF GET /api/balance/{accountId}"| portal
+  classDef product fill:#dae8fc,stroke:#6c8ebf
+  classDef internal fill:#d5e8d4,stroke:#82b366
+  classDef vendor fill:#f5f5f5,stroke:#666666,stroke-dasharray:5 5
+  class ledger,portal,reports product
+  class audit internal
+  class northwind_pay vendor

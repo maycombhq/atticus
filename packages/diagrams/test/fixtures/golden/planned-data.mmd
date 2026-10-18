@@ -1,0 +1,22 @@
+%% Data view. Generated from the catalog by Atticus: change the catalog, not this file.
+flowchart LR
+  subgraph ledger_db["ledger-db (postgresql)"]
+    ledger_db_account[("account")]
+    ledger_db_hold[("hold")]
+  end
+  ledger_api["ledger-api"]
+  ledger_api -->|"reads and writes"| ledger_db_account
+  ledger_api -->|"writes"| ledger_db_hold
+  subgraph legend["Legend"]
+    legend_new["New"]
+    legend_modify["Modify"]
+    legend_retire["Retire"]
+  end
+  classDef product fill:#dae8fc,stroke:#6c8ebf
+  classDef plannedNew stroke:#2e7d32,stroke-width:3px,stroke-dasharray:6 3
+  classDef plannedModify stroke:#ed6c02,stroke-width:3px
+  classDef plannedRetire stroke:#b71c1c,stroke-width:3px,stroke-dasharray:2 2
+  class ledger_api product
+  class ledger_db_hold,legend_new plannedNew
+  class ledger_api,legend_modify plannedModify
+  class legend_retire plannedRetire

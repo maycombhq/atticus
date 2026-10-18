@@ -1,0 +1,13 @@
+%% Data view. Generated from the catalog by Atticus: change the catalog, not this file.
+flowchart LR
+  subgraph ledger_db["ledger-db (postgresql)"]
+    ledger_db_account[("account")]
+    ledger_db_entry[("entry")]
+  end
+  ledger_api["ledger-api"]
+  reports_job["reports-job"]
+  ledger_api -->|"reads and writes"| ledger_db_account
+  ledger_api -->|"reads and writes"| ledger_db_entry
+  reports_job -->|"reads"| ledger_db_entry
+  classDef product fill:#dae8fc,stroke:#6c8ebf
+  class ledger_api,reports_job product

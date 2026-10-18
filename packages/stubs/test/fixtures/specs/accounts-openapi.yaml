@@ -1,0 +1,163 @@
+# Hand-written fixture for the stub tests: an invented Forge accounts API that uses most of
+# what the stub supports (refs, path-level parameters, examples of every kind, scenarios).
+openapi: 3.0.3
+info:
+  title: Forge Accounts API
+  version: 1.2.0
+servers:
+  - url: https://accounts.forge.example/v1
+paths:
+  /accounts:
+    get:
+      operationId: listAccounts
+      parameters:
+        - name: status
+          in: query
+          required: true
+          schema: { type: string, enum: [open, closed] }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        "200":
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Account" }
+              examples:
+                two-open:
+                  summary: Two open accounts
+                  value:
+                    - { id: 1, number: FG0001, status: open }
+                    - { id: 2, number: FG0002, status: open }
+                none:
+                  summary: No accounts
+                  value: []
+    post:
+      operationId: openAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewAccount" }
+      responses:
+        "201":
+          description: Opened
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+              example: { id: 3, number: FG0003, holder: Sample Holder, status: open }
+        "422":
+          description: Rejected
+          content:
+            application/problem+json:
+              example: { title: The holder failed checks, status: 422 }
+  /accounts/me:
+    get:
+      operationId: getMyAccount
+      parameters:
+        - name: X-Customer-Id
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: The caller's account
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Account" }
+  /accounts/{id}:
+    parameters:
+      - $ref: "#/components/parameters/AccountId"
+    get:
+      operationId: getAccount
+      responses:
+        "200":
+          description: The account
+          content:
+            application/json:
+              example: { id: 42, number: FG0042, holder: Sample Holder, status: open, opened: "2024-03-01" }
+        "404":
+          description: No such account
+          content:
+            application/json:
+              example: { title: No such account, status: 404 }
+        "503":
+          description: The ledger is unavailable
+          content:
+            application/json:
+              example: { title: Ledger unavailable, status: 503, retryAfter: 30 }
+    delete:
+      operationId: closeAccount
+      responses:
+        "204":
+          description: Closed
+  /accounts/{id}/statements/{month}:
+    get:
+      operationId: getStatement
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+        - name: month
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: A monthly statement
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Statement" }
+        5XX:
+          description: Any server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  title: { type: string, default: Statements are unavailable }
+components:
+  parameters:
+    AccountId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+  schemas:
+    Account:
+      type: object
+      required: [id, number, status]
+      properties:
+        id: { type: integer, format: int64, readOnly: true }
+        number: { type: string, example: FG0001 }
+        holder: { type: string }
+        status: { type: string, enum: [open, closed] }
+        opened: { type: string, format: date }
+        tags:
+          type: array
+          items: { type: string }
+        limits: { $ref: "#/components/schemas/Limits" }
+    Limits:
+      type: object
+      properties:
+        daily: { type: number, default: 500 }
+        currency: { type: string, default: EUR }
+    NewAccount:
+      type: object
+      required: [holder, currency]
+      properties:
+        holder: { type: string, minLength: 1 }
+        currency: { type: string, enum: [EUR, USD, GBP] }
+        email: { type: string, format: email }
+        initialDeposit: { type: number, minimum: 0 }
+        tags:
+          type: array
+          items: { type: string }
+    Statement:
+      type: object
+      example: { month: "2024-01", entries: 3, closingBalance: 120.5 }
+      properties:
+        month: { type: string }
+        entries: { type: integer }
+        closingBalance: { type: number }

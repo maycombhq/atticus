@@ -1,0 +1,21 @@
+%% Container view of Ledger. Generated from the catalog by Atticus: change the catalog, not this file.
+flowchart LR
+  subgraph ledger["Ledger"]
+    ledger_api["ledger-api"]
+  end
+  subgraph portal["Portal"]
+    portal_bff["portal-bff"]
+  end
+  subgraph reports["Reports"]
+    reports_job["reports-job"]
+  end
+  northwind_pay["Northwind Pay"]
+  ledger_api -->|"POST /v2/payments"| northwind_pay
+  ledger_api -.->|"A.EB.PUB transfers.completed"| reports_job
+  portal_bff -.->|"A.EB.PUB payments.initiated"| ledger_api
+  portal_bff -->|"S.GW.SOR GET /accounts/{id}/balance"| ledger_api
+  portal_bff -->|"S.GW.SOR POST /transfers"| ledger_api
+  classDef product fill:#dae8fc,stroke:#6c8ebf
+  classDef vendor fill:#f5f5f5,stroke:#666666,stroke-dasharray:5 5
+  class ledger,ledger_api,portal,portal_bff,reports,reports_job product
+  class northwind_pay vendor

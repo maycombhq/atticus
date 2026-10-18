@@ -18,10 +18,12 @@
   "dependencies": {
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
+    "@maycombhq/diagrams": "workspace:*",
     "@maycombhq/index": "workspace:*",
     "@maycombhq/openspec-adapter": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",
     "@maycombhq/scanner": "workspace:*",
+    "@maycombhq/stubs": "workspace:*",
     "@maycombhq/workspace": "workspace:*"
   },
   "devDependencies": {
