@@ -1,0 +1,18 @@
+# 0039. Test generation, traceability, the pipeline drift check, the archive gate and the glossary
+
+- Status: accepted
+- Date: 2026-10-18
+
+## Decision
+
+**Test generation.** A story's tests are decided without AI as a test model: one scenario per acceptance criterion, traced to its spec scenario; API cases from the callee's OpenAPI operation (happy path, one negative per schema constraint, documented errors linked to the criterion naming their code, auth and scope checks); contract cases for each new or changed hop (consumer side from mappings and design, provider side from the spec; missing operations and fields are gaps); data cases for new columns, tables and migrations; event cases. Only the case types the change's test-strategy row asks for are generated. Framework plugins (`TestGenerator`) render the model: Gherkin and a JSON test-case format (`atticus-tests/1`) always, plus JUnit 5 + RestAssured or Vitest/Jest + fetch chosen by the repo. AI only names scenarios, tests and test data. Files carry a sha-256 header and are never overwritten after a person edits them unless `--force`.
+
+**Traceability** links requirement → story → criterion → test (generated, or found by name or endpoint path in the repos) → code (Run with AI records and task-branch diffs) → catalog records → feature. Its gaps (requirement without story, story without test, endpoint changed without test block; test without requirement is a risk) are C3 findings on a built-in, non-waivable `trace` gate, read by the lifecycle, critic and archive gate like any gate; the matrix exports as Markdown and CSV.
+
+**Pipeline drift check.** `atticus ci drift` runs in a code repo's pipeline: it scans that repo with deterministic extractors and passing dialects, merges it with the rest of the committed catalog as context, and compares only that repo's surface (endpoints, calls, subscriptions, topics, tables, columns, migrations, loose ends). Anything an approved change's design plans is reported as planned, never as drift. Exit codes 0, 1 (warn-only through `--warn-only` or `process/ci.yaml`) and 2; output JSON, JUnit XML and Markdown; templates for GitHub Actions, Azure Pipelines, GitLab CI and Jenkins. **Archive gate**: `atticus change archive` first runs `atticus ci archive-gate`, which refuses unless the change is released (and through post-release review where its type has one), no gate it was reviewed at has an open blocking finding or gap, its PRs are merged and builds passed, and its repos show no unplanned drift.
+
+**Glossary.** GlossaryTerm records come from wiki definitions (explicit markup only), from code (frequent nouns and compound names), from people (curated define, link and alias decisions) and from AI proposals for code-only terms (stay `inferred` until defined). They are built in every scan, after features and before curated decisions. Terms link to columns (`Column.glossaryTerm`) and to schema fields and features; conflicting definitions and differing code use are flagged; abbreviations become naming hints. The `glossary-term-known` knowledge check makes new columns and fields need a term.
+
+## Consequences
+
+Tests, traceability and catalog truth are enforced at the change, the pipeline and archive, with no network or AI in the checks. Reading catalog files now returns records in scan order (kind, then id) whatever the file names sort to. Candidate additive contracts: C1 GlossaryTerm `aliases`, typed `links` and conflicts; C1 Capability `glossaryTerms`; C6 `process/ci.yaml`; C5 output kinds for proposals and tests. Not yet: `ALTER TABLE … ADD COLUMN` produces a Migration operation but no Column record (extractor gap), and generated change-folder paths follow `openspec/changes` rather than the layout.

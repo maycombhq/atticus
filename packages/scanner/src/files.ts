@@ -35,6 +35,10 @@ export async function readCatalog(
     }
   }
   await walk(dir);
+  // The same order as a scan's records (kind, then id), whatever the file names sort to.
+  records.sort((a, b) =>
+    a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
+  );
   return { records, problems };
 }
 

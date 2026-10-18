@@ -59,7 +59,10 @@ describe("scan of the Forge fixture (M1 exit)", () => {
       const kinds = [...new Set(expected.map((e) => e.kind))];
       // The partner spec in inputs/ comes in through intake, so the vendor endpoint is there
       // and the vendor call is verified: every field of every record matches.
-      const c = compareCatalog(scan.records, expected, kinds);
+      // Column links to glossary terms are an enrichment the hand-written M1 catalog predates (ADR 0039).
+      const c = compareCatalog(scan.records, expected, kinds, {
+        ignoreFields: { Column: ["glossaryTerm"] },
+      });
       expect(c.missing).toEqual([]);
       expect(c.extra.filter((k) => !k.startsWith("SourceDocument/"))).toEqual([]);
       expect(c.fieldDiffs).toEqual([]);

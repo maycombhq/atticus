@@ -24,6 +24,7 @@
     "@maycombhq/core": "workspace:*",
     "@maycombhq/extractors": "workspace:*",
     "@maycombhq/features": "workspace:*",
+    "@maycombhq/glossary": "workspace:*",
     "@maycombhq/ingestors": "workspace:*",
     "@maycombhq/intake": "workspace:*",
     "@maycombhq/sdk": "workspace:*",

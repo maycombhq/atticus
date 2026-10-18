@@ -52,6 +52,18 @@ import {
   zeroInstallCommand,
 } from "./setup-commands.js";
 import { existsSync } from "node:fs";
+import {
+  ciArchiveGate,
+  ciDrift,
+  ciSnippet,
+  glossaryAlias,
+  glossaryDefine,
+  glossaryLink,
+  glossaryList,
+  glossaryScan,
+  testsGenerate,
+  traceCommand,
+} from "./quality-commands.js";
 import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
   catalogMigrate,
@@ -117,7 +129,7 @@ Usage:
   atticus diagram render <view|file>   Draw a view (context, container, data, event, sequence) or a .drawio file
           [--focus id] [--format mermaid|drawio] [--out file]
   atticus diagram library <file>       Write the draw.io shape library
-  atticus stub serve <spec|id>         Serve a stub of an API from its spec, or from the catalog (--catalog)
+  atticus stub serve <spec|id>         Serve a stub of an API from its spec, or from the catalog (--from-catalog)
           [--port 4010] [--host 127.0.0.1]
   atticus stub check <spec>            Which operations have examples to answer with
   atticus dialect new <name> --from <repo>[,<repo>...]   Scaffold a dialect from sample repos
@@ -171,6 +183,16 @@ Usage:
   atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
   atticus absorb <git-url|path> --id <id>  Translate another team's prompts, agents, checklists, Spec Kit or Atticus repo
           [--mode adopt|link|ignore] [--ref r] [--dry-run]
+  atticus tests generate <change> <story>  Generate tests from a story [--framework id] [--force] [--check] [--mode m]
+  atticus trace <change> [--json] [--csv] [--no-write]  Requirement → story → test → code → records → feature
+  atticus ci drift [repo] --catalog <path>  In a repo's pipeline: compare the repo with the committed catalog
+          [--repo id] [--json [file]] [--junit file] [--summary file] [--warn-only]
+  atticus ci snippet <github|azure|gitlab|jenkins> [--write dir]  Pipeline template for the drift check
+  atticus ci archive-gate <change> [--drift file]...  Whether a change may be archived
+  atticus glossary list|scan [--json]  Business terms from wikis, code and people
+  atticus glossary define <term> "<definition>" --by <you> [--owner team]
+  atticus glossary link <term> <record-id|schema#field> --by <you>
+  atticus glossary alias <term> <name>... --by <you>
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -221,7 +243,8 @@ export async function main(argv: string[], io: Output): Promise<number> {
       out: { type: "string" },
       port: { type: "string" },
       host: { type: "string" },
-      catalog: { type: "boolean" },
+      catalog: { type: "string" },
+      "from-catalog": { type: "boolean" },
       from: { type: "string" },
       type: { type: "string" },
       template: { type: "string" },
@@ -259,6 +282,15 @@ export async function main(argv: string[], io: Output): Promise<number> {
       platform: { type: "string" },
       ref: { type: "string" },
       org: { type: "string" },
+      framework: { type: "string" },
+      csv: { type: "boolean" },
+      "no-write": { type: "boolean" },
+      junit: { type: "string" },
+      summary: { type: "string" },
+      "json-out": { type: "string" },
+      "warn-only": { type: "boolean" },
+      write: { type: "string" },
+      drift: { type: "string", multiple: true },
     },
     strict: false,
   });
@@ -361,6 +393,75 @@ export async function main(argv: string[], io: Output): Promise<number> {
   }
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const json = values.json === true;
+  if (group === "tests" && command === "generate")
+    return testsGenerate(
+      root,
+      arg,
+      positionals[3],
+      {
+        ...(str(values.framework) ? { framework: str(values.framework)! } : {}),
+        force: values.force === true,
+        check: values.check === true,
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+        ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
+        json,
+      },
+      io,
+    );
+  if (group === "trace")
+    return traceCommand(
+      root,
+      command,
+      { json, csv: values.csv === true, write: values["no-write"] !== true },
+      io,
+    );
+  if (group === "ci" && command === "drift")
+    return ciDrift(
+      resolve(arg ?? "."),
+      {
+        ...(str(values.catalog) ? { catalog: resolve(str(values.catalog)!) } : {}),
+        json: str(values["json-out"]) ?? json,
+        ...(str(values.junit) ? { junit: str(values.junit)! } : {}),
+        ...(str(values.summary) ? { summary: str(values.summary)! } : {}),
+        warnOnly: values["warn-only"] === true,
+        ...(str(values.repo) ? { repo: str(values.repo)! } : {}),
+      },
+      io,
+    );
+  if (group === "ci" && command === "snippet")
+    return ciSnippet(arg, io, { ...(str(values.write) ? { write: str(values.write)! } : {}) });
+  if (group === "ci" && command === "archive-gate")
+    return ciArchiveGate(
+      root,
+      arg,
+      { ...(Array.isArray(values.drift) ? { drift: values.drift as string[] } : {}), json },
+      io,
+    );
+  if (group === "glossary") {
+    const by = str(values.by);
+    if (command === "list") return glossaryList(root, { json }, io);
+    if (command === "scan")
+      return glossaryScan(
+        root,
+        { ...(str(values.mode) ? { mode: str(values.mode)! } : {}), json },
+        io,
+      );
+    const ownerOne = Array.isArray(values.owner)
+      ? (values.owner[0] as string | undefined)
+      : str(values.owner);
+    if (command === "define")
+      return glossaryDefine(
+        root,
+        arg,
+        positionals.slice(3).join(" ") || undefined,
+        { ...(by ? { by } : {}), ...(ownerOne ? { owner: ownerOne } : {}) },
+        io,
+      );
+    if (command === "link")
+      return glossaryLink(root, arg, positionals[3], { ...(by ? { by } : {}) }, io);
+    if (command === "alias")
+      return glossaryAlias(root, arg, positionals.slice(3), { ...(by ? { by } : {}) }, io);
+  }
   if (group === "init") {
     const owner = Array.isArray(values.owner)
       ? (values.owner[0] as string | undefined)
@@ -766,6 +867,8 @@ export async function main(argv: string[], io: Output): Promise<number> {
         },
         io,
       );
+    if (command === "archive" && (await ciArchiveGate(root, arg, { json: false }, io)) !== 0)
+      return 1;
     if (command === "archive") return changeArchive(root, arg, { ...(by ? { by } : {}) }, io);
   }
   if (group === "intake" && command === "add")
@@ -833,7 +936,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
       {
         ...(num(values.port) ? { port: num(values.port)! } : {}),
         ...(str(values.host) ? { host: str(values.host)! } : {}),
-        catalog: values.catalog === true,
+        catalog: values["from-catalog"] === true,
       },
       io,
     );

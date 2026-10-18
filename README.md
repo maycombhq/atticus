@@ -41,6 +41,9 @@ packages/
   planner/           stories, tasks, service-desk drafts, story bar, work-item sync, templates
   executors/         procedures and the protocol for teams' own automation tools
   adopt/             init, repo discovery, adopt in place, absorb and federation
+  testgen/           tests from stories, and traceability
+  ci/                the pipeline drift check and the archive gate
+  glossary/          business terms from wikis, code and people
   features/          features found in code, names, links and gaps
   intake/            inputs/ intake, triage, curated decisions
   stubs/             stub servers from specs or the catalog

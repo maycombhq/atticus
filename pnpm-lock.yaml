@@ -520,6 +520,9 @@ importers:
       '@maycombhq/features':
         specifier: workspace:*
         version: link:../features
+      '@maycombhq/glossary':
+        specifier: workspace:*
+        version: link:../glossary
       '@maycombhq/ingestors':
         specifier: workspace:*
         version: link:../ingestors

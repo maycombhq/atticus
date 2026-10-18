@@ -79,6 +79,8 @@ export interface GlossaryForScanInput {
   proposalsDir: string;
   /** Pages already read; default: read the org pack's wiki sources. */
   pages?: readonly KnowledgePage[];
+  /** The org-pack folder wiki locations are relative to; default the root's. */
+  orgPackDir?: string;
 }
 
 export interface GlossaryForScanResult {
@@ -96,7 +98,7 @@ export async function glossaryForScan(i: GlossaryForScanInput): Promise<Glossary
     const s = await syncSources({
       root: i.root,
       orgPack: i.orgPack,
-      orgPackDir: orgPackDirOf(i.root),
+      orgPackDir: i.orgPackDir ?? orgPackDirOf(i.root),
       records: [...i.records],
     });
     pages = s.pages;

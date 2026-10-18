@@ -64,7 +64,14 @@ export async function scanCommand(
   if (o.json) {
     io.out(
       JSON.stringify(
-        { stats: scan.stats, diff, problems, written: write !== undefined, files: write ?? null },
+        {
+          stats: scan.stats,
+          diff,
+          problems,
+          notes: scan.notes,
+          written: write !== undefined,
+          files: write ?? null,
+        },
         null,
         2,
       ),
@@ -83,6 +90,7 @@ export async function scanCommand(
         `catalog/generated: ${write.written} written, ${write.unchanged} unchanged, ${write.removed} removed`,
       );
     else io.out("Dry run: nothing written.");
+    for (const n of scan.notes) io.out(`note: ${n}`);
     for (const p of problems)
       io.err(`${"repo" in p && p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`);
   }

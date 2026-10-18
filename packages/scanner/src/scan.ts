@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { featuresForScan } from "@maycombhq/features";
+import { glossaryForScan } from "@maycombhq/glossary";
 import {
   configHash,
   DEFAULT_IGNORES,
@@ -93,6 +94,8 @@ export interface EstateScan {
   };
   /** What intake read from inputs/ (documents, versions, triage items). */
   inputs?: ScanInputsResult;
+  /** Things worth knowing that don't make the scan fail (for example a wiki folder the glossary couldn't read). */
+  notes: string[];
   /** Curated decisions applied, and the records they suppressed. */
   curated: { applied: string[]; suppressed: string[] };
   /** Federated metarepos and what they contributed, when there are any. */
@@ -358,7 +361,18 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     fedRecords = fed.records;
     federated = fed.contributions;
   }
-  const withFeatures = [...merged.records, ...found.features, ...fedRecords].sort((a, b) =>
+  // The business glossary: terms from wikis and code, column links, AI proposals; before curated decisions.
+  const glossary = await glossaryForScan({
+    root: o.root,
+    orgPack: op,
+    records: [...merged.records, ...found.features],
+    decisions: curated.records,
+    proposalsDir: join(dirname(curatedDir), "proposals"),
+    orgPackDir,
+  });
+  // The glossary is an enrichment: what it can't read (a missing wiki folder) is a note, not a scan failure.
+  const notes = glossary.problems.map((p) => `glossary: ${p}`);
+  const withFeatures = [...glossary.records, ...fedRecords].sort((a, b) =>
     a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
   );
   const applied = applyCurated(withFeatures, curated.records);
@@ -384,6 +398,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     },
     ...(inputs ? { inputs } : {}),
     curated: { applied: applied.applied, suppressed: applied.suppressed },
+    notes,
     ...(federated ? { federated } : {}),
   };
 }
