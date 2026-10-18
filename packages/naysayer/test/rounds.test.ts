@@ -1,0 +1,207 @@
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
+import { ReplayRuntime } from "@maycombhq/ai";
+import { canAdvance } from "@maycombhq/changes";
+import { Finding } from "@maycombhq/core";
+import { CriticError, act, gateStatus, runCritic } from "../src/index.js";
+import { CHANGE, FORGE_CHANGE, NOW, changeDir, forgeChangeRoot, readText } from "./helpers.js";
+
+const replay = () =>
+  ReplayRuntime.fromDir(join(FORGE_CHANGE, "recordings"), { now: () => new Date(NOW) });
+const LATER = "2026-10-21T10:00:00Z";
+
+async function idOf(root: string, rule: string, artifact?: string): Promise<string> {
+  const s = await gateStatus(root, CHANGE, "plan");
+  const f = s.findings.find(
+    (x) => x.finding.rule === rule && (!artifact || x.finding.artifact === artifact),
+  );
+  if (!f) throw new Error(`no finding for ${rule}`);
+  return f.finding.id;
+}
+
+describe("rounds, gates and actions", () => {
+  it("records each action on its finding and enforces C3's rules", async () => {
+    const root = await forgeChangeRoot();
+    await runCritic(root, CHANGE, { now: NOW, runtime: await replay() });
+
+    // Apply: the pattern typo has a patch, and applying it fixes interfaces.md.
+    const typo = await idOf(root, "constitution.interface-approved-pattern");
+    expect(typo).toBe("interface-approved-pattern-interfaces-l6");
+    const applied = await act(root, CHANGE, typo, "apply", { by: "ari", now: LATER });
+    expect(applied.patched).toBe("interfaces.md");
+    expect(applied.finding.state).toBe("applied");
+    const ifaces = await readText(join(changeDir(root), "interfaces.md"));
+    expect(ifaces).toContain(
+      "| new | portal-bff | ledger-api | S.GW.SOR | GET /accounts/{id}/limit |",
+    );
+    expect(ifaces).not.toContain("S.GW.SRO");
+    const stored = Finding.parse(parse(await readText(join(changeDir(root), applied.path))));
+    expect(stored.resolution).toEqual({ action: "apply", by: "ari", at: LATER });
+
+    // A finding is acted on once.
+    await expect(act(root, CHANGE, typo, "apply", { by: "ari" })).rejects.toThrow(
+      /already applied \(by ari\)/,
+    );
+
+    // Constitution findings can never be waived.
+    const story = await idOf(root, "constitution.story-acceptance-criteria");
+    await expect(act(root, CHANGE, story, "waive", { by: "tia", reason: "later" })).rejects.toThrow(
+      /constitution rule \(constitution\.story-acceptance-criteria\), which can never be waived/,
+    );
+    // Only blocking findings can be waived.
+    const rollback = await idOf(root, "design-has-rollback");
+    await expect(act(root, CHANGE, rollback, "waive", { by: "tia", reason: "x" })).rejects.toThrow(
+      /Only blocking findings can be waived/,
+    );
+    // Only the stage owner (the plan gate's approver role, team-lead: tia) can waive.
+    const race = await idOf(root, "design-concurrency-handled");
+    await expect(
+      act(root, CHANGE, race, "waive", { by: "ari", reason: "Handled in the ledger library" }),
+    ).rejects.toThrow(
+      /Only the plan stage owner can waive: team-lead on this change \(tia\)\. ari is not\./,
+    );
+    await expect(act(root, CHANGE, race, "waive", { by: "tia" })).rejects.toThrow(
+      /Waive needs a reason/,
+    );
+    const waived = await act(root, CHANGE, race, "waive", {
+      by: "@tia",
+      reason: "The ledger library serialises transfers per account.",
+      now: LATER,
+    });
+    expect(waived.finding.state).toBe("waived");
+
+    // Not relevant needs a reason; a knowledge gap can't be dismissed, only asked or answered.
+    await expect(act(root, CHANGE, rollback, "not-relevant", { by: "dana" })).rejects.toThrow(
+      /needs a reason/,
+    );
+    const dismissed = await act(root, CHANGE, rollback, "not-relevant", {
+      by: "dana",
+      reason: "Rollback is the platform default.",
+      now: LATER,
+    });
+    expect(dismissed.finding.state).toBe("dismissed");
+    const gap = await idOf(root, "vendor-contact-known");
+    await expect(
+      act(root, CHANGE, gap, "not-relevant", { by: "pat", reason: "x" }),
+    ).rejects.toThrow(/knowledge gap: answer it with Ask/);
+    const asked = await act(root, CHANGE, gap, "ask", { by: "bao", now: LATER });
+    expect(asked.finding.resolution?.askedOf).toBe(asked.finding.question?.owner);
+    expect(asked.finding.state).toBe("asked");
+
+    // Unknown actions and findings.
+    await expect(act(root, CHANGE, gap, "shrug", { by: "bao" })).rejects.toBeInstanceOf(
+      CriticError,
+    );
+    await expect(act(root, CHANGE, "nope", "apply", { by: "bao" })).rejects.toThrow(
+      /No finding nope/,
+    );
+  });
+
+  it("refuses a patch that no longer applies or that touches another file", async () => {
+    const root = await forgeChangeRoot();
+    await runCritic(root, CHANGE, { now: NOW });
+    const typo = await idOf(root, "constitution.interface-approved-pattern");
+    const s = await gateStatus(root, CHANGE, "plan");
+    const f = s.findings.find((x) => x.finding.id === typo)!.finding;
+    const other = f.fix.patch!.replace(/interfaces\.md/g, "design.md");
+    await expect(
+      act(root, CHANGE, typo, "edit-and-apply", { by: "ari", edit: other }),
+    ).rejects.toThrow(/a patch may only change its own artifact/);
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(join(changeDir(root), "interfaces.md"), "# Interfaces\n\nrewritten\n");
+    await expect(act(root, CHANGE, typo, "apply", { by: "ari" })).rejects.toThrow(
+      /The patch doesn't apply: line \d+ is/,
+    );
+  });
+
+  it("runs at most two rounds, carries decisions forward, and agrees with the lifecycle", async () => {
+    const root = await forgeChangeRoot();
+    const r1 = await runCritic(root, CHANGE, { now: NOW, runtime: await replay() });
+    expect(r1.status.mayProceed).toBe(false);
+    expect(r1.status.humanDecides).toBe(false);
+
+    await act(root, CHANGE, await idOf(root, "constitution.interface-approved-pattern"), "apply", {
+      by: "ari",
+      now: LATER,
+    });
+    await act(root, CHANGE, await idOf(root, "design-concurrency-handled"), "waive", {
+      by: "tia",
+      reason: "The ledger library serialises transfers per account.",
+      now: LATER,
+    });
+    await act(root, CHANGE, await idOf(root, "mappings-cover-interfaces"), "not-relevant", {
+      by: "ari",
+      reason: "risk-engine is being removed",
+      now: LATER,
+    });
+    const gapId = await idOf(root, "slo-known");
+    await act(root, CHANGE, gapId, "ask", { by: "bao", askedOf: "team-ledger", now: LATER });
+
+    const r2 = await runCritic(root, CHANGE, { now: LATER, runtime: await replay() });
+    expect(r2.round).toBe(2);
+    // The typo is fixed, so it is gone; the rest of the same problems are found again.
+    expect(r2.findings.some((f) => f.finding.summary.includes("S.GW.SRO"))).toBe(false);
+    expect(r2.findings.length).toBe(r1.findings.length - 1);
+    const carried = r2.findings
+      .filter((f) => f.carried)
+      .map((f) => [f.finding.rule, f.finding.state]);
+    expect(carried.sort()).toEqual([
+      ["design-concurrency-handled", "waived"],
+      ["mappings-cover-interfaces", "dismissed"],
+      ["slo-known", "asked"],
+    ]);
+    expect(r2.status.round).toBe(2);
+    expect(r2.status.mayProceed).toBe(false);
+    expect(r2.status.humanDecides).toBe(true);
+
+    // The lifecycle's hand-off check reads the newest round the same way.
+    const ready = await canAdvance(CHANGE, root);
+    const blockers = ready.reasons
+      .filter((x) => x.code === "blocking-finding" || x.code === "open-gap")
+      .map((x) => x.finding);
+    const open = r2.findings.filter(
+      (f) =>
+        f.finding.state === "open" &&
+        (f.finding.severity === "blocking" || f.finding.severity === "gap"),
+    );
+    expect(blockers.sort()).toEqual(open.map((f) => f.finding.id).sort());
+    expect(r2.status.reasons).toEqual(
+      ready.reasons.filter((x) => x.code !== "no-handoff").map((x) => x.message),
+    );
+
+    // A third round is refused: a person decides now.
+    await expect(runCritic(root, CHANGE, { now: LATER })).rejects.toThrow(
+      /The plan gate has had 2 critic rounds, the most it allows\. A person decides now/,
+    );
+    // Acting on an old round is refused.
+    await expect(
+      act(root, CHANGE, "interface-approved-pattern-interfaces-l6", "apply", { by: "ari" }),
+    ).rejects.toThrow(/is from round 1 of the plan gate; act on round 2, the newest/);
+  });
+
+  it("reports a gate with no rounds as open and refuses unknown gates", async () => {
+    const root = await forgeChangeRoot();
+    const s = await gateStatus(root, CHANGE, "design");
+    expect(s.round).toBeUndefined();
+    expect(s.mayProceed).toBe(true);
+    await expect(gateStatus(root, CHANGE, "nowhere")).rejects.toThrow(/There is no gate nowhere/);
+    await expect(runCritic(root, CHANGE, { gate: "nowhere" })).rejects.toThrow(
+      /There is no gate nowhere/,
+    );
+    await expect(runCritic(root, "missing")).rejects.toThrow(/No change missing/);
+  });
+
+  it("runs only the asked lenses' findings, and the design gate only looks at design-phase artifacts", async () => {
+    const root = await forgeChangeRoot();
+    const story = await runCritic(root, CHANGE, { now: NOW, lenses: ["story"] });
+    expect(new Set(story.findings.map((f) => f.finding.lens))).toEqual(new Set(["story"]));
+    const design = await runCritic(root, CHANGE, { now: NOW, gate: "design" });
+    expect(
+      design.findings.some(
+        (f) => f.finding.artifact.startsWith("stories") || f.finding.artifact === "snow.md",
+      ),
+    ).toBe(false);
+    expect(design.findings.some((f) => f.finding.artifact === "interfaces.md")).toBe(true);
+  });
+});

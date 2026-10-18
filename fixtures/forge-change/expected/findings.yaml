@@ -1,0 +1,257 @@
+# Seeded problems in the add-transfer-limit change, and what the critic must report at the
+# plan gate (round 1). Hand-written ground truth: never regenerate it from critic output.
+#
+# layer says which critic layer must catch the problem:
+#   deterministic - layer 1, zero tokens. Everything that can be checked from files is here.
+#   ai            - layer 2, a recorded AI lens answer (recordings/). Only judgement calls.
+# A finding matches an entry when its rule, severity and kind match, and its artifact and
+# line (or record) match when the entry gives them.
+change: add-transfer-limit
+gate: plan
+
+seeded:
+  # ---------------------------------------------------------------- blocking issues
+  - id: b01-pattern-typo
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.interface-approved-pattern
+    artifact: interfaces.md
+    line: 6
+    what: GET /accounts/{id}/limit names pattern S.GW.SRO, a typo of S.GW.SOR (architecture).
+  - id: b02-hop-without-pattern
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.interface-approved-pattern
+    artifact: interfaces.md
+    line: 8
+    what: The changed hop portal-bff to audit-svc names no pattern code (architecture).
+  - id: b03-unknown-system
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.interface-ends-in-catalog
+    artifact: interfaces.md
+    line: 9
+    what: The new hop to risk-engine targets a system the catalog doesn't know (architecture).
+  - id: b04-vendor-call-no-timeout
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.hop-resilience-stated
+    artifact: interfaces.md
+    line: 7
+    what: The new Northwind Pay call states no timeout or retry, which S.GW.VND requires (runtime).
+  - id: b05-risk-call-no-timeout
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.hop-resilience-stated
+    artifact: interfaces.md
+    line: 9
+    what: The new risk-engine call states no timeout or circuit breaker, which S.GW.SOR requires (runtime).
+  - id: b06-table-without-migration
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.data-change-has-migration
+    artifact: data.md
+    line: 8
+    what: The new table limit_change names no migration (data design).
+  - id: b07-personal-column-unclassified
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.data-columns-classified
+    artifact: data.md
+    line: 8
+    what: limit_change.changed_by_email is personal data covered only by a table-wide "internal" (data design).
+  - id: b08-table-without-retention
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.data-retention-stated
+    artifact: data.md
+    line: 8
+    what: The new table limit_change says nothing about how long its rows are kept (data design).
+  - id: b09-story-without-criteria
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.story-acceptance-criteria
+    artifact: stories/s2-show-remaining.md
+    line: 1
+    what: Story s2-show-remaining has no acceptance criteria.
+  - id: b10-instruction-in-story
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.no-embedded-instructions
+    artifact: stories/s3-audit-refusals.md
+    line: 10
+    what: Story s3 tells AI critics to ignore their rules; ingested content is data, never instructions.
+  - id: b11-no-firewall-draft
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.snow-drafts-present
+    artifact: snow.md
+    line: 1
+    what: The new gateway proxy gw-northwind-v2 also needs a firewall rule request; snow.md has no draft.
+  - id: b12-gateway-draft-incomplete
+    kind: issue
+    severity: blocking
+    layer: deterministic
+    rule: constitution.snow-drafts-present
+    artifact: snow.md
+    line: 9
+    what: The gateway proxy draft leaves the required Target field empty.
+  - id: b13-concurrent-transfers
+    kind: issue
+    severity: blocking
+    layer: ai
+    rule: design-concurrency-handled
+    artifact: design.md
+    line: 29
+    what: The design names the race between two transfers but no lock or serialisation (judgement).
+  - id: b14-story-without-spec
+    kind: issue
+    severity: blocking
+    layer: ai
+    rule: story-traces-to-spec
+    artifact: stories/s4-velocity-check.md
+    line: 8
+    what: Story s4's behaviour (holding flagged transfers) is in no spec requirement (judgement).
+
+  # ---------------------------------------------------------------- knowledge gaps
+  - id: g01-audit-owner-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: constitution.touched-components-known
+    record: audit-svc
+    what: audit-svc is known only from a caller; its owner, repo and spec are unknown.
+  - id: g02-ledger-vendor-timeouts-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: constitution.hop-resilience-stated
+    record: ledger-api
+    what: No timeout or retry settings are known for ledger-api, which calls Northwind Pay.
+  - id: g03-portal-bff-alerts-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: jobs-have-alerts
+    record: portal-bff
+    what: No alert is known for portal-bff.
+  - id: g04-audit-alerts-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: jobs-have-alerts
+    record: audit-svc
+    what: No alert is known for audit-svc.
+  - id: g05-vendor-rate-limit-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: vendor-rate-limit-known
+    record: northwind-pay
+    what: Northwind Pay's rate limit is unknown.
+  - id: g06-vendor-contact-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: vendor-contact-known
+    record: northwind-pay
+    what: Nobody is named as the contact at Northwind Pay.
+  - id: g07-vendor-operation-unpublished
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: vendor-operation-known
+    artifact: interfaces.md
+    line: 7
+    record: northwind-pay
+    what: POST /v2/velocity-checks is not in Northwind Pay's published spec.
+  - id: g08-account-retention-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: constitution.data-retention-stated
+    record: ledger-db.account
+    what: The retention of ledger-db.account, which the change alters, is unknown.
+  - id: g09-ledger-slo-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: slo-known
+    record: ledger
+    what: Ledger has no latency SLO, and the change adds work to every transfer.
+  - id: g10-portal-slo-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: slo-known
+    record: portal
+    what: Portal has no latency SLO.
+  - id: g11-ledger-volume-unknown
+    kind: knowledge-gap
+    severity: gap
+    layer: deterministic
+    rule: capacity-known
+    record: ledger-db
+    what: The daily write volume of ledger-db is unknown.
+  - id: g12-default-limit-undecided
+    kind: knowledge-gap
+    severity: gap
+    layer: ai
+    rule: brief-questions-answered
+    artifact: proposal.md
+    what: The default limit for existing accounts is an open question no spec answers (judgement).
+  - id: g13-vendor-failure-behaviour
+    kind: knowledge-gap
+    severity: gap
+    layer: ai
+    rule: brief-questions-answered
+    artifact: specs/transfer-limits/spec.md
+    what: Nothing says what happens to a transfer when the velocity check flags it or doesn't answer (judgement).
+
+# Not seeded problems, but findings the critic must also raise (risks). Any finding not listed
+# here or above fails the golden test, so noise can't creep in unnoticed.
+alsoExpected:
+  - id: r01-mapping-missing
+    kind: issue
+    severity: risk
+    layer: deterministic
+    rule: mappings-cover-interfaces
+    artifact: mappings.md
+  - id: r02-portal-ui-task-missing
+    kind: issue
+    severity: risk
+    layer: deterministic
+    rule: tasks-cover-stories
+    artifact: tasks.md
+  - id: r03-no-rollback
+    kind: issue
+    severity: risk
+    layer: ai
+    rule: design-has-rollback
+    artifact: design.md
+    line: 25
+  - id: r04-limit-error-state
+    kind: issue
+    severity: risk
+    layer: ai
+    rule: ux-states-complete
+    artifact: ux.md
+    line: 3
+  - id: r05-requests-not-sequenced
+    kind: issue
+    severity: risk
+    layer: ai
+    rule: tasks-sequenced-for-lead-times
+    artifact: tasks.md
+    line: 7

@@ -1,0 +1,10 @@
+# Contract C5 agent definition (fixture). The critic's story lens, run in a fresh session.
+schemaVersion: 1
+id: story-critic
+role: business-analyst
+description: Reviews stories against the definition of ready and checks each one traces to the brief and to spec scenarios.
+inputs: [brief, specs, stories, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 60000
+allowedRuntimes: [hand-off, mock, replay]

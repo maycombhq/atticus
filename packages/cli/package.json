@@ -26,6 +26,7 @@
     "@maycombhq/ingestors": "workspace:*",
     "@maycombhq/intake": "workspace:*",
     "@maycombhq/knowledge": "workspace:*",
+    "@maycombhq/naysayer": "workspace:*",
     "@maycombhq/openspec-adapter": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",
     "@maycombhq/scanner": "workspace:*",

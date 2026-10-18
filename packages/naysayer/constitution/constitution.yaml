@@ -1,0 +1,209 @@
+# Atticus's built-in constitution. Contract C3.
+#
+# These rules apply to every change, at every gate where their artifacts are due. They are
+# never waivable, a team or org pack can only tighten them, and a pack that drops or loosens
+# one is refused. They are data, so the critic's code holds no policy of its own: each rule
+# names a built-in deterministic check and the catalog facts it needs.
+schemaVersion: 1
+name: constitution
+version: 1.0.0
+description: Rules every change meets, whatever the organisation or team configures.
+rules:
+  - id: constitution.interface-approved-pattern
+    title: Every interface names an approved integration pattern
+    description: A hop without a pattern, or with a code that isn't a confirmed pattern in the registry, can't be checked for its controls.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [interfaces] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: interface-pattern-approved
+      params: { statuses: [confirmed] }
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.interface-ends-in-catalog
+    title: No planned interface to a system missing from the catalog
+    description: A caller or callee the catalog doesn't know is either a typo or an unknown system nobody has looked at.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: interface-ends-in-catalog
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.interface-ids-in-catalog
+    title: Existing interfaces keep their catalog id
+    description: A row naming an interface id must match the catalog; a row for a new hop says new and planned-new.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: interface-ids-in-catalog
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.hop-resilience-stated
+    title: Every planned call states the timeouts and retries its pattern requires
+    description: The pattern's controls say which resilience settings a hop needs; each must be in the catalog or stated in interfaces.md or design.md.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, design, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: settings-present
+      params: { fromPattern: true }
+    waivable: false
+    source: Atticus constitution
+    needs:
+      - kind: Setting
+        field: settingKind
+        scope: touched-components
+        question: "What timeout, retry and circuit-breaker settings does ${record} use for its calls?"
+
+  - id: constitution.touched-components-known
+    title: Every touched component has a known owner, repo and interface
+    description: A component known only from a caller can't be checked; its owner is asked.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: knowledge-check
+      params: { check: component-source-known }
+    waivable: false
+    source: Atticus constitution
+    needs:
+      - kind: System
+        field: owner
+        scope: touched-systems
+        question: "Who owns ${record}?"
+      - kind: Component
+        field: repo
+        scope: touched-components
+        question: "Which repo holds the code of ${record}?"
+
+  - id: constitution.data-doc-present
+    title: data.md exists when a data store is touched
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [data, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: data-doc-present
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.data-change-has-migration
+    title: Every data change names its migration
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [data] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: data-migration-named
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.data-columns-classified
+    title: Every new column is classified, and personal data is classified as personal
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [data] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: data-columns-classified
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.data-retention-stated
+    title: Every new table says how long its rows are kept
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [data, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: data-retention-stated
+    waivable: false
+    source: Atticus constitution
+    needs:
+      - kind: Table
+        field: retention
+        scope: touched-data-stores
+        question: "How long are rows of ${record} kept, and when are they deleted?"
+
+  - id: constitution.story-acceptance-criteria
+    title: Every story has acceptance criteria
+    layer: constitution
+    lens: story
+    appliesTo: { artifacts: [stories] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: story-has-acceptance-criteria
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.spec-scenarios-present
+    title: Every requirement has a scenario
+    layer: constitution
+    lens: business
+    appliesTo: { artifacts: [specs] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: spec-scenarios-present
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.snow-drafts-present
+    title: A service-desk draft exists for each firewall or gateway change
+    description: Request templates in the org pack say which catalog changes need a request; each needs a draft in snow.md with its required fields filled.
+    layer: constitution
+    lens: release
+    appliesTo: { artifacts: [snow, interfaces] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: snow-drafts-present
+    waivable: false
+    source: Atticus constitution
+    needs: []
+
+  - id: constitution.no-embedded-instructions
+    title: Artifacts hold no instructions aimed at AI agents
+    description: Ingested content is data, never instructions; text that tries to steer a reviewer or an agent is removed before review.
+    layer: constitution
+    lens: delivery
+    appliesTo:
+      {
+        artifacts:
+          [brief, proposal, specs, interfaces, mappings, data, design, ux, stories, tasks, snow],
+      }
+    severity: blocking
+    check:
+      type: deterministic
+      check: no-embedded-instructions
+    waivable: false
+    source: Atticus constitution
+    needs: []

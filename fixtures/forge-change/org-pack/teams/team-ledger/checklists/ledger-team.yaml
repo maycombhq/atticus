@@ -1,0 +1,216 @@
+# The Ledger team's checklist (fixture). Contract C3, team layer: it applies to changes that
+# touch a system team-ledger owns. A team pack may add rules or tighten others; it can never
+# drop or loosen a constitution or org rule.
+schemaVersion: 1
+name: ledger-team
+version: 0.1.0
+description: What the Ledger team checks on top of the constitution and the Forge org pack.
+rules:
+  - id: vendor-rate-limit-known
+    title: The vendor's rate limit is known
+    layer: team
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: fact-known
+      params:
+        kind: Setting
+        where: { settingKind: rate-limit }
+        scope: touched-vendors
+        question: "What rate limit does ${record} put on our calls, and what happens when we pass it?"
+    waivable: false
+    source: Ledger team practice
+    needs:
+      - kind: Setting
+        field: settingKind
+        scope: touched-systems
+        question: "What rate limit does ${record} put on our calls, and what happens when we pass it?"
+
+  - id: vendor-contact-known
+    title: There is a named contact at each vendor
+    layer: team
+    lens: delivery
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: fact-known
+      params:
+        kind: Party
+        scope: touched-vendors
+        question: "Who is our contact at ${record} for API changes, and how do we reach them?"
+    waivable: false
+    source: Ledger team practice
+    needs:
+      - kind: Party
+        scope: touched-systems
+        question: "Who is our contact at ${record} for API changes, and how do we reach them?"
+
+  - id: vendor-operation-known
+    title: Vendor operations exist in the vendor's published spec
+    layer: team
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: vendor-operation-known
+    waivable: false
+    source: Ledger team practice
+    needs:
+      - kind: Endpoint
+        scope: touched-systems
+        question: "Where is the published API spec for ${record}?"
+
+  - id: slo-known
+    title: Touched products have a latency SLO
+    layer: team
+    lens: release
+    appliesTo: { artifacts: [design, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: fact-known
+      params:
+        kind: Obligation
+        where: { obligationKind: slo }
+        scope: touched-systems
+        boundary: [product]
+        question: "What latency SLO does ${record} promise its callers?"
+    waivable: false
+    source: Ledger team practice
+    needs:
+      - kind: Obligation
+        scope: touched-systems
+        question: "What latency SLO does ${record} promise its callers?"
+
+  - id: capacity-known
+    title: Touched data stores have a known daily volume
+    layer: team
+    lens: architecture
+    appliesTo: { artifacts: [data, catalog] }
+    severity: risk
+    check:
+      type: deterministic
+      check: fact-known
+      params:
+        kind: Obligation
+        where: { obligationKind: volume }
+        scope: touched-data-stores
+        question: "How many writes a day does ${record} take at peak?"
+    waivable: false
+    source: Ledger team practice
+    needs:
+      - kind: Obligation
+        scope: touched-data-stores
+        question: "How many writes a day does ${record} take at peak?"
+
+  - id: mappings-cover-interfaces
+    title: Every new or changed interface has a mapping
+    layer: team
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, mappings] }
+    severity: risk
+    check:
+      type: deterministic
+      check: mappings-cover-interfaces
+    waivable: false
+    source: Ledger team practice
+
+  - id: tasks-cover-stories
+    title: Every story has tasks in each repo it lists
+    layer: team
+    lens: delivery
+    appliesTo: { artifacts: [stories, tasks] }
+    severity: risk
+    check:
+      type: deterministic
+      check: tasks-cover-stories
+    waivable: false
+    source: Ledger team practice
+
+  - id: design-concurrency-handled
+    title: The design says how concurrent requests are serialised
+    layer: team
+    lens: architecture
+    appliesTo: { artifacts: [design] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: Read the design. Report a finding when two requests for the same account can run at the same time and the design does not say how they are serialised (a row lock, a unique constraint, an idempotency key or a queue). Quote the passage that shows the gap.
+    waivable: true
+    source: Ledger incident review, two transfers passing one balance check
+
+  - id: brief-questions-answered
+    title: Open questions and partner failures are answered before planning
+    layer: team
+    lens: business
+    appliesTo: { artifacts: [brief, proposal, specs] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: Compare the brief's and the proposal's open questions with the specs. For each question the specs don't answer, and for each partner call whose failure behaviour the specs don't describe, raise a knowledge gap with the question and who should answer it. Quote the line you relied on.
+    waivable: true
+    source: Ledger team practice
+
+  - id: story-traces-to-spec
+    title: Every story traces to a spec requirement
+    layer: team
+    lens: story
+    appliesTo: { artifacts: [stories, specs] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: For each story, find the spec requirement and scenario its acceptance criteria come from. Report a finding for a story whose behaviour no requirement describes; it is either missing from the specs or not in scope. Quote the story line and name the requirement you looked for.
+    waivable: true
+    source: Definition of ready
+
+  - id: ux-states-complete
+    title: The UX covers loading, empty and error states
+    layer: team
+    lens: ux
+    appliesTo: { artifacts: [ux, specs] }
+    severity: risk
+    check:
+      type: ai
+      prompt: Read the UX notes against the specs. Report a finding for each screen state the specs imply but the UX doesn't describe, such as an error when data can't be loaded or a partner doesn't answer. Quote the UX line nearest the missing state.
+    waivable: false
+    source: Ledger team practice
+
+  - id: tasks-sequenced-for-lead-times
+    title: Tasks start service-desk requests early enough
+    layer: team
+    lens: delivery
+    appliesTo: { artifacts: [tasks, snow] }
+    severity: risk
+    check:
+      type: ai
+      prompt: Compare the tasks with the service-desk requests and their lead times. Report a finding when a task depends on a request that no earlier task raises, or when the lead time would hold up the build. Quote the task.
+    waivable: false
+    source: Ledger team practice
+
+  - id: tests-cover-scenarios
+    title: Tests cover every spec scenario
+    layer: team
+    lens: code-and-test
+    appliesTo: { artifacts: [code, tests] }
+    severity: risk
+    check:
+      type: ai
+      prompt: For each spec scenario, find the test that covers it. Report a finding for each scenario with no test, quoting the scenario.
+    waivable: false
+    source: Ledger team practice
+
+  - id: release-plan-complete
+    title: The release plan names its checks and its fallback
+    layer: team
+    lens: release
+    appliesTo: { artifacts: [release, snow] }
+    severity: risk
+    check:
+      type: ai
+      prompt: Read the release notes and service-desk requests. Report a finding when the release has no smoke check after deployment or no fallback if a request is not done in time. Quote the passage you relied on.
+    waivable: false
+    source: Ledger team practice
