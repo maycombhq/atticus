@@ -1,0 +1,101 @@
+# The story bar's eval set for add-transfer-limit: what the planner must produce from the
+# approved design (brief, proposal, specs, interfaces, mappings, data, design, UX), with the
+# hand-written stories, tasks and service-desk drafts of the fixture removed first.
+# Hand-written ground truth: never regenerate it from planner output.
+#
+# The story bar (plan, M3 exit): every seeded gap is covered in the stories or raised by the
+# critic; at least 90% of generated stories pass definition of ready with wording-only edits;
+# no invented systems or interfaces.
+change: add-transfer-limit
+minReadyRate: 0.9
+
+# One story per spec requirement, then one per new or changed hop no requirement covers, then
+# one per data change no story covers. A hop to a system the catalog doesn't know is not
+# planned (the critic raises it). Repos: both ends of each hop that are product components
+# with a repo, the data store owner's repo, and the UI that calls the BFF when ux.md exists.
+stories:
+  - id: s1-daily-transfer-limit
+    source: requirement
+    traces: specs/transfer-limits/spec.md:3
+    systems: [ledger, portal]
+    repos: [forge-ledger, forge-portal-bff, forge-portal-ui]
+    operations: [POST /transfers]
+    records: [ledger-db.account]
+    minCriteria: 2
+    tests: [unit, contract, integration, e2e, regression, performance]
+    dependsOn: []
+  - id: s2-remaining-limit
+    source: requirement
+    traces: specs/transfer-limits/spec.md:14
+    systems: [ledger, portal]
+    repos: [forge-ledger, forge-portal-bff, forge-portal-ui]
+    operations: ["GET /accounts/{id}/limit"]
+    records: []
+    minCriteria: 1
+    tests: [unit, contract, integration, e2e, performance]
+    dependsOn: [s1-daily-transfer-limit]
+  - id: s3-northwind-pay-velocity-checks
+    source: interface
+    traces: proposal.md:10
+    systems: [ledger, northwind-pay]
+    repos: [forge-ledger]
+    operations: [POST /v2/velocity-checks]
+    records: []
+    minCriteria: 1
+    tests: [unit, contract, integration, performance, security]
+    dependsOn: []
+  - id: s4-audit-events
+    source: interface
+    traces: proposal.md:11
+    systems: [audit, portal]
+    repos: [forge-portal-bff]
+    operations: [POST /audit/events]
+    records: []
+    minCriteria: 1
+    tests: [unit, integration, regression]
+    dependsOn: []
+  - id: s5-limit-change
+    source: data
+    traces: proposal.md:11
+    systems: [ledger]
+    repos: [forge-ledger]
+    operations: []
+    records: [ledger-db.limit-change]
+    minCriteria: 1
+    tests: [unit, integration]
+    dependsOn: []
+
+# Hops the planner must leave out, with the callee it doesn't know.
+notPlanned:
+  - { operation: POST /risk/assess, callee: risk-engine }
+
+# Service-desk drafts snow.md must hold (template and record), as the org pack's triggers ask.
+snow:
+  - { template: gateway-route, record: gw-northwind-v2 }
+  - { template: firewall-rule, record: gw-northwind-v2 }
+
+# Every seeded knowledge gap of expected/findings.yaml, and what covers it.
+#   critic: a finding of the newest plan-gate round with this rule (and record, when given)
+#   story:  the named story mentions every phrase (case-insensitive)
+gaps:
+  - { id: g01-audit-owner-unknown, coveredBy: critic, rule: constitution.touched-components-known, record: audit-svc }
+  - { id: g02-ledger-vendor-timeouts-unknown, coveredBy: critic, rule: constitution.hop-resilience-stated, record: ledger-api }
+  - { id: g03-portal-bff-alerts-unknown, coveredBy: critic, rule: jobs-have-alerts, record: portal-bff }
+  - { id: g04-audit-alerts-unknown, coveredBy: critic, rule: jobs-have-alerts, record: audit-svc }
+  - { id: g05-vendor-rate-limit-unknown, coveredBy: critic, rule: vendor-rate-limit-known, record: northwind-pay }
+  - { id: g06-vendor-contact-unknown, coveredBy: critic, rule: vendor-contact-known, record: northwind-pay }
+  - { id: g07-vendor-operation-unpublished, coveredBy: critic, rule: vendor-operation-known, record: northwind-pay }
+  - { id: g08-account-retention-unknown, coveredBy: critic, rule: constitution.data-retention-stated, record: ledger-db.account }
+  - { id: g09-ledger-slo-unknown, coveredBy: critic, rule: slo-known, record: ledger }
+  - { id: g10-portal-slo-unknown, coveredBy: critic, rule: slo-known, record: portal }
+  - { id: g11-ledger-volume-unknown, coveredBy: critic, rule: capacity-known, record: ledger-db }
+  - { id: g12-default-limit-undecided, coveredBy: story, story: s1-daily-transfer-limit, mentions: [default limit, existing accounts] }
+  - { id: g13-vendor-failure-behaviour, coveredBy: story, story: s3-northwind-pay-velocity-checks, mentions: [northwind-pay, "doesn't answer"] }
+
+# Seeded plan problems the generated plan must not repeat: no critic finding of this rule (on
+# files under `artifact`, and whose summary starts with `summaryStartsWith`, when given).
+fixed:
+  - { id: b09-story-without-criteria, rule: constitution.story-acceptance-criteria }
+  - { id: b10-instruction-in-story, rule: constitution.no-embedded-instructions, artifact: stories/ }
+  - { id: b11-no-firewall-draft, rule: constitution.snow-drafts-present, summaryStartsWith: "No " }
+  - { id: r02-portal-ui-task-missing, rule: tasks-cover-stories }

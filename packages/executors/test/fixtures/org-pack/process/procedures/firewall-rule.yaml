@@ -1,0 +1,36 @@
+# A reviewed procedure (hand-written for the executor tests): raise a firewall rule request.
+schemaVersion: 1
+id: firewall-rule
+name: Raise a network firewall rule request
+system: service-desk
+template: firewall-rule
+steps:
+  - id: submit-request
+    name: Fill in and submit the request
+    kind: submit-request
+    writes: true
+    inputs:
+      type: object
+      required: [sourceApp, destinationHost, port, protocol]
+      properties:
+        sourceApp: { type: string }
+        destinationHost: { type: string }
+        port: { type: string }
+        protocol: { type: string }
+    outputs:
+      type: object
+      required: [requestNumber]
+      properties:
+        requestNumber: { type: string, pattern: "^SR-\\d{4}$" }
+  - id: report-state
+    name: Report where the request is
+    kind: report-request-state
+    writes: false
+    inputs: { type: object }
+    outputs: { type: object }
+executors:
+  allowed: [ref-http, ref-command, ref-mcp, ref-broken]
+source: inputs/wiki/snow-firewall-request.md
+status: active
+reviewedBy: platform-lead
+reviewedAt: 2026-10-19

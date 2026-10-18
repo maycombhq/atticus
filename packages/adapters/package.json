@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@maycombhq/core": "workspace:*",
-    "zod": "^4.6.0"
+    "zod": "^4.6.0",
+    "yaml": "^2.9.1"
   }
 }

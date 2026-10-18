@@ -71,6 +71,7 @@ export function orgPackJsonSchemas(): Record<string, object> {
     Runtime: C6.Runtime,
     SkillMeta: C6.SkillMeta,
     ServiceRequestTemplate: C6.ServiceRequestTemplate,
+    Procedure: C6.Procedure,
     TestStrategy: C6.TestStrategy,
     Profile: C6.Profile,
     AgentDefinition: C5.AgentDefinition,

@@ -1,0 +1,36 @@
+{
+  "name": "@maycombhq/planner",
+  "version": "0.0.1",
+  "description": "Planning artifacts from an approved design: stories, tasks and service-desk drafts, the story bar, work-tracker sync, and request templates and procedures drafted from knowledge.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/adapters": "workspace:*",
+    "@maycombhq/ai": "workspace:*",
+    "@maycombhq/changes": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/ingestors": "workspace:*",
+    "@maycombhq/intake": "workspace:*",
+    "@maycombhq/knowledge": "workspace:*",
+    "@maycombhq/naysayer": "workspace:*",
+    "@maycombhq/scanner": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

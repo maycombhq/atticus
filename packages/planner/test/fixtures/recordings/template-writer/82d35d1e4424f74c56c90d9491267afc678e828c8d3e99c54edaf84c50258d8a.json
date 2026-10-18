@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "agent": "template-writer",
+  "promptSha256": "82d35d1e4424f74c56c90d9491267afc678e828c8d3e99c54edaf84c50258d8a",
+  "output": "templates:\n  - id: firewall-rule\n    summary: |-\n      A network firewall rule opens a connection from one of our apps to a host it can't reach yet, such as a vendor's API.\n      A change needs one when it adds a direct call to a new destination.\n    steps:\n      - Raise a \"Network firewall rule\" request in the service desk with the source app, destination host, port, protocol and business justification, then submit it.\n      - Follow the request until the network team approves it; it usually takes about 10 working days.\n  - id: gateway-route\n    summary: |-\n      A gateway proxy deployment puts a new proxy on the API gateway.\n      A change needs one when it adds a gateway route.\n    steps:\n      - Raise a \"Gateway proxy deployment\" request with the proxy name, then submit it.\n      - Follow the request until the gateway team approves it.\n",
+  "usage": {
+    "inputTokens": 387,
+    "outputTokens": 213
+  },
+  "model": "hand-written",
+  "recordedAt": "2026-10-20T09:00:00Z"
+}

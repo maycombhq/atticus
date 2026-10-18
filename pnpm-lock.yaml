@@ -38,6 +38,9 @@ importers:
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
       zod:
         specifier: ^4.6.0
         version: 4.6.7
@@ -128,6 +131,9 @@ importers:
       '@maycombhq/diagrams':
         specifier: workspace:*
         version: link:../diagrams
+      '@maycombhq/executors':
+        specifier: workspace:*
+        version: link:../executors
       '@maycombhq/features':
         specifier: workspace:*
         version: link:../features
@@ -149,6 +155,9 @@ importers:
       '@maycombhq/openspec-adapter':
         specifier: workspace:*
         version: link:../openspec-adapter
+      '@maycombhq/planner':
+        specifier: workspace:*
+        version: link:../planner
       '@maycombhq/reconcile':
         specifier: workspace:*
         version: link:../reconcile
@@ -197,6 +206,21 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+
+  packages/executors:
+    dependencies:
+      '@maycombhq/adapters':
+        specifier: workspace:*
+        version: link:../adapters
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
 
   packages/extractors:
     dependencies:
@@ -330,6 +354,42 @@ importers:
       '@fission-ai/openspec':
         specifier: 1.14.0
         version: 1.14.0(@types/node@22.20.5)
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
+
+  packages/planner:
+    dependencies:
+      '@maycombhq/adapters':
+        specifier: workspace:*
+        version: link:../adapters
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@maycombhq/changes':
+        specifier: workspace:*
+        version: link:../changes
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/ingestors':
+        specifier: workspace:*
+        version: link:../ingestors
+      '@maycombhq/intake':
+        specifier: workspace:*
+        version: link:../intake
+      '@maycombhq/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+      '@maycombhq/naysayer':
+        specifier: workspace:*
+        version: link:../naysayer
+      '@maycombhq/scanner':
+        specifier: workspace:*
+        version: link:../scanner
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
