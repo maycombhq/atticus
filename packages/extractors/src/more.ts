@@ -2,7 +2,14 @@ import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
 import { componentOf, evidence, looseEnd, repoConfig, splitUrl } from "./facts.js";
 import { flattenYaml, yamlKeyLine } from "./lang/config.js";
-import { parseDdl } from "./lang/sql.js";
+import {
+  parseDdl,
+  type SqlAlter,
+  type SqlColumn,
+  type SqlDdl,
+  type SqlDrop,
+  type SqlTable,
+} from "./lang/sql.js";
 
 const slug = (s: string) =>
   s
@@ -193,12 +200,13 @@ async function storeFor(repo: RepoHandle, ctx: ScanContext): Promise<string> {
 
 /**
  * Flyway (V<version>__<name>.sql) and plain SQL migrations: a Migration per file, and the
- * database design they build (Table, Column, IndexConstraint). The owning component reads
- * and writes its own tables. The data store is the datasource host, else <system>-db.
+ * database design they leave (Table, Column, IndexConstraint) after replaying every file in
+ * version order, ALTER TABLE included. The owning component reads and writes its own
+ * tables. The data store is the datasource host, else <system>-db.
  */
 export const migrationsExtractor = defineExtractor({
   id: "migrations",
-  version: "1.0.0",
+  version: "1.1.0",
   claims: ["**/db/migration/*.sql", "**/migrations/*.sql", "**/flyway/*.sql"],
   async *scan(repo, ctx) {
     const owner = componentOf(repo, ctx);
@@ -222,6 +230,7 @@ export const migrationsExtractor = defineExtractor({
       return a.path.localeCompare(b.path);
     });
     let first = true;
+    const state = new DesignState();
     for (const f of files) {
       const ddl = parseDdl(await repo.readText(f.path));
       const ev = (line?: number) =>
@@ -253,82 +262,204 @@ export const migrationsExtractor = defineExtractor({
         operations: ddl.operations,
         evidence: [ev(1)],
       } as unknown as CatalogRecord;
-      for (const t of ddl.tables) {
-        const tid = `${store}.${slug(t.name)}`;
+      state.apply(ddl, ev);
+    }
+    // The design is the latest state after every migration, replayed in version order.
+    for (const t of state.tables.values()) {
+      const tid = `${store}.${slug(t.name)}`;
+      yield {
+        schemaVersion: 1,
+        kind: "Table",
+        id: tid,
+        status: "current",
+        confidence: "verified",
+        dataStore: store,
+        name: t.name,
+        tableKind: "table",
+        ownerComponent: owner,
+        readers: [owner],
+        writers: [owner],
+        evidence: [t.ev],
+      } as unknown as CatalogRecord;
+      for (const c of t.columns.values()) {
         yield {
           schemaVersion: 1,
-          kind: "Table",
-          id: tid,
-          status: "current",
-          confidence: "verified",
-          dataStore: store,
-          name: t.name,
-          tableKind: "table",
-          ownerComponent: owner,
-          readers: [owner],
-          writers: [owner],
-          evidence: [ev(t.line)],
-        } as unknown as CatalogRecord;
-        for (const c of t.columns) {
-          yield {
-            schemaVersion: 1,
-            kind: "Column",
-            id: `${tid}.${slug(c.name)}`,
-            status: "current",
-            confidence: "verified",
-            table: tid,
-            name: c.name,
-            type: c.type,
-            nullable: c.nullable,
-            ...(c.default !== undefined ? { default: c.default } : {}),
-            evidence: [ev(c.line)],
-          } as unknown as CatalogRecord;
-        }
-        if (t.primaryKey) {
-          yield {
-            schemaVersion: 1,
-            kind: "IndexConstraint",
-            id: `${tid}.pk`,
-            status: "current",
-            confidence: "verified",
-            table: tid,
-            constraintKind: "primary-key",
-            columns: t.primaryKey.columns,
-            evidence: [ev(t.primaryKey.line)],
-          } as unknown as CatalogRecord;
-        }
-        for (const fk of t.foreignKeys) {
-          yield {
-            schemaVersion: 1,
-            kind: "IndexConstraint",
-            id: `${tid}.${fk.name ? slug(fk.name) : `fk-${slug(fk.table)}`}`,
-            status: "current",
-            confidence: "verified",
-            table: tid,
-            constraintKind: "foreign-key",
-            columns: fk.columns,
-            references: { table: `${store}.${slug(fk.table)}`, columns: fk.refColumns },
-            evidence: [ev(fk.line)],
-          } as unknown as CatalogRecord;
-        }
-      }
-      for (const ix of ddl.indexes) {
-        const tid = `${store}.${slug(ix.table)}`;
-        yield {
-          schemaVersion: 1,
-          kind: "IndexConstraint",
-          id: `${tid}.${slug(ix.name)}`,
+          kind: "Column",
+          id: `${tid}.${slug(c.name)}`,
           status: "current",
           confidence: "verified",
           table: tid,
-          constraintKind: ix.unique ? "unique" : "index",
-          columns: ix.columns,
-          evidence: [ev(ix.line)],
+          name: c.name,
+          type: c.type,
+          nullable: c.nullable,
+          ...(c.default !== undefined ? { default: c.default } : {}),
+          evidence: c.ev,
+        } as unknown as CatalogRecord;
+      }
+      if (t.primaryKey) {
+        yield {
+          schemaVersion: 1,
+          kind: "IndexConstraint",
+          id: `${tid}.pk`,
+          status: "current",
+          confidence: "verified",
+          table: tid,
+          constraintKind: "primary-key",
+          columns: t.primaryKey.columns,
+          evidence: [t.primaryKey.ev],
+        } as unknown as CatalogRecord;
+      }
+      for (const fk of t.foreignKeys) {
+        yield {
+          schemaVersion: 1,
+          kind: "IndexConstraint",
+          id: `${tid}.${fk.name ? slug(fk.name) : `fk-${slug(fk.table)}`}`,
+          status: "current",
+          confidence: "verified",
+          table: tid,
+          constraintKind: "foreign-key",
+          columns: fk.columns,
+          references: { table: `${store}.${slug(fk.table)}`, columns: fk.refColumns },
+          evidence: [fk.ev],
         } as unknown as CatalogRecord;
       }
     }
+    for (const ix of state.indexes.values()) {
+      const tid = `${store}.${slug(ix.table)}`;
+      yield {
+        schemaVersion: 1,
+        kind: "IndexConstraint",
+        id: `${tid}.${slug(ix.name)}`,
+        status: "current",
+        confidence: "verified",
+        table: tid,
+        constraintKind: ix.unique ? "unique" : "index",
+        columns: ix.columns,
+        evidence: [ix.ev],
+      } as unknown as CatalogRecord;
+    }
   },
 });
+
+type Ev = ReturnType<typeof evidence>;
+type StateColumn = Omit<SqlColumn, "line" | "primaryKey" | "references"> & { ev: Ev[] };
+interface StateTable {
+  name: string;
+  ev: Ev;
+  columns: Map<string, StateColumn>;
+  primaryKey: { columns: string[]; ev: Ev } | undefined;
+  foreignKeys: { name?: string; columns: string[]; table: string; refColumns: string[]; ev: Ev }[];
+}
+
+/**
+ * The database design as migrations leave it. Each file's statements are replayed in file
+ * order over what earlier files built: CREATE TABLE replaces a table, ALTER TABLE adds,
+ * drops, changes and renames columns, DROP TABLE and DROP INDEX remove. A dropped column is
+ * gone from the latest state (code doesn't plan a retirement; it has already happened), and
+ * so are the keys and indexes that depended on it, as databases drop them too.
+ */
+class DesignState {
+  readonly tables = new Map<string, StateTable>();
+  readonly indexes = new Map<
+    string,
+    { name: string; table: string; columns: string[]; unique: boolean; ev: Ev }
+  >();
+
+  apply(ddl: SqlDdl, ev: (line?: number) => Ev): void {
+    type Step = { line: number; run: () => void };
+    const steps: Step[] = [
+      ...ddl.tables.map((t) => ({ line: t.line, run: () => this.create(t, ev) })),
+      ...ddl.indexes.map((ix) => ({
+        line: ix.line,
+        run: () => this.indexes.set(ix.name, { ...ix, ev: ev(ix.line) }),
+      })),
+      ...ddl.alters.map((a) => ({ line: a.line, run: () => this.alter(a, ev(a.line)) })),
+      ...ddl.drops.map((d) => ({ line: d.line, run: () => this.drop(d) })),
+    ];
+    // Stable sort: actions on one line keep the order they were read in.
+    for (const s of steps.sort((a, b) => a.line - b.line)) s.run();
+  }
+
+  private create(t: SqlTable, ev: (line?: number) => Ev): void {
+    this.tables.set(t.name, {
+      name: t.name,
+      ev: ev(t.line),
+      columns: new Map(t.columns.map((c) => [c.name, column(c, ev(c.line))])),
+      primaryKey: t.primaryKey && { columns: t.primaryKey.columns, ev: ev(t.primaryKey.line) },
+      foreignKeys: t.foreignKeys.map(({ line, ...fk }) => ({ ...fk, ev: ev(line) })),
+    });
+  }
+
+  private alter(a: SqlAlter, ev: Ev): void {
+    let t = this.tables.get(a.table);
+    if (!t) {
+      // A table the migrations never created (made before them): its altered columns still
+      // belong to it, so it exists in the design from the first change seen.
+      if (a.op !== "add-column") return;
+      t = { name: a.table, ev, columns: new Map(), primaryKey: undefined, foreignKeys: [] };
+      this.tables.set(a.table, t);
+    }
+    const existing = t.columns.get(a.column);
+    if (a.op === "add-column" && a.definition) {
+      t.columns.set(a.column, column(a.definition, ev));
+      if (a.definition.primaryKey && !t.primaryKey) t.primaryKey = { columns: [a.column], ev };
+      if (a.definition.references)
+        t.foreignKeys.push({
+          columns: [a.column],
+          table: a.definition.references.table,
+          refColumns: a.definition.references.columns,
+          ev,
+        });
+    } else if (a.op === "drop-column") {
+      t.columns.delete(a.column);
+      const uses = (cs: string[]) => cs.includes(a.column);
+      if (t.primaryKey && uses(t.primaryKey.columns)) t.primaryKey = undefined;
+      t.foreignKeys = t.foreignKeys.filter((fk) => !uses(fk.columns));
+      for (const [k, ix] of this.indexes)
+        if (ix.table === t.name && uses(ix.columns)) this.indexes.delete(k);
+    } else if (a.op === "rename-column" && existing && a.to) {
+      const to = a.to;
+      t.columns.delete(a.column);
+      t.columns.set(to, { ...existing, name: to, ev: [...existing.ev, ev] });
+      const swap = (cs: string[]) => cs.map((c) => (c === a.column ? to : c));
+      if (t.primaryKey) t.primaryKey.columns = swap(t.primaryKey.columns);
+      for (const fk of t.foreignKeys) fk.columns = swap(fk.columns);
+      for (const ix of this.indexes.values())
+        if (ix.table === t.name) ix.columns = swap(ix.columns);
+    } else if (a.op === "alter-column" && existing) {
+      const next: StateColumn = { ...existing, ev: [...existing.ev, ev] };
+      if (a.definition) {
+        next.type = a.definition.type;
+        next.nullable = a.definition.nullable;
+        if (a.definition.default !== undefined) next.default = a.definition.default;
+      }
+      if (a.type !== undefined) next.type = a.type;
+      if (a.nullable !== undefined) next.nullable = a.nullable;
+      if (a.default !== undefined) next.default = a.default;
+      if (a.dropDefault) delete next.default;
+      t.columns.set(a.column, next);
+    }
+  }
+
+  private drop(d: SqlDrop): void {
+    if (d.kind === "index") {
+      this.indexes.delete(d.name);
+      return;
+    }
+    this.tables.delete(d.name);
+    for (const [k, ix] of this.indexes) if (ix.table === d.name) this.indexes.delete(k);
+  }
+}
+
+function column(c: SqlColumn, ev: Ev): StateColumn {
+  return {
+    name: c.name,
+    type: c.type,
+    nullable: c.nullable,
+    ...(c.default !== undefined ? { default: c.default } : {}),
+    ev: [ev],
+  };
+}
 
 // ------------------------------------------------------------------ infrastructure as code
 
