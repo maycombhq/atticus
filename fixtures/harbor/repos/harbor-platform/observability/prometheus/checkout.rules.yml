@@ -1,0 +1,21 @@
+groups:
+  - name: checkout
+    rules:
+      - alert: OrdersHighErrorRate
+        expr: sum(rate(http_requests_total{service="orders-svc",code=~"5.."}[5m])) / sum(rate(http_requests_total{service="orders-svc"}[5m])) > 0.02
+        for: 5m
+        labels:
+          severity: page
+          service: orders-svc
+      - alert: PaymentsTidewaterLatency
+        expr: histogram_quantile(0.95, rate(tidewater_request_seconds_bucket{service="payments-svc"}[5m])) > 2
+        for: 10m
+        labels:
+          severity: ticket
+          service: payments-svc
+      - alert: ShopGraphErrors
+        expr: sum(rate(graphql_errors_total{service="shop-graph"}[5m])) > 5
+        for: 5m
+        labels:
+          severity: page
+          service: shop-graph

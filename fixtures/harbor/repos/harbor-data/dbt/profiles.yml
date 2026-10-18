@@ -1,0 +1,11 @@
+harbor-warehouse:
+  target: prod
+  outputs:
+    prod:
+      type: redshift
+      host: harbor-warehouse.c1harbor.us-east-1.redshift.example
+      port: 5439
+      dbname: analytics
+      schema: marts
+      user: "{{ env_var('DBT_USER') }}"
+      password: "{{ env_var('DBT_PASSWORD') }}"

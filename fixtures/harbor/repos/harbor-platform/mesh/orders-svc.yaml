@@ -1,0 +1,32 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: orders-svc
+  namespace: prod
+spec:
+  hosts:
+    - orders-svc.prod.svc.cluster.local
+  http:
+    - route:
+        - destination:
+            host: orders-svc.prod.svc.cluster.local
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: orders-internal
+  namespace: prod
+spec:
+  hosts:
+    - orders.internal.harbor.example
+  gateways:
+    - istio-ingress/harbor-public
+  http:
+    - match:
+        - uri:
+            prefix: /carts
+      route:
+        - destination:
+            host: orders-svc.prod.svc.cluster.local
+            port:
+              number: 3000

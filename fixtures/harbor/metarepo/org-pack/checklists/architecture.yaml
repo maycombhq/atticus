@@ -1,0 +1,83 @@
+# Architecture and operability checks for changes on the Harbor platform. Contract C3.
+# Hand-written; each rule names the seeded problem in fixtures/harbor/expected/discrepancies.yaml
+# it should catch (h-numbers).
+schemaVersion: 1
+name: harbor-architecture
+version: 0.1.0
+description: Integration, vendor and operability checks for changes on the Harbor platform.
+rules:
+  - id: vendor-calls-through-egress
+    title: Calls to SaaS vendors leave through the egress gateway
+    description: Catches h19. Pattern HB.VND.EGRESS requires the egress gateway between a service and a SaaS vendor.
+    layer: org
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: interface-via-matches-pattern
+      params: { pattern: HB.VND.EGRESS, via: gateway }
+    waivable: true
+    source: wiki/integration-patterns.md
+    needs:
+      - kind: Interface
+        field: via
+        scope: touched-interfaces
+        question: "Does ${record} call the vendor directly or through the egress gateway?"
+
+  - id: pattern-code-known
+    title: Every pattern code is in the registry
+    description: Catches h17. A code that isn't in the pattern registry is usually a typo.
+    layer: org
+    lens: architecture
+    appliesTo: { artifacts: [interfaces] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: pattern-code-in-registry
+    waivable: true
+    source: wiki/integration-patterns.md
+
+  - id: every-hop-labelled
+    title: Every hop names its pattern
+    description: Catches h18.
+    layer: org
+    lens: architecture
+    appliesTo: { artifacts: [interfaces] }
+    severity: risk
+    check:
+      type: deterministic
+      check: interface-has-pattern
+    waivable: false
+    source: wiki/integration-patterns.md
+
+  - id: vendor-operation-in-spec
+    title: New vendor calls use an operation the vendor publishes
+    description: Raises h20 as a knowledge gap when the vendor's spec has no such operation.
+    layer: org
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: vendor-operation-known
+    waivable: true
+    source: wiki/requesting-vendor-api-keys.md
+
+  - id: consumers-monitored
+    title: Event consumers and scheduled functions have alerts
+    description: Raises h10 and h11 as knowledge gaps.
+    layer: org
+    lens: release
+    appliesTo: { artifacts: [catalog, release] }
+    severity: blocking
+    check:
+      type: deterministic
+      check: observability-present
+      params: { assetKinds: [alert, dashboard] }
+    waivable: true
+    source: Harbor operability standard
+    needs:
+      - kind: ObservabilityAsset
+        scope: touched-components
+        question: "What alerts or dashboards exist for ${record}?"

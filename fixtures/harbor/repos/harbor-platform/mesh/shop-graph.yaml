@@ -1,0 +1,19 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: shop-graph-public
+  namespace: prod
+spec:
+  hosts:
+    - api.harbor.example
+  gateways:
+    - istio-ingress/harbor-public
+  http:
+    - match:
+        - uri:
+            prefix: /graphql
+      route:
+        - destination:
+            host: shop-graph.prod.svc.cluster.local
+            port:
+              number: 4000

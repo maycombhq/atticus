@@ -1,0 +1,15 @@
+schemaVersion: 1
+code: HB.VND.EGRESS
+name: SaaS vendor call through the egress gateway
+definition: A call to a SaaS vendor leaves the cluster through the mesh egress gateway, which holds the vendor allow-list and the API key.
+interaction: sync
+route: gateway
+targetType: vendor
+controls: [Egress allow-list, timeout, retry with idempotency key]
+resilience: { retries: 2 }
+technology: [Istio egress gateway]
+detection: { via: [gateway], sync: sync, targetBoundary: vendor }
+checklist: [vendor-calls-through-egress]
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: confirmed

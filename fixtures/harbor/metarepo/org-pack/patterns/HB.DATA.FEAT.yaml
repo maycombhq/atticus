@@ -1,0 +1,13 @@
+schemaVersion: 1
+code: HB.DATA.FEAT
+name: Model features from the warehouse
+definition: A model's feature store reads features the warehouse pipeline prepares in a warehouse table.
+interaction: data-access
+route: jdbc
+targetType: data-store
+controls: [Feature view in the feature repo, freshness under 2 days]
+technology: [Feast]
+detection: { hints: [RedshiftSource, FeatureView] }
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: to-review

@@ -1,0 +1,57 @@
+# The Harbor outbox dialect: Harbor services publish domain events through the in-house
+# transactional outbox library (harbor-outbox), `outbox.publish("<topic>", event)`, not through
+# a Kafka client, so no built-in extractor sees the publish. The service names itself in
+# service.yaml at the repo root. Contract C2. Hand-written.
+schemaVersion: 1
+name: harbor-outbox
+version: 0.1.0
+description: Events published through the harbor-outbox library, owned by the service named in service.yaml.
+extends: []
+appliesTo:
+  repoTypes: [service]
+  marker: service.yaml
+rules:
+  - id: outbox-publish
+    description: A call to outbox.publish with a literal topic publishes that topic; the subscribers are resolved later from code and AsyncAPI documents.
+    match:
+      regex: 'outbox\.publish\(\s*"([a-z][a-z0-9._-]*)"'
+      files: ["**/*.py"]
+    emit:
+      kind: Unresolved
+      id: "${yaml:service.yaml#name}.publish.${match.1 | slug}"
+      fields:
+        unresolvedKind: event-publish
+        raw: "${match.1}"
+        owner: "${yaml:service.yaml#name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+tests:
+  - name: the payments service publishes payments.authorized through the outbox
+    fixture: ../../../repos/harbor-payments
+    expect:
+      - kind: Unresolved
+        id: payments-svc.publish.payments.authorized
+        unresolvedKind: event-publish
+        raw: payments.authorized
+        owner: payments-svc
+    absent: [payments-svc.publish.payments-authorized]
+  - name: a topic held in a variable is not a literal and is left out
+    files:
+      service.yaml: |
+        name: demo-svc
+      app/events.py: |
+        TOPIC = "demo.created"
+        outbox.publish(TOPIC, {})
+        outbox.publish("demo.updated", {})
+    expect:
+      - kind: Unresolved
+        id: demo-svc.publish.demo.updated
+        raw: demo.updated
+        owner: demo-svc
+    absent: [demo-svc.publish.demo.created]
+  - name: a repo without service.yaml produces nothing
+    files:
+      app/events.py: |
+        outbox.publish("demo.created", {})
+    expect: []

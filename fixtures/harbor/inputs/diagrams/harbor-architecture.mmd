@@ -1,0 +1,36 @@
+---
+title: Harbor platform (architecture overview)
+---
+%% Kept in the architecture repo and rendered in the wiki. Edge ids e1..e14 are given
+%% where an edge needs a legend class; the others are numbered in order.
+flowchart LR
+  web[Web App]
+  mobile[Mobile App]
+  shop(Shop Graph)
+  catalog[Product Catalog]
+  orders[Orders Svc]
+  payments[Payments Svc]
+  webhook[[Payment Webhook]]
+  reminder[[Cart Reminder]]
+  recs([Recs Model])
+  tidewater>Tidewater Payments]
+  lantern>Lantern Mail]
+  loyalty["Loyalty Service"]:::new
+
+  web -->|HB.GQL.CLIENT| shop
+  mobile -->|HB.GQL.CLIENT| shop
+  shop -->|HB.SYNC.MESH| catalog
+  shop -->|HB.SYNC.MESH| orders
+  orders -->|"HB.SYNC.MESH POST /harbor.inventory.v1.Inventory/CheckStock"| catalog
+  orders -->|HB.SYNC.MESH| payments
+  payments -->|HB.VND.EGRESS| tidewater
+  tidewater -->|HB.VND.HOOK POST /webhooks/tidewater| webhook
+  webhook -.->|HB.ASYNC.EVENT payments.settled| orders
+  payments -.->|HB.ASYNC.EVNT payments.authorized| orders
+  reminder -->|GET /carts/abandoned| orders
+  reminder -->|HB.VND.EGRESS POST /v3/messages| lantern
+  recs -->|POST /v1/models/recommendations:predict| shop
+  shop e14@-->|HB.SYNC.MESH GET /points| loyalty
+
+  classDef new stroke-dasharray: 5 5
+  class e14 new

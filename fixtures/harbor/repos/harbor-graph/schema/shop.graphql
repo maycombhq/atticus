@@ -1,0 +1,35 @@
+# The Shop Graph: the one API the web shop and the mobile app call.
+
+type Query {
+  products(first: Int = 20): [Product!]!
+  product(id: ID!): Product
+  order(id: ID!): Order
+  recommendations(customerId: ID!, limit: Int = 8): [Product!]!
+}
+
+type Mutation {
+  placeOrder(input: PlaceOrderInput!): Order!
+}
+
+type Product {
+  id: ID!
+  name: String!
+  description: String
+  priceCents: Int!
+  thumbnailUrl: String
+}
+
+type Order {
+  id: ID!
+  status: String!
+  totalCents: Int!
+}
+
+input OrderLineInput {
+  sku: String!
+  quantity: Int!
+}
+
+input PlaceOrderInput {
+  lines: [OrderLineInput!]!
+}

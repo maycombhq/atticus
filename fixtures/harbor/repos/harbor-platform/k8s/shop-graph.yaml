@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shop-graph
+  namespace: prod
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: shop-graph
+  template:
+    metadata:
+      labels:
+        app: shop-graph
+    spec:
+      containers:
+        - name: shop-graph
+          image: registry.harbor.example/shop-graph:5.2.0
+          ports:
+            - containerPort: 4000
+          resources:
+            limits:
+              cpu: 500m
+              memory: 512Mi

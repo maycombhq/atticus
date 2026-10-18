@@ -1,0 +1,13 @@
+schemaVersion: 1
+code: HB.GQL.CLIENT
+name: Client app to the Shop Graph
+definition: The web shop or the mobile app sends a GraphQL operation to the Shop Graph, its own backend-for-frontend.
+interaction: sync
+route: direct
+targetType: product
+controls: [Customer session token, persisted queries only]
+technology: [GraphQL]
+detection: { via: [direct], sync: sync, sameSystem: true, hints: [graphql, gql] }
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: confirmed

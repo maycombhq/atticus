@@ -1,0 +1,14 @@
+# Detection has hints only until C6 detection.via accepts "webhook" (ADR 0040 added it to C1).
+schemaVersion: 1
+code: HB.VND.HOOK
+name: Vendor webhook into a function
+definition: A SaaS vendor calls back a Harbor serverless function; the function checks the signature and turns the callback into an event.
+interaction: sync
+route: other
+targetType: product
+controls: [Signature check, replay window, dead-letter queue]
+technology: [AWS Lambda, Serverless Framework]
+detection: { hints: [httpApi, webhook] }
+source: inputs/wiki/integration-patterns.md
+version: 1.0.0
+status: confirmed

@@ -1,0 +1,16 @@
+# Detection has hints only: C6 detection.via can't say "mesh" yet (ADR 0040 added mesh to
+# Interface.via in C1 only), so merge can't infer this pattern until C6 follows.
+schemaVersion: 1
+code: HB.SYNC.MESH
+name: Service to service through the mesh
+definition: A synchronous REST or gRPC call between two Harbor services inside the cluster, through the Istio sidecars.
+interaction: sync
+route: other
+targetType: product
+controls: [mTLS from the mesh, VirtualService for the callee, timeout under 2 s]
+resilience: { timeoutMs: 2000 }
+technology: [Istio, REST, gRPC]
+detection: { hints: [VirtualService, svc.cluster.local] }
+source: inputs/wiki/integration-patterns.md
+version: 1.1.0
+status: confirmed

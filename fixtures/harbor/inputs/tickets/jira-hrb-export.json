@@ -1,0 +1,51 @@
+{
+  "expand": "schema,names",
+  "startAt": 0,
+  "maxResults": 50,
+  "total": 4,
+  "issues": [
+    {
+      "key": "HRB-101",
+      "fields": {
+        "summary": "As a shopper I can see my order's status in the app",
+        "issuetype": { "name": "Story" },
+        "status": { "name": "Done" },
+        "labels": ["mobile", "orders"],
+        "description": "Given a placed order, when I open it in the app, then I see its current status.",
+        "customfield_10031": "Status in the app matches the Orders service within 5 seconds."
+      }
+    },
+    {
+      "key": "HRB-112",
+      "fields": {
+        "summary": "Remind shoppers about abandoned carts",
+        "issuetype": { "name": "Story" },
+        "status": { "name": "Done" },
+        "labels": ["growth"],
+        "description": "Every two hours, email shoppers whose cart is older than two hours, through Lantern Mail.",
+        "customfield_10031": "No shopper gets more than one reminder per cart."
+      }
+    },
+    {
+      "key": "HRB-118",
+      "fields": {
+        "summary": "Gift cards",
+        "issuetype": { "name": "Story" },
+        "status": { "name": "To Do" },
+        "labels": ["checkout"],
+        "description": "",
+        "customfield_10031": null
+      }
+    },
+    {
+      "key": "HRB-90",
+      "fields": {
+        "summary": "Checkout",
+        "issuetype": { "name": "Epic" },
+        "status": { "name": "In Progress" },
+        "labels": ["checkout"],
+        "description": "Everything from cart to paid order."
+      }
+    }
+  ]
+}

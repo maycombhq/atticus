@@ -1,0 +1,32 @@
+// Orders and their lines. Carts are orders in status CART.
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Order {
+  id         String      @id @default(uuid())
+  customerId String      @map("customer_id")
+  status     String
+  totalCents Int         @map("total_cents")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  lines      OrderLine[]
+
+  @@index([status, updatedAt])
+  @@map("orders")
+}
+
+model OrderLine {
+  id         Int    @id @default(autoincrement())
+  orderId    String @map("order_id")
+  sku        String
+  quantity   Int
+  priceCents Int    @map("price_cents")
+  order      Order  @relation(fields: [orderId], references: [id])
+
+  @@map("order_lines")
+}

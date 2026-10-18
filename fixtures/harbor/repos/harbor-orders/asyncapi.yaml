@@ -1,0 +1,33 @@
+asyncapi: 3.0.0
+info:
+  title: Orders service events
+  version: 1.2.0
+channels:
+  ordersPlaced:
+    address: orders.placed
+    messages:
+      OrderPlaced:
+        payload:
+          type: object
+          properties:
+            orderId: { type: string }
+  paymentsAuthorized:
+    address: payments.authorized
+    messages:
+      PaymentAuthorized:
+        payload: { type: object }
+  paymentsSettled:
+    address: payments.settled
+    messages:
+      PaymentSettled:
+        payload: { type: object }
+operations:
+  publishOrderPlaced:
+    action: send
+    channel: { $ref: "#/channels/ordersPlaced" }
+  onPaymentAuthorized:
+    action: receive
+    channel: { $ref: "#/channels/paymentsAuthorized" }
+  onPaymentSettled:
+    action: receive
+    channel: { $ref: "#/channels/paymentsSettled" }

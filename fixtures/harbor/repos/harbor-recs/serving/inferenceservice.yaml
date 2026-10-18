@@ -1,0 +1,22 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: recs-model
+  namespace: prod
+  labels:
+    app: recs-model
+spec:
+  predictor:
+    minReplicas: 2
+    maxReplicas: 6
+    containers:
+      - name: kserve-container
+        image: registry.harbor.example/recs-model:2026.10.1
+        args: ["--model_name=recommendations"]
+        env:
+          - name: FEAST_REPO
+            value: /opt/harbor/features
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi

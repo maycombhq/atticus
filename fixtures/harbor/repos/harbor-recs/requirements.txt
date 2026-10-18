@@ -1,0 +1,3 @@
+feast[redis,redshift]==0.40.1
+kserve==0.14.0
+scikit-learn==1.5.2

@@ -1,0 +1,29 @@
+// Copied from harbor-catalog by `buf export`; do not edit here.
+syntax = "proto3";
+
+package harbor.inventory.v1;
+
+service Inventory {
+  rpc CheckStock(CheckStockRequest) returns (CheckStockResponse);
+  rpc ReserveStock(ReserveStockRequest) returns (ReserveStockResponse);
+}
+
+message CheckStockRequest {
+  string sku = 1;
+  int32 quantity = 2;
+}
+
+message CheckStockResponse {
+  bool available = 1;
+  int32 on_hand = 2;
+}
+
+message ReserveStockRequest {
+  string sku = 1;
+  int32 quantity = 2;
+  string order_id = 3;
+}
+
+message ReserveStockResponse {
+  bool reserved = 1;
+}

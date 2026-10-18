@@ -1,0 +1,4 @@
+# Harbor service descriptor (every Harbor service has one at its root).
+name: orders-svc
+team: team-checkout
+tier: 1

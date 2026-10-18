@@ -1,0 +1,1097 @@
+# Expected catalog from scanning fixtures/harbor/repos plus the partner specs in inputs/,
+# written in the catalog vocabulary of ADR 0040 (GraphQL, gRPC, webhook and function
+# endpoints, via mesh and webhook, schedules as settingKind schedule, ingress on deployments,
+# data-pipeline and ml-model components, warehouse, feature-store, object-storage and queue
+# stores, SaaS vendors tagged saas).
+# Hand-written ground truth. Do not generate it from extractor output.
+# Records omit `schemaVersion` and `status: current`; the tests add them.
+# Records marked "pending:" need a producer that is not on main yet; packages/harbor-tests
+# lists them (test/pending.ts) and skips their assertions until the producer lands.
+
+# ------------------------------------------------------------------ systems
+- kind: System
+  id: storefront
+  confidence: verified
+  name: Storefront
+  boundary: product
+  owner: team-storefront
+  repos: [harbor-web, harbor-mobile, harbor-graph]
+  evidence: [{ source: config, repo: harbor-web, path: package.json }]
+- kind: System
+  id: catalog
+  confidence: verified
+  name: Catalog
+  boundary: product
+  owner: team-catalog
+  repos: [harbor-catalog]
+  evidence: [{ source: config, repo: harbor-catalog, path: go.mod }]
+- kind: System
+  id: orders
+  confidence: verified
+  name: Orders
+  boundary: product
+  owner: team-checkout
+  repos: [harbor-orders]
+  evidence: [{ source: config, repo: harbor-orders, path: package.json }]
+- kind: System
+  id: payments
+  confidence: verified
+  name: Payments
+  boundary: product
+  owner: team-payments
+  repos: [harbor-payments, harbor-payment-webhook]
+  evidence:
+    - { source: config, repo: harbor-payments, path: pyproject.toml }
+    - { source: config, repo: harbor-payment-webhook, path: package.json }
+- kind: System
+  id: engagement
+  confidence: verified
+  name: Engagement
+  boundary: product
+  owner: team-growth
+  repos: [harbor-cart-reminder]
+  evidence: [{ source: config, repo: harbor-cart-reminder, path: requirements.txt }]
+- kind: System
+  id: analytics
+  confidence: verified
+  name: Analytics
+  boundary: internal
+  owner: team-data
+  repos: [harbor-data]
+  evidence: [{ source: config, repo: harbor-data, path: requirements.txt }]
+- kind: System
+  id: recommendations
+  confidence: verified
+  name: Recommendations
+  boundary: product
+  owner: team-ml
+  repos: [harbor-recs]
+  evidence: [{ source: config, repo: harbor-recs, path: requirements.txt }]
+- kind: System
+  id: fraud
+  confidence: inferred
+  name: Fraud
+  boundary: internal
+  evidence: [{ source: code, repo: harbor-orders, path: src/orders.service.ts, line: 26, side: caller }]
+# pending: the saas tag (ADR 0040) on vendor systems.
+- kind: System
+  id: tidewater-payments
+  confidence: verified
+  name: Tidewater Payments
+  boundary: vendor
+  tags: [saas]
+  evidence:
+    - { source: config, path: org-pack/profiles/harbor/profile.yaml }
+    - { source: spec, path: inputs/partner-specs/tidewater-payments-openapi-v2.yaml, side: definition }
+- kind: System
+  id: lantern-mail
+  confidence: inferred
+  name: Lantern Mail
+  boundary: vendor
+  tags: [saas]
+  evidence: [{ source: config, path: org-pack/profiles/harbor/profile.yaml }]
+
+# ------------------------------------------------------------------ components
+- kind: Component
+  id: web-app
+  confidence: verified
+  system: storefront
+  repo: harbor-web
+  type: spa
+  evidence: [{ source: config, repo: harbor-web, path: package.json }]
+- kind: Component
+  id: mobile-app
+  confidence: verified
+  system: storefront
+  repo: harbor-mobile
+  type: mobile-app
+  evidence: [{ source: config, repo: harbor-mobile, path: package.json }]
+- kind: Component
+  id: shop-graph
+  confidence: verified
+  system: storefront
+  repo: harbor-graph
+  type: bff
+  runtime: kubernetes
+  evidence: [{ source: config, repo: harbor-graph, path: package.json }]
+- kind: Component
+  id: catalog-svc
+  confidence: verified
+  system: catalog
+  repo: harbor-catalog
+  type: service
+  runtime: kubernetes
+  evidence: [{ source: config, repo: harbor-catalog, path: go.mod }]
+- kind: Component
+  id: orders-svc
+  confidence: verified
+  system: orders
+  repo: harbor-orders
+  type: service
+  runtime: kubernetes
+  evidence: [{ source: config, repo: harbor-orders, path: package.json }]
+- kind: Component
+  id: payments-svc
+  confidence: verified
+  system: payments
+  repo: harbor-payments
+  type: service
+  runtime: kubernetes
+  evidence: [{ source: config, repo: harbor-payments, path: pyproject.toml }]
+# pending: runtime aws-lambda comes from the function Deployments (serverless.yml).
+- kind: Component
+  id: payment-webhook
+  confidence: verified
+  system: payments
+  repo: harbor-payment-webhook
+  type: function
+  runtime: aws-lambda
+  evidence: [{ source: config, repo: harbor-payment-webhook, path: package.json }]
+- kind: Component
+  id: cart-reminder
+  confidence: verified
+  system: engagement
+  repo: harbor-cart-reminder
+  type: function
+  runtime: aws-lambda
+  evidence: [{ source: config, repo: harbor-cart-reminder, path: requirements.txt }]
+- kind: Component
+  id: warehouse-pipeline
+  confidence: verified
+  system: analytics
+  repo: harbor-data
+  type: data-pipeline
+  evidence: [{ source: config, repo: harbor-data, path: requirements.txt }]
+# pending: runtime kubernetes comes from the KServe InferenceService Deployment.
+- kind: Component
+  id: recs-model
+  confidence: verified
+  system: recommendations
+  repo: harbor-recs
+  type: ml-model
+  runtime: kubernetes
+  evidence: [{ source: config, repo: harbor-recs, path: requirements.txt }]
+# Known only from the Orders service's call: no repo, no owner, no spec.
+- kind: Component
+  id: fraud-score
+  confidence: inferred
+  system: fraud
+  type: service
+  evidence: [{ source: code, repo: harbor-orders, path: src/orders.service.ts, line: 26, side: caller }]
+
+# ------------------------------------------------------------------ endpoints: REST
+- kind: Endpoint
+  id: shop-graph.get-healthz
+  confidence: verified
+  component: shop-graph
+  endpointType: rest
+  method: GET
+  pathOrTopic: /healthz
+  normalizedPath: /healthz
+  evidence: [{ source: code, repo: harbor-graph, path: src/server.ts, line: 8, side: callee }]
+- kind: Endpoint
+  id: catalog-svc.get-healthz
+  confidence: verified
+  component: catalog-svc
+  endpointType: rest
+  method: GET
+  pathOrTopic: /healthz
+  normalizedPath: /healthz
+  evidence: [{ source: code, repo: harbor-catalog, path: cmd/catalog/main.go, line: 27, side: callee }]
+# GET /products and GET /products/{id} both name "product": each gets a short path hash (ADR 0017).
+- kind: Endpoint
+  id: catalog-svc.get-product-d66ca1
+  confidence: verified
+  component: catalog-svc
+  endpointType: rest
+  method: GET
+  pathOrTopic: /products
+  normalizedPath: /products
+  evidence: [{ source: code, repo: harbor-catalog, path: cmd/catalog/main.go, line: 29, side: callee }]
+- kind: Endpoint
+  id: catalog-svc.get-product-b5f716
+  confidence: verified
+  component: catalog-svc
+  endpointType: rest
+  method: GET
+  pathOrTopic: /products/{id}
+  normalizedPath: /products/{}
+  evidence: [{ source: code, repo: harbor-catalog, path: cmd/catalog/main.go, line: 30, side: callee }]
+- kind: Endpoint
+  id: orders-svc.post-order
+  confidence: verified
+  component: orders-svc
+  endpointType: rest
+  method: POST
+  pathOrTopic: /orders
+  normalizedPath: /orders
+  evidence: [{ source: code, repo: harbor-orders, path: src/orders.controller.ts, line: 8, side: callee }]
+- kind: Endpoint
+  id: orders-svc.get-order
+  confidence: verified
+  component: orders-svc
+  endpointType: rest
+  method: GET
+  pathOrTopic: /orders/:id
+  normalizedPath: /orders/{}
+  evidence: [{ source: code, repo: harbor-orders, path: src/orders.controller.ts, line: 13, side: callee }]
+- kind: Endpoint
+  id: orders-svc.get-abandoned
+  confidence: verified
+  component: orders-svc
+  endpointType: rest
+  method: GET
+  pathOrTopic: /carts/abandoned
+  normalizedPath: /carts/abandoned
+  evidence: [{ source: code, repo: harbor-orders, path: src/carts.controller.ts, line: 9, side: callee }]
+- kind: Endpoint
+  id: payments-svc.get-healthz
+  confidence: verified
+  component: payments-svc
+  endpointType: rest
+  method: GET
+  pathOrTopic: /healthz
+  normalizedPath: /healthz
+  evidence: [{ source: code, repo: harbor-payments, path: payments/main.py, line: 9, side: callee }]
+- kind: Endpoint
+  id: payments-svc.post-payment
+  confidence: verified
+  component: payments-svc
+  endpointType: rest
+  method: POST
+  pathOrTopic: /payments
+  normalizedPath: /payments
+  evidence: [{ source: code, repo: harbor-payments, path: payments/api.py, line: 19, side: callee }]
+- kind: Endpoint
+  id: payments-svc.get-payment
+  confidence: verified
+  component: payments-svc
+  endpointType: rest
+  method: GET
+  pathOrTopic: /payments/{payment_id}
+  normalizedPath: /payments/{}
+  evidence: [{ source: code, repo: harbor-payments, path: payments/api.py, line: 26, side: callee }]
+# The vendor's operations, from its published spec (v2; v1 is superseded and not read).
+- kind: Endpoint
+  id: tidewater-payments.post-charge
+  confidence: verified
+  component: tidewater-payments
+  endpointType: rest
+  method: POST
+  pathOrTopic: /v1/charges
+  normalizedPath: /v1/charges
+  auth: api-key
+  evidence: [{ source: spec, path: inputs/partner-specs/tidewater-payments-openapi-v2.yaml, line: 10, side: definition }]
+- kind: Endpoint
+  id: tidewater-payments.get-charge
+  confidence: verified
+  component: tidewater-payments
+  endpointType: rest
+  method: GET
+  pathOrTopic: /v1/charges/{chargeId}
+  normalizedPath: /v1/charges/{}
+  auth: api-key
+  evidence: [{ source: spec, path: inputs/partner-specs/tidewater-payments-openapi-v2.yaml, line: 16, side: definition }]
+- kind: Endpoint
+  id: tidewater-payments.post-refund
+  confidence: verified
+  component: tidewater-payments
+  endpointType: rest
+  method: POST
+  pathOrTopic: /v1/refunds
+  normalizedPath: /v1/refunds
+  auth: api-key
+  evidence: [{ source: spec, path: inputs/partner-specs/tidewater-payments-openapi-v2.yaml, line: 24, side: definition }]
+# pending: the KServe predict route (V1 protocol) from the InferenceService.
+- kind: Endpoint
+  id: recs-model.post-recommendations-predict
+  confidence: verified
+  component: recs-model
+  endpointType: rest
+  method: POST
+  pathOrTopic: /v1/models/recommendations:predict
+  normalizedPath: /v1/models/recommendations:predict
+  evidence: [{ source: infrastructure, repo: harbor-recs, path: serving/inferenceservice.yaml, line: 4, side: definition }]
+
+# ------------------------------------------------------------------ endpoints: GraphQL (pending)
+# One per root field of the SDL schema; method QUERY or MUTATION, pathOrTopic the field.
+- kind: Endpoint
+  id: shop-graph.query-products
+  confidence: verified
+  component: shop-graph
+  endpointType: graphql
+  method: QUERY
+  pathOrTopic: Query.products
+  normalizedPath: Query.products
+  evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 4, side: definition }]
+- kind: Endpoint
+  id: shop-graph.query-product
+  confidence: verified
+  component: shop-graph
+  endpointType: graphql
+  method: QUERY
+  pathOrTopic: Query.product
+  normalizedPath: Query.product
+  evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 5, side: definition }]
+- kind: Endpoint
+  id: shop-graph.query-order
+  confidence: verified
+  component: shop-graph
+  endpointType: graphql
+  method: QUERY
+  pathOrTopic: Query.order
+  normalizedPath: Query.order
+  evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 6, side: definition }]
+- kind: Endpoint
+  id: shop-graph.query-recommendations
+  confidence: verified
+  component: shop-graph
+  endpointType: graphql
+  method: QUERY
+  pathOrTopic: Query.recommendations
+  normalizedPath: Query.recommendations
+  evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 7, side: definition }]
+- kind: Endpoint
+  id: shop-graph.mutation-place-order
+  confidence: verified
+  component: shop-graph
+  endpointType: graphql
+  method: MUTATION
+  pathOrTopic: Mutation.placeOrder
+  normalizedPath: Mutation.placeOrder
+  evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 11, side: definition }]
+
+# ------------------------------------------------------------------ endpoints: gRPC (pending)
+# Served by catalog-svc (proto in harbor-catalog). The copy of the proto in harbor-orders is a
+# client stub: it must not make orders-svc a server of Inventory.
+- kind: Endpoint
+  id: catalog-svc.check-stock
+  confidence: verified
+  component: catalog-svc
+  endpointType: grpc
+  pathOrTopic: /harbor.inventory.v1.Inventory/CheckStock
+  normalizedPath: /harbor.inventory.v1.Inventory/CheckStock
+  evidence: [{ source: spec, repo: harbor-catalog, path: proto/harbor/inventory/v1/inventory.proto, line: 9, side: definition }]
+- kind: Endpoint
+  id: catalog-svc.reserve-stock
+  confidence: verified
+  component: catalog-svc
+  endpointType: grpc
+  pathOrTopic: /harbor.inventory.v1.Inventory/ReserveStock
+  normalizedPath: /harbor.inventory.v1.Inventory/ReserveStock
+  evidence: [{ source: spec, repo: harbor-catalog, path: proto/harbor/inventory/v1/inventory.proto, line: 10, side: definition }]
+
+# ------------------------------------------------------------------ endpoints: webhook and function (pending)
+- kind: Endpoint
+  id: payment-webhook.post-tidewater
+  confidence: verified
+  component: payment-webhook
+  endpointType: webhook
+  method: POST
+  pathOrTopic: /webhooks/tidewater
+  normalizedPath: /webhooks/tidewater
+  evidence: [{ source: infrastructure, repo: harbor-payment-webhook, path: serverless.yml, line: 19, side: definition }]
+- kind: Endpoint
+  id: cart-reminder.remind-abandoned-carts
+  confidence: verified
+  component: cart-reminder
+  endpointType: function
+  pathOrTopic: remindAbandonedCarts
+  evidence: [{ source: infrastructure, repo: harbor-cart-reminder, path: serverless.yml, line: 13, side: definition }]
+
+# ------------------------------------------------------------------ endpoints: event topics
+- kind: Endpoint
+  id: topic.orders-placed
+  confidence: verified
+  component: orders-svc
+  endpointType: event-topic
+  pathOrTopic: orders.placed
+  evidence: [{ source: spec, repo: harbor-orders, path: asyncapi.yaml, line: 6, side: definition }]
+- kind: Endpoint
+  id: topic.payments-authorized
+  confidence: verified
+  component: payments-svc
+  endpointType: event-topic
+  pathOrTopic: payments.authorized
+  evidence: [{ source: spec, repo: harbor-orders, path: asyncapi.yaml, line: 14, side: definition }]
+- kind: Endpoint
+  id: topic.payments-settled
+  confidence: verified
+  component: payment-webhook
+  endpointType: event-topic
+  pathOrTopic: payments.settled
+  evidence:
+    - { source: spec, repo: harbor-orders, path: asyncapi.yaml, line: 19, side: definition }
+    - { source: spec, repo: harbor-payment-webhook, path: asyncapi.yaml, line: 6, side: definition }
+
+# ------------------------------------------------------------------ interfaces: HTTP
+- kind: Interface
+  id: if-46861c9fa2695f99
+  confidence: verified
+  from: shop-graph
+  to: catalog-svc
+  endpoint: catalog-svc.get-product-d66ca1
+  via: mesh
+  method: GET
+  normalizedPath: /products
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-graph, path: src/resolvers.ts, line: 13, side: caller }
+    - { source: code, repo: harbor-catalog, path: cmd/catalog/main.go, line: 29, side: callee }
+- kind: Interface
+  id: if-6394ddc280a46330
+  confidence: verified
+  from: shop-graph
+  to: catalog-svc
+  endpoint: catalog-svc.get-product-b5f716
+  via: mesh
+  method: GET
+  normalizedPath: /products/{}
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-graph, path: src/resolvers.ts, line: 15, side: caller }
+    - { source: code, repo: harbor-catalog, path: cmd/catalog/main.go, line: 30, side: callee }
+- kind: Interface
+  id: if-2fade641225c4539
+  confidence: verified
+  from: shop-graph
+  to: orders-svc
+  endpoint: orders-svc.get-order
+  via: mesh
+  method: GET
+  normalizedPath: /orders/{}
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-graph, path: src/resolvers.ts, line: 17, side: caller }
+    - { source: code, repo: harbor-orders, path: src/orders.controller.ts, line: 13, side: callee }
+- kind: Interface
+  id: if-f571ccbd0ee1281d
+  confidence: verified
+  from: shop-graph
+  to: orders-svc
+  endpoint: orders-svc.post-order
+  via: mesh
+  method: POST
+  normalizedPath: /orders
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-graph, path: src/resolvers.ts, line: 31, side: caller }
+    - { source: code, repo: harbor-orders, path: src/orders.controller.ts, line: 8, side: callee }
+# recs-model has no VirtualService: a plain call. Verified once the KServe route is read (pending).
+- kind: Interface
+  id: if-9c51c4944979e455
+  confidence: verified
+  from: shop-graph
+  to: recs-model
+  endpoint: recs-model.post-recommendations-predict
+  via: direct
+  method: POST
+  normalizedPath: /v1/models/recommendations:predict
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-graph, path: src/resolvers.ts, line: 19, side: caller }
+    - { source: infrastructure, repo: harbor-recs, path: serving/inferenceservice.yaml, line: 4, side: callee }
+- kind: Interface
+  id: if-a24c46bb442ec4b3
+  confidence: verified
+  from: orders-svc
+  to: payments-svc
+  endpoint: payments-svc.post-payment
+  via: mesh
+  method: POST
+  normalizedPath: /payments
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-orders, path: src/orders.service.ts, line: 34, side: caller }
+    - { source: code, repo: harbor-payments, path: payments/api.py, line: 19, side: callee }
+- kind: Interface
+  id: if-86fee9e6f849eb46
+  confidence: inferred
+  from: orders-svc
+  to: fraud-score
+  via: direct
+  method: POST
+  normalizedPath: /v1/score
+  sync: sync
+  evidence: [{ source: code, repo: harbor-orders, path: src/orders.service.ts, line: 26, side: caller }]
+# pending: the vendor host (api.tidewater.example) resolves to tidewater-payments through the
+# partner spec's servers; merge only resolves a host whose first label is a component or system.
+- kind: Interface
+  id: if-a4ccfcea11eeebf0
+  confidence: verified
+  from: payments-svc
+  to: tidewater-payments
+  endpoint: tidewater-payments.post-charge
+  via: direct
+  method: POST
+  normalizedPath: /v1/charges
+  auth: api-key
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-payments, path: payments/api.py, line: 21, side: caller }
+    - { source: spec, path: inputs/partner-specs/tidewater-payments-openapi-v2.yaml, line: 10, side: callee }
+- kind: Interface
+  id: if-018d1416ec04a61a
+  confidence: verified
+  from: payments-svc
+  to: tidewater-payments
+  endpoint: tidewater-payments.get-charge
+  via: direct
+  method: GET
+  normalizedPath: /v1/charges/{}
+  auth: api-key
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-payments, path: payments/api.py, line: 28, side: caller }
+    - { source: spec, path: inputs/partner-specs/tidewater-payments-openapi-v2.yaml, line: 16, side: callee }
+# The function calls the internal ingress host (orders.internal.harbor.example): not through a sidecar.
+- kind: Interface
+  id: if-0fe11f6ee6c3429f
+  confidence: verified
+  from: cart-reminder
+  to: orders-svc
+  endpoint: orders-svc.get-abandoned
+  via: direct
+  method: GET
+  normalizedPath: /carts/abandoned
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-cart-reminder, path: reminder/handler.py, line: 11, side: caller }
+    - { source: code, repo: harbor-orders, path: src/carts.controller.ts, line: 9, side: callee }
+# pending: vendor host resolution, as above (no Lantern Mail spec, so inferred).
+- kind: Interface
+  id: if-10465a7b9c85231e
+  confidence: inferred
+  from: cart-reminder
+  to: lantern-mail
+  via: direct
+  method: POST
+  normalizedPath: /v3/messages
+  sync: sync
+  evidence: [{ source: code, repo: harbor-cart-reminder, path: reminder/handler.py, line: 13, side: caller }]
+
+# ------------------------------------------------------------------ interfaces: gRPC (pending)
+- kind: Interface
+  id: if-307343928186de57
+  confidence: verified
+  from: orders-svc
+  to: catalog-svc
+  endpoint: catalog-svc.check-stock
+  via: mesh
+  normalizedPath: /harbor.inventory.v1.Inventory/CheckStock
+  sync: sync
+  evidence:
+    - { source: code, repo: harbor-orders, path: src/inventory.client.ts, line: 16, side: caller }
+    - { source: spec, repo: harbor-catalog, path: proto/harbor/inventory/v1/inventory.proto, line: 9, side: callee }
+
+# ------------------------------------------------------------------ interfaces: GraphQL (pending)
+# One per root field an app's operations select; the caller line is the field in the document.
+- kind: Interface
+  id: if-48178a435150f443
+  confidence: verified
+  from: web-app
+  to: shop-graph
+  endpoint: shop-graph.query-products
+  via: direct
+  method: QUERY
+  normalizedPath: Query.products
+  sync: sync
+  pattern: { code: HB.GQL.CLIENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-web, path: src/api/operations.ts, line: 5, side: caller }
+    - { source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 4, side: callee }
+- kind: Interface
+  id: if-d9b83070fa73af6e
+  confidence: verified
+  from: web-app
+  to: shop-graph
+  endpoint: shop-graph.query-product
+  via: direct
+  method: QUERY
+  normalizedPath: Query.product
+  sync: sync
+  pattern: { code: HB.GQL.CLIENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-web, path: src/api/operations.ts, line: 15, side: caller }
+    - { source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 5, side: callee }
+- kind: Interface
+  id: if-95c398a68099a3e5
+  confidence: verified
+  from: web-app
+  to: shop-graph
+  endpoint: shop-graph.query-recommendations
+  via: direct
+  method: QUERY
+  normalizedPath: Query.recommendations
+  sync: sync
+  pattern: { code: HB.GQL.CLIENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-web, path: src/api/operations.ts, line: 26, side: caller }
+    - { source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 7, side: callee }
+- kind: Interface
+  id: if-9e795e3899379f37
+  confidence: verified
+  from: web-app
+  to: shop-graph
+  endpoint: shop-graph.mutation-place-order
+  via: direct
+  method: MUTATION
+  normalizedPath: Mutation.placeOrder
+  sync: sync
+  pattern: { code: HB.GQL.CLIENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-web, path: src/api/operations.ts, line: 35, side: caller }
+    - { source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 11, side: callee }
+- kind: Interface
+  id: if-924d2e2fb35e1629
+  confidence: verified
+  from: mobile-app
+  to: shop-graph
+  endpoint: shop-graph.query-products
+  via: direct
+  method: QUERY
+  normalizedPath: Query.products
+  sync: sync
+  pattern: { code: HB.GQL.CLIENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-mobile, path: src/api/operations.ts, line: 5, side: caller }
+    - { source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 4, side: callee }
+- kind: Interface
+  id: if-d35e619ee1aa530d
+  confidence: verified
+  from: mobile-app
+  to: shop-graph
+  endpoint: shop-graph.query-order
+  via: direct
+  method: QUERY
+  normalizedPath: Query.order
+  sync: sync
+  pattern: { code: HB.GQL.CLIENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-mobile, path: src/api/operations.ts, line: 16, side: caller }
+    - { source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 6, side: callee }
+- kind: Interface
+  id: if-18efeccc7ba574be
+  confidence: verified
+  from: mobile-app
+  to: shop-graph
+  endpoint: shop-graph.mutation-place-order
+  via: direct
+  method: MUTATION
+  normalizedPath: Mutation.placeOrder
+  sync: sync
+  pattern: { code: HB.GQL.CLIENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-mobile, path: src/api/operations.ts, line: 26, side: caller }
+    - { source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 11, side: callee }
+
+# ------------------------------------------------------------------ interfaces: webhook (pending)
+# Tidewater's spec declares the callback (webhooks.chargeSettled); the function serves it.
+- kind: Interface
+  id: if-471a26719fe84220
+  confidence: verified
+  from: tidewater-payments
+  to: payment-webhook
+  endpoint: payment-webhook.post-tidewater
+  via: webhook
+  method: POST
+  normalizedPath: /webhooks/tidewater
+  sync: sync
+  evidence:
+    - { source: spec, path: inputs/partner-specs/tidewater-payments-openapi-v2.yaml, line: 31, side: caller }
+    - { source: infrastructure, repo: harbor-payment-webhook, path: serverless.yml, line: 19, side: callee }
+
+# ------------------------------------------------------------------ interfaces: events
+- kind: Interface
+  id: if-2a8d8dd6ededf292
+  confidence: verified
+  from: orders-svc
+  to: catalog-svc
+  endpoint: topic.orders-placed
+  via: event-bus
+  normalizedPath: orders.placed
+  sync: async
+  pattern: { code: HB.ASYNC.EVENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-orders, path: src/events.ts, line: 10, side: caller }
+    - { source: spec, repo: harbor-orders, path: asyncapi.yaml, line: 6, side: definition }
+    - { source: code, repo: harbor-catalog, path: internal/inventory/server.go, line: 48, side: callee }
+# Published through the outbox library: found by the harbor-outbox dialect.
+- kind: Interface
+  id: if-9799eee043a9c9bc
+  confidence: verified
+  from: payments-svc
+  to: orders-svc
+  endpoint: topic.payments-authorized
+  via: event-bus
+  normalizedPath: payments.authorized
+  sync: async
+  pattern: { code: HB.ASYNC.EVENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-payments, path: payments/api.py, line: 22, side: caller, dialect: harbor-outbox@0.1.0 }
+    - { source: spec, repo: harbor-orders, path: asyncapi.yaml, line: 14, side: definition }
+    - { source: code, repo: harbor-orders, path: src/events.ts, line: 18, side: callee }
+# pending: the publish in the function's code (kafkajs outside a server package).
+- kind: Interface
+  id: if-9c9b1e808fbaac38
+  confidence: verified
+  from: payment-webhook
+  to: orders-svc
+  endpoint: topic.payments-settled
+  via: event-bus
+  normalizedPath: payments.settled
+  sync: async
+  pattern: { code: HB.ASYNC.EVENT, source: inferred }
+  evidence:
+    - { source: code, repo: harbor-payment-webhook, path: src/handler.ts, line: 24, side: caller }
+    - { source: spec, repo: harbor-orders, path: asyncapi.yaml, line: 19, side: definition }
+    - { source: spec, repo: harbor-payment-webhook, path: asyncapi.yaml, line: 6, side: definition }
+    - { source: code, repo: harbor-orders, path: src/events.ts, line: 18, side: callee }
+
+# ------------------------------------------------------------------ data: service databases
+- kind: DataStore
+  id: catalog-db
+  confidence: verified
+  storeType: postgresql
+  ownerComponent: catalog-svc
+  entitiesHeld: [products, stock_levels]
+  evidence:
+    - { source: infrastructure, repo: harbor-platform, path: terraform/databases.tf, line: 10 }
+    - { source: migration, repo: harbor-catalog, path: migrations/0001_create_products.up.sql, line: 1 }
+# pending (readers): the warehouse pipeline reads products through its dbt source.
+- kind: Table
+  id: catalog-db.products
+  confidence: verified
+  dataStore: catalog-db
+  name: products
+  tableKind: table
+  ownerComponent: catalog-svc
+  readers: [catalog-svc, warehouse-pipeline]
+  writers: [catalog-svc]
+  evidence:
+    - { source: migration, repo: harbor-catalog, path: migrations/0001_create_products.up.sql, line: 1 }
+    - { source: code, repo: harbor-data, path: dbt/models/sources.yml, line: 14, side: caller }
+- kind: Table
+  id: catalog-db.stock-levels
+  confidence: verified
+  dataStore: catalog-db
+  name: stock_levels
+  tableKind: table
+  ownerComponent: catalog-svc
+  readers: [catalog-svc]
+  writers: [catalog-svc]
+  evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0002_create_stock_levels.up.sql, line: 1 }]
+- { kind: Column, id: catalog-db.products.sku, confidence: verified, table: catalog-db.products, name: sku, type: varchar(32), nullable: false, evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0001_create_products.up.sql, line: 2 }] }
+- { kind: Column, id: catalog-db.products.name, confidence: verified, table: catalog-db.products, name: name, type: varchar(200), nullable: false, evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0001_create_products.up.sql, line: 3 }] }
+- { kind: Column, id: catalog-db.products.description, confidence: verified, table: catalog-db.products, name: description, type: text, nullable: true, evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0001_create_products.up.sql, line: 4 }] }
+- { kind: Column, id: catalog-db.products.price-cents, confidence: verified, table: catalog-db.products, name: price_cents, type: integer, nullable: false, evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0001_create_products.up.sql, line: 5 }] }
+- { kind: Column, id: catalog-db.stock-levels.sku, confidence: verified, table: catalog-db.stock-levels, name: sku, type: varchar(32), nullable: false, evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0002_create_stock_levels.up.sql, line: 2 }] }
+- { kind: Column, id: catalog-db.stock-levels.on-hand, confidence: verified, table: catalog-db.stock-levels, name: on_hand, type: integer, nullable: false, default: "0", evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0002_create_stock_levels.up.sql, line: 3 }] }
+- { kind: IndexConstraint, id: catalog-db.products.pk, confidence: verified, table: catalog-db.products, constraintKind: primary-key, columns: [sku], evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0001_create_products.up.sql, line: 2 }] }
+- { kind: IndexConstraint, id: catalog-db.stock-levels.pk, confidence: verified, table: catalog-db.stock-levels, constraintKind: primary-key, columns: [sku], evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0002_create_stock_levels.up.sql, line: 2 }] }
+- { kind: IndexConstraint, id: catalog-db.stock-levels.fk-products, confidence: verified, table: catalog-db.stock-levels, constraintKind: foreign-key, columns: [sku], references: { table: catalog-db.products, columns: [sku] }, evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0002_create_stock_levels.up.sql, line: 2 }] }
+# pending: golang-migrate names (<version>_<name>.up.sql): version 0001, not "0001_create_products.up".
+- { kind: Migration, id: catalog-db.v0001, confidence: verified, dataStore: catalog-db, version: "0001", tool: other, file: migrations/0001_create_products.up.sql, operations: [create table products], evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0001_create_products.up.sql, line: 1 }] }
+- { kind: Migration, id: catalog-db.v0002, confidence: verified, dataStore: catalog-db, version: "0002", tool: other, file: migrations/0002_create_stock_levels.up.sql, operations: [create table stock_levels], evidence: [{ source: migration, repo: harbor-catalog, path: migrations/0002_create_stock_levels.up.sql, line: 1 }] }
+
+- kind: DataStore
+  id: orders-db
+  confidence: verified
+  storeType: postgresql
+  ownerComponent: orders-svc
+  entitiesHeld: [order_lines, orders]
+  evidence:
+    - { source: infrastructure, repo: harbor-platform, path: terraform/databases.tf, line: 1 }
+    - { source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 2 }
+# Prisma only (no SQL migrations in the repo): what the code expects, so inferred.
+# pending (readers): the warehouse pipeline reads orders through its dbt source.
+- kind: Table
+  id: orders-db.orders
+  confidence: inferred
+  dataStore: orders-db
+  name: orders
+  tableKind: table
+  ownerComponent: orders-svc
+  readers: [orders-svc, warehouse-pipeline]
+  writers: [orders-svc]
+  evidence:
+    - { source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 11 }
+    - { source: code, repo: harbor-data, path: dbt/models/sources.yml, line: 9, side: caller }
+- kind: Table
+  id: orders-db.order-lines
+  confidence: inferred
+  dataStore: orders-db
+  name: order_lines
+  tableKind: table
+  ownerComponent: orders-svc
+  readers: [orders-svc]
+  writers: [orders-svc]
+  evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 23 }]
+- { kind: Column, id: orders-db.orders.id, confidence: inferred, table: orders-db.orders, name: id, type: String, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 12 }] }
+- { kind: Column, id: orders-db.orders.customer-id, confidence: inferred, table: orders-db.orders, name: customer_id, type: String, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 13 }] }
+- { kind: Column, id: orders-db.orders.status, confidence: inferred, table: orders-db.orders, name: status, type: String, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 14 }] }
+- { kind: Column, id: orders-db.orders.total-cents, confidence: inferred, table: orders-db.orders, name: total_cents, type: Int, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 15 }] }
+- { kind: Column, id: orders-db.orders.updated-at, confidence: inferred, table: orders-db.orders, name: updated_at, type: DateTime, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 16 }] }
+- { kind: Column, id: orders-db.order-lines.id, confidence: inferred, table: orders-db.order-lines, name: id, type: Int, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 24 }] }
+- { kind: Column, id: orders-db.order-lines.order-id, confidence: inferred, table: orders-db.order-lines, name: order_id, type: String, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 25 }] }
+- { kind: Column, id: orders-db.order-lines.sku, confidence: inferred, table: orders-db.order-lines, name: sku, type: String, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 26 }] }
+- { kind: Column, id: orders-db.order-lines.quantity, confidence: inferred, table: orders-db.order-lines, name: quantity, type: Int, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 27 }] }
+- { kind: Column, id: orders-db.order-lines.price-cents, confidence: inferred, table: orders-db.order-lines, name: price_cents, type: Int, nullable: false, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 28 }] }
+- { kind: IndexConstraint, id: orders-db.orders.pk, confidence: inferred, table: orders-db.orders, constraintKind: primary-key, columns: [id], evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 12 }] }
+- { kind: IndexConstraint, id: orders-db.orders.orders-status-updated-at-idx, confidence: inferred, table: orders-db.orders, constraintKind: index, columns: [status, updated_at], evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 19 }] }
+- { kind: IndexConstraint, id: orders-db.order-lines.pk, confidence: inferred, table: orders-db.order-lines, constraintKind: primary-key, columns: [id], evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 24 }] }
+- { kind: IndexConstraint, id: orders-db.order-lines.fk-orders, confidence: inferred, table: orders-db.order-lines, constraintKind: foreign-key, columns: [order_id], references: { table: orders-db.orders, columns: [id] }, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 29 }] }
+
+# ------------------------------------------------------------------ data: warehouse, feature store, storage (pending)
+- kind: DataStore
+  id: harbor-warehouse
+  confidence: verified
+  storeType: warehouse
+  ownerComponent: warehouse-pipeline
+  entitiesHeld: [customer_features, fct_daily_sales, stg_orders, stg_products]
+  evidence:
+    - { source: infrastructure, repo: harbor-platform, path: terraform/databases.tf, line: 19 }
+    - { source: config, repo: harbor-data, path: dbt/profiles.yml, line: 6 }
+- kind: Table
+  id: harbor-warehouse.stg-orders
+  confidence: verified
+  dataStore: harbor-warehouse
+  name: stg_orders
+  tableKind: view
+  ownerComponent: warehouse-pipeline
+  readers: [warehouse-pipeline]
+  writers: [warehouse-pipeline]
+  evidence: [{ source: code, repo: harbor-data, path: dbt/models/staging/stg_orders.sql, line: 1 }]
+- kind: Table
+  id: harbor-warehouse.stg-products
+  confidence: verified
+  dataStore: harbor-warehouse
+  name: stg_products
+  tableKind: view
+  ownerComponent: warehouse-pipeline
+  readers: [warehouse-pipeline]
+  writers: [warehouse-pipeline]
+  evidence: [{ source: code, repo: harbor-data, path: dbt/models/staging/stg_products.sql, line: 1 }]
+- kind: Table
+  id: harbor-warehouse.fct-daily-sales
+  confidence: verified
+  dataStore: harbor-warehouse
+  name: fct_daily_sales
+  tableKind: table
+  ownerComponent: warehouse-pipeline
+  readers: [warehouse-pipeline]
+  writers: [warehouse-pipeline]
+  evidence: [{ source: code, repo: harbor-data, path: dbt/models/marts/fct_daily_sales.sql, line: 1 }]
+# The feature store's offline source reads this table (RedshiftSource in harbor-recs).
+- kind: Table
+  id: harbor-warehouse.customer-features
+  confidence: verified
+  dataStore: harbor-warehouse
+  name: customer_features
+  tableKind: table
+  ownerComponent: warehouse-pipeline
+  readers: [recs-model, warehouse-pipeline]
+  writers: [warehouse-pipeline]
+  evidence:
+    - { source: code, repo: harbor-data, path: dbt/models/marts/customer_features.sql, line: 2 }
+    - { source: code, repo: harbor-recs, path: features/customer_features.py, line: 9, side: caller }
+- kind: DataStore
+  id: harbor-features
+  confidence: verified
+  storeType: feature-store
+  ownerComponent: recs-model
+  entitiesHeld: [customer_features]
+  evidence:
+    - { source: infrastructure, repo: harbor-platform, path: terraform/storage.tf, line: 10 }
+    - { source: config, repo: harbor-recs, path: features/feature_store.yaml, line: 6 }
+- kind: Table
+  id: harbor-features.customer-features
+  confidence: verified
+  dataStore: harbor-features
+  name: customer_features
+  tableKind: table
+  ownerComponent: recs-model
+  readers: [recs-model]
+  writers: [recs-model]
+  evidence: [{ source: code, repo: harbor-recs, path: features/customer_features.py, line: 15 }]
+- kind: DataStore
+  id: harbor-media
+  confidence: verified
+  storeType: object-storage
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: terraform/storage.tf, line: 1 }]
+- kind: DataStore
+  id: harbor-webhook-dlq
+  confidence: verified
+  storeType: queue
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: terraform/storage.tf, line: 5 }]
+
+# ------------------------------------------------------------------ runtime
+- kind: Deployment
+  id: catalog-svc.prod
+  confidence: verified
+  component: catalog-svc
+  env: prod
+  platform: kubernetes
+  replicas: 3
+  resources: { cpu: "1", memory: 256Mi }
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: k8s/catalog-svc.yaml, line: 7 }]
+- kind: Deployment
+  id: payments-svc.prod
+  confidence: verified
+  component: payments-svc
+  env: prod
+  platform: kubernetes
+  replicas: 2
+  resources: { cpu: 500m, memory: 512Mi }
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: k8s/payments-svc.yaml, line: 7 }]
+# pending (ingress): routes from the Istio Gateway and the VirtualServices bound to it.
+- kind: Deployment
+  id: shop-graph.prod
+  confidence: verified
+  component: shop-graph
+  env: prod
+  platform: kubernetes
+  replicas: 4
+  resources: { cpu: 500m, memory: 512Mi }
+  ingress: [{ host: api.harbor.example, path: /graphql, tls: true }]
+  evidence:
+    - { source: infrastructure, repo: harbor-platform, path: k8s/shop-graph.yaml, line: 7 }
+    - { source: infrastructure, repo: harbor-platform, path: mesh/shop-graph.yaml, line: 8 }
+- kind: Deployment
+  id: orders-svc.prod
+  confidence: verified
+  component: orders-svc
+  env: prod
+  platform: kubernetes
+  replicas: 3
+  resources: { cpu: "1", memory: 1Gi }
+  ingress: [{ host: orders.internal.harbor.example, path: /carts, tls: true }]
+  evidence:
+    - { source: infrastructure, repo: harbor-platform, path: k8s/orders-svc.yaml, line: 7 }
+    - { source: infrastructure, repo: harbor-platform, path: mesh/orders-svc.yaml, line: 21 }
+# pending: the KServe InferenceService and the two serverless functions.
+- kind: Deployment
+  id: recs-model.prod
+  confidence: verified
+  component: recs-model
+  env: prod
+  platform: kubernetes
+  resources: { cpu: "2", memory: 4Gi }
+  autoscaling: { min: 2, max: 6 }
+  evidence: [{ source: infrastructure, repo: harbor-recs, path: serving/inferenceservice.yaml, line: 10 }]
+- kind: Deployment
+  id: payment-webhook.prod
+  confidence: verified
+  component: payment-webhook
+  env: prod
+  platform: aws-lambda
+  evidence: [{ source: infrastructure, repo: harbor-payment-webhook, path: serverless.yml, line: 7 }]
+- kind: Deployment
+  id: cart-reminder.prod
+  confidence: verified
+  component: cart-reminder
+  env: prod
+  platform: aws-lambda
+  evidence: [{ source: infrastructure, repo: harbor-cart-reminder, path: serverless.yml, line: 7 }]
+
+# pending: schedules as settingKind schedule (ADR 0040), ids as the batch extractor names them.
+- kind: Setting
+  id: cart-reminder.schedule-remindabandonedcarts
+  confidence: verified
+  component: cart-reminder
+  settingKind: schedule
+  key: schedule.remindAbandonedCarts
+  valueOrRef: cron(0 */2 * * ? *)
+  evidence: [{ source: infrastructure, repo: harbor-cart-reminder, path: serverless.yml, line: 17 }]
+- kind: Setting
+  id: warehouse-pipeline.schedule-orders-daily
+  confidence: verified
+  component: warehouse-pipeline
+  settingKind: schedule
+  key: schedule.orders_daily
+  valueOrRef: 0 3 * * *
+  evidence: [{ source: code, repo: harbor-data, path: dags/orders_daily.py, line: 8 }]
+
+# ------------------------------------------------------------------ observability
+- kind: ObservabilityAsset
+  id: orders-svc.alert.orders-high-error-rate
+  confidence: verified
+  component: orders-svc
+  assetKind: alert
+  name: OrdersHighErrorRate
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: observability/prometheus/checkout.rules.yml, line: 4 }]
+- kind: ObservabilityAsset
+  id: payments-svc.alert.payments-tidewater-latency
+  confidence: verified
+  component: payments-svc
+  assetKind: alert
+  name: PaymentsTidewaterLatency
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: observability/prometheus/checkout.rules.yml, line: 10 }]
+- kind: ObservabilityAsset
+  id: shop-graph.alert.errors
+  confidence: verified
+  component: shop-graph
+  assetKind: alert
+  name: ShopGraphErrors
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: observability/prometheus/checkout.rules.yml, line: 16 }]
+- kind: ObservabilityAsset
+  id: orders-svc.dashboard.checkout
+  confidence: verified
+  component: orders-svc
+  assetKind: dashboard
+  name: Checkout
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: observability/grafana/checkout.json, line: 3 }]
+
+# ------------------------------------------------------------------ quality (GitHub Actions)
+- kind: QualityAsset
+  id: web-app.pipeline.ci
+  confidence: verified
+  component: web-app
+  assetKind: pipeline
+  details:
+    tool: github-actions
+    name: Web CI
+    stages: [test, deploy]
+    triggers: [pull-request, push]
+    environments: [production]
+    deployTargets: []
+    testSteps: [Unit tests]
+  evidence: [{ source: pipeline, repo: harbor-web, path: .github/workflows/ci.yml }]
+- kind: QualityAsset
+  id: catalog-svc.pipeline.ci
+  confidence: verified
+  component: catalog-svc
+  assetKind: pipeline
+  details:
+    tool: github-actions
+    name: Catalog CI
+    stages: [test, image]
+    triggers: [pull-request, push]
+    environments: []
+    deployTargets: []
+    testSteps: [Unit tests]
+  evidence: [{ source: pipeline, repo: harbor-catalog, path: .github/workflows/ci.yml }]
+- kind: QualityAsset
+  id: orders-svc.pipeline.ci
+  confidence: verified
+  component: orders-svc
+  assetKind: pipeline
+  details:
+    tool: github-actions
+    name: Orders CI
+    stages: [test, deploy]
+    triggers: [pull-request, push]
+    environments: [production]
+    deployTargets: [kubernetes]
+    testSteps: [Unit tests]
+  evidence: [{ source: pipeline, repo: harbor-orders, path: .github/workflows/ci.yml }]
+- kind: QualityAsset
+  id: orders-svc.coverage-report.ci
+  confidence: verified
+  component: orders-svc
+  assetKind: coverage-report
+  details:
+    pipeline: orders-svc.pipeline.ci
+    files: [coverage/lcov.info]
+    tool: codecov
+  evidence: [{ source: pipeline, repo: harbor-orders, path: .github/workflows/ci.yml, line: 14 }]

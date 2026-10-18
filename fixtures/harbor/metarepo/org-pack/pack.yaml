@@ -1,0 +1,12 @@
+# The Harbor org pack (fixture). Contract C6. Harbor is the second reference ecosystem
+# (ADR 0035): an online retailer on Kubernetes in a public cloud, nothing like Forge.
+# change-types.yaml and test-strategy.yaml are left out: the built-in defaults apply.
+schemaVersion: 1
+name: harbor
+version: 0.1.0
+owner: team-platform
+reviewWindowDays: 60
+freshness:
+  Setting: 120
+  ObservabilityAsset: 120
+  Pattern: 365

@@ -1,0 +1,18 @@
+[
+  {
+    "number": 42,
+    "title": "Production API key for Lantern Mail",
+    "labels": [{ "name": "vendor-key" }],
+    "state": "CLOSED",
+    "url": "https://github.example.com/harbor/harbor-platform/issues/42",
+    "body": "Vendor: Lantern Mail. Environment: production. Calling service: cart-reminder. Calls per minute: 50. Approver: growth lead."
+  },
+  {
+    "number": 57,
+    "title": "Egress gateway for SaaS vendors",
+    "labels": [{ "name": "platform" }, { "name": "architecture" }],
+    "state": "OPEN",
+    "url": "https://github.example.com/harbor/harbor-platform/issues/57",
+    "body": "HB.VND.EGRESS needs the egress gateway. Until it exists, payments-svc and cart-reminder call Tidewater Payments and Lantern Mail directly with keys from Vault."
+  }
+]

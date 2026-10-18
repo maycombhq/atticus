@@ -1,0 +1,17 @@
+{
+  "name": "@harbor/payment-webhook",
+  "version": "1.6.0",
+  "private": true,
+  "scripts": {
+    "deploy": "serverless deploy --stage prod",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "kafkajs": "2.2.4"
+  },
+  "devDependencies": {
+    "serverless": "3.39.0",
+    "typescript": "5.6.3",
+    "vitest": "2.1.4"
+  }
+}
