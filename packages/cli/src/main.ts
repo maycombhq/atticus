@@ -82,6 +82,7 @@ import {
 } from "./learn-commands.js";
 import { defencesScan, evalReport, evalRun } from "./eval-commands.js";
 import { conformanceCommand } from "./u1-commands.js";
+import { uiCommand } from "./ui-commands.js";
 import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
   catalogMigrate,
@@ -241,6 +242,7 @@ Usage:
           [--all] [--force]            All worktrees; also those with uncommitted work
 
   --root <dir>                         The metarepo (default: the current folder)
+  atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
   atticus --version                    Print the version
   atticus --help                       Show this help
 
@@ -279,6 +281,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
       format: { type: "string" },
       out: { type: "string" },
       port: { type: "string" },
+      open: { type: "boolean" },
       host: { type: "string" },
       catalog: { type: "string" },
       "from-catalog": { type: "boolean" },
@@ -516,6 +519,16 @@ export async function main(argv: string[], io: Output): Promise<number> {
       io,
     );
   if (group === "eval" && command === "report") return evalReport(root, { json }, io);
+  if (group === "ui")
+    return uiCommand(
+      root,
+      {
+        ...(num(values.port) ? { port: num(values.port)! } : {}),
+        open: values.open === true,
+        version: VERSION,
+      },
+      io,
+    );
   if (group === "conformance") {
     if (!command) {
       io.err(

@@ -315,3 +315,41 @@ describe("live events on /api/events", () => {
     expect(JSON.parse(r.message!)).toEqual({ type: "index.rebuilt", records: 42 });
   });
 });
+
+describe("the app's files", () => {
+  it("hands out index.html with the session token, the app's assets, and routes unknown screens to the app", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-ui-dist-"));
+    await mkdir(join(dir, "assets"), { recursive: true });
+    await writeFile(
+      join(dir, "index.html"),
+      '<!doctype html><html><head><meta name="atticus-token" content="" /></head><body></body></html>',
+    );
+    await writeFile(join(dir, "assets/app-AbCdEf12.js"), "console.log(1)");
+    const s = await startServer({ root, port: 0, staticDir: dir });
+    try {
+      const html = await fetch(s.url + "/");
+      expect(html.status).toBe(200);
+      expect(await html.text()).toContain(`<meta name="atticus-token" content="${s.token}" />`);
+      expect(html.headers.get("content-security-policy")).toMatch(/default-src 'self'/);
+      const js = await fetch(s.url + "/assets/app-AbCdEf12.js");
+      expect(js.headers.get("content-type")).toMatch(/^text\/javascript/);
+      expect(js.headers.get("cache-control")).toMatch(/immutable/);
+      expect(await (await fetch(s.url + "/changes/add-transfer-limit")).text()).toContain(
+        "atticus-token",
+      );
+      expect((await fetch(s.url + "/assets/missing.js")).status).toBe(404);
+      expect((await fetch(s.url + "/..%2F..%2Fetc%2Fpasswd")).status).toBe(404);
+      const rebinding = await new Promise<number>((resolve, reject) => {
+        const r = request(s.url + "/", { headers: { Host: "evil.example" } }, (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        });
+        r.on("error", reject);
+        r.end();
+      });
+      expect(rebinding).toBe(403);
+    } finally {
+      await s.close();
+    }
+  });
+});

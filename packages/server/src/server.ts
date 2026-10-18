@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { userInfo } from "node:os";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
@@ -6,6 +7,7 @@ import { DEFAULT_PORT } from "@maycombhq/core";
 import { HttpError, notFound, conflict, problem, Router } from "./http.js";
 import { JobManager } from "./jobs.js";
 import { apiRoutes, type Context } from "./routes.js";
+import { appCsp, staticFile } from "./static.js";
 import { upgrade, type Socket } from "./ws.js";
 
 /** A live event (contract C4 LiveEvent): file, job, index and run changes. */
@@ -47,6 +49,8 @@ export interface ServerOptions {
    * run the same command functions the terminal does).
    */
   extend?: (r: Router, ctx: ServerContext) => void;
+  /** The built app to hand out at / (the UI package's dist folder). */
+  staticDir?: string;
 }
 
 export interface ServerContext extends Context {
@@ -65,6 +69,14 @@ export interface RunningServer {
 }
 
 const MAX_BODY = 4 * 1024 * 1024;
+
+function osUser(): string {
+  try {
+    return userInfo().username || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 function sameToken(a: string, b: string): boolean {
   const x = Buffer.from(a);
@@ -115,7 +127,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const jobs = new JobManager((e) => events.publish(e));
   const ctx: ServerContext = {
     root: o.root,
-    user: o.user ?? process.env.USER ?? process.env.USERNAME ?? "unknown",
+    user: o.user ?? process.env.USER ?? process.env.USERNAME ?? osUser(),
     version: o.version ?? "0.0.0",
     events,
     jobs,
@@ -153,8 +165,22 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
-      if (!url.pathname.startsWith("/api/"))
-        throw new HttpError(404, "Not found", `Nothing is served at ${url.pathname} yet.`);
+      if (!url.pathname.startsWith("/api/")) {
+        if (!allowedHosts().has(req.headers.host ?? ""))
+          throw new HttpError(403, "Requests must be addressed to this server");
+        if (!o.staticDir || (req.method !== "GET" && req.method !== "HEAD"))
+          throw new HttpError(404, "Not found", `Nothing is served at ${url.pathname}.`);
+        const f = await staticFile(o.staticDir, url.pathname, token);
+        res.writeHead(f.status, {
+          "Content-Type": f.type,
+          "Cache-Control": f.cache,
+          "X-Content-Type-Options": "nosniff",
+          "Referrer-Policy": "no-referrer",
+          "Content-Security-Policy": appCsp(port),
+        });
+        res.end(req.method === "HEAD" ? undefined : f.body);
+        return;
+      }
       guard(req, url, false);
       const m = router.match(req.method ?? "GET", url.pathname);
       if ("allowed" in m) {

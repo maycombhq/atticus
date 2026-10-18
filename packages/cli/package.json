@@ -46,6 +46,7 @@
     "@maycombhq/stubs": "workspace:*",
     "@maycombhq/taskrun": "workspace:*",
     "@maycombhq/testgen": "workspace:*",
+    "@maycombhq/ui": "workspace:*",
     "@maycombhq/workspace": "workspace:*",
     "zod": "^4.6.0"
   },
