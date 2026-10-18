@@ -117,6 +117,38 @@ describe("atticus scan", () => {
   );
 });
 
+describe("scan, then reconcile (M1 exit)", () => {
+  it(
+    "finds every seeded reconcile discrepancy, d01–d06, in a freshly scanned catalog",
+    async () => {
+      const root = await forgeRoot();
+      expect(await main(["scan", "--root", root], capture().io)).toBe(0);
+      const c = capture();
+      expect(
+        await main(
+          ["reconcile", "../inputs/diagrams/forge-context.drawio", "--json", "--root", root],
+          c.io,
+        ),
+      ).toBe(1);
+      const items = (
+        JSON.parse(c.out.join("\n")) as {
+          diagrams: { items: { type: string; records: string[]; diagram?: { cell: string } }[] }[];
+        }
+      ).diagrams[0]!.items;
+      expect(items.map((i) => `${i.type} ${i.diagram?.cell ?? i.records[0]}`).sort()).toEqual([
+        "alias-needed ledger", // d06
+        "code-only if-5c55930b735276a9", // d03
+        "code-only if-f1cd1f189eaa4b7b", // d04
+        "drawn-call-reads-database e5", // d02
+        "pattern-mismatch e4", // d01
+        "planned e7", // d05
+        "unknown-pattern e5", // d07, which the critic must also find
+      ]);
+    },
+    T,
+  );
+});
+
 describe("atticus catalog diff", () => {
   it(
     "exits 0 for the same catalog and 1 with the changes listed otherwise",

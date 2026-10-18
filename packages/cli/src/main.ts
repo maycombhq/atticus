@@ -12,6 +12,7 @@ import {
 } from "./workspace-commands.js";
 import { catalogDiff, scanCommand } from "./scan-commands.js";
 import { impactCommand, indexRebuild, queryCommand } from "./index-commands.js";
+import { aliasCommand, reconcileCommand } from "./reconcile-commands.js";
 
 export const VERSION = "0.0.1";
 
@@ -32,6 +33,10 @@ Usage:
   atticus impact <id>                  What a change to a record reaches, with owners and open questions
           [--depth n] [--json]
   atticus index rebuild                Rebuild the local index from the catalog files
+  atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
+          [--json]
+  atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
+          [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
@@ -73,6 +78,8 @@ export async function main(argv: string[], io: Output): Promise<number> {
       json: { type: "boolean" },
       limit: { type: "string" },
       depth: { type: "string" },
+      by: { type: "string" },
+      reason: { type: "string" },
     },
     strict: false,
   });
@@ -154,6 +161,27 @@ export async function main(argv: string[], io: Output): Promise<number> {
     );
   }
   if (group === "index" && command === "rebuild") return indexRebuild(root, io);
+  if (group === "alias") {
+    const target = positionals[2];
+    if (!command || !target) {
+      io.err(
+        'alias needs a name and an id, for example: atticus alias "Ledger Platform" ledger-api',
+      );
+      return 2;
+    }
+    return aliasCommand(
+      root,
+      command,
+      target,
+      {
+        ...(typeof values.by === "string" ? { by: values.by } : {}),
+        ...(typeof values.reason === "string" ? { reason: values.reason } : {}),
+      },
+      io,
+    );
+  }
+  if (group === "reconcile")
+    return reconcileCommand(root, positionals.slice(1), { json: values.json === true }, io);
   if (group === "orgpack" && command === "validate")
     return orgPackValidate(arg ? resolve(arg) : join(root, "org-pack"), io);
   if (group === "handoff" && command === "done") {

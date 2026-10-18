@@ -31,6 +31,7 @@ packages/
   extractors/        built-in extractors and the dialect rule engine
   scanner/           the estate scan: merge, catalog files and diffs
   index/             local SQLite index, query language, graph and impact
+  reconcile/         draw.io reader, aliases, diagram-versus-code reconcile
   synth/             synthetic estate generator for scale tests
   cli/               the `atticus` command
   fixtures/          tests that keep the Forge fixture consistent
