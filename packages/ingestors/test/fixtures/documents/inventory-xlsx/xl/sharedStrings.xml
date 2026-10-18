@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="7" uniqueCount="7">
+  <si><t>From</t></si>
+  <si><t>To</t></si>
+  <si><t>Pattern</t></si>
+  <si><t>Portal BFF</t></si>
+  <si><t>Ledger Platform</t></si>
+  <si><r><t xml:space="preserve">S.GW.</t></r><r><rPr><b/></rPr><t>SOR</t></r></si>
+  <si><t>Source &amp; target</t></si>
+</sst>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Masters xmlns="http://schemas.microsoft.com/office/visio/2012/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <Master ID="1" NameU="Rectangle" Name="Rectangle"><Rel r:id="rId1"/></Master>
+  <Master ID="2" NameU="Cloud" Name="Cloud"><Rel r:id="rId2"/></Master>
+  <Master ID="3" NameU="Dynamic connector" Name="Dynamic connector"><Rel r:id="rId3"/></Master>
+</Masters>

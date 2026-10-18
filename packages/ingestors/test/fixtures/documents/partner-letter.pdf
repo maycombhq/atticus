@@ -1,0 +1,55 @@
+%PDF-1.4
+% Hand-written for the Atticus ingestor tests. No xref offsets are needed by the reader.
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 3 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 120 >>
+stream
+BT
+/F1 12 Tf
+72 700 Td
+(Second page: rate limits) Tj
+0 -14 Td
+[(100 requests) -250 (per second)] TJ
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /Contents [6 0 R 7 0 R] >>
+endobj
+6 0 obj
+<< /Length 80 >>
+stream
+BT
+/F1 18 Tf
+72 720 Td
+(Northwind Pay \(partner\) letter) Tj
+ET
+endstream
+endobj
+7 0 obj
+<< /Length 90 >>
+stream
+BT
+/F1 12 Tf
+72 690 Td
+(Webhooks move to /v3/hooks.) Tj
+T*
+<4F6E6520646179206F6666> Tj
+(Line\051 two\\three) '
+ET
+endstream
+endobj
+8 0 obj
+<< /Title (Partner letter) /Author (Northwind Pay) /CreationDate (D:20260912083000Z) >>
+endobj
+trailer
+<< /Root 1 0 R /Info 8 0 R >>
+%%EOF

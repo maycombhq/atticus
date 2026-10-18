@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>Transfers</w:t></w:r></w:p>
+    <w:p><w:r><w:t xml:space="preserve">Written for the </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t>Portal BFF</w:t></w:r><w:r><w:t xml:space="preserve"> team.</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Flow</w:t></w:r></w:p>
+    <w:p><w:r><w:t>The BFF calls</w:t><w:tab/><w:t>POST /ledger/v1/transfers.</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Line one</w:t><w:br/><w:t>line two</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Berschrift2"/></w:pPr><w:r><w:t>Limits</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr><w:tc><w:p><w:r><w:t>Limit</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Value</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr><w:tc><w:p><w:r><w:t>Daily</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>10,000</w:t></w:r></w:p><w:p><w:r><w:t>per account</w:t></w:r></w:p></w:tc></w:tr>
+    </w:tbl>
+    <w:p><w:pPr><w:pStyle w:val="Callout"/></w:pPr><w:r><w:t>Open questions</w:t></w:r></w:p>
+    <w:p><w:r><w:t>Who owns retries &amp; timeouts?</w:t></w:r></w:p>
+    <w:p/>
+    <w:sectPr/>
+  </w:body>
+</w:document>

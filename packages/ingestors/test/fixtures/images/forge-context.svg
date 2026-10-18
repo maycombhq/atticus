@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-drawn test picture of part of the Forge context. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="320" viewBox="0 0 640 320">
+  <title>Forge context sketch</title>
+  <style>text { font: 12px sans-serif; }</style>
+  <script>alert("never run")</script>
+  <rect x="10" y="10" width="120" height="40"/>
+  <text x="20" y="35">Portal BFF</text>
+  <rect x="300" y="10" width="140" height="40"/>
+  <text x="310" y="35"><tspan>Ledger</tspan> <tspan>Platform</tspan></text>
+  <line x1="130" y1="30" x2="300" y2="30"/>
+  <text x="150" y="25">S.GW.SOR POST /ledger/v1/transfers</text>
+  <text x="20" y="300">Portal BFF</text>
+  <text x="20" y="310">  </text>
+  <text x="200" y="200">Fees &amp; limits</text>
+</svg>

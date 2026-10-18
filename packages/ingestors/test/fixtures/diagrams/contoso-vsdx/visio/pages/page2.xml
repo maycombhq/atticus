@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<PageContents xmlns="http://schemas.microsoft.com/office/visio/2012/main">
+  <Shapes>
+    <Shape ID="1" Type="Group">
+      <Shapes>
+        <Shape ID="2" Type="Shape" Master="10">
+          <Cell N="PinX" V="1.25"/><Cell N="PinY" V="4"/>
+          <Text>Billing &amp; Settlement</Text>
+        </Shape>
+        <Shape ID="3" Type="Shape" Master="11"/>
+      </Shapes>
+    </Shape>
+    <Shape ID="4" Type="Group" Master="10">
+      <Text>Pay Hub [Retire]</Text>
+      <Shapes>
+        <Shape ID="5" Type="Shape" Master="11"/>
+      </Shapes>
+    </Shape>
+    <Shape ID="6" Type="Shape" Master="12">
+      <Text>S.GW.SOR&#xA;POST /pay</Text>
+    </Shape>
+    <Shape ID="7" Type="Shape" Master="12">
+      <Cell N="BeginX" V="1"/><Cell N="EndX" V="2"/>
+      <Text>going nowhere</Text>
+    </Shape>
+    <Shape ID="8" Type="Shape" Master="10">
+      <Section N="Property">
+        <Row N="Row_1"><Cell N="Label" V="Legend"/><Cell N="Value" V="Modify"/></Row>
+        <Row N="Row_2"><Cell N="Label" V="Owner"/><Cell N="Value" V="Ledger team"/></Row>
+      </Section>
+      <Text>Ledger Bridge</Text>
+    </Shape>
+  </Shapes>
+  <Connects>
+    <Connect FromSheet="6" FromCell="BeginX" ToSheet="1"/>
+    <Connect FromSheet="6" FromCell="EndX" ToSheet="5"/>
+    <Connect FromSheet="7" FromCell="BeginX" ToSheet="2"/>
+  </Connects>
+</PageContents>

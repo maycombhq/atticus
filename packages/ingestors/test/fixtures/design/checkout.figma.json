@@ -1,0 +1,14 @@
+{
+  "name": "Checkout flow",
+  "lastModified": "2026-10-01T12:00:00Z",
+  "version": "4211",
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      { "id": "0:1", "name": "Payment screens", "type": "CANVAS", "children": [] },
+      { "id": "0:2", "name": "Error states", "type": "CANVAS", "children": [] }
+    ]
+  }
+}

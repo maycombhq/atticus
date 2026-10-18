@@ -1,0 +1,13 @@
+Id,Name,Shape Library,Page ID,Contained By,Group,Line Source,Line Destination,Source Arrow,Destination Arrow,Status,Text Area 1,Text Area 2,Text Area 3,Legend,Comments
+1,Document,,,,,,,,,,Contoso estate,,,,
+2,Page,,,,,,,,,,Overview,,,,
+3,Page,,,,,,,,,,Events,,,,
+4,Rectangle,Standard,2,,,,,,,,"Billing
+Service",,,,
+5,Container,Containers,2,,,,,,,,Pay Hub,,,Modify,
+6,Icon,Icons,2,5,,,,,,,,,,,
+7,Line,,2,,,4,6,None,Arrow,,"S.GW.SOR",POST /pay,,,
+8,Rectangle,Standard,3,,,,,,,,"Fabrikam ""Ledger"" Bridge",,,,"a note, with a comma"
+9,Line,,3,,,8,4,None,Arrow,,billing.settled,,,New,
+10,Line,,3,,,8,,None,Arrow,,dangling,,,,
+11,Text,Standard,2,,,,,,,,,,,,

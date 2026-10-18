@@ -1,0 +1,16 @@
+Id,Name,Shape Library,Page ID,Contained By,Group,Line Source,Line Destination,Source Arrow,Destination Arrow,Status,Text Area 1,Text Area 2
+1,Document,,,,,,,,,Draft,Forge context,
+2,Page,,,,,,,,,,Forge context (as the architect drew it),
+3,Process,Flowchart Shapes,2,,,,,,,,Portal UI,
+4,Process,Flowchart Shapes,2,,,,,,,,Portal BFF,
+5,Process,Flowchart Shapes,2,,,,,,,,Ledger Platform,
+6,Process,Flowchart Shapes,2,,,,,,,,Reports Job,
+7,Cloud,Standard,2,,,,,,,,Northwind Pay,
+8,Process,Flowchart Shapes,2,,,,,,,,Notifications Service [New],
+9,Line,,2,,,3,4,None,Arrow,,,
+10,Line,,2,,,4,5,None,Arrow,,S.GW.SOR GET /ledger/v1/accounts/{id}/balance,
+11,Line,,2,,,4,5,None,Arrow,,S.GW.SOR POST /ledger/v1/transfers,
+12,Line,,2,,,5,7,None,Arrow,,S.GW.VND,POST /v2/payments
+13,Line,,2,,,6,5,None,Arrow,,S.GW.SRO GET /ledger/v1/entries,
+14,Line,,2,,,4,5,None,Arrow,,A.EB.PUB payments.initiated,
+15,Line,,2,,,4,8,None,Arrow,,A.EB.PUB notifications.requested [New],
