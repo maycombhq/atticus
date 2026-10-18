@@ -1,0 +1,19 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: rec-service
+  namespace: prod
+  labels:
+    app: rec-service
+spec:
+  predictor:
+    minReplicas: 2
+    maxReplicas: 6
+    containers:
+      - name: kserve-container
+        image: registry.example/rec:1
+        args: ["--model_name=recommendations", "--http_port=8080"]
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi

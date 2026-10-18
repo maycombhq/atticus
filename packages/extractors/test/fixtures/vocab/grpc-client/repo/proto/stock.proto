@@ -1,0 +1,12 @@
+// Copied from the stock service; do not edit here.
+syntax = "proto3";
+
+package harbor.stock.v1;
+
+service Stock {
+  rpc CheckItem(Item) returns (Level);
+  rpc ReserveItem(Item) returns (Level);
+}
+
+message Item { string sku = 1; }
+message Level { int32 on_hand = 1; }

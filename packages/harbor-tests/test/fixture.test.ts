@@ -45,9 +45,9 @@ describe("Harbor expected catalog", () => {
     expect(usingNew).toHaveLength(18);
   });
 
-  // Needs the ADR 0040 values in C1 (endpointType graphql/webhook/function, via mesh/webhook,
-  // settingKind schedule, Deployment.ingress): producer, the vocabulary track's schema change.
-  it.skip("is valid against contract C1, every record (ADR 0040 schema)", () => {
+  // The ADR 0040 values in C1 (endpointType graphql/webhook/function, via mesh/webhook,
+  // settingKind schedule, Deployment.ingress) are in schema version 2.
+  it("is valid against contract C1, every record (ADR 0040 schema)", () => {
     for (const r of rows) {
       const p = parseRecord({ schemaVersion: 2, status: "current", ...r });
       expect(p.ok, `${r.id}: ${p.ok ? "" : JSON.stringify(p.issues)}`).toBe(true);

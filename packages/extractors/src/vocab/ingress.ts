@@ -23,12 +23,19 @@ import { ev } from "./common.js";
  * `Deployment.ingress` entries `{ host, path, tls }` of the deployment behind the Service they
  * send traffic to (the workload the Service selects, else a component named after the
  * Service). An Ingress host listed under `spec.tls` is TLS; an HTTPRoute is TLS when a parent
- * Gateway in the repo has an HTTPS or TLS listener, and says nothing about TLS otherwise. The
+ * Gateway in the repo has an HTTPS or TLS listener, and says nothing about TLS otherwise.
+ * An Istio `VirtualService` bound to a Gateway (`spec.gateways`, not just `mesh`) publishes each
+ * of its literal hosts there: the path is the URI prefix (or exact path) its rule matches, the
+ * deployment is the destination host's service, and the route is TLS when a server of the
+ * Gateway that covers the host speaks HTTPS or TLS. A VirtualService with no Gateway is
+ * in-mesh routing, not ingress. Manifests of other kinds (Services, workloads, Gateways) are read
+ * from any file of the repo, not only the one holding the route. The
  * Deployment carries only the routes (platform kubernetes, or openshift for a
  * DeploymentConfig); merge joins it to the full Deployment of the same id.
  */
 
-const RELEVANT = /\bkind["']?\s*:\s*["']?(Ingress|HTTPRoute)\b/;
+const RELEVANT =
+  /\bkind["']?\s*:\s*["']?(Ingress|HTTPRoute|VirtualService|Gateway|Service|Deployment|DeploymentConfig|StatefulSet)\b/;
 const WORKLOADS = new Set(["Deployment", "DeploymentConfig", "StatefulSet"]);
 
 const labelsOf = (v: unknown): Record<string, string> => {
@@ -37,9 +44,17 @@ const labelsOf = (v: unknown): Record<string, string> => {
   return out;
 };
 
+/** Whether a Gateway server's host entry (`host`, `ns/host`, `*`, `*.example.com`) covers `host`. */
+function serverHostMatches(entry: string | undefined, host: string): boolean {
+  const pattern = entry?.includes("/") ? entry.slice(entry.indexOf("/") + 1) : entry;
+  if (!pattern) return false;
+  if (pattern === "*") return true;
+  return pattern.startsWith("*.") ? host.endsWith(pattern.slice(1)) : pattern === host;
+}
+
 export const ingressExtractor = defineExtractor({
   id: "ingress",
-  version: "0.1.0",
+  version: "0.1.1",
   claims: MANIFEST_GLOBS,
   async *scan(repo, ctx) {
     const set = await loadManifests(repo, ctx, RELEVANT);
@@ -139,6 +154,47 @@ export const ingressExtractor = defineExtractor({
                   gateways,
                 );
           }
+      } else if (o.kind === "VirtualService" && o.apiVersion.startsWith("networking.istio.io/")) {
+        // A VirtualService bound to a Gateway (not just the mesh) publishes its hosts there.
+        const gateways = arr(at(o.obj, "spec", "gateways"))
+          .map((g) => str(g))
+          .filter((g): g is string => !!g && g !== "mesh")
+          .map((ref) => {
+            const [ns, name] = ref.includes("/") ? ref.split("/") : [undefined, ref];
+            return objs.find(
+              (g) =>
+                g.kind === "Gateway" &&
+                g.apiVersion.startsWith("networking.istio.io/") &&
+                g.name === name &&
+                (ns === undefined || g.namespace === ns),
+            );
+          })
+          .filter((g): g is K8sObject => !!g);
+        if (gateways.length === 0) continue;
+        for (const host of arr(at(o.obj, "spec", "hosts"))
+          .map((h) => str(h))
+          .filter((h): h is string => !!h && !h.includes("*"))) {
+          const tls = gateways.some((g) =>
+            arr(at(g.obj, "spec", "servers")).some(
+              (s) =>
+                /^(HTTPS|TLS)$/.test(str(at(s, "port", "protocol")) ?? "") &&
+                arr(at(s, "hosts")).some((h) => serverHostMatches(str(h), host)),
+            ),
+          );
+          for (const rule of arr(at(o.obj, "spec", "http"))) {
+            const paths = arr(at(rule, "match"))
+              .map((m) => str(at(m, "uri", "prefix")) ?? str(at(m, "uri", "exact")))
+              .filter((p): p is string => !!p);
+            for (const path of paths.length ? paths : [undefined])
+              for (const d of arr(at(rule, "route")))
+                route(
+                  o,
+                  str(at(d, "destination", "host"))?.split(".")[0],
+                  { host, ...(path ? { path } : {}), ...(tls ? { tls: true } : {}) },
+                  gateways,
+                );
+          }
+        }
       }
     }
 

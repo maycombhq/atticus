@@ -17,8 +17,9 @@ import { endpoint, lineAt, loose, own, read, sources, stripComments } from "./co
  * id `<component>.graphql.<type>.<field>`, method QUERY, MUTATION or SUBSCRIPTION and
  * pathOrTopic `Query.field`, owned by the repo's component.
  *
- * Called: operation documents (`query X { a b }`, anonymous `{ a }`) in `.graphql` files and
- * in tagged templates. Each top-level field of an operation is a loose end
+ * Called: operation documents (`query X { a b }`, anonymous `{ a }`) in `.graphql` files, in
+ * tagged templates, in templates marked with a GraphQL hint comment and in untagged templates
+ * that open with an operation header (mobile and web clients often send plain strings). Each top-level field of an operation is a loose end
  * `graphql-call "QUERY Query.a"`. A field this repo serves itself is not a loose end.
  */
 
@@ -197,11 +198,15 @@ export function parseGraphql(text: string): { served: GqlField[]; called: GqlFie
   return { served, called };
 }
 
+/** The start of an operation document: `query Name($v: T) @dir {`, `mutation {`, `subscription Name {`. */
+const OPERATION_HEADER =
+  /^\s*(?:query|mutation|subscription)\b(?:\s+[A-Za-z_]\w*)?\s*(?:\([^)`]*\))?\s*(?:@\w+(?:\([^)`]*\))?\s*)*\{/;
+
 const camel = (s: string) => s.replace(/_([a-z0-9])/g, (_m, c: string) => c.toUpperCase());
 
 export const graphqlExtractor = defineExtractor({
   id: "graphql",
-  version: "0.1.0",
+  version: "0.1.1",
   claims: [...SDL, ...JS, ...JAVA, ...PY],
   async *scan(repo, ctx) {
     const comp = own(repo, ctx);
@@ -244,13 +249,29 @@ export const graphqlExtractor = defineExtractor({
     }
     for (const path of await sources(repo, JS)) {
       const text = await read(repo, ctx, path);
-      if (text === undefined || !/\b(gql|graphql|typeDefs)\b/.test(text)) continue;
+      if (
+        text === undefined ||
+        !/\b(gql|graphql|typeDefs)\b|`\s*(query|mutation|subscription)\b/i.test(text)
+      )
+        continue;
       const clean = stripComments(text, "c");
+      const done = new Set<number>();
+      const take = (body: string, start: number) => {
+        if (done.has(start)) return;
+        done.add(start);
+        readGql(body, start, path, "code", text);
+      };
+      // Tagged templates (gql`...`, graphql(`...`)) and a typeDefs string.
       const re = /(?:\b(?:gql|graphql)\s*(?:\(\s*)?|\btypeDefs\s*[:=]\s*)`([^`]*)`/g;
-      for (const m of clean.matchAll(re)) {
-        const body = m[1]!;
-        readGql(body, m.index + m[0].indexOf("`") + 1, path, "code", text);
-      }
+      for (const m of clean.matchAll(re)) take(m[1]!, m.index + m[0].indexOf("`") + 1);
+      // A template marked with the GraphQL hint comment (editors and codegen read it), which
+      // the comment stripping above would otherwise hide.
+      for (const m of text.matchAll(/\/\*\s*GraphQL\s*\*\/\s*`([^`]*)`/g))
+        take(m[1]!, m.index + m[0].indexOf("`") + 1);
+      // An untagged template that is an operation document: it opens with a complete operation
+      // header (query Name($id: ID!) {), which prose and log messages don't.
+      for (const m of clean.matchAll(/`(\s*(?:query|mutation|subscription)\b[^`]*)`/g))
+        if (OPERATION_HEADER.test(m[1]!)) take(m[1]!, m.index + 1);
     }
     for (const path of await sources(repo, JAVA)) {
       const text = await read(repo, ctx, path);

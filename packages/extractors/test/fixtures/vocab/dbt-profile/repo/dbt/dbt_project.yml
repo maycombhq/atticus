@@ -1,0 +1,11 @@
+name: shop_dw
+profile: shop-dw
+model-paths: ["models"]
+models:
+  shop_dw:
+    staging:
+      +materialized: view
+    marts:
+      +materialized: table
+      live:
+        +materialized: view

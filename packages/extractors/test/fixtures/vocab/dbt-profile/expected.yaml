@@ -1,0 +1,117 @@
+# Hand-written expected output of the data-pipelines extractor over ./repo
+# (repo "shop-data", component "shop-dw", system "shop").
+records:
+  # Airflow: the repo has exactly one DAG, so it is the repo's own component (the DAG id stays in
+  # the schedule key). The dbt project in the same repo is that same component, so no second
+  # Component record.
+  - kind: Component
+    id: shop-dw
+    confidence: verified
+    system: shop
+    repo: shop-data
+    type: data-pipeline
+    runtime: airflow
+    evidence:
+      - { source: code, repo: shop-data, path: orchestration/nightly.py, line: 4 }
+  - kind: Setting
+    id: shop-dw.schedule-nightly-build
+    confidence: verified
+    component: shop-dw
+    settingKind: schedule
+    key: schedule.nightly_build
+    valueOrRef: 0 4 * * *
+    evidence:
+      - { source: code, repo: shop-data, path: orchestration/nightly.py, line: 4 }
+
+  # dbt: the warehouse is named by the host of the profile's target output (prod, not the dev
+  # output), evidenced at that host line.
+  - kind: DataStore
+    id: shop-dw
+    confidence: verified
+    storeType: warehouse
+    entitiesHeld: []
+    evidence:
+      - { source: config, repo: shop-data, path: dbt/profiles.yml, line: 9 }
+
+  # Table kinds: dbt_project.yml's +materialized for the model's folder (the nearest one wins),
+  # and a config(materialized=...) in the model overrides it. Evidence is the first line of SQL
+  # that is not a comment.
+  - kind: Table
+    id: shop-dw.stg-orders
+    confidence: verified
+    dataStore: shop-dw
+    name: stg_orders
+    tableKind: view
+    ownerComponent: shop-dw
+    readers: []
+    writers: [shop-dw]
+    evidence:
+      - { source: code, repo: shop-data, path: dbt/models/staging/stg_orders.sql, line: 4 }
+  - kind: Table
+    id: shop-dw.stg-events
+    confidence: verified
+    dataStore: shop-dw
+    name: stg_events
+    tableKind: view
+    ownerComponent: shop-dw
+    readers: []
+    writers: [shop-dw]
+    evidence:
+      - { source: code, repo: shop-data, path: dbt/models/staging/stg_events.sql, line: 1 }
+  - kind: Table
+    id: shop-dw.sales
+    confidence: verified
+    dataStore: shop-dw
+    name: sales
+    tableKind: table
+    ownerComponent: shop-dw
+    readers: []
+    writers: [shop-dw]
+    evidence:
+      - { source: code, repo: shop-data, path: dbt/models/marts/sales.sql, line: 1 }
+  - kind: Table
+    id: shop-dw.now
+    confidence: verified
+    dataStore: shop-dw
+    name: now
+    tableKind: view
+    ownerComponent: shop-dw
+    readers: []
+    writers: [shop-dw]
+    evidence:
+      - { source: code, repo: shop-data, path: dbt/models/marts/live/now.sql, line: 1 }
+  - kind: Table
+    id: shop-dw.hot
+    confidence: verified
+    dataStore: shop-dw
+    name: hot
+    tableKind: view
+    ownerComponent: shop-dw
+    readers: []
+    writers: [shop-dw]
+    evidence:
+      - { source: code, repo: shop-data, path: dbt/models/marts/hot.sql, line: 1 }
+
+  # A source whose sources.yml entry names a database is a table of that database that the
+  # project reads (inferred: only the reader is seen here), evidenced at its entry in sources.yml.
+  # refunds is declared but no model selects from it, so it is not recorded.
+  - kind: Table
+    id: shop-db.orders
+    confidence: inferred
+    dataStore: shop-db
+    name: orders
+    tableKind: table
+    readers: [shop-dw]
+    writers: []
+    evidence:
+      - { source: code, repo: shop-data, path: dbt/models/sources.yml, line: 6, side: caller }
+
+  # A source with no database is only a table name: table access to resolve.
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: db-access
+    raw: read events
+    owner: shop-dw
+    evidence:
+      - { source: code, repo: shop-data, path: dbt/models/staging/stg_events.sql, line: 1, side: caller }
+warnings: []

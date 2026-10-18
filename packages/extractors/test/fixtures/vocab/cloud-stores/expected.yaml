@@ -1,0 +1,41 @@
+# Hand-written expected output of the cloud-stores extractor over ./repo (repo "shop-infra",
+# type infra). Each store that is not a database is a DataStore named by the resource's own name
+# (the variable in the bucket name is resolved), typed object-storage, queue, warehouse or cache,
+# with the resource block as evidence. The EC2 instance is not a store.
+records:
+  - kind: DataStore
+    id: shop-media-prod
+    confidence: verified
+    storeType: object-storage
+    entitiesHeld: []
+    evidence:
+      - { source: infrastructure, repo: shop-infra, path: infra/stores.tf, line: 5 }
+  - kind: DataStore
+    id: shop-dlq
+    confidence: verified
+    storeType: queue
+    entitiesHeld: []
+    evidence:
+      - { source: infrastructure, repo: shop-infra, path: infra/stores.tf, line: 9 }
+  - kind: DataStore
+    id: shop-warehouse
+    confidence: verified
+    storeType: warehouse
+    entitiesHeld: []
+    evidence:
+      - { source: infrastructure, repo: shop-infra, path: infra/stores.tf, line: 13 }
+  - kind: DataStore
+    id: shop-sessions
+    confidence: verified
+    storeType: cache
+    entitiesHeld: []
+    evidence:
+      - { source: infrastructure, repo: shop-infra, path: infra/stores.tf, line: 17 }
+  - kind: DataStore
+    id: shop-exports
+    confidence: verified
+    storeType: object-storage
+    entitiesHeld: []
+    evidence:
+      - { source: infrastructure, repo: shop-infra, path: infra/stores.tf, line: 21 }
+warnings: []

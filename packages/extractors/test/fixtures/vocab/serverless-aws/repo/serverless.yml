@@ -12,3 +12,9 @@ functions:
           method: get
       - sns: image-uploaded
       - schedule: rate(1 hour)
+  stripeWebhook:
+    handler: src/hooks.handle
+    events:
+      - httpApi:
+          path: /hooks/stripe
+          method: post

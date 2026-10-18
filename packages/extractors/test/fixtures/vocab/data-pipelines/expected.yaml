@@ -55,7 +55,8 @@ records:
       - { source: code, repo: harbor-data, path: dags/orders.py, line: 14 }
 
   # dbt: the project is the repo's component; models are tables it writes on the profile's
-  # warehouse (a view unless configured otherwise); a source is a table it reads.
+  # warehouse (no profiles.yml here, so it is named for the profile: harbor-warehouse; a view
+  # unless configured otherwise); a source is a table it reads.
   - kind: Component
     id: analytics
     confidence: verified
@@ -94,16 +95,15 @@ records:
     writers: [analytics]
     evidence:
       - { source: code, repo: harbor-data, path: analytics/models/staging/stg_orders.sql, line: 1 }
-  - kind: Table
-    id: harbor-warehouse.orders
-    confidence: verified
-    dataStore: harbor-warehouse
-    name: orders
-    tableKind: table
-    readers: [analytics]
-    writers: []
+  # A source no sources.yml gives a database is only a table name: table access to resolve
+  # (the warehouse does not hold it).
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: db-access
+    raw: read orders
+    owner: analytics
     evidence:
-      - { source: code, repo: harbor-data, path: analytics/models/staging/stg_orders.sql, line: 2 }
+      - { source: code, repo: harbor-data, path: analytics/models/staging/stg_orders.sql, line: 2, side: caller }
 
   # Spark: a scheduled application manifest, and PySpark table reads and writes.
   - kind: Component

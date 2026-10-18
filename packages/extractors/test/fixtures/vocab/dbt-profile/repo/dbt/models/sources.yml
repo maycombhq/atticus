@@ -1,0 +1,10 @@
+version: 2
+sources:
+  - name: shop
+    database: shop-db
+    tables:
+      - name: orders
+      - name: refunds
+  - name: web
+    tables:
+      - name: events

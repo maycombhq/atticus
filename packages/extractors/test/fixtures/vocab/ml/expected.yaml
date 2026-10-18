@@ -31,7 +31,7 @@ records:
     normalizedPath: /v1/models/price-model:predict
     schemaRefs: []
     evidence:
-      - { source: infrastructure, repo: harbor-ml, path: serving/inference.yaml, line: 2, side: definition }
+      - { source: infrastructure, repo: harbor-ml, path: serving/inference.yaml, line: 4, side: definition }
 
   # A SageMaker endpoint in Terraform.
   - kind: Component

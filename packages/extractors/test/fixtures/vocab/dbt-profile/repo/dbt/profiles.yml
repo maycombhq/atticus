@@ -1,0 +1,10 @@
+shop-dw:
+  target: prod
+  outputs:
+    dev:
+      type: redshift
+      host: localhost
+    prod:
+      type: redshift
+      host: Shop-DW.c1abc.us-east-1.redshift.example
+      dbname: analytics

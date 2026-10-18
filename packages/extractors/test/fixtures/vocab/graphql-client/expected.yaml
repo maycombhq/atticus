@@ -47,4 +47,20 @@ records:
     owner: storefront-web
     evidence:
       - { source: code, repo: harbor-storefront, path: src/hooks/useCart.tsx, line: 11, side: caller }
+  # src/api/operations.ts: a template with only the GraphQL hint comment, and a plain template
+  # that opens with an operation header. Messages that merely start with "query" are not read.
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: graphql-call
+    raw: QUERY Query.orders
+    owner: storefront-web
+    evidence:
+      - { source: code, repo: harbor-storefront, path: src/api/operations.ts, line: 4, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: graphql-call
+    raw: MUTATION Mutation.checkout
+    owner: storefront-web
+    evidence:
+      - { source: code, repo: harbor-storefront, path: src/api/operations.ts, line: 11, side: caller }
 warnings: []
