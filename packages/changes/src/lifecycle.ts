@@ -194,6 +194,20 @@ export async function checkFindings(
     if (rounds.length === 0) continue;
     const round = Math.max(...rounds);
     const dir = join(base, String(round));
+    // A round started in hand-off mode isn't decided until every AI lens has answered.
+    try {
+      const meta = parse(await readFile(join(dir, "meta", "round.yaml"), "utf8")) as {
+        lenses?: { lens?: string; state?: string; runId?: string }[];
+      } | null;
+      for (const l of meta?.lenses ?? [])
+        if (l.state === "waiting")
+          reasons.push({
+            code: "lens-waiting",
+            message: `The ${l.lens ?? "AI"} lens on the ${gate} gate (round ${round}) is waiting for its hand-off answer${l.runId ? ` (atticus handoff done ${l.runId})` : ""}.`,
+          });
+    } catch {
+      // No meta/round.yaml: an older round, judged by its finding files alone.
+    }
     const files = (await readdir(dir)).filter((f) => /\.ya?ml$/.test(f)).sort();
     for (const f of files) {
       const rel = `review/${gate}/${round}/${f}`;

@@ -9,6 +9,7 @@ export type ReasonCode =
   | "open-gap"
   | "bad-finding"
   | "critic-round-missing"
+  | "lens-waiting"
   | "privacy-role-missing"
   | "approval-missing"
   | "self-approval"

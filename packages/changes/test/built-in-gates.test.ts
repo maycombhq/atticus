@@ -135,4 +135,36 @@ describe("built-in gates in the lifecycle", () => {
       expect(await codes(root), state).toEqual([]);
     }
   });
+  it("a round whose AI lens is still waiting for its hand-off answer stops the hand-off", async () => {
+    const root = await inState("build");
+    const meta = join(root, "openspec/changes", ID, "review", "hand-up", "1", "meta");
+    await mkdir(meta, { recursive: true });
+    const write = (state: string) =>
+      writeFile(
+        join(meta, "round.yaml"),
+        [
+          `change: ${ID}`,
+          "gate: hand-up",
+          "round: 1",
+          "createdAt: 2026-10-19T09:30:00Z",
+          "findings: []",
+          "lenses:",
+          "  - lens: code-and-test",
+          "    agent: code-and-test-critic",
+          `    state: ${state}`,
+          "    runId: r-0001",
+          "    rules: []",
+          "    artifacts: []",
+          "",
+        ].join("\n"),
+      );
+    const waiting = async () =>
+      (await canAdvance(ID, root)).reasons.filter((r) => r.code === "lens-waiting");
+    await write("waiting");
+    expect((await waiting()).map((r) => r.message)).toEqual([
+      "The code-and-test lens on the hand-up gate (round 1) is waiting for its hand-off answer (atticus handoff done r-0001).",
+    ]);
+    await write("ran");
+    expect(await waiting()).toEqual([]);
+  });
 });
