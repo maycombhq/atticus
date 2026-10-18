@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { createAdapters, type Approval, type GitHost } from "@maycombhq/adapters";
+import { createAdapters, fileStepStore, type Approval, type GitHost } from "@maycombhq/adapters";
 import { handoffBranch, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import {
   ChangeError,
@@ -57,7 +57,12 @@ async function gitHostFor(
 ): Promise<GitHost | undefined> {
   if (deps.gitHost) return deps.gitHost;
   const op = await loadOrgPack(join(orgPackDirOf(root)));
-  const gh = createAdapters(op.runtime).gitHost;
+  // Manual Git hosts (and unreachable live ones) turn PR actions into steps a person records (ADR 0032).
+  const gh = createAdapters(
+    op.runtime,
+    {},
+    { store: fileStepStore(root), root, procedures: op.procedures },
+  ).gitHost;
   if (!gh) io.err("No Git host is configured. Set adapters.gitHost in org-pack/runtime.yaml.");
   return gh;
 }

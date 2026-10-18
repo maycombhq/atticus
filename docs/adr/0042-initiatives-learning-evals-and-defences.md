@@ -1,0 +1,18 @@
+# 0042. Initiatives and journeys, learning tools, the eval harness, and defences for ingested content
+
+- Status: accepted
+- Date: 2026-10-18
+
+## Decision
+
+**Initiatives and guided journeys.** An initiative groups changes, parties and commitments toward one outcome. Initiative, Party and Commitment are C1 curated records (`catalog/curated/<kind>/<id>.yaml`), asserted by the person who made them, never written by scans. Plans and system cards live in `initiatives/<id>/`. The six journeys (new feature, new integration, vendor API change, design change, migration, retire system) are data templates an organisation can replace at `org-pack/process/journeys/<id>.yaml`. `planJourney` expands steps per caller or callee in the catalog, takes lead times from the party, then past closed requests, then the request template, then the journey default (each cited), and schedules back from the target release in working days. `initiativeStatus` is deterministic: projected finish, float and status (slipped, at-risk, open, done) per item, and the critical path. "Request from a team" sends a one-page system card from the catalog, tracks the reply as a Commitment and drafts the message as a manual step.
+
+**Learning tools.** Lessons are data (YAML with Markdown, commands, a worked solution and a verifiable check per step), one per core role, extensible in `org-pack/learn/lessons/`. `atticus sandbox create` builds a throwaway metarepo from the invented Forge estate and the forge-change fixture, marked so lesson commands refuse to run elsewhere; progress stays local. `atticus explain` explains records, findings, changes and commands from fixed templates (AI rewording optional). CI runs every lesson end to end; the M4 tours and practice sandbox reuse the engine.
+
+**Eval harness.** Every AI agent has datasets built from the existing fixtures and recordings (read in place). A case calls the agent's real package code; graders are exact or structural comparison, rubric checks and evidence bounds, all deterministic. Mock and replay run in CI; live mode needs a configured provider and a person, and is refused under CI. The live bar for AI-graded exits is at least 4 passes in 5 runs (`passesLiveBar`). Reports, regressions and the AI-quality summary are stored under `.evals/`.
+
+**Defences for ingested content** (not configurable). Untrusted text is screened on a skeleton that undoes disguises (full-width forms, look-alike letters, invisible characters, entity and escape decoding); hidden carriers are read in HTML, Markdown, Office XML and draw.io. High risk (hidden, encoded or disguised instructions, tag characters, chat-template attacks, wrapper break-outs with instructions) is left out of the context pack and raised for a person; medium risk (visible instruction-like text, bidi characters, a lone wrapper tag) stays as data with invisible characters stripped, wrapper tags escaped and a flag line before each suspicious line. `buildContextPack` screens every untrusted source for every agent and records each decision. Whatever slips through is still rejected by the evidence-bounded parsers. A red-team suite of 24 hand-written fixtures across formats proves detection and neutralisation.
+
+## Consequences
+
+Cross-team work is planned and tracked from files with honest dates; every role has a hands-on lesson; agent quality is measured, not assumed; injected instructions never reach a model hidden from people. Candidate additive contracts: C5 `ContextPackManifest.defences`; C6 schemas for journeys, lessons and eval datasets; C1 `Commitment.requestedAt`, `Initiative.target`. Packaging the sandbox and built-in datasets needs a prepack step that copies the fixtures (M5).

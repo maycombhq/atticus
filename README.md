@@ -44,6 +44,9 @@ packages/
   testgen/           tests from stories, and traceability
   ci/                the pipeline drift check and the archive gate
   glossary/          business terms from wikis, code and people
+  initiatives/       initiatives, guided journeys, commitments and system cards
+  learn/             lessons per role, the practice sandbox and explain
+  evals/             datasets and graders for every AI agent
   features/          features found in code, names, links and gaps
   intake/            inputs/ intake, triage, curated decisions
   stubs/             stub servers from specs or the catalog

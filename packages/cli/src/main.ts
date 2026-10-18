@@ -64,6 +64,21 @@ import {
   testsGenerate,
   traceCommand,
 } from "./quality-commands.js";
+import {
+  initiativeCommitment,
+  initiativeNew,
+  initiativePlan,
+  initiativeStatus,
+  requestFromTeam,
+} from "./initiative-commands.js";
+import {
+  explainCommand,
+  learnCheck,
+  learnList,
+  learnStart,
+  sandboxCreate,
+} from "./learn-commands.js";
+import { defencesScan, evalReport, evalRun } from "./eval-commands.js";
 import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
   catalogMigrate,
@@ -193,6 +208,17 @@ Usage:
   atticus glossary define <term> "<definition>" --by <you> [--owner team]
   atticus glossary link <term> <record-id|schema#field> --by <you>
   atticus glossary alias <term> <name>... --by <you>
+  atticus initiative new "<title>" --journey <j> --by <you>  Start an initiative [--id] [--release YYYY-MM-DD] [--epic]
+  atticus initiative plan <id> --target <system> --by <you>  Plan its changes and commitments [--release d] [--system s]... [--dry-run]
+  atticus initiative status <id>       Critical path, at-risk and slipped commitments
+  atticus initiative request <id> <party> --by <you>  Send a team a system card and track the reply [--system s]...
+  atticus initiative commit <commitment> <open|at-risk|done|slipped> --by <you>
+  atticus learn [list] | learn start <role|lesson> | learn check [--answer a] [--lesson l] [--step s]
+  atticus sandbox create <dir>         A throwaway practice metarepo
+  atticus explain <id|command>         Explain a record, finding, change or command in plain words
+  atticus eval run [--agent a]... [--mode mock|replay|live] [--runs n]  Evaluate AI agents
+  atticus eval report                  The latest eval results and AI quality
+  atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -291,6 +317,14 @@ export async function main(argv: string[], io: Output): Promise<number> {
       "warn-only": { type: "boolean" },
       write: { type: "string" },
       drift: { type: "string", multiple: true },
+      journey: { type: "string" },
+      release: { type: "string" },
+      target: { type: "string" },
+      answer: { type: "string" },
+      lesson: { type: "string" },
+      step: { type: "string" },
+      agent: { type: "string", multiple: true },
+      runs: { type: "string" },
     },
     strict: false,
   });
@@ -393,6 +427,87 @@ export async function main(argv: string[], io: Output): Promise<number> {
   }
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const json = values.json === true;
+  if (group === "initiative") {
+    const by = str(values.by);
+    const systems = Array.isArray(values.system) ? (values.system as string[]) : [];
+    if (command === "new")
+      return initiativeNew(
+        root,
+        {
+          ...(arg ? { title: positionals.slice(2).join(" ") } : {}),
+          ...(str(values.journey) ? { journey: str(values.journey)! } : {}),
+          ...(by ? { by } : {}),
+          ...(str(values.id) ? { id: str(values.id)! } : {}),
+          ...(str(values.release) ? { release: str(values.release)! } : {}),
+          ...(str(values.epic) ? { epic: str(values.epic)! } : {}),
+          json,
+        },
+        io,
+      );
+    if (command === "plan")
+      return initiativePlan(
+        root,
+        arg,
+        {
+          ...(str(values.target) ? { target: str(values.target)! } : {}),
+          ...(str(values.release) ? { release: str(values.release)! } : {}),
+          ...(systems.length ? { systems } : {}),
+          ...(by ? { by } : {}),
+          dryRun: values["dry-run"] === true,
+          json,
+        },
+        io,
+      );
+    if (command === "status") return initiativeStatus(root, arg, { json }, io);
+    if (command === "request")
+      return requestFromTeam(
+        root,
+        arg,
+        positionals[3],
+        { ...(by ? { by } : {}), ...(systems.length ? { systems } : {}), json },
+        io,
+      );
+    if (command === "commit")
+      return initiativeCommitment(root, arg, positionals[3], { ...(by ? { by } : {}) }, io);
+  }
+  if (group === "learn") {
+    if (!command || command === "list") return learnList(root, { json }, io);
+    if (command === "start") return learnStart(root, arg, { json }, io);
+    if (command === "check")
+      return learnCheck(
+        root,
+        {
+          ...(str(values.answer) ? { answer: str(values.answer)! } : {}),
+          ...(str(values.lesson) ? { lesson: str(values.lesson)! } : {}),
+          ...(str(values.step) ? { step: str(values.step)! } : {}),
+          json,
+        },
+        io,
+      );
+  }
+  if (group === "sandbox" && command === "create")
+    return sandboxCreate(arg ? resolve(arg) : undefined, { json }, io);
+  if (group === "explain")
+    return explainCommand(root, positionals.slice(1).join(" ") || undefined, { json }, io);
+  if (group === "eval" && command === "run")
+    return evalRun(
+      root,
+      {
+        ...(Array.isArray(values.agent) ? { agent: values.agent as string[] } : {}),
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+        ...(num(values.runs) ? { runs: num(values.runs)! } : {}),
+        json,
+      },
+      io,
+    );
+  if (group === "eval" && command === "report") return evalReport(root, { json }, io);
+  if (group === "defences" && command === "scan")
+    return defencesScan(
+      root,
+      arg ? resolve(arg) : undefined,
+      { json, all: values.all === true },
+      io,
+    );
   if (group === "tests" && command === "generate")
     return testsGenerate(
       root,
