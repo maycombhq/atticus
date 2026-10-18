@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useApi } from "../api/client.js";
+import { Changes } from "../screens/Changes.js";
 import { CommandCenter } from "../screens/CommandCenter.js";
 import { NotBuilt } from "../screens/NotBuilt.js";
 import { GROUPS, SCREENS, screenOf, type ScreenDef } from "./screens.js";
@@ -125,7 +126,13 @@ export function App() {
       <main id="main" className="main" tabIndex={-1}>
         <TopBar health={health.state === "ready" ? health.data : undefined} />
         <h1 className="sr">{current.label}</h1>
-        {current.id === "home" ? <CommandCenter /> : <NotBuilt screen={current} />}
+        {current.id === "home" ? (
+          <CommandCenter />
+        ) : current.id === "changes" ? (
+          <Changes hash={hash} />
+        ) : (
+          <NotBuilt screen={current} />
+        )}
       </main>
     </div>
   );
