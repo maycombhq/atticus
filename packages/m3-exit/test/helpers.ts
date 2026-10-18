@@ -1,13 +1,21 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { it } from "vitest";
-import { parse, stringify } from "yaml";
+import { parse } from "yaml";
 import { main } from "@maycombhq/cli/dist/main.js";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import {
+  CHANGE,
+  FIXTURES,
+  FORGE,
+  FORGE_CHANGE,
+  forgeEstate as buildForgeEstate,
+  OWN,
+  SPECKIT,
+  sh,
+} from "../live/estate.mjs";
 
 /**
  * Shared set-up for the M3 exit suite. Everything runs in a temp folder built from the
@@ -16,33 +24,10 @@ import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-export const FIXTURES = join(HERE, "../../../fixtures");
-export const FORGE = join(FIXTURES, "forge");
-export const FORGE_CHANGE = join(FIXTURES, "forge-change");
-export const SPECKIT = join(FIXTURES, "forge-speckit");
-export const OWN = join(HERE, "fixtures");
+export { CHANGE, FIXTURES, FORGE, FORGE_CHANGE, OWN, SPECKIT, sh };
 export const ADOPT_FIXTURES = join(HERE, "../../adopt/test/fixtures");
-export const CHANGE = "add-transfer-limit";
 export const METAREPO = "forge/forge-metarepo";
 export const T = 300_000;
-
-const ENV = {
-  ...process.env,
-  GIT_AUTHOR_NAME: "Fixture",
-  GIT_AUTHOR_EMAIL: "fixture@example.com",
-  GIT_COMMITTER_NAME: "Fixture",
-  GIT_COMMITTER_EMAIL: "fixture@example.com",
-  GIT_TERMINAL_PROMPT: "0",
-};
-
-export function sh(cwd: string, ...args: string[]): string {
-  return execFileSync("git", ["-c", "init.defaultBranch=main", ...args], {
-    cwd,
-    encoding: "utf8",
-    env: ENV,
-    stdio: "pipe",
-  }).trim();
-}
 
 /**
  * A test that records a known product gap: it asserts what the exit needs and is expected to
@@ -94,58 +79,10 @@ export interface Estate {
  * repository. Nothing is scanned yet.
  */
 export async function forgeEstate(): Promise<Estate> {
-  const top = await mkdtemp(join(tmpdir(), "atticus-m3-exit-"));
-  await cp(FORGE, top, { recursive: true });
-  const root = join(top, "metarepo");
-  await cp(join(FORGE_CHANGE, "org-pack"), join(root, "org-pack"), { recursive: true });
-  await cp(join(SPECKIT, "org-pack"), join(root, "org-pack"), { recursive: true });
-  await cp(join(OWN, "org-pack"), join(root, "org-pack"), { recursive: true });
-  // The diagrams and documents a team drops into the metarepo's inputs/ folder.
-  await cp(join(top, "inputs"), join(root, "inputs"), { recursive: true });
-
-  const buildLog = join(top, "build.log");
-  const fakeBuild = join(top, "fake-build.mjs");
-  await writeFile(
-    fakeBuild,
-    [
-      'import { appendFileSync } from "node:fs";',
-      `appendFileSync(${JSON.stringify(buildLog)}, process.cwd() + "\\n");`,
-      'console.log("fake build: compiled and tested");',
-      "",
-    ].join("\n"),
-  );
-
-  const manifestPath = join(root, "org-pack/profiles/forge/repos.manifest.yaml");
-  const manifest = parse(await readFile(manifestPath, "utf8")) as {
-    repos: { id: string; url: string; build?: string }[];
-  };
-  for (const id of (await readdir(join(top, "repos"))).sort()) {
-    const work = join(top, "repos", id);
-    sh(work, "init", "-q", "-b", "main");
-    sh(work, "add", "-A");
-    sh(work, "commit", "-q", "-m", "initial");
-    const bare = join(top, "remotes", `${id}.git`);
-    await mkdir(dirname(bare), { recursive: true });
-    sh(dirname(bare), "clone", "-q", "--bare", work, bare);
-    const entry = manifest.repos.find((r) => r.id === id);
-    if (!entry) throw new Error(`${id} is not in the Forge manifest`);
-    entry.url = bare;
-    if (entry.build) entry.build = `node ${JSON.stringify(fakeBuild)}`;
-  }
-  await writeFile(manifestPath, stringify(manifest));
-
-  // Replay recordings: the forge-change critic and story-writer answers, and this suite's own.
-  const replayDir = join(top, "recordings");
-  await cp(join(FORGE_CHANGE, "recordings"), replayDir, { recursive: true });
-  await cp(join(OWN, "recordings"), replayDir, { recursive: true });
-
-  await writeFile(join(root, ".gitignore"), "workspace/\n.runs/\n");
-  await mkdir(join(root, ".github"), { recursive: true });
-  await writeFile(join(root, ".github/CODEOWNERS"), "openspec/  @forge/platform\n");
-  sh(root, "init", "-q", "-b", "main");
-  sh(root, "add", "-A");
-  sh(root, "commit", "-q", "-m", "Forge metarepo");
-  return { top, root, replayDir, buildLog };
+  // Shared with the live-run sandboxes (live/estate.mjs); the suite keeps every expected file
+  // and replay recording, the sandboxes leave them out.
+  const e = await buildForgeEstate();
+  return { top: e.top, root: e.root, replayDir: e.replayDir!, buildLog: e.buildLog };
 }
 
 /**
