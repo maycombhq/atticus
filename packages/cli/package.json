@@ -19,6 +19,7 @@
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/index": "workspace:*",
+    "@maycombhq/intake": "workspace:*",
     "@maycombhq/openspec-adapter": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",
     "@maycombhq/scanner": "workspace:*",

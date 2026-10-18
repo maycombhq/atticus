@@ -1,0 +1,431 @@
+# Hand-written expected result of scanInputs over ./inputs with the org pack in
+# ./metarepo/org-pack and no catalog yet. Do not generate it from intake's output.
+# Records omit schemaVersion and status: current; the test adds them.
+
+documents:
+  - path: inputs/diagrams/estate-2026-01-10.drawio
+    id: doc.estate-2026-01-10
+    classification: diagram
+    status: superseded
+    hash: db5a32b32c7b8aa315fb9b9c4c8a9e775ab48112eed811a23b6698249e25cd7e
+    date: "2026-01-10"
+    supersededBy: doc.estate-2026-03-02
+    systems: [billing-hub, fabrikam-fx]
+    unknownNames: []
+    records: []
+  - path: inputs/diagrams/estate-2026-03-02.drawio
+    id: doc.estate-2026-03-02
+    classification: diagram
+    status: read
+    reader: drawio@0.1.0
+    hash: d09359b84428aab92bd8b71d8d0560639eefa480fe2b40f945d9b5ddc9c65083
+    date: "2026-03-02"
+    systems: [billing-hub, fabrikam-fx, ledger]
+    unknownNames: [Tax Engine]
+    records: []
+  - path: inputs/docs/handbook.md
+    id: doc.handbook
+    classification: document
+    status: needs-reading
+    hash: 34ab3b8852b8539c0589e5d80ce24a6b84702a10c01e366b0bfd6c200a156e9b
+    systems: []
+    unknownNames: []
+    records: []
+  - path: inputs/inbox/copy-of-fx-v2.yaml
+    classification: openapi
+    status: duplicate
+    hash: efb7a248a32fe135a41e16a3f55b22d277b8380fef83e806d718a3645fe47089
+    duplicateOf: inputs/partner-specs/fabrikam-fx-openapi-v2.yaml
+    title: Fabrikam FX
+    version: "2.1"
+    systems: []
+    unknownNames: []
+    records: []
+  - path: inputs/inbox/handbook.md
+    id: doc.inbox-handbook
+    classification: document
+    status: needs-reading
+    hash: 428878acdd9cf39cb1f229c76f59269136e5346f8a62a890dfc6e0ec2a8bb3ec
+    systems: []
+    unknownNames: []
+    records: []
+  - path: inputs/inbox/meeting-notes.md
+    id: doc.meeting-notes
+    classification: document
+    status: needs-reading
+    hash: 9a716dd3ef5de09b06e0415b894cffe25d2cbfa672484523a7d84ba04b99b5c9
+    systems: []
+    unknownNames: []
+    records: []
+  - path: inputs/inbox/northwind-swagger.json
+    id: doc.northwind-swagger
+    classification: swagger
+    status: read
+    reader: openapi@1.0.0
+    hash: d51ed7e3ea54fe8203b03ef511038e1631a55985e518de53130450b282073009
+    title: Northwind Payments API
+    version: "2.3"
+    systems: [northwind-pay]
+    unknownNames: []
+    records: [northwind-pay, northwind-pay.post-refund]
+  - path: inputs/inbox/ownership.csv
+    id: doc.ownership
+    classification: spreadsheet
+    status: no-reader
+    hash: 3926f63f7c6947d732578fa780c43b8f39204e97f7322318059a3d85ac37bdab
+    systems: []
+    unknownNames: []
+    records: []
+  - path: inputs/inbox/random.dat
+    id: doc.random
+    classification: unknown
+    status: no-reader
+    hash: 9e2e1d0270ddc7811c9d27261ff5318723d25f0fc49d12424d2220f634fdbe3e
+    systems: []
+    unknownNames: []
+    records: []
+  - path: inputs/inbox/refund-request-sample.json
+    id: doc.refund-request-sample
+    classification: payload
+    status: read
+    reader: payload@0.1.0
+    hash: 49ea18debf94a875e31aa2bd674b08a4f03a24f1fb043a8ce3d858e8bd4f4677
+    systems: []
+    unknownNames: []
+    records: [payload.refund-request-sample]
+  - path: inputs/inbox/tailspin-openapi.yaml
+    id: doc.tailspin-openapi
+    classification: openapi
+    status: unresolved
+    hash: 7f9905ef75d191e6127990ddf40a7f818be0e4ce3bd556a4302ada0b7c446725
+    title: Tailspin Billing
+    version: "0.9"
+    systems: []
+    unknownNames: [Tailspin Billing]
+    records: []
+  - path: inputs/inbox/whiteboard.png
+    id: doc.whiteboard
+    classification: image
+    status: needs-reading
+    hash: d0afbaf740ad2d35e78e6238ae16b5b17bdfd8d2b26351fc66bc2dfdf8e59f9f
+    systems: []
+    unknownNames: []
+    records: []
+  - path: inputs/partner-specs/contoso-events-asyncapi.yaml
+    id: doc.contoso-events-asyncapi
+    classification: asyncapi
+    status: read
+    reader: asyncapi@0.1.0
+    hash: 25922dea3d7f26e19bf13e9b8e8d38e8622d97b1b1f778c3417a9999a4373cc5
+    title: Contoso Events
+    version: 1.4.0
+    systems: [contoso-events]
+    unknownNames: []
+    records: [contoso-events, topic.contoso-orders-cancelled, topic.contoso-orders-created]
+  - path: inputs/partner-specs/fabrikam-fx-openapi-v1.yaml
+    id: doc.fabrikam-fx-openapi-v1
+    classification: openapi
+    status: superseded
+    hash: b7c20f941701b519509b3c7dc76f57acbca82af6cdf9c71ef70c2d85bf9aac8c
+    title: Fabrikam FX
+    version: "1.0"
+    supersededBy: doc.fabrikam-fx-openapi-v2
+    systems: [fabrikam-fx]
+    unknownNames: []
+    records: []
+  - path: inputs/partner-specs/fabrikam-fx-openapi-v2.yaml
+    id: doc.fabrikam-fx-openapi-v2
+    classification: openapi
+    status: read
+    reader: openapi@1.0.0
+    hash: efb7a248a32fe135a41e16a3f55b22d277b8380fef83e806d718a3645fe47089
+    title: Fabrikam FX
+    version: "2.1"
+    systems: [fabrikam-fx]
+    unknownNames: []
+    records: [fabrikam-fx, fabrikam-fx.get-rate, fabrikam-fx.post-quote]
+
+records:
+  - kind: Endpoint
+    id: fabrikam-fx.get-rate
+    confidence: verified
+    component: fabrikam-fx
+    endpointType: rest
+    method: GET
+    pathOrTopic: /v2/rates/{pair}
+    normalizedPath: /v2/rates/{}
+    auth: api-key
+    evidence: [{ source: spec, path: inputs/partner-specs/fabrikam-fx-openapi-v2.yaml, line: 14, side: definition }]
+  - kind: Endpoint
+    id: fabrikam-fx.post-quote
+    confidence: verified
+    component: fabrikam-fx
+    endpointType: rest
+    method: POST
+    pathOrTopic: /v2/quotes
+    normalizedPath: /v2/quotes
+    auth: api-key
+    evidence: [{ source: spec, path: inputs/partner-specs/fabrikam-fx-openapi-v2.yaml, line: 19, side: definition }]
+  - kind: Endpoint
+    id: northwind-pay.post-refund
+    confidence: verified
+    component: northwind-pay
+    endpointType: rest
+    method: POST
+    pathOrTopic: /v2/refunds
+    normalizedPath: /v2/refunds
+    auth: oauth2
+    evidence: [{ source: spec, path: inputs/inbox/northwind-swagger.json, line: 8, side: definition }]
+  - kind: Endpoint
+    id: topic.contoso-orders-cancelled
+    confidence: verified
+    component: contoso-events
+    endpointType: event-topic
+    pathOrTopic: contoso.orders.cancelled
+    evidence: [{ source: spec, path: inputs/partner-specs/contoso-events-asyncapi.yaml, line: 11, side: definition }]
+  - kind: Endpoint
+    id: topic.contoso-orders-created
+    confidence: verified
+    component: contoso-events
+    endpointType: event-topic
+    pathOrTopic: contoso.orders.created
+    evidence: [{ source: spec, path: inputs/partner-specs/contoso-events-asyncapi.yaml, line: 6, side: definition }]
+
+  - kind: Schema
+    id: payload.refund-request-sample
+    confidence: inferred
+    format: json-schema
+    ref: inputs/inbox/refund-request-sample.json
+    fields:
+      - { name: refundId, type: string }
+      - { name: amount, type: object }
+      - { name: amount.value, type: number }
+      - { name: amount.currency, type: string }
+      - { name: reasons, type: array }
+      - { name: "reasons[]", type: string }
+      - { name: approved, type: boolean }
+      - { name: note, type: "null" }
+    evidence: [{ source: document, path: inputs/inbox/refund-request-sample.json, side: document }]
+
+  - kind: SourceDocument
+    id: doc.contoso-events-asyncapi
+    confidence: verified
+    path: inputs/partner-specs/contoso-events-asyncapi.yaml
+    docType: asyncapi
+    version: 1.4.0
+    hash: 25922dea3d7f26e19bf13e9b8e8d38e8622d97b1b1f778c3417a9999a4373cc5
+    recordsProduced: [contoso-events, topic.contoso-orders-cancelled, topic.contoso-orders-created]
+    evidence: [{ source: spec, path: inputs/partner-specs/contoso-events-asyncapi.yaml }]
+  - kind: SourceDocument
+    id: doc.estate-2026-01-10
+    confidence: verified
+    path: inputs/diagrams/estate-2026-01-10.drawio
+    docType: diagram
+    date: "2026-01-10"
+    hash: db5a32b32c7b8aa315fb9b9c4c8a9e775ab48112eed811a23b6698249e25cd7e
+    supersededBy: doc.estate-2026-03-02
+    evidence: [{ source: diagram, path: inputs/diagrams/estate-2026-01-10.drawio }]
+  - kind: SourceDocument
+    id: doc.estate-2026-03-02
+    confidence: verified
+    path: inputs/diagrams/estate-2026-03-02.drawio
+    docType: diagram
+    date: "2026-03-02"
+    hash: d09359b84428aab92bd8b71d8d0560639eefa480fe2b40f945d9b5ddc9c65083
+    evidence: [{ source: diagram, path: inputs/diagrams/estate-2026-03-02.drawio }]
+  - kind: SourceDocument
+    id: doc.fabrikam-fx-openapi-v1
+    confidence: verified
+    path: inputs/partner-specs/fabrikam-fx-openapi-v1.yaml
+    docType: openapi
+    version: "1.0"
+    hash: b7c20f941701b519509b3c7dc76f57acbca82af6cdf9c71ef70c2d85bf9aac8c
+    supersededBy: doc.fabrikam-fx-openapi-v2
+    evidence: [{ source: spec, path: inputs/partner-specs/fabrikam-fx-openapi-v1.yaml }]
+  - kind: SourceDocument
+    id: doc.fabrikam-fx-openapi-v2
+    confidence: verified
+    path: inputs/partner-specs/fabrikam-fx-openapi-v2.yaml
+    docType: openapi
+    version: "2.1"
+    hash: efb7a248a32fe135a41e16a3f55b22d277b8380fef83e806d718a3645fe47089
+    recordsProduced: [fabrikam-fx, fabrikam-fx.get-rate, fabrikam-fx.post-quote]
+    evidence: [{ source: spec, path: inputs/partner-specs/fabrikam-fx-openapi-v2.yaml }]
+  - kind: SourceDocument
+    id: doc.handbook
+    confidence: verified
+    path: inputs/docs/handbook.md
+    docType: document
+    hash: 34ab3b8852b8539c0589e5d80ce24a6b84702a10c01e366b0bfd6c200a156e9b
+    evidence: [{ source: document, path: inputs/docs/handbook.md }]
+  - kind: SourceDocument
+    id: doc.inbox-handbook
+    confidence: verified
+    path: inputs/inbox/handbook.md
+    docType: document
+    hash: 428878acdd9cf39cb1f229c76f59269136e5346f8a62a890dfc6e0ec2a8bb3ec
+    evidence: [{ source: document, path: inputs/inbox/handbook.md }]
+  - kind: SourceDocument
+    id: doc.meeting-notes
+    confidence: verified
+    path: inputs/inbox/meeting-notes.md
+    docType: document
+    hash: 9a716dd3ef5de09b06e0415b894cffe25d2cbfa672484523a7d84ba04b99b5c9
+    evidence: [{ source: document, path: inputs/inbox/meeting-notes.md }]
+  - kind: SourceDocument
+    id: doc.northwind-swagger
+    confidence: verified
+    path: inputs/inbox/northwind-swagger.json
+    docType: swagger
+    version: "2.3"
+    hash: d51ed7e3ea54fe8203b03ef511038e1631a55985e518de53130450b282073009
+    recordsProduced: [northwind-pay, northwind-pay.post-refund]
+    evidence: [{ source: spec, path: inputs/inbox/northwind-swagger.json }]
+  - kind: SourceDocument
+    id: doc.ownership
+    confidence: verified
+    path: inputs/inbox/ownership.csv
+    docType: spreadsheet
+    hash: 3926f63f7c6947d732578fa780c43b8f39204e97f7322318059a3d85ac37bdab
+    evidence: [{ source: export, path: inputs/inbox/ownership.csv }]
+  - kind: SourceDocument
+    id: doc.random
+    confidence: verified
+    path: inputs/inbox/random.dat
+    docType: unknown
+    hash: 9e2e1d0270ddc7811c9d27261ff5318723d25f0fc49d12424d2220f634fdbe3e
+    evidence: [{ source: document, path: inputs/inbox/random.dat }]
+  - kind: SourceDocument
+    id: doc.refund-request-sample
+    confidence: verified
+    path: inputs/inbox/refund-request-sample.json
+    docType: payload
+    hash: 49ea18debf94a875e31aa2bd674b08a4f03a24f1fb043a8ce3d858e8bd4f4677
+    recordsProduced: [payload.refund-request-sample]
+    evidence: [{ source: document, path: inputs/inbox/refund-request-sample.json }]
+  - kind: SourceDocument
+    id: doc.tailspin-openapi
+    confidence: verified
+    path: inputs/inbox/tailspin-openapi.yaml
+    docType: openapi
+    version: "0.9"
+    hash: 7f9905ef75d191e6127990ddf40a7f818be0e4ce3bd556a4302ada0b7c446725
+    evidence: [{ source: spec, path: inputs/inbox/tailspin-openapi.yaml }]
+  - kind: SourceDocument
+    id: doc.whiteboard
+    confidence: verified
+    path: inputs/inbox/whiteboard.png
+    docType: image
+    hash: d0afbaf740ad2d35e78e6238ae16b5b17bdfd8d2b26351fc66bc2dfdf8e59f9f
+    evidence: [{ source: document, path: inputs/inbox/whiteboard.png }]
+
+  - kind: System
+    id: contoso-events
+    confidence: verified
+    name: Contoso Events
+    boundary: vendor
+    evidence: [{ source: spec, path: inputs/partner-specs/contoso-events-asyncapi.yaml, side: definition }]
+  - kind: System
+    id: fabrikam-fx
+    confidence: verified
+    name: Fabrikam FX
+    boundary: vendor
+    evidence: [{ source: spec, path: inputs/partner-specs/fabrikam-fx-openapi-v2.yaml, side: definition }]
+  - kind: System
+    id: northwind-pay
+    confidence: verified
+    name: Northwind Pay
+    boundary: vendor
+    evidence: [{ source: spec, path: inputs/inbox/northwind-swagger.json, side: definition }]
+
+triage:
+  - id: unknown-name.tailspin-billing
+    kind: unknown-name
+    summary: 'The partner spec''s title "Tailspin Billing" matches no system (similar: billing-hub); its facts wait until someone says which system it is.'
+    source: { path: inputs/inbox/tailspin-openapi.yaml, line: 3 }
+    records: [billing-hub]
+    options:
+      - action: alias
+        label: '"Tailspin Billing" is billing-hub'
+        decision:
+          id: alias.tailspin-billing
+          target: billing-hub
+          action: alias
+          value: Tailspin Billing
+          reason: '"Tailspin Billing" is billing-hub'
+      - action: suppress
+        label: Dismiss
+        decision:
+          id: triage.unknown-name.tailspin-billing
+          target: doc.tailspin-openapi
+          action: suppress
+          value: { triage: unknown-name.tailspin-billing }
+          reason: Dismissed in triage
+  - id: alias-needed.northwind-payments-api
+    kind: alias-needed
+    summary: The partner spec's title "Northwind Payments API" was matched to northwind-pay through the profile; confirm it so later documents match it directly.
+    source: { path: inputs/inbox/northwind-swagger.json, line: 3 }
+    records: [northwind-pay]
+    options:
+      - action: alias
+        label: '"Northwind Payments API" is northwind-pay'
+        decision:
+          id: alias.northwind-payments-api
+          target: northwind-pay
+          action: alias
+          value: Northwind Payments API
+          reason: '"Northwind Payments API" is northwind-pay'
+      - action: suppress
+        label: Dismiss
+        decision:
+          id: triage.alias-needed.northwind-payments-api
+          target: northwind-pay
+          action: suppress
+          value: { triage: alias-needed.northwind-payments-api }
+          reason: Dismissed in triage
+  - id: version-unclear.doc-handbook
+    kind: version-unclear
+    summary: inputs/docs/handbook.md looks like another version of inputs/inbox/handbook.md, and neither says which is newer.
+    source: { path: inputs/docs/handbook.md }
+    records: [doc.handbook, doc.inbox-handbook]
+    options:
+      - action: assert
+        label: inputs/inbox/handbook.md replaces it
+        decision:
+          id: triage.version-unclear.doc-handbook
+          target: doc.handbook
+          action: assert
+          value: { supersededBy: doc.inbox-handbook }
+          reason: inputs/inbox/handbook.md replaces it
+      - action: suppress
+        label: It is the current version
+        decision:
+          id: triage.version-unclear.doc-handbook
+          target: doc.handbook
+          action: suppress
+          value: { triage: version-unclear.doc-handbook }
+          reason: It is the current version
+  - id: version-unclear.doc-inbox-handbook
+    kind: version-unclear
+    summary: inputs/inbox/handbook.md looks like another version of inputs/docs/handbook.md, and neither says which is newer.
+    source: { path: inputs/inbox/handbook.md }
+    records: [doc.inbox-handbook, doc.handbook]
+    options:
+      - action: assert
+        label: inputs/docs/handbook.md replaces it
+        decision:
+          id: triage.version-unclear.doc-inbox-handbook
+          target: doc.inbox-handbook
+          action: assert
+          value: { supersededBy: doc.handbook }
+          reason: inputs/docs/handbook.md replaces it
+      - action: suppress
+        label: It is the current version
+        decision:
+          id: triage.version-unclear.doc-inbox-handbook
+          target: doc.inbox-handbook
+          action: suppress
+          value: { triage: version-unclear.doc-inbox-handbook }
+          reason: It is the current version
+
+problems: []

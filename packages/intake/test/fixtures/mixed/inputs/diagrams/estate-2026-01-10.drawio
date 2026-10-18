@@ -1,0 +1,13 @@
+<mxfile host="drawio">
+  <diagram id="p1" name="Estate">
+    <mxGraphModel>
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="hub" value="Billing Hub" vertex="1" parent="1"/>
+        <mxCell id="fx" value="Fabrikam FX" vertex="1" parent="1"/>
+        <mxCell id="e1" value="GET /v1/rates" edge="1" source="hub" target="fx" parent="1"/>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

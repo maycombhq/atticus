@@ -1,0 +1,23 @@
+openapi: 3.1.0
+info:
+  title: Fabrikam FX
+  version: "2.1"
+security:
+  - apiKey: []
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-Key
+paths:
+  /v2/rates/{pair}:
+    get:
+      responses:
+        "200":
+          description: OK
+  /v2/quotes:
+    post:
+      responses:
+        "201":
+          description: Created
