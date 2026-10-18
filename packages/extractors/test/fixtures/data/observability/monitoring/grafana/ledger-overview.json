@@ -1,0 +1,13 @@
+{
+  "uid": "ledger-ov",
+  "title": "Ledger API overview",
+  "tags": ["team:ledger", "service:ledger-api"],
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Requests per second",
+      "targets": [{ "expr": "job:ledger_http_requests:rate5m" }]
+    }
+  ]
+}

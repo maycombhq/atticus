@@ -1,0 +1,53 @@
+# Hand-written: asyncapi extractor output for fixtures/data/asyncapi-v3 (component ledger-api):
+# an AsyncAPI 3 document (send/receive operations on channel addresses) and an AsyncAPI 2
+# document in JSON.
+- kind: Endpoint
+  id: topic.transfers-completed
+  confidence: verified
+  component: ledger-api
+  endpointType: event-topic
+  pathOrTopic: transfers.completed
+  schemaRefs: []
+  evidence: [{ source: spec, path: api/asyncapi.yml, line: 6, side: definition }]
+- kind: Endpoint
+  id: topic.payments-initiated
+  confidence: verified
+  component: unknown
+  endpointType: event-topic
+  pathOrTopic: payments.initiated
+  schemaRefs: []
+  evidence: [{ source: spec, path: api/asyncapi.yml, line: 12, side: definition }]
+- kind: Endpoint
+  id: topic.users-userid-events
+  confidence: verified
+  component: unknown
+  endpointType: event-topic
+  pathOrTopic: users.{userId}.events
+  schemaRefs: []
+  evidence: [{ source: spec, path: api/asyncapi.yml, line: 14, side: definition }]
+- kind: Endpoint
+  id: topic.statements-ready
+  confidence: verified
+  component: ledger-api
+  endpointType: event-topic
+  pathOrTopic: statements.ready
+  schemaRefs: []
+  evidence: [{ source: spec, path: asyncapi/statements.asyncapi.json, line: 5, side: definition }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: event-publish
+  raw: transfers.completed
+  owner: ledger-api
+  evidence: [{ source: spec, path: api/asyncapi.yml, line: 19, side: definition }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: event-subscribe
+  raw: payments.initiated
+  owner: ledger-api
+  evidence: [{ source: spec, path: api/asyncapi.yml, line: 23, side: definition }]
+- kind: Unresolved
+  confidence: inferred
+  unresolvedKind: event-publish
+  raw: statements.ready
+  owner: ledger-api
+  evidence: [{ source: spec, path: asyncapi/statements.asyncapi.json, line: 6, side: definition }]

@@ -1,0 +1,183 @@
+# Hand-written: what the orm extractor must produce for fixtures/data/efcore-orders
+# (component orders-api, system orders; no datasource config, so the store is orders-db).
+- kind: DataStore
+  id: orders-db
+  confidence: inferred
+  storeType: postgresql
+  ownerComponent: orders-api
+  entitiesHeld: []
+  evidence: [{ source: code, path: Orders.Api/Data/OrdersDbContext.cs, line: 6 }]
+
+# ---- orders ([Table] wins over the DbSet name)
+- kind: Table
+  id: orders-db.orders
+  confidence: inferred
+  dataStore: orders-db
+  name: orders
+  tableKind: table
+  ownerComponent: orders-api
+  readers: [orders-api]
+  writers: [orders-api]
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 9 }]
+- kind: Column
+  id: orders-db.orders.id
+  confidence: inferred
+  table: orders-db.orders
+  name: Id
+  type: int
+  nullable: false
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 11 }]
+- kind: Column
+  id: orders-db.orders.reference
+  confidence: inferred
+  table: orders-db.orders
+  name: reference
+  type: string
+  nullable: false
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 16 }]
+- kind: Column
+  id: orders-db.orders.total
+  confidence: inferred
+  table: orders-db.orders
+  name: total
+  type: decimal(18,2)
+  nullable: false
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 19 }]
+- kind: Column
+  id: orders-db.orders.shippedat
+  confidence: inferred
+  table: orders-db.orders
+  name: ShippedAt
+  type: DateTime
+  nullable: true
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 21 }]
+- kind: Column
+  id: orders-db.orders.status
+  confidence: inferred
+  table: orders-db.orders
+  name: Status
+  type: OrderStatus
+  nullable: false
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 23 }]
+- kind: Column
+  id: orders-db.orders.customercode
+  confidence: inferred
+  table: orders-db.orders
+  name: CustomerCode
+  type: string
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 25 }]
+- kind: IndexConstraint
+  id: orders-db.orders.pk
+  confidence: inferred
+  table: orders-db.orders
+  constraintKind: primary-key
+  columns: [Id]
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 11 }]
+- kind: IndexConstraint
+  id: orders-db.orders.fk-customer
+  confidence: inferred
+  table: orders-db.orders
+  constraintKind: foreign-key
+  columns: [CustomerCode]
+  references: { table: orders-db.customer, columns: [customer_code] }
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 27 }]
+- kind: IndexConstraint
+  id: orders-db.orders.ix-orders-reference
+  confidence: inferred
+  table: orders-db.orders
+  constraintKind: unique
+  columns: [reference]
+  evidence: [{ source: code, path: Orders.Api/Models/Order.cs, line: 8 }]
+
+# ---- order_lines (fluent ToTable)
+- kind: Table
+  id: orders-db.order-lines
+  confidence: inferred
+  dataStore: orders-db
+  name: order_lines
+  tableKind: table
+  ownerComponent: orders-api
+  readers: [orders-api]
+  writers: [orders-api]
+  evidence: [{ source: code, path: Orders.Api/Models/OrderLine.cs, line: 5 }]
+- kind: Column
+  id: orders-db.order-lines.lineid
+  confidence: inferred
+  table: orders-db.order-lines
+  name: LineId
+  type: long
+  nullable: false
+  evidence: [{ source: code, path: Orders.Api/Models/OrderLine.cs, line: 8 }]
+- kind: Column
+  id: orders-db.order-lines.orderid
+  confidence: inferred
+  table: orders-db.order-lines
+  name: OrderId
+  type: int
+  nullable: false
+  evidence: [{ source: code, path: Orders.Api/Models/OrderLine.cs, line: 10 }]
+- kind: Column
+  id: orders-db.order-lines.sku
+  confidence: inferred
+  table: orders-db.order-lines
+  name: Sku
+  type: string
+  evidence: [{ source: code, path: Orders.Api/Models/OrderLine.cs, line: 14 }]
+- kind: Column
+  id: orders-db.order-lines.quantity
+  confidence: inferred
+  table: orders-db.order-lines
+  name: Quantity
+  type: int
+  nullable: false
+  evidence: [{ source: code, path: Orders.Api/Models/OrderLine.cs, line: 16 }]
+- kind: IndexConstraint
+  id: orders-db.order-lines.pk
+  confidence: inferred
+  table: orders-db.order-lines
+  constraintKind: primary-key
+  columns: [LineId]
+  evidence: [{ source: code, path: Orders.Api/Models/OrderLine.cs, line: 7 }]
+- kind: IndexConstraint
+  id: orders-db.order-lines.fk-orders
+  confidence: inferred
+  table: orders-db.order-lines
+  constraintKind: foreign-key
+  columns: [OrderId]
+  references: { table: orders-db.orders, columns: [Id] }
+  evidence: [{ source: code, path: Orders.Api/Models/OrderLine.cs, line: 12 }]
+
+# ---- customer (fluent ToTable inside a lambda; [Key] on a renamed column)
+- kind: Table
+  id: orders-db.customer
+  confidence: inferred
+  dataStore: orders-db
+  name: customer
+  tableKind: table
+  ownerComponent: orders-api
+  readers: [orders-api]
+  writers: [orders-api]
+  evidence: [{ source: code, path: Orders.Api/Models/Customer.cs, line: 6 }]
+- kind: Column
+  id: orders-db.customer.customer-code
+  confidence: inferred
+  table: orders-db.customer
+  name: customer_code
+  type: string
+  nullable: false
+  evidence: [{ source: code, path: Orders.Api/Models/Customer.cs, line: 10 }]
+- kind: Column
+  id: orders-db.customer.email
+  confidence: inferred
+  table: orders-db.customer
+  name: Email
+  type: string
+  nullable: true
+  evidence: [{ source: code, path: Orders.Api/Models/Customer.cs, line: 12 }]
+- kind: IndexConstraint
+  id: orders-db.customer.pk
+  confidence: inferred
+  table: orders-db.customer
+  constraintKind: primary-key
+  columns: [customer_code]
+  evidence: [{ source: code, path: Orders.Api/Models/Customer.cs, line: 8 }]

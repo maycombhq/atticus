@@ -1,0 +1,5 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://ledger-db.forge.internal:5432/ledger
+  jpa:
+    open-in-view: false

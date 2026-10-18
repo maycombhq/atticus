@@ -1,0 +1,182 @@
+# Micronaut HTTP controllers and declarative clients. Shipped with Atticus (C2).
+#
+# Controllers: the HTTP-method annotation carries the method path, so plain annotation rules
+# work; the controller's path comes from the enclosing @Controller. The id uses that path, so a
+# @Get in a class without @Controller("...") (a declarative client) fails to fill and is skipped.
+# A @Controller with no path is skipped for the same reason.
+#
+# Declarative clients (@Client on an interface or abstract class): a service id becomes the
+# host (http://<id>), with @Client(path) as a base path; an absolute URL is used as written.
+# Placeholders like @Client("${ledger.url}") are not followed. The component is the configured
+# micronaut.application.name; a repo without one gives no records.
+schemaVersion: 1
+name: micronaut
+version: 1.0.0
+description: Micronaut controllers as REST endpoints, and declarative @Client methods as HTTP calls.
+extends: []
+appliesTo:
+  repoTypes: []
+layout:
+  sourceRoots: [src/main/java]
+  configFiles:
+    - "**/src/main/resources/application.yml"
+    - "**/src/main/resources/application.yaml"
+    - "**/src/main/resources/application.properties"
+rules:
+  - id: controller-get
+    description: A @Get method in a @Controller class serves GET on the controller path joined with the method path.
+    match: { annotation: Get, target: method, files: ["**/src/main/java/**/*.java"] }
+    emit:
+      kind: Endpoint
+      id: "${config:micronaut.application.name}.${annotation.Controller.value | slug}.get-${member.name | slug}"
+      fields:
+        component: "${config:micronaut.application.name}"
+        endpointType: rest
+        method: GET
+        pathOrTopic: "${annotation.Controller.value}${attr.value | default('')}${attr.uri | default('')}"
+        normalizedPath: "${annotation.Controller.value | normalizePath}${attr.value | default('') | normalizePath}${attr.uri | default('') | normalizePath}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: controller-post
+    description: A @Post method in a @Controller class serves POST.
+    match: { annotation: Post, target: method, files: ["**/src/main/java/**/*.java"] }
+    emit:
+      kind: Endpoint
+      id: "${config:micronaut.application.name}.${annotation.Controller.value | slug}.post-${member.name | slug}"
+      fields:
+        component: "${config:micronaut.application.name}"
+        endpointType: rest
+        method: POST
+        pathOrTopic: "${annotation.Controller.value}${attr.value | default('')}${attr.uri | default('')}"
+        normalizedPath: "${annotation.Controller.value | normalizePath}${attr.value | default('') | normalizePath}${attr.uri | default('') | normalizePath}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: controller-put
+    description: A @Put method in a @Controller class serves PUT.
+    match: { annotation: Put, target: method, files: ["**/src/main/java/**/*.java"] }
+    emit:
+      kind: Endpoint
+      id: "${config:micronaut.application.name}.${annotation.Controller.value | slug}.put-${member.name | slug}"
+      fields:
+        component: "${config:micronaut.application.name}"
+        endpointType: rest
+        method: PUT
+        pathOrTopic: "${annotation.Controller.value}${attr.value | default('')}${attr.uri | default('')}"
+        normalizedPath: "${annotation.Controller.value | normalizePath}${attr.value | default('') | normalizePath}${attr.uri | default('') | normalizePath}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: controller-delete
+    description: A @Delete method in a @Controller class serves DELETE.
+    match: { annotation: Delete, target: method, files: ["**/src/main/java/**/*.java"] }
+    emit:
+      kind: Endpoint
+      id: "${config:micronaut.application.name}.${annotation.Controller.value | slug}.delete-${member.name | slug}"
+      fields:
+        component: "${config:micronaut.application.name}"
+        endpointType: rest
+        method: DELETE
+        pathOrTopic: "${annotation.Controller.value}${attr.value | default('')}${attr.uri | default('')}"
+        normalizedPath: "${annotation.Controller.value | normalizePath}${attr.value | default('') | normalizePath}${attr.uri | default('') | normalizePath}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: controller-patch
+    description: A @Patch method in a @Controller class serves PATCH.
+    match: { annotation: Patch, target: method, files: ["**/src/main/java/**/*.java"] }
+    emit:
+      kind: Endpoint
+      id: "${config:micronaut.application.name}.${annotation.Controller.value | slug}.patch-${member.name | slug}"
+      fields:
+        component: "${config:micronaut.application.name}"
+        endpointType: rest
+        method: PATCH
+        pathOrTopic: "${annotation.Controller.value}${attr.value | default('')}${attr.uri | default('')}"
+        normalizedPath: "${annotation.Controller.value | normalizePath}${attr.value | default('') | normalizePath}${attr.uri | default('') | normalizePath}"
+      evidence: { source: code, side: callee }
+    confidence: verified
+
+  - id: client-call-service-id
+    description: >-
+      An HTTP-method annotation in an interface (or abstract class) annotated @Client with a
+      service id calls http://<service id><@Client path><method path>.
+    match:
+      regex: '(?=@(?:Get|Post|Put|Delete|Patch|Head|Options)\b)(?<=@Client\((?=(?:[^)]*\bpath\s*=\s*"([^"]*)")?)\s*(?:[^)]*\b(?:id|value)\s*=\s*)?"([\w.-]+)"[^)]*\)\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:public\s+)?(?:interface|abstract\s+class)\s+(\w+)\b[\s\S]*)@(Get|Post|Put|Delete|Patch|Head|Options)\b(?:\(\s*(?:(?:value|uri)\s*=\s*)?"([^"]*)"[^)]*\)|\([^)]*\))?(?:\s*@[\w.]+(?:\([^)]*\))?)*\s*(?:(?:public|protected|private|static|final|synchronized|abstract|default)\s+)*[\w.$]+(?:<[^;{}()]*>)?(?:\[\])*\s+(\w+)\s*\('
+      files: ["**/src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${config:micronaut.application.name}.call.${match.2 | slug}.${match.4 | lower}-${match.6 | slug}"
+      fields:
+        unresolvedKind: http-call
+        raw: "${match.4 | upper} http://${match.2}${match.1}${match.5}"
+        owner: "${config:micronaut.application.name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+  - id: client-call-url
+    description: An HTTP-method annotation in an interface annotated @Client with an absolute URL calls that URL joined with the method path.
+    match:
+      regex: '(?=@(?:Get|Post|Put|Delete|Patch|Head|Options)\b)(?<=@Client\(\s*(?:value\s*=\s*)?"(https?://[^"]*?)/?"[^)]*\)\s*(?:@[\w.]+(?:\([^)]*\))?\s*)*(?:public\s+)?(?:interface|abstract\s+class)\s+(\w+)\b[\s\S]*)@(Get|Post|Put|Delete|Patch|Head|Options)\b(?:\(\s*(?:(?:value|uri)\s*=\s*)?"([^"]*)"[^)]*\)|\([^)]*\))?(?:\s*@[\w.]+(?:\([^)]*\))?)*\s*(?:(?:public|protected|private|static|final|synchronized|abstract|default)\s+)*[\w.$]+(?:<[^;{}()]*>)?(?:\[\])*\s+(\w+)\s*\('
+      files: ["**/src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${config:micronaut.application.name}.call.${match.2 | slug}.${match.3 | lower}-${match.5 | slug}"
+      fields:
+        unresolvedKind: http-call
+        raw: "${match.3 | upper} ${match.1}${match.4}"
+        owner: "${config:micronaut.application.name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+
+tests:
+  - name: controller endpoints and declarative clients in statements-service
+    fixture: ../test/fixtures/dialects/micronaut/statements-service
+    expect:
+      - kind: Endpoint
+        id: statements-service.statements.get-get
+        component: statements-service
+        method: GET
+        pathOrTopic: /statements/{id}
+        normalizedPath: /statements/{}
+      - kind: Endpoint
+        id: statements-service.statements.get-list
+        method: GET
+        pathOrTopic: /statements
+        normalizedPath: /statements
+      - kind: Endpoint
+        id: statements-service.statements.post-send
+        method: POST
+        pathOrTopic: /statements/{id}/send
+        normalizedPath: /statements/{}/send
+      - kind: Endpoint
+        id: statements-service.statements.delete-remove
+        method: DELETE
+        pathOrTopic: /statements/{id}
+      - kind: Unresolved
+        id: statements-service.call.ledger-api.get-balance
+        unresolvedKind: http-call
+        raw: GET http://ledger-api/ledger/v1/accounts/{id}/balance
+        owner: statements-service
+      - kind: Unresolved
+        id: statements-service.call.ledger-api.post-transfer
+        raw: POST http://ledger-api/ledger/v1/transfers
+      - kind: Unresolved
+        id: statements-service.call.ratesclient.get-rate
+        raw: GET https://rates.northwind-pay.example/v2/fx/{currency}
+  - name: a client whose target is a placeholder, and a controller without an application name, give nothing
+    files:
+      src/main/java/x/LedgerClient.java: |
+        @Client("${ledger.url}")
+        public interface LedgerClient {
+            @Get("/accounts")
+            List<Account> accounts();
+        }
+      src/main/java/x/PingController.java: |
+        @Controller("/ping")
+        public class PingController {
+            @Get
+            public String ping() { return "pong"; }
+        }
+    expect: []

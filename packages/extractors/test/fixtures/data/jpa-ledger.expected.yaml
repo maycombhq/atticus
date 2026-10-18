@@ -1,0 +1,195 @@
+# Hand-written: what the orm extractor must produce for fixtures/data/jpa-ledger
+# (component ledger-api, system ledger). Evidence lists source, path, line (and side if any).
+- kind: DataStore
+  id: ledger-db
+  confidence: inferred
+  storeType: postgresql
+  ownerComponent: ledger-api
+  entitiesHeld: []
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Account.java, line: 7 }]
+
+# ---- account (inherits id and created_at from the @MappedSuperclass)
+- kind: Table
+  id: ledger-db.account
+  confidence: inferred
+  dataStore: ledger-db
+  name: account
+  tableKind: table
+  ownerComponent: ledger-api
+  readers: [ledger-api]
+  writers: [ledger-api]
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Account.java, line: 7 }]
+- kind: Column
+  id: ledger-db.account.id
+  confidence: inferred
+  table: ledger-db.account
+  name: id
+  type: Long
+  nullable: false
+  evidence: [{ source: code, path: src/main/java/forge/ledger/BaseEntity.java, line: 10 }]
+- kind: Column
+  id: ledger-db.account.created-at
+  confidence: inferred
+  table: ledger-db.account
+  name: created_at
+  type: Instant
+  nullable: false
+  evidence: [{ source: code, path: src/main/java/forge/ledger/BaseEntity.java, line: 13 }]
+- kind: Column
+  id: ledger-db.account.owner-name
+  confidence: inferred
+  table: ledger-db.account
+  name: owner_name
+  type: String
+  nullable: false
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Account.java, line: 15 }]
+- kind: Column
+  id: ledger-db.account.balance
+  confidence: inferred
+  table: ledger-db.account
+  name: balance
+  type: BigDecimal
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Account.java, line: 17 }]
+- kind: Column
+  id: ledger-db.account.frozen
+  confidence: inferred
+  table: ledger-db.account
+  name: frozen
+  type: boolean
+  nullable: false
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Account.java, line: 19 }]
+- kind: IndexConstraint
+  id: ledger-db.account.pk
+  confidence: inferred
+  table: ledger-db.account
+  constraintKind: primary-key
+  columns: [id]
+  evidence: [{ source: code, path: src/main/java/forge/ledger/BaseEntity.java, line: 8 }]
+- kind: IndexConstraint
+  id: ledger-db.account.ix-account-owner
+  confidence: inferred
+  table: ledger-db.account
+  constraintKind: index
+  columns: [owner_name]
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Account.java, line: 9 }]
+
+# ---- entry
+- kind: Table
+  id: ledger-db.entry
+  confidence: inferred
+  dataStore: ledger-db
+  name: entry
+  tableKind: table
+  ownerComponent: ledger-api
+  readers: [ledger-api]
+  writers: [ledger-api]
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Entry.java, line: 7 }]
+- kind: Column
+  id: ledger-db.entry.entry-id
+  confidence: inferred
+  table: ledger-db.entry
+  name: entry_id
+  type: UUID
+  nullable: false
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Entry.java, line: 12 }]
+- kind: Column
+  id: ledger-db.entry.account-id
+  confidence: inferred
+  table: ledger-db.entry
+  name: account_id
+  type: Long
+  nullable: false
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Entry.java, line: 16 }]
+- kind: Column
+  id: ledger-db.entry.amount
+  confidence: inferred
+  table: ledger-db.entry
+  name: amount
+  type: NUMERIC(19,2)
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Entry.java, line: 19 }]
+- kind: Column
+  id: ledger-db.entry.posting-reference
+  confidence: inferred
+  table: ledger-db.entry
+  name: posting_reference
+  type: String
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Entry.java, line: 21 }]
+- kind: IndexConstraint
+  id: ledger-db.entry.pk
+  confidence: inferred
+  table: ledger-db.entry
+  constraintKind: primary-key
+  columns: [entry_id]
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Entry.java, line: 10 }]
+- kind: IndexConstraint
+  id: ledger-db.entry.fk-account
+  confidence: inferred
+  table: ledger-db.entry
+  constraintKind: foreign-key
+  columns: [account_id]
+  references: { table: ledger-db.account, columns: [id] }
+  evidence: [{ source: code, path: src/main/java/forge/ledger/Entry.java, line: 14 }]
+
+# ---- transfer_request (no @Table: Spring's snake_case naming; two keys to account)
+- kind: Table
+  id: ledger-db.transfer-request
+  confidence: inferred
+  dataStore: ledger-db
+  name: transfer_request
+  tableKind: table
+  ownerComponent: ledger-api
+  readers: [ledger-api]
+  writers: [ledger-api]
+  evidence: [{ source: code, path: src/main/java/forge/ledger/TransferRequest.java, line: 5 }]
+- kind: Column
+  id: ledger-db.transfer-request.id
+  confidence: inferred
+  table: ledger-db.transfer-request
+  name: id
+  type: Long
+  nullable: false
+  evidence: [{ source: code, path: src/main/java/forge/ledger/TransferRequest.java, line: 8 }]
+- kind: Column
+  id: ledger-db.transfer-request.source-account-id
+  confidence: inferred
+  table: ledger-db.transfer-request
+  name: source_account_id
+  type: Long
+  evidence: [{ source: code, path: src/main/java/forge/ledger/TransferRequest.java, line: 12 }]
+- kind: Column
+  id: ledger-db.transfer-request.target-id
+  confidence: inferred
+  table: ledger-db.transfer-request
+  name: target_id
+  type: Long
+  evidence: [{ source: code, path: src/main/java/forge/ledger/TransferRequest.java, line: 15 }]
+- kind: Column
+  id: ledger-db.transfer-request.idempotency-key
+  confidence: inferred
+  table: ledger-db.transfer-request
+  name: idempotency_key
+  type: String
+  evidence: [{ source: code, path: src/main/java/forge/ledger/TransferRequest.java, line: 18 }]
+- kind: IndexConstraint
+  id: ledger-db.transfer-request.pk
+  confidence: inferred
+  table: ledger-db.transfer-request
+  constraintKind: primary-key
+  columns: [id]
+  evidence: [{ source: code, path: src/main/java/forge/ledger/TransferRequest.java, line: 7 }]
+- kind: IndexConstraint
+  id: ledger-db.transfer-request.fk-account-source-account-id
+  confidence: inferred
+  table: ledger-db.transfer-request
+  constraintKind: foreign-key
+  columns: [source_account_id]
+  references: { table: ledger-db.account, columns: [id] }
+  evidence: [{ source: code, path: src/main/java/forge/ledger/TransferRequest.java, line: 10 }]
+- kind: IndexConstraint
+  id: ledger-db.transfer-request.fk-account-target-id
+  confidence: inferred
+  table: ledger-db.transfer-request
+  constraintKind: foreign-key
+  columns: [target_id]
+  references: { table: ledger-db.account, columns: [id] }
+  evidence: [{ source: code, path: src/main/java/forge/ledger/TransferRequest.java, line: 14 }]

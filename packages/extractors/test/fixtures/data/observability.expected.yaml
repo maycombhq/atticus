@@ -1,0 +1,122 @@
+# Hand-written: what the observability extractor must produce for fixtures/data/observability,
+# scanned as repo forge-monitoring with no manifest component (so the fallback component is
+# the repo id). Labels and tags (service:, component:) name the component where present.
+- kind: ObservabilityAsset
+  id: forge-monitoring.metric.job-ledger-http-requests-rate5m
+  confidence: verified
+  component: forge-monitoring
+  assetKind: metric
+  name: job:ledger_http_requests:rate5m
+  evidence: [{ source: infrastructure, path: monitoring/prometheus/ledger.rules.yml, line: 4 }]
+- kind: ObservabilityAsset
+  id: ledger-api.alert.high-error-rate
+  confidence: verified
+  component: ledger-api
+  assetKind: alert
+  name: LedgerApiHighErrorRate
+  evidence: [{ source: infrastructure, path: monitoring/prometheus/ledger.rules.yml, line: 6 }]
+- kind: ObservabilityAsset
+  id: portal-bff.alert.latency
+  confidence: verified
+  component: portal-bff
+  assetKind: alert
+  name: PortalBffLatency
+  evidence: [{ source: infrastructure, path: monitoring/prometheus/ledger.rules.yml, line: 14 }]
+- kind: ObservabilityAsset
+  id: ledger-api.alert.db-connections-exhausted
+  confidence: verified
+  component: ledger-api
+  assetKind: alert
+  name: LedgerApiDbConnectionsExhausted
+  evidence: [{ source: infrastructure, path: monitoring/ledger-prometheusrule.yaml, line: 9 }]
+- kind: ObservabilityAsset
+  id: ledger-api.dashboard.ledger-api-overview
+  confidence: verified
+  component: ledger-api
+  assetKind: dashboard
+  name: Ledger API overview
+  evidence: [{ source: infrastructure, path: monitoring/grafana/ledger-overview.json, line: 3 }]
+- kind: ObservabilityAsset
+  id: forge-monitoring.dashboard.portal-traffic
+  confidence: verified
+  component: forge-monitoring
+  assetKind: dashboard
+  name: Portal traffic
+  evidence: [{ source: infrastructure, path: monitoring/grafana/portal.json, line: 5 }]
+- kind: ObservabilityAsset
+  id: ledger-api.alert.transfer-queue-backlog
+  confidence: verified
+  component: ledger-api
+  assetKind: alert
+  name: "[ledger-api] Transfer queue backlog"
+  evidence: [{ source: infrastructure, path: monitoring/datadog/monitors.json, line: 3 }]
+- kind: ObservabilityAsset
+  id: portal-bff.alert.5xx-errors
+  confidence: verified
+  component: portal-bff
+  assetKind: alert
+  name: Portal BFF 5xx errors
+  evidence: [{ source: infrastructure, path: terraform/datadog.tf, line: 1 }]
+- kind: ObservabilityAsset
+  id: forge-monitoring.dashboard.ledger-slos
+  confidence: verified
+  component: forge-monitoring
+  assetKind: dashboard
+  name: Ledger SLOs
+  evidence: [{ source: infrastructure, path: terraform/datadog.tf, line: 8 }]
+- kind: ObservabilityAsset
+  id: forge-monitoring.trace.otel-collector-traces
+  confidence: verified
+  component: forge-monitoring
+  assetKind: trace
+  name: otel-collector traces
+  evidence: [{ source: infrastructure, path: otel/otel-collector.yaml, line: 10 }]
+- kind: ObservabilityAsset
+  id: forge-monitoring.metric.otel-collector-metrics-app
+  confidence: verified
+  component: forge-monitoring
+  assetKind: metric
+  name: otel-collector metrics/app
+  evidence: [{ source: infrastructure, path: otel/otel-collector.yaml, line: 13 }]
+- kind: ObservabilityAsset
+  id: forge-monitoring.log-config.otel-collector-logs
+  confidence: verified
+  component: forge-monitoring
+  assetKind: log-config
+  name: otel-collector logs
+  evidence: [{ source: infrastructure, path: otel/otel-collector.yaml, line: 16 }]
+- kind: ObservabilityAsset
+  id: forge-monitoring.log-config.logback-spring.xml
+  confidence: verified
+  component: forge-monitoring
+  assetKind: log-config
+  name: logback-spring.xml
+  evidence: [{ source: config, path: ledger/src/main/resources/logback-spring.xml, line: 2 }]
+- kind: ObservabilityAsset
+  id: forge-monitoring.log-config.log4j2.xml
+  confidence: verified
+  component: forge-monitoring
+  assetKind: log-config
+  name: log4j2.xml
+  evidence: [{ source: config, path: reports/src/main/resources/log4j2.xml, line: 2 }]
+- kind: ObservabilityAsset
+  id: forge-monitoring.log-config.appsettings.json
+  confidence: verified
+  component: forge-monitoring
+  assetKind: log-config
+  name: appsettings.json
+  evidence: [{ source: config, path: orders/appsettings.json, line: 5 }]
+- kind: ObservabilityAsset
+  id: ledger-api.runbook.ledger-api-error-spike
+  confidence: inferred
+  component: ledger-api
+  assetKind: runbook
+  name: Ledger API error spike
+  evidence: [{ source: document, path: runbooks/ledger-api-errors.md, line: 5 }]
+- kind: ObservabilityAsset
+  id: forge-monitoring.runbook.forge-on-call-runbook
+  confidence: inferred
+  component: forge-monitoring
+  assetKind: runbook
+  name: Forge on-call runbook
+  evidence: [{ source: document, path: docs/runbook.md, line: 3 }]

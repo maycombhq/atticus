@@ -1,0 +1,26 @@
+asyncapi: 3.0.0
+info:
+  title: Ledger events
+  version: 2.0.0
+channels:
+  transfersCompleted:
+    address: transfers.completed
+    messages:
+      transferCompleted:
+        payload:
+          type: object
+  paymentsInitiated:
+    address: payments.initiated
+  userEvents:
+    address: users.{userId}.events
+    parameters:
+      userId: {}
+operations:
+  sendTransferCompleted:
+    action: send
+    channel:
+      $ref: "#/channels/transfersCompleted"
+  onPaymentInitiated:
+    action: receive
+    channel:
+      $ref: "#/channels/paymentsInitiated"

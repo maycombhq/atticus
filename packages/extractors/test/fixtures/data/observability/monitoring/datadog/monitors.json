@@ -1,0 +1,8 @@
+[
+  {
+    "name": "[ledger-api] Transfer queue backlog",
+    "type": "query alert",
+    "query": "avg(last_10m):avg:forge.ledger.transfer_queue.depth{env:prod} > 500",
+    "tags": ["service:ledger-api", "team:ledger"]
+  }
+]

@@ -1,0 +1,3 @@
+# Notes about our AsyncAPI documents; not an AsyncAPI document itself.
+channels:
+  payments.initiated: owned by the payments team
