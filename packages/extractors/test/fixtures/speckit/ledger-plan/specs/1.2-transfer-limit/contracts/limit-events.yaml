@@ -1,0 +1,12 @@
+asyncapi: 3.0.0
+info:
+  title: Limit events (planned)
+  version: 1.0.0
+channels:
+  limitRefused:
+    address: ledger.limit-refused
+operations:
+  publishLimitRefused:
+    action: send
+    channel:
+      $ref: "#/channels/limitRefused"

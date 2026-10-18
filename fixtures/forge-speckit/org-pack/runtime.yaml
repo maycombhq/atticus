@@ -1,0 +1,23 @@
+# Forge runtime for the Spec Kit fixture (contract C6). Replaces fixtures/forge's runtime.yaml:
+# the same settings plus model mode (mock provider), the build engine (ADR 0030 point 5) and a
+# manual service desk (ADR 0032).
+schemaVersion: 1
+assistants: { allowed: [copilot, claude-code], default: copilot }
+editors: [vscode, intellij]
+modes: { allowed: [hand-off, model, headless-claude-code], default: hand-off }
+models: { allowed: [mock-model] }
+autonomy:
+  default: draft
+  capPerRepo: { forge-gateway: plan-only, forge-infra: plan-only, forge-reports-job: draft }
+  maxFixRounds: 3
+budgets: { defaultTokens: 150000 }
+retention: { runsDays: 30 }
+buildEngine:
+  default: speckit
+  perRepo: { forge-portal-bff: atticus }
+adapters:
+  workTracker: { type: mock }
+  serviceDesk: { type: manual }
+  gitHost: { type: mock }
+  notify: { type: mock }
+  model: { type: mock, settings: { model: mock-model } }

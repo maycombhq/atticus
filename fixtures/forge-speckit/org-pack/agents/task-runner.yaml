@@ -1,0 +1,9 @@
+# Contract C5 agent definition (fixture): Run with AI's agent for one task in one repo.
+schemaVersion: 1
+id: task-runner
+role: developer
+description: Implements one task of a change in its repo, with tests, within the approved design.
+inputs: [stories, design, interfaces, data, mappings, skills, repo-code]
+outputArtifact: code
+tokenBudget: 120000
+allowedRuntimes: [hand-off, model, headless-claude-code, mock, replay]

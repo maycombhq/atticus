@@ -1,0 +1,31 @@
+# Compared as parsed YAML. The operations ledger-api serves in change add-transfer-limit.
+openapi: 3.0.3
+info:
+  title: ledger-api, as planned by change add-transfer-limit
+  version: 0.0.0
+  description: Seeded by Atticus from interfaces.md. Fill in schemas while planning; keep the paths and methods, or amend the design.
+paths:
+  /transfers:
+    post:
+      operationId: post-transfers
+      summary: Called by portal-bff (S.GW.SOR)
+      x-atticus-status: planned-modify
+      x-atticus-pattern: S.GW.SOR
+      responses:
+        default:
+          description: See the change's mappings.md
+  /accounts/{id}/limit:
+    get:
+      operationId: get-accounts-id-limit
+      summary: Called by portal-bff (S.GW.SRO)
+      x-atticus-status: planned-new
+      x-atticus-pattern: S.GW.SRO
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          description: See the change's mappings.md

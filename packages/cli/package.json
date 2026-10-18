@@ -18,6 +18,7 @@
   "dependencies": {
     "@maycombhq/adapters": "workspace:*",
     "@maycombhq/ai": "workspace:*",
+    "@maycombhq/assistant-files": "workspace:*",
     "@maycombhq/assistant-kit": "workspace:*",
     "@maycombhq/changes": "workspace:*",
     "@maycombhq/core": "workspace:*",
@@ -31,7 +32,9 @@
     "@maycombhq/openspec-adapter": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",
     "@maycombhq/scanner": "workspace:*",
+    "@maycombhq/speckit": "workspace:*",
     "@maycombhq/stubs": "workspace:*",
+    "@maycombhq/taskrun": "workspace:*",
     "@maycombhq/workspace": "workspace:*"
   },
   "devDependencies": {

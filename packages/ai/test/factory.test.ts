@@ -1,0 +1,303 @@
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { AgentDefinition, DEFAULT_RUNTIME, Runtime } from "@maycombhq/core";
+import {
+  buildContextPack,
+  createRuntime,
+  DATA_RULE,
+  HandoffRuntime,
+  HeadlessClaudeCodeRuntime,
+  MockRuntime,
+  ModelRuntime,
+  ReplayRuntime,
+  RuntimeConfigError,
+  runtimeForCli,
+  type AiRequest,
+  type HeadlessInvocation,
+  type ModelProvider,
+} from "../src/index.js";
+
+const NOW = new Date("2026-10-18T06:00:00Z");
+const now = () => NOW;
+
+const agent = AgentDefinition.parse({
+  schemaVersion: 1,
+  id: "task-runner",
+  role: "developer",
+  description: "Implements one task of a change in its repo.",
+  inputs: ["stories", "design", "tasks"],
+  outputArtifact: "code",
+  tokenBudget: 5000,
+  allowedRuntimes: ["hand-off", "model", "headless-claude-code", "mock", "replay"],
+});
+
+function request(): AiRequest {
+  const pack = buildContextPack({
+    change: "add-transfer-limit",
+    agent: agent.id,
+    budget: 5000,
+    levels: ["public", "internal"],
+    maxClassification: "internal",
+    now: NOW,
+    sources: [
+      {
+        id: "0",
+        kind: "instruction",
+        origin: "atticus/taskrun",
+        text: "Do task 1.2.",
+        classification: "public",
+        trusted: true,
+      },
+    ],
+  });
+  return { change: "add-transfer-limit", agent, pack, outputPath: "tasks/1.2/plan.md" };
+}
+
+const rt = (r: Record<string, unknown>) =>
+  ({
+    runtime: Runtime.parse({
+      schemaVersion: 1,
+      assistants: { allowed: ["copilot", "claude-code"], default: "copilot" },
+      ...r,
+    }),
+  }) as const;
+
+const tmp = () => mkdtemp(join(tmpdir(), "atticus-factory-"));
+
+describe("createRuntime", () => {
+  it("gives the hand-off runtime by default (the built-in runtime.yaml)", async () => {
+    const r = await createRuntime({ runtime: DEFAULT_RUNTIME }, { root: await tmp() });
+    expect(r).toBeInstanceOf(HandoffRuntime);
+    expect(r.kind).toBe("hand-off");
+  });
+
+  it("refuses a mode runtime.yaml doesn't allow, saying what to change", async () => {
+    await expect(
+      createRuntime({ runtime: DEFAULT_RUNTIME }, { root: await tmp(), mode: "model" }),
+    ).rejects.toThrow(/doesn't allow model mode \(allowed: hand-off\)/);
+    await expect(
+      createRuntime(
+        { runtime: DEFAULT_RUNTIME },
+        { root: await tmp(), mode: "telepathy" as never },
+      ),
+    ).rejects.toThrow(RuntimeConfigError);
+  });
+
+  it("model mode: a clear error without a model adapter or an installed provider", async () => {
+    const allowed = { modes: { allowed: ["hand-off", "model"], default: "model" } };
+    await expect(createRuntime(rt(allowed), { root: await tmp() })).rejects.toThrow(
+      /needs a model adapter in runtime.yaml/,
+    );
+    await expect(
+      createRuntime(
+        rt({ ...allowed, adapters: { model: { type: "anthropic", settings: { model: "m" } } } }),
+        { root: await tmp() },
+      ),
+    ).rejects.toThrow(
+      "No anthropic model provider is installed. Add its plugin, or use hand-off mode.",
+    );
+  });
+
+  it("model mode: uses an installed provider, honours models.allowed, no network", async () => {
+    const calls: string[] = [];
+    const provider = (model: string): ModelProvider => ({
+      model,
+      async complete(i) {
+        calls.push(i.system);
+        return { text: "plan", usage: { inputTokens: 1, outputTokens: 1 } };
+      },
+    });
+    const cfg = rt({
+      modes: { allowed: ["model"], default: "model" },
+      models: { allowed: ["model-a"] },
+      adapters: { model: { type: "anthropic", settings: { model: "model-a" } } },
+    });
+    const r = await createRuntime(cfg, {
+      root: await tmp(),
+      now,
+      providers: { anthropic: (s) => provider(String(s.model)) },
+    });
+    expect(r).toBeInstanceOf(ModelRuntime);
+    const run = await r.run((await r.prepare(request())).runId);
+    expect(run.state).toBe("validated");
+    expect(run.output).toBe("plan");
+    expect(calls[0]).toContain(DATA_RULE);
+    const other = rt({
+      modes: { allowed: ["model"], default: "model" },
+      models: { allowed: ["model-a"] },
+      adapters: { model: { type: "anthropic", settings: { model: "model-b" } } },
+    });
+    await expect(
+      createRuntime(other, {
+        root: await tmp(),
+        providers: { anthropic: (s) => provider(String(s.model)) },
+      }),
+    ).rejects.toThrow(/model-b is not allowed/);
+  });
+
+  it("model mode with the mock provider answers from the prompt", async () => {
+    const r = await createRuntime(
+      rt({
+        modes: { allowed: ["model"], default: "model" },
+        adapters: { model: { type: "mock", settings: { model: "mock-1" } } },
+      }),
+      { root: await tmp(), modelAnswer: (p) => `saw ${p.includes("Do task 1.2") ? "task" : "?"}` },
+    );
+    const run = await r.run((await r.prepare(request())).runId);
+    expect(run.output).toBe("saw task");
+  });
+
+  it("replay and mock need no permission from runtime.yaml but need their inputs", async () => {
+    const root = await tmp();
+    expect(
+      await createRuntime({ runtime: DEFAULT_RUNTIME }, { root, mode: "replay", recordings: [] }),
+    ).toBeInstanceOf(ReplayRuntime);
+    await expect(
+      createRuntime({ runtime: DEFAULT_RUNTIME }, { root, mode: "replay" }),
+    ).rejects.toThrow(/needs a folder of recordings/);
+    expect(
+      await createRuntime({ runtime: DEFAULT_RUNTIME }, { root, mode: "mock", respond: () => "x" }),
+    ).toBeInstanceOf(MockRuntime);
+    await expect(
+      createRuntime({ runtime: DEFAULT_RUNTIME }, { root, mode: "mock" }),
+    ).rejects.toThrow(/Mock mode is for tests/);
+  });
+
+  it("headless Claude Code needs claude-code among the allowed assistants", async () => {
+    const cfg = {
+      runtime: Runtime.parse({
+        schemaVersion: 1,
+        assistants: { allowed: ["copilot"], default: "copilot" },
+        modes: { allowed: ["headless-claude-code"], default: "headless-claude-code" },
+      }),
+    };
+    await expect(createRuntime(cfg, { root: await tmp() })).rejects.toThrow(
+      /doesn't list under assistants.allowed/,
+    );
+  });
+});
+
+describe("headless Claude Code", () => {
+  const cfg = rt({ modes: { allowed: ["headless-claude-code"], default: "headless-claude-code" } });
+
+  it("writes the prompt file and runs claude -p in the worktree through the runner", async () => {
+    const root = await tmp();
+    const worktree = join(root, "workspace/.worktrees/add-transfer-limit/forge-ledger");
+    await mkdir(worktree, { recursive: true });
+    const seen: HeadlessInvocation[] = [];
+    const r = await createRuntime(cfg, {
+      root,
+      now,
+      headless: {
+        runner: async (i) => {
+          seen.push(i);
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              type: "result",
+              result: "Changed TransferService.java",
+              is_error: false,
+              usage: { input_tokens: 120, output_tokens: 30 },
+            }),
+            stderr: "",
+          };
+        },
+        invocation: () => ({
+          cwd: worktree,
+          permissionMode: "acceptEdits",
+          env: { SPECIFY_FEATURE_DIRECTORY: "specs/1.2" },
+        }),
+      },
+    });
+    expect(r).toBeInstanceOf(HeadlessClaudeCodeRuntime);
+    const prepared = await r.prepare(request());
+    const run = await r.run(prepared.runId);
+    expect(run.state).toBe("validated");
+    expect(run.output).toBe("Changed TransferService.java");
+    expect(run.usage).toEqual({ inputTokens: 120, outputTokens: 30 });
+    expect(seen).toHaveLength(1);
+    const i = seen[0]!;
+    expect(i.cwd).toBe(worktree);
+    expect(i.args.slice(0, 7)).toEqual([
+      "-p",
+      "--output-format",
+      "json",
+      "--permission-mode",
+      "acceptEdits",
+      "--permission-prompts",
+      "none",
+    ]);
+    expect(i.args).toContain(DATA_RULE);
+    expect(i.env).toEqual({ SPECIFY_FEATURE_DIRECTORY: "specs/1.2" });
+    expect(i.promptFile).toBe(join(root, ".runs/add-transfer-limit", prepared.runId, "prompt.md"));
+    const file = await readFile(i.promptFile, "utf8");
+    expect(file).toBe(i.prompt);
+    expect(file).toContain("Do task 1.2.");
+    expect(file).not.toContain("atticus handoff done");
+  });
+
+  it("fails the run on a non-zero exit, an error result or output that isn't JSON", async () => {
+    const root = await tmp();
+    const answers = [
+      {
+        exitCode: 1,
+        stdout: JSON.stringify({ result: "auth failed", is_error: true }),
+        stderr: "",
+      },
+      { exitCode: 0, stdout: "Segmentation fault", stderr: "boom" },
+    ];
+    const r = await createRuntime(cfg, {
+      root,
+      now,
+      headless: { runner: async () => answers.shift()!, invocation: () => ({ cwd: root }) },
+    });
+    const a = await r.run((await r.prepare(request())).runId);
+    expect(a.state).toBe("failed");
+    expect(a.errors[0]).toMatch(/reported a failure: auth failed/);
+    const b = await r.run((await r.prepare(request())).runId);
+    expect(b.state).toBe("failed");
+    expect(b.errors[0]).toMatch(/without JSON output: boom/);
+  });
+});
+
+describe("runtimeForCli", () => {
+  async function metarepo(runtimeYaml?: string) {
+    const root = await tmp();
+    await mkdir(join(root, "org-pack"), { recursive: true });
+    if (runtimeYaml) await writeFile(join(root, "org-pack/runtime.yaml"), runtimeYaml);
+    return root;
+  }
+
+  it("reads runtime.yaml's default mode", async () => {
+    const root = await metarepo();
+    const r = await runtimeForCli(root, { env: {} });
+    expect(r.mode).toBe("hand-off");
+    expect(r.runtime).toBeInstanceOf(HandoffRuntime);
+    expect(r.describe).toMatch(/handed to your assistant/);
+  });
+
+  it("takes the mode from --mode, then ATTICUS_RUNTIME, and replay from ATTICUS_REPLAY_DIR", async () => {
+    const root = await metarepo();
+    const r = await runtimeForCli(root, {
+      env: { ATTICUS_RUNTIME: "replay", ATTICUS_REPLAY_DIR: join(root, "recordings") },
+    });
+    expect(r.mode).toBe("replay");
+    await expect(
+      runtimeForCli(root, { mode: "model", env: { ATTICUS_RUNTIME: "replay" } }),
+    ).rejects.toThrow(/doesn't allow model mode/);
+    await expect(runtimeForCli(root, { mode: "mock", env: {} })).rejects.toThrow(
+      /Mock mode is for tests/,
+    );
+  });
+
+  it("refuses a broken runtime.yaml instead of falling back to defaults", async () => {
+    const root = await metarepo(
+      "schemaVersion: 1\nassistants: { allowed: [copilot], default: claude-code }\n",
+    );
+    await expect(runtimeForCli(root, { env: {} })).rejects.toThrow(
+      /org-pack\/runtime.yaml has problems/,
+    );
+  });
+});

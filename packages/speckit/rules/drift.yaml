@@ -1,0 +1,78 @@
+# The three-way drift check's rules (ADR 0030 point 4). Contract C3. Built in, so they sit in
+# the constitution layer: never waivable. Only the contradiction blocks; additions are warnings
+# to the architect until the design is amended or the plan is fixed.
+schemaVersion: 1
+name: drift
+version: 1.0.0
+description: Approved design (OpenSpec change) against repo plan (Spec Kit) against code (catalog).
+rules:
+  - id: drift.plan-contradicts-design
+    title: A repo plan doesn't contradict the approved design
+    description: The plan uses a design element differently from the approved design (another route or pattern for the same call, another type for the same column). It blocks the PR until the design is amended or the plan is fixed.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, data, design] }
+    severity: blocking
+    check: { type: deterministic, check: drift-plan-vs-design }
+    waivable: false
+    source: ADR 0030
+  - id: drift.plan-adds-system
+    title: A repo plan calls no system the design doesn't include
+    description: A system the design doesn't include has had no architecture review; the architect decides whether the design is amended.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [interfaces] }
+    severity: risk
+    check: { type: deterministic, check: drift-plan-vs-design }
+    waivable: false
+    source: ADR 0030
+  - id: drift.plan-adds-interface
+    title: A repo plan adds no interface the design lacks
+    description: An interface the design lacks has no pattern, mapping or approval behind it; the architect decides whether the design is amended.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [interfaces] }
+    severity: risk
+    check: { type: deterministic, check: drift-plan-vs-design }
+    waivable: false
+    source: ADR 0030
+  - id: drift.plan-adds-data
+    title: A repo plan adds no table or column data.md lacks
+    description: A table or column data.md lacks has no migration, classification or retention decided at the change level.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [data] }
+    severity: risk
+    check: { type: deterministic, check: drift-plan-vs-design }
+    waivable: false
+    source: ADR 0030
+  - id: drift.plan-vs-code
+    title: A repo plan agrees with the code it changes
+    description: The plan describes an existing interface or column differently from what the code has; one of them is wrong.
+    layer: constitution
+    lens: code-and-test
+    appliesTo: { artifacts: [code, catalog] }
+    severity: risk
+    check: { type: deterministic, check: drift-plan-vs-code }
+    waivable: false
+    source: ADR 0030
+  - id: drift.plan-not-built
+    title: What a repo plan adds is in the code once the change is past build
+    description: After build, everything the plan adds should be in the scanned code; what isn't was dropped or not merged.
+    layer: constitution
+    lens: code-and-test
+    appliesTo: { artifacts: [code, tasks] }
+    severity: risk
+    check: { type: deterministic, check: drift-plan-vs-code }
+    waivable: false
+    source: ADR 0030
+  - id: drift.design-vs-code
+    title: The approved design agrees with the code
+    description: The design changes an interface the code doesn't have, or, past build, plans what the code doesn't have or retires what it still has.
+    layer: constitution
+    lens: architecture
+    appliesTo: { artifacts: [interfaces, catalog] }
+    severity: risk
+    check: { type: deterministic, check: drift-design-vs-code }
+    waivable: false
+    source: ADR 0030

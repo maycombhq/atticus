@@ -1,0 +1,18 @@
+# Fixture org checklist (contract C3): the code-and-test lens rules hand-up sends plan.md and
+# tasks.md to.
+schemaVersion: 1
+name: forge-code-and-test
+version: 0.1.0
+description: How Forge teams plan and test a task inside a repo.
+rules:
+  - id: plan-tests-first
+    title: Every behaviour change has a test task before it
+    layer: org
+    lens: code-and-test
+    appliesTo: { artifacts: [tasks, code, tests] }
+    severity: risk
+    check:
+      type: ai
+      prompt: In tasks.md, find each task that changes behaviour and the test task that comes before it. Report a finding for each change with no earlier test task, quoting the task line.
+    waivable: false
+    source: Forge engineering handbook

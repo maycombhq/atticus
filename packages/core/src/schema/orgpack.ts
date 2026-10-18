@@ -353,11 +353,26 @@ const AdapterSettings = z
     }
   });
 
-const adapter = <T extends readonly [string, ...string[]]>(types: T) =>
+/**
+ * An adapter entry. Every external system may also be `manual` (ADR 0032): a person does the
+ * step and records the result, which is also the fallback when a configured adapter can't be
+ * reached. The model adapter has no manual form: hand-off mode is that.
+ */
+const adapter = <T extends readonly [string, ...string[]]>(
+  types: T,
+  o: { manual?: boolean } = {},
+) =>
   z.strictObject({
-    type: z.enum([...types, "mock"] as unknown as [string, ...string[]]),
+    type: z.enum([...types, "mock", ...(o.manual === false ? [] : ["manual"])] as unknown as [
+      string,
+      ...string[],
+    ]),
     settings: AdapterSettings.default({}),
   });
+
+/** How a code repo runs a task (ADR 0030): Spec Kit inside the repo, or plain Atticus task files. */
+export const BuildEngine = z.enum(["speckit", "atticus"]);
+export type BuildEngine = z.infer<typeof BuildEngine>;
 
 export const Autonomy = z.enum(["plan-only", "draft", "draft-and-pr"]);
 
@@ -415,9 +430,22 @@ export const Runtime = z.strictObject({
       wiki: adapter(["confluence", "ado-wiki", "sharepoint"] as const).optional(),
       notify: adapter(["teams", "slack", "email"] as const).optional(),
       design: adapter(["figma"] as const).optional(),
-      model: adapter(["anthropic", "azure-openai", "bedrock", "vertex"] as const).optional(),
+      model: adapter(["anthropic", "azure-openai", "bedrock", "vertex"] as const, {
+        manual: false,
+      }).optional(),
     })
     .default({}),
+  /**
+   * The build engine for code repos (ADR 0030 point 5): `speckit` (the default when this is
+   * left out) or `atticus`, with per-repo overrides. Additive and optional, so no schema
+   * version bump. The change level is always OpenSpec.
+   */
+  buildEngine: z
+    .strictObject({
+      default: BuildEngine.default("speckit"),
+      perRepo: z.record(RecordId, BuildEngine).default({}),
+    })
+    .optional(),
 });
 export type Runtime = z.infer<typeof Runtime>;
 
