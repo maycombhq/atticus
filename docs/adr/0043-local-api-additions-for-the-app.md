@@ -16,6 +16,7 @@ ADR 0015 fixed the local API before the screens existed. Building the server (M4
 - **Starting a run** (`POST /api/changes/{changeId}/runs`) covers task runs, the story writer and the critic; other agents start from their own screens.
 - **The 422 status** is added to the documented error statuses for write calls.
 - **Read-only views** for the Know to Build screens: `GET /api/view/{name}` and `GET /api/view/{name}/{id}` run one whitelisted `atticus … --json` command (coverage, questions, intake, triage, features, glossary, critic stats, conflicts, sources, reconcile; and per change, feature or initiative: findings, drift, trace, story bar, feature, initiative status) and return `{code, data, problems}`. Only commands that read files are listed. An unknown view is 404, a missing or malformed id 400, a command that printed no JSON 422.
+- **`POST /api/triage/{itemId}/decide`** (`option`, optional `reason`): `atticus triage decide` as the signed-in person; it writes the curated decision the option carries, so a click on the Intake screen and the terminal do the same thing.
 - **`GET /api/initiatives`** lists every initiative with its status; **`GET /api/diagram/{view}`** returns a catalog view (context, container, data, event, sequence; `?focus=` for the last two) as Mermaid text; **`GET /api/search`** documents the index query call the server already had.
 
 ### Release and Run screens
