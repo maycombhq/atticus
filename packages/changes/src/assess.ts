@@ -12,6 +12,8 @@ import { changeFootprint, type Footprint } from "./footprint.js";
 import {
   checkArtifacts,
   checkFindings,
+  checkMandatoryRounds,
+  mandatoryGates,
   handoffName,
   nextState,
   phaseGates,
@@ -81,6 +83,11 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
   const blockers: Reason[] = [
     ...(await checkArtifacts(ctx.root, change, requiredArtifacts(ctx, type, phase, footprint))),
     ...(await checkFindings(ctx.root, change, phaseGates(ctx, phase))),
+    ...(await checkMandatoryRounds(
+      ctx.root,
+      change,
+      phaseGates(ctx, phase).filter((g) => mandatoryGates(ctx).includes(g)),
+    )),
   ];
   if (privacy.touched && privacy.phase === phase && !privacy.roleDefined) {
     blockers.push({

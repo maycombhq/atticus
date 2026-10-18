@@ -3,7 +3,6 @@ import { RECORD_KINDS, type CatalogRecord, type OrgPack, type RecordKind } from 
 import { knowledgeGaps, type KnowledgeGap } from "@maycombhq/knowledge";
 import {
   docOf,
-  hopRoutes,
   normalizePath,
   readDataChanges,
   readSnowDrafts,
@@ -23,6 +22,7 @@ import {
   type Hit,
 } from "../hits.js";
 import { matchesWhere, relatedRecords } from "../related.js";
+import { matchServiceRequestTriggers, triggerReason } from "../snow-triggers.js";
 
 /** Evidence for a catalog record: the record, plus the first file it was read from. */
 function catalogEvidence(ctx: CriticContext, id: string): Evidence[] {
@@ -319,89 +319,32 @@ export const snowDraftsPresent: DeterministicCheckDef = {
       if (!needs.some((x) => x.template.id === n.template.id && x.record === n.record))
         needs.push(n);
     };
-    for (const t of templates) {
-      for (const trig of t.triggers) {
-        const matches: { record: string; evidence: Evidence[]; fields: Record<string, string> }[] =
-          [];
-        if (trig.kind === "Interface" && ifaces)
-          for (const h of ctx.hops) {
-            if (h.status !== trig.change) continue;
-            const p = ctx.patterns.get(h.pattern);
-            const rec = h.id.startsWith("if-") ? ctx.get("Interface", h.id) : undefined;
-            const via = p?.route ?? rec?.via;
-            if (!via) continue;
-            matches.push({
-              record: h.id !== "new" ? h.id : `${h.caller}-${h.callee}`,
-              evidence: [lineEvidence(ifaces, h.line)],
-              fields: { via, method: h.method ?? "", from: h.caller, to: h.callee },
-            });
-          }
-        if (trig.kind === "GatewayRoute" && ifaces)
-          for (const h of ctx.hops) {
-            for (const route of hopRoutes(ctx.files, h)) {
-              const exists = !!ctx.get("GatewayRoute", route);
-              if ((trig.change === "planned-new") === exists) continue;
-              if (trig.change !== "planned-new" && h.status !== trig.change) continue;
-              const note = contentLines(ifaces).find((l) => l.text.toLowerCase().includes(route));
-              matches.push({
-                record: route,
-                evidence: [lineEvidence(ifaces, note?.n ?? h.line)],
-                fields: {},
-              });
-            }
-          }
-        if (
-          (trig.kind === "Table" || trig.kind === "Column") &&
-          data &&
-          trig.change === "planned-new"
-        )
-          for (const r of readDataChanges(ctx.files)) {
-            if (trig.kind === "Table" && r.newTable)
-              matches.push({
-                record: r.tableId,
-                evidence: [lineEvidence(data, r.line)],
-                fields: {},
-              });
-            if (trig.kind === "Column")
-              for (const c of r.newColumns)
-                matches.push({
-                  record: `${r.tableId}.${c.name}`,
-                  evidence: [lineEvidence(data, r.line)],
-                  fields: {},
-                });
-          }
-        for (const m of matches) {
-          if (!Object.entries(trig.where).every(([k, v]) => m.fields[k] === v)) continue;
-          add({
-            template: t,
-            record: m.record,
-            why: `${m.record} is ${trig.change} (${trig.kind}${
-              Object.keys(trig.where).length
-                ? `, ${Object.entries(trig.where)
-                    .map(([k, v]) => `${k} ${v}`)
-                    .join(", ")}`
-                : ""
-            })`,
-            evidence: [
-              ...m.evidence,
-              { source: "rule", path: `org-pack/process/snow/${t.id}.yaml` },
-            ],
-          });
-          for (const also of t.alsoNeeds) {
-            const at = templates.find((x) => x.id === also);
-            if (at)
-              add({
-                template: at,
-                record: m.record,
-                why: `the ${title(t.name)} for ${m.record} also needs a ${title(at.name)}`,
-                evidence: [
-                  ...m.evidence,
-                  { source: "rule", path: `org-pack/process/snow/${t.id}.yaml` },
-                ],
-              });
-          }
-        }
-      }
+    for (const m of matchServiceRequestTriggers({
+      templates,
+      hops: ifaces ? ctx.hops : [],
+      data: data ? readDataChanges(ctx.files) : [],
+      files: ctx.files,
+      patterns: ctx.patterns,
+      get: (kind, id) => ctx.get(kind, id),
+    })) {
+      // A route a hop names is shown where the interface notes mention it.
+      const note =
+        m.trigger.kind === "GatewayRoute" && ifaces
+          ? contentLines(ifaces).find((l) => l.text.toLowerCase().includes(m.record))?.n
+          : undefined;
+      const doc = m.file === "data.md" ? data! : ifaces!;
+      const rule = {
+        source: "rule" as const,
+        path: `org-pack/process/snow/${(m.alongside ?? m.template).id}.yaml`,
+      };
+      add({
+        template: m.template,
+        record: m.record,
+        why: m.alongside
+          ? `the ${title(m.alongside.name)} for ${m.record} also needs a ${title(m.template.name)}`
+          : triggerReason(m.record, m.trigger),
+        evidence: [lineEvidence(doc, note ?? m.line), rule],
+      });
     }
     const hits: Hit[] = [];
     if (needs.length === 0) return { hits, subjects: [] };

@@ -18,6 +18,7 @@ import {
   approval,
   copyPhase,
   forgeMetarepo,
+  passedRound,
   host,
   readText,
 } from "./helpers.js";
@@ -221,6 +222,8 @@ describe("a Forge feature from Define to Release against the mock Git host", () 
     ).toMatchObject({ merged: true, state: "release-ready" });
 
     // ---- Release: delivery lead and SRE (the Forge release gate needs two approvals)
+    // The Forge profile makes the release gate mandatory: the critic has reviewed it.
+    await passedRound(root, ID, "release");
     await handoff(root, ID, {
       ...base,
       by: "tia",
@@ -305,6 +308,7 @@ describe("an emergency fix: build, release, then post-release review", () => {
       }),
     ).toMatchObject({ merged: true, state: "release-ready" });
 
+    await passedRound(root, id, "release");
     await handoff(root, id, {
       ...base,
       by: "dee",

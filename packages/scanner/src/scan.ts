@@ -31,6 +31,7 @@ import {
 import { listIngestors } from "@maycombhq/ingestors";
 import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
 import { baseClonePath, checkoutState } from "@maycombhq/workspace";
+import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
 
 export interface ScanOptions {
@@ -71,6 +72,8 @@ export interface FederatedContribution {
   added: number;
   /** Records the federated catalog also has, kept from this scan instead ("kind/id"). */
   shadowed: string[];
+  /** Its loose ends placed against our records (as interfaces), when there are any. */
+  resolved?: number;
 }
 
 export interface ScanProblem {
@@ -358,8 +361,17 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   let fedRecords: CatalogRecord[] = [];
   if (fedSources.length) {
     const fed = await federate([...merged.records, ...found.features], fedSources, problems);
-    fedRecords = fed.records;
-    federated = fed.contributions;
+    // Their loose ends go through merge against our raw facts; local code still wins.
+    const placed = resolveFederatedLooseEnds({
+      local: merged.records,
+      raw: [...codeRecords, ...(inputs?.records ?? [])],
+      federated: fed.records,
+      merge: (records) => mergeCatalog(mergeInput(records)),
+    });
+    fedRecords = placed.federated;
+    federated = fed.contributions.map((c) =>
+      placed.resolved.get(c.id) ? { ...c, resolved: placed.resolved.get(c.id)! } : c,
+    );
   }
   // The business glossary: terms from wikis and code, column links, AI proposals; before curated decisions.
   const glossary = await glossaryForScan({
