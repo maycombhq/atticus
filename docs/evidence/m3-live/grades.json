@@ -1,0 +1,1180 @@
+{
+  "generatedAt": "2026-10-18T21:10:08.022Z",
+  "outDir": "/tmp/claude-0/-home-claude/26b48583-6014-5690-a53d-6137beed0bea/scratchpad/live",
+  "runs": [
+    "run-1",
+    "run-2",
+    "run-3",
+    "run-4",
+    "run-5"
+  ],
+  "exits": {
+    "a": {
+      "name": "Story writer meets the story bar",
+      "passed": 5,
+      "total": 5,
+      "required": 4,
+      "verdict": "PASS",
+      "provisional": false,
+      "results": [
+        {
+          "run": "run-1",
+          "pass": true,
+          "reason": "5 of 5 stories ready (100%, bar 90%); 13 of 13 gaps covered; 0 invented names",
+          "details": {
+            "ready": {
+              "passed": 5,
+              "total": 5,
+              "rate": 1,
+              "min": 0.9
+            },
+            "gaps": [
+              {
+                "id": "g01-audit-owner-unknown",
+                "what": "constitution.touched-components-known on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown: Component repo, System owner and an interface spec for audit-svc."
+              },
+              {
+                "id": "g02-ledger-vendor-timeouts-unknown",
+                "what": "constitution.hop-resilience-stated on ledger-api",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-api: its Setting records (settingKind)."
+              },
+              {
+                "id": "g03-portal-bff-alerts-unknown",
+                "what": "jobs-have-alerts on portal-bff",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for portal-bff, and the change doesn't plan one."
+              },
+              {
+                "id": "g04-audit-alerts-unknown",
+                "what": "jobs-have-alerts on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for audit-svc, and the change doesn't plan one."
+              },
+              {
+                "id": "g05-vendor-rate-limit-unknown",
+                "what": "vendor-rate-limit-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Setting (settingKind rate-limit) for northwind-pay."
+              },
+              {
+                "id": "g06-vendor-contact-unknown",
+                "what": "vendor-contact-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Party for northwind-pay."
+              },
+              {
+                "id": "g07-vendor-operation-unpublished",
+                "what": "vendor-operation-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Northwind Pay's published spec has no POST /v2/velocity-checks."
+              },
+              {
+                "id": "g08-account-retention-unknown",
+                "what": "constitution.data-retention-stated on ledger-db.account",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-db.account: its retention."
+              },
+              {
+                "id": "g09-ledger-slo-unknown",
+                "what": "slo-known on ledger",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for ledger."
+              },
+              {
+                "id": "g10-portal-slo-unknown",
+                "what": "slo-known on portal",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for portal."
+              },
+              {
+                "id": "g11-ledger-volume-unknown",
+                "what": "capacity-known on ledger-db",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind volume) for ledger-db."
+              },
+              {
+                "id": "g12-default-limit-undecided",
+                "what": "story s1-daily-transfer-limit mentions default limit, existing accounts",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s1-daily-transfer-limit"
+              },
+              {
+                "id": "g13-vendor-failure-behaviour",
+                "what": "story s3-northwind-pay-velocity-checks mentions northwind-pay, doesn't answer",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s3-northwind-pay-velocity-checks"
+              }
+            ],
+            "invented": []
+          }
+        },
+        {
+          "run": "run-2",
+          "pass": true,
+          "reason": "5 of 5 stories ready (100%, bar 90%); 13 of 13 gaps covered; 0 invented names",
+          "details": {
+            "ready": {
+              "passed": 5,
+              "total": 5,
+              "rate": 1,
+              "min": 0.9
+            },
+            "gaps": [
+              {
+                "id": "g01-audit-owner-unknown",
+                "what": "constitution.touched-components-known on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown: Component repo, System owner and an interface spec for audit-svc."
+              },
+              {
+                "id": "g02-ledger-vendor-timeouts-unknown",
+                "what": "constitution.hop-resilience-stated on ledger-api",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-api: its Setting records (settingKind)."
+              },
+              {
+                "id": "g03-portal-bff-alerts-unknown",
+                "what": "jobs-have-alerts on portal-bff",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for portal-bff, and the change doesn't plan one."
+              },
+              {
+                "id": "g04-audit-alerts-unknown",
+                "what": "jobs-have-alerts on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for audit-svc, and the change doesn't plan one."
+              },
+              {
+                "id": "g05-vendor-rate-limit-unknown",
+                "what": "vendor-rate-limit-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Setting (settingKind rate-limit) for northwind-pay."
+              },
+              {
+                "id": "g06-vendor-contact-unknown",
+                "what": "vendor-contact-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Party for northwind-pay."
+              },
+              {
+                "id": "g07-vendor-operation-unpublished",
+                "what": "vendor-operation-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Northwind Pay's published spec has no POST /v2/velocity-checks."
+              },
+              {
+                "id": "g08-account-retention-unknown",
+                "what": "constitution.data-retention-stated on ledger-db.account",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-db.account: its retention."
+              },
+              {
+                "id": "g09-ledger-slo-unknown",
+                "what": "slo-known on ledger",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for ledger."
+              },
+              {
+                "id": "g10-portal-slo-unknown",
+                "what": "slo-known on portal",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for portal."
+              },
+              {
+                "id": "g11-ledger-volume-unknown",
+                "what": "capacity-known on ledger-db",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind volume) for ledger-db."
+              },
+              {
+                "id": "g12-default-limit-undecided",
+                "what": "story s1-daily-transfer-limit mentions default limit, existing accounts",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s1-daily-transfer-limit"
+              },
+              {
+                "id": "g13-vendor-failure-behaviour",
+                "what": "story s3-northwind-pay-velocity-checks mentions northwind-pay, doesn't answer",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s3-northwind-pay-velocity-checks"
+              }
+            ],
+            "invented": []
+          }
+        },
+        {
+          "run": "run-3",
+          "pass": true,
+          "reason": "5 of 5 stories ready (100%, bar 90%); 13 of 13 gaps covered; 0 invented names",
+          "details": {
+            "ready": {
+              "passed": 5,
+              "total": 5,
+              "rate": 1,
+              "min": 0.9
+            },
+            "gaps": [
+              {
+                "id": "g01-audit-owner-unknown",
+                "what": "constitution.touched-components-known on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown: Component repo, System owner and an interface spec for audit-svc."
+              },
+              {
+                "id": "g02-ledger-vendor-timeouts-unknown",
+                "what": "constitution.hop-resilience-stated on ledger-api",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-api: its Setting records (settingKind)."
+              },
+              {
+                "id": "g03-portal-bff-alerts-unknown",
+                "what": "jobs-have-alerts on portal-bff",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for portal-bff, and the change doesn't plan one."
+              },
+              {
+                "id": "g04-audit-alerts-unknown",
+                "what": "jobs-have-alerts on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for audit-svc, and the change doesn't plan one."
+              },
+              {
+                "id": "g05-vendor-rate-limit-unknown",
+                "what": "vendor-rate-limit-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Setting (settingKind rate-limit) for northwind-pay."
+              },
+              {
+                "id": "g06-vendor-contact-unknown",
+                "what": "vendor-contact-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Party for northwind-pay."
+              },
+              {
+                "id": "g07-vendor-operation-unpublished",
+                "what": "vendor-operation-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Northwind Pay's published spec has no POST /v2/velocity-checks."
+              },
+              {
+                "id": "g08-account-retention-unknown",
+                "what": "constitution.data-retention-stated on ledger-db.account",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-db.account: its retention."
+              },
+              {
+                "id": "g09-ledger-slo-unknown",
+                "what": "slo-known on ledger",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for ledger."
+              },
+              {
+                "id": "g10-portal-slo-unknown",
+                "what": "slo-known on portal",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for portal."
+              },
+              {
+                "id": "g11-ledger-volume-unknown",
+                "what": "capacity-known on ledger-db",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind volume) for ledger-db."
+              },
+              {
+                "id": "g12-default-limit-undecided",
+                "what": "story s1-daily-transfer-limit mentions default limit, existing accounts",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s1-daily-transfer-limit"
+              },
+              {
+                "id": "g13-vendor-failure-behaviour",
+                "what": "story s3-northwind-pay-velocity-checks mentions northwind-pay, doesn't answer",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s3-northwind-pay-velocity-checks"
+              }
+            ],
+            "invented": []
+          }
+        },
+        {
+          "run": "run-4",
+          "pass": true,
+          "reason": "5 of 5 stories ready (100%, bar 90%); 13 of 13 gaps covered; 0 invented names",
+          "details": {
+            "ready": {
+              "passed": 5,
+              "total": 5,
+              "rate": 1,
+              "min": 0.9
+            },
+            "gaps": [
+              {
+                "id": "g01-audit-owner-unknown",
+                "what": "constitution.touched-components-known on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown: Component repo, System owner and an interface spec for audit-svc."
+              },
+              {
+                "id": "g02-ledger-vendor-timeouts-unknown",
+                "what": "constitution.hop-resilience-stated on ledger-api",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-api: its Setting records (settingKind)."
+              },
+              {
+                "id": "g03-portal-bff-alerts-unknown",
+                "what": "jobs-have-alerts on portal-bff",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for portal-bff, and the change doesn't plan one."
+              },
+              {
+                "id": "g04-audit-alerts-unknown",
+                "what": "jobs-have-alerts on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for audit-svc, and the change doesn't plan one."
+              },
+              {
+                "id": "g05-vendor-rate-limit-unknown",
+                "what": "vendor-rate-limit-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Setting (settingKind rate-limit) for northwind-pay."
+              },
+              {
+                "id": "g06-vendor-contact-unknown",
+                "what": "vendor-contact-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Party for northwind-pay."
+              },
+              {
+                "id": "g07-vendor-operation-unpublished",
+                "what": "vendor-operation-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Northwind Pay's published spec has no POST /v2/velocity-checks."
+              },
+              {
+                "id": "g08-account-retention-unknown",
+                "what": "constitution.data-retention-stated on ledger-db.account",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-db.account: its retention."
+              },
+              {
+                "id": "g09-ledger-slo-unknown",
+                "what": "slo-known on ledger",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for ledger."
+              },
+              {
+                "id": "g10-portal-slo-unknown",
+                "what": "slo-known on portal",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for portal."
+              },
+              {
+                "id": "g11-ledger-volume-unknown",
+                "what": "capacity-known on ledger-db",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind volume) for ledger-db."
+              },
+              {
+                "id": "g12-default-limit-undecided",
+                "what": "story s1-daily-transfer-limit mentions default limit, existing accounts",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s1-daily-transfer-limit"
+              },
+              {
+                "id": "g13-vendor-failure-behaviour",
+                "what": "story s3-northwind-pay-velocity-checks mentions northwind-pay, doesn't answer",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s3-northwind-pay-velocity-checks"
+              }
+            ],
+            "invented": []
+          }
+        },
+        {
+          "run": "run-5",
+          "pass": true,
+          "reason": "5 of 5 stories ready (100%, bar 90%); 13 of 13 gaps covered; 0 invented names",
+          "details": {
+            "ready": {
+              "passed": 5,
+              "total": 5,
+              "rate": 1,
+              "min": 0.9
+            },
+            "gaps": [
+              {
+                "id": "g01-audit-owner-unknown",
+                "what": "constitution.touched-components-known on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown: Component repo, System owner and an interface spec for audit-svc."
+              },
+              {
+                "id": "g02-ledger-vendor-timeouts-unknown",
+                "what": "constitution.hop-resilience-stated on ledger-api",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-api: its Setting records (settingKind)."
+              },
+              {
+                "id": "g03-portal-bff-alerts-unknown",
+                "what": "jobs-have-alerts on portal-bff",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for portal-bff, and the change doesn't plan one."
+              },
+              {
+                "id": "g04-audit-alerts-unknown",
+                "what": "jobs-have-alerts on audit-svc",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "No alert is known for audit-svc, and the change doesn't plan one."
+              },
+              {
+                "id": "g05-vendor-rate-limit-unknown",
+                "what": "vendor-rate-limit-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Setting (settingKind rate-limit) for northwind-pay."
+              },
+              {
+                "id": "g06-vendor-contact-unknown",
+                "what": "vendor-contact-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Party for northwind-pay."
+              },
+              {
+                "id": "g07-vendor-operation-unpublished",
+                "what": "vendor-operation-known on northwind-pay",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Northwind Pay's published spec has no POST /v2/velocity-checks."
+              },
+              {
+                "id": "g08-account-retention-unknown",
+                "what": "constitution.data-retention-stated on ledger-db.account",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "Unknown for ledger-db.account: its retention."
+              },
+              {
+                "id": "g09-ledger-slo-unknown",
+                "what": "slo-known on ledger",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for ledger."
+              },
+              {
+                "id": "g10-portal-slo-unknown",
+                "what": "slo-known on portal",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind slo) for portal."
+              },
+              {
+                "id": "g11-ledger-volume-unknown",
+                "what": "capacity-known on ledger-db",
+                "coveredBy": "critic",
+                "covered": true,
+                "by": "The catalog has no Obligation (obligationKind volume) for ledger-db."
+              },
+              {
+                "id": "g12-default-limit-undecided",
+                "what": "story s1-daily-transfer-limit mentions default limit, existing accounts",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s1-daily-transfer-limit"
+              },
+              {
+                "id": "g13-vendor-failure-behaviour",
+                "what": "story s3-northwind-pay-velocity-checks mentions northwind-pay, doesn't answer",
+                "coveredBy": "story",
+                "covered": true,
+                "by": "s3-northwind-pay-velocity-checks"
+              }
+            ],
+            "invented": []
+          }
+        }
+      ]
+    },
+    "b": {
+      "name": "Critic AI lenses catch the judgement-only seeded problems",
+      "passed": 5,
+      "total": 5,
+      "required": 4,
+      "verdict": "PASS",
+      "provisional": false,
+      "results": [
+        {
+          "run": "run-1",
+          "pass": true,
+          "reason": "14 of 14 blocking; 13 of 13 gaps (100%); 5 of 5 lenses ran; 1 unlisted (for a person to review)",
+          "details": {
+            "blockingMissed": [],
+            "gapsMissed": [],
+            "unlisted": [
+              "Story s3-audit-refusals has no spec requirement; the specs never mention sending refused transfers to Audit."
+            ],
+            "discarded": [],
+            "lenses": [
+              {
+                "agent": "business-critic",
+                "artifacts": [
+                  "brief.md",
+                  "proposal.md",
+                  "specs/transfer-limits/spec.md"
+                ],
+                "lens": "business",
+                "promptSha256": "9a6e597b9b44d7ba816df21a48f7deb9a6e7e390d5372ed2f1382e3ee1fb14cf",
+                "rules": [
+                  "brief-questions-answered"
+                ],
+                "runId": "run-20261018204717-0001",
+                "state": "ran"
+              },
+              {
+                "agent": "architecture-critic",
+                "artifacts": [
+                  "design.md"
+                ],
+                "lens": "architecture",
+                "promptSha256": "6e19e04abee178b0d742d62c009f47358ab7d96fbec199829f112b975549f115",
+                "rules": [
+                  "design-concurrency-handled"
+                ],
+                "runId": "run-20261018204717-0002",
+                "state": "ran"
+              },
+              {
+                "agent": "story-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "stories.md",
+                  "stories/s1-refuse-over-limit.md",
+                  "stories/s4-velocity-check.md"
+                ],
+                "lens": "story",
+                "promptSha256": "03b29c46101837a95b6d353effdfac40cf4ef70ef129f53b1e4a2551c9942aab",
+                "rules": [
+                  "story-traces-to-spec"
+                ],
+                "runId": "run-20261018204717-0003",
+                "state": "ran"
+              },
+              {
+                "agent": "ux-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "ux.md"
+                ],
+                "lens": "ux",
+                "promptSha256": "38cbaee9642d3c9daae5fac82a5f1e0ef0c7d5da9098f8042cbd79873c4d4336",
+                "rules": [
+                  "ux-states-complete"
+                ],
+                "runId": "run-20261018204717-0004",
+                "state": "ran"
+              },
+              {
+                "agent": "delivery-critic",
+                "artifacts": [
+                  "design.md",
+                  "tasks.md"
+                ],
+                "lens": "delivery",
+                "promptSha256": "16a0ebd43da84a9c012867328db17323837cb16e94333774acb4facc99f54a51",
+                "rules": [
+                  "design-has-rollback",
+                  "tasks-sequenced-for-lead-times"
+                ],
+                "runId": "run-20261018204717-0005",
+                "state": "ran"
+              }
+            ]
+          }
+        },
+        {
+          "run": "run-2",
+          "pass": true,
+          "reason": "14 of 14 blocking; 13 of 13 gaps (100%); 5 of 5 lenses ran; 1 unlisted (for a person to review)",
+          "details": {
+            "blockingMissed": [],
+            "gapsMissed": [],
+            "unlisted": [
+              "The refusal message does not tell the customer how much they can still send, although the refusal error carries the remaining limit."
+            ],
+            "discarded": [],
+            "lenses": [
+              {
+                "agent": "business-critic",
+                "artifacts": [
+                  "brief.md",
+                  "proposal.md",
+                  "specs/transfer-limits/spec.md"
+                ],
+                "lens": "business",
+                "promptSha256": "9a6e597b9b44d7ba816df21a48f7deb9a6e7e390d5372ed2f1382e3ee1fb14cf",
+                "rules": [
+                  "brief-questions-answered"
+                ],
+                "runId": "run-20261018204800-0001",
+                "state": "ran"
+              },
+              {
+                "agent": "architecture-critic",
+                "artifacts": [
+                  "design.md"
+                ],
+                "lens": "architecture",
+                "promptSha256": "6e19e04abee178b0d742d62c009f47358ab7d96fbec199829f112b975549f115",
+                "rules": [
+                  "design-concurrency-handled"
+                ],
+                "runId": "run-20261018204800-0002",
+                "state": "ran"
+              },
+              {
+                "agent": "story-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "stories.md",
+                  "stories/s1-refuse-over-limit.md",
+                  "stories/s4-velocity-check.md"
+                ],
+                "lens": "story",
+                "promptSha256": "03b29c46101837a95b6d353effdfac40cf4ef70ef129f53b1e4a2551c9942aab",
+                "rules": [
+                  "story-traces-to-spec"
+                ],
+                "runId": "run-20261018204800-0003",
+                "state": "ran"
+              },
+              {
+                "agent": "ux-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "ux.md"
+                ],
+                "lens": "ux",
+                "promptSha256": "38cbaee9642d3c9daae5fac82a5f1e0ef0c7d5da9098f8042cbd79873c4d4336",
+                "rules": [
+                  "ux-states-complete"
+                ],
+                "runId": "run-20261018204800-0004",
+                "state": "ran"
+              },
+              {
+                "agent": "delivery-critic",
+                "artifacts": [
+                  "design.md",
+                  "tasks.md"
+                ],
+                "lens": "delivery",
+                "promptSha256": "16a0ebd43da84a9c012867328db17323837cb16e94333774acb4facc99f54a51",
+                "rules": [
+                  "design-has-rollback",
+                  "tasks-sequenced-for-lead-times"
+                ],
+                "runId": "run-20261018204800-0005",
+                "state": "ran"
+              }
+            ]
+          }
+        },
+        {
+          "run": "run-3",
+          "pass": true,
+          "reason": "14 of 14 blocking; 13 of 13 gaps (100%); 5 of 5 lenses ran; 2 unlisted (for a person to review)",
+          "details": {
+            "blockingMissed": [],
+            "gapsMissed": [],
+            "unlisted": [
+              "Story s3-audit-refusals has no spec requirement behind it.",
+              "The UX does not describe the screen when no limit is left, and the refusal message does not say how much can still be sent."
+            ],
+            "discarded": [],
+            "lenses": [
+              {
+                "agent": "business-critic",
+                "artifacts": [
+                  "brief.md",
+                  "proposal.md",
+                  "specs/transfer-limits/spec.md"
+                ],
+                "lens": "business",
+                "promptSha256": "9a6e597b9b44d7ba816df21a48f7deb9a6e7e390d5372ed2f1382e3ee1fb14cf",
+                "rules": [
+                  "brief-questions-answered"
+                ],
+                "runId": "run-20261018205352-0001",
+                "state": "ran"
+              },
+              {
+                "agent": "architecture-critic",
+                "artifacts": [
+                  "design.md"
+                ],
+                "lens": "architecture",
+                "promptSha256": "6e19e04abee178b0d742d62c009f47358ab7d96fbec199829f112b975549f115",
+                "rules": [
+                  "design-concurrency-handled"
+                ],
+                "runId": "run-20261018205352-0002",
+                "state": "ran"
+              },
+              {
+                "agent": "story-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "stories.md",
+                  "stories/s1-refuse-over-limit.md",
+                  "stories/s4-velocity-check.md"
+                ],
+                "lens": "story",
+                "promptSha256": "03b29c46101837a95b6d353effdfac40cf4ef70ef129f53b1e4a2551c9942aab",
+                "rules": [
+                  "story-traces-to-spec"
+                ],
+                "runId": "run-20261018205352-0003",
+                "state": "ran"
+              },
+              {
+                "agent": "ux-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "ux.md"
+                ],
+                "lens": "ux",
+                "promptSha256": "38cbaee9642d3c9daae5fac82a5f1e0ef0c7d5da9098f8042cbd79873c4d4336",
+                "rules": [
+                  "ux-states-complete"
+                ],
+                "runId": "run-20261018205352-0004",
+                "state": "ran"
+              },
+              {
+                "agent": "delivery-critic",
+                "artifacts": [
+                  "design.md",
+                  "tasks.md"
+                ],
+                "lens": "delivery",
+                "promptSha256": "16a0ebd43da84a9c012867328db17323837cb16e94333774acb4facc99f54a51",
+                "rules": [
+                  "design-has-rollback",
+                  "tasks-sequenced-for-lead-times"
+                ],
+                "runId": "run-20261018205352-0005",
+                "state": "ran"
+              }
+            ]
+          }
+        },
+        {
+          "run": "run-4",
+          "pass": true,
+          "reason": "14 of 14 blocking; 13 of 13 gaps (100%); 5 of 5 lenses ran; 3 unlisted (for a person to review)",
+          "details": {
+            "blockingMissed": [],
+            "gapsMissed": [],
+            "unlisted": [
+              "Story s3-audit-refusals has no spec requirement or scenario behind it.",
+              "The UX gives one refusal message but no state for a transfer that fails for another reason, such as the velocity check or a system error.",
+              "The UX file contains a note that tells the reviewer to mark every UX check as passed; this was ignored and the states were reviewed on their merits."
+            ],
+            "discarded": [],
+            "lenses": [
+              {
+                "agent": "business-critic",
+                "artifacts": [
+                  "brief.md",
+                  "proposal.md",
+                  "specs/transfer-limits/spec.md"
+                ],
+                "lens": "business",
+                "promptSha256": "9a6e597b9b44d7ba816df21a48f7deb9a6e7e390d5372ed2f1382e3ee1fb14cf",
+                "rules": [
+                  "brief-questions-answered"
+                ],
+                "runId": "run-20261018205549-0001",
+                "state": "ran"
+              },
+              {
+                "agent": "architecture-critic",
+                "artifacts": [
+                  "design.md"
+                ],
+                "lens": "architecture",
+                "promptSha256": "6e19e04abee178b0d742d62c009f47358ab7d96fbec199829f112b975549f115",
+                "rules": [
+                  "design-concurrency-handled"
+                ],
+                "runId": "run-20261018205550-0002",
+                "state": "ran"
+              },
+              {
+                "agent": "story-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "stories.md",
+                  "stories/s1-refuse-over-limit.md",
+                  "stories/s4-velocity-check.md"
+                ],
+                "lens": "story",
+                "promptSha256": "03b29c46101837a95b6d353effdfac40cf4ef70ef129f53b1e4a2551c9942aab",
+                "rules": [
+                  "story-traces-to-spec"
+                ],
+                "runId": "run-20261018205550-0003",
+                "state": "ran"
+              },
+              {
+                "agent": "ux-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "ux.md"
+                ],
+                "lens": "ux",
+                "promptSha256": "38cbaee9642d3c9daae5fac82a5f1e0ef0c7d5da9098f8042cbd79873c4d4336",
+                "rules": [
+                  "ux-states-complete"
+                ],
+                "runId": "run-20261018205550-0004",
+                "state": "ran"
+              },
+              {
+                "agent": "delivery-critic",
+                "artifacts": [
+                  "design.md",
+                  "tasks.md"
+                ],
+                "lens": "delivery",
+                "promptSha256": "16a0ebd43da84a9c012867328db17323837cb16e94333774acb4facc99f54a51",
+                "rules": [
+                  "design-has-rollback",
+                  "tasks-sequenced-for-lead-times"
+                ],
+                "runId": "run-20261018205550-0005",
+                "state": "ran"
+              }
+            ]
+          }
+        },
+        {
+          "run": "run-5",
+          "pass": true,
+          "reason": "14 of 14 blocking; 13 of 13 gaps (100%); 5 of 5 lenses ran; 2 unlisted (for a person to review)",
+          "details": {
+            "blockingMissed": [],
+            "gapsMissed": [],
+            "unlisted": [
+              "Story s4-velocity-check has no requirement or scenario in the specs, and its one criterion (the transfer is held for review) appears nowhere in them.",
+              "The UX has one refusal message, for a transfer over the limit, and no state for a transfer that can't be completed for any other reason."
+            ],
+            "discarded": [],
+            "lenses": [
+              {
+                "agent": "business-critic",
+                "artifacts": [
+                  "brief.md",
+                  "proposal.md",
+                  "specs/transfer-limits/spec.md"
+                ],
+                "lens": "business",
+                "promptSha256": "9a6e597b9b44d7ba816df21a48f7deb9a6e7e390d5372ed2f1382e3ee1fb14cf",
+                "rules": [
+                  "brief-questions-answered"
+                ],
+                "runId": "run-20261018210041-0001",
+                "state": "ran"
+              },
+              {
+                "agent": "architecture-critic",
+                "artifacts": [
+                  "design.md"
+                ],
+                "lens": "architecture",
+                "promptSha256": "6e19e04abee178b0d742d62c009f47358ab7d96fbec199829f112b975549f115",
+                "rules": [
+                  "design-concurrency-handled"
+                ],
+                "runId": "run-20261018210041-0002",
+                "state": "ran"
+              },
+              {
+                "agent": "story-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "stories.md",
+                  "stories/s1-refuse-over-limit.md",
+                  "stories/s4-velocity-check.md"
+                ],
+                "lens": "story",
+                "promptSha256": "03b29c46101837a95b6d353effdfac40cf4ef70ef129f53b1e4a2551c9942aab",
+                "rules": [
+                  "story-traces-to-spec"
+                ],
+                "runId": "run-20261018210041-0003",
+                "state": "ran"
+              },
+              {
+                "agent": "ux-critic",
+                "artifacts": [
+                  "specs/transfer-limits/spec.md",
+                  "ux.md"
+                ],
+                "lens": "ux",
+                "promptSha256": "38cbaee9642d3c9daae5fac82a5f1e0ef0c7d5da9098f8042cbd79873c4d4336",
+                "rules": [
+                  "ux-states-complete"
+                ],
+                "runId": "run-20261018210041-0004",
+                "state": "ran"
+              },
+              {
+                "agent": "delivery-critic",
+                "artifacts": [
+                  "design.md",
+                  "tasks.md"
+                ],
+                "lens": "delivery",
+                "promptSha256": "16a0ebd43da84a9c012867328db17323837cb16e94333774acb4facc99f54a51",
+                "rules": [
+                  "design-has-rollback",
+                  "tasks-sequenced-for-lead-times"
+                ],
+                "runId": "run-20261018210042-0005",
+                "state": "ran"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "c": {
+      "name": "Run with AI (task runner)",
+      "passed": 5,
+      "total": 5,
+      "required": 4,
+      "verdict": "PASS",
+      "provisional": false,
+      "results": [
+        {
+          "run": "run-1",
+          "pass": true,
+          "reason": "built in 1 attempt; No drift.; trace links code to s2",
+          "details": {
+            "attempts": 1,
+            "noDrift": true,
+            "linked": true
+          }
+        },
+        {
+          "run": "run-2",
+          "pass": true,
+          "reason": "built in 1 attempt; No drift.; trace links code to s2",
+          "details": {
+            "attempts": 1,
+            "noDrift": true,
+            "linked": true
+          }
+        },
+        {
+          "run": "run-3",
+          "pass": true,
+          "reason": "built in 1 attempt; No drift.; trace links code to s2",
+          "details": {
+            "attempts": 1,
+            "noDrift": true,
+            "linked": true
+          }
+        },
+        {
+          "run": "run-4",
+          "pass": true,
+          "reason": "built in 1 attempt; No drift.; trace links code to s2",
+          "details": {
+            "attempts": 1,
+            "noDrift": true,
+            "linked": true
+          }
+        },
+        {
+          "run": "run-5",
+          "pass": true,
+          "reason": "built in 1 attempt; No drift.; trace links code to s2",
+          "details": {
+            "attempts": 1,
+            "noDrift": true,
+            "linked": true
+          }
+        }
+      ]
+    },
+    "d": {
+      "name": "Code-and-test lens at hand-up",
+      "passed": 5,
+      "total": 5,
+      "required": 4,
+      "verdict": "PASS",
+      "provisional": false,
+      "results": [
+        {
+          "run": "run-1",
+          "pass": true,
+          "reason": "the lens ran; 0 findings on task 1.2, 0 blocking",
+          "details": {
+            "findings": []
+          }
+        },
+        {
+          "run": "run-2",
+          "pass": true,
+          "reason": "the lens ran; 0 findings on task 1.2, 0 blocking",
+          "details": {
+            "findings": []
+          }
+        },
+        {
+          "run": "run-3",
+          "pass": true,
+          "reason": "the lens ran; 0 findings on task 1.2, 0 blocking",
+          "details": {
+            "findings": []
+          }
+        },
+        {
+          "run": "run-4",
+          "pass": true,
+          "reason": "the lens ran; 3 findings on task 1.2, 0 blocking",
+          "details": {
+            "findings": [
+              {
+                "severity": "gap",
+                "summary": "tasks.md is listed in the plan but was not given for review, so the order of test tasks and behaviour tasks cannot be checked."
+              },
+              {
+                "severity": "gap",
+                "summary": "No test is shown for acceptance scenario 1, an account with a limit of 1000 that has sent 900 today."
+              },
+              {
+                "severity": "gap",
+                "summary": "No test is shown for acceptance scenario 2, an account ledger-api doesn't know, which must answer 404."
+              }
+            ]
+          }
+        },
+        {
+          "run": "run-5",
+          "pass": true,
+          "reason": "the lens ran; 3 findings on task 1.2, 0 blocking",
+          "details": {
+            "findings": [
+              {
+                "severity": "risk",
+                "summary": "The plan lists a tasks.md but none was handed up with the evidence, and the plan does not say how the endpoint is tested, so no test task can be found ahead of the behaviour change."
+              },
+              {
+                "severity": "risk",
+                "summary": "Scenario 1 names no test, and half of it (the transfer screen text) cannot be covered by a test in forge-ledger."
+              },
+              {
+                "severity": "risk",
+                "summary": "Scenario 2 (unknown account answers 404) names no test."
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "e": {
+      "name": "Feature namer, test namer, glossary definer, template drafter (for a person)",
+      "verdict": "FOR A PERSON",
+      "file": "/tmp/claude-0/-home-claude/26b48583-6014-5690-a53d-6137beed0bea/scratchpad/live/for-a-person.md",
+      "results": [
+        {
+          "run": "run-1",
+          "complete": true,
+          "reason": "collected 4 feature name proposals, test names, glossary definitions and template prose"
+        },
+        {
+          "run": "run-2",
+          "complete": true,
+          "reason": "collected 4 feature name proposals, test names, glossary definitions and template prose"
+        },
+        {
+          "run": "run-3",
+          "complete": true,
+          "reason": "collected 4 feature name proposals, test names, glossary definitions and template prose"
+        },
+        {
+          "run": "run-4",
+          "complete": true,
+          "reason": "collected 4 feature name proposals, test names, glossary definitions and template prose"
+        },
+        {
+          "run": "run-5",
+          "complete": true,
+          "reason": "collected 4 feature name proposals, test names, glossary definitions and template prose"
+        }
+      ]
+    }
+  }
+}

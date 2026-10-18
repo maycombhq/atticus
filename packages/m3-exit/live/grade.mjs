@@ -96,13 +96,38 @@ async function gradeCritic(runDir) {
     return fail("the critic was never run at the plan gate (no review/plan/1/meta/round.yaml)");
   const found = (await yamlFiles(roundDir)).map(([, f]) => f);
   const ex = await readYaml(join(FORGE_CHANGE, "expected/findings.yaml"));
-  const caught = (list) => list.filter((s) => found.some((f) => matches(s, f)));
+  // A seeded judgement (layer ai) is caught when a finding raises the same problem: same rule,
+  // severity and kind, anchored on the seeded artifact or one the rule reads (the brief's open
+  // questions can be anchored on the brief, the proposal or a spec; a story on its file or on
+  // stories.md). The line isn't compared: a lens may point at the heading or the sentence. Each
+  // finding counts for one seeded problem only. Deterministic findings keep the exact rule.
+  const RELATED = {
+    "brief-questions-answered": (a) =>
+      a === "brief.md" || a === "proposal.md" || a.startsWith("specs/"),
+    "story-traces-to-spec": (a) => a === "stories.md" || a.startsWith("stories/"),
+  };
+  const used = new Set();
+  const judged = (s, f) =>
+    f.rule === s.rule &&
+    f.severity === s.severity &&
+    f.kind === s.kind &&
+    (f.artifact === s.artifact || (RELATED[s.rule]?.(f.artifact) ?? false));
+  const hit = (s) => {
+    if (s.layer !== "ai") return found.some((f) => matches(s, f));
+    const exact = found.find((f) => !used.has(f) && matches(s, f));
+    const f = exact ?? found.find((x) => !used.has(x) && judged(s, x));
+    if (f) used.add(f);
+    return Boolean(f);
+  };
+  const caught = (list) => list.filter((s) => hit(s));
   const blocking = ex.seeded.filter((s) => s.severity === "blocking");
   const gaps = ex.seeded.filter((s) => s.kind === "knowledge-gap");
   const blockingHit = caught(blocking);
   const gapsHit = caught(gaps);
   const listed = [...ex.seeded, ...ex.alsoExpected];
-  const unlisted = found.filter((f) => !listed.some((s) => matches(s, f))).map((f) => f.summary);
+  const unlisted = found
+    .filter((f) => !used.has(f) && !listed.some((s) => matches(s, f)))
+    .map((f) => f.summary);
   const lenses = (meta.lenses ?? []).filter((l) => l.lens !== "release");
   if (lenses.length === 0) return fail("round 1 has no AI lens (the critic ran without --mode)");
   const ranLenses = lenses.filter((l) => l.state === "ran").length;

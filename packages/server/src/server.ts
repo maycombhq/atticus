@@ -3,8 +3,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
 import { DEFAULT_PORT } from "@maycombhq/core";
-import { HttpError, problem, Router } from "./http.js";
-import { apiRoutes } from "./routes.js";
+import { HttpError, notFound, conflict, problem, Router } from "./http.js";
+import { JobManager } from "./jobs.js";
+import { apiRoutes, type Context } from "./routes.js";
 import { upgrade, type Socket } from "./ws.js";
 
 /** A live event (contract C4 LiveEvent): file, job, index and run changes. */
@@ -41,6 +42,16 @@ export interface ServerOptions {
   user?: string;
   /** The Atticus version reported by health. */
   version?: string;
+  /**
+   * More routes, registered by whoever starts the server (the CLI adds the write calls, which
+   * run the same command functions the terminal does).
+   */
+  extend?: (r: Router, ctx: ServerContext) => void;
+}
+
+export interface ServerContext extends Context {
+  events: EventHub;
+  jobs: JobManager;
 }
 
 export interface RunningServer {
@@ -49,6 +60,7 @@ export interface RunningServer {
   /** New every start; every API call must send it as X-Atticus-Token. */
   token: string;
   events: EventHub;
+  jobs: JobManager;
   close(): Promise<void>;
 }
 
@@ -100,11 +112,27 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     throw new Error(`Atticus only listens on 127.0.0.1 (asked for ${host}).`);
   const token = randomBytes(32).toString("base64url");
   const events = new EventHub();
-  const router = apiRoutes(new Router(), {
+  const jobs = new JobManager((e) => events.publish(e));
+  const ctx: ServerContext = {
     root: o.root,
     user: o.user ?? process.env.USER ?? process.env.USERNAME ?? "unknown",
     version: o.version ?? "0.0.0",
-  });
+    events,
+    jobs,
+  };
+  const router = apiRoutes(new Router(), ctx)
+    .add("GET", "/api/jobs/{jobId}", ({ params }) => {
+      const j = jobs.get(params.jobId!);
+      if (!j) throw notFound(`There is no job ${params.jobId}.`);
+      return { status: 200, body: j };
+    })
+    .add("POST", "/api/jobs/{jobId}/cancel", ({ params }) => {
+      const j = jobs.get(params.jobId!);
+      if (!j) throw notFound(`There is no job ${params.jobId}.`);
+      if (!jobs.cancel(j.id)) throw conflict(`Job ${j.id} already finished (${j.state}).`);
+      return { status: 200, body: j };
+    });
+  o.extend?.(router, ctx);
   let port = 0;
 
   /** Host must be this server (DNS rebinding); Origin, when a browser sends one, too. */
@@ -176,6 +204,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     port,
     token,
     events,
+    jobs,
     close: () =>
       new Promise<void>((resolve) => {
         events.closeAll();

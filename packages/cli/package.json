@@ -41,11 +41,13 @@
     "@maycombhq/planner": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",
     "@maycombhq/scanner": "workspace:*",
+    "@maycombhq/server": "workspace:*",
     "@maycombhq/speckit": "workspace:*",
     "@maycombhq/stubs": "workspace:*",
     "@maycombhq/taskrun": "workspace:*",
     "@maycombhq/testgen": "workspace:*",
-    "@maycombhq/workspace": "workspace:*"
+    "@maycombhq/workspace": "workspace:*",
+    "zod": "^4.6.0"
   },
   "devDependencies": {
     "yaml": "^2.9.1"
