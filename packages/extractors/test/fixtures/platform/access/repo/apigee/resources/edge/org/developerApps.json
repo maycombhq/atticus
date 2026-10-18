@@ -1,0 +1,8 @@
+{
+  "partner-dev@example.com": [
+    {
+      "name": "northwind-pay-app",
+      "apiProducts": ["ledger-partner"]
+    }
+  ]
+}

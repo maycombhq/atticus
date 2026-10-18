@@ -1,0 +1,70 @@
+# Hand-written expected output of the openshift extractor over ./repo (repo "forge-ocp", type infra).
+# Evidence lists repo, path, line and source; the runner's commit, scannedAt and extractor stamps
+# are left out. schemaVersion and status default to 1 and current.
+records:
+  - kind: Deployment
+    id: ledger-api.prod
+    confidence: verified
+    component: ledger-api
+    env: prod
+    platform: openshift
+    replicas: 3
+    resources: { cpu: 500m, memory: 768Mi }
+    autoscaling: { min: 3, max: 8 }
+    networkPolicies: [allow-from-gateway, deny-all]
+    evidence:
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 2 }
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 27 }
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/network-policies.yaml, line: 2 }
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/network-policies.yaml, line: 17 }
+
+  # A plain Kubernetes Deployment outside the folders the infra extractor reads, and not the
+  # first document in its file: the infra extractor can't see it, so this one emits it whole.
+  - kind: Deployment
+    id: portal-bff.prod
+    confidence: verified
+    component: portal-bff
+    env: prod
+    platform: kubernetes
+    replicas: 2
+    resources: { cpu: 250m, memory: 512Mi }
+    networkPolicies: [allow-portal, deny-all]
+    evidence:
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/portal-bff.yaml, line: 10 }
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/network-policies.yaml, line: 17 }
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/network-policies.yaml, line: 26 }
+
+  # From the OpenShift Template, with parameter defaults filled in. The policy in namespace
+  # forge-uat selects every pod there, so it applies even though its file sits under prod.
+  - kind: Deployment
+    id: notify-svc.uat
+    confidence: verified
+    component: notify-svc
+    env: uat
+    platform: openshift
+    replicas: 2
+    resources: { memory: 256Mi }
+    networkPolicies: [other-namespace]
+    evidence:
+      - { source: infrastructure, repo: forge-ocp, path: ocp/templates/notify-svc-template.yaml, line: 19 }
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/network-policies.yaml, line: 36 }
+
+  # A Route is not an API gateway route (C1 GatewayRoute), so its public URL is kept as a
+  # config Setting of the component behind the Service it points to.
+  - kind: Setting
+    id: ledger-api.prod.route-ledger-public
+    confidence: verified
+    component: ledger-api
+    env: prod
+    settingKind: config
+    key: route.ledger-public
+    valueOrRef: https://ledger.apps.forge.example/ledger
+    evidence:
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 51 }
+      - { source: infrastructure, repo: forge-ocp, path: ocp/overlays/prod/ledger-api.yaml, line: 40 }
+
+warnings:
+  - path: ocp/overlays/dev/broken.yaml
+    message: Could not read this file as YAML; skipped it.
+  - path: ocp/templates/notify-svc-template.yaml
+    message: "Skipped Route notify-svc: template parameter ROUTE_HOST has no value."

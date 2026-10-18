@@ -1,0 +1,21 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: job-runner
+rules:
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: reports-job-runner
+  namespace: forge-prod
+subjects:
+  - kind: ServiceAccount
+    name: reports-job
+roleRef:
+  kind: ClusterRole
+  name: job-runner
+  apiGroup: rbac.authorization.k8s.io

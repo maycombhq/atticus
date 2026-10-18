@@ -1,0 +1,5 @@
+{
+  "name": "forge-platform-access",
+  "private": true,
+  "scripts": { "lint": "echo ok" }
+}

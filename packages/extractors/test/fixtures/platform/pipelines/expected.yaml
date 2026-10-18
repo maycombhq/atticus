@@ -1,0 +1,189 @@
+# Hand-written expected output of the pipelines extractor over ./repo
+# (repo "forge-ledger-ci", component "ledger-api").
+records:
+  # Azure Pipelines: the local stage template is expanded once per use with its parameters;
+  # the template in another repository can't be read and is listed instead.
+  - kind: QualityAsset
+    id: ledger-api.pipeline.azure-pipelines
+    confidence: verified
+    component: ledger-api
+    assetKind: pipeline
+    details:
+      tool: azure-pipelines
+      name: azure-pipelines
+      stages: [Build, Deploy_uat, Deploy_prod]
+      triggers: [push, pull-request, schedule 0 3 * * 1]
+      environments: [forge-uat, forge-prod]
+      deployTargets: [kubernetes, openshift]
+      testSteps: [Build and test]
+      templates: [deploy.yml@platform-templates]
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: azure-pipelines.yml }
+      - { source: pipeline, repo: forge-ledger-ci, path: .azure-pipelines/deploy-stage.yml }
+
+  - kind: QualityAsset
+    id: ledger-api.test-suite.azure-pipelines
+    confidence: verified
+    component: ledger-api
+    assetKind: test-suite
+    details:
+      pipeline: ledger-api.pipeline.azure-pipelines
+      files: ["**/surefire-reports/TEST-*.xml"]
+      format: JUnit
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: azure-pipelines.yml, line: 23 }
+
+  - kind: QualityAsset
+    id: ledger-api.coverage-report.azure-pipelines
+    confidence: verified
+    component: ledger-api
+    assetKind: coverage-report
+    details:
+      pipeline: ledger-api.pipeline.azure-pipelines
+      files: ["**/jacoco.xml"]
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: azure-pipelines.yml, line: 27 }
+
+  # GitHub Actions: jobs stand in for stages.
+  - kind: QualityAsset
+    id: ledger-api.pipeline.ci
+    confidence: verified
+    component: ledger-api
+    assetKind: pipeline
+    details:
+      tool: github-actions
+      name: Ledger CI
+      stages: [test, deploy]
+      triggers: [push, pull-request, manual]
+      environments: [staging]
+      deployTargets: [cloud-run]
+      testSteps: [Unit tests]
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: .github/workflows/ci.yml }
+
+  - kind: QualityAsset
+    id: ledger-api.coverage-report.ci
+    confidence: verified
+    component: ledger-api
+    assetKind: coverage-report
+    details:
+      pipeline: ledger-api.pipeline.ci
+      files: [target/site/jacoco/jacoco.xml]
+      tool: codecov
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: .github/workflows/ci.yml, line: 14 }
+
+  - kind: QualityAsset
+    id: ledger-api.pipeline.nightly
+    confidence: verified
+    component: ledger-api
+    assetKind: pipeline
+    details:
+      tool: github-actions
+      name: nightly
+      stages: [e2e]
+      triggers: [schedule 0 2 * * *]
+      environments: []
+      deployTargets: []
+      testSteps: ["npm run test:e2e"]
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: .github/workflows/nightly.yaml }
+
+  - kind: QualityAsset
+    id: ledger-api.test-suite.nightly
+    confidence: verified
+    component: ledger-api
+    assetKind: test-suite
+    details:
+      pipeline: ledger-api.pipeline.nightly
+      files: [reports/e2e-*.xml]
+      format: jest-junit
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: .github/workflows/nightly.yaml, line: 10 }
+
+  # GitLab CI, with the local include read in.
+  - kind: QualityAsset
+    id: ledger-api.pipeline.gitlab-ci
+    confidence: verified
+    component: ledger-api
+    assetKind: pipeline
+    details:
+      tool: gitlab-ci
+      name: gitlab-ci
+      stages: [build, test, deploy]
+      triggers: [pull-request, push]
+      environments: [production]
+      deployTargets: [helm]
+      testSteps: [mvn -B verify]
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: .gitlab-ci.yml }
+      - { source: pipeline, repo: forge-ledger-ci, path: ci/deploy.yml }
+
+  - kind: QualityAsset
+    id: ledger-api.test-suite.gitlab-ci
+    confidence: verified
+    component: ledger-api
+    assetKind: test-suite
+    details:
+      pipeline: ledger-api.pipeline.gitlab-ci
+      files: [target/surefire-reports/TEST-*.xml]
+      format: junit
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: .gitlab-ci.yml, line: 27 }
+
+  - kind: QualityAsset
+    id: ledger-api.coverage-report.gitlab-ci
+    confidence: verified
+    component: ledger-api
+    assetKind: coverage-report
+    details:
+      pipeline: ledger-api.pipeline.gitlab-ci
+      files: [target/site/cobertura/coverage.xml]
+      format: cobertura
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: .gitlab-ci.yml, line: 28 }
+
+  # Jenkins declarative pipeline; the environment comes from the deploy stage's name.
+  - kind: QualityAsset
+    id: ledger-api.pipeline.jenkinsfile
+    confidence: verified
+    component: ledger-api
+    assetKind: pipeline
+    details:
+      tool: jenkins
+      name: Jenkinsfile
+      stages: [Build, Test, Deploy to UAT]
+      triggers: [schedule H 4 * * 1-5]
+      environments: [uat]
+      deployTargets: [openshift]
+      testSteps: [./gradlew test]
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: Jenkinsfile }
+
+  - kind: QualityAsset
+    id: ledger-api.test-suite.jenkinsfile
+    confidence: verified
+    component: ledger-api
+    assetKind: test-suite
+    details:
+      pipeline: ledger-api.pipeline.jenkinsfile
+      files: [build/test-results/test/*.xml]
+      format: junit
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: Jenkinsfile, line: 19 }
+
+  - kind: QualityAsset
+    id: ledger-api.coverage-report.jenkinsfile
+    confidence: verified
+    component: ledger-api
+    assetKind: coverage-report
+    details:
+      pipeline: ledger-api.pipeline.jenkinsfile
+      files: [build/jacoco/*.exec]
+      tool: jacoco
+    evidence:
+      - { source: pipeline, repo: forge-ledger-ci, path: Jenkinsfile, line: 20 }
+
+warnings:
+  - path: .github/workflows/broken.yml
+    message: Could not read this file as YAML; skipped it.

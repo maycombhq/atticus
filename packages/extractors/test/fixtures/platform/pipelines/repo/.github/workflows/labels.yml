@@ -1,0 +1,5 @@
+# Label definitions kept next to the workflows; not a workflow.
+- name: bug
+  color: d73a4a
+- name: docs
+  color: 0075ca

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reports-job-config
+  namespace: forge-prod
+data:
+  schedule: "not a cron job"

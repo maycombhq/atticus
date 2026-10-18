@@ -1,0 +1,149 @@
+# Hand-written expected output of the gcp extractor over ./repo (repo "forge-gcp", type infra).
+# Unresolved records are compared without their id (a hash); the test checks its prefix.
+# google_sql_database_instance is left to the infra extractor, which already reads it.
+records:
+  - kind: Deployment
+    id: ledger-api.prod
+    confidence: verified
+    component: ledger-api
+    env: prod
+    platform: cloud-run
+    resources: { cpu: "2", memory: 1Gi }
+    autoscaling: { min: 2, max: 10 }
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/envs/prod/main.tf, line: 12 }
+
+  # name = "reports-job-${var.env}" with the variable's default; maxScale only, so min is 0.
+  - kind: Deployment
+    id: reports-job.prod
+    confidence: verified
+    component: reports-job
+    env: prod
+    platform: cloud-run
+    resources: { memory: 2Gi }
+    autoscaling: { min: 0, max: 3 }
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/envs/prod/main.tf, line: 33 }
+
+  - kind: Deployment
+    id: notify-svc.prod
+    confidence: verified
+    component: notify-svc
+    env: prod
+    platform: cloud-run
+    resources: { cpu: "1", memory: 512Mi }
+    autoscaling: { min: 1, max: 5 }
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: cloudrun/prod/notify-svc.yaml, line: 2 }
+
+  - kind: Deployment
+    id: statements-ui.default
+    confidence: verified
+    component: statements-ui
+    env: default
+    platform: app-engine
+    autoscaling: { min: 1, max: 4 }
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: appengine/app.yaml, line: 1 }
+
+  - kind: Deployment
+    id: admin-svc.prod
+    confidence: verified
+    component: admin-svc
+    env: prod
+    platform: app-engine
+    replicas: 2
+    resources: { cpu: "2", memory: 4GB }
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: appengine/prod/app.yaml, line: 1 }
+
+  - kind: Endpoint
+    id: topic.payments-initiated
+    confidence: verified
+    component: unknown
+    endpointType: event-topic
+    pathOrTopic: payments.initiated
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/envs/prod/main.tf, line: 56, side: definition }
+
+  - kind: Endpoint
+    id: topic.transfers-completed
+    confidence: verified
+    component: unknown
+    endpointType: event-topic
+    pathOrTopic: transfers.completed
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/envs/prod/main.tf, line: 69, side: definition }
+
+  # Read from the broken file: the block before the unclosed one is kept.
+  - kind: Endpoint
+    id: topic.ops-alerts
+    confidence: verified
+    component: unknown
+    endpointType: event-topic
+    pathOrTopic: ops.alerts
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/shared/broken.tf, line: 1, side: definition }
+
+  # Subscriptions with a known subscriber become loose ends; audit-tap names none, so it gives nothing.
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: event-subscribe
+    raw: transfers.completed
+    owner: reports-job
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/envs/prod/main.tf, line: 61, side: definition }
+
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: event-subscribe
+    raw: payments.initiated
+    owner: notify-svc
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/envs/prod/main.tf, line: 74, side: definition }
+
+  # One grant per service account or group; user members are never recorded.
+  - kind: AccessGrant
+    id: ledger-api.iam.project-forge-prod-1234.cloudsql.client
+    confidence: verified
+    subjectKind: service-account
+    subject: ledger-api@forge-prod-1234.iam.gserviceaccount.com
+    resource: project/forge-prod-1234
+    scopesOrPermissions: [roles/cloudsql.client]
+    env: prod
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/envs/prod/main.tf, line: 87 }
+
+  - kind: AccessGrant
+    id: reports-job.iam.project-forge-prod-1234.pubsub.subscriber
+    confidence: verified
+    subjectKind: service-account
+    subject: reports-job@forge-prod-1234.iam.gserviceaccount.com
+    resource: project/forge-prod-1234
+    scopesOrPermissions: [roles/pubsub.subscriber]
+    env: prod
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/envs/prod/main.tf, line: 93 }
+
+  - kind: AccessGrant
+    id: forge-oncall.iam.project-forge-prod-1234.pubsub.subscriber
+    confidence: verified
+    subjectKind: group
+    subject: forge-oncall@example.com
+    resource: project/forge-prod-1234
+    scopesOrPermissions: [roles/pubsub.subscriber]
+    env: prod
+    evidence:
+      - { source: infrastructure, repo: forge-gcp, path: terraform/envs/prod/main.tf, line: 93 }
+
+warnings:
+  - path: terraform/shared/broken.tf
+    message: "Read this file up to line 5 only: the block there isn't closed."
