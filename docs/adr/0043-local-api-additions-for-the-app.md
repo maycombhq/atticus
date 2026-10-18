@@ -15,7 +15,9 @@ ADR 0015 fixed the local API before the screens existed. Building the server (M4
 - **Task lists** carry each task's branch (`task/<change>/<task>`).
 - **Starting a run** (`POST /api/changes/{changeId}/runs`) covers task runs, the story writer and the critic; other agents start from their own screens.
 - **The 422 status** is added to the documented error statuses for write calls.
+- **Read-only views** for the Know to Build screens: `GET /api/view/{name}` and `GET /api/view/{name}/{id}` run one whitelisted `atticus … --json` command (coverage, questions, intake, triage, features, glossary, critic stats, conflicts, sources, reconcile; and per change, feature or initiative: findings, drift, trace, story bar, feature, initiative status) and return `{code, data, problems}`. Only commands that read files are listed. An unknown view is 404, a missing or malformed id 400, a command that printed no JSON 422.
+- **`GET /api/initiatives`** lists every initiative with its status; **`GET /api/diagram/{view}`** returns a catalog view (context, container, data, event, sequence; `?focus=` for the last two) as Mermaid text; **`GET /api/search`** documents the index query call the server already had.
 
 ## Consequences
 
-The OpenAPI document (`pnpm api:doc`) gains the new calls and fields when the app screens that use them land. Plugins and assistants that only used the first contract are unaffected.
+The OpenAPI document (`pnpm api:doc`) carries the new calls and fields, and the C4 request schemas (`NewChangeRequest`, `HandoffRequest`, `SyncRequest`, `FindingActionRequest`) are the ones the server parses. Plugins and assistants that only used the first contract are unaffected.

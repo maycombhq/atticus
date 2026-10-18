@@ -27,6 +27,9 @@
       "name": "catalog"
     },
     {
+      "name": "views"
+    },
+    {
       "name": "workspace"
     },
     {
@@ -317,6 +320,399 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "operationId": "search",
+        "summary": "Find records with the query language (docs/query-language.md)",
+        "tags": [
+          "catalog"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The query, e.g. kind:interface via:gateway",
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/view/{name}": {
+      "get": {
+        "operationId": "getView",
+        "summary": "A read-only view: the JSON the matching atticus … --json command prints (ADR 0043)",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "coverage",
+                "questions",
+                "intake",
+                "triage",
+                "features",
+                "glossary",
+                "critic-stats",
+                "conflicts",
+                "sources",
+                "reconcile"
+              ]
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data",
+                    "problems"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "data": {},
+                    "problems": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/view/{name}/{id}": {
+      "get": {
+        "operationId": "getViewOf",
+        "summary": "A read-only view of one change, feature or initiative (ADR 0043)",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "features",
+                "findings",
+                "drift",
+                "trace",
+                "story-bar",
+                "initiatives"
+              ]
+            },
+            "required": true
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "data",
+                    "problems"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "data": {},
+                    "problems": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/initiatives": {
+      "get": {
+        "operationId": "listInitiatives",
+        "summary": "Every initiative with its status, critical path and commitments",
+        "tags": [
+          "views"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/diagram/{view}": {
+      "get": {
+        "operationId": "getDiagram",
+        "summary": "A catalog view drawn as Mermaid text",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "view",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "context",
+                "container",
+                "data",
+                "event",
+                "sequence"
+              ]
+            },
+            "required": true
+          },
+          {
+            "name": "focus",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The system, for container and sequence views",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "text"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "integer"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "problems": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -889,6 +1285,28 @@
                   },
                   "from": {
                     "type": "string"
+                  },
+                  "owners": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "systems": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "template": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -941,6 +1359,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -985,6 +1413,148 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/status": {
+      "get": {
+        "operationId": "getChangeStatus",
+        "summary": "State, next step, risk, test kinds, approvals and what blocks it (ADR 0043)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "state",
+                    "nextStep"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/sync": {
+      "post": {
+        "operationId": "syncChange",
+        "summary": "Refresh the change from its hand-off PR and advance it when merged (ADR 0043)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1366,11 +1936,11 @@
                       "qa",
                       "release"
                     ]
+                  },
+                  "repo": {
+                    "type": "string"
                   }
                 },
-                "required": [
-                  "phase"
-                ],
                 "additionalProperties": false
               }
             }
@@ -1383,6 +1953,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChangeDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -1419,6 +1999,16 @@
           },
           "409": {
             "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1586,6 +2176,16 @@
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2033,6 +2633,9 @@
                   },
                   "patch": {
                     "type": "string"
+                  },
+                  "gate": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -2096,6 +2699,16 @@
           },
           "409": {
             "description": "Conflict: the file changed since you read it, or the state doesn't allow this",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9260,7 +9873,7 @@
   },
   "x-websocket": {
     "path": "/api/events",
-    "description": "Live updates. Authenticate with the session token as the first message.",
+    "description": "Live updates. Pass the session token as ?token= on the upgrade request.",
     "messages": {
       "$ref": "#/components/schemas/LiveEvent"
     }

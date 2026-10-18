@@ -601,7 +601,7 @@ function TasksByRepo({
     try {
       const r = await api<Run>(`/api/changes/${change}/runs`, {
         method: "POST",
-        body: { task: t.id, runtime: "hand-off" },
+        body: { agent: "task-runner", task: t.id, runtime: "hand-off" },
       });
       setRan({ ...ran, [t.id]: `Run ${r.runId} prepared: your assistant takes it from here.` });
     } catch (e) {

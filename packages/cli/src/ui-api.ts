@@ -86,11 +86,7 @@ function parseBody<T extends z.ZodType>(schema: T, body: unknown): z.infer<T> {
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
 /** Contract C4 NewChangeRequest plus the owners, systems and template the form also asks (ADR 0043). */
-const NewChange = Api.NewChangeRequest.extend({
-  owners: z.record(z.string(), z.array(z.string()).min(1)).optional(),
-  systems: z.array(z.string()).optional(),
-  template: z.string().optional(),
-});
+const NewChange = Api.NewChangeRequest;
 
 async function latestFindings(root: string, change: string): Promise<Finding[]> {
   const out: Finding[] = [];
@@ -334,12 +330,8 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     })
     .add("POST", "/api/changes/{changeId}/handoff", async ({ params, body }) => {
       await readChange(root, params.changeId!);
-      // C4 HandoffRequest, with the phase optional (the change's current one) and the metarepo
-      // repo when runtime.yaml doesn't name it (ADR 0043).
-      const b = parseBody(
-        z.object({ phase: z.string().optional(), repo: z.string().optional() }),
-        body,
-      );
+      // The phase defaults to the change's current one; repo names the metarepo (ADR 0043).
+      const b = parseBody(Api.HandoffRequest, body);
       const res = await run((io) =>
         changeHandoff(
           root,
@@ -354,7 +346,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     })
     .add("POST", "/api/changes/{changeId}/sync", async ({ params, body }) => {
       await readChange(root, params.changeId!);
-      const b = parseBody(z.object({ repo: z.string().optional() }), body);
+      const b = parseBody(Api.SyncRequest, body);
       const res = await run((io) =>
         changeSync(
           root,
@@ -476,7 +468,7 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     })
     .add("POST", "/api/findings/{changeId}/{findingId}/action", async ({ params, body }) => {
       await readChange(root, params.changeId!);
-      const b = parseBody(Api.FindingActionRequest.extend({ gate: z.string().optional() }), body);
+      const b = parseBody(Api.FindingActionRequest, body);
       const res = await run((io) =>
         findingAction(
           root,

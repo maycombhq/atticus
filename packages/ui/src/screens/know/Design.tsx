@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { api, useApi, useLiveEvents } from "../../api/client.js";
+import { useApi, useLiveEvents } from "../../api/client.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
-import { Note, Table, queryParam, setQueryParam, useAction, useView } from "./common.js";
+import { Table, queryParam, setQueryParam, useView } from "./common.js";
 
 // ------------------------------------------------------------------ Contracts
 
@@ -286,7 +286,6 @@ export function Reconcile({ hash }: { hash: string }) {
   const r = useReconcile();
   const file = queryParam(hash, "file");
   const [filter, setFilter] = useState<string>("all");
-  const act = useAction();
   useLiveEvents((e) => {
     if (e.type === "job.done") r.reload();
   });
@@ -338,20 +337,9 @@ export function Reconcile({ hash }: { hash: string }) {
                   </span>
                 </a>
               ))}
-              <button
-                type="button"
-                className="btn"
-                disabled={act.busy}
-                onClick={() =>
-                  void act.run(
-                    () => api("/api/reconcile", { method: "POST", body: {} }),
-                    "Reconciling: the list refreshes when it finishes.",
-                  )
-                }
-              >
-                Reconcile again
+              <button type="button" className="btn" onClick={() => r.reload()}>
+                Check again
               </button>
-              <Note note={act.note} />
             </div>
           )}
         </View>

@@ -221,6 +221,10 @@ export const NewChangeRequest = z.strictObject({
   type: RecordId,
   /** A work-tracker item the change starts from. */
   from: z.string().optional(),
+  /** ADR 0043: role → people, the systems it touches and a change template. */
+  owners: z.record(z.string(), z.array(z.string()).min(1)).optional(),
+  systems: z.array(z.string()).optional(),
+  template: z.string().optional(),
 });
 
 export const SaveArtifactRequest = z.strictObject({
@@ -243,11 +247,20 @@ export const FindingActionRequest = z.strictObject({
   askedOf: z.string().min(1).optional(),
   /** For edit-and-apply: the edited fix. */
   patch: z.string().optional(),
+  /** ADR 0043: the gate the finding belongs to, when the id alone is ambiguous. */
+  gate: z.string().optional(),
 });
 
 export const OpenWorkspaceRequest = z.strictObject({ repos: z.array(RecordId).min(1) });
 
-export const HandoffRequest = z.strictObject({ phase: Phase });
+/** ADR 0043: the phase defaults to the change's current one; repo names the metarepo when runtime.yaml doesn't. */
+export const HandoffRequest = z.strictObject({
+  phase: Phase.optional(),
+  repo: z.string().optional(),
+});
+
+/** ADR 0043: refresh a change from its hand-off PR. */
+export const SyncRequest = z.strictObject({ repo: z.string().optional() });
 
 export const ReconcileRequest = z.strictObject({ diagram: z.string().min(1) });
 
@@ -303,6 +316,13 @@ const q = (name: string, schema: object = str, description?: string) => ({
   ...(description ? { description } : {}),
 });
 
+/** What a read-only view returns: the command's exit code, its JSON and anything it printed to stderr. */
+const VIEW_RESULT = {
+  type: "object",
+  required: ["code", "data", "problems"],
+  properties: { code: { type: "integer" }, data: {}, problems: { type: "array", items: str } },
+};
+
 const OPS: Record<string, Record<string, Op>> = {
   "/api/health": {
     get: {
@@ -345,6 +365,110 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("kind", { schema: { type: "string", enum: RECORD_KINDS } }), p("id")],
       ok: { status: 200, schema: "CatalogRecord", description: "OK" },
       errors: [404],
+    },
+  },
+  "/api/search": {
+    get: {
+      id: "search",
+      summary: "Find records with the query language (docs/query-language.md)",
+      tag: "catalog",
+      params: [
+        q("q", str, "The query, e.g. kind:interface via:gateway"),
+        q("limit", { type: "integer" }),
+      ],
+      ok: {
+        status: 200,
+        schema: {
+          type: "object",
+          properties: {
+            rows: { type: "array", items: { type: "object" } },
+            total: { type: "integer" },
+          },
+        },
+        description: "OK",
+      },
+      errors: [400],
+    },
+  },
+  "/api/view/{name}": {
+    get: {
+      id: "getView",
+      summary: "A read-only view: the JSON the matching atticus … --json command prints (ADR 0043)",
+      tag: "views",
+      params: [
+        p("name", {
+          schema: {
+            type: "string",
+            enum: [
+              "coverage",
+              "questions",
+              "intake",
+              "triage",
+              "features",
+              "glossary",
+              "critic-stats",
+              "conflicts",
+              "sources",
+              "reconcile",
+            ],
+          },
+        }),
+      ],
+      ok: { status: 200, schema: VIEW_RESULT, description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/view/{name}/{id}": {
+    get: {
+      id: "getViewOf",
+      summary: "A read-only view of one change, feature or initiative (ADR 0043)",
+      tag: "views",
+      params: [
+        p("name", {
+          schema: {
+            type: "string",
+            enum: ["features", "findings", "drift", "trace", "story-bar", "initiatives"],
+          },
+        }),
+        p("id"),
+      ],
+      ok: { status: 200, schema: VIEW_RESULT, description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/initiatives": {
+    get: {
+      id: "listInitiatives",
+      summary: "Every initiative with its status, critical path and commitments",
+      tag: "views",
+      ok: { status: 200, schema: { type: "array", items: { type: "object" } }, description: "OK" },
+    },
+  },
+  "/api/diagram/{view}": {
+    get: {
+      id: "getDiagram",
+      summary: "A catalog view drawn as Mermaid text",
+      tag: "views",
+      params: [
+        p("view", {
+          schema: { type: "string", enum: ["context", "container", "data", "event", "sequence"] },
+        }),
+        q("focus", str, "The system, for container and sequence views"),
+      ],
+      ok: {
+        status: 200,
+        schema: {
+          type: "object",
+          required: ["text"],
+          properties: {
+            code: { type: "integer" },
+            text: str,
+            problems: { type: "array", items: str },
+          },
+        },
+        description: "OK",
+      },
+      errors: [400],
     },
   },
   "/api/graph": {
@@ -449,7 +573,7 @@ const OPS: Record<string, Record<string, Op>> = {
       tag: "changes",
       body: NewChangeRequest,
       ok: { status: 201, schema: "ChangeDetail", description: "Created" },
-      errors: [400, 409],
+      errors: [400, 409, 422],
     },
   },
   "/api/changes/{changeId}": {
@@ -460,6 +584,31 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       ok: { status: 200, schema: "ChangeDetail", description: "OK" },
       errors: [404],
+    },
+  },
+  "/api/changes/{changeId}/status": {
+    get: {
+      id: "getChangeStatus",
+      summary: "State, next step, risk, test kinds, approvals and what blocks it (ADR 0043)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["state", "nextStep"] },
+        description: "OK",
+      },
+      errors: [404],
+    },
+  },
+  "/api/changes/{changeId}/sync": {
+    post: {
+      id: "syncChange",
+      summary: "Refresh the change from its hand-off PR and advance it when merged (ADR 0043)",
+      tag: "changes",
+      params: [p("changeId")],
+      body: SyncRequest,
+      ok: { status: 200, schema: "ChangeDetail", description: "OK" },
+      errors: [400, 404, 422],
     },
   },
   "/api/changes/{changeId}/artifacts/{artifact}": {
@@ -516,7 +665,7 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       body: HandoffRequest,
       ok: { status: 201, schema: "ChangeDetail", description: "Hand-off PR opened" },
-      errors: [403, 404, 409],
+      errors: [400, 403, 404, 409, 422],
     },
   },
   "/api/changes/{changeId}/runs": {
@@ -535,7 +684,7 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId")],
       body: StartRunRequest,
       ok: { status: 201, schema: "RunView", description: "Prepared" },
-      errors: [400, 403, 404],
+      errors: [400, 403, 404, 422],
     },
   },
   "/api/runs/{runId}": {
@@ -611,7 +760,7 @@ const OPS: Record<string, Record<string, Op>> = {
       params: [p("changeId"), p("findingId")],
       body: FindingActionRequest,
       ok: { status: 200, schema: "Finding", description: "Recorded" },
-      errors: [400, 403, 404, 409],
+      errors: [400, 403, 404, 409, 422],
     },
   },
   "/api/orgpack": {
@@ -630,6 +779,7 @@ const ERROR_TEXT: Record<number, string> = {
   403: "You can't do this; the problem says who can",
   404: "Not found",
   409: "Conflict: the file changed since you read it, or the state doesn't allow this",
+  422: "Atticus refused: the problem carries the command's own words (ADR 0043)",
 };
 
 /** Build the OpenAPI 3.1 document from the zod schemas. */
@@ -733,9 +883,17 @@ export function openApiDocument(): Record<string, unknown> {
     },
     servers: [{ url: `http://127.0.0.1:${DEFAULT_PORT}` }],
     security: [{ sessionToken: [] }],
-    tags: ["system", "catalog", "workspace", "scans", "changes", "ai", "findings", "orgpack"].map(
-      (name) => ({ name }),
-    ),
+    tags: [
+      "system",
+      "catalog",
+      "views",
+      "workspace",
+      "scans",
+      "changes",
+      "ai",
+      "findings",
+      "orgpack",
+    ].map((name) => ({ name })),
     paths,
     components: {
       schemas,
@@ -750,7 +908,7 @@ export function openApiDocument(): Record<string, unknown> {
     },
     "x-websocket": {
       path: "/api/events",
-      description: "Live updates. Authenticate with the session token as the first message.",
+      description: "Live updates. Pass the session token as ?token= on the upgrade request.",
       messages: ref("LiveEvent"),
     },
   };
