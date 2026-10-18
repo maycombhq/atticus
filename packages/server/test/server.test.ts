@@ -205,6 +205,17 @@ describe("the local server (ADR 0015)", () => {
     expect(Problem.parse(missing.body).detail).toBe("There is no Component no-such-thing.");
   });
 
+  it("search with the catalog query language, and a plain 400 for a bad query", async () => {
+    const r = await call("/api/search?q=kind:component&limit=3");
+    expect(r.status).toBe(200);
+    const body = r.body as { rows: { kind: string; id: string }[]; total: number };
+    expect(body.rows).toHaveLength(3);
+    expect(body.rows.every((x) => x.kind === "Component")).toBe(true);
+    expect(body.total).toBeGreaterThanOrEqual(3);
+    expect((await call("/api/search")).status).toBe(400);
+    expect((await call("/api/search?q=kind:nonsense")).status).toBe(400);
+  });
+
   it("graph and impact", async () => {
     const g = Graph.parse((await call("/api/graph")).body);
     expect(g.nodes.length).toBeGreaterThan(0);

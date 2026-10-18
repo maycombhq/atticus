@@ -13,7 +13,7 @@ import {
   type Finding,
 } from "@maycombhq/core";
 import { changeStore } from "@maycombhq/changes";
-import { graph, impact, openIndex, type CatalogIndex } from "@maycombhq/index";
+import { graph, impact, openIndex, QueryError, type CatalogIndex } from "@maycombhq/index";
 import { readRound, reviewedGates, roundsOf } from "@maycombhq/naysayer";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import { badRequest, intParam, notFound, strParam, type Router } from "./http.js";
@@ -109,6 +109,18 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       const rec = await withIndex(root, (ix) => ix.get(kind, params.id!));
       if (!rec) throw notFound(`There is no ${kind} ${params.id}.`);
       return { status: 200, body: rec };
+    })
+    .add("GET", "/api/search", async ({ query }) => {
+      const q = strParam(query, "q");
+      if (!q) throw badRequest("Say what to look for: ?q=<words or filters>.");
+      const limit = intParam(query, "limit", 1, 500) ?? 100;
+      const offset = intParam(query, "offset", 0, 1_000_000) ?? 0;
+      try {
+        return { status: 200, body: await withIndex(root, (ix) => ix.query(q, { limit, offset })) };
+      } catch (e) {
+        if (e instanceof QueryError) throw badRequest(e.message);
+        throw e;
+      }
     })
     .add("GET", "/api/graph", async ({ query }) => {
       const depth = intParam(query, "depth", 1, 6);

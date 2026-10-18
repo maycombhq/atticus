@@ -1,0 +1,16 @@
+import type { ComponentType } from "react";
+import { Changes } from "./Changes.js";
+import { CommandCenter } from "./CommandCenter.js";
+import { Explore } from "./Explore.js";
+
+/**
+ * Screen id (screens.ts) → component. Each screen gets the current hash so it can read its own
+ * route (#/changes/<id>, #/explore?q=…). A screen not listed here shows the "being built" note.
+ */
+export type Screen = ComponentType<{ hash: string }>;
+
+export const SCREEN_COMPONENTS: Record<string, Screen> = {
+  home: () => <CommandCenter />,
+  changes: Changes,
+  explore: Explore,
+};
