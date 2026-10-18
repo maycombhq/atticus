@@ -61,7 +61,7 @@ documents:
     id: doc.northwind-swagger
     classification: swagger
     status: read
-    reader: openapi@1.0.0
+    reader: openapi@1.0.1
     hash: d51ed7e3ea54fe8203b03ef511038e1631a55985e518de53130450b282073009
     title: Northwind Payments API
     version: "2.3"
@@ -137,7 +137,7 @@ documents:
     id: doc.fabrikam-fx-openapi-v2
     classification: openapi
     status: read
-    reader: openapi@1.0.0
+    reader: openapi@1.0.1
     hash: efb7a248a32fe135a41e16a3f55b22d277b8380fef83e806d718a3645fe47089
     title: Fabrikam FX
     version: "2.1"

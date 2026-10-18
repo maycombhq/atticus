@@ -91,6 +91,9 @@ function combine(a: Rec, b: Rec): Rec {
     else if (Array.isArray(cur) && Array.isArray(v) && v.every((x) => typeof x === "string"))
       out[k] = [...new Set([...(cur as string[]), ...(v as string[])])].sort();
   }
+  // Code is the source of truth: a record seen as current wins over a planned one of the same identity.
+  if (a.status !== b.status && (a.status === "current" || b.status === "current"))
+    out.status = "current";
   out.evidence = unionEvidence(a.evidence, b.evidence);
   out.confidence =
     (RANK[b.confidence] ?? 0) > (RANK[a.confidence] ?? 0) ? b.confidence : a.confidence;

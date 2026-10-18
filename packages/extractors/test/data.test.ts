@@ -333,7 +333,7 @@ describe("DATA_EXTRACTORS", () => {
     expect(DATA_EXTRACTORS.map((x) => `${x.id}@${x.version}`)).toEqual([
       "orm@1.0.0",
       "observability@1.0.0",
-      "asyncapi@1.0.0",
+      "asyncapi@1.0.1",
       "mainframe@1.0.0",
     ]);
   });

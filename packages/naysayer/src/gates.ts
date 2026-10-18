@@ -71,6 +71,9 @@ export async function gateStatusOf(
   };
 }
 
+/** Gates Atticus itself writes findings to (drift check, Spec Kit hand-up), whether or not gates.yaml lists them. */
+export const BUILT_IN_GATES: readonly string[] = ["drift", "hand-up"];
+
 /** Counts for a gate and whether its hand-off may proceed. */
 export async function gateStatus(
   root: string,
@@ -83,7 +86,7 @@ export async function gateStatus(
     .catch((e: Error) => {
       throw new CriticError("not-found", e.message);
     });
-  if (!lifecycle.orgPack.gates.gates.some((g) => g.id === gate))
+  if (!BUILT_IN_GATES.includes(gate) && !lifecycle.orgPack.gates.gates.some((g) => g.id === gate))
     throw new CriticError(
       "no-gate",
       `There is no gate ${gate}. Gates: ${lifecycle.orgPack.gates.gates.map((g) => g.id).join(", ")}.`,

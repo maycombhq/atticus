@@ -176,3 +176,11 @@ describe("mergeCatalog: data stores", () => {
     expect(r.records.filter((x) => x.kind === "DataStore").map((x) => x.id)).toEqual(["s-db"]);
   });
 });
+
+describe("mergeCatalog: code is the source of truth", () => {
+  it("keeps a record current when a plan describes the same identity as planned", () => {
+    const planned = { ...component("api", "s"), status: "planned-new" } as unknown as CatalogRecord;
+    const r = mergeCatalog({ records: [planned, component("api", "s")], repos: [], systems: [] });
+    expect(r.records.find((x) => x.id === "api")!.status).toBe("current");
+  });
+});

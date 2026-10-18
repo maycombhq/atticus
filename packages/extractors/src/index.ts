@@ -22,8 +22,8 @@ export * from "./platform/index.js";
 import { PLATFORM_EXTRACTORS } from "./platform/index.js";
 export * from "./data/index.js";
 import { DATA_EXTRACTORS } from "./data/index.js";
-// Exported for @maycombhq/speckit (hand-up and drift); the lead adds SPECKIT_EXTRACTORS to the list below.
 export * from "./speckit/index.js";
+import { SPECKIT_EXTRACTORS } from "./speckit/index.js";
 export {
   apigeeExtractor,
   componentExtractor,
@@ -49,4 +49,5 @@ export const BUILT_IN_EXTRACTORS: readonly Extractor[] = [
   ...BACKEND_EXTRACTORS,
   ...PLATFORM_EXTRACTORS,
   ...DATA_EXTRACTORS,
+  ...SPECKIT_EXTRACTORS,
 ];

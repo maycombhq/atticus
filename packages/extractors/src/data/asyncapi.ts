@@ -3,6 +3,8 @@ import { defineExtractor } from "@maycombhq/sdk";
 import { componentOf, evidence, looseEnd } from "../facts.js";
 import { get, isTestOrBuildPath, pairs, parseYamlDoc, scalar, topicId } from "./common.js";
 
+const SPEC_KIT_CONTRACT = /(^|\/)specs\/[^/]+\/contracts\//;
+
 /**
  * AsyncAPI 2.x and 3.x documents (YAML or JSON) describing the repo's component:
  *   - each channel is an event-topic Endpoint, id topic.<topic> as the topics extractor names it
@@ -19,7 +21,7 @@ import { get, isTestOrBuildPath, pairs, parseYamlDoc, scalar, topicId } from "./
  */
 export const asyncapiExtractor = defineExtractor({
   id: "asyncapi",
-  version: "1.0.0",
+  version: "1.0.1",
   claims: [
     "**/*asyncapi*.yaml",
     "**/*asyncapi*.yml",
@@ -37,6 +39,8 @@ export const asyncapiExtractor = defineExtractor({
     const loose: CatalogRecord[] = [];
     const seenFiles = new Set<string>();
     for await (const path of repo.listFiles(this.claims)) {
+      // Contracts inside a Spec Kit feature are plans, read by the speckit extractor (ADR 0030).
+      if (SPEC_KIT_CONTRACT.test(path)) continue;
       if (isTestOrBuildPath(path) || seenFiles.has(path)) continue;
       seenFiles.add(path);
       const doc = parseYamlDoc(await repo.readText(path));

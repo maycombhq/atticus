@@ -23,6 +23,17 @@ import {
 import { diagramLibrary, diagramRender } from "./diagram-commands.js";
 import { stubCheck, stubServe } from "./stub-commands.js";
 import { intakeAdd, intakeList, triageDecide, triageList } from "./intake-commands.js";
+import {
+  assistantFiles,
+  driftCommand,
+  specHandDown,
+  specHandUp,
+  taskHandoff,
+  taskRun,
+} from "./run-commands.js";
+import { featureSuggestNames } from "./feature-commands.js";
+import { isTaskRun } from "@maycombhq/taskrun";
+import { runtimeForCli, RuntimeConfigError } from "@maycombhq/ai";
 import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
   catalogMigrate,
@@ -119,6 +130,12 @@ Usage:
   atticus feature suggest-links [--json]  Suggest links between features and work items
   atticus feature spec <id>            Draft an OpenSpec capability spec from a confirmed feature
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
+  atticus task run <change> <task> --by <you>  Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]
+  atticus spec hand-down <change> <task>  Create the task's Spec Kit feature in its repo [--force]
+  atticus spec hand-up <change> <task> --by <you>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
+  atticus drift <change> [--json]      Compare design, repo plans and code
+  atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
+  atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -186,6 +203,13 @@ export async function main(argv: string[], io: Output): Promise<number> {
       title: { type: "string" },
       name: { type: "string" },
       into: { type: "string" },
+      level: { type: "string" },
+      mode: { type: "string" },
+      approve: { type: "boolean" },
+      pr: { type: "string" },
+      "pr-url": { type: "string" },
+      change: { type: "string" },
+      check: { type: "boolean" },
     },
     strict: false,
   });
@@ -288,6 +312,48 @@ export async function main(argv: string[], io: Output): Promise<number> {
   }
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const json = values.json === true;
+  if (group === "task" && command === "run")
+    return taskRun(
+      root,
+      arg,
+      positionals[3],
+      {
+        ...(str(values.level) ? { level: str(values.level)! } : {}),
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+        ...(str(values.by) ? { by: str(values.by)! } : {}),
+        approve: values.approve === true,
+        json,
+      },
+      io,
+    );
+  if (group === "spec" && command === "hand-down")
+    return specHandDown(root, arg, positionals[3], { force: values.force === true, json }, io);
+  if (group === "spec" && command === "hand-up")
+    return specHandUp(
+      root,
+      arg,
+      positionals[3],
+      {
+        ...(str(values.by) ? { by: str(values.by)! } : {}),
+        ...(num(values.pr) ? { pr: num(values.pr)! } : {}),
+        ...(str(values["pr-url"]) ? { prUrl: str(values["pr-url"])! } : {}),
+        json,
+      },
+      io,
+    );
+  if (group === "drift") return driftCommand(root, command, { json }, io);
+  if (group === "assistant-files")
+    return assistantFiles(
+      root,
+      {
+        ...(str(values.repo) ? { repo: str(values.repo)! } : {}),
+        ...(str(values.change) ? { change: str(values.change)! } : {}),
+        force: values.force === true,
+        check: values.check === true,
+        json,
+      },
+      io,
+    );
   if (group === "catalog" && command === "migrate")
     return catalogMigrate(root, io, { dryRun: values["dry-run"] === true });
   if (group === "feature") {
@@ -299,10 +365,18 @@ export async function main(argv: string[], io: Output): Promise<number> {
     if (command === "list") return featureList(root, { json }, io);
     if (command === "suggest-links") return featureSuggestLinks(root, { json }, io);
     if (command === "suggest-names") {
-      io.err(
-        "AI naming needs an AI runtime; it is configured with Run with AI (runtime.yaml). Until then, name features with atticus feature name.",
-      );
-      return 2;
+      try {
+        const { runtime } = await runtimeForCli(root, {
+          ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+        });
+        return await featureSuggestNames(root, { runtime, json }, io);
+      } catch (e) {
+        if (e instanceof RuntimeConfigError) {
+          io.err(e.message);
+          return 2;
+        }
+        throw e;
+      }
     }
     if (!arg) {
       io.err(
@@ -609,6 +683,17 @@ export async function main(argv: string[], io: Output): Promise<number> {
       );
       return 2;
     }
+    if (await isTaskRun(root, arg))
+      return taskHandoff(
+        root,
+        arg,
+        {
+          ...(str(values.by) ? { by: str(values.by)! } : {}),
+          approve: values.approve === true,
+          json,
+        },
+        io,
+      );
     return handoffDone(root, arg, io);
   }
   if (group === "openspec" && command === "setup") return openspecSetup(root, io);

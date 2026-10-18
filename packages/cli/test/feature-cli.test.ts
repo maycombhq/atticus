@@ -368,7 +368,12 @@ describe("feature commands through main", () => {
     const io = { out: () => {}, err: (l: string) => err.push(l) };
     expect(await main(["feature", "show"], io)).toBe(2);
     expect(await main(["feature", "name", "feature.x"], io)).toBe(2);
-    expect(await main(["feature", "suggest-names"], io)).toBe(2);
+    expect(
+      await main(
+        ["feature", "suggest-names", "--root", "/nonexistent-atticus-root", "--mode", "model"],
+        io,
+      ),
+    ).toBe(2);
     expect(err.join("\n")).toMatch(/needs a feature id/);
   });
 });

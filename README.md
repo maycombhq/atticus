@@ -35,6 +35,9 @@ packages/
   ingestors/         diagram (Lucid, Visio, Mermaid) and document (Office, PDF, Markdown) readers
   changes/           change lifecycle, hand-off PRs, approvals, risk and conflicts
   naysayer/          the critic: rule layers, deterministic checks, AI lenses, gates
+  taskrun/           Run with AI: plan, draft or PR for one task
+  speckit/           Spec Kit hand-down, hand-up and drift
+  assistant-files/   Copilot and Claude Code files from one skill source
   features/          features found in code, names, links and gaps
   intake/            inputs/ intake, triage, curated decisions
   stubs/             stub servers from specs or the catalog

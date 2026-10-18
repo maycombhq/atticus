@@ -3,6 +3,8 @@ import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor } from "@maycombhq/sdk";
 import { componentOf, restEndpoint } from "./facts.js";
 
+const SPEC_KIT_CONTRACT = /(^|\/)specs\/[^/]+\/contracts\//;
+
 const METHODS = ["get", "put", "post", "delete", "patch", "head", "options", "trace"];
 
 /**
@@ -12,7 +14,7 @@ const METHODS = ["get", "put", "post", "delete", "patch", "head", "options", "tr
  */
 export const openapiExtractor = defineExtractor({
   id: "openapi",
-  version: "1.0.0",
+  version: "1.0.1",
   claims: [
     "**/*openapi*.yaml",
     "**/*openapi*.yml",
@@ -26,6 +28,8 @@ export const openapiExtractor = defineExtractor({
   async *scan(repo, ctx) {
     const component = componentOf(repo, ctx);
     for await (const path of repo.listFiles(this.claims)) {
+      // Contracts inside a Spec Kit feature are plans, read by the speckit extractor (ADR 0030).
+      if (SPEC_KIT_CONTRACT.test(path)) continue;
       const text = await repo.readText(path);
       const lc = new LineCounter();
       const doc = parseDocument(text, { lineCounter: lc });
