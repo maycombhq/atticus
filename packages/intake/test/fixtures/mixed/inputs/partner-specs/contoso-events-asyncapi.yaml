@@ -1,0 +1,15 @@
+asyncapi: 2.6.0
+info:
+  title: Contoso Events
+  version: 1.4.0
+channels:
+  contoso.orders.created:
+    subscribe:
+      message:
+        payload:
+          type: object
+  contoso.orders.cancelled:
+    subscribe:
+      message:
+        payload:
+          type: object

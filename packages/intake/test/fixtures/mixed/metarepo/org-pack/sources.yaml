@@ -1,0 +1,3 @@
+schemaVersion: 1
+wikis:
+  - { id: acme-wiki, type: markdown-folder, location: ../../inputs/wiki, owner: team-platform }

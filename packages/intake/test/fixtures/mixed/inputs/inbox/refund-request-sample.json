@@ -1,0 +1,7 @@
+{
+  "refundId": "RF-1001",
+  "amount": { "value": 12.5, "currency": "EUR" },
+  "reasons": ["duplicate"],
+  "approved": true,
+  "note": null
+}

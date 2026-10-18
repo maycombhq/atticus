@@ -1,0 +1,12 @@
+{
+  "swagger": "2.0",
+  "info": { "title": "Northwind Payments API", "version": "2.3" },
+  "basePath": "/v2",
+  "securityDefinitions": { "oauth": { "type": "oauth2", "flow": "application", "tokenUrl": "https://auth.northwind.example/token" } },
+  "security": [{ "oauth": [] }],
+  "paths": {
+    "/refunds": {
+      "post": { "responses": { "201": { "description": "Created" } } }
+    }
+  }
+}

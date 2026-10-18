@@ -1,0 +1,10 @@
+schemaVersion: 1
+platform: acme
+name: Invented test estate for intake
+systems:
+  - { id: billing-hub, name: Billing Hub, boundary: product, owner: team-billing }
+  - { id: ledger, name: Ledger, boundary: product, owner: team-ledger, aliases: [Ledger Platform] }
+  - { id: fabrikam-fx, name: Fabrikam FX, boundary: vendor }
+  - { id: contoso-events, name: Contoso Events, boundary: vendor }
+  - { id: northwind-pay, name: Northwind Pay, boundary: vendor, aliases: [Northwind Payments API] }
+environments: [dev, prod]
