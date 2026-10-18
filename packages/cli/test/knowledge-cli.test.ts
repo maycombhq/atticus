@@ -203,3 +203,16 @@ describe("atticus coverage and atticus questions", () => {
     ]);
   });
 });
+
+describe("knowledge commands through main", () => {
+  it("answers usage errors and unknown subcommands with exit 2", async () => {
+    const { main } = await import("../src/main.js");
+    const out: string[] = [];
+    const err: string[] = [];
+    const io = { out: (l: string) => out.push(l), err: (l: string) => err.push(l) };
+    expect(await main(["sources", "add"], io)).toBe(2);
+    expect(err.join("\n")).toMatch(/sources add needs a type and a location/);
+    expect(await main(["--help"], io)).toBe(0);
+    expect(out.join("\n")).toMatch(/atticus patterns scan/);
+  });
+});

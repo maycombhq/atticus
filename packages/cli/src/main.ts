@@ -13,6 +13,13 @@ import {
 import { catalogDiff, scanCommand } from "./scan-commands.js";
 import { impactCommand, indexRebuild, queryCommand } from "./index-commands.js";
 import { aliasCommand, reconcileCommand } from "./reconcile-commands.js";
+import {
+  coverageCommand,
+  patternsScan,
+  questionsCommand,
+  sourcesAdd,
+  sourcesSync,
+} from "./knowledge-commands.js";
 
 export const VERSION = "0.0.1";
 
@@ -35,6 +42,11 @@ Usage:
   atticus index rebuild                Rebuild the local index from the catalog files
   atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
           [--json]
+  atticus sources add <type> <location> Print the sources.yaml entry for a wiki (markdown-folder, ado-wiki, ...)
+  atticus sources sync [--json]        Read the wikis: pages, stale pages, conflicts with code, document-only facts
+  atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
+  atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
+  atticus questions [--json]           Knowledge gaps and the owner questions that close them
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -180,6 +192,22 @@ export async function main(argv: string[], io: Output): Promise<number> {
       io,
     );
   }
+  if (group === "sources" && command === "add") {
+    const [kind, location] = positionals.slice(2);
+    if (!kind || !location) {
+      io.err(
+        "sources add needs a type and a location, for example: atticus sources add markdown-folder ../wiki",
+      );
+      return 2;
+    }
+    return sourcesAdd(root, kind, location, io);
+  }
+  if (group === "sources" && command === "sync")
+    return sourcesSync(root, io, { json: values.json === true });
+  if (group === "patterns" && command === "scan")
+    return patternsScan(root, io, { json: values.json === true });
+  if (group === "coverage") return coverageCommand(root, io, { json: values.json === true });
+  if (group === "questions") return questionsCommand(root, io, { json: values.json === true });
   if (group === "reconcile")
     return reconcileCommand(root, positionals.slice(1), { json: values.json === true }, io);
   if (group === "orgpack" && command === "validate")

@@ -27,9 +27,15 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 | 14     | draw.io reader and ingestor (compressed pages, HTML labels, legends), aliases (curated decisions, ids, profile), reconcile with ten item types and suggested curated decisions; `atticus reconcile`, `atticus alias`; scan-then-reconcile finds d01–d06                                                                                    | `packages/reconcile`, `packages/cli`, ADR 0019                                        |
 | 15     | M1 exit check on 300 synthetic repos: full pipeline, catalog files and index; one-repo change rescanned and reindexed in about 5 s; index 5 MB. Merge splits a store claimed by two owners; the synthetic estate's Spring repos call through the gateway with Feign                                                                        | `packages/scanner`, `packages/synth`, `packages/core`, ADR 0020, `docs/m1-exit.md`    |
 
+## Done (M2, in progress)
+
+| Track | What                                                                                                                                                                                                                                                               | Where                          |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
+| T5    | Knowledge sources (read-only wiki adapters), wiki facts against code (document conflicts, document-only facts), pattern scan, knowledge gaps with owner questions, coverage, freshness; `atticus sources`, `patterns scan`, `coverage`, `questions`. Finds d09–d12 | `packages/knowledge`, ADR 0021 |
+
 ## Next
 
-1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0020; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
+1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0021; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
 2. **M2:** intake of documents (partner specs, wiki pages, tickets) and the remaining ingestors; triage of reconcile items into curated decisions; the dialect build kit. Exit: golden tests for every extractor and ingestor; a fresh session writes a second Forge dialect from the build kit in 4 of 5 runs, also with a small model.
 
 ## How to work

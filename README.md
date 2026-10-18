@@ -32,6 +32,7 @@ packages/
   scanner/           the estate scan: merge, catalog files and diffs
   index/             local SQLite index, query language, graph and impact
   reconcile/         draw.io reader, aliases, diagram-versus-code reconcile
+  knowledge/         wiki sources, pattern scan, coverage, knowledge gaps and owner questions
   synth/             synthetic estate generator for scale tests
   cli/               the `atticus` command
   fixtures/          tests that keep the Forge fixture consistent

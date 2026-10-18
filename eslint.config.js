@@ -9,6 +9,7 @@ export default tseslint.config(
       "**/node_modules/**",
       "packages/core/schema/**",
       "fixtures/**",
+      ".claude/**",
     ],
   },
   js.configs.recommended,
