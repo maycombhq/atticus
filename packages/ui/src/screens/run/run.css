@@ -1,0 +1,194 @@
+/* Small additions for the Release and Run screens, in the HUD look of hud.css. */
+
+.run-note {
+  margin: 8px 0 0;
+  white-space: pre-line;
+  font-size: 12.5px;
+}
+.run-note.ok {
+  color: var(--green);
+}
+.run-note.bad {
+  color: #ff9bcb;
+}
+
+.run-input,
+.run-select,
+.run-textarea {
+  height: 32px;
+  min-width: 0;
+  background: #0b1016;
+  color: var(--text);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12.5px;
+}
+.run-textarea {
+  height: auto;
+  padding: 8px;
+  font-family: var(--mono);
+}
+
+.run-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.run-copy {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.run-choice {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.run-choice .btn.on {
+  border-color: var(--accent);
+  background: rgba(46, 230, 246, 0.12);
+  color: var(--text);
+}
+
+.run-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(90px, max-content) 1fr;
+  gap: 6px 12px;
+  font-size: 12.5px;
+}
+.run-facts dt {
+  font-size: 10px;
+  padding-top: 2px;
+}
+.run-facts dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.run-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.run-table th {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 4px 8px 6px 0;
+}
+.run-table td {
+  border-top: 1px solid #18202a;
+  padding: 7px 8px 7px 0;
+  vertical-align: top;
+}
+
+.run-pick {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 6px;
+  border: 0;
+  border-bottom: 1px solid #18202a;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.run-pick:hover {
+  background: rgba(127, 244, 255, 0.04);
+}
+.run-pick[aria-current="true"] {
+  background: rgba(46, 230, 246, 0.08);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.run-field {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 7px 0;
+  border-bottom: 1px solid #18202a;
+}
+.run-field:last-child {
+  border-bottom: 0;
+}
+.run-field .value {
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.run-field .value.empty {
+  color: var(--amber);
+  font-family: var(--font);
+}
+
+.run-text {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.6;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+
+.run-inert {
+  display: block;
+  margin: 6px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: #0b1016;
+  border: 1px dashed rgba(255, 79, 163, 0.45);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-2);
+}
+
+.run-safety {
+  border: 1px solid rgba(61, 220, 151, 0.35);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.run-gates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.run-gates li {
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.run-steps {
+  margin: 0;
+  padding-left: 20px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
