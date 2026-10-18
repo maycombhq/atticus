@@ -144,6 +144,36 @@ importers:
         specifier: ^4.6.0
         version: 4.6.7
 
+  packages/ci:
+    dependencies:
+      '@maycombhq/changes':
+        specifier: workspace:*
+        version: link:../changes
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/extractors':
+        specifier: workspace:*
+        version: link:../extractors
+      '@maycombhq/naysayer':
+        specifier: workspace:*
+        version: link:../naysayer
+      '@maycombhq/scanner':
+        specifier: workspace:*
+        version: link:../scanner
+      '@maycombhq/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@maycombhq/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
+
   packages/cli:
     dependencies:
       '@maycombhq/adapters':
@@ -164,6 +194,9 @@ importers:
       '@maycombhq/changes':
         specifier: workspace:*
         version: link:../changes
+      '@maycombhq/ci':
+        specifier: workspace:*
+        version: link:../ci
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
@@ -176,6 +209,9 @@ importers:
       '@maycombhq/features':
         specifier: workspace:*
         version: link:../features
+      '@maycombhq/glossary':
+        specifier: workspace:*
+        version: link:../glossary
       '@maycombhq/index':
         specifier: workspace:*
         version: link:../index
@@ -212,6 +248,9 @@ importers:
       '@maycombhq/taskrun':
         specifier: workspace:*
         version: link:../taskrun
+      '@maycombhq/testgen':
+        specifier: workspace:*
+        version: link:../testgen
       '@maycombhq/workspace':
         specifier: workspace:*
         version: link:../workspace
@@ -308,6 +347,24 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+
+  packages/glossary:
+    dependencies:
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
 
   packages/index:
     dependencies:
@@ -568,6 +625,36 @@ importers:
       '@maycombhq/speckit':
         specifier: workspace:*
         version: link:../speckit
+      '@maycombhq/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+      zod:
+        specifier: ^4.6.0
+        version: 4.6.7
+
+  packages/testgen:
+    dependencies:
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@maycombhq/changes':
+        specifier: workspace:*
+        version: link:../changes
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/naysayer':
+        specifier: workspace:*
+        version: link:../naysayer
+      '@maycombhq/planner':
+        specifier: workspace:*
+        version: link:../planner
+      '@maycombhq/stubs':
+        specifier: workspace:*
+        version: link:../stubs
       '@maycombhq/workspace':
         specifier: workspace:*
         version: link:../workspace

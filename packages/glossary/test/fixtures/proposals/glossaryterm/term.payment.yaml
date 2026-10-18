@@ -1,0 +1,7 @@
+schemaVersion: 1
+term: term.payment
+definition: Money a customer sends to a vendor such as Northwind Pay.
+evidence:
+  - northwind-pay.post-payment
+agent: glossary-definer
+at: 2026-10-03T09:00:00Z

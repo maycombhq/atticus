@@ -22,10 +22,12 @@
     "@maycombhq/assistant-files": "workspace:*",
     "@maycombhq/assistant-kit": "workspace:*",
     "@maycombhq/changes": "workspace:*",
+    "@maycombhq/ci": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/diagrams": "workspace:*",
     "@maycombhq/executors": "workspace:*",
     "@maycombhq/features": "workspace:*",
+    "@maycombhq/glossary": "workspace:*",
     "@maycombhq/index": "workspace:*",
     "@maycombhq/ingestors": "workspace:*",
     "@maycombhq/intake": "workspace:*",
@@ -38,6 +40,7 @@
     "@maycombhq/speckit": "workspace:*",
     "@maycombhq/stubs": "workspace:*",
     "@maycombhq/taskrun": "workspace:*",
+    "@maycombhq/testgen": "workspace:*",
     "@maycombhq/workspace": "workspace:*"
   },
   "devDependencies": {

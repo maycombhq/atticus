@@ -1,0 +1,27 @@
+# Hand-written: the test cases of s1-daily-transfer-limit by repo, with fallback names
+# (no test writer), and the status each API case expects. The change is a feature at high
+# risk (test-strategy feature/high: unit, contract, integration, e2e, regression,
+# performance, security), so every case type is generated.
+forge-ledger:
+  - [acceptance.c1, Transfer over the limit]
+  - [acceptance.c2, Transfer within the limit]
+  - [api.post-transfers.happy, POST /transfers accepts a valid request, "201"]
+  - [api.post-transfers.missing-accountid, POST /transfers refuses a request without accountId, "400"]
+  - [api.post-transfers.missing-amount, POST /transfers refuses a request without amount, "400"]
+  - [api.post-transfers.missing-currency, POST /transfers refuses a request without currency, "400"]
+  - [api.post-transfers.accountid-type, POST /transfers refuses accountId that is not a number, "400"]
+  - [api.post-transfers.accountid-minimum, POST /transfers refuses accountId below 1, "400"]
+  - [api.post-transfers.amount-type, POST /transfers refuses amount that is not a number, "400"]
+  - [api.post-transfers.amount-minimum, POST /transfers refuses amount below 0.01, "400"]
+  - [api.post-transfers.amount-maximum, POST /transfers refuses amount above 1000000, "400"]
+  - [api.post-transfers.currency-enum, "POST /transfers refuses currency outside EUR, USD", "400"]
+  - [api.post-transfers.reference-type, POST /transfers refuses reference that is not text, "400"]
+  - [api.post-transfers.reference-max-length, POST /transfers refuses reference longer than 140 characters, "400"]
+  - [api.post-transfers.status-422, "POST /transfers answers 422: Daily limit exceeded (LIMIT_EXCEEDED)", "422"]
+  - [api.post-transfers.no-credentials, POST /transfers refuses a request without credentials, "401"]
+  - [api.post-transfers.no-scope-ledger-write, POST /transfers refuses a token without scope ledger.write, "403"]
+  - [contract.post-transfers.provider, ledger-api serves POST /transfers as portal-bff expects]
+  - [data.account.daily-limit, "column account.daily_limit exists as numeric(18,2)"]
+  - [data.account.migration, migration V3__add_daily_limit.sql applies on a copy of ledger-db]
+forge-portal-bff:
+  - [contract.post-transfers.consumer, "portal-bff calls POST /ledger/v1/transfers as ledger-api's contract says"]

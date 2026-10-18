@@ -1,0 +1,49 @@
+# The traceability check's rules: requirement (spec scenario) → story → acceptance criterion →
+# test → code → catalog records → feature. Contract C3. Built in, so they sit in the
+# constitution layer: never waivable. A gap in the chain that leaves behaviour untested blocks;
+# a test that traces to no requirement is a risk for the product owner to look at.
+schemaVersion: 1
+name: trace
+version: 1.0.0
+description: Every requirement has a story, every story and changed endpoint has a test, and every test traces to a requirement.
+rules:
+  - id: trace.requirement-without-story
+    title: Every spec scenario has a story
+    description: A requirement no story covers will not be built or tested; plan a story for it or take it out of the spec.
+    layer: constitution
+    lens: story
+    appliesTo: { artifacts: [specs, stories] }
+    severity: blocking
+    check: { type: deterministic, check: trace-matrix }
+    waivable: false
+    source: Traceability (M3 test generation and trace)
+  - id: trace.story-without-test
+    title: Every story has a test
+    description: A story with no generated test and no test in its repos that names it, its scenarios or its endpoints can't show it works.
+    layer: constitution
+    lens: code-and-test
+    appliesTo: { artifacts: [stories, tests] }
+    severity: blocking
+    check: { type: deterministic, check: trace-matrix }
+    waivable: false
+    source: Traceability (M3 test generation and trace)
+  - id: trace.endpoint-without-test
+    title: Every new or changed endpoint has a test
+    description: An interface the change adds or changes with no API or contract test, generated or found, can break callers unnoticed.
+    layer: constitution
+    lens: code-and-test
+    appliesTo: { artifacts: [interfaces, tests] }
+    severity: blocking
+    check: { type: deterministic, check: trace-matrix }
+    waivable: false
+    source: Traceability (M3 test generation and trace)
+  - id: trace.test-without-requirement
+    title: Every test traces to a requirement
+    description: A test that traces to no spec scenario checks behaviour nobody asked for, or the spec is missing a requirement.
+    layer: constitution
+    lens: story
+    appliesTo: { artifacts: [tests, specs] }
+    severity: risk
+    check: { type: deterministic, check: trace-matrix }
+    waivable: false
+    source: Traceability (M3 test generation and trace)

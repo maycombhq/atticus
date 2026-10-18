@@ -1,0 +1,35 @@
+{
+  "name": "@maycombhq/testgen",
+  "version": "0.0.1",
+  "description": "Test generation from a story, the change and the catalog (Gherkin, a JSON test-case format and framework plugins), and traceability from requirement to feature.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "rules"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --testTimeout=30000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/ai": "workspace:*",
+    "@maycombhq/changes": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/naysayer": "workspace:*",
+    "@maycombhq/planner": "workspace:*",
+    "@maycombhq/stubs": "workspace:*",
+    "@maycombhq/workspace": "workspace:*",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
+  }
+}

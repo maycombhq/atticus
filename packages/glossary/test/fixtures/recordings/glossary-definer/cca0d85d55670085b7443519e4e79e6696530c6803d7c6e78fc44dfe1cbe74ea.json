@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "agent": "glossary-definer",
+  "promptSha256": "cca0d85d55670085b7443519e4e79e6696530c6803d7c6e78fc44dfe1cbe74ea",
+  "output": "terms:\n  - id: term.balance\n    definition: How much money an account holds, as the portal shows it to the customer.\n    evidence: [ledger-api.get-balance, portal-bff.get-balance]\n  - id: term.transfer\n    definition: Money a customer moves out of an account through the portal.\n    evidence: [ledger-api.post-transfer]\n  - id: term.entry\n    definition: A line in the daily entries report.\n    evidence: [reports-job]\n  - id: term.unknown\n    definition: Something the code doesn't use.\n    evidence: [ledger-db.entry]\n",
+  "usage": { "inputTokens": 900, "outputTokens": 120 },
+  "model": "hand-written",
+  "recordedAt": "2026-10-18T09:00:00Z"
+}

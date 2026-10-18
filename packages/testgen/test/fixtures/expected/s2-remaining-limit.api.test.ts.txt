@@ -1,0 +1,57 @@
+import { describe, expect, it } from "vitest";
+
+const env = (name: string, fallback = "") => process.env[name] || fallback;
+const BASE_URL = env("ATTICUS_BASE_URL", "http://localhost:3000");
+
+describe("API tests for story s2-remaining-limit (change add-transfer-limit)", () => {
+  it("GET /accounts/{id}/limit accepts a valid request", async () => {
+    const res = await fetch(`${BASE_URL}/accounts/${encodeURIComponent(String(1))}/limit`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${env("ATTICUS_TOKEN")}` },
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json).toHaveProperty("limit");
+    expect(json).toHaveProperty("remaining");
+  });
+
+  it("GET /accounts/{id}/limit refuses a path id that is not a number", async () => {
+    const res = await fetch(`${BASE_URL}/accounts/${encodeURIComponent(String("abc"))}/limit`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${env("ATTICUS_TOKEN")}` },
+    });
+    expect(Math.floor(res.status / 100)).toBe(4);
+  });
+
+  it("GET /accounts/{id}/limit refuses a path id below 1", async () => {
+    const res = await fetch(`${BASE_URL}/accounts/${encodeURIComponent(String(0))}/limit`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${env("ATTICUS_TOKEN")}` },
+    });
+    expect(Math.floor(res.status / 100)).toBe(4);
+  });
+
+  it("GET /accounts/{id}/limit answers 404: Unknown account", async () => {
+    // The spec documents 404: Unknown account. The request needs data in that state.
+    const res = await fetch(`${BASE_URL}/accounts/${encodeURIComponent(String(1))}/limit`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${env("ATTICUS_TOKEN")}` },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("GET /accounts/{id}/limit refuses a request without credentials", async () => {
+    const res = await fetch(`${BASE_URL}/accounts/${encodeURIComponent(String(1))}/limit`, {
+      method: "GET",
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it.skipIf(!process.env.ATTICUS_TOKEN_WITHOUT_LEDGER_READ)("GET /accounts/{id}/limit refuses a token without scope ledger.read", async () => {
+    const res = await fetch(`${BASE_URL}/accounts/${encodeURIComponent(String(1))}/limit`, {
+      method: "GET",
+      headers: { authorization: `Bearer ${env("ATTICUS_TOKEN_WITHOUT_LEDGER_READ")}` },
+    });
+    expect(res.status).toBe(403);
+  });
+});

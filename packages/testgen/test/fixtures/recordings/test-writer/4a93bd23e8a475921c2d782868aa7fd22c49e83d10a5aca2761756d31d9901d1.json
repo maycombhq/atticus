@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "agent": "test-writer",
+  "promptSha256": "4a93bd23e8a475921c2d782868aa7fd22c49e83d10a5aca2761756d31d9901d1",
+  "output": "scenarios:\n  - id: acceptance.c1\n    name: A transfer that would pass the daily limit is refused\n  - id: acceptance.c2\n    name: A transfer within the daily limit goes through\ncases:\n  - id: api.post-transfers.happy\n    name: Creates a transfer within the limit\n  - id: api.post-transfers.status-422\n    name: Refuses a transfer over the limit with LIMIT_EXCEEDED\n  - id: api.delete-transfers.happy\n    name: Cancels a transfer\ndata:\n  - id: data.post-transfers\n    name: transfer of one hundred euros\n",
+  "usage": { "inputTokens": 1800, "outputTokens": 140 },
+  "model": "hand-written",
+  "recordedAt": "2026-10-21T09:00:00Z"
+}
