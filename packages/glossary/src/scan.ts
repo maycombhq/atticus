@@ -11,7 +11,7 @@ import {
   type CatalogRecord,
   type OrgPack,
 } from "@maycombhq/core";
-import type { AiRuntime } from "@maycombhq/ai";
+import { toRunSummary, type AiRuntime, type Run } from "@maycombhq/ai";
 import { syncSources, type KnowledgePage } from "@maycombhq/knowledge";
 import {
   applyGlossary,
@@ -20,6 +20,7 @@ import {
   type GlossaryTermRecord,
 } from "./build.js";
 import {
+  parseDefinerOutput,
   proposeDefinitions,
   readDefinitionProposals,
   undefinedCodeTerms,
@@ -244,4 +245,34 @@ export async function scanGlossary(
     await put(recordPath(r), serializeRecord(glossaryTerm ? next : (rest as CatalogRecord)));
   }
   return { ...g, written: written.sort(), removed, ...(propose ? { propose } : {}) };
+}
+
+/**
+ * The end of `glossary scan` in hand-off mode: `atticus handoff done` validated the assistant's
+ * answer, so read it against today's code-only terms (those the definer was sent), save the
+ * definitions as proposals and rebuild the glossary, as a model run's answer would have been.
+ */
+export async function completeGlossaryDefinitions(
+  root: string,
+  run: Pick<Run, "runId" | "output" | "request"> & Partial<Run>,
+  o: { now?: Date } = {},
+): Promise<ScanGlossaryResult & { propose: ProposeResult }> {
+  const g = await loadGlossary(root);
+  const at = (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const sent = new Set(run.request.pack.manifest.sources.map((s) => s.id));
+  const todo = undefinedCodeTerms(g.build.entries).filter((e) => sent.has(e.id));
+  const parsed = parseDefinerOutput(run.output ?? "", todo, {
+    agent: run.request.agent.id,
+    at,
+    runId: run.runId,
+  });
+  if (parsed.proposals.length)
+    await writeDefinitionProposals(join(g.catalogDir, "proposals"), parsed.proposals);
+  const propose: ProposeResult = {
+    ...parsed,
+    ...(run.state ? { run: toRunSummary(run as Run) } : {}),
+    promptSha256: run.request.pack.manifest.promptSha256,
+  };
+  const scanned = await scanGlossary(root);
+  return { ...scanned, propose };
 }

@@ -165,6 +165,7 @@ Usage:
   atticus change list [--json]         Every change and its state
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
+  atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
   atticus findings <change> [--json]   The change's findings by gate and round
   atticus finding <change> <id> <action> --by <you>  apply | edit-and-apply | not-relevant | waive | ask
@@ -930,6 +931,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
         ...(str(values.gate) ? { gate: str(values.gate)! } : {}),
         ...(str(values.lens) ? { lens: str(values.lens)! } : {}),
         ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+        ...(values.resume ? { resume: true } : {}),
         json,
       },
       io,

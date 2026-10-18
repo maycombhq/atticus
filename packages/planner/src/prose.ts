@@ -44,6 +44,13 @@ export interface StoryProse {
 
 export const STORY_WRITER = "story-writer";
 
+/**
+ * Where a hand-off story writer puts its answer: a file in the run's own folder
+ * (`.runs/<change>/<run>/`), because the change folder's `stories.md` is the file the plan
+ * writes and `plan stories --resume` would take the answer for a plan a person wrote.
+ */
+export const STORY_PROSE_OUTPUT = "story-prose.yaml";
+
 /** The org pack's story writer, or a built-in one. */
 export function storyWriter(ctx: PlanContext): AgentDefinition {
   const own = ctx.lifecycle.orgPack.agents.find((a) => a.id === STORY_WRITER);
@@ -315,7 +322,8 @@ export async function writeProse(
       change: ctx.change.id,
       agent,
       pack,
-      outputPath: "stories.md",
+      outputPath: STORY_PROSE_OUTPUT,
+      outputIn: "run",
     });
     await writeQuarantineItems(ctx.root, ctx.change.id, prepared.runId, quarantined);
     run = await o.runtime.run(prepared.runId);

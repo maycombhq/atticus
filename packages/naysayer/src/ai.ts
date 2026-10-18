@@ -13,6 +13,7 @@ import {
   quarantineItems,
   toRunSummary,
   type AiRuntime,
+  type ContextPack,
   type QuarantineItem,
   type SourceInput,
 } from "@maycombhq/ai";
@@ -37,7 +38,13 @@ export type LensName = z.infer<typeof Lens>;
 export interface LensRun {
   lens: LensName;
   agent: string;
-  state: "ran" | "skipped" | "failed";
+  /**
+   * "waiting": the run went to the person's assistant (hand-off) and its answer isn't in yet;
+   * `atticus handoff done <runId>` reads it into the round (`completeLensRun`).
+   */
+  state: "ran" | "skipped" | "failed" | "waiting";
+  /** The hand-off run a waiting lens is with. */
+  runId?: string;
   reason?: string;
   rules: string[];
   artifacts: string[];
@@ -341,6 +348,31 @@ export interface LensOptions {
   quarantined: QuarantineItem[];
 }
 
+/**
+ * What the context pack left out of a lens's artifacts: the ones the defences quarantined or
+ * the budget dropped (a lens may not cite them), and the sentence the round records about it.
+ */
+export function leftOut(
+  pack: Pick<ContextPack, "defences" | "manifest">,
+  artifacts: Iterable<string>,
+): { left: Set<string>; reason?: string } {
+  const sent = new Set(artifacts);
+  const quarantined = quarantineItems(pack.defences ?? []);
+  const left = pack.manifest.dropped.filter((d) => sent.has(d.id));
+  const overBudget = left.filter((d) => !quarantined.some((q) => q.source === d.id));
+  const reason = [
+    overBudget.length
+      ? `left out to fit the budget: ${overBudget.map((d) => d.id).join(", ")}`
+      : "",
+    quarantined.length
+      ? `quarantined by the defences, for a person to review: ${quarantined.map((q) => q.source).join(", ")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("; ");
+  return { left: new Set(left.map((d) => d.id)), ...(reason ? { reason } : {}) };
+}
+
 const ARTIFACT_INPUTS = new Set<string>([
   "brief",
   "proposal",
@@ -494,18 +526,33 @@ export async function runLenses(
         ...quarantineHits(lens, DEFAULT_ROLES[lens], quarantined, (source) => docs.has(source)),
       );
     }
-    const left = pack.manifest.dropped.filter((d) => docs.has(d.id));
-    const overBudget = left.filter((d) => !quarantined.some((q) => q.source === d.id));
+    const out = leftOut(pack, docs.keys());
     try {
       const prepared = await o.runtime.prepare({
         change: ctx.change.id,
         agent,
         pack,
-        outputPath: `review/${ctx.gate.id}/findings-${lens}.yaml`,
+        // In hand-off mode the answer goes to a file in the run's own folder: a round at the same
+        // gate never finds an earlier round's answer where it looks, and the change keeps only
+        // the round (the findings), not the assistant's raw answers.
+        outputPath: `findings-${lens}.yaml`,
+        outputIn: "run",
       });
       const run = await o.runtime.run(prepared.runId);
       const summary = toRunSummary(run);
       const meta = { runtime: run.runtime, summary, promptSha256: pack.manifest.promptSha256 };
+      if (run.state === "waiting") {
+        // Hand-off: the prompt is written and the person's assistant has it. The round records
+        // the lens as waiting; `atticus handoff done <run>` reads the answer in later.
+        runs.push({
+          ...base,
+          ...meta,
+          state: "waiting",
+          runId: run.runId,
+          reason: `handed to your assistant; finish with atticus handoff done ${run.runId}`,
+        });
+        continue;
+      }
       if (run.state !== "validated" || run.output === undefined) {
         runs.push({
           ...base,
@@ -520,7 +567,7 @@ export async function runLenses(
         lens,
         run.output,
         sent,
-        [...docs.values()].filter((d) => !left.some((x) => x.id === d.path)),
+        [...docs.values()].filter((d) => !out.left.has(d.path)),
       );
       hits.push(...parsed.hits);
       discarded.push(...parsed.discarded);
@@ -528,20 +575,7 @@ export async function runLenses(
         ...base,
         ...meta,
         state: "ran",
-        ...(overBudget.length || quarantined.length
-          ? {
-              reason: [
-                overBudget.length
-                  ? `left out to fit the budget: ${overBudget.map((d) => d.id).join(", ")}`
-                  : "",
-                quarantined.length
-                  ? `quarantined by the defences, for a person to review: ${quarantined.map((q) => q.source).join(", ")}`
-                  : "",
-              ]
-                .filter(Boolean)
-                .join("; "),
-            }
-          : {}),
+        ...(out.reason ? { reason: out.reason } : {}),
       });
     } catch (e) {
       runs.push({ ...base, state: "failed", reason: (e as Error).message });

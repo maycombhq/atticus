@@ -72,8 +72,10 @@ export function describeRun(root: string, r: TaskRunRecord, io: Output): number 
     "needs-person": `Task ${r.task} needs a person in ${r.worktree}.`,
     failed: `The run for task ${r.task} failed.`,
   };
-  io.out(what[r.state]);
-  for (const n of r.notes) io.out(`  ${n}`);
+  // A failed run says why on its first line: the last note is the step that failed and its error.
+  const reason = r.state === "failed" ? r.notes.at(-1) : undefined;
+  io.out(reason ? `The run for task ${r.task} failed: ${reason}` : what[r.state]);
+  for (const n of reason ? r.notes.slice(0, -1) : r.notes) io.out(`  ${n}`);
   return r.state === "failed" || r.state === "needs-person" ? 1 : 0;
 }
 
