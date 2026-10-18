@@ -26,6 +26,7 @@ packages/
   sdk/               plugin SDK (C4): extractors, ingestors, scan runner and cache
   openspec-adapter/  the only door to OpenSpec: pinned CLI wrapper, org-flow schema, contract tests
   workspace/         base clones, change worktrees, repos files, VS Code and IntelliJ workspaces
+  adapters/          work tracker, service desk, Git host, wiki, design tool, notifications; each with a mock
   cli/               the `atticus` command
   fixtures/          tests that keep the Forge fixture consistent
 fixtures/forge/      an invented ecosystem with a hand-written expected catalog
