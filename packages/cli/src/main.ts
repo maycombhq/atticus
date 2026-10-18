@@ -23,6 +23,7 @@ import {
 import { diagramLibrary, diagramRender } from "./diagram-commands.js";
 import { stubCheck, stubServe } from "./stub-commands.js";
 import { intakeAdd, intakeList, triageDecide, triageList } from "./intake-commands.js";
+import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
   changeArchive,
   changeConflicts,
@@ -91,6 +92,11 @@ Usage:
   atticus change archive <id> --by <you>  Archive a released change
   atticus change list [--json]         Every change and its state
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
+  atticus critic <change> [--gate g] [--lens l] [--json]  Review a change at a gate: rule checks, then AI lenses
+  atticus critic stats [--json]        How often each rule's findings are dismissed or waived
+  atticus findings <change> [--json]   The change's findings by gate and round
+  atticus finding <change> <id> <action> --by <you>  apply | edit-and-apply | not-relevant | waive | ask
+          [--reason text] [--asked-of who] [--edit patch-file]
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -150,6 +156,10 @@ export async function main(argv: string[], io: Output): Promise<number> {
       system: { type: "string", multiple: true },
       base: { type: "string" },
       repo: { type: "string" },
+      gate: { type: "string" },
+      lens: { type: "string" },
+      "asked-of": { type: "string" },
+      edit: { type: "string" },
     },
     strict: false,
   });
@@ -252,6 +262,54 @@ export async function main(argv: string[], io: Output): Promise<number> {
   }
   const str = (v: unknown) => (typeof v === "string" ? v : undefined);
   const json = values.json === true;
+  if (group === "critic" && command === "stats") return criticStats(root, { json }, io);
+  if (group === "critic") {
+    if (!command) {
+      io.err(
+        "critic needs a change id, for example: atticus critic add-transfer-limit --gate design",
+      );
+      return 2;
+    }
+    return critic(
+      root,
+      command,
+      {
+        ...(str(values.gate) ? { gate: str(values.gate)! } : {}),
+        ...(str(values.lens) ? { lens: str(values.lens)! } : {}),
+        json,
+      },
+      io,
+    );
+  }
+  if (group === "findings") {
+    if (!command) {
+      io.err("findings needs a change id");
+      return 2;
+    }
+    return findings(root, command, { json }, io);
+  }
+  if (group === "finding") {
+    const [findingId, action] = positionals.slice(2);
+    if (!command || !findingId || !action) {
+      io.err(
+        'finding needs a change, a finding id and an action, for example: atticus finding add-transfer-limit f-1 not-relevant --by you --reason "..."',
+      );
+      return 2;
+    }
+    return findingAction(
+      root,
+      command,
+      findingId,
+      action,
+      {
+        ...(str(values.by) ? { by: str(values.by)! } : {}),
+        ...(str(values.reason) ? { reason: str(values.reason)! } : {}),
+        ...(str(values["asked-of"]) ? { askedOf: str(values["asked-of"])! } : {}),
+        ...(str(values.edit) ? { edit: str(values.edit)! } : {}),
+      },
+      io,
+    );
+  }
   if (group === "change") {
     const list = (v: unknown) =>
       Array.isArray(v) ? (v as string[]) : typeof v === "string" ? [v] : undefined;
