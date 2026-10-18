@@ -199,6 +199,18 @@ export function apiRoutes(r: Router, ctx: Context): Router {
             profiles: op.profiles.length,
             gates: Object.keys(op.gates ?? {}).length,
           },
+          // Additive (ADR 0043): the patterns, checklists and procedures themselves, for the screen.
+          patterns: op.patterns,
+          checklists: op.checklists.map((c) => ({
+            name: c.name,
+            version: c.version,
+            rules: c.rules.length,
+          })),
+          procedures: op.procedures.map((x) => ({
+            id: x.id,
+            title: (x as { title?: string }).title,
+            steps: (x as { steps?: unknown[] }).steps?.length ?? 0,
+          })),
           problems: op.problems.map((p) => ({
             file: p.file,
             path: p.path ?? "",
