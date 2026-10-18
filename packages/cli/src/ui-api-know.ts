@@ -1,3 +1,4 @@
+import { initiativeStatus, readView } from "@maycombhq/initiatives";
 import {
   badRequest,
   HttpError,
@@ -29,8 +30,12 @@ const VIEWS: Record<string, (arg?: string) => string[] | undefined> = {
   trace: (id) => (id ? ["trace", id, "--no-write"] : undefined),
   "story-bar": (id) => (id ? ["plan", "bar", id] : undefined),
   sources: () => ["sources", "sync"],
-  initiatives: (id) => (id ? ["initiative", "status", id] : ["initiative", "status"]),
+  initiatives: (id) => (id ? ["initiative", "status", id] : undefined),
+  reconcile: () => ["reconcile"],
 };
+
+/** Diagram views `atticus diagram render` draws as Mermaid text; container and sequence need a focus. */
+const DIAGRAM_VIEWS = ["context", "container", "data", "event", "sequence"];
 
 export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
   const view = async (name: string, arg?: string) => {
@@ -38,7 +43,7 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
     if (!build) throw notFound(`There is no view ${name}.`);
     if (arg !== undefined && !ID.test(arg)) throw badRequest(`${arg} isn't an id.`);
     const args = build(arg);
-    if (!args) throw badRequest(`The ${name} view needs a change id: /api/view/${name}/<change>.`);
+    if (!args) throw badRequest(`The ${name} view needs an id: /api/view/${name}/<id>.`);
     // Loaded when first used: main.ts imports the command that starts this server.
     const { main } = await import("./main.js");
     const out: string[] = [];
@@ -64,7 +69,37 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
       );
     return { status: 200, body: { code, data: body, problems: err } };
   };
+  /** Run a command that prints text, not JSON; returns the text. */
+  const text = async (args: string[]) => {
+    const { main } = await import("./main.js");
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await main([...args, "--root", ctx.root], {
+      out: (l) => out.push(l),
+      err: (l) => err.push(l),
+    });
+    if (code === 2) throw badRequest(err.join("\n") || "The command refused the request.");
+    return { code, text: out.join("\n"), problems: err };
+  };
   return r
+    .add("GET", "/api/initiatives", async () => {
+      const v = await readView(ctx.root);
+      const body = [];
+      for (const i of v.all("Initiative").sort((a, b) => a.id.localeCompare(b.id)))
+        body.push(await initiativeStatus(ctx.root, i.id));
+      return { status: 200, body };
+    })
+    .add("GET", "/api/diagram/{view}", async ({ params, query }) => {
+      const name = params.view!;
+      if (!DIAGRAM_VIEWS.includes(name))
+        throw badRequest(`${name} isn't a view. Views: ${DIAGRAM_VIEWS.join(", ")}.`);
+      const focus = query.get("focus") ?? undefined;
+      if (focus !== undefined && !ID.test(focus)) throw badRequest(`${focus} isn't an id.`);
+      return {
+        status: 200,
+        body: await text(["diagram", "render", name, ...(focus ? ["--focus", focus] : [])]),
+      };
+    })
     .add("GET", "/api/view/{name}", ({ params }) => view(params.name!))
     .add("GET", "/api/view/{name}/{id}", ({ params }) => view(params.name!, params.id!));
 }

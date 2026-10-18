@@ -51,7 +51,26 @@ describe("read-only views run the CLI's --json commands", () => {
     expect((await get("/api/view/delete-everything")).status).toBe(404);
     const need = await get("/api/view/trace");
     expect(need.status).toBe(400);
-    expect(need.body.detail).toBe("The trace view needs a change id: /api/view/trace/<change>.");
+    expect(need.body.detail).toBe("The trace view needs an id: /api/view/trace/<id>.");
     expect((await get("/api/view/trace/..%2F..%2Fetc")).status).toBe(400);
+  });
+
+  it("lists initiatives with their status (none in the fixture)", async () => {
+    const r = await fetch(srv.url + "/api/initiatives", {
+      headers: { "X-Atticus-Token": srv.token },
+    });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual([]);
+  });
+
+  it("draws a catalog view as Mermaid text, and refuses an unknown view or a bad focus", async () => {
+    const r = await fetch(srv.url + "/api/diagram/context", {
+      headers: { "X-Atticus-Token": srv.token },
+    });
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as { text: string };
+    expect(body.text).toMatch(/^(flowchart|graph|C4Context)/m);
+    expect((await get("/api/diagram/everything")).status).toBe(400);
+    expect((await get("/api/diagram/container?focus=..%2Fx")).status).toBe(400);
   });
 });

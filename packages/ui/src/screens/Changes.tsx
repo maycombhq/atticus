@@ -2,28 +2,28 @@ import { useState, type FormEvent } from "react";
 import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { Panel, Ring, View } from "../app/ui.js";
 
-interface ChangeSummary {
+export interface ChangeSummary {
   id: string;
   title: string;
   type: string;
   state: string;
   openFindings: { blocking: number; gap: number; risk: number; idea: number };
 }
-interface ArtifactStatus {
+export interface ArtifactStatus {
   artifact: string;
   path: string;
   status: "blocked" | "ready" | "done" | "not-required";
   openFindings: number;
 }
-interface ChangeDetail extends ChangeSummary {
+export interface ChangeDetail extends ChangeSummary {
   artifacts: ArtifactStatus[];
   handoff?: { phase: string; pr?: string; state: string };
 }
-interface Reason {
+export interface Reason {
   code: string;
   message: string;
 }
-interface Status {
+export interface Status {
   state: string;
   phase?: string;
   next?: string;
@@ -33,7 +33,7 @@ interface Status {
   blockers: Reason[];
   reasons: Reason[];
 }
-interface Task {
+export interface Task {
   id: string;
   repo: string;
   description: string;
@@ -41,7 +41,7 @@ interface Task {
   story?: string;
   branch?: string;
 }
-interface Run {
+export interface Run {
   runId: string;
   agent: string;
   runtime: string;
@@ -50,7 +50,7 @@ interface Run {
   errors: string[];
   promptPath?: string;
 }
-interface Finding {
+export interface Finding {
   id: string;
   gate: string;
   lens?: string;
@@ -62,7 +62,7 @@ interface Finding {
   waivable: boolean;
   question?: { text: string; owner?: string };
 }
-interface Artifact {
+export interface Artifact {
   path: string;
   content: string;
   sha256: string;
@@ -161,7 +161,7 @@ function ChangeList({ list, current }: { list: Loaded<ChangeSummary[]>; current?
   );
 }
 
-function Pipeline({ state }: { state: string }) {
+export function Pipeline({ state }: { state: string }) {
   const at = PHASES.indexOf(state);
   return (
     <ol
@@ -212,7 +212,7 @@ function Pipeline({ state }: { state: string }) {
   );
 }
 
-function ArtifactEditor({
+export function ArtifactEditor({
   change,
   artifact,
   onClose,
@@ -284,7 +284,15 @@ function ArtifactEditor({
   );
 }
 
-function FindingActions({ change, f, done }: { change: string; f: Finding; done: () => void }) {
+export function FindingActions({
+  change,
+  f,
+  done,
+}: {
+  change: string;
+  f: Finding;
+  done: () => void;
+}) {
   const [reason, setReason] = useState("");
   const act = useAction();
   const go = (action: string) =>
