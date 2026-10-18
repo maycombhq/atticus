@@ -11,7 +11,7 @@ import { ev, setting } from "./common.js";
  *   each component whose pods get a sidecar: workloads in a namespace labelled
  *   `istio-injection: enabled` (or `istio.io/rev`) or annotated `linkerd.io/inject: enabled`,
  *   workloads whose pod template asks for injection, and the in-cluster hosts that mesh
- *   routing rules name. Merge marks a direct synchronous call between two members `via: mesh`.
+ *   routing rules name (every VirtualService route destination, with or without a policy). Merge marks a direct synchronous call between two members `via: mesh`.
  * - Policies, as Settings of the destination component (`mesh.timeout`, `mesh.retry`,
  *   `mesh.pool`, `mesh.outlier`; per named route `mesh.<route>.<policy>`): Istio
  *   VirtualService timeouts and retries, DestinationRule connection pools (pool) and outlier
@@ -39,7 +39,7 @@ function flat(v: unknown, prefix = ""): string[] {
 
 export const meshExtractor = defineExtractor({
   id: "mesh",
-  version: "0.1.0",
+  version: "0.1.1",
   claims: MANIFEST_GLOBS,
   async *scan(repo, ctx) {
     const set = await loadManifests(repo, ctx, RELEVANT);
@@ -124,6 +124,14 @@ export const meshExtractor = defineExtractor({
     };
     for (const o of objs) {
       if (o.kind === "VirtualService" && o.apiVersion.startsWith("networking.istio.io/")) {
+        // A routing rule names the services it sends traffic to, whether or not it sets a
+        // timeout or retries: those services are in the mesh.
+        for (const proto of ["http", "tls", "tcp"])
+          for (const rule of arr(at(o.obj, "spec", proto)))
+            for (const r of arr(at(rule, "route"))) {
+              const c = hostComponent(str(at(r, "destination", "host")));
+              if (c) member(componentFor(ctx, [c]), envFor(o), "istio", evOf(o));
+            }
         arr(at(o.obj, "spec", "http")).forEach((h, i) => {
           const name = str(at(h, "name"));
           const k = (p: string) => (name ? `mesh.${name}.${p}` : `mesh.${p}`);

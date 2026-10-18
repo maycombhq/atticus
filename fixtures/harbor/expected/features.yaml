@@ -24,19 +24,19 @@
 # - Daily sales: the warehouse pipeline's daily schedule; it calls nothing.
 - name: Product catalog
   entryPoints: [catalog-svc.get-product-b5f716, catalog-svc.get-product-d66ca1]
-  adr0040: [shop-graph.query-product, shop-graph.query-products]
+  adr0040: [shop-graph.graphql.query.product, shop-graph.graphql.query.products]
 - name: Orders
   entryPoints: [if-2a8d8dd6ededf292, orders-svc.get-order, orders-svc.post-order]
-  adr0040: [shop-graph.mutation-place-order, shop-graph.query-order]
+  adr0040: [shop-graph.graphql.mutation.placeorder, shop-graph.graphql.query.order]
 - name: Payments
   entryPoints: [if-9799eee043a9c9bc, if-9c9b1e808fbaac38, payments-svc.post-payment]
-  adr0040: [payment-webhook.post-tidewater]
+  adr0040: [payment-webhook.webhook.webhooks-tidewater]
 - name: Abandoned cart reminders
-  entryPoints: [cart-reminder.schedule-remindabandonedcarts, orders-svc.get-abandoned]
+  entryPoints: [cart-reminder.prod.schedule-remindabandonedcarts, orders-svc.get-abandoned]
 - name: Stock check
-  entryPoints: [catalog-svc.check-stock]
+  entryPoints: [catalog-svc.grpc.harbor.inventory.v1.inventory.checkstock]
 - name: Recommendations
   entryPoints: [recs-model.post-recommendations-predict]
-  adr0040: [shop-graph.query-recommendations]
+  adr0040: [shop-graph.graphql.query.recommendations]
 - name: Daily sales
   entryPoints: [warehouse-pipeline.schedule-orders-daily]

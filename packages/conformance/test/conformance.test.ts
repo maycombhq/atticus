@@ -317,7 +317,7 @@ describe("plugin", () => {
       kind: "plugin",
     });
     expect(problems(v)).toEqual([]);
-    expect(v.results.filter((x) => x.check === "plugin.determinism")).toHaveLength(10);
+    expect(v.results.filter((x) => x.check === "plugin.determinism")).toHaveLength(11);
   });
 });
 

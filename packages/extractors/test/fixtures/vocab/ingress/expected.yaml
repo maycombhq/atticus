@@ -30,4 +30,22 @@ records:
       - { source: infrastructure, repo: harbor-k8s, path: k8s/routes.yaml, line: 32 }
       - { source: infrastructure, repo: harbor-k8s, path: k8s/routes.yaml, line: 12 }
       - { source: infrastructure, repo: harbor-k8s, path: k8s/routes.yaml, line: 20 }
+  # Istio: two VirtualServices bound to a Gateway (in another file) publish hosts of catalog. The
+  # HTTPS server covers api.harbor.example, so that route is TLS and carries the URI prefix its
+  # rule matches; the HTTP server's host gets neither TLS nor a path (no match). orders-in-mesh has
+  # no gateways, so it is in-mesh routing and no ingress.
+  - kind: Deployment
+    id: catalog.prod
+    confidence: verified
+    component: catalog
+    env: prod
+    platform: kubernetes
+    networkPolicies: []
+    ingress:
+      - { host: api.harbor.example, path: /catalog, tls: true }
+      - { host: plain.harbor.example }
+    evidence:
+      - { source: infrastructure, repo: harbor-k8s, path: istio/virtualservices.yaml, line: 2 }
+      - { source: infrastructure, repo: harbor-k8s, path: istio/gateway.yaml, line: 2 }
+      - { source: infrastructure, repo: harbor-k8s, path: istio/virtualservices.yaml, line: 20 }
 warnings: []

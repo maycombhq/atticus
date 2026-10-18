@@ -1,0 +1,12 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: inventory
+  namespace: shop-prod
+spec:
+  hosts:
+    - inventory.shop-prod.svc.cluster.local
+  http:
+    - route:
+        - destination:
+            host: inventory.shop-prod.svc.cluster.local

@@ -39,6 +39,18 @@ records:
     evidence:
       - { source: infrastructure, repo: harbor-platform, path: mesh/namespaces.yaml, line: 2 }
       - { source: infrastructure, repo: harbor-platform, path: mesh/workloads.yaml, line: 10 }
+  # mesh/plain-vs.yaml routes to inventory with no timeout or retries: still a mesh member,
+  # because a routing rule names the service it sends traffic to.
+  - kind: Setting
+    id: inventory.prod.mesh
+    confidence: verified
+    component: inventory
+    env: prod
+    settingKind: config
+    key: mesh
+    valueOrRef: istio
+    evidence:
+      - { source: infrastructure, repo: harbor-platform, path: mesh/plain-vs.yaml, line: 2 }
 
   # Linkerd ServiceProfile: a route timeout, a retryable route and the retry budget.
   - kind: Setting

@@ -1,0 +1,72 @@
+# Hand-written expected output of the ml extractor over ./repo
+# (repo "shop-recs", component "rec-service", system "shop").
+records:
+  # KServe: the container sets --model_name, so the model is served as "recommendations", not
+  # under the service's name. The Deployment carries the container limits, the predictor's replica
+  # bounds as autoscaling, and the line of the replica settings as evidence.
+  - kind: Component
+    id: rec-service
+    confidence: verified
+    system: shop
+    repo: shop-recs
+    type: ml-model
+    runtime: kserve
+    evidence:
+      - { source: infrastructure, repo: shop-recs, path: serving/inferenceservice.yaml, line: 2 }
+  - kind: Deployment
+    id: rec-service.prod
+    confidence: verified
+    component: rec-service
+    env: prod
+    platform: kserve
+    resources: { cpu: "2", memory: 4Gi }
+    autoscaling: { min: 2, max: 6 }
+    networkPolicies: []
+    evidence:
+      - { source: infrastructure, repo: shop-recs, path: serving/inferenceservice.yaml, line: 10 }
+  - kind: Endpoint
+    id: rec-service.inference.predict
+    confidence: verified
+    component: rec-service
+    endpointType: rest
+    method: POST
+    pathOrTopic: /v1/models/recommendations:predict
+    normalizedPath: /v1/models/recommendations:predict
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: shop-recs, path: serving/inferenceservice.yaml, line: 4, side: definition }
+
+  # Feast: the online store names a host, so the feature store is that cluster (shop-features),
+  # not the project; its feature view is a Table (evidence at the name argument). The Redshift
+  # offline store names the warehouse cluster, so the RedshiftSource makes the component a reader
+  # of that warehouse's table (inferred: only the reader is seen here).
+  - kind: DataStore
+    id: shop-features
+    confidence: verified
+    storeType: feature-store
+    ownerComponent: rec-service
+    entitiesHeld: []
+    evidence:
+      - { source: config, repo: shop-recs, path: features/feature_store.yaml, line: 6 }
+  - kind: Table
+    id: shop-features.customer-stats
+    confidence: verified
+    dataStore: shop-features
+    name: customer_stats
+    tableKind: table
+    ownerComponent: rec-service
+    readers: []
+    writers: [rec-service]
+    evidence:
+      - { source: code, repo: shop-recs, path: features/views.py, line: 12 }
+  - kind: Table
+    id: shop-warehouse.customer-stats
+    confidence: inferred
+    dataStore: shop-warehouse
+    name: customer_stats
+    tableKind: table
+    readers: [rec-service]
+    writers: []
+    evidence:
+      - { source: code, repo: shop-recs, path: features/views.py, line: 6, side: caller }
+warnings: []

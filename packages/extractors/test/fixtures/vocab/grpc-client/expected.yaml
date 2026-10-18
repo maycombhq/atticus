@@ -23,4 +23,21 @@ records:
     owner: checkout-svc
     evidence:
       - { source: code, repo: harbor-checkout, path: worker/settle.py, line: 7, side: caller }
+  # orders/stock.client.ts: the address is a variable (gRPC credentials mark the client) and the
+  # repo holds the proto, so each declared RPC the stub is called with is its own loose end at the
+  # line of the call (checkItem is CheckItem with a lowercase first letter); close() is not an RPC.
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: grpc-call
+    raw: harbor.stock.v1.Stock/CheckItem
+    owner: checkout-svc
+    evidence:
+      - { source: code, repo: harbor-checkout, path: orders/stock.client.ts, line: 9, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: grpc-call
+    raw: harbor.stock.v1.Stock/ReserveItem
+    owner: checkout-svc
+    evidence:
+      - { source: code, repo: harbor-checkout, path: orders/stock.client.ts, line: 13, side: caller }
 warnings: []

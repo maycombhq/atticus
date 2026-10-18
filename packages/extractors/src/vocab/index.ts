@@ -1,5 +1,6 @@
 import type { Extractor } from "@maycombhq/sdk";
 import { appsExtractor } from "./apps.js";
+import { cloudStoresExtractor } from "./cloud-stores.js";
 import { dataPipelinesExtractor } from "./data-pipelines.js";
 import { graphqlExtractor } from "./graphql.js";
 import { grpcExtractor } from "./grpc.js";
@@ -12,6 +13,7 @@ import { webhooksExtractor } from "./webhooks.js";
 
 export {
   appsExtractor,
+  cloudStoresExtractor,
   dataPipelinesExtractor,
   graphqlExtractor,
   grpcExtractor,
@@ -28,8 +30,8 @@ export type { VocabLooseEnd } from "./common.js";
 
 /**
  * The extractors that produce the ADR 0040 vocabulary (GraphQL, gRPC, WebSocket/SSE,
- * webhooks, serverless, service mesh, mobile and desktop apps, data pipelines, ML, ingress),
- * in a stable order.
+ * webhooks, serverless, service mesh, mobile and desktop apps, data pipelines, ML, ingress,
+ * cloud object stores, queues and warehouses), in a stable order.
  */
 export const VOCAB_EXTRACTORS: readonly Extractor[] = [
   graphqlExtractor,
@@ -42,4 +44,5 @@ export const VOCAB_EXTRACTORS: readonly Extractor[] = [
   dataPipelinesExtractor,
   mlExtractor,
   ingressExtractor,
+  cloudStoresExtractor,
 ];

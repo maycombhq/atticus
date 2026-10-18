@@ -7,6 +7,7 @@ import { mergeCatalog, type CatalogRecord } from "@maycombhq/core";
 import { fsRepo, memoryRepo, scanRepo, type Extractor } from "@maycombhq/sdk";
 import {
   appsExtractor,
+  cloudStoresExtractor,
   dataPipelinesExtractor,
   graphqlExtractor,
   grpcExtractor,
@@ -88,18 +89,19 @@ export async function golden(
 }
 
 describe("vocabulary extractors (ADR 0040): identity", () => {
-  it("are versioned 0.1.0 with the agreed ids, in a stable order", () => {
+  it("have the agreed ids and versions, in a stable order", () => {
     expect(VOCAB_EXTRACTORS.map((x) => `${x.id}@${x.version}`)).toEqual([
-      "graphql@0.1.0",
-      "grpc@0.1.0",
+      "graphql@0.1.1",
+      "grpc@0.1.1",
       "realtime@0.1.0",
       "webhooks@0.1.0",
-      "serverless@0.1.0",
-      "mesh@0.1.0",
+      "serverless@0.1.1",
+      "mesh@0.1.1",
       "apps@0.1.0",
-      "data-pipelines@0.1.0",
-      "ml@0.1.0",
-      "ingress@0.1.0",
+      "data-pipelines@0.1.1",
+      "ml@0.1.1",
+      "ingress@0.1.1",
+      "cloud-stores@0.1.0",
     ]);
   });
 });
@@ -159,7 +161,13 @@ describe("graphql", () => {
       ifs.every((i) => i.from === "storefront-web" && i.to === "catalog-api" && i.via === "direct"),
     ).toBe(true);
     const left = m.records.filter((r) => r.kind === "Unresolved") as unknown as Rec[];
-    expect(left.map((l) => l.raw)).toEqual(["QUERY Query.cart"]);
+    // The server serves none of these: cart (a field it doesn't have) and the two operations
+    // read from plain templates in src/api/operations.ts.
+    expect(left.map((l) => String(l.raw)).sort()).toEqual([
+      "MUTATION Mutation.checkout",
+      "QUERY Query.cart",
+      "QUERY Query.orders",
+    ]);
   });
 
   it("reads nothing from a repo without GraphQL (vocabulary extractors are quiet elsewhere)", async () => {
@@ -191,6 +199,23 @@ describe("grpc", () => {
       });
     expect((await scan()).records.map((r) => r.id)).toEqual(["x.grpc.a.v1.s.m"]);
     expect((await scan("library")).records).toEqual([]);
+  });
+
+  it("a Go server that embeds the generated Unimplemented...Server serves the service, even in a library repo", async () => {
+    const files = {
+      "api.proto": "package a.v1;\nservice S { rpc M(R) returns (R); }\n",
+      "s/server.go": "package s\n\ntype Server struct {\n\tv1.UnimplementedSServer\n}\n",
+    };
+    const s = await scanRepo({
+      repo: memoryRepo("x", SHA, files),
+      extractors: [grpcExtractor],
+      repoInfo: { component: "x", repoType: "library" },
+    });
+    expect(s.records.map((r) => r.id)).toEqual(["x.grpc.a.v1.s.m"]);
+    expect(s.records[0]!.evidence.map((e) => `${e.path}:${e.line}:${e.side}`)).toEqual([
+      "api.proto:2:definition",
+      "s/server.go:4:callee",
+    ]);
   });
 });
 
@@ -337,17 +362,37 @@ describe("data-pipelines", () => {
       system: "harbor",
     });
   });
+
+  it("golden: a lone DAG is the repo's component; a dbt profile host, folder materialization and sources.yml databases", async () => {
+    await golden("dbt-profile", dataPipelinesExtractor, "shop-data", {
+      component: "shop-dw",
+      system: "shop",
+    });
+  });
 });
 
 describe("ml", () => {
   it("golden: MLflow, KServe, SageMaker and Feast", async () => {
     await golden("ml", mlExtractor, "harbor-ml", { component: "price-model", system: "harbor" });
   });
+
+  it("golden: --model_name, predictor resources and replicas, a Feast online store host and a Redshift source", async () => {
+    await golden("ml-serving", mlExtractor, "shop-recs", {
+      component: "rec-service",
+      system: "shop",
+    });
+  });
 });
 
 describe("ingress", () => {
   it("golden: Kubernetes Ingress and Gateway API HTTPRoute", async () => {
     await golden("ingress", ingressExtractor, "harbor-k8s", { repoType: "infra" });
+  });
+});
+
+describe("cloud-stores", () => {
+  it("golden: Terraform buckets, queues, warehouses and caches", async () => {
+    await golden("cloud-stores", cloudStoresExtractor, "shop-infra", { repoType: "infra" });
   });
 });
 
@@ -366,8 +411,11 @@ describe("vocabulary extractors are deterministic", () => {
       "apps-android",
       "apps-flutter",
       "data-pipelines",
+      "dbt-profile",
       "ml",
+      "ml-serving",
       "ingress",
+      "cloud-stores",
     ];
     for (const f of fixtures) {
       const run = async () =>

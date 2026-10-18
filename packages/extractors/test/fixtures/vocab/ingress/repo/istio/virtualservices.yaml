@@ -1,0 +1,45 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: catalog-public
+  namespace: prod
+spec:
+  hosts:
+    - api.harbor.example
+  gateways:
+    - istio-ingress/public
+  http:
+    - match:
+        - uri:
+            prefix: /catalog
+      route:
+        - destination:
+            host: catalog.prod.svc.cluster.local
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: catalog-plain
+  namespace: prod
+spec:
+  hosts:
+    - plain.harbor.example
+  gateways:
+    - istio-ingress/public
+  http:
+    - route:
+        - destination:
+            host: catalog
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: orders-in-mesh
+  namespace: prod
+spec:
+  hosts:
+    - orders.prod.svc.cluster.local
+  http:
+    - route:
+        - destination:
+            host: orders

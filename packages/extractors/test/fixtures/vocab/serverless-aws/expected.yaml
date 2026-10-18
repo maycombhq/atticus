@@ -14,6 +14,7 @@ records:
     evidence:
       - { source: infrastructure, repo: harbor-media, path: cdk.out/MediaStack.template.json, line: 4 }
       - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 7 }
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 15 }
       - { source: infrastructure, repo: harbor-media, path: template.yaml, line: 8 }
 
   # SAM and CDK templates name no stage; serverless.yml says prod.
@@ -36,6 +37,7 @@ records:
     networkPolicies: []
     evidence:
       - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 7 }
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 15 }
 
   # CDK synth: an Events rule targeting the function by Fn::GetAtt.
   - kind: Endpoint
@@ -103,6 +105,37 @@ records:
     valueOrRef: rate(1 hour)
     evidence:
       - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 14 }
+
+  # A function called a webhook with a /hooks/ path: its HTTP trigger is a webhook endpoint
+  # (method POST unless the trigger says one), not a plain function trigger.
+  - kind: Endpoint
+    id: media-fns.webhook.hooks-stripe
+    confidence: verified
+    component: media-fns
+    endpointType: webhook
+    method: POST
+    pathOrTopic: /hooks/stripe
+    normalizedPath: /hooks/stripe
+    schemaRefs: []
+    evidence:
+      - { source: infrastructure, repo: harbor-media, path: serverless.yml, line: 19, side: definition }
+
+  # What the handlers publish (src/hooks.ts for kafkajs, thumbs.py for Python Kafka); commented
+  # out sends are not read.
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: event-publish
+    raw: charges.settled
+    owner: media-fns
+    evidence:
+      - { source: code, repo: harbor-media, path: src/hooks.ts, line: 7, side: caller }
+  - kind: Unresolved
+    confidence: inferred
+    unresolvedKind: event-publish
+    raw: thumbnails.ready
+    owner: media-fns
+    evidence:
+      - { source: code, repo: harbor-media, path: thumbs.py, line: 7, side: caller }
 
   # SAM: an API event, a schedule and an SQS queue named by the referenced queue.
   - kind: Endpoint

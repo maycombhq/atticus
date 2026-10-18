@@ -23,12 +23,13 @@ Everything here is made up. Harbor is an invented online retailer; Tidewater Pay
 | `expected/discrepancies.yaml` | Twenty-one seeded problems for reconcile, the critic, knowledge gaps and intake |
 | `expected/features.yaml` | Which entry points form one feature (ADR 0031) |
 
-Conventions this fixture fixes, for the producers still to come (lead review):
+Conventions this fixture fixes (reconciled with the vocabulary extractors, `docs/spec/concepts/identity.md` and C1):
 
-- A call is `via: mesh` when its target host has an Istio VirtualService; the cart reminder calls Orders through the internal ingress host, so it is `direct`, and so is the call to the model, which has no VirtualService.
-- GraphQL endpoints are `<component>.<query|mutation>-<field slug>`, method `QUERY` or `MUTATION`, `pathOrTopic` `Query.<field>`; the caller line of a call is the root field in the operation document; the SDL line is the definition.
-- gRPC endpoints are `<component>.<method slug>`, `pathOrTopic` `/<package>.<Service>/<Method>`, no method; the proto's `rpc` line is the definition.
-- A webhook receiver is `<component>.post-<last segment>` with endpointType `webhook`; the vendor's spec `webhooks:` entry is the caller end. A scheduled function's trigger is an endpointType `function` named by the function; its schedule is a `settingKind: schedule` Setting named as the batch extractor names schedules (`<component>.schedule-<slug>`, key `schedule.<name>`).
-- Ingress routes come from a Gateway-bound VirtualService: host, the URI prefix as path, and tls when the Gateway server has tls.
+- A call is `via: mesh` when its target host has an Istio VirtualService and the caller is in the mesh too; the cart reminder calls Orders through the internal ingress host, so it is `direct`, and so is the call to the model, which has no VirtualService. A service some VirtualService routes to carries a `mesh` Setting.
+- GraphQL endpoints are `<component>.graphql.<query|mutation>.<field>` (lowercase), method `QUERY` or `MUTATION`, `pathOrTopic` `Query.<field>`, no `normalizedPath`; the caller line of a call is the root field in the operation document; the SDL line is the definition.
+- gRPC endpoints are `<component>.grpc.<package.service.method>` (lowercase), `method` the RPC, `pathOrTopic` `<package>.<Service>/<Method>` (no leading slash); the proto's `rpc` line is the definition and the line that registers the server is the callee evidence of the call.
+- A webhook receiver is `<component>.webhook.<path slug>` with endpointType `webhook`; the vendor's spec `webhooks:` entry is the caller end. A scheduled function's trigger is an endpointType `function` named `<component>.function.<function>.<trigger>`, its `pathOrTopic` the trigger (`schedule:<expression>`); its schedule is a `settingKind: schedule` Setting named as the batch extractor names schedules (`<component>.<env>.schedule-<slug>`, key `schedule.<name>`). A repo with exactly one Airflow DAG is that DAG's component.
+- Ingress routes come from a Gateway-bound VirtualService: host, the URI prefix as path, and tls when the Gateway server has tls; the evidence is the VirtualService and the Gateway.
+- Function and model runtimes are the platform they run on (`lambda`, `kserve`); a mobile app's runtime is its framework (`react-native`).
 
 Rules: the expected files are written by hand and reviewed by a person; never regenerate them from extractor output. Files under `fixtures/` are byte-exact (excluded from formatting) because evidence points at line numbers and documents are hashed.

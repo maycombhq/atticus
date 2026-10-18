@@ -1,0 +1,10 @@
+project: shop_recs
+registry: s3://shop-ml/registry.db
+provider: aws
+online_store:
+  type: redis
+  connection_string: shop-features.abc123.cache.example:6379,ssl=true
+offline_store:
+  type: redshift
+  cluster_id: shop-warehouse
+  database: analytics

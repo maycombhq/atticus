@@ -105,6 +105,7 @@
   system: storefront
   repo: harbor-mobile
   type: mobile-app
+  runtime: react-native
   evidence: [{ source: config, repo: harbor-mobile, path: package.json }]
 - kind: Component
   id: shop-graph
@@ -138,14 +139,14 @@
   type: service
   runtime: kubernetes
   evidence: [{ source: config, repo: harbor-payments, path: pyproject.toml }]
-# pending: runtime aws-lambda comes from the function Deployments (serverless.yml).
+# Function components run on Lambda: the runtime comes from the function Deployments (serverless.yml).
 - kind: Component
   id: payment-webhook
   confidence: verified
   system: payments
   repo: harbor-payment-webhook
   type: function
-  runtime: aws-lambda
+  runtime: lambda
   evidence: [{ source: config, repo: harbor-payment-webhook, path: package.json }]
 - kind: Component
   id: cart-reminder
@@ -153,7 +154,7 @@
   system: engagement
   repo: harbor-cart-reminder
   type: function
-  runtime: aws-lambda
+  runtime: lambda
   evidence: [{ source: config, repo: harbor-cart-reminder, path: requirements.txt }]
 - kind: Component
   id: warehouse-pipeline
@@ -161,15 +162,16 @@
   system: analytics
   repo: harbor-data
   type: data-pipeline
+  runtime: airflow
   evidence: [{ source: config, repo: harbor-data, path: requirements.txt }]
-# pending: runtime kubernetes comes from the KServe InferenceService Deployment.
+# The model runs on KServe (on Kubernetes): the runtime comes from the InferenceService Deployment.
 - kind: Component
   id: recs-model
   confidence: verified
   system: recommendations
   repo: harbor-recs
   type: ml-model
-  runtime: kubernetes
+  runtime: kserve
   evidence: [{ source: config, repo: harbor-recs, path: requirements.txt }]
 # Known only from the Orders service's call: no repo, no owner, no spec.
 - kind: Component
@@ -302,7 +304,7 @@
   normalizedPath: /v1/refunds
   auth: api-key
   evidence: [{ source: spec, path: inputs/partner-specs/tidewater-payments-openapi-v2.yaml, line: 24, side: definition }]
-# pending: the KServe predict route (V1 protocol) from the InferenceService.
+# The KServe predict route (V1 protocol) from the InferenceService.
 - kind: Endpoint
   id: recs-model.post-recommendations-predict
   confidence: verified
@@ -313,77 +315,79 @@
   normalizedPath: /v1/models/recommendations:predict
   evidence: [{ source: infrastructure, repo: harbor-recs, path: serving/inferenceservice.yaml, line: 4, side: definition }]
 
-# ------------------------------------------------------------------ endpoints: GraphQL (pending)
+# ------------------------------------------------------------------ endpoints: GraphQL
 # One per root field of the SDL schema; method QUERY or MUTATION, pathOrTopic the field.
+# Ids are <component>.graphql.<operation>.<field> (docs/spec/concepts/identity.md).
 - kind: Endpoint
-  id: shop-graph.query-products
+  id: shop-graph.graphql.query.products
   confidence: verified
   component: shop-graph
   endpointType: graphql
   method: QUERY
   pathOrTopic: Query.products
-  normalizedPath: Query.products
   evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 4, side: definition }]
 - kind: Endpoint
-  id: shop-graph.query-product
+  id: shop-graph.graphql.query.product
   confidence: verified
   component: shop-graph
   endpointType: graphql
   method: QUERY
   pathOrTopic: Query.product
-  normalizedPath: Query.product
   evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 5, side: definition }]
 - kind: Endpoint
-  id: shop-graph.query-order
+  id: shop-graph.graphql.query.order
   confidence: verified
   component: shop-graph
   endpointType: graphql
   method: QUERY
   pathOrTopic: Query.order
-  normalizedPath: Query.order
   evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 6, side: definition }]
 - kind: Endpoint
-  id: shop-graph.query-recommendations
+  id: shop-graph.graphql.query.recommendations
   confidence: verified
   component: shop-graph
   endpointType: graphql
   method: QUERY
   pathOrTopic: Query.recommendations
-  normalizedPath: Query.recommendations
   evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 7, side: definition }]
 - kind: Endpoint
-  id: shop-graph.mutation-place-order
+  id: shop-graph.graphql.mutation.placeorder
   confidence: verified
   component: shop-graph
   endpointType: graphql
   method: MUTATION
   pathOrTopic: Mutation.placeOrder
-  normalizedPath: Mutation.placeOrder
   evidence: [{ source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 11, side: definition }]
 
-# ------------------------------------------------------------------ endpoints: gRPC (pending)
-# Served by catalog-svc (proto in harbor-catalog). The copy of the proto in harbor-orders is a
-# client stub: it must not make orders-svc a server of Inventory.
+# ------------------------------------------------------------------ endpoints: gRPC
+# Served by catalog-svc (proto in harbor-catalog; main.go registers the server). The copy of the
+# proto in harbor-orders is a client stub: it must not make orders-svc a server of Inventory.
+# Ids are <component>.grpc.<package.service.method>; method is the RPC, pathOrTopic Service/Method.
 - kind: Endpoint
-  id: catalog-svc.check-stock
+  id: catalog-svc.grpc.harbor.inventory.v1.inventory.checkstock
   confidence: verified
   component: catalog-svc
   endpointType: grpc
-  pathOrTopic: /harbor.inventory.v1.Inventory/CheckStock
-  normalizedPath: /harbor.inventory.v1.Inventory/CheckStock
-  evidence: [{ source: spec, repo: harbor-catalog, path: proto/harbor/inventory/v1/inventory.proto, line: 9, side: definition }]
+  method: CheckStock
+  pathOrTopic: harbor.inventory.v1.Inventory/CheckStock
+  evidence:
+    - { source: spec, repo: harbor-catalog, path: proto/harbor/inventory/v1/inventory.proto, line: 9, side: definition }
+    - { source: code, repo: harbor-catalog, path: cmd/catalog/main.go, line: 34, side: callee }
 - kind: Endpoint
-  id: catalog-svc.reserve-stock
+  id: catalog-svc.grpc.harbor.inventory.v1.inventory.reservestock
   confidence: verified
   component: catalog-svc
   endpointType: grpc
-  pathOrTopic: /harbor.inventory.v1.Inventory/ReserveStock
-  normalizedPath: /harbor.inventory.v1.Inventory/ReserveStock
-  evidence: [{ source: spec, repo: harbor-catalog, path: proto/harbor/inventory/v1/inventory.proto, line: 10, side: definition }]
+  method: ReserveStock
+  pathOrTopic: harbor.inventory.v1.Inventory/ReserveStock
+  evidence:
+    - { source: spec, repo: harbor-catalog, path: proto/harbor/inventory/v1/inventory.proto, line: 10, side: definition }
+    - { source: code, repo: harbor-catalog, path: cmd/catalog/main.go, line: 34, side: callee }
 
-# ------------------------------------------------------------------ endpoints: webhook and function (pending)
+# ------------------------------------------------------------------ endpoints: webhook and function
+# A function Endpoint is <component>.function.<function>.<trigger>; its pathOrTopic names the trigger.
 - kind: Endpoint
-  id: payment-webhook.post-tidewater
+  id: payment-webhook.webhook.webhooks-tidewater
   confidence: verified
   component: payment-webhook
   endpointType: webhook
@@ -392,12 +396,12 @@
   normalizedPath: /webhooks/tidewater
   evidence: [{ source: infrastructure, repo: harbor-payment-webhook, path: serverless.yml, line: 19, side: definition }]
 - kind: Endpoint
-  id: cart-reminder.remind-abandoned-carts
+  id: cart-reminder.function.remindabandonedcarts.schedule-cron-0-2
   confidence: verified
   component: cart-reminder
   endpointType: function
-  pathOrTopic: remindAbandonedCarts
-  evidence: [{ source: infrastructure, repo: harbor-cart-reminder, path: serverless.yml, line: 13, side: definition }]
+  pathOrTopic: "schedule:cron(0 */2 * * ? *)"
+  evidence: [{ source: infrastructure, repo: harbor-cart-reminder, path: serverless.yml, line: 17, side: definition }]
 
 # ------------------------------------------------------------------ endpoints: event topics
 - kind: Endpoint
@@ -477,7 +481,7 @@
   evidence:
     - { source: code, repo: harbor-graph, path: src/resolvers.ts, line: 31, side: caller }
     - { source: code, repo: harbor-orders, path: src/orders.controller.ts, line: 8, side: callee }
-# recs-model has no VirtualService: a plain call. Verified once the KServe route is read (pending).
+# recs-model has no VirtualService: a plain call. Verified because the KServe route is read.
 - kind: Interface
   id: if-9c51c4944979e455
   confidence: verified
@@ -570,28 +574,30 @@
   sync: sync
   evidence: [{ source: code, repo: harbor-cart-reminder, path: reminder/handler.py, line: 13, side: caller }]
 
-# ------------------------------------------------------------------ interfaces: gRPC (pending)
+# ------------------------------------------------------------------ interfaces: gRPC
+# The callee side is where the server is registered (main.go), not the proto.
 - kind: Interface
-  id: if-307343928186de57
+  id: if-8e69b1c4ccb0aed9
   confidence: verified
   from: orders-svc
   to: catalog-svc
-  endpoint: catalog-svc.check-stock
+  endpoint: catalog-svc.grpc.harbor.inventory.v1.inventory.checkstock
   via: mesh
-  normalizedPath: /harbor.inventory.v1.Inventory/CheckStock
+  method: CheckStock
+  normalizedPath: harbor.inventory.v1.Inventory/CheckStock
   sync: sync
   evidence:
     - { source: code, repo: harbor-orders, path: src/inventory.client.ts, line: 16, side: caller }
-    - { source: spec, repo: harbor-catalog, path: proto/harbor/inventory/v1/inventory.proto, line: 9, side: callee }
+    - { source: code, repo: harbor-catalog, path: cmd/catalog/main.go, line: 34, side: callee }
 
-# ------------------------------------------------------------------ interfaces: GraphQL (pending)
+# ------------------------------------------------------------------ interfaces: GraphQL
 # One per root field an app's operations select; the caller line is the field in the document.
 - kind: Interface
   id: if-48178a435150f443
   confidence: verified
   from: web-app
   to: shop-graph
-  endpoint: shop-graph.query-products
+  endpoint: shop-graph.graphql.query.products
   via: direct
   method: QUERY
   normalizedPath: Query.products
@@ -605,7 +611,7 @@
   confidence: verified
   from: web-app
   to: shop-graph
-  endpoint: shop-graph.query-product
+  endpoint: shop-graph.graphql.query.product
   via: direct
   method: QUERY
   normalizedPath: Query.product
@@ -619,7 +625,7 @@
   confidence: verified
   from: web-app
   to: shop-graph
-  endpoint: shop-graph.query-recommendations
+  endpoint: shop-graph.graphql.query.recommendations
   via: direct
   method: QUERY
   normalizedPath: Query.recommendations
@@ -633,7 +639,7 @@
   confidence: verified
   from: web-app
   to: shop-graph
-  endpoint: shop-graph.mutation-place-order
+  endpoint: shop-graph.graphql.mutation.placeorder
   via: direct
   method: MUTATION
   normalizedPath: Mutation.placeOrder
@@ -647,7 +653,7 @@
   confidence: verified
   from: mobile-app
   to: shop-graph
-  endpoint: shop-graph.query-products
+  endpoint: shop-graph.graphql.query.products
   via: direct
   method: QUERY
   normalizedPath: Query.products
@@ -661,7 +667,7 @@
   confidence: verified
   from: mobile-app
   to: shop-graph
-  endpoint: shop-graph.query-order
+  endpoint: shop-graph.graphql.query.order
   via: direct
   method: QUERY
   normalizedPath: Query.order
@@ -675,7 +681,7 @@
   confidence: verified
   from: mobile-app
   to: shop-graph
-  endpoint: shop-graph.mutation-place-order
+  endpoint: shop-graph.graphql.mutation.placeorder
   via: direct
   method: MUTATION
   normalizedPath: Mutation.placeOrder
@@ -685,14 +691,14 @@
     - { source: code, repo: harbor-mobile, path: src/api/operations.ts, line: 26, side: caller }
     - { source: spec, repo: harbor-graph, path: schema/shop.graphql, line: 11, side: callee }
 
-# ------------------------------------------------------------------ interfaces: webhook (pending)
+# ------------------------------------------------------------------ interfaces: webhook (pending: needs the partner spec intake)
 # Tidewater's spec declares the callback (webhooks.chargeSettled); the function serves it.
 - kind: Interface
   id: if-471a26719fe84220
   confidence: verified
   from: tidewater-payments
   to: payment-webhook
-  endpoint: payment-webhook.post-tidewater
+  endpoint: payment-webhook.webhook.webhooks-tidewater
   via: webhook
   method: POST
   normalizedPath: /webhooks/tidewater
@@ -758,7 +764,7 @@
   evidence:
     - { source: infrastructure, repo: harbor-platform, path: terraform/databases.tf, line: 10 }
     - { source: migration, repo: harbor-catalog, path: migrations/0001_create_products.up.sql, line: 1 }
-# pending (readers): the warehouse pipeline reads products through its dbt source.
+# The warehouse pipeline reads products through its dbt source.
 - kind: Table
   id: catalog-db.products
   confidence: verified
@@ -804,7 +810,7 @@
     - { source: infrastructure, repo: harbor-platform, path: terraform/databases.tf, line: 1 }
     - { source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 2 }
 # Prisma only (no SQL migrations in the repo): what the code expects, so inferred.
-# pending (readers): the warehouse pipeline reads orders through its dbt source.
+# The warehouse pipeline reads orders through its dbt source.
 - kind: Table
   id: orders-db.orders
   confidence: inferred
@@ -842,12 +848,11 @@
 - { kind: IndexConstraint, id: orders-db.order-lines.pk, confidence: inferred, table: orders-db.order-lines, constraintKind: primary-key, columns: [id], evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 24 }] }
 - { kind: IndexConstraint, id: orders-db.order-lines.fk-orders, confidence: inferred, table: orders-db.order-lines, constraintKind: foreign-key, columns: [order_id], references: { table: orders-db.orders, columns: [id] }, evidence: [{ source: code, repo: harbor-orders, path: prisma/schema.prisma, line: 29 }] }
 
-# ------------------------------------------------------------------ data: warehouse, feature store, storage (pending)
+# ------------------------------------------------------------------ data: warehouse, feature store, storage
 - kind: DataStore
   id: harbor-warehouse
   confidence: verified
   storeType: warehouse
-  ownerComponent: warehouse-pipeline
   entitiesHeld: [customer_features, fct_daily_sales, stg_orders, stg_products]
   evidence:
     - { source: infrastructure, repo: harbor-platform, path: terraform/databases.tf, line: 19 }
@@ -859,7 +864,7 @@
   name: stg_orders
   tableKind: view
   ownerComponent: warehouse-pipeline
-  readers: [warehouse-pipeline]
+  readers: []
   writers: [warehouse-pipeline]
   evidence: [{ source: code, repo: harbor-data, path: dbt/models/staging/stg_orders.sql, line: 1 }]
 - kind: Table
@@ -869,7 +874,7 @@
   name: stg_products
   tableKind: view
   ownerComponent: warehouse-pipeline
-  readers: [warehouse-pipeline]
+  readers: []
   writers: [warehouse-pipeline]
   evidence: [{ source: code, repo: harbor-data, path: dbt/models/staging/stg_products.sql, line: 1 }]
 - kind: Table
@@ -879,7 +884,7 @@
   name: fct_daily_sales
   tableKind: table
   ownerComponent: warehouse-pipeline
-  readers: [warehouse-pipeline]
+  readers: []
   writers: [warehouse-pipeline]
   evidence: [{ source: code, repo: harbor-data, path: dbt/models/marts/fct_daily_sales.sql, line: 1 }]
 # The feature store's offline source reads this table (RedshiftSource in harbor-recs).
@@ -890,7 +895,7 @@
   name: customer_features
   tableKind: table
   ownerComponent: warehouse-pipeline
-  readers: [recs-model, warehouse-pipeline]
+  readers: [recs-model]
   writers: [warehouse-pipeline]
   evidence:
     - { source: code, repo: harbor-data, path: dbt/models/marts/customer_features.sql, line: 2 }
@@ -944,7 +949,8 @@
   replicas: 2
   resources: { cpu: 500m, memory: 512Mi }
   evidence: [{ source: infrastructure, repo: harbor-platform, path: k8s/payments-svc.yaml, line: 7 }]
-# pending (ingress): routes from the Istio Gateway and the VirtualServices bound to it.
+# Routes from the Istio Gateway and the VirtualServices bound to it; the evidence is each VirtualService
+# and the Gateway whose TLS setting the route carries.
 - kind: Deployment
   id: shop-graph.prod
   confidence: verified
@@ -956,7 +962,8 @@
   ingress: [{ host: api.harbor.example, path: /graphql, tls: true }]
   evidence:
     - { source: infrastructure, repo: harbor-platform, path: k8s/shop-graph.yaml, line: 7 }
-    - { source: infrastructure, repo: harbor-platform, path: mesh/shop-graph.yaml, line: 8 }
+    - { source: infrastructure, repo: harbor-platform, path: mesh/shop-graph.yaml, line: 2 }
+    - { source: infrastructure, repo: harbor-platform, path: mesh/gateway.yaml, line: 2 }
 - kind: Deployment
   id: orders-svc.prod
   confidence: verified
@@ -968,14 +975,15 @@
   ingress: [{ host: orders.internal.harbor.example, path: /carts, tls: true }]
   evidence:
     - { source: infrastructure, repo: harbor-platform, path: k8s/orders-svc.yaml, line: 7 }
-    - { source: infrastructure, repo: harbor-platform, path: mesh/orders-svc.yaml, line: 21 }
-# pending: the KServe InferenceService and the two serverless functions.
+    - { source: infrastructure, repo: harbor-platform, path: mesh/orders-svc.yaml, line: 15 }
+    - { source: infrastructure, repo: harbor-platform, path: mesh/gateway.yaml, line: 2 }
+# The KServe InferenceService and the two serverless functions.
 - kind: Deployment
   id: recs-model.prod
   confidence: verified
   component: recs-model
   env: prod
-  platform: kubernetes
+  platform: kserve
   resources: { cpu: "2", memory: 4Gi }
   autoscaling: { min: 2, max: 6 }
   evidence: [{ source: infrastructure, repo: harbor-recs, path: serving/inferenceservice.yaml, line: 10 }]
@@ -984,21 +992,61 @@
   confidence: verified
   component: payment-webhook
   env: prod
-  platform: aws-lambda
-  evidence: [{ source: infrastructure, repo: harbor-payment-webhook, path: serverless.yml, line: 7 }]
+  platform: lambda
+  evidence: [{ source: infrastructure, repo: harbor-payment-webhook, path: serverless.yml, line: 13 }]
 - kind: Deployment
   id: cart-reminder.prod
   confidence: verified
   component: cart-reminder
   env: prod
-  platform: aws-lambda
-  evidence: [{ source: infrastructure, repo: harbor-cart-reminder, path: serverless.yml, line: 7 }]
+  platform: lambda
+  evidence: [{ source: infrastructure, repo: harbor-cart-reminder, path: serverless.yml, line: 13 }]
 
-# pending: schedules as settingKind schedule (ADR 0040), ids as the batch extractor names them.
+# A service in the Istio mesh (a VirtualService routes to it) carries a mesh setting; two mesh
+# services calling each other is what makes an Interface via: mesh.
 - kind: Setting
-  id: cart-reminder.schedule-remindabandonedcarts
+  id: catalog-svc.prod.mesh
+  confidence: verified
+  component: catalog-svc
+  env: prod
+  settingKind: config
+  key: mesh
+  valueOrRef: istio
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: mesh/catalog-svc.yaml, line: 2 }]
+- kind: Setting
+  id: orders-svc.prod.mesh
+  confidence: verified
+  component: orders-svc
+  env: prod
+  settingKind: config
+  key: mesh
+  valueOrRef: istio
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: mesh/orders-svc.yaml, line: 2 }, { source: infrastructure, repo: harbor-platform, path: mesh/orders-svc.yaml, line: 15 }]
+- kind: Setting
+  id: payments-svc.prod.mesh
+  confidence: verified
+  component: payments-svc
+  env: prod
+  settingKind: config
+  key: mesh
+  valueOrRef: istio
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: mesh/payments-svc.yaml, line: 2 }]
+- kind: Setting
+  id: shop-graph.prod.mesh
+  confidence: verified
+  component: shop-graph
+  env: prod
+  settingKind: config
+  key: mesh
+  valueOrRef: istio
+  evidence: [{ source: infrastructure, repo: harbor-platform, path: mesh/shop-graph.yaml, line: 2 }]
+
+# Schedules as settingKind schedule (ADR 0040), ids as the batch extractor names them.
+- kind: Setting
+  id: cart-reminder.prod.schedule-remindabandonedcarts
   confidence: verified
   component: cart-reminder
+  env: prod
   settingKind: schedule
   key: schedule.remindAbandonedCarts
   valueOrRef: cron(0 */2 * * ? *)

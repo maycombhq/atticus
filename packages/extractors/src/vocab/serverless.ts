@@ -1,4 +1,4 @@
-import type { CatalogRecord } from "@maycombhq/core";
+import { normalizePath, type CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
 import { topicName } from "../platform/gcp.js";
 import { attrOf, child } from "../platform/hcl.js";
@@ -28,7 +28,11 @@ import {
  * function's triggers are its Endpoints, id `<component>.function.<function>.<kind>-<value>`,
  * pathOrTopic `<kind>:<value>` with kind http (method set), queue, topic, schedule, storage or
  * event. Queue and topic triggers are also event-subscribe loose ends, so merge links the
- * publishers. A schedule is a Setting `schedule.<function>` of kind schedule.
+ * publishers. A schedule is a Setting `schedule.<function>` of kind schedule. An HTTP trigger
+ * of a function (or a path) called a webhook or hook is a `webhook` Endpoint instead, id
+ * `<component>.webhook.<path>`, method POST unless the trigger says one, pathOrTopic the path.
+ * What a function publishes from its handler file (kafkajs `send`, Python Kafka `send` and
+ * `produce`) is an event-publish loose end of the function app.
  *
  * - AWS SAM (`AWS::Serverless::Function` events Api, HttpApi, SQS, SNS, Schedule,
  *   ScheduleV2, S3) and CloudFormation as CDK synthesizes it (`AWS::Lambda::Function`, with
@@ -58,7 +62,7 @@ interface Trigger {
   method?: string;
   path: string;
   line?: number;
-  /** Line of the schedule expression itself, for its Setting. */
+  /** Line of the schedule expression itself, for its Setting (of the route's path, for a webhook). */
   valueLine?: number;
 }
 
@@ -68,17 +72,35 @@ interface Fn {
   env: string;
   path: string;
   line?: number;
+  /** The code file the handler names (`src/handler.handle` → `src/handler`, no extension). */
+  module?: string;
 }
 
 /** Attributes in C# are code; templates and bindings are infrastructure. */
 const sourceOf = (path: string) =>
   path.endsWith(".cs") ? ("code" as const) : ("infrastructure" as const);
 const kebab = (s: string) => s.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
+
+/** `src/handler.handle` (with an optional CodeUri folder) → the module `src/handler`. */
+function moduleOf(handler: string | undefined, codeUri?: string): { module?: string } {
+  if (!handler || handler.includes("::") || !handler.includes(".")) return {};
+  const mod = handler.slice(0, handler.lastIndexOf("."));
+  const dir = codeUri && !/^s3:|^\.?\/?$/.test(codeUri) ? codeUri.replace(/^\.\/|\/$/g, "") : "";
+  return { module: dir ? `${dir}/${mod}` : mod };
+}
+
+/**
+ * An HTTP trigger that receives another system's callbacks: the function is called a webhook
+ * (`tidewaterWebhook`, `stripe-hook-receiver`) or its path has a `webhook(s)` or `hook(s)` segment.
+ */
+const isWebhook = (fn: string, path: string) =>
+  /(^|[^a-z])hooks?([^a-z]|$)|webhook/i.test(kebab(fn)) ||
+  /(^|\/)(web)?hooks?(\/|$)/i.test(path.replace(/\{[^}]*\}/g, ""));
 const INTRINSIC = /!(Ref|GetAtt|Sub|Join|Select|ImportValue|FindInMap|If|Split|Base64)\b[ \t]*/g;
 
 export const serverlessExtractor = defineExtractor({
   id: "serverless",
-  version: "0.1.0",
+  version: "0.1.1",
   claims: [...YAML, ...CS, ...TF],
   async *scan(repo, ctx) {
     const comp = own(repo, ctx);
@@ -133,6 +155,7 @@ export const serverlessExtractor = defineExtractor({
         });
     }
     yield* emitTriggers(repo, comp, fns, triggers);
+    yield* handlerEvents(repo, ctx, comp, fns);
     yield* infraFunctions(repo, ctx);
   },
 });
@@ -146,18 +169,37 @@ function* emitTriggers(
   const envOfFn = new Map(fns.map((f) => [f.name, f.env]));
   const seen = new Set<string>();
   for (const t of triggers) {
-    const e = endpoint({
-      repo,
-      component: comp,
-      endpointType: "function",
-      prefix: `function.${slug(t.fn)}`,
-      name: `${t.kind}-${t.value}`,
-      ...(t.method ? { method: t.method } : {}),
-      pathOrTopic: `${t.kind}:${t.value}`,
-      source: t.path.endsWith(".cs") ? "code" : "infrastructure",
-      path: t.path,
-      ...(t.line ? { line: t.line } : {}),
-    });
+    const source = t.path.endsWith(".cs") ? "code" : "infrastructure";
+    // An HTTP trigger that receives another system's callbacks is a webhook endpoint of the
+    // component (like a registered callback), not a plain function trigger.
+    const hook = t.kind === "http" && isWebhook(t.fn, t.value);
+    const e = hook
+      ? endpoint({
+          repo,
+          component: comp,
+          endpointType: "webhook",
+          prefix: "webhook",
+          name: t.value,
+          method: t.method && t.method !== "ANY" ? t.method : "POST",
+          pathOrTopic: t.value,
+          normalizedPath: normalizePath(t.value),
+          source,
+          path: t.path,
+          // The route's path is what defines the webhook endpoint.
+          ...((t.valueLine ?? t.line) ? { line: t.valueLine ?? t.line } : {}),
+        })
+      : endpoint({
+          repo,
+          component: comp,
+          endpointType: "function",
+          prefix: `function.${slug(t.fn)}`,
+          name: `${t.kind}-${t.value}`,
+          ...(t.method ? { method: t.method } : {}),
+          pathOrTopic: `${t.kind}:${t.value}`,
+          source,
+          path: t.path,
+          ...(t.line ? { line: t.line } : {}),
+        });
     if (seen.has(e.id)) continue;
     seen.add(e.id);
     yield e;
@@ -183,6 +225,41 @@ function* emitTriggers(
         t.valueLine ?? t.line,
         t.path.endsWith(".cs") ? "code" : "infrastructure",
       );
+  }
+}
+
+/**
+ * Events a function publishes from its own code: the handler file the template names (a
+ * function package has no server framework, so no backend extractor reads it). kafkajs
+ * `producer.send({ topic: "x", ... })` and Python `producer.send("x", ...)` / `.produce("x", ...)`
+ * in a file that uses Kafka become event-publish loose ends of the function app.
+ */
+async function* handlerEvents(
+  repo: RepoHandle,
+  ctx: ScanContext,
+  comp: string,
+  fns: Fn[],
+): AsyncGenerator<CatalogRecord> {
+  const modules = [...new Set(fns.flatMap((f) => (f.module ? [f.module] : [])))];
+  if (modules.length === 0) return;
+  const files = await sources(repo, ["**/*.ts", "**/*.js", "**/*.mjs", "**/*.cjs", "**/*.py"]);
+  const seen = new Set<string>();
+  for (const mod of modules) {
+    for (const path of files.filter((p) => p.replace(/\.\w+$/, "") === mod.replace(/^\.\//, ""))) {
+      const text = await read(repo, ctx, path);
+      if (text === undefined || !/kafka/i.test(text)) continue;
+      const clean = stripComments(text, path.endsWith(".py") ? "hash" : "c");
+      const re = path.endsWith(".py")
+        ? /\.(?:send|produce)\s*\(\s*(?:topic\s*=\s*)?["']([^"'\s]+)["']/g
+        : /\.send\s*\(\s*\{[^}]*?\btopic\s*:\s*["'`]([^"'`\s]+)["'`]/g;
+      for (const m of clean.matchAll(re)) {
+        const line = lineAt(clean, m.index + m[0].lastIndexOf(m[1]!));
+        const key = `${m[1]}|${path}|${line}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        yield loose(repo, comp, "event-publish", m[1]!, path, line);
+      }
+    }
   }
 }
 
@@ -215,6 +292,7 @@ function cloudFormation(doc: YamlDoc, path: string, fns: Fn[], triggers: Trigger
       env: "default",
       path,
       line: doc.line(["Resources", id, "Type"]),
+      ...moduleOf(str(at(r, "Properties", "Handler")), str(at(r, "Properties", "CodeUri"))),
     });
     const events = at(r, "Properties", "Events");
     if (!isObj(events)) continue;
@@ -311,7 +389,14 @@ function serverlessFramework(doc: YamlDoc, path: string, fns: Fn[], triggers: Tr
   const functions = at(doc.value, "functions");
   if (!isObj(functions)) return;
   for (const [name, f] of Object.entries(functions)) {
-    fns.push({ name, platform: "lambda", env, path, line: doc.line(["functions", name]) });
+    fns.push({
+      name,
+      platform: "lambda",
+      env,
+      path,
+      line: doc.line(["functions", name]),
+      ...moduleOf(str(at(f, "handler"))),
+    });
     arr(at(f, "events")).forEach((e, i) => {
       const line = doc.line(["functions", name, "events", i]);
       const http = at(e, "http") ?? at(e, "httpApi");
@@ -324,6 +409,14 @@ function serverlessFramework(doc: YamlDoc, path: string, fns: Fn[], triggers: Tr
           method: (str(http.method) ?? "ANY").toUpperCase(),
           path,
           line,
+          valueLine: doc.line([
+            "functions",
+            name,
+            "events",
+            i,
+            at(e, "http") !== undefined ? "http" : "httpApi",
+            "path",
+          ]),
         });
       }
       const sqs = str(at(e, "sqs")) ?? str(at(e, "sqs", "arn"));
