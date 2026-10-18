@@ -23,7 +23,7 @@ AI teaches and drafts; deterministic code does the repeated work. Scans never ca
 ```
 packages/
   core/              catalog record contracts (C1), workspace file schemas, canonical YAML, identity and branch rules
-  sdk/               plugin SDK (C4): extractors, ingestors, test helpers
+  sdk/               plugin SDK (C4): extractors, ingestors, scan runner and cache
   openspec-adapter/  the only door to OpenSpec: pinned CLI wrapper, org-flow schema, contract tests
   workspace/         base clones, change worktrees, repos files, VS Code and IntelliJ workspaces
   cli/               the `atticus` command

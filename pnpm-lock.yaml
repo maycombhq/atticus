@@ -87,6 +87,10 @@ importers:
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   packages/workspace:
     dependencies:

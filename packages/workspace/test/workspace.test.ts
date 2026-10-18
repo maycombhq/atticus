@@ -8,6 +8,7 @@ import { parse } from "yaml";
 import { RepoManifest, type ManifestRepo } from "@maycombhq/core";
 import {
   baseClonePath,
+  checkoutState,
   createWorkspace,
   ensureGitignore,
   intellijProjectPath,
@@ -161,6 +162,19 @@ describe("base clones", () => {
       const [r] = await ws.sync([repos[0]!]);
       expect(r!.action).toBe("skipped");
       expect(r!.reason).toContain("read-only");
+    },
+    T,
+  );
+
+  it(
+    "reports a base clone's commit and whether it is dirty",
+    async () => {
+      const ws = createWorkspace(root);
+      const [r] = await ws.sync([repos[0]!]);
+      const base = baseClonePath(root, "forge-ledger");
+      expect(await checkoutState(base)).toEqual({ commit: r!.sha, dirty: false });
+      await writeFile(join(base, "new.txt"), "x\n");
+      expect((await checkoutState(base)).dirty).toBe(true);
     },
     T,
   );
