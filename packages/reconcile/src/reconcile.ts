@@ -56,7 +56,7 @@ export interface ReconcileInput {
 export interface ReconcileResult {
   items: ReconcileItem[];
   /** Each drawn edge that matched code, with the interfaces it shows. */
-  matches: { cell: string; interfaces: string[] }[];
+  matches: { cell: string; interfaces: string[]; tables?: string[] }[];
   names: NameResolution[];
 }
 
@@ -322,6 +322,12 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
         (t.readers.some((c) => same(from, c)) || t.writers.some((c) => same(from, c)))
       );
     });
+    if (owned.length > 0 && e.pattern && patterns.get(e.pattern)?.interaction === "data-access") {
+      // Drawn as direct data access, and that is what the code does: a match.
+      for (const t of owned) explainedAccess.add(`${from}|${t.id}`);
+      matches.push({ cell: e.cell, interfaces: [], tables: owned.map((t) => t.id).sort() });
+      continue;
+    }
     if (owned.length > 0) {
       for (const t of owned) explainedAccess.add(`${from}|${t.id}`);
       const jdbc = input.patterns.find(

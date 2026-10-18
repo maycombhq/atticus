@@ -30,18 +30,10 @@ async function scanForge(opts: { root?: string; cache?: null } = {}) {
     repoState: async () => ({ commit: "a".repeat(40), dirty: false }),
     ...(opts.cache === null ? { cache: null } : {}),
     scannedAt: "2026-10-18T09:00:00Z",
+    inputsDir: join(FORGE, "inputs"),
   });
   return { root, scan };
 }
-
-/**
- * Facts that come from documents in inputs/ (the vendor's partner spec) arrive with intake
- * in M2. Until then the vendor endpoint is missing and the vendor call can only be inferred.
- */
-const AWAITING_INTAKE = {
-  skip: ["northwind-pay.post-payment"],
-  ignoreFields: { System: ["confidence"], Interface: [] as string[] },
-};
 
 describe("scan of the Forge fixture (M1 exit)", () => {
   it(
@@ -65,24 +57,17 @@ describe("scan of the Forge fixture (M1 exit)", () => {
     async () => {
       const { scan } = await scanForge({ cache: null });
       const kinds = [...new Set(expected.map((e) => e.kind))];
-      const c = compareCatalog(scan.records, expected, kinds, {
-        skip: AWAITING_INTAKE.skip,
-        ignoreFields: AWAITING_INTAKE.ignoreFields,
-      });
+      // The partner spec in inputs/ comes in through intake, so the vendor endpoint is there
+      // and the vendor call is verified: every field of every record matches.
+      const c = compareCatalog(scan.records, expected, kinds);
       expect(c.missing).toEqual([]);
-      expect(c.extra).toEqual([]);
-      // The vendor interface lacks its callee end until the partner spec is taken in.
-      expect(c.fieldDiffs).toEqual([
-        'Interface/if-e7344c9455608119.confidence: expected "verified", got "inferred"',
-        'Interface/if-e7344c9455608119.endpoint: expected "northwind-pay.post-payment", got undefined',
-      ]);
+      expect(c.extra.filter((k) => !k.startsWith("SourceDocument/"))).toEqual([]);
+      expect(c.fieldDiffs).toEqual([]);
       // Evidence must match exactly for everything except systems and components, whose
       // evidence is the first file that shows them (ADR 0017).
       expect(
         c.evidenceDiffs.filter((d) => !d.startsWith("System/") && !d.startsWith("Component/")),
-      ).toEqual([
-        "Interface/if-e7344c9455608119: missing [:inputs/partner-specs/northwind-pay-openapi.yaml:6:callee] extra []",
-      ]);
+      ).toEqual([]);
     },
     T,
   );
@@ -99,6 +84,7 @@ describe("scan of the Forge fixture (M1 exit)", () => {
       expect(ifs.find((i) => i.id === "if-5c55930b735276a9")!.confidence).toBe("inferred");
       expect(ifs.find((i) => i.id === "if-75b5e8d8aa780837")!.pattern?.code).toBe("S.GW.SOR");
       expect(ifs.find((i) => i.id === "if-e7344c9455608119")!.pattern).toBeUndefined();
+      expect(ifs.find((i) => i.id === "if-e7344c9455608119")!.confidence).toBe("verified");
       expect(ifs.find((i) => i.id === "if-5c55930b735276a9")!.pattern).toBeUndefined();
     },
     T,

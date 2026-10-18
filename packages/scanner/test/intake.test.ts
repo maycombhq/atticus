@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { loadOrgPack, mergeCatalog, parseRecord, type CatalogRecord } from "@maycombhq/core";
-import { scanEstate } from "@maycombhq/scanner";
-import { scanInputs } from "../src/index.js";
+import { scanEstate } from "../src/index.js";
+import { scanInputs } from "@maycombhq/intake";
 
 const FORGE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/forge");
 const ORG_PACK = join(FORGE, "metarepo/org-pack");
@@ -68,6 +68,7 @@ async function forge() {
     repoState: async () => ({ commit: "a".repeat(40), dirty: false }),
     cache: null,
     scannedAt: "2026-10-18T09:00:00Z",
+    inputsDir: null,
   });
   const inputs = await scanInputs({
     root: join(FORGE, "metarepo"),

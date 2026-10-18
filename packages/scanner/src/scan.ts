@@ -9,14 +9,24 @@ import {
   type ScanCache,
 } from "@maycombhq/sdk";
 import {
+  applyCurated,
   loadOrgPack,
   mergeCatalog,
   type CatalogRecord,
   type Dialect,
   type OrgPack,
 } from "@maycombhq/core";
-import { BUILT_IN_EXTRACTORS, dialectExtractor, runDialectTests } from "@maycombhq/extractors";
+import {
+  BUILT_IN_EXTRACTORS,
+  dialectExtractor,
+  loadShippedDialects,
+  runDialectTests,
+  SHIPPED_DIALECTS_DIR,
+} from "@maycombhq/extractors";
+import { listIngestors } from "@maycombhq/ingestors";
+import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
 import { baseClonePath, checkoutState } from "@maycombhq/workspace";
+import { readCatalog } from "./files.js";
 
 export interface ScanOptions {
   /** The metarepo root (holds org-pack/, catalog/, workspace/). */
@@ -36,6 +46,10 @@ export interface ScanOptions {
   /** Extra extractors (plugins). */
   extractors?: Extractor[];
   onProgress?: (done: number, total: number, repo: string) => void;
+  /** Where inputs/ is (documents, partner specs, diagrams); default <root>/inputs. Pass null to skip intake. */
+  inputsDir?: string | null;
+  /** Folder of curated decisions applied over the merged catalog; default <root>/catalog/curated. */
+  curatedDir?: string;
 }
 
 export interface ScanProblem {
@@ -57,6 +71,10 @@ export interface EstateScan {
     verified: number;
     unresolved: number;
   };
+  /** What intake read from inputs/ (documents, versions, triage items). */
+  inputs?: ScanInputsResult;
+  /** Curated decisions applied, and the records they suppressed. */
+  curated: { applied: string[]; suppressed: string[] };
 }
 
 /** Load and check dialects: a dialect whose own tests fail is not used, and the failure is reported. */
@@ -65,12 +83,21 @@ async function usableDialects(
   orgPackDir: string,
   problems: ScanProblem[],
 ): Promise<Dialect[]> {
-  const byName = new Map(op.dialects.map((d) => [d.name, d]));
+  // Dialects shipped with Atticus are defaults; an org-pack dialect with the same name replaces one.
+  const own = new Set(op.dialects.map((d) => d.name));
+  const shipped = (await loadShippedDialects().catch(() => [] as Dialect[])).filter(
+    (d) => !own.has(d.name),
+  );
+  const all = [
+    ...shipped.map((d) => ({ d, dir: SHIPPED_DIALECTS_DIR })),
+    ...op.dialects.map((d) => ({ d, dir: join(orgPackDir, "dialects") })),
+  ];
+  const byName = new Map(all.map(({ d }) => [d.name, d]));
   const ok: Dialect[] = [];
-  for (const d of op.dialects) {
-    const failures = await runDialectTests(d, join(orgPackDir, "dialects"), byName).catch(
-      (e: Error) => [{ test: "(load)", message: e.message }],
-    );
+  for (const { d, dir } of all) {
+    const failures = await runDialectTests(d, dir, byName).catch((e: Error) => [
+      { test: "(load)", message: e.message },
+    ]);
     if (failures.length > 0) {
       for (const f of failures)
         problems.push({ source: `dialect ${d.name}`, message: `test "${f.test}": ${f.message}` });
@@ -93,7 +120,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     message: `${p.path ? `${p.path}: ` : ""}${p.message}`,
   }));
   const dialects = await usableDialects(op, orgPackDir, problems);
-  const byName = new Map(op.dialects.map((d) => [d.name, d]));
+  const byName = new Map(dialects.map((d) => [d.name, d]));
   const dialectExtractors = dialects.map((d) => ({ d, x: dialectExtractor(d, byName) }));
   const cache =
     o.cache === null ? undefined : (o.cache ?? fsScanCache(join(o.root, ".index", "scan-cache")));
@@ -153,8 +180,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     o.onProgress?.(++done, repos.length, r.id);
   }
 
-  const merged = mergeCatalog({
-    records: results.flatMap((s) => s.records),
+  const mergeInput = (records: CatalogRecord[]) => ({
+    records,
     repos: repos.map((r) => ({
       id: r.id,
       type: r.type,
@@ -167,6 +194,33 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       ? `org-pack/profiles/${op.profiles[0].platform}/profile.yaml`
       : undefined,
   });
+  const codeRecords = results.flatMap((s) => s.records);
+  let merged = mergeCatalog(mergeInput(codeRecords));
+  const curatedDir = o.curatedDir ?? join(o.root, "catalog", "curated");
+  const curated = await readCatalog(curatedDir);
+  for (const p of curated.problems)
+    problems.push({ source: `catalog/curated/${p.file}`, message: p.message });
+
+  // Documents in inputs/ (partner specs, diagrams, payloads) come after the code, so code wins in merge.
+  let inputs: ScanInputsResult | undefined;
+  if (o.inputsDir !== null) {
+    inputs = await scanInputs({
+      root: o.root,
+      orgPack: op,
+      inputsDir: o.inputsDir ?? join(o.root, "inputs"),
+      records: [...merged.records, ...curated.records],
+      ingestors: listIngestors(),
+      scannedAt,
+    });
+    for (const p of inputs.problems)
+      problems.push({ source: "intake", message: `${p.path ? `${p.path}: ` : ""}${p.message}` });
+    if (inputs.records.length > 0)
+      merged = mergeCatalog(mergeInput([...codeRecords, ...inputs.records]));
+  }
+  const applied = applyCurated(merged.records, curated.records);
+  for (const p of applied.problems)
+    problems.push({ source: "curated", message: JSON.stringify(p) });
+  merged = { ...merged, records: applied.records };
   for (const i of merged.invalid)
     problems.push({
       source: "merge",
@@ -184,5 +238,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       records: merged.records.length,
       ...merged.stats,
     },
+    ...(inputs ? { inputs } : {}),
+    curated: { applied: applied.applied, suppressed: applied.suppressed },
   };
 }

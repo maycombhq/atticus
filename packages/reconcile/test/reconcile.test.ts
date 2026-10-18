@@ -141,3 +141,30 @@ describe("reconcile the Forge diagram with the catalog (M1 exit)", () => {
     expect(r.matches.map((m) => m.cell)).toEqual(["e1", "e2", "e3", "e4", "e6"]);
   });
 });
+
+describe("reconcile: drawn data access", () => {
+  it("accepts an edge drawn with a data-access pattern between a table's reader and its owner", async () => {
+    const op = await loadOrgPack(join(FORGE, "metarepo/org-pack"));
+    const profile = op.profiles[0]!.profile!;
+    const xml = readFileSync(join(FORGE, DIAGRAM), "utf8").replace(
+      "S.GW.SRO GET /ledger/v1/entries",
+      "D.JDBC",
+    );
+    const r = reconcile({
+      diagram: readDrawio(xml, profile.legend),
+      file: DIAGRAM,
+      records: catalog(),
+      systems: profile.systems,
+      patterns: op.patterns,
+    });
+    expect(r.items.some((i) => i.diagram?.cell === "e5")).toBe(false);
+    expect(r.matches.find((m) => m.cell === "e5")).toEqual({
+      cell: "e5",
+      interfaces: [],
+      tables: ["ledger-db.entry"],
+    });
+    expect(
+      r.items.some((i) => i.type === "code-only" && i.records.includes("ledger-db.entry")),
+    ).toBe(false);
+  });
+});

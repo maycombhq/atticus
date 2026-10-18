@@ -16,6 +16,12 @@ export * from "./lang/java.js";
 export * from "./lang/config.js";
 export * from "./lang/xml.js";
 export * from "./lang/sql.js";
+export * from "./backends/index.js";
+import { BACKEND_EXTRACTORS } from "./backends/index.js";
+export * from "./platform/index.js";
+import { PLATFORM_EXTRACTORS } from "./platform/index.js";
+export * from "./data/index.js";
+import { DATA_EXTRACTORS } from "./data/index.js";
 export {
   apigeeExtractor,
   componentExtractor,
@@ -38,4 +44,7 @@ export const BUILT_IN_EXTRACTORS: readonly Extractor[] = [
   topicsExtractor,
   migrationsExtractor,
   infraExtractor,
+  ...BACKEND_EXTRACTORS,
+  ...PLATFORM_EXTRACTORS,
+  ...DATA_EXTRACTORS,
 ];

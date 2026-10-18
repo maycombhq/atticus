@@ -207,10 +207,6 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
-    devDependencies:
-      '@maycombhq/scanner':
-        specifier: workspace:*
-        version: link:../scanner
 
   packages/knowledge:
     dependencies:
@@ -260,6 +256,12 @@ importers:
       '@maycombhq/extractors':
         specifier: workspace:*
         version: link:../extractors
+      '@maycombhq/ingestors':
+        specifier: workspace:*
+        version: link:../ingestors
+      '@maycombhq/intake':
+        specifier: workspace:*
+        version: link:../intake
       '@maycombhq/sdk':
         specifier: workspace:*
         version: link:../sdk

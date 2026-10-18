@@ -33,6 +33,10 @@ packages/
   index/             local SQLite index, query language, graph and impact
   reconcile/         draw.io reader, aliases, diagram-versus-code reconcile
   ingestors/         diagram (Lucid, Visio, Mermaid) and document (Office, PDF, Markdown) readers
+  intake/            inputs/ intake, triage, curated decisions
+  stubs/             stub servers from specs or the catalog
+  diagrams/          Mermaid and draw.io views of the catalog
+  assistant-kit/     the dialect build kit and its grader
   knowledge/         wiki sources, pattern scan, coverage, knowledge gaps and owner questions
   synth/             synthetic estate generator for scale tests
   cli/               the `atticus` command

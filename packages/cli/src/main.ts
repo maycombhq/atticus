@@ -20,6 +20,16 @@ import {
   sourcesAdd,
   sourcesSync,
 } from "./knowledge-commands.js";
+import { diagramLibrary, diagramRender } from "./diagram-commands.js";
+import { stubCheck, stubServe } from "./stub-commands.js";
+import { intakeAdd, intakeList, triageDecide, triageList } from "./intake-commands.js";
+import {
+  dialectGrade,
+  dialectKit,
+  dialectNew,
+  dialectRun,
+  dialectTest,
+} from "./dialect-commands.js";
 
 export const VERSION = "0.0.1";
 
@@ -47,6 +57,21 @@ Usage:
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
   atticus questions [--json]           Knowledge gaps and the owner questions that close them
+  atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
+  atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
+  atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
+  atticus triage decide <item> <n>     Choose option n for a triage item; writes a curated decision
+          [--by handle] [--reason text]
+  atticus diagram render <view|file>   Draw a view (context, container, data, event, sequence) or a .drawio file
+          [--focus id] [--format mermaid|drawio] [--out file]
+  atticus diagram library <file>       Write the draw.io shape library
+  atticus stub serve <spec|id>         Serve a stub of an API from its spec, or from the catalog (--catalog)
+          [--port 4010] [--host 127.0.0.1]
+  atticus stub check <spec>            Which operations have examples to answer with
+  atticus dialect new <name> --from <repo>[,<repo>...]   Scaffold a dialect from sample repos
+  atticus dialect test <name>          Run a dialect's own tests
+  atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
+  atticus dialect kit [dir]            Export the dialect build kit for an assistant
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--by handle] [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
@@ -92,6 +117,13 @@ export async function main(argv: string[], io: Output): Promise<number> {
       depth: { type: "string" },
       by: { type: "string" },
       reason: { type: "string" },
+      focus: { type: "string" },
+      format: { type: "string" },
+      out: { type: "string" },
+      port: { type: "string" },
+      host: { type: "string" },
+      catalog: { type: "boolean" },
+      from: { type: "string" },
     },
     strict: false,
   });
@@ -191,6 +223,127 @@ export async function main(argv: string[], io: Output): Promise<number> {
       },
       io,
     );
+  }
+  const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+  const json = values.json === true;
+  if (group === "intake" && command === "add")
+    return intakeAdd(
+      root,
+      positionals.slice(2).map((f) => resolve(f)),
+      io,
+    );
+  if (group === "intake" && command === "list") return intakeList(root, io, { json });
+  if (group === "triage" && !command) return triageList(root, io, { json });
+  if (group === "triage" && command === "decide") {
+    const [item, option] = positionals.slice(2);
+    if (!item || !option || !num(option)) {
+      io.err(
+        "triage decide needs an item id and an option number, for example: atticus triage decide alias-needed.ledger-platform 1",
+      );
+      return 2;
+    }
+    return triageDecide(
+      root,
+      item,
+      num(option)!,
+      {
+        ...(str(values.by) ? { by: str(values.by)! } : {}),
+        ...(str(values.reason) ? { reason: str(values.reason)! } : {}),
+      },
+      io,
+    );
+  }
+  if (group === "diagram" && command === "render") {
+    if (!arg) {
+      io.err("diagram render needs a view or a file, for example: atticus diagram render context");
+      return 2;
+    }
+    return diagramRender(
+      root,
+      {
+        view: arg,
+        ...(str(values.focus) ? { focus: str(values.focus)! } : {}),
+        ...(str(values.format) ? { format: str(values.format)! } : {}),
+        ...(str(values.out) ? { out: str(values.out)! } : {}),
+      },
+      io,
+    );
+  }
+  if (group === "diagram" && command === "library") {
+    if (!arg) {
+      io.err(
+        "diagram library needs a file to write, for example: atticus diagram library atticus.xml",
+      );
+      return 2;
+    }
+    return diagramLibrary(arg, io);
+  }
+  if (group === "stub" && command === "serve") {
+    if (!arg) {
+      io.err(
+        "stub serve needs a spec file or a catalog id, for example: atticus stub serve api/openapi.yaml",
+      );
+      return 2;
+    }
+    return stubServe(
+      root,
+      arg,
+      {
+        ...(num(values.port) ? { port: num(values.port)! } : {}),
+        ...(str(values.host) ? { host: str(values.host)! } : {}),
+        catalog: values.catalog === true,
+      },
+      io,
+    );
+  }
+  if (group === "stub" && command === "check") {
+    if (!arg) {
+      io.err("stub check needs a spec file");
+      return 2;
+    }
+    return stubCheck(arg, io);
+  }
+  if (group === "dialect") {
+    const rest = positionals.slice(3);
+    if (command === "kit") return dialectKit(resolve(arg ?? "dialect-kit"), io);
+    if (!arg) {
+      io.err(
+        `dialect ${command ?? ""} needs a dialect name, for example: atticus dialect test forge`.replace(
+          "  ",
+          " ",
+        ),
+      );
+      return 2;
+    }
+    if (command === "new") {
+      const repos = [...(str(values.from)?.split(",") ?? []), ...rest]
+        .map((r) => r.trim())
+        .filter(Boolean);
+      if (repos.length === 0) {
+        io.err(
+          "dialect new needs sample repos, for example: atticus dialect new forge --from workspace/forge-ledger",
+        );
+        return 2;
+      }
+      return dialectNew(root, arg, repos, io);
+    }
+    if (command === "test") return dialectTest(root, arg, io);
+    if (command === "run") {
+      if (!rest[0]) {
+        io.err(
+          "dialect run needs a repo folder, for example: atticus dialect run forge workspace/forge-ledger",
+        );
+        return 2;
+      }
+      return dialectRun(root, arg, rest[0], { json }, io);
+    }
+    if (command === "grade") {
+      if (!rest[0]) {
+        io.err("dialect grade needs a dialect file and an eval folder");
+        return 2;
+      }
+      return dialectGrade(arg, rest[0], io);
+    }
   }
   if (group === "sources" && command === "add") {
     const [kind, location] = positionals.slice(2);
