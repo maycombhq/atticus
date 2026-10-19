@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### No secrets in the catalog
+
+- A Spring datasource URL loses its credentials before it is recorded, in every JDBC form (`user:pass@`, `?password=`, `;user=..;password=..`, Oracle's `scott/tiger@`); a URL that could still hold one is left out. Before, `spring.datasource.url` went into catalog files, the catalog site and context packs as written.
+- Settings whose names hold credentials (`pwd`, `passphrase`, `credentials`, `api-key`, `access-key`, as well as `password`, `secret`, `token`) are recorded as `(secret)`.
+
 ### No facts made from what the code doesn't spell out
 
 - `repos.manifest.yaml` takes `hosts` per repo (ADR 0053). Calls go through a gateway only on hosts listed for the gateway repo, and a call to a host listed for a component joins it whatever the host's labels say. Before, any unknown host whose path started with a gateway basepath was joined through the gateway, which invented interfaces. A scan note names each undeclared host that looks like a gateway.

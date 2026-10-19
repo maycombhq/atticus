@@ -228,6 +228,56 @@ class PaymentEvents {
     ]);
   });
 
+  it("never copies a password from a datasource URL or a secret-looking setting into the catalog", async () => {
+    const urls: [string, string][] = [
+      [
+        "jdbc:postgresql://ledger-db.forge.internal:5432/ledger",
+        "jdbc:postgresql://ledger-db.forge.internal:5432/ledger",
+      ],
+      [
+        "jdbc:postgresql://db.internal/ledger?user=svc&password=Hunter2",
+        "jdbc:postgresql://db.internal/ledger",
+      ],
+      ["jdbc:mysql://svc:Hunter2@db.internal:3306/ledger", "jdbc:mysql://db.internal:3306/ledger"],
+      [
+        "jdbc:sqlserver://db.internal:1433;databaseName=ledger;user=sa;password=Hunter2",
+        "jdbc:sqlserver://db.internal:1433;databaseName=ledger",
+      ],
+      [
+        "jdbc:oracle:thin:scott/Hunter2@db.internal:1521/LEDGER",
+        "jdbc:oracle:thin:@db.internal:1521/LEDGER",
+      ],
+      [
+        "jdbc:oracle:thin:scott/Hunter2@//db.internal:1521/LEDGER",
+        "jdbc:oracle:thin:@//db.internal:1521/LEDGER",
+      ],
+    ];
+    for (const [given, want] of urls) {
+      const repo = memoryRepo("x", SHA, {
+        "src/main/resources/application.yml": `spring:
+  datasource:
+    url: ${given}
+ledger:
+  client:
+    pwd: Hunter2
+    api-key-value: Hunter2
+    read-timeout: 2s
+`,
+      });
+      const s = await scanRepo({
+        repo,
+        extractors: [springExtractor],
+        repoInfo: { component: "x" },
+      });
+      const text = JSON.stringify(s.records);
+      expect(text, given).not.toContain("Hunter2");
+      const conn = s.records.find(
+        (r) => (r as unknown as { unresolvedKind?: string }).unresolvedKind === "db-connection",
+      ) as unknown as { raw: string } | undefined;
+      expect(conn?.raw, given).toBe(want);
+    }
+  });
+
   it("reads WebClient and exchange calls", async () => {
     const repo = memoryRepo("x", SHA, {
       "src/main/java/A.java": `import org.springframework.web.reactive.function.client.WebClient;

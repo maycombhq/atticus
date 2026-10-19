@@ -784,6 +784,34 @@ export function cleanDbUrl(url: string): string | undefined {
   return `${m[1]!.toLowerCase()}${m[2]}${m[3]}`;
 }
 
+/** Setting and URL parameter names that hold credentials: their values never enter the catalog. */
+export const SECRET_NAME =
+  /pass(word|wd|phrase)?$|pwd$|secret|token|credential|api-?key|private-?key|access-?key|auth-?key|key$/i;
+
+/**
+ * A JDBC URL without credentials, in every form drivers use: userinfo
+ * (jdbc:mysql://user:pass@host), query parameters (?user=..&password=..), driver properties
+ * (jdbc:sqlserver://host;user=..;password=.., keeping databaseName) and Oracle's
+ * user/password@ (jdbc:oracle:thin:scott/tiger@host:1521/svc). Undefined when what is left
+ * could still hold a secret, so a URL is dropped rather than leaked.
+ */
+export function cleanJdbcUrl(url: string): string | undefined {
+  let u = url.trim();
+  if (!/^jdbc:/i.test(u)) return cleanDbUrl(u);
+  // Oracle thin: jdbc:oracle:thin:user/password@host... → jdbc:oracle:thin:@host...
+  u = u.replace(/^(jdbc:oracle:(?:thin|oci):)[^@]*@/i, "$1@");
+  // userinfo in a URL authority
+  u = u.replace(/^(jdbc:[a-z0-9+.:-]*?:\/\/)[^@/?#;]*@/i, "$1");
+  // query string and fragment
+  u = u.replace(/[?#].*$/, "");
+  // ;key=value driver properties: keep the database name only
+  const [head, ...props] = u.split(";");
+  const kept = props.filter((p) => /^\s*(databaseName|database)\s*=/i.test(p));
+  u = [head, ...kept].join(";");
+  if (/(^|[;?&:/])(user(name)?|pass(word)?|pwd)\s*=/i.test(u)) return undefined;
+  return u;
+}
+
 /**
  * A connection string as a database URL without credentials: URLs are cleaned, and
  * key=value strings (`Host=db;Port=5432;Database=x`, `host=db dbname=x`) are rebuilt as

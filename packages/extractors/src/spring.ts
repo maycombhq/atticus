@@ -12,6 +12,7 @@ import {
   type Decl,
 } from "./lang/java.js";
 import { looksLikeSql, tablesInQuery } from "./lang/sql.js";
+import { cleanJdbcUrl, SECRET_NAME } from "./backends/shared.js";
 
 const MAPPINGS: Record<string, string | undefined> = {
   GetMapping: "GET",
@@ -259,8 +260,10 @@ export const springExtractor = defineExtractor({
 
     // ---- configuration: datasource and resilience settings
     const ds = config.get("spring.datasource.url") ?? config.get("spring.datasource.jdbc-url");
-    if (ds)
-      yield looseEnd(repo, ctx, "db-connection", ds.value, {
+    // Never the raw value: a JDBC URL often carries the user and password.
+    const dsUrl = ds ? cleanJdbcUrl(ds.value) : undefined;
+    if (ds && dsUrl)
+      yield looseEnd(repo, ctx, "db-connection", dsUrl, {
         source: "config",
         path: ds.file,
         line: ds.line,
@@ -287,7 +290,7 @@ function* settings(
       component,
       settingKind: kind,
       key,
-      valueOrRef: /password|secret|token|key$/i.test(key) ? "(secret)" : v.value,
+      valueOrRef: SECRET_NAME.test(key) ? "(secret)" : v.value,
       evidence: [{ source: "config", repo: repoName, path: v.file, line: v.line }],
     } as unknown as CatalogRecord;
   }
