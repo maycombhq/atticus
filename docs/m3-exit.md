@@ -108,6 +108,8 @@ Five fresh Claude Code agent sessions (one per run, two at a time, none with any
 
 ## Real assistant smoke runs (for a person)
 
+The Claude Code run (item 1 and item 4 for Claude Code) was done in M5 against the practice sandbox: [docs/evidence/m5-smoke](evidence/m5-smoke/README.md). The Copilot runs remain.
+
 For the metarepo and for forge-ledger's change worktree, after `atticus assistant-files` (and `--repo forge-ledger --change add-transfer-limit`):
 
 1. Claude Code: open the folder; `/atticus-ask`, `/atticus-critic add-transfer-limit`, `/atticus-plan add-transfer-limit` and `/explain-pattern S.GW.VND` appear and run; the nine agents (`story-writer`, `task-runner`, the critics) load from `.claude/agents/`; the skills `add-forge-endpoint` and `forge-migrations` are offered; in forge-ledger the `/speckit.*` commands run against `specs/1.2/`.

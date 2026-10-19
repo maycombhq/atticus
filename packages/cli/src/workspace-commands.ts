@@ -6,6 +6,7 @@ import {
 } from "@maycombhq/openspec-adapter";
 import {
   createWorkspace,
+  GitError,
   loadRepos,
   vscodeWorkspacePath,
   intellijProjectPath,
@@ -79,7 +80,20 @@ export async function workspaceOpen(
   }
   const repos = pick(await loadRepos(root), repoIds, io);
   if (!repos) return 2;
-  const c = await createWorkspace(root).openChange(change, repos);
+  let c;
+  try {
+    c = await createWorkspace(root).openChange(change, repos);
+  } catch (e) {
+    if (!(e instanceof GitError)) throw e;
+    // Git's own words, with what to do: most often a base clone with no origin/main yet.
+    io.err(`Git couldn't open the worktrees: ${(e.stderr || e.message).trim().split("\n")[0]}`);
+    io.err(
+      /origin\//.test(e.message + e.stderr)
+        ? "A base clone has no origin branch to start from: run atticus workspace sync, then try again."
+        : "Run atticus doctor, and atticus workspace sync, then try again.",
+    );
+    return 1;
+  }
   for (const r of c.repos) io.out(`${r.id}: ${r.branch} at ${r.worktree}`);
   io.out(`VS Code: ${vscodeWorkspacePath(root, change)}`);
   io.out(`IntelliJ: open the folder ${intellijProjectPath(root, change)}`);

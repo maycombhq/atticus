@@ -119,6 +119,14 @@ export async function createSandbox(
       git(base, ["init", "-q"]);
       git(base, ["add", "-A"]);
       git(base, ["commit", "-q", "-m", "Forge fixture"]);
+      // A local bare repository stands in for the Git host, so the base clone has an origin
+      // and workspace sync, worktrees and task branches work with no network.
+      const remote = join(target, "remotes", `${id}.git`);
+      await mkdir(dirname(remote), { recursive: true });
+      git(target, ["clone", "-q", "--bare", base, remote]);
+      git(base, ["remote", "add", "origin", remote]);
+      git(base, ["fetch", "-q", "origin"]);
+      git(base, ["branch", "-q", "--set-upstream-to=origin/main", "main"]);
     } catch (e) {
       await rm(join(base, ".git"), { recursive: true, force: true });
       throw new SandboxError(

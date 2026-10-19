@@ -43,12 +43,13 @@ On the build machine, 120 synthetic repos (932 records) and the seeded change; t
 3. **`trace` cited tests in another task's worktree** (M3 live finding 4): it read only the first worktree's copy of a file. Each copy is read now, and a test is cited where its own story's task wrote it.
 4. **`.atticus/me.yaml` could be committed** in a metarepo: `.atticus/.gitignore` now keeps this machine's files out of Git.
 5. **`atticus ui --port 0`** used the default port instead of a free one.
-6. Two browser-test races: the app's server writing its log while a journey cleaned up, and a triage decision's confirmation vanishing with its item.
+6. **The practice sandbox couldn't open a worktree** (found in the Claude Code smoke run): its base clones had no origin. Each sandbox repo now has a local bare remote, and `workspace open` reports a Git failure in plain words.
+7. Two browser-test races: the app's server writing its log while a journey cleaned up, and a triage decision's confirmation vanishing with its item.
 
 ## For a person
 
 1. **Run the full CI matrix once Actions minutes allow** (Actions > CI > Run workflow, full: true). It runs every test on Windows and Node 24, and the `bundle` job builds the offline zip and installs it with `install.ps1` on Windows and `install.sh` on Linux. Keep the uploaded zips: they are the release candidate's artefacts.
 2. **Install the bundle on the target laptop** (the office machine), then run `atticus doctor` there and note what it says about the proxy, certificates and long paths. Nothing needs to come back out: the doctor's fixes are local.
 3. **Security review:** hand over `docs/security/threat-model.md`, `sbom.cdx.json` and `THIRD-PARTY-LICENSES.txt` from the bundle.
-4. From M4: time the onboarding bars with someone new, accept a drafted org pack, a screen-reader pass. From M3: the grading in `docs/evidence/m3-live/for-a-person.md` and the real assistant smoke runs.
+4. From M4: time the onboarding bars with someone new, accept a drafted org pack, a screen-reader pass. From M3: the grading in `docs/evidence/m3-live/for-a-person.md`, and the assistant smoke runs in VS Code and IntelliJ with Copilot. The Claude Code smoke run is done: [docs/evidence/m5-smoke](evidence/m5-smoke/README.md).
 5. **Decide 1.0:** when the above are done, change the version to 1.0.0 and tag it (`docs/decisions-pending.md`).

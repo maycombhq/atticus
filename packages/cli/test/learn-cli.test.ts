@@ -225,3 +225,24 @@ describe("atticus learn, sandbox and explain", () => {
     expect(await defencesScan(root, "nowhere", {}, c.io)).toBe(2);
   });
 });
+
+describe("the practice sandbox works like a real metarepo", () => {
+  it(
+    "opens a change's worktree and syncs its repos, with no network",
+    async () => {
+      const root = await sandbox();
+      const run = async (...args: string[]) => {
+        const c = capture();
+        const code = await main([...args, "--root", root], c.io);
+        return { code, text: [...c.out, ...c.err].join("\n") };
+      };
+      const open = await run("workspace", "open", "add-transfer-limit", "--repos", "forge-ledger");
+      expect(open.code, open.text).toBe(0);
+      const sync = await run("workspace", "sync");
+      expect(sync.code, sync.text).toBe(0);
+      const down = await run("spec", "hand-down", "add-transfer-limit", "1.2");
+      expect(down.code, down.text).toBe(0);
+    },
+    T,
+  );
+});
