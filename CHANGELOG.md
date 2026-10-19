@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The messy estate: the catalog-truth gate
+
+- `fixtures/messy`: an invented bank (Tidewater) written the way real teams write code (constants, `@Value` base URLs, a house starter, a wrapper client, Kotlin, JMS, a password in the datasource URL, a broken template, a gateway with a declared host). `packages/scanner/test/messy.test.ts` checks a scan finishes, makes no verified fact the code doesn't spell out, shows every client call, joins through the gateway only on its host, keeps no secret and reports coverage. The house annotation and the wrapper client are recorded as known gaps for phase 3.
+- Fixed, found by it: merge dropped loose ends of every kind it doesn't join (`http-endpoint`, `mq-publish`, `mq-subscribe`, and any a dialect emits), so they never reached the catalog. They now pass through. A `kafkaTemplate.send` was also taken for a JMS send.
+
 ### Every client call is seen, joined or not
 
 - A Spring call whose URL or topic the code builds (`restTemplate.postForObject(base + PAY, ...)`, `kafkaTemplate.send(Topics.PAYMENTS, ...)`, WebClient `.uri(...)`) is a loose end showing what it was built from, instead of nothing. Same-file `static final` String constants and `@Value` fields are filled in, so `base + PAY` reads `${nw.endpoints.payments}/v2/payments` and config resolves it where it can.

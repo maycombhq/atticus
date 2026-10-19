@@ -1,0 +1,8 @@
+spring:
+  application:
+    name: cards-svc
+  datasource:
+    url: jdbc:oracle:thin:cards/Tide-Fixture-Pw1@db.tide.internal:1521/CARDS
+tide:
+  endpoints:
+    payments: https://api-gw.tide.internal/payments-api

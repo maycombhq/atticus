@@ -309,7 +309,8 @@ export const springExtractor = defineExtractor({
         if (
           usesJms &&
           (c.method === "send" || c.method === "convertAndSend") &&
-          /jms|template/i.test(c.receiver ?? "") &&
+          // A JMS template by name: kafkaTemplate.send is Kafka's, not a queue.
+          /jms/i.test(c.receiver ?? "") &&
           queue
         )
           found.push(

@@ -676,6 +676,10 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     });
   }
 
+  // Loose ends of a kind merge doesn't join (http-endpoint, mq-publish, a dialect's own kinds)
+  // stay as they are: nothing an extractor saw may disappear here.
+  for (const l of loose) if (!JOINED_KINDS.has(String(l.unresolvedKind))) unresolved.push(l);
+
   // ---- 9. assemble and validate
   const out: Rec[] = [...byKey.values(), ...interfaces.values()];
   for (const l of unresolved) if (!out.includes(l)) out.push(l);
@@ -719,6 +723,18 @@ function hostPattern(p: string): RegExp {
     .join("[a-z0-9-]*");
   return new RegExp(`^${body}$`);
 }
+
+/** Loose-end kinds merge tries to join; it keeps the ones it can't. Every other kind passes through. */
+const JOINED_KINDS = new Set([
+  "http-call",
+  "event-publish",
+  "event-subscribe",
+  "db-connection",
+  "db-access",
+  "graphql-call",
+  "grpc-call",
+  "webhook-callback",
+]);
 
 /** Paths every service serves (health, metrics): a relative call to one names no particular callee. */
 const GENERIC_PATH =

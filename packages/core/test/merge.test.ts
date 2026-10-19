@@ -325,3 +325,29 @@ describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {
     expect(m.records.filter((x) => x.kind === "Unresolved")).toHaveLength(1);
   });
 });
+
+describe("mergeCatalog: loose ends of a kind it doesn't join", () => {
+  it("keeps them as they are, so nothing an extractor saw disappears", () => {
+    const l = (kind: string, raw: string) =>
+      ({
+        ...base,
+        confidence: "inferred",
+        kind: "Unresolved",
+        id: `api-${kind}`,
+        unresolvedKind: kind,
+        raw,
+        owner: "api",
+      }) as unknown as CatalogRecord;
+    const r = merged([
+      component("api", "ledger"),
+      l("mq-publish", "${Queues.ORDERS}"),
+      l("http-endpoint", "GET ${ApiPaths.CARDS}"),
+    ]);
+    expect(
+      r.records
+        .filter((x) => x.kind === "Unresolved")
+        .map((x) => (x as unknown as { unresolvedKind: string }).unresolvedKind)
+        .sort(),
+    ).toEqual(["http-endpoint", "mq-publish"]);
+  });
+});

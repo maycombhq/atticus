@@ -1,0 +1,23 @@
+# Tidewater's repos (messy-estate fixture). Hand-written; matches fixtures/messy/repos.
+schemaVersion: 1
+platform: tide
+repos:
+  - id: tide-cards
+    url: https://git.example.com/tide/tide-cards.git
+    type: spring-boot
+    owner: team-cards
+    component: cards-svc
+    system: cards
+  - id: tide-payments
+    url: https://git.example.com/tide/tide-payments.git
+    type: spring-boot
+    owner: team-payments
+    component: payments-svc
+    system: payments
+    hosts: [payments.tide.internal]
+  - id: tide-gateway
+    url: https://git.example.com/tide/tide-gateway.git
+    type: gateway
+    owner: team-platform
+    system: gateway
+    hosts: [api-gw.tide.internal]

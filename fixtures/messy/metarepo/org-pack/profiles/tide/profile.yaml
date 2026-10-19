@@ -1,0 +1,8 @@
+schemaVersion: 1
+platform: tide
+name: Tidewater cards and payments
+systems:
+  - { id: cards, name: Cards, boundary: product, owner: team-cards, aliases: [] }
+  - { id: payments, name: Payments, boundary: product, owner: team-payments, aliases: [] }
+  - { id: gateway, name: API gateway, boundary: internal, aliases: [] }
+environments: [dev, uat, prod]

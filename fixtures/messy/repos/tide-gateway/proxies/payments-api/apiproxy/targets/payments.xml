@@ -1,0 +1,5 @@
+<TargetEndpoint name="payments">
+  <HTTPTargetConnection>
+    <URL>http://payments.tide.internal</URL>
+  </HTTPTargetConnection>
+</TargetEndpoint>

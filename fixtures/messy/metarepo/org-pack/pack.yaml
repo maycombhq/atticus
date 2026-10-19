@@ -1,0 +1,6 @@
+# The Tidewater org pack (messy-estate fixture). Contract C6; defaults apply to what isn't here.
+schemaVersion: 1
+name: tidewater
+version: 0.1.0
+owner: team-platform
+reviewWindowDays: 90
