@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { normalizePath, type CatalogRecord, type EvidenceSource } from "@maycombhq/core";
 import type { z } from "zod";
 import type { RepoHandle, ScanContext } from "@maycombhq/sdk";
-import { flattenProperties, flattenYaml, type ConfigValue } from "./lang/config.js";
+import { flattenProperties, flattenYamlDocuments, type ConfigValue } from "./lang/config.js";
 
 /**
  * Helpers every built-in extractor uses, so records come out in one shape.
@@ -104,18 +104,95 @@ export async function repoConfig(
     "**/bootstrap*.yml",
   ],
 ): Promise<Map<string, ConfigValue>> {
-  const out = new Map<string, ConfigValue>();
+  return layer(await configSources(repo, globs), () => true);
+}
+
+/**
+ * Config for each file of a repo: a module's own config (files under the folder that holds
+ * its src/), then the repo's root config, each layered as repoConfig does. For multi-module
+ * repos, where each module has its own application.yml.
+ */
+export async function repoConfigFor(
+  repo: RepoHandle,
+  globs?: string[],
+): Promise<(path: string) => Map<string, ConfigValue>> {
+  const sources = await configSources(repo, globs);
+  const rootOf = (p: string) => /^(.*?)\/?src\//.exec(p)?.[1] ?? "";
+  const modules = new Map<string, Map<string, ConfigValue>>();
+  const root = layer(sources, (s) => rootOf(s.file) === "");
+  return (path: string) => {
+    const mod = rootOf(path);
+    if (mod === "") return root;
+    if (!modules.has(mod)) {
+      const own = layer(sources, (s) => rootOf(s.file) === mod);
+      modules.set(mod, new Map([...root, ...own]));
+    }
+    return modules.get(mod)!;
+  };
+}
+
+/** Profiles a catalog reads when a key has no base value: production's, before any other. */
+const PROD = /^(prod|production|prd|live)$/i;
+
+interface ConfigSource {
+  file: string;
+  /** The profile a file (application-<p>.yml) or a YAML document belongs to; none for base. */
+  profile?: string;
+  values: Map<string, ConfigValue>;
+}
+
+async function configSources(
+  repo: RepoHandle,
+  globs = [
+    "**/application*.yml",
+    "**/application*.yaml",
+    "**/application*.properties",
+    "**/bootstrap*.yml",
+  ],
+): Promise<ConfigSource[]> {
+  const out: ConfigSource[] = [];
   const files: string[] = [];
   for await (const p of repo.listFiles(globs)) if (!/\/test\//.test(p)) files.push(p);
-  // application.yml before profile-specific files, so defaults win for the base config.
-  files.sort(
-    (a, b) => a.split("/").pop()!.length - b.split("/").pop()!.length || a.localeCompare(b),
-  );
-  for (const f of files) {
+  for (const f of files.sort()) {
     const text = await repo.readText(f);
-    const flat = f.endsWith(".properties") ? flattenProperties(text, f) : flattenYaml(text, f);
-    for (const [k, v] of flat) if (!out.has(k)) out.set(k, v);
+    const fileProfile = /(?:application|bootstrap)-([^/.]+)\.(?:ya?ml|properties)$/.exec(f)?.[1];
+    if (f.endsWith(".properties")) {
+      out.push({
+        file: f,
+        ...(fileProfile ? { profile: fileProfile } : {}),
+        values: flattenProperties(text, f),
+      });
+      continue;
+    }
+    for (const d of flattenYamlDocuments(text, f)) {
+      const profile = d.profile ?? fileProfile;
+      out.push({ file: f, ...(profile ? { profile } : {}), values: d.values });
+    }
   }
+  return out;
+}
+
+/**
+ * One map from config sources, the way a catalog should read them: base config (no profile)
+ * wins; a key set only in profiles takes production's value, then the other profiles' in name
+ * order. Not "whichever file name sorts first", which let a dev URL shadow prod's.
+ */
+function layer(
+  sources: ConfigSource[],
+  keep: (s: ConfigSource) => boolean,
+): Map<string, ConfigValue> {
+  const rank = (s: ConfigSource) => (!s.profile ? 0 : PROD.test(s.profile) ? 1 : 2);
+  const ordered = sources
+    .filter(keep)
+    .sort(
+      (a, b) =>
+        rank(a) - rank(b) ||
+        (a.profile ?? "").localeCompare(b.profile ?? "") ||
+        a.file.split("/").pop()!.length - b.file.split("/").pop()!.length ||
+        a.file.localeCompare(b.file),
+    );
+  const out = new Map<string, ConfigValue>();
+  for (const s of ordered) for (const [k, v] of s.values) if (!out.has(k)) out.set(k, v);
   return out;
 }
 

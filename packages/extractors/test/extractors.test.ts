@@ -450,6 +450,25 @@ class CardsController {
     ]);
   });
 
+  it("resolves each module's calls from its own config, and prod's over dev's", async () => {
+    const call = `import org.springframework.web.client.RestTemplate;
+class C { void a() { restTemplate.postForObject("\${payments.url}/v2/payments", b, R.class); } }`;
+    const repo = memoryRepo("x", SHA, {
+      "cards-api/src/main/java/C.java": call,
+      "cards-api/src/main/resources/application-dev.yml": "payments:\n  url: https://pay-dev\n",
+      "cards-api/src/main/resources/application-prod.yml": "payments:\n  url: https://pay\n",
+      "cards-batch/src/main/java/C.java": call,
+      "cards-batch/src/main/resources/application.yml": "payments:\n  url: https://pay-batch\n",
+    });
+    const s = await scanRepo({ repo, extractors: [springExtractor], repoInfo: { component: "x" } });
+    expect(
+      s.records
+        .filter((r) => r.kind === "Unresolved")
+        .map((r) => (r as unknown as { raw: string }).raw)
+        .sort(),
+    ).toEqual(["POST https://pay-batch/v2/payments", "POST https://pay/v2/payments"]);
+  });
+
   it("reads WebClient and exchange calls", async () => {
     const repo = memoryRepo("x", SHA, {
       "src/main/java/A.java": `import org.springframework.web.reactive.function.client.WebClient;

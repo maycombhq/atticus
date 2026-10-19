@@ -1,6 +1,6 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle } from "@maycombhq/sdk";
-import { componentOf, looseEnd, repoConfig, restEndpoint } from "./facts.js";
+import { componentOf, looseEnd, repoConfig, repoConfigFor, restEndpoint } from "./facts.js";
 import { resolvePlaceholders, type ConfigValue } from "./lang/config.js";
 import {
   attr,
@@ -165,13 +165,17 @@ export const springExtractor = defineExtractor({
   async *scan(repo, ctx) {
     const component = componentOf(repo, ctx);
     const config = await repoConfig(repo);
-    const resolve = (s: string) => resolvePlaceholders(s, config);
+    // Each file resolves placeholders from its own module's config first (multi-module repos).
+    const configFor = await repoConfigFor(repo);
+    let resolve = (s: string) => resolvePlaceholders(s, config);
     // Constants the repo's own code defines, anywhere in it: Class.NAME → value.
     const repoConstants = await constantsOf(repo);
 
     for await (const path of repo.listFiles(["**/*.java", "**/*.kt"])) {
       if (/(^|\/)src\/test\//.test(path)) continue;
       const src = await repo.readText(path);
+      const fileConfig = configFor(path);
+      resolve = (s: string) => resolvePlaceholders(s, fileConfig);
       const housePackages = (ctx.frameworks ?? []).flatMap((m) => m.packages);
       if (
         !/springframework|@FeignClient|KafkaTemplate|JdbcTemplate|@KafkaListener/.test(src) &&
