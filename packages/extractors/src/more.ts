@@ -1,6 +1,7 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
 import { componentOf, evidence, looseEnd, repoConfig, splitUrl } from "./facts.js";
+import { LIQUIBASE_CLAIMS, liquibaseChangeSets } from "./data/liquibase.js";
 import { flattenYaml, yamlKeyLine } from "./lang/config.js";
 import {
   parseDdl,
@@ -204,15 +205,18 @@ async function storeFor(repo: RepoHandle, ctx: ScanContext): Promise<string> {
  * version order, ALTER TABLE included. The owning component reads and writes its own
  * tables. The data store is the datasource host, else <system>-db.
  */
+/** Flyway's files: under db/migration (any depth), migrations/ or flyway/. */
+const FLYWAY_CLAIMS = ["**/db/migration/**/*.sql", "**/migrations/*.sql", "**/flyway/*.sql"];
+
 export const migrationsExtractor = defineExtractor({
   id: "migrations",
-  version: "1.1.0",
-  claims: ["**/db/migration/*.sql", "**/migrations/*.sql", "**/flyway/*.sql"],
+  version: "1.2.0",
+  claims: [...FLYWAY_CLAIMS, ...LIQUIBASE_CLAIMS],
   async *scan(repo, ctx) {
     const owner = componentOf(repo, ctx);
     const store = await storeFor(repo, ctx);
     const files: { path: string; version: string }[] = [];
-    for await (const path of repo.listFiles(this.claims)) {
+    for await (const path of repo.listFiles(FLYWAY_CLAIMS)) {
       const v = /(?:^|\/)V(\d+(?:[._]\d+)*)__[^/]+\.sql$/i.exec(path);
       files.push({
         path,
@@ -263,6 +267,42 @@ export const migrationsExtractor = defineExtractor({
         evidence: [ev(1)],
       } as unknown as CatalogRecord;
       state.apply(ddl, ev);
+    }
+    // Liquibase change sets, after any Flyway migrations, in the order Liquibase applies them.
+    for (const cs of await liquibaseChangeSets(repo)) {
+      const ddl = parseDdl(cs.sql);
+      const ev = (line?: number) =>
+        evidence(repo, { source: "migration", path: cs.file, line: line ?? cs.line });
+      if (first) {
+        first = false;
+        yield {
+          schemaVersion: 1,
+          kind: "DataStore",
+          id: store,
+          status: "current",
+          confidence: "verified",
+          storeType: "unknown",
+          ownerComponent: owner,
+          entitiesHeld: [],
+          evidence: [ev(1)],
+        } as unknown as CatalogRecord;
+      }
+      const stem = (cs.file.split("/").pop() ?? cs.file).replace(/\.[^.]+$/, "");
+      yield {
+        schemaVersion: 1,
+        kind: "Migration",
+        id: `${store}.lb.${slug(stem)}.${slug(cs.id)}`,
+        status: "current",
+        confidence: "verified",
+        dataStore: store,
+        version: cs.id,
+        tool: "liquibase",
+        file: cs.file,
+        operations: ddl.operations,
+        evidence: [ev()],
+      } as unknown as CatalogRecord;
+      // Lines inside a change set are the change set's line: the DDL was made from it.
+      state.apply(ddl, () => ev());
     }
     // The design is the latest state after every migration, replayed in version order.
     for (const t of state.tables.values()) {
