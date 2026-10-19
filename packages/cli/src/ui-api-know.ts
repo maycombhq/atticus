@@ -68,10 +68,11 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
     const { main } = await import("./main.js");
     const out: string[] = [];
     const err: string[] = [];
-    const code = await main([...args, "--json", "--root", ctx.root], {
-      out: (l) => out.push(l),
-      err: (l) => err.push(l),
-    });
+    const code = await main(
+      [...args, "--json", "--root", ctx.root],
+      { out: (l) => out.push(l), err: (l) => err.push(l) },
+      { quiet: true },
+    );
     const text = out.join("\n").trim();
     if (code === 2) {
       const words = err.join("\n") || "The command refused the request.";
@@ -104,10 +105,11 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
     const { main } = await import("./main.js");
     const out: string[] = [];
     const err: string[] = [];
-    const code = await main([...args, "--root", ctx.root], {
-      out: (l) => out.push(l),
-      err: (l) => err.push(l),
-    });
+    const code = await main(
+      [...args, "--root", ctx.root],
+      { out: (l) => out.push(l), err: (l) => err.push(l) },
+      { quiet: true },
+    );
     if (code === 2) {
       const words = err.join("\n") || "The command refused the request.";
       // A refusal that names the step to take first (a scan) is an empty state, not a failure.

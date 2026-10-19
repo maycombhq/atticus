@@ -2,7 +2,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
-import { Api, CORE_ROLES, loadOrgPack, orgPackDirOf, type OrgPack } from "@maycombhq/core";
+import {
+  Api,
+  CORE_ROLES,
+  ensureLocalIgnore,
+  loadOrgPack,
+  orgPackDirOf,
+  type OrgPack,
+} from "@maycombhq/core";
 import { readCodeowners } from "@maycombhq/changes";
 import { badRequest, HttpError, type Router, type ServerContext } from "@maycombhq/server";
 import { approvalsWaiting, digestCommand, type DigestDeps } from "./digest-commands.js";
@@ -121,6 +128,7 @@ export async function meView(root: string, user: string) {
 }
 
 async function writeMe(root: string, me: MeFile) {
+  await ensureLocalIgnore(root);
   const file = join(root, ME_FILE);
   await mkdir(dirname(file), { recursive: true });
   await writeFile(

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { DEFAULT_PORT } from "@maycombhq/core";
+import { createLog, DEFAULT_PORT } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiDistDir } from "@maycombhq/ui";
 import type { Output } from "./commands.js";
@@ -21,6 +21,15 @@ export function startUi(
     staticDir: o.staticDir ?? uiDistDir(),
     ...(o.user ? { user: o.user } : {}),
     ...(o.version ? { version: o.version } : {}),
+    onRequest: (() => {
+      const log = createLog(root);
+      return (r) => {
+        const fields = { method: r.method, path: r.path, status: r.status, ms: r.ms };
+        if (r.error) log.error("request", r.error, fields);
+        else if (r.status >= 500) log.warn("request", fields);
+        else log.debug("request", fields);
+      };
+    })(),
     extend: (r, ctx) =>
       uiAcrossRoutes(
         uiMeRoutes(uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx), ctx),

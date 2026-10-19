@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { catalogDirOf } from "@maycombhq/core";
+import { acquireLock, catalogDirOf, LockHeldError } from "@maycombhq/core";
 import { loadRepos } from "@maycombhq/workspace";
 import { driftAfterScan, type DriftAfterScan } from "@maycombhq/speckit";
 import {
@@ -58,6 +58,31 @@ export async function scanCommand(
       return 2;
     }
   }
+  // One scan at a time per metarepo; a scan whose process is gone was cut short.
+  let lock: Awaited<ReturnType<typeof acquireLock>> | undefined;
+  if (!o.dryRun) {
+    try {
+      lock = await acquireLock(root, "scan", "scan");
+    } catch (e) {
+      if (e instanceof LockHeldError) {
+        io.err(e.message);
+        return 1;
+      }
+      throw e;
+    }
+    if (lock.interrupted)
+      io.err(
+        `The last scan (started ${lock.interrupted.startedAt}) stopped before it finished; this one brings the catalog up to date.`,
+      );
+  }
+  try {
+    return await scanLocked(root, o, io);
+  } finally {
+    await lock?.release();
+  }
+}
+
+async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Promise<number> {
   const out = join(catalogDirOf(root), "generated");
   const before = await readCatalog(out);
   const started = Date.now();

@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
+import { createLog, SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
 import { basename, join, resolve } from "node:path";
 import { catalogValidate, orgPackValidate, schemaExport, type Output } from "./commands.js";
 import {
@@ -16,6 +16,7 @@ import { guideCommand, siteBuildCommand } from "./site-commands.js";
 import { baselineCommand, setupCommand } from "./baseline-commands.js";
 import { digestCommand } from "./digest-commands.js";
 import { doctorCommand } from "./doctor.js";
+import { supportBundleCommand } from "./support.js";
 import { aliasCommand, reconcileCommand } from "./reconcile-commands.js";
 import {
   coverageCommand,
@@ -127,7 +128,8 @@ import {
   dialectTest,
 } from "./dialect-commands.js";
 
-export const VERSION = "0.0.1";
+import { VERSION } from "./version.js";
+export { VERSION };
 
 const HELP = `atticus ${VERSION} (catalog schema v${SCHEMA_VERSION})
 
@@ -148,6 +150,7 @@ Usage:
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline --by <you>          Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant
+  atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest --as <you>            What waits on you [--group g]... [--channel c] [--send] [--json]
   atticus guide <system> [--json]      A system's guide, generated from the catalog: parts, calls, data, runtime, decisions
   atticus site build <dir> [--title t] The read-only catalog site as static files (only systems open to everyone)
@@ -282,7 +285,43 @@ function num(v: unknown): number | undefined {
 }
 
 /** Run the CLI. Returns the process exit code: 0 ok, 1 problems found, 2 usage error. */
-export async function main(argv: string[], io: Output): Promise<number> {
+/**
+ * Run `atticus <argv>`. What ran, how it ended and how long it took go to the metarepo's local
+ * log (ADR 0050): the command and its flag names, never their values. A crash is logged with
+ * its stack and rethrown, carrying the log's path for the message the person sees.
+ */
+export async function main(
+  argv: string[],
+  io: Output,
+  o: { quiet?: boolean } = {},
+): Promise<number> {
+  const started = Date.now();
+  const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
+  const flags = [
+    ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
+  ];
+  const rootAt = argv.indexOf("--root");
+  const root = resolve(rootAt >= 0 && argv[rootAt + 1] ? argv[rootAt + 1]! : process.cwd());
+  const log = () =>
+    isMetarepoRoot(root) ? createLog(root, o.quiet ? { level: "warn" } : {}) : undefined;
+  try {
+    const code = await dispatch(argv, io);
+    log()?.info("command", { command: words.join(" "), flags, code, ms: Date.now() - started });
+    return code;
+  } catch (e) {
+    const l = log();
+    l?.error("crash", e, { command: words.join(" "), flags, ms: Date.now() - started });
+    if (l && e instanceof Error) (e as Error & { logFile?: string }).logFile = l.file;
+    throw e;
+  }
+}
+
+/** A metarepo, or a repo adopted in place: where Atticus keeps a log. */
+function isMetarepoRoot(root: string): boolean {
+  return existsSync(join(root, "org-pack")) || existsSync(join(root, ".atticus", "org-pack"));
+}
+
+async function dispatch(argv: string[], io: Output): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -435,6 +474,15 @@ export async function main(argv: string[], io: Output): Promise<number> {
     );
   if (group === "setup" && !command) return setupCommand(root, { json: values.json === true }, io);
   if (group === "doctor") return doctorCommand(root, { json: values.json === true }, io);
+  if (group === "support" && command === "bundle")
+    return supportBundleCommand(
+      root,
+      {
+        ...(typeof values.out === "string" && values.out ? { out: values.out } : {}),
+        json: values.json === true,
+      },
+      io,
+    );
   if (group === "baseline")
     return baselineCommand(
       root,

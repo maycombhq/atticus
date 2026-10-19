@@ -1,7 +1,7 @@
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { parse } from "yaml";
-import { ChangeLifecycle, changesDirOf, toCanonicalYaml } from "@maycombhq/core";
+import { ChangeLifecycle, changesDirOf, toCanonicalYaml, writeFileAtomic } from "@maycombhq/core";
 
 /**
  * Where OpenSpec keeps changes in a metarepo made by `atticus init`; `archive/` under it
@@ -52,22 +52,8 @@ export function serializeChange(value: ChangeLifecycle): string {
   return toCanonicalYaml(r.data, LEADING);
 }
 
-/**
- * Write a file so a crash never leaves it half-written: write a temporary file beside it,
- * then rename it over the old one (a rename within a folder is atomic on every platform
- * Atticus supports).
- */
-export async function writeFileAtomic(path: string, text: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
-  try {
-    await writeFile(tmp, text, "utf8");
-    await rename(tmp, path);
-  } catch (e) {
-    await rm(tmp, { force: true });
-    throw e;
-  }
-}
+/** Kept here for the packages that import it from changes; it lives in core. */
+export { writeFileAtomic };
 
 export interface ChangeStore {
   readonly root: string;

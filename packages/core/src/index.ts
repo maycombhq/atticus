@@ -22,3 +22,5 @@ export * from "./refs.js";
 export * from "./curated.js";
 export * from "./migrate.js";
 export * from "./metarepo.js";
+export * from "./fs.js";
+export * from "./log.js";

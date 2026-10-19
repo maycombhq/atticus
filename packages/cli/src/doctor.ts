@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { access, constants, mkdir, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { delimiter, join } from "node:path";
-import { DEFAULT_PORT, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
+import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock } from "@maycombhq/core";
 import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -269,6 +269,19 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     status: port ? "ok" : "warn",
     detail: port ? "free for atticus ui" : "in use (another atticus ui, or another program)",
     fix: `Stop the other program, or start the app on another port: atticus ui --port 4322.`,
+  });
+
+  const scan = await readLock(root, "scan");
+  out.push({
+    id: "last-scan",
+    label: "Last scan",
+    status: scan?.stale ? "warn" : "ok",
+    detail: scan
+      ? scan.stale
+        ? `the scan started ${scan.startedAt} stopped before it finished`
+        : `a scan is running (since ${scan.startedAt})`
+      : "finished",
+    fix: "Run atticus scan again: it brings the catalog up to date (every file it writes is whole).",
   });
 
   // ---- The org pack's choices, checked against this machine

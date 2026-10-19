@@ -111,8 +111,13 @@ export async function startApp(root: string): Promise<App> {
 }
 
 export async function stopApp(a: App): Promise<void> {
-  a.server.kill();
-  await rm(a.root, { recursive: true, force: true });
+  // Wait for the server to exit: until then it may still be writing its log.
+  if (a.server.exitCode === null && a.server.signalCode === null) {
+    const exited = new Promise((resolve) => a.server.once("exit", resolve));
+    a.server.kill();
+    await exited;
+  }
+  await rm(a.root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
 // ------------------------------------------------------------------ page helpers

@@ -1,10 +1,11 @@
-import { readdir, readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { parseRecord } from "./catalog.js";
 import { SCHEMA_VERSION } from "./schema/common.js";
 import { RECORD_KINDS } from "./schema/kinds.js";
 import { serializeRecord } from "./serialize.js";
+import { writeFileAtomic } from "./fs.js";
 
 export interface MigrationResult {
   /** Files rewritten at the current schema version (relative to the folder, "/"-separated). */
@@ -78,7 +79,7 @@ export async function migrateCatalog(
       });
       continue;
     }
-    if (!o.dryRun) await writeFile(full, serializeRecord(p.record), "utf8");
+    if (!o.dryRun) await writeFileAtomic(full, serializeRecord(p.record));
     res.migrated.push(file);
   }
   return res;

@@ -1,7 +1,8 @@
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
+import { readdir, readFile, rm } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
 import {
   deserializeRecord,
+  writeFileAtomic,
   recordPath,
   serializeRecord,
   type CatalogRecord,
@@ -61,8 +62,9 @@ export async function writeCatalog(
       unchanged++;
       continue;
     }
-    await mkdir(dirname(full), { recursive: true });
-    await writeFile(full, text, "utf8");
+    // One record at a time, each whole: a scan cut short leaves every file readable, and the
+    // next scan finishes the job.
+    await writeFileAtomic(full, text);
     written++;
   }
   let removed = 0;

@@ -51,6 +51,14 @@ export interface ServerOptions {
   extend?: (r: Router, ctx: ServerContext) => void;
   /** The built app to hand out at / (the UI package's dist folder). */
   staticDir?: string;
+  /** Told about every API call when it ends: method, path (no query), status and time. */
+  onRequest?: (r: {
+    method: string;
+    path: string;
+    status: number;
+    ms: number;
+    error?: Error;
+  }) => void;
 }
 
 export interface ServerContext extends Context {
@@ -163,6 +171,18 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   };
 
   const server = createServer(async (req, res) => {
+    const t0 = Date.now();
+    const done = (status: number, error?: Error) => {
+      const path = (req.url ?? "/").split("?")[0]!;
+      if (path.startsWith("/api/"))
+        o.onRequest?.({
+          method: req.method ?? "GET",
+          path,
+          status,
+          ms: Date.now() - t0,
+          ...(error ? { error } : {}),
+        });
+    };
     try {
       const url = new URL(req.url ?? "/", "http://127.0.0.1");
       if (!url.pathname.startsWith("/api/")) {
@@ -197,12 +217,14 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
         body,
       });
       send(res, out.status, out.body);
+      done(out.status);
     } catch (e) {
       const err =
         e instanceof HttpError
           ? e
           : new HttpError(500, "Something went wrong", e instanceof Error ? e.message : String(e));
       send(res, err.status, problem(err), "application/problem+json");
+      done(err.status, err.status >= 500 && e instanceof Error ? e : undefined);
     }
   });
 
