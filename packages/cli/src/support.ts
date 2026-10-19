@@ -1,7 +1,6 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { arch, platform, release } from "node:os";
 import { join, resolve } from "node:path";
-import { crc32, deflateRawSync } from "node:zlib";
 import {
   API_VERSION,
   catalogDirOf,
@@ -13,6 +12,7 @@ import {
   redactText,
   SCHEMA_VERSION,
   writeFileAtomic,
+  zip,
 } from "@maycombhq/core";
 import { changeStore } from "@maycombhq/changes";
 import { loadRepos } from "@maycombhq/workspace";
@@ -139,59 +139,6 @@ export async function bundleFiles(root: string, deps: DoctorDeps = {}): Promise<
   return files.map((f) => ({ name: f.name, text: scrub(f.text, root) }));
 }
 
-// ------------------------------------------------------------------ zip
-
-/** A plain zip (deflate), enough for a handful of text files; every unzip tool reads it. */
-export function zip(files: BundleFile[], at = new Date()): Buffer {
-  const dosTime = (at.getHours() << 11) | (at.getMinutes() << 5) | (at.getSeconds() >> 1);
-  const dosDate = ((at.getFullYear() - 1980) << 9) | ((at.getMonth() + 1) << 5) | at.getDate();
-  const locals: Buffer[] = [];
-  const centrals: Buffer[] = [];
-  let offset = 0;
-  for (const f of files) {
-    const name = Buffer.from(f.name, "utf8");
-    const data = Buffer.from(f.text, "utf8");
-    const packed = deflateRawSync(data);
-    const crc = crc32(data);
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(0x0800, 6); // UTF-8 names
-    local.writeUInt16LE(8, 8); // deflate
-    local.writeUInt16LE(dosTime, 10);
-    local.writeUInt16LE(dosDate, 12);
-    local.writeUInt32LE(crc, 14);
-    local.writeUInt32LE(packed.length, 18);
-    local.writeUInt32LE(data.length, 22);
-    local.writeUInt16LE(name.length, 26);
-    local.writeUInt16LE(0, 28);
-    locals.push(local, name, packed);
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(20, 4);
-    central.writeUInt16LE(20, 6);
-    central.writeUInt16LE(0x0800, 8);
-    central.writeUInt16LE(8, 10);
-    central.writeUInt16LE(dosTime, 12);
-    central.writeUInt16LE(dosDate, 14);
-    central.writeUInt32LE(crc, 16);
-    central.writeUInt32LE(packed.length, 20);
-    central.writeUInt32LE(data.length, 24);
-    central.writeUInt16LE(name.length, 28);
-    central.writeUInt32LE(offset, 42);
-    centrals.push(central, name);
-    offset += local.length + name.length + packed.length;
-  }
-  const cd = Buffer.concat(centrals);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(files.length, 8);
-  end.writeUInt16LE(files.length, 10);
-  end.writeUInt32LE(cd.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...locals, cd, end]);
-}
-
 /** atticus support bundle [--out file.zip] [--json] */
 export async function supportBundleCommand(
   root: string,
@@ -203,7 +150,13 @@ export async function supportBundleCommand(
   const files = await bundleFiles(root, deps);
   const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\..*$/, "").replace("T", "-");
   const out = resolve(o.out ?? join(root, ".atticus", "logs", `atticus-support-${stamp}.zip`));
-  await writeFileAtomic(out, zip(files, now));
+  await writeFileAtomic(
+    out,
+    zip(
+      files.map((f) => ({ name: f.name, data: f.text })),
+      now,
+    ),
+  );
   if (o.json) io.out(JSON.stringify({ file: out, files: files.map((f) => f.name) }, null, 2));
   else {
     io.out(`Wrote ${out} (${files.length} files, nothing sent anywhere):`);

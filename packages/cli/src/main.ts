@@ -659,7 +659,12 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     return uiCommand(
       root,
       {
-        ...(num(values.port) ? { port: num(values.port)! } : {}),
+        // --port 0 asks for any free port.
+        ...(values.port === "0"
+          ? { port: 0 }
+          : num(values.port)
+            ? { port: num(values.port)! }
+            : {}),
         open: values.open === true,
         version: VERSION,
       },

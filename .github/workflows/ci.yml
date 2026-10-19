@@ -46,3 +46,29 @@ jobs:
       - run: pnpm typecheck
       # Windows runners are slower; fewer packages testing at once keeps timing-sensitive tests honest.
       - run: pnpm turbo run test --concurrency=${{ matrix.os == 'windows-latest' && '2' || '10' }}
+
+  # The offline install bundle, built and installed the way a person would, on Linux and
+  # Windows (install.sh and install.ps1), when the full matrix runs.
+  bundle:
+    if: github.event_name == 'workflow_dispatch' && inputs.full
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm bundle
+      - run: node scripts/bundle/test-bundle.mjs dist/atticus-*-offline.zip
+        shell: bash
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atticus-offline-${{ matrix.os }}
+          path: dist/*-offline.zip*

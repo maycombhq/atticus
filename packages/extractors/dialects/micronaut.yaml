@@ -132,7 +132,7 @@ rules:
 
 tests:
   - name: controller endpoints and declarative clients in statements-service
-    fixture: ../test/fixtures/dialects/micronaut/statements-service
+    fixture: fixtures/micronaut/statements-service
     expect:
       - kind: Endpoint
         id: statements-service.statements.get-get

@@ -116,7 +116,7 @@ rules:
 
 tests:
   - name: channels and configured topics in fraud-service
-    fixture: ../test/fixtures/dialects/quarkus-reactive-messaging/fraud-service
+    fixture: fixtures/quarkus-reactive-messaging/fraud-service
     expect:
       - kind: Unresolved
         id: fraud-service.subscribe.payments-in

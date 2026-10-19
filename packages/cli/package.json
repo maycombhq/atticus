@@ -50,6 +50,7 @@
     "@maycombhq/testgen": "workspace:*",
     "@maycombhq/ui": "workspace:*",
     "@maycombhq/workspace": "workspace:*",
+    "yaml": "^2.9.1",
     "zod": "^4.6.0"
   },
   "devDependencies": {

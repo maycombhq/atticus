@@ -9,7 +9,7 @@ import { dialectExtractor, runDialectTests } from "../src/index.js";
 import { listShippedDialects, loadShippedDialects } from "../src/data/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const FIX = join(HERE, "fixtures/dialects");
+const FIX = join(HERE, "../dialects/fixtures");
 const SHA = "0123456789abcdef0123456789abcdef01234567";
 
 type Rec = Record<string, unknown> & { kind: string; id: string; evidence: Rec[] };

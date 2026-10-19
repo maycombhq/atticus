@@ -93,7 +93,7 @@ rules:
 
 tests:
   - name: resources and MicroProfile clients in accounts-service
-    fixture: ../test/fixtures/dialects/jaxrs/accounts-service
+    fixture: fixtures/jaxrs/accounts-service
     expect:
       - kind: Endpoint
         id: accounts-service.accountresource.get-list

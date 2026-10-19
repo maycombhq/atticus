@@ -12,12 +12,15 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "lint": "eslint . && prettier --check . && node scripts/check-core-neutral.mjs",
+    "lint": "eslint . && prettier --check . && node scripts/check-core-neutral.mjs && node scripts/check-deps.mjs && node scripts/bundle/check-licences.mjs",
     "format": "prettier --write .",
     "denylist": "node scripts/check-denylist.mjs",
     "check": "pnpm denylist && pnpm lint && pnpm typecheck && pnpm test",
     "api:doc": "pnpm --filter @maycombhq/core build && node scripts/write-api-doc.mjs",
-    "spec:doc": "pnpm --filter @maycombhq/conformance... build && node scripts/write-spec.mjs"
+    "spec:doc": "pnpm --filter @maycombhq/conformance... build && node scripts/write-spec.mjs",
+    "bundle": "node scripts/bundle/offline-bundle.mjs",
+    "bundle:test": "node scripts/bundle/test-bundle.mjs",
+    "licences": "node scripts/bundle/check-licences.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
