@@ -216,6 +216,9 @@ importers:
       '@maycombhq/executors':
         specifier: workspace:*
         version: link:../executors
+      '@maycombhq/extractors':
+        specifier: workspace:*
+        version: link:../extractors
       '@maycombhq/features':
         specifier: workspace:*
         version: link:../features
@@ -258,6 +261,9 @@ importers:
       '@maycombhq/scanner':
         specifier: workspace:*
         version: link:../scanner
+      '@maycombhq/sdk':
+        specifier: workspace:*
+        version: link:../sdk
       '@maycombhq/server':
         specifier: workspace:*
         version: link:../server

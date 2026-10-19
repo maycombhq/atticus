@@ -67,8 +67,19 @@ const REST_TEMPLATE: Record<string, string> = {
 /** Receivers that are HTTP clients by name, for calls whose URL isn't a literal (not map.put). */
 const CLIENT_RECEIVER = /rest|template|client|http|web/i;
 
+/** Annotations this extractor reads: what a framework model's annotations can stand for. */
+export const READ_ANNOTATIONS = new Set([
+  "RestController",
+  "Controller",
+  "RequestMapping",
+  ...Object.keys(MAPPINGS),
+  "FeignClient",
+  "KafkaListener",
+  "JmsListener",
+]);
+
 /** Packages whose use means a file talks to another system. */
-const CLIENT_PACKAGES = [
+export const CLIENT_PACKAGES = [
   "org.springframework.web.client",
   "org.springframework.web.reactive.function.client",
   "org.springframework.cloud.openfeign",

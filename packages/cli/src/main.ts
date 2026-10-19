@@ -128,6 +128,7 @@ import {
   dialectRun,
   dialectTest,
 } from "./dialect-commands.js";
+import { frameworksLearn } from "./framework-commands.js";
 
 import { VERSION } from "./version.js";
 export { VERSION };
@@ -182,6 +183,8 @@ Usage:
   atticus dialect test <name>          Run a dialect's own tests
   atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
+  atticus frameworks learn <name> --from <repo>   Learn what a house framework means from its source
+          [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
   atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, approvals and test kinds
@@ -360,6 +363,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       catalog: { type: "string" },
       "from-catalog": { type: "boolean" },
       from: { type: "string" },
+      package: { type: "string" },
       type: { type: "string" },
       template: { type: "string" },
       id: { type: "string" },
@@ -1309,6 +1313,26 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       return 2;
     }
     return stubCheck(arg, io);
+  }
+  if (group === "frameworks") {
+    const from = str(values.from);
+    if (command !== "learn" || !arg || !from) {
+      io.err(
+        "frameworks learn needs a name and the starter's source, for example: atticus frameworks learn tide-platform --from workspace/tide-platform",
+      );
+      return 2;
+    }
+    const pkg = str(values.package);
+    return frameworksLearn(
+      root,
+      arg,
+      from,
+      {
+        ...(pkg ? { packages: pkg.split(",").map((x) => x.trim()) } : {}),
+        dryRun: values["dry-run"] === true,
+      },
+      io,
+    );
   }
   if (group === "dialect") {
     const rest = positionals.slice(3);
