@@ -1,0 +1,20 @@
+schemaVersion: 1
+id: f-no-firewall-request
+kind: issue
+change: add-transfer-limit
+gate: plan
+round: 1
+rule: snow-drafts-present
+layer: org
+lens: release
+severity: blocking
+artifact: snow.md
+locator: { line: 3 }
+summary: The gateway proxy request also needs a network firewall rule request, and none is drafted.
+why: The gateway-route template says it is always raised with a firewall rule request.
+fix: { text: Draft the firewall rule request with atticus plan snow. }
+evidence:
+  - { source: artifact, path: snow.md, line: 3 }
+waivable: false
+state: open
+createdAt: 2026-10-20T12:00:00Z

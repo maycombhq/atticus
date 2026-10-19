@@ -1,0 +1,9 @@
+schemaVersion: 1
+change: add-transfer-limit
+gate: drift
+round: 1
+createdAt: 2026-10-21T08:00:00Z
+findings: []
+rules: { ran: [], skipped: [] }
+lenses: []
+discarded: []

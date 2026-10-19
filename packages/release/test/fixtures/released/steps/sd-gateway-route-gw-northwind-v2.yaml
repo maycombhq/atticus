@@ -1,0 +1,17 @@
+schemaVersion: 1
+id: sd-gateway-route-gw-northwind-v2
+change: add-transfer-limit
+system: service-desk
+action: submit-request
+key: gateway-route|gw-northwind-v2
+title: File the gateway proxy deployment request for gw-northwind-v2
+where: Service desk, Gateway proxy deployment form
+createdAt: 2026-10-20T09:00:00Z
+createdBy: bao
+state: done
+result:
+  - { name: requestNumber, label: Request number, format: text }
+recorded:
+  at: 2026-10-20T11:00:00Z
+  by: bao
+  values: { requestNumber: SR-1042 }

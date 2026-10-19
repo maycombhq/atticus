@@ -1,0 +1,13 @@
+schemaVersion: 1
+runId: run-20261020-0001
+change: add-transfer-limit
+agent: task-runner
+runtime: mock
+state: validated
+startedAt: 2026-10-20T13:00:00Z
+finishedAt: 2026-10-20T13:02:00Z
+output: tasks/1.3/plan.md
+usage: { inputTokens: 1200, outputTokens: 340 }
+contextManifestSha256: 1ddb00eac2aaf91a5ec5d9dfd220116be9f75aec6546a4a3a3b050ed89af2864
+errors: []
+attempt: 1

@@ -40,6 +40,7 @@
     "@maycombhq/openspec-adapter": "workspace:*",
     "@maycombhq/planner": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",
+    "@maycombhq/release": "workspace:*",
     "@maycombhq/scanner": "workspace:*",
     "@maycombhq/server": "workspace:*",
     "@maycombhq/speckit": "workspace:*",

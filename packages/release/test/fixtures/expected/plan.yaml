@@ -1,0 +1,36 @@
+# The deployment plan for add-transfer-limit at plan, on Wednesday 2026-10-21, worked out by
+# hand from interfaces.md, data.md, tasks.md, stories.md, snow.md, the Forge org pack and the
+# Forge expected catalog. Hand-written: never regenerate it from deploymentPlan output.
+#
+# - migration (expand) before the code that reads ledger-db.account: forge-ledger migration first
+# - gw-northwind-v2 is a new gateway route (not in the catalog); ledger-api calls through it
+# - ledger-api serves the new GET /accounts/{id}/limit and the changed POST /transfers that
+#   portal-bff calls; stories s2 and s3 (portal repos) depend on s1 (forge-ledger)
+# - the gateway request (5 working days, gateway-route.yaml) is tied to the route it deploys
+# - audit-svc has no repo, risk-engine isn't in the catalog: both unplaced
+steps:
+  - { n: 1, repo: forge-ledger, kind: migration, after: [], earliest: 2026-10-21, waits: [] }
+  - { n: 2, repo: forge-gateway, kind: gateway-route, after: [], earliest: 2026-10-28, waits: [Gateway proxy deployment] }
+  - { n: 3, repo: forge-ledger, kind: code, after: [1, 2], earliest: 2026-10-28, waits: [] }
+  - { n: 4, repo: forge-portal-bff, kind: code, after: [3], earliest: 2026-10-28, waits: [] }
+  - { n: 5, repo: forge-portal-ui, kind: code, after: [3], earliest: 2026-10-28, waits: [] }
+request:
+  heading: Gateway proxy deployment
+  template: gateway-route
+  record: gw-northwind-v2
+  state: to-file
+  leadTimeDays: 5
+  waitDays: 5
+  readyBy: 2026-10-28
+  missing: [Target]
+  source: snow.md:3
+unplaced: [audit-svc, risk-engine]
+external: { system: northwind-pay, beforeStep: 3 }
+sections:
+  rollout: design.md:23
+  rollback: gap
+  readiness: gap
+  verification: gap
+  hypercare: gap
+rollbackGaps: 5
+earliest: 2026-10-28

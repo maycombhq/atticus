@@ -1,0 +1,25 @@
+schemaVersion: 1
+id: f-audit-no-pattern
+kind: issue
+change: add-transfer-limit
+gate: design
+round: 1
+rule: interface-has-pattern
+layer: org
+lens: architecture
+severity: blocking
+artifact: interfaces.md
+locator: { line: 8 }
+summary: POST /audit/events has no integration pattern.
+why: Every hop names an approved pattern so its controls apply.
+fix: { text: Name the pattern in the Pattern column. }
+evidence:
+  - { source: artifact, path: interfaces.md, line: 8 }
+waivable: true
+state: waived
+resolution:
+  action: waive
+  by: avery
+  at: 2026-10-20T10:00:00Z
+  reason: Audit calls stay direct until the audit gateway exists next quarter.
+createdAt: 2026-10-20T09:00:00Z
