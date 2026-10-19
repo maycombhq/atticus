@@ -63,6 +63,22 @@ const REST_TEMPLATE: Record<string, string> = {
   exchange: "ANY",
 };
 
+/** Receivers that are HTTP clients by name, for calls whose URL isn't a literal (not map.put). */
+const CLIENT_RECEIVER = /rest|template|client|http|web/i;
+
+/** Packages whose use means a file talks to another system. */
+const CLIENT_PACKAGES = [
+  "org.springframework.web.client",
+  "org.springframework.web.reactive.function.client",
+  "org.springframework.cloud.openfeign",
+  "org.springframework.kafka",
+  "org.springframework.jms",
+  "org.apache.kafka",
+  "javax.jms",
+  "jakarta.jms",
+  "com.ibm.mq",
+];
+
 const SETTING_KIND: [RegExp, string][] = [
   [/timeout/i, "timeout"],
   [/retr(y|ies)|max-?attempts/i, "retry"],
@@ -123,8 +139,22 @@ export const springExtractor = defineExtractor({
         continue;
       const file = parseJava(src);
       const lines = src.split("\n");
+      // Names this file gives a value: same-file String constants and @Value fields
+      // (base → ${nw.endpoints.payments}), so base + PAY reads as a URL resolve() can finish.
+      const known = new Map<string, string>();
+      for (const m of src.matchAll(
+        /static\s+final\s+String\s+(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*;/g,
+      ))
+        known.set(m[1]!, m[2]!);
+      for (const d of file.decls.filter((x) => x.kind === "field")) {
+        const v = attr(findAnnotation(d, "Value"));
+        if (v) known.set(d.name, v);
+      }
+      const fill = (shown: string) =>
+        shown.replace(/\$\{([A-Za-z_]\w*)\}/g, (m, n: string) => known.get(n) ?? m);
 
-      // ---- serving side: controllers
+      // ---- serving side: controllers (collected, so what the file gave is known)
+      const serving: CatalogRecord[] = [];
       for (const d of file.decls.filter((x) => x.kind === "method" && x.parent)) {
         const type = d.parent as Decl;
         const isController = !!findAnnotation(type, "RestController", "Controller");
@@ -141,30 +171,36 @@ export const springExtractor = defineExtractor({
               const full = join(prefix, p);
               if (isController && !feign && named) {
                 // A served path made from a constant: seen, but not known well enough to verify.
-                yield looseEnd(repo, ctx, "http-endpoint", `${m.method} ${full}`, {
-                  source: "code",
-                  path,
-                  line: a.line,
-                  side: "callee",
-                });
+                serving.push(
+                  looseEnd(repo, ctx, "http-endpoint", `${m.method} ${full}`, {
+                    source: "code",
+                    path,
+                    line: a.line,
+                    side: "callee",
+                  }),
+                );
               } else if (isController && !feign) {
-                yield restEndpoint(repo, component, m.method, full, {
-                  source: "code",
-                  path,
-                  line: a.line,
-                  side: "callee",
-                });
+                serving.push(
+                  restEndpoint(repo, component, m.method, full, {
+                    source: "code",
+                    path,
+                    line: a.line,
+                    side: "callee",
+                  }),
+                );
               } else if (feign) {
                 const url = attrsShown(feign, "url");
                 const base =
                   url.values[0] ??
                   `http://${attr(feign, "name") ?? attr(feign, "value") ?? "unknown"}`;
-                yield looseEnd(repo, ctx, "http-call", `${m.method} ${resolve(join(base, full))}`, {
-                  source: "code",
-                  path,
-                  line: a.line,
-                  side: "caller",
-                });
+                serving.push(
+                  looseEnd(repo, ctx, "http-call", `${m.method} ${resolve(join(base, full))}`, {
+                    source: "code",
+                    path,
+                    line: a.line,
+                    side: "caller",
+                  }),
+                );
               }
             }
           }
@@ -174,38 +210,59 @@ export const springExtractor = defineExtractor({
         const qs = attr(q, "value");
         if (q && qs && looksLikeSql(qs)) {
           for (const t of tablesInQuery(qs))
-            yield looseEnd(repo, ctx, "db-access", `${t.access} ${t.table}`, {
-              source: "code",
-              path,
-              line: q.line,
-              side: "caller",
-            });
+            serving.push(
+              looseEnd(repo, ctx, "db-access", `${t.access} ${t.table}`, {
+                source: "code",
+                path,
+                line: q.line,
+                side: "caller",
+              }),
+            );
         }
         // Kafka listeners.
         const listener = findAnnotation(d, "KafkaListener");
         // topics = Topics.PAYMENTS shows as ${Topics.PAYMENTS}: a loose end, never joined.
         for (const topic of attrsShown(listener, "topics").values) {
-          yield looseEnd(repo, ctx, "event-subscribe", resolve(topic), {
-            source: "code",
-            path,
-            line: listener!.line,
-            side: "callee",
-          });
+          serving.push(
+            looseEnd(repo, ctx, "event-subscribe", resolve(topic), {
+              source: "code",
+              path,
+              line: listener!.line,
+              side: "callee",
+            }),
+          );
         }
+        // JMS listeners (IBM MQ, ActiveMQ and others behind Spring JMS).
+        const jms = findAnnotation(d, "JmsListener");
+        for (const q of attrsShown(jms, "destination").values)
+          serving.push(
+            looseEnd(repo, ctx, "mq-subscribe", resolve(q), {
+              source: "code",
+              path,
+              line: jms!.line,
+              side: "callee",
+            }),
+          );
       }
 
       // ---- calling side: RestTemplate, WebClient, Kafka publish, JDBC
       const usesRest = /RestTemplate|RestClient/.test(src);
       const usesKafka = /KafkaTemplate/.test(src);
+      const usesJms = /JmsTemplate|JmsListener/.test(src);
       const found: CatalogRecord[] = [];
       file.calls.forEach((c, i) => {
         const url = c.args[0];
-        if (usesRest && REST_TEMPLATE[c.method] && url && /^(\/|https?:|\$\{)/.test(url)) {
+        // An argument the code builds from names, filled from this file, resolved from config.
+        const built = !url && c.shown[0] ? fill(c.shown[0]) : undefined;
+        const client = CLIENT_RECEIVER.test(c.receiver ?? "");
+        const target =
+          url && /^(\/|https?:|\$\{)/.test(url) ? url : built && client ? built : undefined;
+        if (usesRest && REST_TEMPLATE[c.method] && target) {
           let method = REST_TEMPLATE[c.method]!;
           if (method === "ANY")
             method = /HttpMethod\.(\w+)/.exec(lines[c.line - 1] ?? "")?.[1] ?? "ANY";
           found.push(
-            looseEnd(repo, ctx, "http-call", `${method} ${resolve(url)}`, {
+            looseEnd(repo, ctx, "http-call", `${method} ${resolve(target)}`, {
               source: "code",
               path,
               line: c.line,
@@ -213,7 +270,8 @@ export const springExtractor = defineExtractor({
             }),
           );
         }
-        if (c.method === "uri" && url) {
+        const uri = url ?? (c.shown[0] ? fill(c.shown[0]) : undefined);
+        if (c.method === "uri" && uri) {
           const verb = file.calls
             .slice(Math.max(0, i - 3), i)
             .reverse()
@@ -223,7 +281,7 @@ export const springExtractor = defineExtractor({
             );
           if (verb)
             found.push(
-              looseEnd(repo, ctx, "http-call", `${verb.method.toUpperCase()} ${resolve(url)}`, {
+              looseEnd(repo, ctx, "http-call", `${verb.method.toUpperCase()} ${resolve(uri)}`, {
                 source: "code",
                 path,
                 line: c.line,
@@ -231,9 +289,15 @@ export const springExtractor = defineExtractor({
               }),
             );
         }
-        if (usesKafka && c.method === "send" && url && !/\s/.test(url)) {
+        const topic =
+          url && !/\s/.test(url)
+            ? url
+            : built && /kafka|template|producer/i.test(c.receiver ?? "")
+              ? built
+              : undefined;
+        if (usesKafka && c.method === "send" && topic) {
           found.push(
-            looseEnd(repo, ctx, "event-publish", resolve(url), {
+            looseEnd(repo, ctx, "event-publish", resolve(topic), {
               source: "code",
               path,
               line: c.line,
@@ -241,6 +305,21 @@ export const springExtractor = defineExtractor({
             }),
           );
         }
+        const queue = url ?? built;
+        if (
+          usesJms &&
+          (c.method === "send" || c.method === "convertAndSend") &&
+          /jms|template/i.test(c.receiver ?? "") &&
+          queue
+        )
+          found.push(
+            looseEnd(repo, ctx, "mq-publish", resolve(queue), {
+              source: "code",
+              path,
+              line: c.line,
+              side: "caller",
+            }),
+          );
         for (const a of c.args) {
           if (a && looksLikeSql(a)) {
             for (const t of tablesInQuery(a))
@@ -255,6 +334,12 @@ export const springExtractor = defineExtractor({
           }
         }
       });
+      // Negative space: a file that uses a client library but gave nothing is a gap to see.
+      if (serving.length === 0 && found.length === 0) {
+        const lib = CLIENT_PACKAGES.find((p) => file.imports.some((i) => i.startsWith(p)));
+        if (lib) ctx.warn(`uses ${lib} but no call to it was read here`, path);
+      }
+      yield* serving;
       yield* found;
     }
 

@@ -117,6 +117,26 @@ describe("scan of the Forge fixture (M1 exit)", () => {
   );
 
   it(
+    "says per repo how much of what it found it could join: interfaces, loose ends, unread files",
+    async () => {
+      const { scan } = await scanForge({ cache: null });
+      const bff = scan.coverage.find((c) => c.repo === "forge-portal-bff")!;
+      const ifs = scan.records.filter(
+        (r) => r.kind === "Interface" && (r as unknown as { from: string }).from === "portal-bff",
+      ).length;
+      const open = scan.records.filter(
+        (r) =>
+          r.kind === "Unresolved" && (r as unknown as { owner?: string }).owner === "portal-bff",
+      ).length;
+      expect(bff).toEqual({ repo: "forge-portal-bff", joined: ifs, open, unreadFiles: 0 });
+      expect(ifs).toBeGreaterThan(0);
+      // Repos that call nothing (topic configs, infrastructure) are listed with zeros.
+      expect(scan.coverage.map((c) => c.repo).sort()).toEqual(scan.repos.map((r) => r.repo).sort());
+    },
+    T,
+  );
+
+  it(
     "serves an unchanged rescan from the cache with identical results",
     async () => {
       const first = await scanForge();

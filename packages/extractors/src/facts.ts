@@ -27,7 +27,9 @@ export type LooseEndKind =
   | "event-publish"
   | "event-subscribe"
   | "db-access"
-  | "db-connection";
+  | "db-connection"
+  | "mq-publish"
+  | "mq-subscribe";
 
 export interface Ev {
   source: z.infer<typeof EvidenceSource>;

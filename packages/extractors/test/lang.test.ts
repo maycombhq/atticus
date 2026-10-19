@@ -86,6 +86,40 @@ public class BalanceController extends BaseController implements Audited {
     ]);
   });
 
+  it("shows every call argument, with what isn't a literal as ${...}", () => {
+    const r = parseJava(`class P {
+  void a() { rest.postForObject(base + PAY, body, Resp.class); }
+  void b() { rest.getForObject("/limits/{id}", Limit.class, id); }
+}`);
+    const [a, b] = r.calls.filter(
+      (c) => c.method === "postForObject" || c.method === "getForObject",
+    );
+    expect(a!.args[0]).toBeUndefined();
+    expect(a!.shown[0]).toBe("${base}${PAY}");
+    expect(b!.shown[0]).toBe("/limits/{id}");
+  });
+
+  it("records imports, and reads Kotlin, which ends lines without semicolons", () => {
+    const java = parseJava(
+      "package a.b;\nimport org.springframework.web.client.RestTemplate;\nimport static x.Y.*;\nclass C {}\n",
+    );
+    expect(java.imports).toEqual(["org.springframework.web.client.RestTemplate", "x.Y.*"]);
+    const kt = parseJava(`package forge.cards
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.RestController
+
+@RestController
+class CardsController {
+  @GetMapping("/cards/{id}")
+  fun card(id: String) = id
+}
+`);
+    expect(kt.packageName).toBe("forge.cards");
+    expect(kt.imports).toHaveLength(2);
+    const cls = kt.decls.find((d) => d.name === "CardsController")!;
+    expect(cls.annotations.map((a) => a.name)).toEqual(["RestController"]);
+  });
+
   it("tokenises text blocks and escapes", () => {
     const t = tokenize('String s = """\\n  SELECT *\\n  FROM entry""";\nchar c = \'\\n\';').filter(
       (x) => x.t === "str",

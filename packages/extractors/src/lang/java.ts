@@ -139,6 +139,11 @@ export interface Call {
   method: string;
   /** Literal string arguments in order (non-literals are undefined). */
   args: (string | undefined)[];
+  /**
+   * Every argument as written, with what isn't a string literal shown as ${...}:
+   * `base + PAY` → "${base}${PAY}". What a loose end can say about a call it can't resolve.
+   */
+  shown: string[];
   line: number;
   /** The method declaration the call sits in. */
   inMethod?: Decl;
@@ -147,6 +152,8 @@ export interface Call {
 
 export interface JavaFile {
   packageName?: string;
+  /** Imported names, as written: "org.springframework.web.client.RestTemplate", "x.Y.*". */
+  imports: string[];
   decls: Decl[];
   calls: Call[];
 }
@@ -306,6 +313,7 @@ export function parseJava(src: string): JavaFile {
   const tk = tokenize(src);
   const decls: Decl[] = [];
   const calls: Call[] = [];
+  const imports: string[] = [];
   let packageName: string | undefined;
   /** Stack of [decl, brace depth at which its body opened]. */
   const stack: { decl: Decl; depth: number }[] = [];
@@ -321,17 +329,24 @@ export function parseJava(src: string): JavaFile {
 
   for (let i = 0; i < tk.length; i++) {
     const t = tk[i]!;
+    // package and import end at ";" (Java) or at the end of the line (Kotlin has no ";").
+    const endsHere = (j: number) =>
+      j >= tk.length || (tk[j]!.t === "p" && tk[j]!.v === ";") || tk[j]!.line !== t.line;
     if (t.t === "id" && t.v === "package" && depth === 0 && !packageName) {
       let name = "";
       let j = i + 1;
-      while (j < tk.length && !(tk[j]!.t === "p" && tk[j]!.v === ";"))
-        name += (tk[j++] as { v: string }).v;
+      while (!endsHere(j)) name += (tk[j++] as { v: string }).v;
       packageName = name;
-      i = j;
+      i = tk[j]?.t === "p" && tk[j]!.v === ";" ? j : j - 1;
       continue;
     }
     if (t.t === "id" && t.v === "import" && depth === 0) {
-      while (i < tk.length && !(tk[i]!.t === "p" && tk[i]!.v === ";")) i++;
+      let name = "";
+      let j = i + 1;
+      if (tk[j]?.t === "id" && (tk[j] as { v: string }).v === "static") j++;
+      while (!endsHere(j)) name += (tk[j++] as { v: string }).v;
+      if (name) imports.push(name);
+      i = tk[j]?.t === "p" && tk[j]!.v === ";" ? j : j - 1;
       continue;
     }
     if (t.t === "p" && t.v === "@") {
@@ -483,10 +498,26 @@ export function parseJava(src: string): JavaFile {
           : undefined;
       if (!(prev?.t === "id" && ["new", "class", "interface"].includes(prev.v))) {
         const args: (string | undefined)[] = [];
+        const shown: string[] = [];
         let j = i + 2;
         let pd = 0;
         let cur: string | undefined = "";
         let literalOnly = true;
+        // The shown form: literals as text, any other run of tokens as ${...}.
+        let sh = "";
+        let run = "";
+        const endRun = () => {
+          if (run) sh += `\${${run}}`;
+          run = "";
+        };
+        const endArg = () => {
+          endRun();
+          args.push(literalOnly && cur !== "" ? cur : undefined);
+          shown.push(sh);
+          cur = "";
+          sh = "";
+          literalOnly = true;
+        };
         for (; j < tk.length; j++) {
           const x = tk[j]!;
           if (x.t === "p" && (x.v === "(" || x.v === "{" || x.v === "[")) pd++;
@@ -495,22 +526,29 @@ export function parseJava(src: string): JavaFile {
             pd--;
           }
           if (pd === 0 && x.t === "p" && x.v === ",") {
-            args.push(literalOnly && cur !== "" ? cur : undefined);
-            cur = "";
-            literalOnly = true;
+            endArg();
             continue;
           }
-          if (pd === 0 && x.t === "str") cur += x.v;
-          else if (pd === 0 && x.t === "p" && x.v === "+") continue;
-          else literalOnly = false;
+          if (pd === 0 && x.t === "str") {
+            cur += x.v;
+            endRun();
+            sh += x.v;
+          } else if (pd === 0 && x.t === "p" && x.v === "+") {
+            endRun();
+            continue;
+          } else {
+            literalOnly = false;
+            run += x.t === "str" ? JSON.stringify(x.v) : x.v;
+          }
         }
-        if (cur !== "" || args.length > 0) args.push(literalOnly && cur !== "" ? cur : undefined);
+        if (cur !== "" || run !== "" || sh !== "" || args.length > 0) endArg();
         const inMethod = currentMethod();
         const inType = currentType();
         calls.push({
           ...(receiver ? { receiver } : {}),
           method: t.v,
           args,
+          shown,
           line: t.line,
           ...(inMethod ? { inMethod } : {}),
           ...(inType ? { inType } : {}),
@@ -528,7 +566,7 @@ export function parseJava(src: string): JavaFile {
       if (pending.length > 0 && currentMethod()) pending = [];
     }
   }
-  return { ...(packageName ? { packageName } : {}), decls, calls };
+  return { ...(packageName ? { packageName } : {}), imports, decls, calls };
 }
 
 /** A string attribute (the first item if it's a list). */

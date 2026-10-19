@@ -82,6 +82,16 @@ export interface ScanProblem {
   message: string;
 }
 
+export interface RepoCoverage {
+  repo: string;
+  /** Interfaces from this repo's components. */
+  joined: number;
+  /** Loose ends this repo's components still own: calls, listeners, endpoints not yet known. */
+  open: number;
+  /** Files that use an HTTP or messaging client but gave nothing. */
+  unreadFiles: number;
+}
+
 export interface EstateScan {
   records: CatalogRecord[];
   repos: RepoScan[];
@@ -103,6 +113,12 @@ export interface EstateScan {
   notes: string[];
   /** Curated decisions applied, and the records they suppressed. */
   curated: { applied: string[]; suppressed: string[] };
+  /**
+   * Per repo, how much of what the scan found it could join: interfaces from the repo's
+   * components, loose ends they still own, and files that use a client library but gave
+   * nothing (warnings). Low numbers are where dialects or hosts are missing.
+   */
+  coverage: RepoCoverage[];
   /** Federated metarepos and what they contributed, when there are any. */
   federated?: FederatedContribution[];
 }
@@ -400,7 +416,33 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       message: `invalid record: ${i.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
     });
   const runs = results.flatMap((s) => s.runs);
+  const coverage: RepoCoverage[] = repos
+    .filter((r) => results.some((s) => s.repo === r.id))
+    .map((r) => {
+      const own = new Set([
+        r.component ?? r.id,
+        ...merged.records
+          .filter((x) => x.kind === "Component" && (x as { repo?: string }).repo === r.id)
+          .map((x) => x.id),
+      ]);
+      const scan = results.find((s) => s.repo === r.id)!;
+      return {
+        repo: r.id,
+        joined: merged.records.filter(
+          (x) => x.kind === "Interface" && own.has(String((x as { from?: string }).from)),
+        ).length,
+        open: merged.records.filter(
+          (x) => x.kind === "Unresolved" && own.has(String((x as { owner?: string }).owner)),
+        ).length,
+        unreadFiles: new Set(
+          scan.warnings
+            .filter((w) => /but no call to it was read here/.test(w.message))
+            .map((w) => w.path),
+        ).size,
+      };
+    });
   return {
+    coverage,
     records: merged.records,
     repos: results,
     problems,

@@ -122,6 +122,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           diff,
           problems,
           warnings,
+          coverage: scan.coverage,
           notes: scan.notes,
           written: write !== undefined,
           files: write ?? null,
@@ -138,6 +139,15 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
     );
     io.out(
       `${s.records} records: ${s.interfaces} interfaces (${s.verified} verified), ${s.unresolved} loose ends`,
+    );
+    const joined = scan.coverage.reduce((n, c) => n + c.joined, 0);
+    const found = joined + scan.coverage.reduce((n, c) => n + c.open, 0);
+    const unread = scan.coverage.reduce((n, c) => n + c.unreadFiles, 0);
+    io.out(
+      `Joined ${joined} of ${found} calls, listeners and endpoints found (${found ? Math.round((joined / found) * 100) : 100}%)` +
+        (unread
+          ? `; ${unread} file${unread === 1 ? " uses" : "s use"} a client library with nothing read (atticus scan --warnings)`
+          : ""),
     );
     for (const l of diffLines(diff)) io.out(l);
     if (write)

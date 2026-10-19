@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Every client call is seen, joined or not
+
+- A Spring call whose URL or topic the code builds (`restTemplate.postForObject(base + PAY, ...)`, `kafkaTemplate.send(Topics.PAYMENTS, ...)`, WebClient `.uri(...)`) is a loose end showing what it was built from, instead of nothing. Same-file `static final` String constants and `@Value` fields are filled in, so `base + PAY` reads `${nw.endpoints.payments}/v2/payments` and config resolves it where it can.
+- JMS sends (`JmsTemplate.send`, `convertAndSend`) and `@JmsListener` destinations are recorded (`mq-publish`, `mq-subscribe`).
+- A file that imports an HTTP or messaging client (RestTemplate, WebClient, Feign, Kafka, JMS, IBM MQ) but gave nothing is a scan warning.
+- `atticus scan` prints how much of what it found it joined (`Joined 21 of 30 calls, listeners and endpoints found (70%)`); `--json` has `coverage` per repo: interfaces, loose ends and unread files.
+- The Java reader reads Kotlin's `package` and `import` lines, which have no semicolon; before, the first import swallowed the rest of the file.
+
 ### No secrets in the catalog
 
 - A Spring datasource URL loses its credentials before it is recorded, in every JDBC form (`user:pass@`, `?password=`, `;user=..;password=..`, Oracle's `scott/tiger@`); a URL that could still hold one is left out. Before, `spring.datasource.url` went into catalog files, the catalog site and context packs as written.

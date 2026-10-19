@@ -278,6 +278,50 @@ ledger:
     }
   });
 
+  it("records every client call it can't resolve as a loose end, and says which files it read nothing from", async () => {
+    // Bank style forbids literal URLs and topics: these used to vanish without a trace.
+    const repo = memoryRepo("x", SHA, {
+      "src/main/java/PaymentsGateway.java": `import org.springframework.web.client.RestTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
+class PaymentsGateway {
+  @Value("\${nw.endpoints.payments}") private String base;
+  private static final String PAY = "/v2/payments";
+  void a() { restTemplate.postForObject(base + PAY, body, Resp.class); }
+  void b() { kafkaTemplate.send(Topics.PAYMENTS, event); }
+  void c() { cache.put(key, value); map.delete(key); }
+}`,
+      "src/main/java/Orders.java": `import org.springframework.jms.core.JmsTemplate;
+import org.springframework.jms.annotation.JmsListener;
+class Orders {
+  void send() { jmsTemplate.convertAndSend("ORDERS.IN", msg); }
+  @JmsListener(destination = Queues.OUT)
+  void on(String m) {}
+}`,
+      "src/main/java/Quiet.java": `import org.springframework.web.client.RestTemplate;
+class Quiet { void x() { restTemplate.execute(url, HttpMethod.GET, cb, ex); } }`,
+    });
+    const s = await scanRepo({ repo, extractors: [springExtractor], repoInfo: { component: "x" } });
+    expect(
+      s.records
+        .filter((r) => r.kind === "Unresolved")
+        .map((r) => {
+          const u = r as unknown as { unresolvedKind: string; raw: string };
+          return `${u.unresolvedKind} ${u.raw}`;
+        })
+        .sort(),
+    ).toEqual([
+      "event-publish ${Topics.PAYMENTS}",
+      "http-call POST ${nw.endpoints.payments}/v2/payments",
+      "mq-publish ORDERS.IN",
+      "mq-subscribe ${Queues.OUT}",
+    ]);
+    expect(s.warnings).toContainEqual({
+      extractor: "spring",
+      path: "src/main/java/Quiet.java",
+      message: "uses org.springframework.web.client but no call to it was read here",
+    });
+  });
+
   it("reads WebClient and exchange calls", async () => {
     const repo = memoryRepo("x", SHA, {
       "src/main/java/A.java": `import org.springframework.web.reactive.function.client.WebClient;

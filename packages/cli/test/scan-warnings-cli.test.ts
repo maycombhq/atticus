@@ -54,6 +54,10 @@ describe("atticus scan: warnings", () => {
       const root = await forgeWithBigFile();
       const plain = capture();
       expect(await scanCommand(root, { noDrift: true }, plain.io)).toBe(0);
+      // How much of what was found is joined, in one line.
+      expect(plain.out).toContainEqual(
+        expect.stringMatching(/^Joined \d+ of \d+ calls, listeners and endpoints found \(\d+%\)/),
+      );
       expect(plain.out).toContainEqual(
         expect.stringMatching(/^\d+ warnings?: atticus scan --warnings lists (it|them)$/),
       );
@@ -66,9 +70,11 @@ describe("atticus scan: warnings", () => {
       expect(await scanCommand(root, { noDrift: true, json: true }, json.io)).toBe(0);
       const r = JSON.parse(json.out.join("\n")) as {
         stats: { warnings: number };
+        coverage: { repo: string; joined: number; open: number; unreadFiles: number }[];
         warnings: { repo: string; extractor: string; path?: string; message: string }[];
       };
       expect(r.stats.warnings).toBe(r.warnings.length);
+      expect(r.coverage.find((c) => c.repo === "forge-portal-bff")!.joined).toBeGreaterThan(0);
       expect(r.warnings).toContainEqual(
         expect.objectContaining({ repo: "forge-portal-ui", path: BIG }),
       );
