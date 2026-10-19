@@ -188,7 +188,7 @@ describe("atticus learn, sandbox and explain", () => {
     expect(await sandboxCreate(undefined, {}, u.io)).toBe(2);
   });
 
-  it("explains a finding the critic wrote, in plain words", { timeout: T }, async () => {
+  it("explains a finding the critic wrote, in plain words", async () => {
     const root = await sandbox();
     const gh = new MockGitHost([{ repo: REPO }]);
     await atticus(root, ["scan"], capture().io, gh);
@@ -211,23 +211,19 @@ describe("atticus learn, sandbox and explain", () => {
     expect(await explainCommand(root, " ", {}, none.io)).toBe(2);
   });
 
-  it(
-    "defences scan: reports hidden instructions in a document dropped into intake",
-    { timeout: T },
-    async () => {
-      const root = await sandbox();
-      const platform = lessons.find((l) => l.id === "platform-lead-coverage-and-defences")!;
-      await writeSolution(root, platform.steps[1]!.solution!.files);
-      let c = capture();
-      expect(await defencesScan(root, undefined, {}, c.io)).toBe(1);
-      expect(c.out.find((l) => l.startsWith("high"))).toMatch(
-        /^high\s+inputs\/inbox\/vendor-notes\.md\s+quarantined: left out of every AI step/,
-      );
-      expect(c.out.at(-1)).toMatch(/^Scanned \d+ files: 1 high, 0 medium\.$/);
-      c = capture();
-      expect(await defencesScan(root, "nowhere", {}, c.io)).toBe(2);
-    },
-  );
+  it("defences scan: reports hidden instructions in a document dropped into intake", async () => {
+    const root = await sandbox();
+    const platform = lessons.find((l) => l.id === "platform-lead-coverage-and-defences")!;
+    await writeSolution(root, platform.steps[1]!.solution!.files);
+    let c = capture();
+    expect(await defencesScan(root, undefined, {}, c.io)).toBe(1);
+    expect(c.out.find((l) => l.startsWith("high"))).toMatch(
+      /^high\s+inputs\/inbox\/vendor-notes\.md\s+quarantined: left out of every AI step/,
+    );
+    expect(c.out.at(-1)).toMatch(/^Scanned \d+ files: 1 high, 0 medium\.$/);
+    c = capture();
+    expect(await defencesScan(root, "nowhere", {}, c.io)).toBe(2);
+  });
 });
 
 /**

@@ -292,4 +292,19 @@ describe("tests found in task worktrees (M3 live finding 4)", () => {
       `workspace/.worktrees/${CHANGE}/.tasks/1.3/forge-ledger/${rel}`,
     ]);
   });
+
+  it("counts copies that differ only in line endings once (Git for Windows checks out CRLF)", async () => {
+    const root = await prepared();
+    const tasks = join(root, "workspace/.worktrees", CHANGE, ".tasks");
+    const rel = "specs/1.2/plan.md";
+    const text = "# Plan\n\nTests POST /transfers and GET /accounts/{id}/limit.\n";
+    // Atticus wrote one copy with LF; core.autocrlf=true checked the other out with CRLF.
+    await put(join(tasks, "1.2/forge-ledger", rel), text);
+    await put(join(worktree(root, "forge-ledger"), rel), text.replace(/\n/g, "\r\n"));
+    const m = await traceMatrix(root, CHANGE, { git });
+    expect(m.found.filter((f) => f.path.endsWith(rel))).toHaveLength(1);
+    expect(
+      m.gaps.filter((g) => g.kind === "test-without-requirement" && g.subject.endsWith(rel)),
+    ).toHaveLength(1);
+  });
 });

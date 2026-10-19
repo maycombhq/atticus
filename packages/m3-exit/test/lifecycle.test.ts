@@ -607,7 +607,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
       }
       const t = await run("trace", CHANGE);
       expect(t.code).toBe(0);
-      expect(t.out).toContain("Wrote 1 finding to review/trace/2/.");
+      expect(t.out, t.text).toContain("Wrote 1 finding to review/trace/2/.");
       expect(t.text).toMatch(/test-without-requirement: /);
     },
     T,

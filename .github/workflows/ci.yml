@@ -1,8 +1,10 @@
 name: CI
 
-# Every push runs the check once on Linux. The full matrix (Linux and Windows, Node 22 and 24)
-# runs when started by hand (Actions > CI > Run workflow, full: true) and before a release:
-# hosted minutes on a private repo are limited, and Windows minutes count double.
+# Every push and pull request runs the check on Linux and Windows (Node 22): the definition of
+# done in CLAUDE.md needs both, and Windows is where most installs run. The full matrix adds
+# Node 24 and the offline bundle install, when started by hand (Actions > CI > Run workflow,
+# full: true) and before a release: hosted minutes on a private repo are limited, and Windows
+# minutes count double.
 on:
   push:
     branches: [main]
@@ -27,7 +29,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'workflow_dispatch' && inputs.full && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        os: [ubuntu-latest, windows-latest]
         node: ${{ github.event_name == 'workflow_dispatch' && inputs.full && fromJSON('[22,24]') || fromJSON('[22]') }}
     runs-on: ${{ matrix.os }}
     steps:

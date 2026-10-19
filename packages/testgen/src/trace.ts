@@ -269,7 +269,12 @@ export async function traceMatrix(
     const copies = new Map<string, { rel: string; text: string; dirs: string[] }>();
     for (const dir of places) {
       for (const rel of await walk(dir)) {
-        const text = await readFile(join(dir, rel), "utf8").catch(() => "");
+        // Line endings don't make a different copy: Git for Windows (core.autocrlf) checks a
+        // worktree out with CRLF while Atticus writes LF.
+        const text = (await readFile(join(dir, rel), "utf8").catch(() => "")).replace(
+          /\r\n/g,
+          "\n",
+        );
         if (text.length > 512 * 1024) continue;
         const key = `${rel}\u0000${text}`;
         const c = copies.get(key);

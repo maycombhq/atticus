@@ -94,11 +94,13 @@ describe("M3 exit live runs: prepare.mjs", () => {
       expect(await exists(join(change("names"), "tasks/1.2"))).toBe(false);
       // The real build command, not the suite's fake of it, is what the manifest names: a node
       // script that logs the build.
-      const manifest = await readFile(
+      // Read as YAML, not as text: a long Windows path is folded across lines.
+      const manifest = await readYaml<{ repos: { build?: string }[] }>(
         join(metarepoOf(runDir, "task"), "org-pack/profiles/forge/repos.manifest.yaml"),
-        "utf8",
       );
-      expect(manifest).toMatch(/build: '?node ".*fake-build\.mjs"/);
+      const builds = manifest.repos.flatMap((r) => (r.build ? [r.build] : []));
+      expect(builds.length).toBeGreaterThan(0);
+      for (const b of builds) expect(b).toMatch(/^node ".*fake-build\.mjs"$/);
     },
     T,
   );

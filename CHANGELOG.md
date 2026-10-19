@@ -10,7 +10,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - `install.ps1`: the `atticus.cmd` shim finds its version beside itself instead of holding a full path, so a profile folder with accented letters no longer breaks it; `-NoPath` leaves your PATH as it is.
 - `pnpm bundle:test` installs into a home folder with a space and an accented letter, runs the `atticus` shim, no longer adds its throwaway folder to your PATH, and removes its temporary files when it passes. The bundle and licence check remove their `pnpm deploy` folder.
 - The practice sandbox works on a machine with no Git identity (each repo gets a local one, with signing off), and its Git host is manual, so the product owner's lesson reaches Design with the command line alone: the hand-off PR steps are recorded with `atticus todo done`. Before, a fresh mock host in every command lost the PR.
-- Tests that build a practice sandbox have their own timeout; on Windows, building one takes longer than Vitest's default 5 seconds.
+- `atticus trace` no longer reports a test or plan twice when one worktree holds it with CRLF line endings (Git for Windows' `core.autocrlf`) and another with LF.
+- Every package's tests run with their own temporary folder, removed when the run ends (`vitest.shared.mjs`); tests used to leave hundreds of folders behind in the system temp folder.
+- CI runs the check on Linux and Windows on every push and pull request.
 - The bundle leaves out `node_modules/.bin`, so a zip built on Windows holds the same files as one built on Linux.
 
 ## 1.0.0-rc.1 (2026-10-19)
