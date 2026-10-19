@@ -68,6 +68,27 @@ describe("atticus frameworks learn", () => {
     T,
   );
 
+  it("learns the same model from the starter's JAR, from bytecode", async () => {
+    const root = await metarepo();
+    const c = capture();
+    expect(
+      await frameworksLearn(
+        root,
+        "tide-platform",
+        join(MESSY, "jars/tide-web-starter-3.2.0.jar"),
+        {},
+        c.io,
+      ),
+    ).toBe(0);
+    expect(c.out[0]).toBe(
+      "Wrote org-pack/frameworks/tide-platform.yaml from tide-web-starter-3.2.0.jar: 3 annotations, 2 wrapper methods, 2 constants (all from bytecode); kept 1 service a person added.",
+    );
+    const model = FrameworkModel.parse(
+      parse(await readFile(join(root, "org-pack/frameworks/tide-platform.yaml"), "utf8")),
+    );
+    expect(model.annotations.every((a) => a.source.kind === "bytecode")).toBe(true);
+  });
+
   it("--dry-run writes nothing; an unknown folder is refused", async () => {
     const root = await metarepo();
     const before = await readFile(join(root, "org-pack/frameworks/tide-platform.yaml"), "utf8");
@@ -87,6 +108,6 @@ describe("atticus frameworks learn", () => {
     );
     const bad = capture();
     expect(await frameworksLearn(root, "x", join(root, "nowhere"), {}, bad.io)).toBe(2);
-    expect(bad.err[0]).toMatch(/isn't a folder/);
+    expect(bad.err[0]).toMatch(/isn't a folder or a \.jar/);
   });
 });

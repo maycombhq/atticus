@@ -26,3 +26,4 @@ export * from "./metarepo.js";
 export * from "./fs.js";
 export * from "./log.js";
 export * from "./zip.js";
+export * from "./zip-read.js";

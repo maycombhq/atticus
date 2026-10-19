@@ -2,7 +2,7 @@ import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { parse } from "yaml";
 import { FrameworkModel, orgPackDirOf, RecordId, toCanonicalYaml } from "@maycombhq/core";
-import { learnFramework } from "@maycombhq/extractors";
+import { learnFramework, learnFrameworkFromJar } from "@maycombhq/extractors";
 import { fsRepo } from "@maycombhq/sdk";
 import type { Output } from "./commands.js";
 
@@ -66,16 +66,24 @@ export async function frameworksLearn(
     return 2;
   }
   const dir = resolve(from);
-  if (!(await stat(dir).catch(() => undefined))?.isDirectory()) {
+  const info = await stat(dir).catch(() => undefined);
+  const isJar = !!info?.isFile() && /\.jar$/i.test(dir);
+  if (!info?.isDirectory() && !isJar) {
     io.err(
-      `${from} isn't a folder: give the starter's source, e.g. --from workspace/tide-platform`,
+      `${from} isn't a folder or a .jar: give the starter's source or its JAR, e.g. --from workspace/tide-platform`,
     );
     return 2;
   }
-  const learned = await learnFramework(fsRepo(basename(dir), dir, "0".repeat(40)), {
-    name,
-    ...(o.packages?.length ? { packages: o.packages } : {}),
-  });
+  const opts = { name, ...(o.packages?.length ? { packages: o.packages } : {}) };
+  let learned: Awaited<ReturnType<typeof learnFramework>>;
+  try {
+    learned = isJar
+      ? learnFrameworkFromJar(await readFile(dir), { ...opts, jarName: basename(dir) })
+      : await learnFramework(fsRepo(basename(dir), dir, "0".repeat(40)), opts);
+  } catch (e) {
+    io.err(`${from} couldn't be read: ${(e as Error).message}`);
+    return 1;
+  }
   const rel = `org-pack/frameworks/${name}.yaml`;
   const file = join(orgPackDirOf(root), "frameworks", `${name}.yaml`);
   let existing: FrameworkModel | undefined;
@@ -91,7 +99,7 @@ export async function frameworksLearn(
   }
   const { model, keptServices, keptOther } = merge(existing, learned.model);
   const m = learned.model;
-  const what = `${plural(m.annotations.length, "annotation")}, ${plural(m.clients.length, "wrapper method")}, ${plural(Object.keys(m.constants).length, "constant")} (all from code)`;
+  const what = `${plural(m.annotations.length, "annotation")}, ${plural(m.clients.length, "wrapper method")}, ${plural(Object.keys(m.constants).length, "constant")} (all from ${isJar ? "bytecode" : "code"})`;
   const keptParts = [
     ...(keptServices ? [plural(keptServices, "service")] : []),
     ...(keptOther ? [plural(keptOther, "other entry", "other entries")] : []),

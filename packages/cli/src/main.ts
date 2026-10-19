@@ -183,7 +183,7 @@ Usage:
   atticus dialect test <name>          Run a dialect's own tests
   atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
-  atticus frameworks learn <name> --from <repo>   Learn what a house framework means from its source
+  atticus frameworks learn <name> --from <repo|jar>   Learn what a house framework means from its source or JAR
           [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
   atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
