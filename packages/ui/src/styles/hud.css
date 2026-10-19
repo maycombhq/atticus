@@ -472,3 +472,10 @@ a:hover {
   background: rgba(46, 230, 246, 0.1);
   box-shadow: inset 2px 0 0 var(--accent);
 }
+
+.btn.danger {
+  border-color: var(--magenta);
+  color: #ffd6ea;
+  background: rgba(255, 79, 163, 0.14);
+  box-shadow: 0 0 12px rgba(255, 79, 163, 0.25);
+}

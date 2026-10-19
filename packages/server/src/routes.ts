@@ -191,6 +191,84 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       if (!res) throw notFound(`There is no record ${params.id} in the catalog.`);
       return { status: 200, body: res };
     })
+    .add("GET", "/api/incident/{id}", async ({ params }) => {
+      // Incident mode: read-only, from the last scan. Atticus never connects to live systems,
+      // consoles or monitoring; this is what the catalog says a failure here reaches.
+      const res = await withIndex(root, (ix) => {
+        const reach = impact(ix, params.id!, 3);
+        if (!reach) return undefined;
+        const rootRec = ix.find(params.id!)[0]!;
+        const ids = [params.id!, ...reach.affected.map((a) => a.id)];
+        const kindOf = new Map(reach.affected.map((a) => [a.id, a.kind]));
+        kindOf.set(params.id!, rootRec.kind);
+        const systems = new Set<string>();
+        for (const id of ids) {
+          const k = kindOf.get(id)!;
+          const sys = k === "System" ? id : ix.systemOf(k, id);
+          if (sys) systems.add(sys);
+        }
+        const owners = new Map<string, { owner: string; systems: string[] }>();
+        const unowned: string[] = [];
+        for (const sys of [...systems].sort()) {
+          const rec = ix.get("System", sys) as unknown as { owner?: string } | undefined;
+          if (!rec?.owner) unowned.push(sys);
+          else {
+            const o = owners.get(rec.owner) ?? { owner: rec.owner, systems: [] };
+            o.systems.push(sys);
+            owners.set(rec.owner, o);
+          }
+        }
+        const components = new Set(ids.filter((id) => kindOf.get(id) === "Component"));
+        const watch = ix
+          .query("kind:observabilityasset", { limit: 500 })
+          .rows.map((r) => ix.get(r.kind, r.id) as unknown as Record<string, unknown>)
+          .filter((a) => components.has(String(a.component)))
+          .map((a) => ({
+            component: String(a.component),
+            kind: String(a.assetKind),
+            name: String(a.name),
+            ...(a.link ? { link: String(a.link) } : {}),
+          }));
+        return {
+          reach,
+          systems: [...systems].sort(),
+          owners: [...owners.values()],
+          unowned,
+          watch,
+        };
+      });
+      if (!res) throw notFound(`There is no record ${params.id} in the catalog.`);
+      const near = new Set([...res.systems, params.id!, ...res.reach.affected.map((a) => a.id)]);
+      const changes = (await changeStore(root).list())
+        .filter(
+          (c) =>
+            c.systems.some((s) => near.has(s)) ||
+            [...c.touches.records, ...c.touches.tables, ...c.touches.dataStores].some((x) =>
+              near.has(x),
+            ),
+        )
+        .map((c) => ({
+          id: c.id,
+          title: c.title,
+          state: c.state,
+          updatedAt: c.history.at(-1)?.at ?? c.createdAt,
+          systems: c.systems.filter((s) => near.has(s)),
+        }))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      return {
+        status: 200,
+        body: {
+          id: params.id,
+          blastRadius: res.reach.affected.length,
+          affected: res.reach.affected,
+          systems: res.systems,
+          call: res.owners,
+          ownerUnknown: res.unowned,
+          watch: res.watch,
+          recentChanges: changes,
+        },
+      };
+    })
     .add("GET", "/api/repos", async () => {
       const repos = await loadRepos(root);
       const body = [];

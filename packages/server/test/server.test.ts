@@ -420,3 +420,35 @@ describe("Ask", () => {
     }
   });
 });
+
+describe("incident mode", () => {
+  it("gives the blast radius, the owners to call, what watches it and recent nearby changes", async () => {
+    const root = await forgeMetarepo();
+    const s = await startServer({ root, port: 0 });
+    try {
+      const r = await fetch(`${s.url}/api/incident/ledger-api`, {
+        headers: { "X-Atticus-Token": s.token },
+      });
+      expect(r.status).toBe(200);
+      const b = (await r.json()) as {
+        blastRadius: number;
+        call: { owner: string; systems: string[] }[];
+        ownerUnknown: string[];
+        watch: { name: string }[];
+        recentChanges: { id: string }[];
+      };
+      expect(b.blastRadius).toBeGreaterThan(0);
+      expect(b.call.map((c) => c.owner)).toEqual(
+        expect.arrayContaining(["team-ledger", "team-portal"]),
+      );
+      expect(b.watch.map((w) => w.name)).toContain("Ledger API error rate");
+      expect(b.recentChanges.map((c) => c.id)).toContain("add-transfer-limit");
+      const missing = await fetch(`${s.url}/api/incident/atlantis`, {
+        headers: { "X-Atticus-Token": s.token },
+      });
+      expect(missing.status).toBe(404);
+    } finally {
+      await s.close();
+    }
+  });
+});

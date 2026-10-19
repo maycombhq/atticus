@@ -2,16 +2,7 @@ import { useState, type FormEvent } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
-import {
-  Markdown,
-  Note,
-  Table,
-  list,
-  queryParam,
-  setQueryParam,
-  useAction,
-  useView,
-} from "./common.js";
+import { Markdown, Note, Table, list, queryParam, useAction, useView } from "./common.js";
 
 interface Coverage {
   systems: {
@@ -57,7 +48,12 @@ function SystemGuide({ system }: { system: string }) {
     <Panel title={`Guide · ${system}`} span="1 / -1" meta="Generated from the catalog">
       <View of={g}>
         {(d) => (
-          <div style={{ maxHeight: 560, overflowY: "auto", paddingRight: 6 }}>
+          <div
+            tabIndex={0}
+            role="region"
+            aria-label={`Guide to ${system}`}
+            style={{ maxHeight: 560, overflowY: "auto", paddingRight: 6 }}
+          >
             <Markdown text={d.markdown} />
           </div>
         )}
@@ -247,6 +243,8 @@ export function EcosystemMap() {
         >
           {(q) => (
             <ul
+              tabIndex={0}
+              aria-label="Questions for owners"
               style={{
                 listStyle: "none",
                 margin: 0,
@@ -278,6 +276,19 @@ export function EcosystemMap() {
 }
 
 // ------------------------------------------------------------------ Impact explorer
+
+interface Incident {
+  call: { owner: string; systems: string[] }[];
+  ownerUnknown: string[];
+  watch: { component: string; kind: string; name: string }[];
+  recentChanges: {
+    id: string;
+    title: string;
+    state: string;
+    updatedAt: string;
+    systems: string[];
+  }[];
+}
 
 /** The impact paths as a graph: the root in the middle, every hop an edge. */
 function blastGraph(d: Impact): Graph {
@@ -319,10 +330,14 @@ interface Impact {
 export function ImpactExplorer({ hash }: { hash: string }) {
   const q = queryParam(hash, "q") ?? "";
   const [text, setText] = useState(q);
+  const incident = queryParam(hash, "incident") === "1";
   const imp = useApi<Impact>(q ? `/api/impact/${encodeURIComponent(q)}?depth=4` : undefined);
+  const inc = useApi<Incident>(
+    q && incident ? `/api/incident/${encodeURIComponent(q)}` : undefined,
+  );
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    setQueryParam("impact", "q", text.trim());
+    location.hash = `#/impact?q=${encodeURIComponent(text.trim())}${incident ? "&incident=1" : ""}`;
   };
   const byHop = new Map<number, number>();
   if (imp.state === "ready")
@@ -355,11 +370,96 @@ export function ImpactExplorer({ hash }: { hash: string }) {
           <button type="submit" className="btn primary">
             Show impact
           </button>
+          <button
+            type="button"
+            className={`btn ${incident ? "danger" : ""}`}
+            aria-pressed={incident}
+            onClick={() =>
+              (location.hash = `#/impact?q=${encodeURIComponent(text.trim())}${incident ? "" : "&incident=1"}`)
+            }
+          >
+            {incident ? "Incident mode on" : "Incident mode"}
+          </button>
           <a href="#/explore" className="muted" style={{ fontSize: 12 }}>
             Find an id in the Knowledge explorer
           </a>
         </form>
       </Panel>
+      {q && incident && (
+        <>
+          <Panel title="Owners to call" span="span 4" kind="dark">
+            <View of={inc}>
+              {(d) => (
+                <div className="stack" style={{ gap: 8 }}>
+                  {d.call.map((c) => (
+                    <div key={c.owner} className="list-row">
+                      <span className="chip blocking">{c.owner}</span>
+                      <span className="mono" style={{ fontSize: 11.5 }}>
+                        {c.systems.join(", ")}
+                      </span>
+                    </div>
+                  ))}
+                  {d.ownerUnknown.length > 0 && (
+                    <p style={{ margin: 0, fontSize: 12.5, color: "#FFD18A" }}>
+                      No owner recorded for {d.ownerUnknown.join(", ")}.
+                    </p>
+                  )}
+                  <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+                    From the last scan. Atticus never connects to live systems, consoles or
+                    monitoring.
+                  </p>
+                </div>
+              )}
+            </View>
+          </Panel>
+          <Panel title="What watches it" span="span 4">
+            <View
+              of={inc}
+              empty={(d) => d.watch.length === 0}
+              emptyText="No alerts, dashboards or runbooks in the catalog for what it reaches."
+            >
+              {(d) => (
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
+                  {d.watch.map((w, i) => (
+                    <li key={i}>
+                      <span className="chip dim">{w.kind}</span> {w.name}{" "}
+                      <span className="mono muted">({w.component})</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </View>
+          </Panel>
+          <Panel title="Recent nearby changes" span="span 4">
+            <View
+              of={inc}
+              empty={(d) => d.recentChanges.length === 0}
+              emptyText="No change touches what it reaches."
+            >
+              {(d) => (
+                <div className="stack" style={{ gap: 6 }}>
+                  {d.recentChanges.map((c) => (
+                    <a
+                      key={c.id}
+                      href={`#/changes/${encodeURIComponent(c.id)}`}
+                      className="list-row"
+                      style={{ textDecoration: "none", color: "inherit" }}
+                    >
+                      <span className="stack" style={{ gap: 2 }}>
+                        <span style={{ fontSize: 12.5 }}>{c.title}</span>
+                        <span className="hud" style={{ fontSize: 9.5 }}>
+                          {c.id} · {c.updatedAt.slice(0, 10)} · {c.systems.join(", ")}
+                        </span>
+                      </span>
+                      <span className="chip">{c.state.toUpperCase()}</span>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </View>
+          </Panel>
+        </>
+      )}
       {!q ? null : (
         <>
           <Panel title={`Blast radius of ${q}`} kind="hero" span="span 9">

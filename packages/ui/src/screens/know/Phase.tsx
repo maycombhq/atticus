@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
 import {
@@ -180,7 +180,12 @@ function ArtifactPanel({
               <span className="mono muted" style={{ fontSize: 11 }}>
                 {d.path}
               </span>
-              <div style={{ maxHeight: 520, overflowY: "auto", paddingRight: 6 }}>
+              <div
+                tabIndex={0}
+                role="region"
+                aria-label={`${artifact} text`}
+                style={{ maxHeight: 520, overflowY: "auto", paddingRight: 6 }}
+              >
                 <Markdown text={d.content} />
               </div>
             </div>
@@ -197,17 +202,23 @@ function FindingsPanel({
   artifacts,
   span,
   rows,
+  tick = 0,
 }: {
   change: string;
   artifacts: string[];
   span?: string;
   rows?: string;
+  /** Bumped when the gate ran something; the findings reload. */
+  tick?: number;
 }) {
   const f = useApi<Finding[]>(`/api/findings?change=${change}&state=open`);
   const [open, setOpen] = useState<string | undefined>();
   useLiveEvents((e) => {
-    if (e.type === "findings.changed" || e.type === "run.changed") f.reload();
+    if (e.type === "file.changed" || e.type === "run.changed") f.reload();
   });
+  useEffect(() => {
+    if (tick) f.reload();
+  }, [tick]);
   const mine =
     f.state === "ready"
       ? f.data.filter((x) => artifacts.some((a) => x.artifact.startsWith(a)))
@@ -313,7 +324,7 @@ function PhaseScreen(p: {
     reload: () => setTick(tick + 1),
   };
   return (
-    <div className="bento" key={`${c.id}/${tick}`}>
+    <div className="bento" key={c.id}>
       <div className="column" style={{ gridColumn: "span 8" }}>
         <GateHeader part="hero" {...header} />
         {p.artifacts.map((a) => (
@@ -322,7 +333,7 @@ function PhaseScreen(p: {
       </div>
       <div className="column" style={{ gridColumn: "span 4" }}>
         <GateHeader part="gate" {...header} />
-        <FindingsPanel change={c.id} artifacts={p.artifacts} />
+        <FindingsPanel change={c.id} artifacts={p.artifacts} tick={tick} />
         {p.extra?.(c.id)}
       </div>
     </div>

@@ -186,7 +186,13 @@ export function Contracts() {
   return (
     <div className="bento">
       <Panel title="Contracts" span="span 4" rows="span 2">
-        <div className="stack" style={{ gap: 14, maxHeight: 640, overflowY: "auto" }}>
+        <div
+          className="stack"
+          tabIndex={0}
+          role="region"
+          aria-label="Contracts list"
+          style={{ gap: 14, maxHeight: 640, overflowY: "auto" }}
+        >
           <ContractList
             kind="Endpoint"
             title="APIs"
@@ -586,6 +592,8 @@ export function Diagrams({ hash }: { hash: string }) {
           {(t) => (
             <pre
               className="mono"
+              tabIndex={0}
+              aria-label="Mermaid source"
               style={{
                 margin: 0,
                 fontSize: 11.5,

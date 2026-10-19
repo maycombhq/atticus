@@ -364,6 +364,8 @@ function Detail({ id }: { id: string }) {
               </p>
               <ExportEvidence id={id} />
               <ul
+                tabIndex={0}
+                aria-label="Evidence files"
                 style={{
                   listStyle: "none",
                   margin: 0,

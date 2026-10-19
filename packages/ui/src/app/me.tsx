@@ -60,10 +60,10 @@ export function ViewPicker({ id, compact }: { id: string; compact?: boolean }) {
   const { me, setView } = useMe();
   if (!me) return null;
   return (
-    <label htmlFor={id} className="stack" style={{ gap: 4 }}>
-      <span className="hud" style={{ fontSize: compact ? 9.5 : 10 }}>
+    <div className="stack" style={{ gap: 4 }}>
+      <label htmlFor={id} className="hud" style={{ fontSize: compact ? 9.5 : 10 }}>
         {compact ? "View" : "Pick the view you work in"}
-      </span>
+      </label>
       <select
         id={id}
         value={me.view ?? ""}
@@ -86,7 +86,7 @@ export function ViewPicker({ id, compact }: { id: string; compact?: boolean }) {
           </option>
         ))}
       </select>
-    </label>
+    </div>
   );
 }
 

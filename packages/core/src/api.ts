@@ -612,6 +612,21 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "Coverage", description: "OK" },
     },
   },
+  "/api/incident/{id}": {
+    get: {
+      id: "getIncident",
+      summary:
+        "Incident mode: a failing record's blast radius, the owners to call, what watches it and recent nearby changes (read-only, from the last scan)",
+      tag: "catalog",
+      params: [p("id")],
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["id", "affected", "call", "recentChanges"] },
+        description: "OK",
+      },
+      errors: [404],
+    },
+  },
   "/api/repos": {
     get: {
       id: "listRepos",

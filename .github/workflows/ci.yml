@@ -38,6 +38,8 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # The role journeys drive the app in Chromium.
+      - run: pnpm --filter @maycombhq/journeys exec playwright install --with-deps chromium
       - run: pnpm build
       - run: pnpm denylist
       - run: pnpm lint

@@ -527,6 +527,8 @@ export function NotesPanel({ id, tick }: { id: string; tick: number }) {
           {(x) => (
             <pre
               className="run-text"
+              tabIndex={0}
+              aria-label="Release notes"
               style={{ maxHeight: 320, overflow: "auto", fontFamily: "var(--mono)", fontSize: 12 }}
             >
               {x.markdown}
