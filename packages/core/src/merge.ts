@@ -245,17 +245,32 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     }
   }
   const restEndpoints = endpoints.map(([, e]) => e);
+  // Indexes, so each loose end is matched in constant time (a scan per loose end made merge
+  // quadratic: 800 components took about a minute). Same order as the list, so same results.
+  const endpointsAt = new Map<string, Rec[]>(); // component + path
+  const endpointsOnPath = new Map<string, Rec[]>(); // path
+  for (const e of restEndpoints) {
+    const at = `${String(e.component)}\u0000${String(e.normalizedPath)}`;
+    endpointsAt.set(at, [...(endpointsAt.get(at) ?? []), e]);
+    const on = String(e.normalizedPath);
+    endpointsOnPath.set(on, [...(endpointsOnPath.get(on) ?? []), e]);
+  }
 
   // ---- 3. components, systems and lookups
   const components = new Map<string, Rec>();
   for (const [k, r] of byKey) if (k.startsWith("Component|")) components.set(r.id, r);
   const systemsById = new Map(input.systems.map((s) => [s.id, s]));
+  const systemsLongestFirst = [...systemsById.keys()].sort((a, b) => b.length - a.length);
+  const systemByPrefix = new Map<string, string | undefined>();
   const systemOf = (componentId: string): string | undefined => {
     const c = components.get(componentId);
     if (c?.system) return String(c.system);
-    return [...systemsById.keys()]
-      .sort((a, b) => b.length - a.length)
-      .find((s) => componentId === s || componentId.startsWith(`${s}-`));
+    if (!systemByPrefix.has(componentId))
+      systemByPrefix.set(
+        componentId,
+        systemsLongestFirst.find((s) => componentId === s || componentId.startsWith(`${s}-`)),
+      );
+    return systemByPrefix.get(componentId);
   };
   const componentsOfSystem = (sys: string) =>
     [...components.values()].filter((c) => c.system === sys).map((c) => c.id);
@@ -297,11 +312,8 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   // An endpoint of another method is a different endpoint: never matched (it once made a GET
   // call "verified" against a POST endpoint).
   const findEndpoint = (component: string, method: string | undefined, norm: string) =>
-    restEndpoints.find(
-      (e) =>
-        e.component === component &&
-        e.normalizedPath === norm &&
-        (!method || method === "ANY" || e.method === method),
+    (endpointsAt.get(`${component}\u0000${norm}`) ?? []).find(
+      (e) => !method || method === "ANY" || e.method === method,
     );
 
   // Hosts the manifest declares (ADR 0053). A repo with gateway routes is a gateway: its hosts
@@ -401,11 +413,10 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       // Relative URL: served by a component of the caller's own system with a matching endpoint.
       const sys = systemOf(owner);
       const norm = normalizePath(path);
-      const hits = restEndpoints.filter(
+      const hits = (endpointsOnPath.get(norm) ?? []).filter(
         (e) =>
           e.component !== owner &&
           systemOf(String(e.component)) === sys &&
-          e.normalizedPath === norm &&
           (method === "ANY" || e.method === method),
       );
       if (hits.length === 1) to = String(hits[0]!.component);
@@ -539,19 +550,31 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   // ---- 6. database access
   const tables = [...byKey.values()].filter((r) => r.kind === "Table");
   const stores = [...byKey.values()].filter((r) => r.kind === "DataStore");
+  const storeIds = new Set(stores.map((s) => s.id));
+  // The first store each component owns, and tables by name and by store: lookups, not scans.
+  const storeOf = new Map<string, string>();
+  for (const s of stores)
+    if (typeof s.ownerComponent === "string" && !storeOf.has(s.ownerComponent))
+      storeOf.set(s.ownerComponent, s.id);
+  const tablesNamed = new Map<string, Rec[]>();
+  const tablesIn = new Map<string, Rec[]>();
+  for (const t of tables) {
+    tablesNamed.set(String(t.name), [...(tablesNamed.get(String(t.name)) ?? []), t]);
+    tablesIn.set(String(t.dataStore), [...(tablesIn.get(String(t.dataStore)) ?? []), t]);
+  }
   const connections = new Map<string, string>(); // owner → store id
   for (const l of loose.filter((x) => x.unresolvedKind === "db-connection")) {
     const host = splitUrl(String(l.raw).replace(/^jdbc:/, "")).host?.split(".")[0];
-    if (host && stores.some((s) => s.id === host)) connections.set(String(l.owner), host);
+    if (host && storeIds.has(host)) connections.set(String(l.owner), host);
     else unresolved.push(l);
   }
   for (const l of loose.filter((x) => x.unresolvedKind === "db-access")) {
     const [access, name] = String(l.raw).split(" ");
     const owner = String(l.owner);
-    const store =
-      connections.get(owner) ??
-      [...byKey.values()].find((r) => r.kind === "DataStore" && r.ownerComponent === owner)?.id;
-    const candidates = tables.filter((t) => t.name === name && (!store || t.dataStore === store));
+    const store = connections.get(owner) ?? storeOf.get(owner);
+    const candidates = (tablesNamed.get(String(name)) ?? []).filter(
+      (t) => !store || t.dataStore === store,
+    );
     if (candidates.length !== 1) {
       unresolved.push(l);
       continue;
@@ -562,7 +585,7 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     if (t.ownerComponent !== owner) t.evidence = unionEvidence(t.evidence, l.evidence);
   }
   for (const s of stores) {
-    const held = tables.filter((t) => t.dataStore === s.id).map((t) => String(t.name));
+    const held = (tablesIn.get(s.id) ?? []).map((t) => String(t.name));
     s.entitiesHeld = [...new Set([...((s.entitiesHeld as string[]) ?? []), ...held])].sort();
   }
 
@@ -682,7 +705,12 @@ export function mergeCatalog(input: MergeInput): MergeResult {
 
   // ---- 9. assemble and validate
   const out: Rec[] = [...byKey.values(), ...interfaces.values()];
-  for (const l of unresolved) if (!out.includes(l)) out.push(l);
+  const inOut = new Set(out);
+  for (const l of unresolved)
+    if (!inOut.has(l)) {
+      out.push(l);
+      inOut.add(l);
+    }
   const invalid: MergeResult["invalid"] = [];
   const records: CatalogRecord[] = [];
   const seen = new Set<string>();

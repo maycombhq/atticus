@@ -351,3 +351,61 @@ describe("mergeCatalog: loose ends of a kind it doesn't join", () => {
     ).toEqual(["http-endpoint", "mq-publish"]);
   });
 });
+
+describe("mergeCatalog at estate scale", () => {
+  it("merges 800 components (about 50,000 records) in seconds: it grows linearly", () => {
+    const recs: CatalogRecord[] = [];
+    const evc = (repo: string, side: "caller" | "callee") => [{ ...ev[0]!, repo, side }];
+    const C = 800;
+    for (let c = 0; c < C; c++) {
+      const id = `svc-${c}`;
+      recs.push({
+        ...base,
+        kind: "Component",
+        id,
+        system: `sys-${c % 50}`,
+        repo: id,
+        type: "service",
+      } as unknown as CatalogRecord);
+      for (let e = 0; e < 20; e++)
+        recs.push({
+          ...base,
+          kind: "Endpoint",
+          id: `${id}.get.${e}`,
+          component: id,
+          endpointType: "rest",
+          method: "GET",
+          pathOrTopic: `/api/${id}/r${e}/{id}`,
+          normalizedPath: `/api/${id}/r${e}/{}`,
+          schemaRefs: [],
+          evidence: evc(id, "callee"),
+        } as unknown as CatalogRecord);
+      for (let k = 0; k < 20; k++) {
+        const t = (c + k + 1) % C;
+        recs.push({
+          ...base,
+          confidence: "inferred",
+          kind: "Unresolved",
+          id: `${id}.http-call.${k}`,
+          unresolvedKind: "http-call",
+          raw:
+            k % 2 ? `GET http://svc-${t}/api/svc-${t}/r${k}/{id}` : `GET /api/svc-${t}/r${k}/{id}`,
+          owner: id,
+          evidence: evc(id, "caller"),
+        } as unknown as CatalogRecord);
+      }
+    }
+    const systemsN = Array.from({ length: 50 }, (_, i) => ({
+      id: `sys-${i}`,
+      name: `S${i}`,
+      boundary: "internal" as const,
+      aliases: [],
+    }));
+    const t0 = performance.now();
+    const m = mergeCatalog({ records: recs, repos: [], systems: systemsN });
+    const ms = performance.now() - t0;
+    expect(m.stats.interfaces).toBe(C * 10);
+    // About a second today; the quadratic merge this replaced took about 20.
+    expect(ms).toBeLessThan(10_000);
+  });
+});
