@@ -15,9 +15,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, relative, sep } from "node:path";
-import { cyclonedx, deploy, inventory, licenceAllowed, REPO } from "./inventory.mjs";
+import { pathToFileURL } from "node:url";
+import { cyclonedx, deploy, inventory, licenceAllowed, removeDeploy, REPO } from "./inventory.mjs";
 
-const { zip } = await import(join(REPO, "packages/core/dist/index.js"));
+const { zip } = await import(pathToFileURL(join(REPO, "packages/core/dist/index.js")).href);
 const VERSION = JSON.parse(readFileSync(join(REPO, "packages/cli/package.json"), "utf8")).version;
 const NAME = `atticus-${VERSION}`;
 const outDir = process.argv[2] ?? join(REPO, "dist");
@@ -63,6 +64,8 @@ writeFileSync(
 // ---- install scripts
 const ps1 = `# Install Atticus ${VERSION} for this user, from this folder (no network).
 #   powershell -ExecutionPolicy Bypass -File install.ps1
+#   -NoPath: leave your PATH as it is (run atticus by its full path, or add the bin folder yourself)
+param([switch]$NoPath)
 $ErrorActionPreference = "Stop"
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $version = "${VERSION}"
@@ -89,9 +92,11 @@ $bin = Join-Path $base "bin"
 New-Item -ItemType Directory -Force -Path $target, $bin | Out-Null
 Write-Host "Copying to $target..."
 Copy-Item -Recurse -Force -Path (Join-Path $here "*") -Destination $target
-Set-Content -Encoding ASCII -Path (Join-Path $bin "atticus.cmd") -Value "@node \`"$target\\dist\\bin.js\`" %*"
+# The shim finds this version beside itself (%~dp0 is its own folder), so no path is written
+# into it and a profile folder with letters outside ASCII (an accented name) can't be mangled.
+Set-Content -Encoding ASCII -Path (Join-Path $bin "atticus.cmd") -Value "@node \`"%~dp0..\\$version\\dist\\bin.js\`" %*"
 $path = [Environment]::GetEnvironmentVariable("Path", "User")
-if (-not ($path -split ";" | Where-Object { $_ -eq $bin })) {
+if (-not $NoPath -and -not ($path -split ";" | Where-Object { $_ -eq $bin })) {
   [Environment]::SetEnvironmentVariable("Path", (($path, $bin) -join ";").Trim(";"), "User")
   Write-Host "Added $bin to your PATH (open a new terminal to use it)."
 }
@@ -149,8 +154,9 @@ const walk = (d) => {
   for (const e of readdirSync(d).sort()) {
     const f = join(d, e);
     const st = lstatSync(f);
-    // node_modules/.bin links aren't needed: Atticus runs dist/bin.js with node.
-    if (st.isSymbolicLink()) continue;
+    // node_modules/.bin isn't needed: Atticus runs dist/bin.js with node. On Linux pnpm makes
+    // those links, on Windows real .cmd/.ps1 files, so skip the folder for the same zip on both.
+    if (st.isSymbolicLink() || (e === ".bin" && st.isDirectory())) continue;
     if (st.isDirectory()) walk(f);
     else files.push(f);
   }
@@ -174,6 +180,7 @@ const buf = zip(entries, now);
 writeFileSync(out, buf);
 const sha = createHash("sha256").update(buf).digest("hex");
 writeFileSync(`${out}.sha256`, `${sha}  ${NAME}-offline.zip\n`);
+removeDeploy(dir);
 console.log(
   `Wrote ${out} (${(buf.length / 1024 / 1024).toFixed(1)} MB, ${entries.length} files, ${items.filter((i) => !i.own).length} third-party packages).\nsha256 ${sha}`,
 );

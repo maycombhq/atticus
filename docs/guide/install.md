@@ -19,7 +19,7 @@ The bundle is one zip, `atticus-<version>-offline.zip`, with a `.sha256` file be
 
 1. Check the zip against its `.sha256` file, then unzip it anywhere.
 2. Run the install script from the unzipped folder:
-   - **Windows:** right-click `install.ps1` and choose _Run with PowerShell_, or run `powershell -ExecutionPolicy Bypass -File install.ps1`.
+   - **Windows:** right-click `install.ps1` and choose _Run with PowerShell_, or run `powershell -ExecutionPolicy Bypass -File install.ps1`. Add `-NoPath` to leave your PATH as it is.
    - **macOS, Linux:** `sh install.sh`.
 3. Open a new terminal and run `atticus --version`.
 

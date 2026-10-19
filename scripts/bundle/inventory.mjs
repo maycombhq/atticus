@@ -1,11 +1,12 @@
 // What a deployed Atticus contains: every package under node_modules with its version, licence
 // and licence text. Used by the licence check, the SBOM and the offline bundle's LICENSES file.
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, mkdtempSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const REPO = new URL("../..", import.meta.url).pathname;
+export const REPO = fileURLToPath(new URL("../..", import.meta.url));
 
 /** Licences Atticus may ship (SPDX ids); anything else fails the check. */
 export const ALLOWED = new Set([
@@ -31,27 +32,44 @@ export function licenceAllowed(expr) {
     .some((alt) => alt.split(/\s+AND\s+/i).every((id) => ALLOWED.has(id.trim())));
 }
 
+/**
+ * Run pnpm: the pnpm running this script when it was started by `pnpm <script>`, else the one on
+ * PATH. On Windows that one is pnpm.cmd, which Node only starts through a shell.
+ */
+function pnpm(args, opts) {
+  const exec = process.env.npm_execpath;
+  if (exec && /\.[cm]?js$/.test(exec)) return execFileSync(process.execPath, [exec, ...args], opts);
+  if (process.platform !== "win32") return execFileSync("pnpm", args, opts);
+  const quoted = args.map((a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '""')}"` : a));
+  return execFileSync("pnpm", quoted, { ...opts, shell: true });
+}
+
 /** `pnpm deploy` of the CLI with production dependencies only, into a new folder. */
 export function deploy(dir = join(mkdtempSync(join(tmpdir(), "atticus-deploy-")), "atticus")) {
   // Hoisted: real folders, no symlinks, so the zip (and Windows) see one copy of each package.
-  execFileSync(
-    "pnpm",
+  // --prefer-offline, not --offline: a fresh `pnpm install --frozen-lockfile` fills the store
+  // but not pnpm's metadata cache, which --offline needs. The lockfile still fixes every version.
+  pnpm(
     [
       "--filter",
       "@maycombhq/cli",
       "deploy",
       "--prod",
       "--legacy",
-      "--offline",
+      "--prefer-offline",
       "--config.node-linker=hoisted",
       dir,
     ],
-    {
-      cwd: REPO,
-      stdio: "pipe",
-    },
+    { cwd: REPO, stdio: "pipe" },
   );
   return dir;
+}
+
+/** Remove a folder deploy() made (its atticus-deploy-* parent in the temp folder). */
+export function removeDeploy(dir) {
+  const parent = dirname(dir);
+  if (dirname(parent) === tmpdir() && basename(parent).startsWith("atticus-deploy-"))
+    rmSync(parent, { recursive: true, force: true, maxRetries: 5 });
 }
 
 function licenceOf(pkg) {

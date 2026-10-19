@@ -1,7 +1,9 @@
 // pnpm licences: every package Atticus ships is under a licence it may ship (ALLOWED).
-import { deploy, inventory, licenceAllowed } from "./inventory.mjs";
+import { deploy, inventory, licenceAllowed, removeDeploy } from "./inventory.mjs";
 
-const items = inventory(process.argv[2] ?? deploy());
+const dir = process.argv[2] ?? deploy();
+const items = inventory(dir);
+if (!process.argv[2]) removeDeploy(dir);
 const third = items.filter((i) => !i.own);
 const bad = third.filter((i) => !licenceAllowed(i.licence));
 const own = items.filter((i) => i.own && i.licence !== "Apache-2.0");

@@ -4,8 +4,9 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+const root = fileURLToPath(new URL("..", import.meta.url));
 const builtins = new Set(builtinModules);
 // Test tools come from the workspace root (vitest, playwright, axe): tests may use those too.
 const rootPkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));

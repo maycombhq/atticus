@@ -3,7 +3,7 @@
 // home folder, with no network, and use it: version, a practice sandbox, doctor, a scan, the
 // app's health call. On Windows it runs install.ps1, elsewhere install.sh.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,7 +14,8 @@ if (!zipFile || !existsSync(zipFile)) {
 }
 const win = process.platform === "win32";
 const work = mkdtempSync(join(tmpdir(), "atticus-bundle-test-"));
-const home = join(work, "home");
+// A space and a letter outside ASCII, as in many real profile folders.
+const home = join(work, "home Mü");
 const unpacked = join(work, "unpacked");
 const env = {
   ...process.env,
@@ -38,8 +39,11 @@ if (win)
     `Expand-Archive -LiteralPath '${zipFile}' -DestinationPath '${unpacked}'`,
   ]);
 else run("unzip", ["-q", zipFile, "-d", unpacked]);
-const [top] = readdirSync(unpacked);
+// Expand-Archive can leave nothing behind and still exit 0 (a full disk, for one).
+const [top] = existsSync(unpacked) ? readdirSync(unpacked) : [];
+if (!top) throw new Error(`unpacking ${zipFile} left ${unpacked} empty`);
 const dir = join(unpacked, top);
+// -NoPath: a test install must not leave its throwaway bin folder on the user's PATH.
 const out = win
   ? run("powershell", [
       "-NoProfile",
@@ -47,6 +51,7 @@ const out = win
       "Bypass",
       "-File",
       join(dir, "install.ps1"),
+      "-NoPath",
     ])
   : run("sh", [join(dir, "install.sh")]);
 console.log(out.trim());
@@ -57,6 +62,16 @@ const installed = win
 const atticus = (...args) => run(process.execPath, [installed, ...args]);
 if (atticus("--version").trim() !== version)
   throw new Error("the installed atticus reports another version");
+// The command people type: the shim the install script wrote.
+const shim = win
+  ? run("cmd.exe", [
+      "/d",
+      "/c",
+      join(env.LOCALAPPDATA, "Programs", "Atticus", "bin", "atticus.cmd"),
+      "--version",
+    ])
+  : run("sh", [join(home, ".local", "bin", "atticus"), "--version"]);
+if (shim.trim() !== version) throw new Error(`the atticus shim printed ${JSON.stringify(shim)}`);
 const sandbox = join(work, "sandbox");
 console.log(atticus("sandbox", "create", sandbox).trim());
 const root = join(sandbox, "metarepo");
@@ -80,8 +95,12 @@ const url = await new Promise((resolve, reject) => {
 });
 const health = await fetch(`${url.base}/api/health`, { headers: { "X-Atticus-Token": url.token } });
 const page = await fetch(`${url.base}/`);
+const exited = new Promise((resolve) => ui.once("exit", resolve));
 ui.kill();
+await exited;
 if (health.status !== 200 || !(await page.text()).includes("atticus-token"))
   throw new Error(`the app didn't answer (health ${health.status})`);
 console.log(`The installed app answers at ${url.base}.`);
 console.log("Offline bundle test passed.");
+// Kept when something fails (to look at); removed when it all passed.
+rmSync(work, { recursive: true, force: true, maxRetries: 5 });

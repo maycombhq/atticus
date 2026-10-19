@@ -1,8 +1,9 @@
 // The command line's help text, read from its source (so docs checks run before a build).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const REPO = new URL("..", import.meta.url).pathname;
+export const REPO = fileURLToPath(new URL("..", import.meta.url));
 
 export function helpText() {
   const src = readFileSync(join(REPO, "packages/cli/src/main.ts"), "utf8");
