@@ -1,0 +1,49 @@
+schemaVersion: 1
+initiative: daily-limits
+journey: new-feature
+journeySource: built-in
+target: ledger
+targetRelease: 2026-11-13
+createdAt: 2026-10-19T09:00:00Z
+by: pat
+items:
+  - key: gateway-route
+    step: gateway-route
+    phase: plan
+    kind: request
+    what: Gateway team deploys gw-northwind-v2
+    template: gateway-route
+    days: 5
+    leadTime: org-pack/process/snow/gateway-route.yaml leadTimeDays
+    after: []
+    start: 2026-10-19
+    due: 2026-10-26
+  - key: build.ledger
+    step: build
+    phase: build
+    kind: change
+    what: add-transfer-limit built and through QA
+    system: ledger
+    change: add-transfer-limit
+    milestone: build
+    days: 10
+    leadTime: journey new-feature step build (10 working days)
+    after: [gateway-route]
+    start: 2026-10-26
+    due: 2026-11-09
+  - key: release-ready.ledger
+    step: release-ready
+    phase: release
+    kind: change
+    what: add-transfer-limit ready for go / no-go
+    system: ledger
+    change: add-transfer-limit
+    milestone: release-ready
+    days: 3
+    leadTime: journey new-feature step release-ready (3 working days)
+    after: [build.ledger]
+    start: 2026-11-09
+    due: 2026-11-12
+done: {}
+started: {}
+notes: []

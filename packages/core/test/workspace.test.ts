@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
+  ChangeOutcomes,
   ChangeRepos,
   RepoManifest,
   changeBranch,
@@ -182,5 +183,42 @@ describe("workspace JSON Schemas", () => {
       "https://maycombhq.github.io/atticus/schema/workspace/v1/RepoManifest.json",
     );
     expect(s.ChangeRepos!.$id).toContain("/workspace/v1/ChangeRepos.json");
+    expect(s.ChangeOutcomes!.$id).toContain("/workspace/v1/ChangeOutcomes.json");
+  });
+});
+
+describe("a change's outcome records (ADR 0045)", () => {
+  const value = { value: "0 accepted over a limit", by: "pat", at: "2026-11-30T09:00:00Z" };
+  const file = {
+    schemaVersion: 1,
+    change: "add-transfer-limit",
+    measures: [
+      {
+        id: "no-transfer-over-a-limit-is-accepted",
+        measure: "No transfer over a limit is accepted",
+        values: [value],
+      },
+    ],
+  };
+
+  it("keeps each measure's values with who and when", () => {
+    expect(ChangeOutcomes.parse(file).measures[0]!.values[0]).toEqual(value);
+  });
+
+  it("refuses a value without who, a duplicate measure and an empty value", () => {
+    const m = file.measures[0]!;
+    expect(
+      ChangeOutcomes.safeParse({
+        ...file,
+        measures: [{ ...m, values: [{ value: "1", at: value.at }] }],
+      }).success,
+    ).toBe(false);
+    expect(ChangeOutcomes.safeParse({ ...file, measures: [m, m] }).success).toBe(false);
+    expect(
+      ChangeOutcomes.safeParse({
+        ...file,
+        measures: [{ ...m, values: [{ ...value, value: " " }] }],
+      }).success,
+    ).toBe(false);
   });
 });

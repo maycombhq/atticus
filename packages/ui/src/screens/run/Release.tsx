@@ -1,5 +1,13 @@
+import { useState } from "react";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
+import {
+  ExportEvidence,
+  NotesPanel,
+  OutcomesPanel,
+  PlanPanels,
+  SecurityPanel,
+} from "./ReleaseViews.js";
 import { Note, plural, useAction } from "./shared.js";
 
 interface ReleaseItem {
@@ -123,8 +131,12 @@ function Gate(p: { label: string; value: string; ok: boolean; warn?: boolean; de
 function Detail({ id }: { id: string }) {
   const d = useApi<ReleaseDetail>(`/api/release/${id}`);
   const act = useAction();
+  // the generated views reload with the screen when a file changes
+  const [tick, setTick] = useState(0);
   useLiveEvents((e) => {
-    if (e.type === "file.changed") d.reload();
+    if (e.type !== "file.changed") return;
+    d.reload();
+    setTick((t) => t + 1);
   });
   const post = (path: string, body: unknown, ok: string) =>
     void act.run(() => api(path, { method: "POST", body }).then(() => d.reload()), ok);
@@ -265,77 +277,7 @@ function Detail({ id }: { id: string }) {
         </View>
       </Panel>
 
-      <Panel title="Order and rollback" span="span 5">
-        <View of={d}>
-          {(r) => {
-            const lead = Math.max(
-              0,
-              ...r.requests.list
-                .filter((x) => x.state === "to-file")
-                .map((x) => x.leadTimeDays ?? 0),
-            );
-            return (
-              <ol className="stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 0 }}>
-                {r.requests.toFile > 0 && (
-                  <li className="list-row" style={{ alignItems: "flex-start" }}>
-                    <span className="stack" style={{ gap: 2 }}>
-                      <span style={{ fontSize: 12.5 }}>
-                        0 · File {plural(r.requests.toFile, "service request")}
-                      </span>
-                      <span className="muted" style={{ fontSize: 12 }}>
-                        Blocks step 1. Longest lead time {lead} days. They are drafted in the{" "}
-                        <a href="#/service-desk">Service desk queue</a>.
-                      </span>
-                    </span>
-                    <span className="chip blocking">NOT FILED</span>
-                  </li>
-                )}
-                {r.repos.length === 0 ? (
-                  <li className="state">
-                    No repos yet: repos.yaml is written when the change's workspace opens.
-                  </li>
-                ) : (
-                  r.repos.map((x, i) => (
-                    <li key={x.id} className="list-row">
-                      <span className="stack" style={{ gap: 2 }}>
-                        <span style={{ fontSize: 12.5 }}>
-                          {i + 1} · <span className="mono">{x.id}</span>
-                        </span>
-                        <span className="hud" style={{ fontSize: 9.5 }}>
-                          {x.branch}
-                          {x.pr ? ` · PR #${x.pr.number} ${x.pr.state}` : " · no PR yet"}
-                        </span>
-                      </span>
-                      <span
-                        className={`chip ${x.build.status === "passed" ? "done" : x.build.status === "failed" ? "blocking" : "dim"}`}
-                      >
-                        BUILD {x.build.status.toUpperCase()}
-                      </span>
-                    </li>
-                  ))
-                )}
-              </ol>
-            );
-          }}
-        </View>
-      </Panel>
-
-      <Panel title="Rollout and rollback" meta="from design.md" span="span 4">
-        <View
-          of={d}
-          empty={(r) => !r.rollout}
-          emptyText="design.md has no rollout section yet. Add one (rollout, rollback, release or deploy)."
-        >
-          {(r) => (
-            <div className="stack">
-              <span className="hud" style={{ fontSize: 10 }}>
-                {r.rollout!.heading}
-              </span>
-              <p className="run-text">{r.rollout!.text}</p>
-            </div>
-          )}
-        </View>
-      </Panel>
+      <PlanPanels id={id} tick={tick} />
 
       <Panel title="What stops it" span="span 6">
         <View
@@ -416,9 +358,11 @@ function Detail({ id }: { id: string }) {
           {(r) => (
             <div className="stack">
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                For the approval board or an audit: the change folder holds every artifact, critic
-                round, waiver, step and request, each with its source.
+                For the approval board or an audit: one Markdown document generated from the change
+                folder (summary, every file with its sha-256, critic rounds and waivers, approvals,
+                trace, requests and steps, drift and AI runs), each item with its source.
               </p>
+              <ExportEvidence id={id} />
               <ul
                 style={{
                   listStyle: "none",
@@ -443,6 +387,10 @@ function Detail({ id }: { id: string }) {
           )}
         </View>
       </Panel>
+
+      <SecurityPanel id={id} tick={tick} />
+      <NotesPanel id={id} tick={tick} />
+      <OutcomesPanel id={id} tick={tick} />
     </>
   );
 }

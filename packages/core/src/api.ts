@@ -279,6 +279,13 @@ export const StepRunRequest = z.strictObject({
 });
 export const ArchiveRequest = z.strictObject({ rescan: z.boolean().optional() });
 export const DraftRequestsRequest = z.strictObject({ force: z.boolean().optional() });
+/** ADR 0045: record a measured outcome of a released change, as the signed-in person. */
+export const RecordOutcomeRequest = z.strictObject({
+  /** The measure's id, its number in the brief, or its words. */
+  measure: z.string().trim().min(1),
+  value: z.string().trim().min(1).max(500),
+  note: z.string().trim().min(1).max(1000).optional(),
+});
 /** Live mode is part of the shape so the server can refuse it in words: it calls a real model. */
 export const EvalRunRequest = z.strictObject({
   mode: z.enum(["mock", "replay", "live"]).default("mock"),
@@ -1059,6 +1066,105 @@ const OPS: Record<string, Record<string, Op>> = {
       summary: "Ping the executors set up here; nothing runs",
       tag: "run",
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+  },
+  "/api/release/{changeId}/plan": {
+    get: {
+      id: "getDeploymentPlan",
+      summary:
+        "The deployment plan: deploy order across repos with why, rollback, request waits, release sections and the forecast",
+      tag: "release",
+      params: [p("changeId")],
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [404, 422],
+    },
+  },
+  "/api/release/{changeId}/forecast": {
+    get: {
+      id: "getReleaseForecast",
+      summary:
+        "Forecast ready-to-release day from lead times and the initiative's plan, with the target",
+      tag: "release",
+      params: [p("changeId")],
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [404, 422],
+    },
+  },
+  "/api/release/{changeId}/evidence": {
+    get: {
+      id: "getEvidencePack",
+      summary: "The evidence pack as one Markdown document, and every file with its sha-256",
+      tag: "release",
+      params: [p("changeId")],
+      ok: {
+        status: 200,
+        schema: {
+          type: "object",
+          required: ["markdown", "files"],
+          properties: {
+            markdown: str,
+            files: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: { path: str, sha256: str, bytes: { type: "integer" } },
+              },
+            },
+          },
+        },
+        description: "OK",
+      },
+      errors: [404, 422],
+    },
+  },
+  "/api/release/{changeId}/notes": {
+    get: {
+      id: "getReleaseNotes",
+      summary: "Release notes for business or technical readers, generated without AI",
+      tag: "release",
+      params: [p("changeId"), q("audience", { type: "string", enum: ["business", "technical"] })],
+      ok: {
+        status: 200,
+        schema: { type: "object", properties: { markdown: str } },
+        description: "OK",
+      },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/release/{changeId}/security": {
+    get: {
+      id: "getSecurityReview",
+      summary:
+        "Security review draft: auth, classifications, data crossing boundaries, vendors, secrets, findings and sign-off",
+      tag: "release",
+      params: [p("changeId")],
+      ok: {
+        status: 200,
+        schema: { type: "object", properties: { markdown: str } },
+        description: "OK",
+      },
+      errors: [404, 422],
+    },
+  },
+  "/api/release/{changeId}/outcomes": {
+    post: {
+      id: "recordOutcome",
+      summary: "Record a measured outcome of a released change, as the signed-in person",
+      tag: "release",
+      params: [p("changeId")],
+      body: RecordOutcomeRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Recorded" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/outcomes": {
+    get: {
+      id: "listOutcomes",
+      summary: "The brief's success measures per change and the values recorded after release",
+      tag: "release",
+      params: [q("change")],
+      ok: { status: 200, schema: {}, description: "OK" },
+      errors: [404, 422],
     },
   },
   "/api/orgpack": {

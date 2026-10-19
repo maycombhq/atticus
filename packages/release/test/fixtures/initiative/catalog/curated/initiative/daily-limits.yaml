@@ -1,0 +1,13 @@
+schemaVersion: 2
+kind: Initiative
+id: daily-limits
+status: current
+confidence: asserted
+evidence:
+  - { source: manual, by: pat }
+title: Daily limits on outgoing money
+journey: new-feature
+changes: [add-transfer-limit]
+parties: []
+commitments: []
+targetRelease: 2026-11-13

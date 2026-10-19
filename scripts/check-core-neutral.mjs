@@ -42,6 +42,7 @@ export const CORE_PACKAGES = [
   "adopt",
   "workspace",
   "conformance",
+  "release",
 ];
 
 /**
@@ -214,6 +215,7 @@ export const ALLOW = [
   { file: "packages/planner/src/plan.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/planner/src/snow.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/planner/src/sync.ts", names: ["snow"], reason: SNOW_ARTIFACT },
+  { file: "packages/release/src/context.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   {
     file: "packages/planner/src/templates.ts",
     names: ["snow", "claude"],

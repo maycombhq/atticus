@@ -1,0 +1,10 @@
+schemaVersion: 1
+change: add-transfer-limit
+gate: plan
+round: 1
+createdAt: 2026-10-20T12:00:00Z
+findings:
+  - { id: f-no-firewall-request, layer: org, rule: snow-drafts-present, severity: blocking }
+rules: { ran: [snow-drafts-present], skipped: [] }
+lenses: []
+discarded: []

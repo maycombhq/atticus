@@ -1,0 +1,13 @@
+schemaVersion: 1
+change: add-transfer-limit
+measures:
+  - id: support-reversals-for-drained-accounts-drop-to-zero
+    measure: Support reversals for drained accounts drop to zero
+    values:
+      - value: 0 reversals in October
+        by: pat
+        at: 2026-10-21T09:00:00Z
+        note: From the support queue export
+      - value: 0 reversals
+        by: sam
+        at: 2026-11-02T09:00:00Z

@@ -83,6 +83,15 @@ import {
 } from "./learn-commands.js";
 import { defencesScan, evalReport, evalRun } from "./eval-commands.js";
 import { conformanceCommand } from "./u1-commands.js";
+import {
+  outcomeList,
+  outcomeRecord,
+  releaseEvidenceCommand,
+  releaseForecastCommand,
+  releaseNotesCommand,
+  releasePlanCommand,
+  releaseSecurityCommand,
+} from "./release-commands.js";
 import { uiCommand } from "./ui-commands.js";
 import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
 import {
@@ -211,6 +220,13 @@ Usage:
           [--mode adopt|link|ignore] [--ref r] [--dry-run]
   atticus tests generate <change> <story>  Generate tests from a story [--framework id] [--force] [--check] [--mode m]
   atticus trace <change> [--json] [--csv] [--no-write]  Requirement → story → test → code → records → feature
+  atticus release plan <change> [--json]  Deploy order across the repos, why, rollback per step, waits and release sections
+  atticus release forecast <change> [--json]  Forecast ready-to-release day from lead times and the initiative's plan
+  atticus release evidence <change> [--out dir] [--json]  The evidence pack for an approval board or an audit
+  atticus release notes <change> [--audience business|technical] [--json]  Release notes from the brief, interfaces and data
+  atticus release security <change> [--json]  Security review draft: auth, classifications, boundaries, vendors, secrets
+  atticus outcome list [--change id] [--json]  The brief's success measures and the values recorded after release
+  atticus outcome record <change> <measure> --value <v> --by <you>  Record a measured outcome [--note text]
   atticus ci drift [repo] --catalog <path>  In a repo's pipeline: compare the repo with the committed catalog
           [--repo id] [--json [file]] [--junit file] [--summary file] [--warn-only]
   atticus ci snippet <github|azure|gitlab|jenkins> [--write dir]  Pipeline template for the drift check
@@ -346,6 +362,8 @@ export async function main(argv: string[], io: Output): Promise<number> {
       step: { type: "string" },
       agent: { type: "string", multiple: true },
       runs: { type: "string" },
+      audience: { type: "string" },
+      value: { type: "string" },
     },
     strict: false,
   });
@@ -593,6 +611,44 @@ export async function main(argv: string[], io: Output): Promise<number> {
       root,
       command,
       { json, csv: values.csv === true, write: values["no-write"] !== true },
+      io,
+    );
+  if (group === "release") {
+    if (command === "plan") return releasePlanCommand(root, arg, { json }, io);
+    if (command === "forecast") return releaseForecastCommand(root, arg, { json }, io);
+    if (command === "evidence")
+      return releaseEvidenceCommand(
+        root,
+        arg,
+        { ...(str(values.out) ? { out: str(values.out)! } : {}), json },
+        io,
+      );
+    if (command === "notes")
+      return releaseNotesCommand(
+        root,
+        arg,
+        { ...(str(values.audience) ? { audience: str(values.audience)! } : {}), json },
+        io,
+      );
+    if (command === "security") return releaseSecurityCommand(root, arg, { json }, io);
+  }
+  if (group === "outcome" && (!command || command === "list"))
+    return outcomeList(
+      root,
+      { ...(str(values.change) ? { change: str(values.change)! } : {}), json },
+      io,
+    );
+  if (group === "outcome" && command === "record")
+    return outcomeRecord(
+      root,
+      arg,
+      positionals[3],
+      {
+        ...(str(values.value) ? { value: str(values.value)! } : {}),
+        ...(str(values.by) ? { by: str(values.by)! } : {}),
+        ...(str(values.note) ? { note: str(values.note)! } : {}),
+        json,
+      },
       io,
     );
   if (group === "ci" && command === "drift")

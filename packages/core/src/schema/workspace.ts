@@ -160,3 +160,50 @@ export const ChangeRepos = z
     });
   });
 export type ChangeRepos = z.infer<typeof ChangeRepos>;
+
+/**
+ * `openspec/changes/<change-id>/review/outcomes.yaml` (ADR 0045): what people measured after
+ * release against the brief's success measures. The measures themselves are read from the
+ * brief on every view; this file keeps only the values people recorded, each with who and when.
+ */
+export const OutcomeValue = z.strictObject({
+  value: z.string().trim().min(1).max(500),
+  /** The person who measured it: a handle. */
+  by: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^@?[A-Za-z0-9][A-Za-z0-9._/-]*$/, "a handle such as pat"),
+  at: z.iso.datetime({ offset: true }),
+  note: z.string().trim().min(1).max(1000).optional(),
+});
+export type OutcomeValue = z.infer<typeof OutcomeValue>;
+
+export const OutcomeMeasure = z.strictObject({
+  /** Slug of the measure as the brief words it. */
+  id: RecordId,
+  /** The measure's words when its first value was recorded. */
+  measure: z.string().min(1),
+  values: z.array(OutcomeValue).min(1),
+});
+export type OutcomeMeasure = z.infer<typeof OutcomeMeasure>;
+
+export const ChangeOutcomes = z
+  .strictObject({
+    schemaVersion: z.literal(WORKSPACE_SCHEMA_VERSION),
+    change: BranchSegment,
+    measures: z.array(OutcomeMeasure),
+  })
+  .superRefine((c, ctx) => {
+    const seen = new Set<string>();
+    c.measures.forEach((m, i) => {
+      if (seen.has(m.id))
+        ctx.addIssue({
+          code: "custom",
+          path: ["measures", i, "id"],
+          message: `duplicate measure ${m.id}`,
+        });
+      seen.add(m.id);
+    });
+  });
+export type ChangeOutcomes = z.infer<typeof ChangeOutcomes>;

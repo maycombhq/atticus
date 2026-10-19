@@ -54,6 +54,15 @@ import { defencesScan, evalRun } from "./eval-commands.js";
 import { learnCheck, learnStart, sandboxCreate } from "./learn-commands.js";
 import { snowDraft, snowSubmit } from "./plan-commands.js";
 import { ciArchiveGate } from "./quality-commands.js";
+import {
+  outcomeList,
+  outcomeRecord,
+  releaseEvidenceCommand,
+  releaseForecastCommand,
+  releaseNotesCommand,
+  releasePlanCommand,
+  releaseSecurityCommand,
+} from "./release-commands.js";
 import { executorsCheck, todoDone, todoRun, todoShow, type TodoDeps } from "./todo-commands.js";
 import { conformanceCommand } from "./u1-commands.js";
 import type { UiDeps } from "./ui-api.js";
@@ -113,6 +122,14 @@ function jsonOf<T>(r: Ran): T | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** A read-only view a command printed as JSON; no such change is 404, anything else its own words. */
+function viewOf(r: Ran): unknown {
+  const out = r.code === 0 ? jsonOf<unknown>(r) : undefined;
+  if (out !== undefined) return out;
+  if (r.err.some((l) => /^There is no change/.test(l))) throw notFound(r.err.join("\n"));
+  throw refused(r.code === 0 ? { ...r, code: 1 } : r);
 }
 
 async function readChange(root: string, id: string): Promise<ChangeLifecycle> {
@@ -339,6 +356,7 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
   const { root, user } = ctx;
   const nowDate = deps.now ? () => new Date(deps.now!) : undefined;
   const pack = () => loadOrgPack(orgPackDirOf(root));
+  const rel = deps.now ? { now: () => new Date(deps.now!) } : {};
 
   return (
     r
@@ -670,6 +688,78 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         if (res.code !== 0) throw refused(res);
         ctx.events.publish({ type: "file.changed", path: id });
         return { status: 200, body: { lines: [...gate.out, ...res.out] } };
+      })
+
+      // ---------------------------------------------------------------- generated release views
+      .add("GET", "/api/release/{changeId}/plan", async ({ params }) => ({
+        status: 200,
+        body: viewOf(
+          await run((io) => releasePlanCommand(root, params.changeId!, { json: true }, io, rel)),
+        ),
+      }))
+      .add("GET", "/api/release/{changeId}/forecast", async ({ params }) => ({
+        status: 200,
+        body: viewOf(
+          await run((io) =>
+            releaseForecastCommand(root, params.changeId!, { json: true }, io, rel),
+          ),
+        ),
+      }))
+      .add("GET", "/api/release/{changeId}/evidence", async ({ params }) => ({
+        status: 200,
+        body: viewOf(
+          await run((io) =>
+            releaseEvidenceCommand(root, params.changeId!, { json: true }, io, rel),
+          ),
+        ),
+      }))
+      .add("GET", "/api/release/{changeId}/notes", async ({ params, query }) => {
+        const audience = strParam(query, "audience") ?? "business";
+        return {
+          status: 200,
+          body: viewOf(
+            await run((io) =>
+              releaseNotesCommand(root, params.changeId!, { audience, json: true }, io, rel),
+            ),
+          ),
+        };
+      })
+      .add("GET", "/api/release/{changeId}/security", async ({ params }) => ({
+        status: 200,
+        body: viewOf(
+          await run((io) =>
+            releaseSecurityCommand(root, params.changeId!, { json: true }, io, rel),
+          ),
+        ),
+      }))
+      .add("GET", "/api/outcomes", async ({ query }) => {
+        const change = strParam(query, "change");
+        return {
+          status: 200,
+          body: viewOf(
+            await run((io) =>
+              outcomeList(root, { ...(change ? { change } : {}), json: true }, io, rel),
+            ),
+          ),
+        };
+      })
+      .add("POST", "/api/release/{changeId}/outcomes", async ({ params, body }) => {
+        const id = params.changeId!;
+        await readChange(root, id);
+        const b = parseBody(Api.RecordOutcomeRequest, body);
+        const res = await run((io) =>
+          outcomeRecord(
+            root,
+            id,
+            b.measure,
+            { value: b.value, by: user, ...(b.note ? { note: b.note } : {}), json: true },
+            io,
+            rel,
+          ),
+        );
+        if (res.code !== 0) throw refused(res);
+        ctx.events.publish({ type: "file.changed", path: `${id}/review/outcomes.yaml` });
+        return { status: 200, body: jsonOf(res) ?? { lines: res.out } };
       })
 
       // ---------------------------------------------------------------- governance

@@ -1,0 +1,16 @@
+schemaVersion: 1
+change: add-transfer-limit
+gate: design
+round: 1
+createdAt: 2026-10-20T09:00:00Z
+findings:
+  - { id: f-audit-no-pattern, layer: org, rule: interface-has-pattern, severity: blocking }
+rules: { ran: [interface-has-pattern], skipped: [] }
+lenses:
+  - lens: architecture
+    agent: architecture-critic
+    state: ran
+    rules: []
+    artifacts: [interfaces.md, design.md]
+    promptSha256: 6e19e04abee178b0d742d62c009f47358ab7d96fbec199829f112b975549f115
+discarded: []
