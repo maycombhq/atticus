@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AgentDefinition, DEFAULT_RUNTIME, Runtime } from "@maycombhq/core";
 import {
+  AiOffError,
   buildContextPack,
   createRuntime,
   DATA_RULE,
@@ -83,6 +84,24 @@ describe("createRuntime", () => {
         { root: await tmp(), mode: "telepathy" as never },
       ),
     ).rejects.toThrow(RuntimeConfigError);
+  });
+
+  it("starts no AI step when runtime.yaml turns AI off, but still replays recordings in tests (ADR 0046)", async () => {
+    const off = rt({ ai: "off" });
+    await expect(createRuntime(off, { root: await tmp() })).rejects.toThrow(AiOffError);
+    await expect(createRuntime(off, { root: await tmp() })).rejects.toThrow(
+      /AI is off here .*Write the artifact yourself/,
+    );
+    const replay = await createRuntime(off, {
+      root: await tmp(),
+      mode: "replay",
+      replayDir: await tmp(),
+    });
+    expect(replay.kind).toBe("replay");
+    // text-only still allows text steps.
+    expect((await createRuntime(rt({ ai: "text-only" }), { root: await tmp() })).kind).toBe(
+      "hand-off",
+    );
   });
 
   it("model mode: a clear error without a model adapter or an installed provider", async () => {

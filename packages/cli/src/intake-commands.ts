@@ -224,7 +224,7 @@ async function triageOf(root: string, io: Output): Promise<Triage> {
       }).items,
     });
   }
-  return buildTriage({ records, inputs, decisions: curated, reconcileItems });
+  return buildTriage({ records, inputs, decisions: curated, reconcileItems, ai: op.runtime.ai });
 }
 
 /**

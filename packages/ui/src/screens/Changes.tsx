@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
+import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { Panel, Ring, View } from "../app/ui.js";
 
 export interface ChangeSummary {
@@ -356,6 +357,7 @@ export function FindingActions({
 }
 
 function Detail({ id }: { id: string }) {
+  const aiOn = useAiOn();
   const detail = useApi<ChangeDetail>(`/api/changes/${id}`);
   const status = useApi<Status>(`/api/changes/${id}/status`);
   const tasks = useApi<Task[]>(`/api/changes/${id}/tasks`);
@@ -469,15 +471,16 @@ function Detail({ id }: { id: string }) {
                         onClick={() =>
                           void critic.run(
                             () =>
-                              api(`/api/changes/${id}/runs`, {
-                                method: "POST",
-                                body: { agent: "architecture-critic", runtime: "hand-off" },
-                              }).then(reloadAll),
-                            "Critic round started. Open the prompts in your assistant, then mark them done below.",
+                              api(`/api/changes/${id}/critic`, { method: "POST", body: {} }).then(
+                                reloadAll,
+                              ),
+                            aiOn
+                              ? "Critic round started: the rule checks ran and any AI lens is with your assistant. Mark each run done below."
+                              : "The rule checks ran. AI is off here, so no lens waits.",
                           )
                         }
                       >
-                        Run the critic (your assistant)
+                        {aiOn ? "Run the critic (your assistant)" : "Run the rule checks"}
                       </button>
                     </div>
                     <Note note={handoff.note ?? critic.note} />
@@ -601,6 +604,10 @@ function Detail({ id }: { id: string }) {
                 </span>
                 {t.done ? (
                   <span className="chip done">DONE</span>
+                ) : !aiOn ? (
+                  <span className="chip dim" title={AI_OFF_TEXT}>
+                    BY HAND
+                  </span>
                 ) : (
                   <button
                     type="button"

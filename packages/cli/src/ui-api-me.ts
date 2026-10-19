@@ -96,6 +96,7 @@ async function meView(root: string, user: string) {
 
   return {
     user,
+    ai: op.runtime.ai,
     groups: me.groups,
     view,
     source,

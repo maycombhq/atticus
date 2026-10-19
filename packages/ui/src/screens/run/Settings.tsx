@@ -1,4 +1,5 @@
 import { api, useApi, type Loaded } from "../../api/client.js";
+import { useMe } from "../../app/me.js";
 import { Panel, View } from "../../app/ui.js";
 import { Facts, Note, useAction } from "./shared.js";
 
@@ -97,8 +98,21 @@ const MODE_CHIP: Record<string, { cls: string; label: string; what: string }> = 
   "not-set": { cls: "dim", label: "NOT SET", what: "not configured" },
 };
 
+const AI_MODE: Record<string, { label: string; what: string }> = {
+  on: { label: "ON", what: "Every AI step may run, in the modes allowed below." },
+  "text-only": {
+    label: "TEXT ONLY",
+    what: "No AI step is given a picture; pictures go to a person in Intake.",
+  },
+  off: {
+    label: "OFF",
+    what: "No AI step runs. People write what agents would draft, the rule checks review it, and no gate waits for an AI lens.",
+  },
+};
+
 export function Settings() {
   const s = useApi<Settings>("/api/settings");
+  const ai = useMe().me?.ai ?? "on";
   const check = useAction();
   return (
     <>
@@ -114,6 +128,17 @@ export function Settings() {
           <View of={s}>
             {(d) => (
               <div className="stack" style={{ gap: 10 }}>
+                <div className="list-row" style={{ alignItems: "flex-start" }}>
+                  <span className="stack" style={{ gap: 2 }}>
+                    <span style={{ fontSize: 13 }}>AI in this organisation</span>
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      {AI_MODE[ai]!.what}
+                    </span>
+                  </span>
+                  <span className={`chip ${ai === "on" ? "done" : "warn"}`}>
+                    {AI_MODE[ai]!.label}
+                  </span>
+                </div>
                 {MODES.map((m) => {
                   const allowed = d.runtime.modes.allowed.includes(m.id);
                   const active = d.runtime.modes.default === m.id;

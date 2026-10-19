@@ -55,6 +55,15 @@ export class RuntimeConfigError extends RuntimeError {
   }
 }
 
+/** AI is off in this organisation (runtime.yaml ai: off, ADR 0046): no AI step may start. */
+export class AiOffError extends RuntimeConfigError {
+  constructor() {
+    super(
+      "AI is off here (org-pack/runtime.yaml ai: off), so Atticus starts no AI step. Write the artifact yourself; the critic's rule checks still review it, and every gate works without AI.",
+    );
+  }
+}
+
 // ------------------------------------------------------------------ headless Claude Code
 
 export interface HeadlessInvocation {
@@ -270,6 +279,7 @@ export async function createRuntime(
     throw new RuntimeConfigError(
       `There is no AI mode called ${String(mode)}. Use one of: ${RUNTIME_MODES.join(", ")}.`,
     );
+  if (rt.ai === "off" && CONFIGURED.includes(mode)) throw new AiOffError();
   if (CONFIGURED.includes(mode) && !rt.modes.allowed.includes(mode as never))
     throw new RuntimeConfigError(
       `runtime.yaml doesn't allow ${mode} mode (allowed: ${rt.modes.allowed.join(", ")}). Change modes.allowed in a pull request, or pick an allowed mode.`,

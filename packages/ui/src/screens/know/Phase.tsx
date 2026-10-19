@@ -12,6 +12,7 @@ import {
   type Status,
   type Task,
 } from "../Changes.js";
+import { AI_OFF_TEXT, useAiOn } from "../../app/me.js";
 import { Markdown, Note, Table, useAction, useChange, useView } from "./common.js";
 
 const SEV_CHIP: Record<string, string> = {
@@ -33,6 +34,7 @@ function GateHeader(p: {
   const detail = useApi<ChangeDetail>(`/api/changes/${p.id}`);
   const status = useApi<Status>(`/api/changes/${p.id}/status`);
   const act = useAction();
+  const aiOn = useAiOn();
   const done = () => {
     detail.reload();
     status.reload();
@@ -83,15 +85,14 @@ function GateHeader(p: {
                   onClick={() =>
                     void act.run(
                       () =>
-                        api(`/api/changes/${p.id}/runs`, {
-                          method: "POST",
-                          body: { agent: p.critic, runtime: "hand-off" },
-                        }).then(done),
-                      "The critic's prompts are ready for your assistant. Mark the run done on the Changes screen when it has answered.",
+                        api(`/api/changes/${p.id}/critic`, { method: "POST", body: {} }).then(done),
+                      aiOn
+                        ? "The rule checks ran; any AI lens is with your assistant. Finish each with atticus handoff done."
+                        : "The rule checks ran. AI is off here, so no lens waits.",
                     )
                   }
                 >
-                  Run the critic
+                  {aiOn ? "Run the critic" : "Run the rule checks"}
                 </button>
               )}
               <button
@@ -535,6 +536,7 @@ function StoryBarPanel({ change }: { change: string }) {
 
 function StoryWriter({ change }: { change: string }) {
   const act = useAction();
+  const aiOn = useAiOn();
   return (
     <Panel title="Stories and tasks" span="span 4">
       <div className="stack" style={{ gap: 8 }}>
@@ -542,23 +544,27 @@ function StoryWriter({ change }: { change: string }) {
           The story writer drafts stories, acceptance criteria and repo tasks from the approved
           design. You edit them before the plan gate.
         </p>
-        <button
-          type="button"
-          className="btn primary"
-          disabled={act.busy}
-          onClick={() =>
-            void act.run(
-              () =>
-                api(`/api/changes/${change}/runs`, {
-                  method: "POST",
-                  body: { agent: "story-writer", runtime: "hand-off" },
-                }),
-              "The story writer's prompt is ready for your assistant.",
-            )
-          }
-        >
-          Write stories with AI
-        </button>
+        {aiOn ? (
+          <button
+            type="button"
+            className="btn primary"
+            disabled={act.busy}
+            onClick={() =>
+              void act.run(
+                () =>
+                  api(`/api/changes/${change}/runs`, {
+                    method: "POST",
+                    body: { agent: "story-writer", runtime: "hand-off" },
+                  }),
+                "The story writer's prompt is ready for your assistant.",
+              )
+            }
+          >
+            Write stories with AI
+          </button>
+        ) : (
+          <p style={{ margin: 0, fontSize: 12.5 }}>{AI_OFF_TEXT}</p>
+        )}
         <Note note={act.note} />
       </div>
     </Panel>
@@ -596,6 +602,7 @@ function TasksByRepo({
   compact?: boolean;
 }) {
   const tasks = useApi<Task[]>(`/api/changes/${change}/tasks`);
+  const aiOn = useAiOn();
   const [ran, setRan] = useState<Record<string, string>>({});
   const run = async (t: Task) => {
     try {
@@ -661,10 +668,14 @@ function TasksByRepo({
                             </span>
                             {x.done ? (
                               <span className="chip done">DONE</span>
-                            ) : (
+                            ) : aiOn ? (
                               <button type="button" className="btn" onClick={() => void run(x)}>
                                 Run with AI
                               </button>
+                            ) : (
+                              <span className="chip dim" title={AI_OFF_TEXT}>
+                                BY HAND
+                              </span>
                             )}
                           </div>
                           <span className="mono muted" style={{ fontSize: 10.5 }}>

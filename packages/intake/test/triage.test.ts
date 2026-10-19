@@ -270,3 +270,51 @@ describe("triage of the Forge diagram and inputs", () => {
     });
   });
 });
+
+describe("files only a person can read when AI is limited (ADR 0046)", () => {
+  const inputsWith = (docs: { path: string; classification: string; id: string }[]) => ({
+    records: [],
+    documents: docs.map((d) => ({
+      ...d,
+      status: "needs-reading" as const,
+      hash: "0".repeat(64),
+      systems: [],
+      unknownNames: [],
+      records: [],
+    })),
+    problems: [],
+    triage: [],
+  });
+  const files = [
+    { path: "inputs/diagrams/whiteboard.png", classification: "image", id: "doc.whiteboard" },
+    { path: "inputs/wiki/runbook.md", classification: "document", id: "doc.runbook" },
+  ];
+
+  it("asks nothing extra while AI is on: an assistant can read them", () => {
+    const t = buildTriage({ records: [], inputs: inputsWith(files) as never, ai: "on" });
+    expect(t.items.filter((i) => i.kind === "needs-reading")).toEqual([]);
+  });
+
+  it("gives a person each picture when image reading is off, with a way to redraw it", () => {
+    const t = buildTriage({ records: [], inputs: inputsWith(files) as never, ai: "text-only" });
+    const items = t.items.filter((i) => i.kind === "needs-reading");
+    expect(items.map((i) => i.id)).toEqual(["needs-reading.doc.whiteboard"]);
+    expect(items[0]!.summary).toMatch(/image reading is off/);
+    expect(items[0]!.next).toMatch(/draw\.io/);
+    expect(items[0]!.options.map((o) => o.label)).toEqual(["Nothing more to take from it"]);
+  });
+
+  it("gives a person pictures and free text when AI is off, and a decision clears the item", () => {
+    const t = buildTriage({ records: [], inputs: inputsWith(files) as never, ai: "off" });
+    const ids = t.items.filter((i) => i.kind === "needs-reading").map((i) => i.id);
+    expect(ids).toEqual(["needs-reading.doc.runbook", "needs-reading.doc.whiteboard"]);
+    const d = t.decide("needs-reading.doc.runbook", 0, { by: "priya", at: "2026-10-19T10:00:00Z" });
+    const after = buildTriage({
+      records: [],
+      inputs: inputsWith(files) as never,
+      ai: "off",
+      decisions: [d],
+    });
+    expect(after.items.map((i) => i.id)).toEqual(["needs-reading.doc.whiteboard"]);
+  });
+});

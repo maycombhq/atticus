@@ -300,6 +300,9 @@ export const CheckLessonRequest = z.strictObject({
 });
 export const SandboxRequest = z.strictObject({ dir: z.string().trim().min(1) });
 
+/** ADR 0046: run the critic at a gate (the change's current one by default). */
+export const RunCriticRequest = z.strictObject({ gate: z.string().min(1).optional() });
+
 /** ADR 0044: the view (role) a person works in; it changes what they see, never what they approve. */
 export const SaveViewRequest = z.strictObject({ view: RecordId });
 
@@ -792,6 +795,18 @@ const OPS: Record<string, Record<string, Op>> = {
       body: StartRunRequest,
       ok: { status: 201, schema: "RunView", description: "Prepared" },
       errors: [400, 403, 404, 422],
+    },
+  },
+  "/api/changes/{changeId}/critic": {
+    post: {
+      id: "runCritic",
+      summary:
+        "Run the critic: rule checks, and AI lenses handed to the assistant unless AI is off",
+      tag: "findings",
+      params: [p("changeId")],
+      body: RunCriticRequest,
+      ok: { status: 200, schema: { type: "object", required: ["ai", "round"] }, description: "OK" },
+      errors: [400, 404, 422],
     },
   },
   "/api/runs/{runId}": {

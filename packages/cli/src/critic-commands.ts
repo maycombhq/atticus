@@ -2,6 +2,7 @@ import { readFile, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import {
   HandoffRuntime,
+  AiOffError,
   RuntimeConfigError,
   runtimeForCli,
   type AiRuntime,
@@ -86,7 +87,13 @@ async function runtimeOf(
   if (deps.runtime) return deps.runtime;
   const env = deps.env ?? process.env;
   if (!mode) return undefined;
-  return (await runtimeForCli(root, { ...(mode ? { mode } : {}), env })).runtime;
+  try {
+    return (await runtimeForCli(root, { ...(mode ? { mode } : {}), env })).runtime;
+  } catch (e) {
+    // AI off (ADR 0046): the critic runs its rule checks alone and records the lenses as not run.
+    if (e instanceof AiOffError) return undefined;
+    throw e;
+  }
 }
 
 /** atticus critic <change> [--gate g] [--lens l] [--mode m] [--resume] [--json] */

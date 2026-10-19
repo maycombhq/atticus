@@ -389,6 +389,12 @@ export const Runtime = z.strictObject({
     .array(z.enum(["vscode", "intellij"]))
     .min(1)
     .default(["vscode", "intellij"]),
+  /**
+   * What AI may do here (ADR 0046). on: every AI step. text-only: no step is given a picture, so
+   * pictures go to a person. off: no AI step runs at all; AI lenses are recorded as not run and
+   * don't hold a gate, AI buttons become guidance, and people write what agents would draft.
+   */
+  ai: z.enum(["on", "text-only", "off"]).default("on"),
   /** How AI steps run: hand-off to the assistant, a direct model call, or headless Claude Code. */
   modes: z
     .strictObject({

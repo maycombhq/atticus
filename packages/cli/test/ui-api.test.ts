@@ -230,3 +230,26 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     expect((await call("/api/runs/run-nope")).status).toBe(404);
   });
 });
+
+describe("the critic from the app (ADR 0046)", () => {
+  it("runs the rule checks and hands the AI lenses to the assistant", async () => {
+    const r = await call(`/api/changes/${ID}/critic`, { method: "POST", body: {} });
+    expect(r.status).toBe(200);
+    expect(r.body.ai).toBe("on");
+    const lenses = (r.body.round as { lenses: { state: string }[] }).lenses;
+    expect(lenses.some((l) => l.state === "waiting" || l.state === "skipped")).toBe(true);
+  });
+
+  it("with AI off, runs the rule checks alone and records the lenses as not run", async () => {
+    const f = join(root, "org-pack/runtime.yaml");
+    await writeFile(f, `${readFileSync(f, "utf8")}ai: off\n`);
+    const r = await call(`/api/changes/${ID}/critic`, { method: "POST", body: {} });
+    expect(r.status).toBe(200);
+    expect(r.body.ai).toBe("off");
+    const lenses = (r.body.round as { lenses: { state: string }[] }).lenses;
+    expect(lenses.every((l) => l.state === "skipped")).toBe(true);
+    expect((await call(`/api/changes/no-such/critic`, { method: "POST", body: {} })).status).toBe(
+      404,
+    );
+  });
+});

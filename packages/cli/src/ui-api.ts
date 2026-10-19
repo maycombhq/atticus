@@ -7,6 +7,8 @@ import {
   ChangeArtifact,
   changesDirOf,
   changesRelOf,
+  loadOrgPack,
+  orgPackDirOf,
   runsDirOf,
   runsRelOf,
   type ChangeLifecycle,
@@ -425,6 +427,41 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           state: (await runView(root, params.changeId!, id))?.state ?? "prepared",
         });
       return { status: 201, body: v };
+    })
+    .add("POST", "/api/changes/{changeId}/critic", async ({ params, body }) => {
+      await readChange(root, params.changeId!);
+      const b = parseBody(Api.RunCriticRequest, body);
+      // AI lenses go to the person's assistant (hand-off) unless AI is off here (ADR 0046):
+      // then the rule checks run alone and the lenses are recorded as not run.
+      const op = await loadOrgPack(orgPackDirOf(root));
+      const mode = op.runtime.ai === "off" ? undefined : "hand-off";
+      const once = (gate?: string) =>
+        run((io) =>
+          critic(
+            root,
+            params.changeId!,
+            { ...(gate ? { gate } : {}), ...(mode ? { mode } : {}), json: true },
+            io,
+          ),
+        );
+      let res = await once(b.gate);
+      // A change in a state with no gate of its own (define) is checked at the gate it goes to.
+      if (!b.gate && res.code === 2 && res.err.some((l) => /has no gate/.test(l))) {
+        const next = (await changeReport(root, params.changeId!)).next;
+        if (next) res = await once(next);
+      }
+      if (res.code === 2) throw refused(res);
+      ctx.events.publish({
+        type: "file.changed",
+        path: `${changesRelOf(root)}/${params.changeId!}/review`,
+      });
+      let round: unknown;
+      try {
+        round = JSON.parse(res.out.join("\n"));
+      } catch {
+        throw refused(res);
+      }
+      return { status: 200, body: { ai: op.runtime.ai, round } };
     })
     .add("GET", "/api/runs/{runId}", async ({ params }) => ({
       status: 200,

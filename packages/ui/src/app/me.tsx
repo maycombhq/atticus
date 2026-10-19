@@ -4,6 +4,8 @@ import type { RoleDef } from "./roles.js";
 
 export interface Me {
   user: string;
+  /** What AI may do here (runtime.yaml ai, ADR 0046). */
+  ai: "on" | "text-only" | "off";
   groups: string[];
   view: string | null;
   source: "chosen" | "group" | "pick";
@@ -87,3 +89,10 @@ export function ViewPicker({ id, compact }: { id: string; compact?: boolean }) {
     </label>
   );
 }
+
+/** True when AI steps may start here; false when the org pack turns AI off. */
+export const useAiOn = () => useMe().me?.ai !== "off";
+
+/** What to do instead of an AI step when AI is off. */
+export const AI_OFF_TEXT =
+  "AI is off here, so write it yourself: the critic's rule checks still review it.";

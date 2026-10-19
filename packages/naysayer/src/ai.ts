@@ -453,12 +453,19 @@ export async function runLenses(
       continue;
     }
     if (!o.runtime) {
+      const off = ctx.lifecycle.orgPack.runtime.ai === "off";
       runs.push({
         ...base,
         state: "skipped",
-        reason: "no AI runtime was given; layer 1 ran alone",
+        reason: off
+          ? "AI is off here (runtime.yaml ai: off); layer 1 ran alone and the gate doesn't wait for this lens"
+          : "no AI runtime was given; layer 1 ran alone",
       });
-      for (const r of sent) skipped.push({ rule: r.id, reason: "not run: no AI runtime" });
+      for (const r of sent)
+        skipped.push({
+          rule: r.id,
+          reason: off ? "not run: AI is off here" : "not run: no AI runtime",
+        });
       continue;
     }
     const sources: SourceInput[] = [

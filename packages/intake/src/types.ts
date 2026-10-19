@@ -68,7 +68,9 @@ export type TriageKind =
   /** Marked new, modify or retire: work for a change. */
   | "planned"
   /** A work item that looks like what built a feature (ADR 0031): someone confirms the link. */
-  | "feature-link";
+  | "feature-link"
+  /** A picture or free text that only a person can read here, because AI or image reading is off (ADR 0046). */
+  | "needs-reading";
 
 export const KIND_ORDER: TriageKind[] = [
   "defences",
@@ -80,6 +82,7 @@ export const KIND_ORDER: TriageKind[] = [
   "diagram-gap",
   "planned",
   "feature-link",
+  "needs-reading",
 ];
 
 export type DecisionAction = "alias" | "assert" | "suppress" | "resolve-conflict" | "classify";

@@ -28,6 +28,41 @@ export interface BuildTriageInput {
   reconcileItems?: { file: string; items: ReconcileItem[] }[];
   /** Decisions already made (catalog/curated); other records are ignored. */
   decisions?: CatalogRecord[];
+  /** What AI may do here (runtime.yaml ai, ADR 0046); default on. */
+  ai?: "on" | "text-only" | "off";
+}
+
+/**
+ * Files only a person can read: pictures when image reading is off, and free text too when AI
+ * is off. Each says how to bring its facts in; deciding it means nothing more is needed.
+ */
+function readingItems(input: BuildTriageInput): TriageItem[] {
+  const ai = input.ai ?? "on";
+  if (ai === "on") return [];
+  return (input.inputs?.documents ?? [])
+    .filter(
+      (d) =>
+        d.status === "needs-reading" &&
+        d.id &&
+        (d.classification === "image" || (ai === "off" && d.classification === "document")),
+    )
+    .map((d) => {
+      const itemId = `needs-reading.${d.id!}`;
+      const picture = d.classification === "image";
+      return {
+        id: itemId,
+        kind: "needs-reading",
+        summary: picture
+          ? `${d.path} is a picture and image reading is off here, so a person reads it.`
+          : `${d.path} is free text and AI is off here, so a person reads it.`,
+        source: { path: d.path },
+        records: [d.id!],
+        options: [opt.make(itemId, "suppress", d.id!, null, "Nothing more to take from it")],
+        next: picture
+          ? "Redraw it in draw.io with the catalog shape library (atticus diagram library) and drop the .drawio file into inputs/: Atticus reads it exactly. Or record what it shows as owner answers and curated decisions."
+          : "Record the facts it holds as owner answers or curated decisions, or link the page as a source; Atticus never takes a fact from it on its own.",
+      } satisfies TriageItem;
+    });
 }
 
 export interface DecideOptions {
@@ -205,6 +240,7 @@ export function buildTriage(input: BuildTriageInput): Triage {
     ),
     ...conflictItems(records),
     ...imageItems([...records, ...inputRecords]),
+    ...readingItems(input),
   ];
   const open = all.filter(
     (i) =>

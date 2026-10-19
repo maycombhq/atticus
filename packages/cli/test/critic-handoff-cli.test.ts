@@ -266,3 +266,32 @@ describe("completionOf and the hand-off runs it routes", () => {
     expect(await readdir(changesDirOf(r))).toEqual([CHANGE]);
   });
 });
+
+describe("with AI off in the org pack (ADR 0046)", () => {
+  const aiOff = async () => {
+    const r = await root();
+    const f = join(r, "org-pack/runtime.yaml");
+    await writeFile(f, `${await readFile(f, "utf8")}ai: off\n`);
+    return r;
+  };
+
+  it("runs the rule checks alone, records each lens as not run, and the gate waits for nothing", async () => {
+    const r = await aiOff();
+    const s = await start(r);
+    expect(s.waiting).toEqual([]);
+    expect(s.j.lenses.every((l) => l.state === "skipped")).toBe(true);
+    expect(
+      s.j.lenses.filter((l) => /AI is off here/.test(l.reason ?? "")).map((l) => l.lens),
+    ).toEqual(["business", "architecture", "story", "ux", "delivery"]);
+    await expect(readdir(join(r, ".runs"))).rejects.toThrow();
+  });
+
+  it("refuses to start an AI step, saying what to do instead", async () => {
+    const r = await aiOff();
+    const { main } = await import("../src/main.js");
+    const c = capture();
+    const code = await main(["plan", "stories", CHANGE, "--root", r], c.io);
+    expect(code).not.toBe(0);
+    expect(c.err.join("\n")).toMatch(/AI is off here .*Write the artifact yourself/);
+  });
+});

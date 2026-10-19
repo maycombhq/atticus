@@ -102,6 +102,24 @@ function Nav({ current }: { current: ScreenDef }) {
   );
 }
 
+/** Shows when AI is limited here, so nobody wonders why an AI button is missing. */
+function AiChip() {
+  const { me } = useMe();
+  if (!me || me.ai === "on") return null;
+  return (
+    <span
+      className="chip warn"
+      title={
+        me.ai === "off"
+          ? "AI is off in this organisation: no AI step runs; people write and the rule checks review."
+          : "Image reading is off: pictures go to a person in Intake."
+      }
+    >
+      {me.ai === "off" ? "AI OFF" : "TEXT-ONLY AI"}
+    </span>
+  );
+}
+
 function TopBar({ health }: { health?: Health }) {
   const [q, setQ] = useState("");
   const submit = (e: FormEvent) => {
@@ -124,6 +142,7 @@ function TopBar({ health }: { health?: Health }) {
           Ask
         </button>
       </form>
+      <AiChip />
       <span className="hud" style={{ fontSize: 9.5, whiteSpace: "nowrap" }} aria-hidden="true">
         Ctrl K
       </span>
