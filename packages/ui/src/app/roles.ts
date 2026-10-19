@@ -100,10 +100,20 @@ export interface InboxData {
   questions: { id: string; question: string; owner?: string; system?: string }[];
   triage: { id: string; kind: string; summary: string }[];
   steps: { id: string; title: string; system: string; change?: string }[];
+  /** Hand-off PRs waiting on the person (from ownership, never the view). */
+  approvals?: {
+    change: string;
+    title: string;
+    phase: string;
+    pr: string;
+    kind: "review" | "revise";
+    because: string;
+    openedAt?: string;
+  }[];
 }
 
 export interface InboxItem {
-  kind: "phase" | "finding" | "triage" | "question" | "step";
+  kind: "approval" | "phase" | "finding" | "triage" | "question" | "step";
   title: string;
   detail: string;
   href: string;
@@ -158,6 +168,18 @@ const QUESTION_ROLES = new Set(["platform-lead", "architect"]);
 /** Everything waiting on a role: changes in its phase, findings on its artifacts, then queues. */
 export function inboxFor(role: string, d: InboxData): InboxItem[] {
   const out: InboxItem[] = [];
+  // Approvals come first and whatever the view: they follow ownership, and the PR is where you approve.
+  for (const a of d.approvals ?? [])
+    out.push({
+      kind: "approval",
+      title:
+        a.kind === "review"
+          ? `Review the ${a.phase} hand-off of ${a.title}`
+          : `Revise the ${a.phase} hand-off of ${a.title}: changes were requested`,
+      detail: `${a.change} · ${a.because}`,
+      href: a.pr,
+      ...(a.openedAt ? { since: a.openedAt } : {}),
+    });
   for (const w of WAITS_IN[role] ?? [])
     for (const c of d.changes.filter((x) => x.state === w.state))
       out.push({

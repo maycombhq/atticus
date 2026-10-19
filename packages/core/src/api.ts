@@ -309,6 +309,15 @@ export const RunCriticRequest = z.strictObject({ gate: z.string().min(1).optiona
 /** ADR 0044: the view (role) a person works in; it changes what they see, never what they approve. */
 export const SaveViewRequest = z.strictObject({ view: RecordId });
 
+/** ADR 0048: how often the person wants their digest, and where it goes. */
+export const SaveNotifyRequest = z.strictObject({
+  digest: z.enum(["off", "daily", "weekly"]),
+  channel: z.string().trim().min(1).optional(),
+});
+
+/** ADR 0048: show the digest, or send it through the notify adapter (the click is the approval). */
+export const SendDigestRequest = z.strictObject({ send: z.boolean().default(false) });
+
 /** ADR 0043: choose one of a triage item's numbered options; it writes a curated decision. */
 export const TriageDecideRequest = z.strictObject({
   option: z.number().int().min(1),
@@ -403,6 +412,71 @@ const OPS: Record<string, Record<string, Op>> = {
       body: SaveViewRequest,
       ok: { status: 200, schema: { type: "object" }, description: "Saved" },
       errors: [400],
+    },
+  },
+  "/api/me/approvals": {
+    get: {
+      id: "listMyApprovals",
+      summary:
+        "Hand-off PRs that wait on the signed-in person (a reviewer, or one of their groups), and their own hand-offs to revise",
+      tag: "system",
+      ok: { status: 200, schema: { type: "array", items: { type: "object" } }, description: "OK" },
+    },
+  },
+  "/api/me/notify": {
+    put: {
+      id: "saveNotify",
+      summary: "How often the person wants their digest and where it goes (.atticus/me.yaml)",
+      tag: "system",
+      body: SaveNotifyRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Saved" },
+      errors: [400],
+    },
+  },
+  "/api/me/digest": {
+    post: {
+      id: "sendDigest",
+      summary:
+        "What waits on the person; with send, posted through the notify adapter as their approval",
+      tag: "system",
+      body: SendDigestRequest,
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["title", "body", "lines"] },
+        description: "The digest, with sent or notSent",
+      },
+      errors: [400],
+    },
+  },
+  "/api/across": {
+    get: {
+      id: "listAcross",
+      summary:
+        "One view across every open change: findings, tasks, stories, tests, requests or releases",
+      tag: "views",
+      params: [
+        q("view", {
+          type: "string",
+          enum: ["findings", "tasks", "stories", "tests", "requests", "releases"],
+        }),
+      ],
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["view", "changes", "rows"] },
+        description: "OK",
+      },
+      errors: [400],
+    },
+  },
+  "/api/changes/{changeId}/mappings": {
+    get: {
+      id: "getMappingGrid",
+      summary:
+        "The change's field mappings per hop, next to the catalog's FieldMapping records for the same interface",
+      tag: "views",
+      params: [p("changeId")],
+      ok: { status: 200, schema: { type: "object", required: ["hops"] }, description: "OK" },
+      errors: [404],
     },
   },
   "/api/catalog/kinds": {

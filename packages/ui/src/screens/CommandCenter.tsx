@@ -142,6 +142,60 @@ function SetupChecklist() {
   );
 }
 
+interface DigestResult {
+  title: string;
+  lines: string[];
+  sent?: { id: string; channel: string };
+  notSent?: string;
+}
+
+/** See what waits on you as one message, or send it to yourself through the notify adapter. */
+function DigestButtons() {
+  const [busy, setBusy] = useState(false);
+  const [d, setD] = useState<DigestResult | undefined>();
+  const [error, setError] = useState<string | undefined>();
+  const go = async (send: boolean) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      setD(await api<DigestResult>("/api/me/digest", { method: "POST", body: { send } }));
+    } catch (e) {
+      setError(e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="stack" style={{ gap: 6, marginTop: 10 }}>
+      <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+        <button type="button" className="btn" disabled={busy} onClick={() => void go(false)}>
+          Show my digest
+        </button>
+        <button type="button" className="btn" disabled={busy} onClick={() => void go(true)}>
+          Send it to me
+        </button>
+      </div>
+      {error && (
+        <p role="alert" style={{ margin: 0, color: "#FF9BCB", fontSize: 12.5 }}>
+          {error}
+        </p>
+      )}
+      {d && (
+        <div role="status" className="stack" style={{ gap: 2, fontSize: 12.5 }}>
+          <strong>{d.title}</strong>
+          {d.lines.map((l, i) => (
+            <span key={i} className="clamp2">
+              {l}
+            </span>
+          ))}
+          {d.sent && <span style={{ color: "var(--green)" }}>Sent to {d.sent.channel}.</span>}
+          {d.notSent && <span className="muted">{d.notSent}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CommandCenter() {
   const changes = useApi<ChangeSummary[]>("/api/changes");
   const findings = useApi<Finding[]>("/api/findings?state=open");
@@ -149,18 +203,19 @@ export function CommandCenter() {
   const qs = useApi<{ data: { questions?: InboxData["questions"] } | null }>("/api/view/questions");
   const triage = useApi<{ data: { items?: InboxData["triage"] } | null }>("/api/view/triage");
   const todo = useApi<{ steps: InboxData["steps"] }>("/api/todo");
+  const approvals = useApi<NonNullable<InboxData["approvals"]>>("/api/me/approvals");
   const { me } = useMe();
   const role = baseRole(me?.view ?? null, me?.roles ?? []);
   const roleName = me?.roles.find((r) => r.id === me.view)?.name;
-  const inbox = role
-    ? inboxFor(role, {
-        changes: changes.state === "ready" ? changes.data : [],
-        findings: findings.state === "ready" ? findings.data : [],
-        questions: qs.state === "ready" ? (qs.data.data?.questions ?? []) : [],
-        triage: triage.state === "ready" ? (triage.data.data?.items ?? []) : [],
-        steps: todo.state === "ready" ? todo.data.steps : [],
-      })
-    : [];
+  // Approvals follow ownership, so they show even before a view is picked.
+  const inbox = inboxFor(role ?? "", {
+    changes: changes.state === "ready" ? changes.data : [],
+    findings: findings.state === "ready" ? findings.data : [],
+    questions: qs.state === "ready" ? (qs.data.data?.questions ?? []) : [],
+    triage: triage.state === "ready" ? (triage.data.data?.items ?? []) : [],
+    steps: todo.state === "ready" ? todo.data.steps : [],
+    approvals: approvals.state === "ready" ? approvals.data : [],
+  });
   const graph = useApi<Graph>("/api/graph");
   useLiveEvents((e) => {
     if (e.type === "index.rebuilt" || e.type === "file.changed") {
@@ -168,6 +223,7 @@ export function CommandCenter() {
       graph.reload();
       changes.reload();
       findings.reload();
+      approvals.reload();
     }
     if (e.type === "run.changed") findings.reload();
   });
@@ -383,8 +439,12 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel title="Waiting on you" span="span 4" meta={role ? inbox.length : undefined}>
-          {!role ? (
+        <Panel
+          title="Waiting on you"
+          span="span 4"
+          meta={role || inbox.length ? inbox.length : undefined}
+        >
+          {!role && inbox.length === 0 ? (
             <div className="state">Pick a view to see what waits on you.</div>
           ) : inbox.length === 0 ? (
             <div className="state">Nothing waiting on you.</div>
@@ -406,7 +466,7 @@ export function CommandCenter() {
                       </span>
                     </span>
                     <span
-                      className={`chip ${x.kind === "finding" ? "blocking" : x.kind === "phase" ? "" : "warn"}`}
+                      className={`chip ${x.kind === "finding" ? "blocking" : x.kind === "phase" ? "" : x.kind === "approval" ? "done" : "warn"}`}
                     >
                       {x.kind.toUpperCase()}
                     </span>
@@ -420,6 +480,7 @@ export function CommandCenter() {
               )}
             </ul>
           )}
+          {me && <DigestButtons />}
         </Panel>
 
         <Panel title="Findings by lens" span="span 4">

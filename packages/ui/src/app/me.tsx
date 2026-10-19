@@ -13,15 +13,22 @@ export interface Me {
   roles: RoleDef[];
   approvals: { action: string; because: string }[];
   owns: string[];
+  /** The person's digest settings (.atticus/me.yaml, ADR 0048). */
+  notify?: { digest: "off" | "daily" | "weekly"; channel?: string };
 }
 
 interface MeState {
   me?: Me;
   setView: (view: string) => Promise<void>;
+  /** Save digest settings; throws the API's words when refused. */
+  saveNotify: (n: { digest: string; channel?: string }) => Promise<void>;
   error?: string;
 }
 
-const Ctx = createContext<MeState>({ setView: async () => undefined });
+const Ctx = createContext<MeState>({
+  setView: async () => undefined,
+  saveNotify: async () => undefined,
+});
 
 /** Who is signed in and the view they work in, shared by the sidebar and every home. */
 export function MeProvider({ children }: { children: ReactNode }) {
@@ -37,8 +44,13 @@ export function MeProvider({ children }: { children: ReactNode }) {
       setError(String(e));
     }
   };
+  const saveNotify = async (n: { digest: string; channel?: string }) => {
+    setSaved(await api<Me>("/api/me/notify", { method: "PUT", body: n }));
+  };
   return (
-    <Ctx.Provider value={{ ...(me ? { me } : {}), setView, ...(error ? { error } : {}) }}>
+    <Ctx.Provider
+      value={{ ...(me ? { me } : {}), setView, saveNotify, ...(error ? { error } : {}) }}
+    >
       {children}
     </Ctx.Provider>
   );

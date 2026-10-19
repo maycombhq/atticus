@@ -110,4 +110,26 @@ describe("what waits on you", () => {
     for (const role of Object.keys(ROLE_SCREENS))
       expect(inboxFor(role, data).some((i) => i.title === "Reuse the audit client")).toBe(false);
   });
+
+  it("puts hand-offs waiting on the person first, whatever their view, linking to the PR", () => {
+    const approvals = [
+      {
+        change: "add-transfer-limit",
+        title: "Add a daily transfer limit",
+        phase: "plan",
+        pr: "https://git.example.com/forge/forge-metarepo/pull/3",
+        kind: "review" as const,
+        because: "Forge Delivery is a reviewer",
+      },
+    ];
+    for (const role of ["developer", "delivery-lead"]) {
+      const items = inboxFor(role, { ...data, approvals });
+      expect(items[0]).toMatchObject({
+        kind: "approval",
+        title: "Review the plan hand-off of Add a daily transfer limit",
+        href: "https://git.example.com/forge/forge-metarepo/pull/3",
+        detail: "add-transfer-limit · Forge Delivery is a reviewer",
+      });
+    }
+  });
 });

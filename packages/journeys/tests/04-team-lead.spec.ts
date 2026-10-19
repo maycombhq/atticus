@@ -20,3 +20,16 @@ test("follows the initiative's timeline against the target", async ({ page }) =>
   await expect(page.getByRole("img", { name: /Timeline of/ })).toBeVisible();
   await accessible(page, "initiatives");
 });
+
+test("sees every change's tasks in one list and narrows it to a repo", async ({ page }) => {
+  await open(page, app(), "changes?across=tasks");
+  await expect(page.getByRole("heading", { level: 2, name: "Tasks across changes" })).toBeVisible();
+  const status = page.getByRole("status").filter({ hasText: /across 1 open change/ });
+  await expect(status).toBeVisible();
+  await page.getByLabel("Filter").fill("forge-portal-bff");
+  await expect(status).toHaveText(/^\d+ of \d+ across/);
+  await expect(page.getByRole("region", { name: "Tasks across open changes" })).toContainText(
+    "forge-portal-bff",
+  );
+  await accessible(page, "tasks across changes");
+});

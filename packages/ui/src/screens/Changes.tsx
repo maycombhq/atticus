@@ -2,13 +2,26 @@ import { useState, type FormEvent } from "react";
 import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { Panel, Ring, View } from "../app/ui.js";
+import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
 
 export interface ChangeSummary {
   id: string;
   title: string;
   type: string;
   state: string;
+  repos?: string[];
   openFindings: { blocking: number; gap: number; risk: number; idea: number };
+}
+
+/** Changes matching the words (id, title, repos) and the state; "blocked" means a blocking finding is open. */
+export function filterChanges(list: ChangeSummary[], text: string, state: string): ChangeSummary[] {
+  const words = text.toLowerCase().split(/\s+/).filter(Boolean);
+  return list.filter((c) => {
+    if (state === "blocked" && !c.openFindings.blocking) return false;
+    if (state && state !== "blocked" && c.state !== state) return false;
+    const hay = [c.id, c.title, c.type, ...(c.repos ?? [])].join(" ").toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
 }
 export interface ArtifactStatus {
   artifact: string;
@@ -119,7 +132,17 @@ function Note({ note }: { note?: { ok: boolean; text: string } }) {
   );
 }
 
-function ChangeList({ list, current }: { list: Loaded<ChangeSummary[]>; current?: string }) {
+function ChangeList({
+  list,
+  current,
+  across,
+}: {
+  list: Loaded<ChangeSummary[]>;
+  current?: string;
+  across?: AcrossId;
+}) {
+  const [text, setText] = useState("");
+  const [state, setState] = useState("");
   return (
     <Panel title="Changes" span="span 3" rows="span 3">
       <View
@@ -127,36 +150,99 @@ function ChangeList({ list, current }: { list: Loaded<ChangeSummary[]>; current?
         empty={(l) => l.length === 0}
         emptyText="No changes yet. Start one with atticus change new."
       >
-        {(l) => (
-          <nav aria-label="Changes" className="stack" style={{ gap: 2 }}>
-            {l.map((c) => (
-              <a
-                key={c.id}
-                href={`#/changes/${c.id}`}
-                aria-current={c.id === current ? "page" : undefined}
-                className="list-row"
-                style={{
-                  textDecoration: "none",
-                  padding: "8px 6px",
-                  borderRadius: 6,
-                  background: c.id === current ? "rgba(46,230,246,0.08)" : undefined,
-                }}
+        {(all) => {
+          const states = [...new Set(all.map((c) => c.state))];
+          const l = filterChanges(all, text, state);
+          return (
+            <div className="stack" style={{ gap: 8 }}>
+              <div className="stack" style={{ gap: 4 }}>
+                <label htmlFor="change-filter" className="hud" style={{ fontSize: 10 }}>
+                  Find a change
+                </label>
+                <input
+                  id="change-filter"
+                  className="field"
+                  value={text}
+                  placeholder="Id, title or repo"
+                  onChange={(e) => setText(e.target.value)}
+                />
+                <label htmlFor="change-state" className="sr">
+                  State
+                </label>
+                <select
+                  id="change-state"
+                  className="field"
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                >
+                  <option value="">Every state</option>
+                  <option value="blocked">Blocked</option>
+                  {states.map((x) => (
+                    <option key={x} value={x}>
+                      {LABEL[x] ?? x}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <nav aria-label="Changes" className="stack" style={{ gap: 2 }}>
+                {l.map((c) => (
+                  <a
+                    key={c.id}
+                    href={`#/changes/${c.id}`}
+                    aria-current={!across && c.id === current ? "page" : undefined}
+                    className="list-row"
+                    style={{
+                      textDecoration: "none",
+                      padding: "8px 6px",
+                      borderRadius: 6,
+                      background: !across && c.id === current ? "rgba(46,230,246,0.08)" : undefined,
+                    }}
+                  >
+                    <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+                      <span className="mono" style={{ fontSize: 12 }}>
+                        {c.id}
+                      </span>
+                      <span className="muted" style={{ fontSize: 11.5 }}>
+                        {c.title}
+                      </span>
+                    </span>
+                    <span className={`chip ${c.openFindings.blocking ? "blocking" : ""}`}>
+                      {c.openFindings.blocking
+                        ? "BLOCKED"
+                        : (LABEL[c.state] ?? c.state).toUpperCase()}
+                    </span>
+                  </a>
+                ))}
+                {l.length === 0 && (
+                  <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                    No change matches.
+                  </p>
+                )}
+              </nav>
+              <div
+                className="stack"
+                style={{ gap: 4, borderTop: "1px solid var(--line)", paddingTop: 8 }}
               >
-                <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                  <span className="mono" style={{ fontSize: 12 }}>
-                    {c.id}
-                  </span>
-                  <span className="muted" style={{ fontSize: 11.5 }}>
-                    {c.title}
-                  </span>
+                <span className="hud" style={{ fontSize: 10 }}>
+                  Across all changes
                 </span>
-                <span className={`chip ${c.openFindings.blocking ? "blocking" : ""}`}>
-                  {c.openFindings.blocking ? "BLOCKED" : (LABEL[c.state] ?? c.state).toUpperCase()}
-                </span>
-              </a>
-            ))}
-          </nav>
-        )}
+                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+                  {ACROSS.map((a) => (
+                    <a
+                      key={a.id}
+                      href={`#/changes?across=${a.id}`}
+                      aria-current={across === a.id ? "page" : undefined}
+                      className="chip"
+                      style={{ textDecoration: "none" }}
+                    >
+                      {a.label}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </div>
+          );
+        }}
       </View>
     </Panel>
   );
@@ -708,13 +794,17 @@ function Detail({ id }: { id: string }) {
 
 export function Changes({ hash }: { hash: string }) {
   const id = hash.replace(/^#\/?changes\/?/, "").split("?")[0] || undefined;
+  const wanted = new URLSearchParams(hash.split("?")[1] ?? "").get("across");
+  const across = ACROSS.find((a) => a.id === wanted)?.id;
   const list = useApi<ChangeSummary[]>("/api/changes");
   const first = list.state === "ready" ? list.data[0]?.id : undefined;
   const current = id ?? first;
   return (
     <div className="bento">
-      <ChangeList list={list} current={current} />
-      {current ? (
+      <ChangeList list={list} current={current} across={across} />
+      {across && !id ? (
+        <AcrossPanel key={across} view={across} />
+      ) : current ? (
         <Detail key={current} id={current} />
       ) : (
         <Panel title="No change selected" span="span 9">

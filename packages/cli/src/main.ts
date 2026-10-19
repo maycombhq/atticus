@@ -14,6 +14,7 @@ import { catalogDiff, scanCommand } from "./scan-commands.js";
 import { askCommand, impactCommand, indexRebuild, queryCommand } from "./index-commands.js";
 import { guideCommand, siteBuildCommand } from "./site-commands.js";
 import { baselineCommand, setupCommand } from "./baseline-commands.js";
+import { digestCommand } from "./digest-commands.js";
 import { aliasCommand, reconcileCommand } from "./reconcile-commands.js";
 import {
   coverageCommand,
@@ -145,6 +146,7 @@ Usage:
   atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline --by <you>          Accept the as-is catalog as the baseline [--note text] [--site dir]
+  atticus digest --as <you>            What waits on you [--group g]... [--channel c] [--send] [--json]
   atticus guide <system> [--json]      A system's guide, generated from the catalog: parts, calls, data, runtime, decisions
   atticus site build <dir> [--title t] The read-only catalog site as static files (only systems open to everyone)
           [--depth n] [--json]
@@ -299,6 +301,10 @@ export async function main(argv: string[], io: Output): Promise<number> {
       limit: { type: "string" },
       depth: { type: "string" },
       by: { type: "string" },
+      as: { type: "string" },
+      group: { type: "string", multiple: true },
+      channel: { type: "string" },
+      send: { type: "boolean" },
       site: { type: "string" },
       reason: { type: "string" },
       focus: { type: "string" },
@@ -433,6 +439,20 @@ export async function main(argv: string[], io: Output): Promise<number> {
         ...(typeof values.by === "string" && values.by ? { by: values.by } : {}),
         ...(typeof values.note === "string" && values.note ? { note: values.note } : {}),
         ...(typeof values.site === "string" && values.site ? { site: values.site } : {}),
+      },
+      io,
+    );
+  if (group === "digest")
+    return digestCommand(
+      root,
+      {
+        ...(typeof values.as === "string" && values.as ? { as: values.as } : {}),
+        groups: Array.isArray(values.group) ? values.group.map(String) : [],
+        ...(typeof values.channel === "string" && values.channel
+          ? { channel: values.channel }
+          : {}),
+        send: values.send === true,
+        json: values.json === true,
       },
       io,
     );

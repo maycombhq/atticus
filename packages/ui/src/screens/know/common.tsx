@@ -279,8 +279,9 @@ export function Table<R>(p: {
   rowKey: (r: R) => string;
   caption?: string;
 }) {
+  // Wide tables scroll sideways on narrow screens, so the scroll box takes keyboard focus.
   return (
-    <div style={{ overflowX: "auto" }}>
+    <div style={{ overflowX: "auto" }} tabIndex={0} role="region" aria-label={p.caption ?? "Table"}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 480 }}>
         {p.caption && <caption className="sr">{p.caption}</caption>}
         <thead>

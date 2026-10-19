@@ -497,3 +497,30 @@ a:hover {
   box-shadow: 0 0 18px rgba(46, 230, 246, 0.45);
   border-radius: 8px;
 }
+
+/* A plain text box or select in a panel (filters, settings). */
+.field {
+  height: 32px;
+  background: #0b1016;
+  color: var(--text);
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 13px;
+  min-width: 0;
+}
+.field::placeholder {
+  color: var(--muted);
+}
+.field:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* A link styled as a button (tabs, PR links). */
+a.btn {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

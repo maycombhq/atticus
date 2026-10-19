@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { api, useApi, type Loaded } from "../../api/client.js";
 import { useMe } from "../../app/me.js";
 import { Panel, View } from "../../app/ui.js";
@@ -109,6 +110,78 @@ const AI_MODE: Record<string, { label: string; what: string }> = {
     what: "No AI step runs. People write what agents would draft, the rule checks review it, and no gate waits for an AI lens.",
   },
 };
+
+/** The person's own digest settings: how often, and where it goes. Kept in .atticus/me.yaml. */
+function NotifyPanel() {
+  const { me, saveNotify } = useMe();
+  const [digest, setDigest] = useState<string | undefined>();
+  const [channel, setChannel] = useState<string | undefined>();
+  const act = useAction();
+  const d = digest ?? me?.notify?.digest ?? "off";
+  const c = channel ?? me?.notify?.channel ?? "";
+  return (
+    <Panel title="Your notifications" meta=".atticus/me.yaml" span="span 7">
+      {!me ? (
+        <div className="stack" aria-busy="true">
+          <span className="sr">Loading</span>
+          <div className="skeleton" style={{ width: "70%" }} />
+        </div>
+      ) : (
+        <form
+          className="stack"
+          style={{ gap: 8 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void act.run(
+              () => saveNotify({ digest: d, ...(c.trim() ? { channel: c.trim() } : {}) }),
+              "Saved.",
+            );
+          }}
+        >
+          <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55 }}>
+            Your digest lists the hand-offs waiting on your review and the blocking findings on
+            changes you own. Atticus sends it only when you press Send it to me on Home, or when
+            your own scheduled job runs{" "}
+            <code className="mono">atticus digest --as {me.user} --send</code>.
+          </p>
+          <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div className="stack" style={{ gap: 4 }}>
+              <label htmlFor="notify-digest" className="hud" style={{ fontSize: 10 }}>
+                How often
+              </label>
+              <select
+                id="notify-digest"
+                className="field"
+                value={d}
+                onChange={(e) => setDigest(e.target.value)}
+              >
+                <option value="off">Off</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+            </div>
+            <div className="stack" style={{ gap: 4, flex: 1, minWidth: 180 }}>
+              <label htmlFor="notify-channel" className="hud" style={{ fontSize: 10 }}>
+                Where it goes
+              </label>
+              <input
+                id="notify-channel"
+                className="field"
+                value={c}
+                placeholder={`@${me.user} (a direct message)`}
+                onChange={(e) => setChannel(e.target.value)}
+              />
+            </div>
+            <button type="submit" className="btn primary" disabled={act.busy}>
+              Save
+            </button>
+          </div>
+          <Note note={act.note} />
+        </form>
+      )}
+    </Panel>
+  );
+}
 
 export function Settings() {
   const s = useApi<Settings>("/api/settings");
@@ -273,6 +346,8 @@ export function Settings() {
             )}
           </View>
         </Panel>
+
+        <NotifyPanel />
 
         <Panel title="Gates" meta="gates.yaml" span="span 12">
           <View of={s} empty={(d) => d.gates.length === 0} emptyText="No gates.">

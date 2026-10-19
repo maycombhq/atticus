@@ -4,7 +4,8 @@ import { parse, stringify } from "yaml";
 import { z } from "zod";
 import { Api, CORE_ROLES, loadOrgPack, orgPackDirOf, type OrgPack } from "@maycombhq/core";
 import { readCodeowners } from "@maycombhq/changes";
-import { badRequest, type Router, type ServerContext } from "@maycombhq/server";
+import { badRequest, HttpError, type Router, type ServerContext } from "@maycombhq/server";
+import { approvalsWaiting, digestCommand, type DigestDeps } from "./digest-commands.js";
 
 /**
  * Who is signed in, the view they work in and what they may approve (ADR 0044). A view
@@ -16,9 +17,17 @@ import { badRequest, type Router, type ServerContext } from "@maycombhq/server";
 /** The person's own file, never committed: their groups and the view they chose. */
 export const ME_FILE = ".atticus/me.yaml";
 
+const MeNotify = z.object({
+  /** Where the digest goes; default a direct message to the person. */
+  channel: z.string().min(1).optional(),
+  /** How often the person wants the digest; Atticus sends it only when they (or their own scheduled job) ask. */
+  digest: z.enum(["off", "daily", "weekly"]).default("off"),
+});
+
 const MeFile = z.object({
   groups: z.array(z.string().min(1)).default([]),
   view: z.string().min(1).optional(),
+  notify: MeNotify.optional(),
 });
 type MeFile = z.infer<typeof MeFile>;
 
@@ -104,10 +113,28 @@ export async function meView(root: string, user: string) {
     roles,
     approvals,
     owns,
+    notify: {
+      digest: me.notify?.digest ?? "off",
+      ...(me.notify?.channel ? { channel: me.notify.channel } : {}),
+    },
   };
 }
 
-export function uiMeRoutes(r: Router, ctx: ServerContext): Router {
+async function writeMe(root: string, me: MeFile) {
+  const file = join(root, ME_FILE);
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(
+    file,
+    stringify({
+      groups: me.groups,
+      ...(me.view ? { view: me.view } : {}),
+      ...(me.notify ? { notify: me.notify } : {}),
+    }),
+    "utf8",
+  );
+}
+
+export function uiMeRoutes(r: Router, ctx: ServerContext, deps: DigestDeps = {}): Router {
   return r
     .add("GET", "/api/me", async () => ({ status: 200, body: await meView(ctx.root, ctx.user) }))
     .add("PUT", "/api/me", async ({ body }) => {
@@ -120,9 +147,43 @@ export function uiMeRoutes(r: Router, ctx: ServerContext): Router {
           `${b.data.view} isn't a view here. Views: ${roles.map((x) => x.id).join(", ")}.`,
         );
       const me = await readMe(ctx.root);
-      const file = join(ctx.root, ME_FILE);
-      await mkdir(dirname(file), { recursive: true });
-      await writeFile(file, stringify({ groups: me.groups, view: b.data.view }), "utf8");
+      await writeMe(ctx.root, { ...me, view: b.data.view });
       return { status: 200, body: await meView(ctx.root, ctx.user) };
+    })
+    .add("GET", "/api/me/approvals", async () => {
+      const me = await readMe(ctx.root);
+      return { status: 200, body: await approvalsWaiting(ctx.root, ctx.user, me.groups) };
+    })
+    .add("PUT", "/api/me/notify", async ({ body }) => {
+      const b = Api.SaveNotifyRequest.safeParse(body ?? {});
+      if (!b.success)
+        throw badRequest("Say how often: { digest: off | daily | weekly, channel?: <channel> }.");
+      const me = await readMe(ctx.root);
+      await writeMe(ctx.root, {
+        ...me,
+        notify: { digest: b.data.digest, ...(b.data.channel ? { channel: b.data.channel } : {}) },
+      });
+      return { status: 200, body: await meView(ctx.root, ctx.user) };
+    })
+    .add("POST", "/api/me/digest", async ({ body }) => {
+      const b = Api.SendDigestRequest.safeParse(body ?? {});
+      if (!b.success) throw badRequest("Send { send: true } to post it, or {} to see it.");
+      const me = await readMe(ctx.root);
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await digestCommand(
+        ctx.root,
+        {
+          as: ctx.user,
+          groups: me.groups,
+          ...(me.notify?.channel ? { channel: me.notify.channel } : {}),
+          send: b.data.send,
+          json: true,
+        },
+        { out: (l) => out.push(l), err: (l) => err.push(l) },
+        deps,
+      );
+      if (code === 2) throw new HttpError(400, "The request isn't valid", err.join("\n"));
+      return { status: 200, body: JSON.parse(out.join("\n")) as unknown };
     });
 }

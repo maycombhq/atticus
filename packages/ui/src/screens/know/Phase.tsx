@@ -304,6 +304,8 @@ function PhaseScreen(p: {
   artifacts: string[];
   critic?: string;
   extra?: (change: string) => ReactNode;
+  /** Panels for the wide column, between the header and the artifacts. */
+  main?: (change: string) => ReactNode;
 }) {
   const c = useChange(p.hash, p.screen);
   const [tick, setTick] = useState(0);
@@ -327,6 +329,7 @@ function PhaseScreen(p: {
     <div className="bento" key={c.id}>
       <div className="column" style={{ gridColumn: "span 8" }}>
         <GateHeader part="hero" {...header} />
+        {p.main?.(c.id)}
         {p.artifacts.map((a) => (
           <ArtifactPanel key={a} change={c.id!} artifact={a} />
         ))}
@@ -470,6 +473,96 @@ export function ArchReview({ hash }: { hash: string }) {
   );
 }
 
+interface MappingHop {
+  heading: string;
+  line: number;
+  noChange: boolean;
+  note?: string;
+  rows: { line: number; source: string; target: string; rule: string; whenMissing: string }[];
+  asIs: { id: string; interface: string; source: string; target: string; transform?: string }[];
+}
+
+/** Each hop's field mappings from mappings.md, beside what the catalog maps today (ADR 0048). */
+function MappingGrid({ change }: { change: string }) {
+  const g = useApi<{ hops: MappingHop[]; catalogMappings: number }>(
+    `/api/changes/${encodeURIComponent(change)}/mappings`,
+  );
+  return (
+    <Panel title="Field mappings" meta="by hop, with the catalog">
+      <View
+        of={g}
+        empty={(d) => d.hops.length === 0}
+        emptyText="No hops in mappings.md yet. Add a section per new or modified hop: source field, target field, rule, and what happens when it is missing."
+      >
+        {(d) => (
+          <div className="stack" style={{ gap: 14 }}>
+            {d.hops.map((h) => (
+              <section key={h.line} aria-label={h.heading} className="stack" style={{ gap: 6 }}>
+                <div className="row between" style={{ flexWrap: "wrap", gap: 6 }}>
+                  <h3 className="mono" style={{ margin: 0, fontSize: 13 }}>
+                    {h.heading}
+                  </h3>
+                  {h.noChange ? (
+                    <span className="chip">NO MAPPING CHANGE</span>
+                  ) : (
+                    <span className="chip">{h.rows.length} FIELDS</span>
+                  )}
+                </div>
+                {h.note && (
+                  <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                    {h.note}
+                  </p>
+                )}
+                {h.rows.length > 0 && (
+                  <Table
+                    rows={h.rows}
+                    rowKey={(r) => String(r.line)}
+                    caption={`Field mappings for ${h.heading}`}
+                    cols={[
+                      { label: "Source field", cell: (r) => r.source, mono: true },
+                      { label: "Target field", cell: (r) => r.target, mono: true },
+                      { label: "Rule", cell: (r) => r.rule },
+                      { label: "When missing or invalid", cell: (r) => r.whenMissing },
+                    ]}
+                  />
+                )}
+                {!h.noChange && h.rows.length === 0 && (
+                  <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+                    No field rows yet for this hop.
+                  </p>
+                )}
+                {h.asIs.length > 0 && (
+                  <details>
+                    <summary className="hud" style={{ fontSize: 10, cursor: "pointer" }}>
+                      Mapped today in the catalog · {h.asIs.length}
+                    </summary>
+                    <Table
+                      rows={h.asIs}
+                      rowKey={(r) => r.id}
+                      caption={`Catalog field mappings for ${h.heading}`}
+                      cols={[
+                        { label: "Source field", cell: (r) => r.source, mono: true },
+                        { label: "Target field", cell: (r) => r.target, mono: true },
+                        { label: "Transform", cell: (r) => r.transform ?? "" },
+                        { label: "Record", cell: (r) => r.id, mono: true },
+                      ]}
+                    />
+                  </details>
+                )}
+              </section>
+            ))}
+            {d.catalogMappings === 0 && (
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                The catalog has no field mappings yet, so there is nothing to compare with.
+              </p>
+            )}
+          </div>
+        )}
+      </View>
+    </Panel>
+  );
+}
+
 export function Mappings({ hash }: { hash: string }) {
   return (
     <PhaseScreen
@@ -478,6 +571,7 @@ export function Mappings({ hash }: { hash: string }) {
       title="API mappings"
       artifacts={["mappings"]}
       critic="architecture-critic"
+      main={(id) => <MappingGrid change={id} />}
       extra={() => (
         <Panel title="How mappings are checked" span="span 4">
           <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>

@@ -22,3 +22,18 @@ test("sees the release plan and manual steps", async ({ page }) => {
   ).toBeVisible();
   await accessible(page, "to-do");
 });
+
+test("sees the releases across changes and their digest on Home", async ({ page }) => {
+  await open(page, app(), "changes?across=releases");
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Releases across changes" }),
+  ).toBeVisible();
+  await expect(page.getByRole("region", { name: "Releases across open changes" })).toContainText(
+    "add-transfer-limit",
+  );
+  await open(page, app(), "home");
+  await workAs(page, "delivery-lead");
+  await page.getByRole("button", { name: "Show my digest" }).click();
+  await expect(page.getByRole("status").filter({ hasText: /^Atticus: / })).toBeVisible();
+  await accessible(page, "home with the digest");
+});
