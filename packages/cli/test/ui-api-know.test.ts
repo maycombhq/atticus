@@ -95,3 +95,22 @@ describe("read-only views run the CLI's --json commands", () => {
     );
   });
 });
+
+describe("guided setup from the app (ADR 0047)", () => {
+  it("shows the checklist, and accepts the catalog as the signed-in person", async () => {
+    const before = (await get("/api/setup")).body as unknown as { baselined: boolean };
+    expect(before.baselined).toBe(false);
+    const r = await fetch(srv.url + "/api/baseline", {
+      method: "POST",
+      headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "Walked the map" }),
+    });
+    expect(r.status).toBe(200);
+    const after = (await r.json()) as {
+      baselined: boolean;
+      steps: { id: string; done: boolean }[];
+    };
+    expect(after.baselined).toBe(true);
+    expect(after.steps.find((s) => s.id === "baseline")!.done).toBe(true);
+  });
+});

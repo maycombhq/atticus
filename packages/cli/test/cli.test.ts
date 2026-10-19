@@ -71,6 +71,7 @@ describe("atticus CLI", () => {
       "Finding.json",
     ]);
     expect((await readdir(join(dir, "workspace"))).sort()).toEqual([
+      "CatalogBaseline.json",
       "ChangeLifecycle.json",
       "ChangeOutcomes.json",
       "ChangeRepos.json",

@@ -5,6 +5,7 @@ import { NotBuilt } from "../screens/NotBuilt.js";
 import { ScreenBoundary } from "./boundary.js";
 import { MeProvider, useMe, ViewPicker } from "./me.js";
 import { CommandPalette } from "./palette.js";
+import { replayTour, Tour } from "./tour.js";
 import { screensFor } from "./roles.js";
 import { GROUPS, SCREENS, screenOf, type ScreenDef } from "./screens.js";
 
@@ -143,6 +144,14 @@ function TopBar({ health }: { health?: Health }) {
         </button>
       </form>
       <AiChip />
+      <button
+        type="button"
+        className="btn"
+        onClick={replayTour}
+        title="Replay the tour of your view"
+      >
+        Help
+      </button>
       <span className="hud" style={{ fontSize: 9.5, whiteSpace: "nowrap" }} aria-hidden="true">
         Ctrl K
       </span>
@@ -170,6 +179,7 @@ export function App() {
         </a>
         <Nav current={current} />
         <CommandPalette />
+        <Tour />
         <main id="main" className="main" tabIndex={-1}>
           <TopBar health={health.state === "ready" ? health.data : undefined} />
           <h1 className="sr">{current.label}</h1>

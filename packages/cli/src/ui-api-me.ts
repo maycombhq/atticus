@@ -56,7 +56,7 @@ function rolesOf(op: OrgPack) {
   ];
 }
 
-async function meView(root: string, user: string) {
+export async function meView(root: string, user: string) {
   const op = await loadOrgPack(orgPackDirOf(root));
   const me = await readMe(root);
   const roles = rolesOf(op);

@@ -300,6 +300,9 @@ export const CheckLessonRequest = z.strictObject({
 });
 export const SandboxRequest = z.strictObject({ dir: z.string().trim().min(1) });
 
+/** ADR 0047: accept the as-is catalog as the baseline, as the signed-in person. */
+export const BaselineRequest = z.strictObject({ note: z.string().trim().min(1).optional() });
+
 /** ADR 0046: run the critic at a gate (the change's current one by default). */
 export const RunCriticRequest = z.strictObject({ gate: z.string().min(1).optional() });
 
@@ -504,6 +507,29 @@ const OPS: Record<string, Record<string, Op>> = {
       ],
       ok: { status: 200, schema: VIEW_RESULT, description: "OK" },
       errors: [400, 404, 422],
+    },
+  },
+  "/api/setup": {
+    get: {
+      id: "getSetup",
+      summary: "The setup checklist until the catalog is accepted, with a plain fix for each step",
+      tag: "system",
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["steps", "baselined"] },
+        description: "OK",
+      },
+    },
+  },
+  "/api/baseline": {
+    post: {
+      id: "acceptBaseline",
+      summary:
+        "Accept the as-is catalog as the baseline (catalog/baseline.yaml), as the signed-in person",
+      tag: "system",
+      body: BaselineRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Accepted" },
+      errors: [400, 403, 422],
     },
   },
   "/api/guide/{system}": {

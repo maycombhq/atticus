@@ -13,6 +13,7 @@ import {
 import { catalogDiff, scanCommand } from "./scan-commands.js";
 import { askCommand, impactCommand, indexRebuild, queryCommand } from "./index-commands.js";
 import { guideCommand, siteBuildCommand } from "./site-commands.js";
+import { baselineCommand, setupCommand } from "./baseline-commands.js";
 import { aliasCommand, reconcileCommand } from "./reconcile-commands.js";
 import {
   coverageCommand,
@@ -142,6 +143,8 @@ Usage:
           [--limit n] [--json]         (see docs/query-language.md)
   atticus impact <id>                  What a change to a record reaches, with owners and open questions
   atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
+  atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
+  atticus baseline --by <you>          Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus guide <system> [--json]      A system's guide, generated from the catalog: parts, calls, data, runtime, decisions
   atticus site build <dir> [--title t] The read-only catalog site as static files (only systems open to everyone)
           [--depth n] [--json]
@@ -296,6 +299,7 @@ export async function main(argv: string[], io: Output): Promise<number> {
       limit: { type: "string" },
       depth: { type: "string" },
       by: { type: "string" },
+      site: { type: "string" },
       reason: { type: "string" },
       focus: { type: "string" },
       format: { type: "string" },
@@ -418,6 +422,17 @@ export async function main(argv: string[], io: Output): Promise<number> {
         dryRun: values["dry-run"] === true,
         json: values.json === true,
         noDrift: values["no-drift"] === true,
+      },
+      io,
+    );
+  if (group === "setup" && !command) return setupCommand(root, { json: values.json === true }, io);
+  if (group === "baseline")
+    return baselineCommand(
+      root,
+      {
+        ...(typeof values.by === "string" && values.by ? { by: values.by } : {}),
+        ...(typeof values.note === "string" && values.note ? { note: values.note } : {}),
+        ...(typeof values.site === "string" && values.site ? { site: values.site } : {}),
       },
       io,
     );

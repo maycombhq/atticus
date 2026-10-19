@@ -2,6 +2,8 @@ import { Api } from "@maycombhq/core";
 import { initiativeStatus, readView } from "@maycombhq/initiatives";
 import { systemGuide } from "@maycombhq/site";
 import { catalogRecords, openChanges } from "./site-commands.js";
+import { baselineCommand, setupSteps } from "./baseline-commands.js";
+import { meView } from "./ui-api-me.js";
 import {
   badRequest,
   HttpError,
@@ -108,6 +110,35 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
       }
       ctx.events.publish({ type: "file.changed", path: "catalog/curated" });
       return { status: 200, body: { item: params.itemId, option: b.data.option, lines: out } };
+    })
+    .add("GET", "/api/setup", async () => ({ status: 200, body: await setupSteps(ctx.root) }))
+    .add("POST", "/api/baseline", async ({ body }) => {
+      const b = Api.BaselineRequest.safeParse(body ?? {});
+      if (!b.success) throw badRequest("Some fields aren't right.");
+      // Accepting the catalog is a catalog decision: when roles.yaml names who may make those
+      // (approvals.catalog-assert), only they may; ownership decides, never the view.
+      const op = await import("@maycombhq/core").then((m) =>
+        m.loadOrgPack(m.orgPackDirOf(ctx.root)),
+      );
+      if (op.roles.approvals["catalog-assert"]) {
+        const me = await meView(ctx.root, ctx.user);
+        if (!me.approvals.some((a) => a.action === "catalog-assert"))
+          throw new HttpError(
+            403,
+            "You can't accept the catalog",
+            "roles.yaml says who may make catalog decisions (approvals.catalog-assert); ask one of them.",
+          );
+      }
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await baselineCommand(
+        ctx.root,
+        { by: ctx.user, ...(b.data.note ? { note: b.data.note } : {}) },
+        { out: (l) => out.push(l), err: (l) => err.push(l) },
+      );
+      if (code !== 0) throw new HttpError(422, "Atticus refused", [...err, ...out].join("\n"));
+      ctx.events.publish({ type: "file.changed", path: "catalog/baseline.yaml" });
+      return { status: 200, body: { lines: out, ...(await setupSteps(ctx.root)) } };
     })
     .add("GET", "/api/guide/{system}", async ({ params }) => {
       const id = params.system!;

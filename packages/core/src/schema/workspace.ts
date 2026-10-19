@@ -207,3 +207,19 @@ export const ChangeOutcomes = z
     });
   });
 export type ChangeOutcomes = z.infer<typeof ChangeOutcomes>;
+
+/**
+ * catalog/baseline.yaml (ADR 0047): the as-is catalog a person accepted, the point every later
+ * scan, document and change is compared with. Written by `atticus baseline`; until it exists,
+ * Home shows the setup checklist.
+ */
+export const CatalogBaseline = z.strictObject({
+  schemaVersion: z.literal(WORKSPACE_SCHEMA_VERSION),
+  acceptedBy: z.string().min(1),
+  acceptedAt: z.iso.datetime({ offset: true }),
+  /** Records per kind at acceptance. */
+  kinds: z.record(z.string(), z.number().int().nonnegative()),
+  systems: z.array(z.string().min(1)),
+  note: z.string().optional(),
+});
+export type CatalogBaseline = z.infer<typeof CatalogBaseline>;

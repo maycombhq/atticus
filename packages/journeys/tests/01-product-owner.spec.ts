@@ -5,7 +5,19 @@ const app = forgeJourney();
 
 test("starts from a home made for the product owner", async ({ page }) => {
   await open(page, app(), "home");
-  await workAs(page, "product-owner");
+  await workAs(page, "product-owner", { keepTour: true });
+  // The first-run tour: three steps, skippable, and it replays from Help.
+  const tour = page.getByRole("dialog", { name: "Your home" });
+  await expect(tour).toBeVisible();
+  await accessible(page, "first-run tour");
+  await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByRole("dialog", { name: "Write the brief" })).toBeVisible();
+  await page.getByRole("button", { name: "Next" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await expect(page.getByRole("dialog", { name: /Your home|Write the brief/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Help" }).click();
+  await expect(page.getByRole("dialog", { name: "Your home" })).toBeVisible();
+  await page.getByRole("button", { name: "Skip the tour" }).click();
   await expect(page.getByText("Product owner view · chosen by you")).toBeVisible();
   const nav = page.getByRole("group", { name: "Your screens" });
   await expect(nav.getByRole("link", { name: "Feature brief" })).toBeVisible();

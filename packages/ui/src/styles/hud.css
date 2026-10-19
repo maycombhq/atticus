@@ -479,3 +479,21 @@ a:hover {
   background: rgba(255, 79, 163, 0.14);
   box-shadow: 0 0 12px rgba(255, 79, 163, 0.25);
 }
+
+.tour {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: min(380px, calc(100vw - 32px));
+  z-index: 40;
+  border-color: var(--accent);
+  box-shadow:
+    0 0 32px rgba(46, 230, 246, 0.22),
+    0 18px 40px rgba(0, 0, 0, 0.6);
+}
+.tour-target {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: 0 0 18px rgba(46, 230, 246, 0.45);
+  border-radius: 8px;
+}

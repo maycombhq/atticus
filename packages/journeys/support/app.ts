@@ -122,14 +122,27 @@ export async function open(page: Page, app: App, route: string): Promise<void> {
   await page.goto(`${app.url}/#/${route}`);
   await expect(page.locator(".panel").first()).toBeVisible();
   await page.waitForLoadState("networkidle");
+  await skipTour(page);
+}
+
+/** Each test is a fresh browser, so the first-run tour of the saved view opens again: skip it. */
+async function skipTour(page: Page): Promise<void> {
+  const skip = page.getByRole("button", { name: "Skip the tour" });
+  if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
 /** Work in a role's view, through the View switch in the sidebar. */
-export async function workAs(page: Page, role: string): Promise<void> {
+export async function workAs(
+  page: Page,
+  role: string,
+  o: { keepTour?: boolean } = {},
+): Promise<void> {
   const picker = page.getByLabel("View", { exact: true });
   await picker.selectOption(role);
   await expect(picker).toHaveValue(role);
   await page.waitForLoadState("networkidle");
+  // The first-run tour opens for a new view; journeys that aren't about it skip it.
+  if (!o.keepTour) await skipTour(page);
 }
 
 /** WCAG 2.1 AA: no serious or critical axe violation on the page as it is now. */

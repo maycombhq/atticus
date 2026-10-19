@@ -3,9 +3,18 @@ import { accessible, expect, forgeJourney, open, test, workAs } from "../support
 /** Platform lead: repos and scans, intake, the org pack, governance and settings. */
 const app = forgeJourney();
 
-test("sees the repos and the catalog", async ({ page }) => {
+test("follows the setup checklist and accepts the catalog", async ({ page }) => {
   await open(page, app(), "home");
   await workAs(page, "platform-lead");
+  await expect(page.getByRole("heading", { level: 2, name: "Set up Atticus" })).toBeVisible();
+  await expect(page.getByText(/Repos are cloned here/)).toBeVisible();
+  await accessible(page, "setup checklist");
+  await page.getByRole("button", { name: "Accept the catalog as the baseline" }).click();
+  await expect(page.getByRole("heading", { level: 2, name: "Set up Atticus" })).toHaveCount(0);
+});
+
+test("sees the repos and the catalog", async ({ page }) => {
+  await open(page, app(), "home");
   await open(page, app(), "scans");
   await expect(page.getByText("forge-ledger").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Scan now" })).toBeVisible();

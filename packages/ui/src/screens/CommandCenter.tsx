@@ -1,4 +1,5 @@
-import { useApi, useLiveEvents } from "../api/client.js";
+import { useState } from "react";
+import { api, ApiError, useApi, useLiveEvents } from "../api/client.js";
 import { GraphView, type Graph } from "../app/graph.js";
 import { ACTION_LABEL, useMe, ViewPicker } from "../app/me.js";
 import { baseRole, inboxFor, type InboxData } from "../app/roles.js";
@@ -49,6 +50,96 @@ function stateChip(c: ChangeSummary) {
     cls: c.state === "release-ready" ? "warn" : "",
     text: (PHASE_LABEL[c.state] ?? c.state).toUpperCase(),
   };
+}
+
+interface Setup {
+  baselined: boolean;
+  steps: {
+    id: string;
+    label: string;
+    done: boolean;
+    detail: string;
+    fix?: string;
+    optional?: boolean;
+  }[];
+}
+
+/** Guided setup: the checklist until the catalog is accepted (ADR 0047). */
+function SetupChecklist() {
+  const setup = useApi<Setup>("/api/setup");
+  const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
+  if (setup.state !== "ready" || setup.data.baselined) return null;
+  const s = setup.data;
+  const done = s.steps.filter((x) => x.done).length;
+  const scanned = s.steps.find((x) => x.id === "scan")?.done;
+  const accept = async () => {
+    try {
+      await api("/api/baseline", { method: "POST", body: {} });
+      setNote({ ok: true, text: "The catalog is accepted as the baseline." });
+      setup.reload();
+    } catch (e) {
+      setNote({
+        ok: false,
+        text: e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e),
+      });
+    }
+  };
+  return (
+    <div className="bento">
+      <Panel
+        title="Set up Atticus"
+        kind="hero"
+        span="1 / -1"
+        meta={`${done} of ${s.steps.length} done`}
+      >
+        <ol style={{ listStyle: "none", margin: 0, padding: 0 }} className="stack">
+          {s.steps.map((x) => (
+            <li key={x.id} className="row" style={{ alignItems: "flex-start", gap: 10 }}>
+              <span
+                aria-hidden="true"
+                className={`chip ${x.done ? "done" : x.optional ? "dim" : "warn"}`}
+                style={{ minWidth: 24, textAlign: "center" }}
+              >
+                {x.done ? "✓" : "·"}
+              </span>
+              <span className="stack" style={{ gap: 2 }}>
+                <span style={{ fontSize: 13 }}>
+                  {x.label}
+                  <span className="sr">{x.done ? " (done)" : " (to do)"}</span>
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {" "}
+                    · {x.detail}
+                    {x.optional ? " · optional" : ""}
+                  </span>
+                </span>
+                {!x.done && x.fix && (
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {x.fix}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+        {scanned && (
+          <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
+            <button type="button" className="btn primary" onClick={() => void accept()}>
+              Accept the catalog as the baseline
+            </button>
+            <span className="muted" style={{ fontSize: 12 }}>
+              After walking the ecosystem map with the architect. Every later scan, document and
+              change is compared with it.
+            </span>
+          </div>
+        )}
+        {note && (
+          <p role={note.ok ? "status" : "alert"} style={{ margin: "8px 0 0", fontSize: 12.5 }}>
+            {note.text}
+          </p>
+        )}
+      </Panel>
+    </div>
+  );
 }
 
 export function CommandCenter() {
@@ -124,6 +215,7 @@ export function CommandCenter() {
           </Panel>
         </div>
       )}
+      <SetupChecklist />
       {me && me.view && (
         <div className="row" style={{ flexWrap: "wrap", gap: 6 }} aria-label="Approvals you hold">
           <span className="hud" style={{ fontSize: 10 }}>
