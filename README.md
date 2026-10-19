@@ -4,7 +4,7 @@
 
 Atticus is an open-source, configurable framework for teams whose systems span many repositories, gateways, event streams and vendors. It builds on [OpenSpec](https://github.com/Fission-AI/openspec) and works with the AI assistant you already use (GitHub Copilot or Claude Code).
 
-> **Status: early build (M0).** The catalog contracts, canonical file format, plugin SDK basics, OpenSpec adapter and workspace manager are in place. Scanning, the critic and Atticus Studio (the local UI) are being built in the stages described below. Nothing here is ready for production use yet.
+> **Status: release candidate 1.0.0-rc.1.** The whole product is built: the catalog from code, the critic, changes from idea to release across repos, the local app with a home for each of thirteen roles, and the install kit (offline bundle, doctor, upgrade, support bundle). What remains before 1.0 is listed in [docs/m5-exit.md](docs/m5-exit.md) under "For a person".
 
 ## What it does
 
@@ -54,21 +54,46 @@ packages/
   assistant-kit/     the dialect build kit and its grader
   knowledge/         wiki sources, pattern scan, coverage, knowledge gaps and owner questions
   synth/             synthetic estate generator for scale tests
+  server/            the local API server (127.0.0.1, session token)
+  ui/                the local app: 27 screens, a home for each role
+  release/           deployment plan, forecast, evidence pack, release notes, outcomes, security review
+  site/              system guides and the read-only catalog site
+  journeys/          the thirteen role journeys and accessibility checks, in a browser
+  m3-exit/ m4-exit/ m5-exit/   milestone exit suites
   cli/               the `atticus` command
   fixtures/          tests that keep the Forge fixture consistent
 fixtures/forge/      an invented ecosystem with a hand-written expected catalog
+docs/guide/          install, admin, role and troubleshooting guides; the command reference
 docs/adr/            architecture decision records
+scripts/bundle/      the offline install bundle, SBOM and licence check
 ```
 
-## Try it
+## Get started
 
-Requires Node.js 22.13 or newer and Git.
+- **Install:** [docs/guide/install.md](docs/guide/install.md). One offline zip and one script; Node.js 22.13 or later and Git 2.30 or later.
+- **Set it up for a team:** [docs/guide/admin.md](docs/guide/admin.md).
+- **Your role:** [docs/guide/roles.md](docs/guide/roles.md).
+- **Every command:** [docs/guide/commands.md](docs/guide/commands.md).
+- **Security:** [docs/security/threat-model.md](docs/security/threat-model.md).
+
+Try it without touching anything real:
+
+```bash
+atticus sandbox create ./practice      # the invented Forge ecosystem, every outside system a mock
+cd practice/metarepo
+atticus doctor
+atticus scan
+atticus ui --open
+```
+
+From a checkout:
 
 ```bash
 corepack enable
 pnpm install
-pnpm check          # deny-list, lint, typecheck, tests
-node packages/cli/dist/bin.js --help
+pnpm build
+pnpm check          # deny-list, lint, dependency, licence and docs checks, typecheck, tests
+pnpm bundle         # dist/atticus-<version>-offline.zip
 ```
 
 ## Contributing

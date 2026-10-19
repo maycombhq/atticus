@@ -1,5 +1,5 @@
 /** The Atticus version this build reports (atticus --version, health, the support bundle). */
-export const VERSION = "0.0.1";
+export const VERSION = "1.0.0-rc.1";
 
 /** Numeric version order, ignoring a pre-release or platform suffix: v is min or later. */
 export function versionAtLeast(v: string, min: string): boolean {

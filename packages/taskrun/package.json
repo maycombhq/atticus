@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/taskrun",
-  "version": "0.0.1",
+  "version": "1.0.0-rc.1",
   "description": "Run with AI: one task of a change at plan-only, draft or PR level, in hand-off, model or headless Claude Code mode, with build-fix attempts and run summaries.",
   "license": "Apache-2.0",
   "type": "module",

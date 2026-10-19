@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/reconcile",
-  "version": "0.0.1",
+  "version": "1.0.0-rc.1",
   "description": "Reads draw.io diagrams, resolves diagram names to catalog ids, and reconciles what the diagram says with what the code says.",
   "license": "Apache-2.0",
   "type": "module",

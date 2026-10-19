@@ -278,7 +278,7 @@ Usage:
   atticus --version                    Print the version
   atticus --help                       Show this help
 
-More commands arrive as the build progresses; see the plan's command reference.`;
+Every command is described in docs/guide/commands.md; atticus explain <command> says more.`;
 
 /** A positive whole number from an option, or undefined. */
 function num(v: unknown): number | undefined {

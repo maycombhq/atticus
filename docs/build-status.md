@@ -65,12 +65,23 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 | AI switch      | `runtime.yaml ai: on, text-only or off`; every gate works without AI (ADR 0046)                                                                                                                              |
 | Exit           | `packages/journeys`: the 13 role journeys, axe on every screen, empty and unreachable states (98 tests); `packages/m4-exit`: onboarding, knowledge-source and drafted-org-pack bars on a fresh sandbox       |
 
+## Done (M5, exit met: see `docs/m5-exit.md`; version 1.0.0-rc.1)
+
+| Area     | What                                                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------ |
+| Install  | The offline bundle with install scripts, checksums, SBOM and licences (ADR 0052); `atticus doctor` (ADR 0049)      |
+| Support  | The redacted local log, crash messages, whole-file writes, one scan at a time, `atticus support bundle` (ADR 0050) |
+| Upgrade  | `atticus upgrade` and the metarepo stamp (ADR 0051)                                                                |
+| Security | The threat model; hardening headers                                                                                |
+| Quality  | Performance budgets (`packages/m5-exit`); dependency, licence and docs checks in `pnpm lint`                       |
+| Docs     | Install, admin, role and troubleshooting guides; the command reference; README and changelog                       |
+
 ## Next
 
 1. **M0 sign-off** (Tom George): the expected catalog in `fixtures/forge/expected/` and ADRs 0001–0042; and the in-bank spikes (installs per role, Copilot features in VS Code and IntelliJ).
 2. **For a person (M3):** grade the namers' and drafters' output in `docs/evidence/m3-live/for-a-person.md`, and do the real assistant smoke runs listed in `docs/m3-exit.md` (Claude Code, VS Code Copilot, IntelliJ Copilot).
 3. **For a person (M4):** time the onboarding bars with someone new on a sandbox, accept a drafted org pack, and a screen-reader pass (`docs/m4-exit.md`, "For a person").
-4. **M5: ready to install**: performance, logs, support bundle, crash safety, offline bundle, upgrade and migrate, doctor, threat model, SBOM and licences, Windows paths, docs checked, release candidate.
+4. **For a person (M5):** run the full CI matrix (Windows, Node 24 and the offline bundle on both systems), install the bundle on the target laptop and run `atticus doctor`, hand the threat model, SBOM and licences to the security review, then decide 1.0 (`docs/m5-exit.md`).
 
 ## How to work
 

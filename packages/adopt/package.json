@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/adopt",
-  "version": "0.0.1",
+  "version": "1.0.0-rc.1",
   "description": "Set Atticus up: init a metarepo, discover repos, adopt an existing repo in place, absorb another team's work and federate another Atticus metarepo.",
   "license": "Apache-2.0",
   "type": "module",

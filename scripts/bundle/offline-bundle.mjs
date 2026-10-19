@@ -25,6 +25,14 @@ const now = new Date(
   process.env.SOURCE_DATE_EPOCH ? Number(process.env.SOURCE_DATE_EPOCH) * 1000 : Date.now(),
 );
 
+// The built command line must be this version (a stale build would ship the wrong one).
+const built = readFileSync(join(REPO, "packages/cli/dist/version.js"), "utf8");
+if (!built.includes(`"${VERSION}"`)) {
+  console.error(
+    `packages/cli/dist is not built at ${VERSION}: run pnpm turbo run build --force first.`,
+  );
+  process.exit(1);
+}
 const dir = deploy();
 for (const f of ["forge", "forge-change"])
   cpSync(join(REPO, "fixtures", f), join(dir, "fixtures", f), { recursive: true });

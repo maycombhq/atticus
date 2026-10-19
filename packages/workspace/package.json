@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/workspace",
-  "version": "0.0.1",
+  "version": "1.0.0-rc.1",
   "description": "Atticus workspace manager: base clones, change worktrees, branches and editor workspace files.",
   "license": "Apache-2.0",
   "type": "module",

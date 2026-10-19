@@ -1,6 +1,6 @@
 {
   "name": "@maycombhq/initiatives",
-  "version": "0.0.1",
+  "version": "1.0.0-rc.1",
   "description": "Initiatives and guided journeys: changes, parties and commitments toward one outcome, plans worked back from a target release, critical path and system-card requests to other teams.",
   "license": "Apache-2.0",
   "type": "module",
