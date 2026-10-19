@@ -73,7 +73,10 @@ public class BalanceController extends BaseController implements Audited {
     // Templates, archetypes and half-edited files have these; one used to hang a whole scan.
     for (const bad of ["@A(})", "@A({)", '@A({"x"])', "@A(x = })", "@A({{)", "@A(", "@A({"]) {
       const r = parseJava(`class C {\n  ${bad}\n  void m() {}\n}\n@RestController class D {}\n`);
-      expect(r.decls.map((d) => d.name), bad).toContain("C");
+      expect(
+        r.decls.map((d) => d.name),
+        bad,
+      ).toContain("C");
     }
     // An empty value keeps the annotation's own closing parenthesis.
     const empty = parseJava('class C {\n  @A(x = )\n  @GetMapping("/ok")\n  void m() {}\n}\n');
