@@ -79,7 +79,7 @@ scripts/bundle/      the offline install bundle, SBOM and licence check
 Try it without touching anything real:
 
 ```bash
-atticus sandbox create ./practice      # the invented Forge ecosystem, every outside system a mock
+atticus sandbox create ./practice      # the invented Forge ecosystem, no outside system reached
 cd practice/metarepo
 atticus doctor
 atticus scan

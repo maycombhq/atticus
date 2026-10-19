@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,13 +15,16 @@ import { fileURLToPath } from "node:url";
  *                               git so a scan can read them), and the seeded change
  *                               openspec/changes/add-transfer-limit
  *
- * Nothing in it is real and nothing leaves it: every adapter in the org pack is a mock. A
+ * Nothing in it is real and nothing leaves it: every adapter in the org pack is a mock, except the
+ * Git host, which is manual (its steps are recorded with atticus todo done). A
  * marker file `.atticus-sandbox.json` at the metarepo root lets the lesson commands refuse to
  * run anywhere else, so a lesson never writes decisions into a real metarepo.
  */
 
 export const SANDBOX_MARKER = ".atticus-sandbox.json";
 export const SEEDED_CHANGE = "add-transfer-limit";
+/** The metarepo's name on the sandbox's (manual) Git host. */
+export const SANDBOX_METAREPO = "forge/forge-metarepo";
 
 export interface SandboxInfo {
   /** The folder given. */
@@ -111,12 +114,33 @@ export async function createSandbox(
       recursive: true,
     },
   );
+  // No Git host here: a manual one, so the hand-off PR is a step the learner records with
+  // atticus todo done, and it survives from one command to the next (a mock host lives in one
+  // process only).
+  const runtime = join(root, "org-pack", "runtime.yaml");
+  await writeFile(
+    runtime,
+    (await readFile(runtime, "utf8")).replace(
+      /^(\s*)gitHost:.*$/m,
+      `$1gitHost: { type: manual, settings: { metarepo: ${SANDBOX_METAREPO} } }`,
+    ),
+    "utf8",
+  );
   const repos = (await readdir(join(target, "repos"))).sort();
   for (const id of repos) {
     const base = join(root, "workspace", id);
     await cp(join(target, "repos", id), base, { recursive: true });
     try {
       git(base, ["init", "-q"]);
+      // Commands that commit here (spec hand-down, task runs) work on a machine with no Git
+      // identity, and never ask for a signing key or run the person's own hooks.
+      // Written straight into .git/config: one git process per setting is slow on Windows.
+      await appendFile(
+        join(base, ".git", "config"),
+        "[user]\n\tname = Atticus sandbox\n\temail = sandbox@example.com\n" +
+          "[commit]\n\tgpgsign = false\n[tag]\n\tgpgsign = false\n",
+        "utf8",
+      );
       git(base, ["add", "-A"]);
       git(base, ["commit", "-q", "-m", "Forge fixture"]);
       // A local bare repository stands in for the Git host, so the base clone has an origin
@@ -145,7 +169,8 @@ export async function createSandbox(
       "# Atticus practice sandbox",
       "",
       "A throwaway metarepo built from the invented Forge ecosystem. Everything here is made up;",
-      "every adapter is a mock. Try anything, then delete the folder.",
+      "every adapter is a mock but the Git host, whose steps you record with `atticus todo done`.",
+      "Try anything, then delete the folder.",
       "",
       "Run commands from this folder, or add `--root " + root.replace(/\\/g, "/") + "`.",
       "",

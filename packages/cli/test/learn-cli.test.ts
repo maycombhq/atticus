@@ -188,7 +188,7 @@ describe("atticus learn, sandbox and explain", () => {
     expect(await sandboxCreate(undefined, {}, u.io)).toBe(2);
   });
 
-  it("explains a finding the critic wrote, in plain words", async () => {
+  it("explains a finding the critic wrote, in plain words", { timeout: T }, async () => {
     const root = await sandbox();
     const gh = new MockGitHost([{ repo: REPO }]);
     await atticus(root, ["scan"], capture().io, gh);
@@ -211,24 +211,62 @@ describe("atticus learn, sandbox and explain", () => {
     expect(await explainCommand(root, " ", {}, none.io)).toBe(2);
   });
 
-  it("defences scan: reports hidden instructions in a document dropped into intake", async () => {
-    const root = await sandbox();
-    const platform = lessons.find((l) => l.id === "platform-lead-coverage-and-defences")!;
-    await writeSolution(root, platform.steps[1]!.solution!.files);
-    let c = capture();
-    expect(await defencesScan(root, undefined, {}, c.io)).toBe(1);
-    expect(c.out.find((l) => l.startsWith("high"))).toMatch(
-      /^high\s+inputs\/inbox\/vendor-notes\.md\s+quarantined: left out of every AI step/,
-    );
-    expect(c.out.at(-1)).toMatch(/^Scanned \d+ files: 1 high, 0 medium\.$/);
-    c = capture();
-    expect(await defencesScan(root, "nowhere", {}, c.io)).toBe(2);
-  });
+  it(
+    "defences scan: reports hidden instructions in a document dropped into intake",
+    { timeout: T },
+    async () => {
+      const root = await sandbox();
+      const platform = lessons.find((l) => l.id === "platform-lead-coverage-and-defences")!;
+      await writeSolution(root, platform.steps[1]!.solution!.files);
+      let c = capture();
+      expect(await defencesScan(root, undefined, {}, c.io)).toBe(1);
+      expect(c.out.find((l) => l.startsWith("high"))).toMatch(
+        /^high\s+inputs\/inbox\/vendor-notes\.md\s+quarantined: left out of every AI step/,
+      );
+      expect(c.out.at(-1)).toMatch(/^Scanned \d+ files: 1 high, 0 medium\.$/);
+      c = capture();
+      expect(await defencesScan(root, "nowhere", {}, c.io)).toBe(2);
+    },
+  );
 });
+
+/**
+ * Run `fn` as on a machine with no Git identity and no global Git settings (a new laptop, or a
+ * build agent): git reads an empty global config and no system config.
+ */
+async function withoutGlobalGit<T>(fn: () => Promise<T>): Promise<T> {
+  const empty = join(await mkdtemp(join(tmpdir(), "atticus-no-gitconfig-")), "gitconfig");
+  await writeFile(empty, "", "utf8");
+  const saved = {
+    global: process.env.GIT_CONFIG_GLOBAL,
+    nosystem: process.env.GIT_CONFIG_NOSYSTEM,
+  };
+  process.env.GIT_CONFIG_GLOBAL = empty;
+  process.env.GIT_CONFIG_NOSYSTEM = "1";
+  try {
+    return await fn();
+  } finally {
+    for (const [k, v] of [
+      ["GIT_CONFIG_GLOBAL", saved.global],
+      ["GIT_CONFIG_NOSYSTEM", saved.nosystem],
+    ] as const)
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+  }
+}
+
+/** A value for each field a manual Git host step asks a person to record. */
+const RECORDED: Record<string, string> = {
+  url: "https://git.example.com/forge/forge-meta/pull/1",
+  number: "1",
+  approvers: "pat",
+  checksPassing: "yes",
+  mergedBy: "pat",
+};
 
 describe("the practice sandbox works like a real metarepo", () => {
   it(
-    "opens a change's worktree and syncs its repos, with no network",
+    "opens a change's worktree and syncs its repos, with no network and no Git identity",
     async () => {
       const root = await sandbox();
       const run = async (...args: string[]) => {
@@ -236,12 +274,75 @@ describe("the practice sandbox works like a real metarepo", () => {
         const code = await main([...args, "--root", root], c.io);
         return { code, text: [...c.out, ...c.err].join("\n") };
       };
-      const open = await run("workspace", "open", "add-transfer-limit", "--repos", "forge-ledger");
-      expect(open.code, open.text).toBe(0);
-      const sync = await run("workspace", "sync");
-      expect(sync.code, sync.text).toBe(0);
-      const down = await run("spec", "hand-down", "add-transfer-limit", "1.2");
-      expect(down.code, down.text).toBe(0);
+      await withoutGlobalGit(async () => {
+        const open = await run(
+          "workspace",
+          "open",
+          "add-transfer-limit",
+          "--repos",
+          "forge-ledger",
+        );
+        expect(open.code, open.text).toBe(0);
+        const sync = await run("workspace", "sync");
+        expect(sync.code, sync.text).toBe(0);
+        const down = await run("spec", "hand-down", "add-transfer-limit", "1.2");
+        expect(down.code, down.text).toBe(0);
+      });
+    },
+    T,
+  );
+
+  it(
+    "takes the product owner's lesson to Design with the command line alone, recording the Git host's steps",
+    async () => {
+      const root = await sandbox();
+      const lesson = lessons.find((l) => l.id === "product-owner-first-change")!;
+      const run = async (argv: string[]) => {
+        const c = capture();
+        const code = await main([...argv, "--root", root], c.io);
+        return { code, text: [...c.out, ...c.err].join("\n"), out: c.out };
+      };
+      expect(await learnStart(root, lesson.role, {}, capture().io, { now: NOW })).toBe(0);
+      for (const step of lesson.steps) {
+        await writeSolution(root, step.solution?.files ?? []);
+        for (const argv of step.do) {
+          const r = await run(argv);
+          expect([0, 1], `atticus ${argv.join(" ")}: ${r.text}`).toContain(r.code);
+        }
+        // Each sync leaves the next Git host step (open, report, merge) for a person to record.
+        for (let round = 0; round < 4 && step.id === "handoff"; round++) {
+          const list = await run(["todo", "--json"]);
+          const open = (
+            JSON.parse(list.out.join("\n")) as {
+              id: string;
+              waitsFor: string[];
+              record: { name: string }[];
+            }[]
+          ).filter((s) => s.waitsFor.length === 0);
+          if (open.length === 0) break;
+          for (const s of open) {
+            const args = ["todo", "done", s.id, "--by", "pat"];
+            for (const f of s.record)
+              if (RECORDED[f.name]) args.push("--result", `${f.name}=${RECORDED[f.name]}`);
+            const done = await run(args);
+            expect(done.code, `atticus ${args.join(" ")}: ${done.text}`).toBe(0);
+          }
+          const sync = await run(["change", "sync", "show-transfer-history", "--by", "pat"]);
+          expect([0, 1], sync.text).toContain(sync.code);
+        }
+        const c = capture();
+        const code = await learnCheck(
+          root,
+          step.solution?.answer !== undefined ? { answer: step.solution.answer } : {},
+          c.io,
+          { now: NOW },
+        );
+        expect({ step: step.id, code, out: c.out[0] }).toEqual({
+          step: step.id,
+          code: 0,
+          out: expect.stringMatching(/^Passed: /),
+        });
+      }
     },
     T,
   );

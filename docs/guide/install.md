@@ -82,7 +82,7 @@ atticus ui --open
 
 **An existing repo** (an OpenSpec or Spec Kit repo, or a repo with its own assistant prompts) can use Atticus in place: `atticus adopt <path>` writes only `.atticus/`, and `atticus unadopt <path>` leaves the repo byte for byte as it was.
 
-**Practice first:** `atticus sandbox create <dir>` makes a throwaway metarepo from the invented Forge ecosystem, with every outside system a mock.
+**Practice first:** `atticus sandbox create <dir>` makes a throwaway metarepo from the invented Forge ecosystem, with every outside system a mock except the Git host, which is manual: you record its pull request steps with `atticus todo done`, as you would without Git host access.
 
 The app's Home shows the setup checklist until the catalog is accepted. The same list is `atticus setup`. Next: [the admin guide](admin.md).
 
