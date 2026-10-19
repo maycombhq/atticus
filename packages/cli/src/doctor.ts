@@ -6,6 +6,9 @@ import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock } from "@maycombhq/co
 import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { upgradeCheck } from "./upgrade.js";
+import { versionAtLeast } from "./version.js";
+export { versionAtLeast };
 
 /**
  * `atticus doctor` (ADR 0049): what this machine needs for Atticus to work, each check with a
@@ -42,18 +45,6 @@ export interface DoctorDeps {
 export const MIN_NODE = "22.13.0";
 export const MIN_GIT = "2.30.0";
 const GB = 1024 ** 3;
-
-export function versionAtLeast(v: string, min: string): boolean {
-  const a = v.replace(/^v/, "").split(/[.+-]/).map(Number);
-  const b = min.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    const x = a[i] ?? 0;
-    const y = b[i] ?? 0;
-    if (Number.isNaN(x)) return false;
-    if (x !== y) return x > y;
-  }
-  return true;
-}
 
 function defaultPortFree(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -282,6 +273,23 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
         : `a scan is running (since ${scan.startedAt})`
       : "finished",
     fix: "Run atticus scan again: it brings the catalog up to date (every file it writes is whole).",
+  });
+
+  const up = await upgradeCheck(root);
+  out.push({
+    id: "upgrade",
+    label: "Metarepo version",
+    status: up.newer ? "fail" : up.pending.length ? "warn" : "ok",
+    detail: up.newer
+      ? `upgraded by Atticus ${up.stamp!.atticus}; this is ${up.atticus}`
+      : up.pending.length
+        ? `${up.pending.length} upgrade step${up.pending.length === 1 ? "" : "s"} to run`
+        : up.stamp
+          ? `up to date (last upgraded by Atticus ${up.stamp.atticus})`
+          : "up to date",
+    fix: up.newer
+      ? `Install Atticus ${up.stamp!.atticus} or later before working in this metarepo.`
+      : "Run atticus upgrade, then commit what it changed in a pull request.",
   });
 
   // ---- The org pack's choices, checked against this machine

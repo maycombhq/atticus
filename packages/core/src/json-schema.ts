@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { SCHEMA_VERSION } from "./schema/common.js";
 import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
-import { CatalogBaseline, ChangeOutcomes, ChangeRepos, RepoManifest } from "./schema/workspace.js";
+import {
+  CatalogBaseline,
+  ChangeOutcomes,
+  ChangeRepos,
+  MetarepoStamp,
+  RepoManifest,
+} from "./schema/workspace.js";
 import { ChangeLifecycle } from "./schema/change.js";
 import { Dialect } from "./schema/dialect.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
@@ -30,7 +36,12 @@ export function catalogJsonSchemas(): Record<RecordKind, object> {
  * change.yaml (its lifecycle state) and review/outcomes.yaml (ADR 0045).
  */
 export function workspaceJsonSchemas(): Record<
-  "RepoManifest" | "ChangeRepos" | "ChangeLifecycle" | "ChangeOutcomes" | "CatalogBaseline",
+  | "RepoManifest"
+  | "ChangeRepos"
+  | "ChangeLifecycle"
+  | "ChangeOutcomes"
+  | "CatalogBaseline"
+  | "MetarepoStamp",
   object
 > {
   const gen = (name: string, schema: z.ZodType) => ({
@@ -44,6 +55,7 @@ export function workspaceJsonSchemas(): Record<
     ChangeLifecycle: gen("ChangeLifecycle", ChangeLifecycle),
     ChangeOutcomes: gen("ChangeOutcomes", ChangeOutcomes),
     CatalogBaseline: gen("CatalogBaseline", CatalogBaseline),
+    MetarepoStamp: gen("MetarepoStamp", MetarepoStamp),
   };
 }
 

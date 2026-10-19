@@ -17,6 +17,7 @@ import { baselineCommand, setupCommand } from "./baseline-commands.js";
 import { digestCommand } from "./digest-commands.js";
 import { doctorCommand } from "./doctor.js";
 import { supportBundleCommand } from "./support.js";
+import { upgradeCommand } from "./upgrade.js";
 import { aliasCommand, reconcileCommand } from "./reconcile-commands.js";
 import {
   coverageCommand,
@@ -150,6 +151,7 @@ Usage:
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline --by <you>          Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant
+  atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first) [--by you]
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest --as <you>            What waits on you [--group g]... [--channel c] [--send] [--json]
   atticus guide <system> [--json]      A system's guide, generated from the catalog: parts, calls, data, runtime, decisions
@@ -474,6 +476,17 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     );
   if (group === "setup" && !command) return setupCommand(root, { json: values.json === true }, io);
   if (group === "doctor") return doctorCommand(root, { json: values.json === true }, io);
+  if (group === "upgrade")
+    return upgradeCommand(
+      root,
+      {
+        check: values.check === true,
+        dryRun: values["dry-run"] === true,
+        ...(typeof values.by === "string" && values.by ? { by: values.by } : {}),
+        json: values.json === true,
+      },
+      io,
+    );
   if (group === "support" && command === "bundle")
     return supportBundleCommand(
       root,
@@ -788,10 +801,11 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     const owner = Array.isArray(values.owner)
       ? (values.owner[0] as string | undefined)
       : str(values.owner);
-    return initCommand(
-      resolve(command ?? "."),
+    const dir = resolve(command ?? ".");
+    const code = await initCommand(
+      dir,
       {
-        ...(command ? { name: basename(resolve(command)) } : {}),
+        ...(command ? { name: basename(dir) } : {}),
         ...(str(values.platform) ? { platform: str(values.platform)! } : {}),
         ...(str(values.from) ? { packFrom: resolve(str(values.from)!) } : {}),
         ...(owner ? { owner } : {}),
@@ -799,6 +813,14 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       },
       io,
     );
+    // A new metarepo starts up to date: record the Atticus that made it (ADR 0051).
+    if (code === 0)
+      await upgradeCommand(
+        dir,
+        { ...(owner ? { by: owner } : {}) },
+        { out: () => undefined, err: (l) => io.err(l) },
+      );
+    return code;
   }
   if (group === "adopt")
     return adoptCommand(

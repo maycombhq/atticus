@@ -223,3 +223,16 @@ export const CatalogBaseline = z.strictObject({
   note: z.string().optional(),
 });
 export type CatalogBaseline = z.infer<typeof CatalogBaseline>;
+
+/**
+ * `.atticus/metarepo.yaml` (ADR 0051), committed: which Atticus last upgraded this metarepo and
+ * the migrations it has had. An older Atticus refuses to upgrade a metarepo a newer one wrote.
+ */
+export const MetarepoStamp = z.strictObject({
+  schemaVersion: z.literal(WORKSPACE_SCHEMA_VERSION),
+  atticus: z.string().min(1),
+  upgradedAt: z.iso.datetime({ offset: true }),
+  upgradedBy: z.string().min(1),
+  migrations: z.array(z.string().min(1)).default([]),
+});
+export type MetarepoStamp = z.infer<typeof MetarepoStamp>;

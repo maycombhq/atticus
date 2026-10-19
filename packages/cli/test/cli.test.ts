@@ -75,6 +75,7 @@ describe("atticus CLI", () => {
       "ChangeLifecycle.json",
       "ChangeOutcomes.json",
       "ChangeRepos.json",
+      "MetarepoStamp.json",
       "RepoManifest.json",
     ]);
     const system = JSON.parse(await readFile(join(dir, "catalog", "System.json"), "utf8"));

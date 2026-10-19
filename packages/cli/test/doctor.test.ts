@@ -12,6 +12,7 @@ import {
   type DoctorDeps,
 } from "../src/doctor.js";
 import { setupSteps } from "../src/baseline-commands.js";
+import { upgradeCommand } from "../src/upgrade.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 let root: string;
@@ -42,6 +43,8 @@ const byId = (checks: DoctorCheck[], id: string) => checks.find((c) => c.id === 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "atticus-doctor-"));
   await cp(join(FIXTURES, "forge/metarepo"), root, { recursive: true });
+  // Up to date, so the machine checks are the only ones that vary here.
+  await upgradeCommand(root, { by: "pat" }, { out: () => undefined, err: () => undefined });
 });
 
 describe("atticus doctor", () => {
