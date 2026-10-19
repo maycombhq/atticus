@@ -19,19 +19,20 @@ Home shows it until the catalog is accepted; `atticus setup` prints it. Each ste
 
 Everything a team might want to change is in `org-pack/`: configuration and rule files, never code. Changes to it go through pull requests like any other code. The full schema is [contract C6](../spec/contracts/c6-org-pack.md); the files a team touches most:
 
-| File                                      | What it decides                                                                           |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `pack.yaml`                               | Name, version, owner, review window, how long facts stay fresh                            |
-| `runtime.yaml`                            | What AI may do, assistants and editors, run modes, autonomy, budgets, outside systems     |
-| `roles.yaml`                              | Optional roles, directory groups mapped to roles, who approves what, separation of duties |
-| `sources.yaml`                            | Wikis Atticus reads (read-only)                                                           |
-| `gates.yaml`                              | The gate at each phase, its approvers and checklists                                      |
-| `change-types.yaml`, `test-strategy.yaml` | Change types and the tests each needs (built-in defaults until written)                   |
-| `profiles/<platform>/`                    | The platform profile and `repos.manifest.yaml`                                            |
-| `dialects/`                               | Rules that teach the scanner a house framework (`atticus dialect new`)                    |
-| `patterns/`, `checklists/`                | Integration patterns and the critic's checklists                                          |
-| `process/`                                | Change templates, service-desk request templates, procedures and skills                   |
-| `agents/`                                 | AI agent definitions the critic and planners use                                          |
+| File                                      | What it decides                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `pack.yaml`                               | Name, version, owner, review window, how long facts stay fresh                                    |
+| `runtime.yaml`                            | What AI may do, assistants and editors, run modes, autonomy, budgets, outside systems             |
+| `roles.yaml`                              | Optional roles, directory groups mapped to roles, who approves what, separation of duties         |
+| `sources.yaml`                            | Wikis Atticus reads (read-only)                                                                   |
+| `gates.yaml`                              | The gate at each phase, its approvers and checklists                                              |
+| `change-types.yaml`, `test-strategy.yaml` | Change types and the tests each needs (built-in defaults until written)                           |
+| `profiles/<platform>/`                    | The platform profile and `repos.manifest.yaml`                                                    |
+| `dialects/`                               | Rules that teach the scanner a house framework (`atticus dialect new`)                            |
+| `frameworks/`                             | What a house framework means: its annotations, wrapper clients, service ids, constants (ADR 0054) |
+| `patterns/`, `checklists/`                | Integration patterns and the critic's checklists                                                  |
+| `process/`                                | Change templates, service-desk request templates, procedures and skills                           |
+| `agents/`                                 | AI agent definitions the critic and planners use                                                  |
 
 A secret never goes in the org pack: Atticus refuses keys that look like one. Credentials come from the OS credential manager, Git's own helper or the plugins.
 

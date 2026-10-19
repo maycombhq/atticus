@@ -13,6 +13,7 @@ import {
 } from "./lang/java.js";
 import { looksLikeSql, tablesInQuery } from "./lang/sql.js";
 import { cleanJdbcUrl, SECRET_NAME } from "./backends/shared.js";
+import { applyAnnotations, modelsFor, modelValues, wrapperCalls } from "./frameworks.js";
 
 const MAPPINGS: Record<string, string | undefined> = {
   GetMapping: "GET",
@@ -135,10 +136,18 @@ export const springExtractor = defineExtractor({
     for await (const path of repo.listFiles(["**/*.java", "**/*.kt"])) {
       if (/(^|\/)src\/test\//.test(path)) continue;
       const src = await repo.readText(path);
-      if (!/springframework|@FeignClient|KafkaTemplate|JdbcTemplate|@KafkaListener/.test(src))
+      const housePackages = (ctx.frameworks ?? []).flatMap((m) => m.packages);
+      if (
+        !/springframework|@FeignClient|KafkaTemplate|JdbcTemplate|@KafkaListener/.test(src) &&
+        !housePackages.some((p) => src.includes(p))
+      )
         continue;
       const file = parseJava(src);
       const lines = src.split("\n");
+      // House frameworks this file uses (ADR 0054): their annotations read as Spring's.
+      const models = modelsFor(file, ctx.frameworks);
+      applyAnnotations(file, models);
+      const values = modelValues(models);
       // Names this file gives a value: same-file String constants and @Value fields
       // (base → ${nw.endpoints.payments}), so base + PAY reads as a URL resolve() can finish.
       const known = new Map<string, string>();
@@ -151,7 +160,17 @@ export const springExtractor = defineExtractor({
         if (v) known.set(d.name, v);
       }
       const fill = (shown: string) =>
-        shown.replace(/\$\{([A-Za-z_]\w*)\}/g, (m, n: string) => known.get(n) ?? m);
+        shown.replace(
+          /\$\{([A-Za-z_][\w.]*)\}/g,
+          (m, n: string) => known.get(n) ?? values.get(n)?.value ?? m,
+        );
+      // For a served path: only names whose value was learned from code or bytecode, so the
+      // endpoint it makes can be verified.
+      const fillVerified = (shown: string) =>
+        shown.replace(/\$\{([A-Za-z_][\w.]*)\}/g, (m, n: string) => {
+          const v = values.get(n);
+          return v?.verified ? v.value : m;
+        });
 
       // ---- serving side: controllers (collected, so what the file gave is known)
       const serving: CatalogRecord[] = [];
@@ -165,10 +184,10 @@ export const springExtractor = defineExtractor({
           const classMap = findAnnotation(type, "RequestMapping");
           const cm = classMap ? mapping(classMap) : undefined;
           const prefixes = cm?.paths ?? [""];
-          const named = m.named || !!cm?.named;
           for (const prefix of prefixes) {
             for (const p of m.paths) {
-              const full = join(prefix, p);
+              const full = join(fillVerified(prefix), fillVerified(p));
+              const named = full.includes("${");
               if (isController && !feign && named) {
                 // A served path made from a constant: seen, but not known well enough to verify.
                 serving.push(
@@ -180,13 +199,21 @@ export const springExtractor = defineExtractor({
                   }),
                 );
               } else if (isController && !feign) {
+                // Known only through a model a person or document wrote: inferred, not verified.
+                const byPerson = [
+                  a,
+                  classMap,
+                  findAnnotation(type, "RestController", "Controller"),
+                ].some((x) => x?.from && !x.from.verified);
                 serving.push(
-                  restEndpoint(repo, component, m.method, full, {
-                    source: "code",
-                    path,
-                    line: a.line,
-                    side: "callee",
-                  }),
+                  restEndpoint(
+                    repo,
+                    component,
+                    m.method,
+                    full,
+                    { source: "code", path, line: a.line, side: "callee" },
+                    byPerson ? { confidence: "inferred" } : {},
+                  ),
                 );
               } else if (feign) {
                 const url = attrsShown(feign, "url");
@@ -335,9 +362,21 @@ export const springExtractor = defineExtractor({
           }
         }
       });
+      // Calls through a house framework's wrapper client (ADR 0054).
+      for (const w of wrapperCalls(file, src, models, fill))
+        found.push(
+          looseEnd(repo, ctx, "http-call", `${w.method} ${resolve(w.url)}`, {
+            source: "code",
+            path,
+            line: w.call.line,
+            side: "caller",
+          }),
+        );
       // Negative space: a file that uses a client library but gave nothing is a gap to see.
       if (serving.length === 0 && found.length === 0) {
-        const lib = CLIENT_PACKAGES.find((p) => file.imports.some((i) => i.startsWith(p)));
+        const lib = [...CLIENT_PACKAGES, ...models.flatMap((m) => m.packages)].find((p) =>
+          file.imports.some((i) => i.startsWith(p)),
+        );
         if (lib) ctx.warn(`uses ${lib} but no call to it was read here`, path);
       }
       yield* serving;

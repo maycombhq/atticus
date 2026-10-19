@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { Dialect, type CatalogRecord } from "@maycombhq/core";
+import { Dialect, FrameworkModel, type CatalogRecord } from "@maycombhq/core";
 import { fsRepo, memoryRepo, scanRepo, type Extractor } from "@maycombhq/sdk";
 import {
   apigeeExtractor,
@@ -320,6 +320,87 @@ class Quiet { void x() { restTemplate.execute(url, HttpMethod.GET, cb, ex); } }`
       path: "src/main/java/Quiet.java",
       message: "uses org.springframework.web.client but no call to it was read here",
     });
+  });
+
+  it("reads a house framework through its model: annotations, wrapper calls, constants (ADR 0054)", async () => {
+    const model = FrameworkModel.parse({
+      schemaVersion: 1,
+      name: "tide-platform",
+      packages: ["tide.platform"],
+      annotations: [
+        {
+          name: "InternalApi",
+          means: ["RestController", "RequestMapping"],
+          attributes: { basePath: "path" },
+          source: { kind: "code" },
+        },
+        {
+          name: "Op",
+          means: ["RequestMapping"],
+          attributes: { verb: "method", path: "path" },
+          source: { kind: "code" },
+        },
+      ],
+      clients: [
+        {
+          type: "BankHttp",
+          method: "exchange",
+          service: { arg: 0 },
+          httpMethod: { arg: 1 },
+          path: { arg: 2 },
+          source: { kind: "person" },
+        },
+      ],
+      services: {
+        "Services.AUDIT": { value: "https://audit.tide.internal", source: { kind: "person" } },
+      },
+      constants: {
+        "Paths.LIMITS": { value: "/limits", source: { kind: "code" } },
+        "Paths.GUESS": { value: "/guess", source: { kind: "document" } },
+      },
+    });
+    const repo = memoryRepo("x", SHA, {
+      "src/main/java/Statements.java": `import tide.platform.web.InternalApi;
+import tide.platform.web.Op;
+@InternalApi(basePath = "/statements")
+class Statements {
+  @Op(verb = "GET", path = "/{id}") Statement one(String id) { return null; }
+  @Op(verb = "POST", path = Paths.LIMITS) Limit limit() { return null; }
+  @Op(verb = "GET", path = Paths.GUESS) Limit guess() { return null; }
+}`,
+      "src/main/java/Audit.java": `import tide.platform.http.BankHttp;
+class Audit {
+  private final BankHttp bankHttp;
+  void record(Event e) { bankHttp.exchange(Services.AUDIT, "POST", "/audit/events", e); }
+}`,
+    });
+    const s = await scanRepo({
+      repo,
+      extractors: [springExtractor],
+      repoInfo: { component: "x" },
+      frameworks: [model],
+    });
+    const endpoints = s.records
+      .filter((r) => r.kind === "Endpoint")
+      .map((r) => {
+        const e = r as unknown as { method: string; pathOrTopic: string };
+        return `${e.method} ${e.pathOrTopic}`;
+      })
+      .sort();
+    // A constant learned from code fills a verified path; one from a document doesn't.
+    expect(endpoints).toEqual(["GET /statements/{id}", "POST /statements/limits"]);
+    expect(
+      s.records
+        .filter((r) => r.kind === "Unresolved")
+        .map((r) => {
+          const u = r as unknown as { unresolvedKind: string; raw: string };
+          return `${u.unresolvedKind} ${u.raw}`;
+        })
+        .sort(),
+    ).toEqual([
+      "http-call POST https://audit.tide.internal/audit/events",
+      "http-endpoint GET /statements/${Paths.GUESS}",
+    ]);
   });
 
   it("reads WebClient and exchange calls", async () => {

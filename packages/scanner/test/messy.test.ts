@@ -109,24 +109,19 @@ describe("the messy estate (phase 2 gate)", () => {
     expect(scan.coverage).toHaveLength(3);
   });
 
-  // ---- Known gaps, for phase 3 (house frameworks). Each fails today; when one passes, the
-  // gap is closed: turn it into an ordinary test.
+  // ---- Phase 3: the house starter, read through its framework model (ADR 0054;
+  // org-pack/frameworks/tide-platform.yaml, written by a person).
 
-  it.fails(
-    "phase 3 gap: a controller on the house starter's @InternalApi/@Op is an endpoint",
-    () => {
-      expect(
-        recs().some(
-          (r) => r.kind === "Endpoint" && String(r.pathOrTopic).startsWith("/statements"),
-        ),
-      ).toBe(true);
-    },
-  );
+  it("reads a controller on the house starter's @InternalApi/@Op as an endpoint, inferred", () => {
+    const ep = recs().find(
+      (r) => r.kind === "Endpoint" && r.method === "GET" && r.pathOrTopic === "/statements/{id}",
+    );
+    expect(ep?.component).toBe("cards-svc");
+    // The model says what @InternalApi means, and a person wrote it: not verified yet.
+    expect(ep?.confidence).toBe("inferred");
+  });
 
-  it.fails(
-    "phase 3 gap: a call through the platform's wrapper client is at least a loose end",
-    () => {
-      expect(loose("http-call").some((x) => x.includes("/audit/events"))).toBe(true);
-    },
-  );
+  it("reads a call through the platform's wrapper client, with the service id's URL", () => {
+    expect(loose("http-call")).toContain("POST https://audit.tide.internal/audit/events");
+  });
 });

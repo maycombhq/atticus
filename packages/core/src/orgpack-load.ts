@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parse } from "yaml";
+import { FrameworkModel } from "./schema/frameworks.js";
 import type { z } from "zod";
 import {
   DEFAULT_CHANGE_TYPES,
@@ -48,6 +49,8 @@ export interface OrgPack {
   profiles: { profile?: Profile; repos?: RepoManifest; platform: string }[];
   patterns: IntegrationPattern[];
   dialects: Dialect[];
+  /** Framework models (ADR 0054), from frameworks/. */
+  frameworks: FrameworkModel[];
   checklists: ChecklistPack[];
   skills: (z.infer<typeof SkillMeta> & { body: string })[];
   serviceRequests: z.infer<typeof ServiceRequestTemplate>[];
@@ -180,6 +183,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   };
   const patterns = await many("patterns", /\.ya?ml$/, IntegrationPattern);
   const dialects = await many("dialects", /\.ya?ml$/, Dialect);
+  const frameworks = await many("frameworks", /\.ya?ml$/, FrameworkModel);
   const checklists = await many("checklists", /\.ya?ml$/, ChecklistPack);
   const serviceRequests = await many("process/snow", /\.ya?ml$/, ServiceRequestTemplate);
   const procedures = await many("process/procedures", /\.ya?ml$/, Procedure);
@@ -362,6 +366,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     profiles,
     patterns,
     dialects,
+    frameworks,
     checklists,
     skills,
     serviceRequests,

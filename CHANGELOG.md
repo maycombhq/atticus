@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### House frameworks, read through framework models
+
+- `org-pack/frameworks/<name>.yaml` (ADR 0054): what a house framework means, in terms the scanner already reads. Its annotations stand for Spring's (`@InternalApi` → `@RestController` + `@RequestMapping`, `@Op(verb, path)` → `@RequestMapping`), its wrapper client is an HTTP call (`bankHttp.exchange(Services.AUDIT, "POST", "/audit/events")`), and its service ids and constants have values. Every entry says where it was learned (code, bytecode, a document or a person); only code and bytecode make verified facts. `atticus orgpack validate` checks the files.
+- The Spring extractor reads files that use a modelled framework even when they don't import Spring, and turns a file using one into a warning when nothing was read from it.
+- The messy estate's two known gaps are closed: its house controller is an endpoint (inferred: a person wrote the model) and its wrapper call reaches `https://audit.tide.internal/audit/events`.
+- A Spring property placeholder in a served path (`"${api.base}/x"`) is a loose end, not a verified endpoint whose path holds `${api.base}`.
+
 ### The messy estate: the catalog-truth gate
 
 - `fixtures/messy`: an invented bank (Tidewater) written the way real teams write code (constants, `@Value` base URLs, a house starter, a wrapper client, Kotlin, JMS, a password in the datasource URL, a broken template, a gateway with a declared host). `packages/scanner/test/messy.test.ts` checks a scan finishes, makes no verified fact the code doesn't spell out, shows every client call, joins through the gateway only on its host, keeps no secret and reports coverage. The house annotation and the wrapper client are recorded as known gaps for phase 3.

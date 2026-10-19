@@ -307,6 +307,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         const d = dialectExtractors.find((de) => de.x === x)?.d;
         return d ? configHash({ dialect: JSON.stringify(d) }) : undefined;
       },
+      frameworks: op.frameworks,
       repoInfo: {
         ...(r.component ? { component: r.component } : {}),
         ...(r.system ? { system: r.system } : {}),

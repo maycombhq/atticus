@@ -116,6 +116,11 @@ export interface Annotation {
    * A name's value isn't known here, so what it makes is a loose end, never a verified fact.
    */
   named?: Record<string, AnnValue>;
+  /**
+   * Set when a framework model added this annotation for a house one (ADR 0054): which model,
+   * and whether what it says was learned from code or bytecode (else facts it makes are inferred).
+   */
+  from?: { model: string; verified: boolean };
   line: number;
 }
 

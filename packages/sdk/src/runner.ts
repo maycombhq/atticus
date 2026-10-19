@@ -1,4 +1,9 @@
-import { parseRecord, type CatalogRecord, type RecordIssue } from "@maycombhq/core";
+import {
+  parseRecord,
+  type CatalogRecord,
+  type FrameworkModel,
+  type RecordIssue,
+} from "@maycombhq/core";
 import type { ScanCache, ScanCacheKey } from "./cache.js";
 import { tooLargeMessage, type FsRepoHandle } from "./fs-repo.js";
 import { globToRegExp, type Extractor, type RepoHandle, type ScanContext } from "./plugin.js";
@@ -17,6 +22,8 @@ export interface ScanRepoOptions {
   configFor?: (extractor: Extractor) => string | undefined;
   /** What the manifest says about the repo; passed to extractors and part of the cache key. */
   repoInfo?: { component?: string; system?: string; repoType?: string };
+  /** Framework models for every extractor's context (ADR 0054); part of the cache key. */
+  frameworks?: readonly FrameworkModel[];
 }
 
 export type RunStatus = "ran" | "cached" | "skipped" | "failed";
@@ -147,9 +154,12 @@ export async function scanRepo(options: ScanRepoOptions): Promise<RepoScan> {
       extractor: extractor.id,
       version: extractor.version,
       dialects,
-      config: [options.configFor?.(extractor) ?? "", JSON.stringify(options.repoInfo ?? {})].join(
-        "|",
-      ),
+      config: [
+        options.configFor?.(extractor) ?? "",
+        JSON.stringify(options.repoInfo ?? {}),
+        // A changed framework model means a different reading of the same code.
+        options.frameworks?.length ? JSON.stringify(options.frameworks) : "",
+      ].join("|"),
     };
 
     try {
@@ -174,6 +184,7 @@ export async function scanRepo(options: ScanRepoOptions): Promise<RepoScan> {
           ...(info.component ? { component: info.component } : {}),
           ...(info.system ? { system: info.system } : {}),
           ...(info.repoType ? { repoType: info.repoType } : {}),
+          ...(options.frameworks?.length ? { frameworks: options.frameworks } : {}),
           scannedAt,
           warn: (message, path) =>
             warnings.push(path === undefined ? { message } : { message, path }),

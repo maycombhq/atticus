@@ -217,6 +217,7 @@ const CONTRACTS: Contract[] = [
       { name: "ChangeTypes", where: "org-pack/change-types.yaml" },
       { name: "Gates", where: "org-pack/gates.yaml" },
       { name: "IntegrationPattern", where: "org-pack/patterns/<code>.yaml" },
+      { name: "FrameworkModel", where: "org-pack/frameworks/<name>.yaml (ADR 0054)" },
       { name: "Sources", where: "org-pack/sources.yaml" },
       { name: "Runtime", where: "org-pack/runtime.yaml" },
       { name: "SkillMeta", where: "org-pack/process/skills/<name>/SKILL.md (front matter)" },

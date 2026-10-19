@@ -1,4 +1,9 @@
-import { parseRecord, type CatalogRecord, type RecordIssue } from "@maycombhq/core";
+import {
+  parseRecord,
+  type CatalogRecord,
+  type FrameworkModel,
+  type RecordIssue,
+} from "@maycombhq/core";
 
 /**
  * Contract C4 (v0): the plugin interfaces. Extractors read files and emit catalog records.
@@ -27,6 +32,11 @@ export interface ScanContext {
   readonly repoType?: string;
   /** ISO timestamp of this scan, for evidence. */
   readonly scannedAt: string;
+  /**
+   * Framework models that apply (ADR 0054): what house annotations, wrapper clients and
+   * constants mean. Extractors that don't read house frameworks ignore it.
+   */
+  readonly frameworks?: readonly FrameworkModel[];
   /** Report a problem without failing the scan. */
   warn(message: string, path?: string): void;
 }

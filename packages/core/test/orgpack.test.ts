@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   BUILT_IN_ROLES,
@@ -10,6 +11,7 @@ import {
   DEFAULT_ROLES,
   DEFAULT_RUNTIME,
   DEFAULT_TEST_STRATEGY,
+  FrameworkModel,
   IntegrationPattern,
   loadOrgPack,
   Profile,
@@ -252,5 +254,30 @@ describe("loadOrgPack", () => {
     );
     expect(op.problems).toEqual([]);
     expect(op.skills[0]).toMatchObject({ id: "x", status: "active", body: "\n1. Do x.\n" });
+  });
+});
+
+describe("framework models (ADR 0054)", () => {
+  const MESSY = join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../../fixtures/messy/metarepo/org-pack",
+  );
+
+  it("loads frameworks/*.yaml from the org pack, with no problems", async () => {
+    const op = await loadOrgPack(MESSY);
+    expect(op.problems).toEqual([]);
+    expect(op.frameworks.map((f) => f.name)).toEqual(["tide-platform"]);
+    expect(op.frameworks[0]!.annotations.map((a) => a.name)).toEqual(["InternalApi", "Op"]);
+  });
+
+  it("refuses an annotation that stands for nothing, and a constant without a source", () => {
+    const bad = FrameworkModel.safeParse({
+      schemaVersion: 1,
+      name: "x",
+      packages: ["x"],
+      annotations: [{ name: "A", means: [], source: { kind: "code" } }],
+      constants: { "C.X": { value: "1" } },
+    });
+    expect(bad.success).toBe(false);
   });
 });

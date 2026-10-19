@@ -1,0 +1,24 @@
+# Tidewater's house starter, written by hand by the platform team (ADR 0054). Later this file
+# is learned from the starter's source or JARs; until then a person says what it means.
+schemaVersion: 1
+name: tide-platform
+packages: [tide.platform]
+artifacts: ["tide.platform:tide-web-starter"]
+annotations:
+  - name: InternalApi
+    means: [RestController, RequestMapping]
+    attributes: { basePath: path }
+    source: { kind: person, ref: "@tide-platform-team" }
+  - name: Op
+    means: [RequestMapping]
+    attributes: { verb: method, path: path }
+    source: { kind: person, ref: "@tide-platform-team" }
+clients:
+  - type: BankHttp
+    method: exchange
+    service: { arg: 0 }
+    httpMethod: { arg: 1 }
+    path: { arg: 2 }
+    source: { kind: person, ref: "@tide-platform-team" }
+services:
+  Services.AUDIT: { value: "https://audit.tide.internal", source: { kind: person, ref: "@tide-platform-team" } }
