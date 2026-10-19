@@ -5,6 +5,7 @@ import { uiDistDir } from "@maycombhq/ui";
 import type { Output } from "./commands.js";
 import { uiRoutes, type UiDeps } from "./ui-api.js";
 import { uiRunRoutes } from "./ui-api-run.js";
+import { uiMeRoutes } from "./ui-api-me.js";
 import { uiKnowRoutes } from "./ui-api-know.js";
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
@@ -19,7 +20,8 @@ export function startUi(
     staticDir: o.staticDir ?? uiDistDir(),
     ...(o.user ? { user: o.user } : {}),
     ...(o.version ? { version: o.version } : {}),
-    extend: (r, ctx) => uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx),
+    extend: (r, ctx) =>
+      uiMeRoutes(uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx), ctx),
   });
 }
 

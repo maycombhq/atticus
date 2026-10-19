@@ -393,3 +393,30 @@ describe("the index on a fresh metarepo", () => {
     }
   });
 });
+
+describe("Ask", () => {
+  it("answers a question with the query it ran, an impact walk or an owner", async () => {
+    const root = await forgeMetarepo();
+    const s = await startServer({ root, port: 0 });
+    const ask = async (q: string) =>
+      (await (
+        await fetch(`${s.url}/api/ask?q=${encodeURIComponent(q)}`, {
+          headers: { "X-Atticus-Token": s.token },
+        })
+      ).json()) as Record<string, unknown>;
+    try {
+      const calls = await ask("Who calls ledger-api?");
+      expect(calls).toMatchObject({ action: "query", query: "kind:interface to:ledger-api" });
+      expect((calls.result as { total: number }).total).toBeGreaterThan(0);
+      const breaks = await ask("what breaks if ledger-api changes");
+      expect(breaks).toMatchObject({ action: "impact", id: "ledger-api" });
+      expect((breaks.impact as { affected: unknown[] }).affected.length).toBeGreaterThan(0);
+      expect(await ask("who owns ledger-api")).toMatchObject({
+        action: "owner",
+        owner: "team-ledger",
+      });
+    } finally {
+      await s.close();
+    }
+  });
+});

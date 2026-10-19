@@ -1,20 +1,34 @@
 name: CI
 
+# Every push runs the check once on Linux. The full matrix (Linux and Windows, Node 22 and 24)
+# runs when started by hand (Actions > CI > Run workflow, full: true) and before a release:
+# hosted minutes on a private repo are limited, and Windows minutes count double.
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Run the full matrix (Linux and Windows, Node 22 and 24)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
+
+# A newer push cancels the run for an older one.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        node: [22, 24]
+        os: ${{ github.event_name == 'workflow_dispatch' && inputs.full && fromJSON('["ubuntu-latest","windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        node: ${{ github.event_name == 'workflow_dispatch' && inputs.full && fromJSON('[22,24]') || fromJSON('[22]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4

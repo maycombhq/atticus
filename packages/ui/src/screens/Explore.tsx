@@ -49,9 +49,20 @@ function value(v: unknown): string {
   return JSON.stringify(v);
 }
 
-function queryOf(hash: string): string {
+function paramOf(hash: string, name: string): string {
   const q = hash.split("?")[1];
-  return q ? (new URLSearchParams(q).get("q") ?? "") : "";
+  return q ? (new URLSearchParams(q).get(name) ?? "") : "";
+}
+const queryOf = (hash: string) => paramOf(hash, "q");
+
+interface Asked {
+  question: string;
+  action: "query" | "impact" | "owner";
+  query: string;
+  explanation: string;
+  id?: string;
+  owner?: string | null;
+  error?: string;
 }
 
 function Detail({ row }: { row: Row }) {
@@ -152,12 +163,23 @@ function Detail({ row }: { row: Row }) {
 
 export function Explore({ hash }: { hash: string }) {
   const initial = queryOf(hash);
+  const askText = paramOf(hash, "ask");
+  const asked = useApi<Asked>(askText ? `/api/ask?q=${encodeURIComponent(askText)}` : undefined);
   const [text, setText] = useState(initial);
   const [q, setQ] = useState(initial);
   useEffect(() => {
     setText(initial);
     setQ(initial);
   }, [initial]);
+  useEffect(() => {
+    if (asked.state !== "ready") return;
+    if (asked.data.action === "impact" && asked.data.id) {
+      location.hash = `#/impact?q=${encodeURIComponent(asked.data.id)}`;
+      return;
+    }
+    setText(asked.data.query);
+    setQ(asked.data.query);
+  }, [asked.state, asked.state === "ready" ? asked.data : undefined]);
   const [picked, setPicked] = useState<Row | undefined>();
   const results = useApi<SearchResult>(
     q ? `/api/search?q=${encodeURIComponent(q)}&limit=60` : undefined,
@@ -178,6 +200,43 @@ export function Explore({ hash }: { hash: string }) {
 
   return (
     <div className="bento">
+      {askText && (
+        <Panel title={`Ask: ${askText}`} kind="hero" span="1 / -1">
+          <View of={asked}>
+            {(a) => (
+              <div className="stack" style={{ gap: 6 }}>
+                <p style={{ margin: 0 }}>{a.explanation}</p>
+                {a.action === "owner" && (
+                  <p style={{ margin: 0, fontSize: 18 }}>
+                    {a.owner ? (
+                      <>
+                        <span className="mono">{a.id}</span> is owned by{" "}
+                        <span className="chip done">{a.owner}</span>
+                      </>
+                    ) : (
+                      <>
+                        The catalog doesn't know who owns <span className="mono">{a.id}</span> yet.
+                      </>
+                    )}
+                  </p>
+                )}
+                <span className="hud" style={{ fontSize: 10 }}>
+                  Query run:{" "}
+                  <span className="mono" style={{ color: "var(--accent)" }}>
+                    {a.query}
+                  </span>{" "}
+                  · edit it below to refine
+                </span>
+                {a.error && (
+                  <span role="alert" style={{ color: "#FF9BCB" }}>
+                    {a.error}
+                  </span>
+                )}
+              </div>
+            )}
+          </View>
+        </Panel>
+      )}
       <Panel title="Search the catalog" span="1 / -1">
         <form role="search" onSubmit={submit} className="row" style={{ flexWrap: "wrap" }}>
           <label htmlFor="kq" className="sr">

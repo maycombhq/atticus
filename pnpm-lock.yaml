@@ -258,6 +258,9 @@ importers:
       '@maycombhq/server':
         specifier: workspace:*
         version: link:../server
+      '@maycombhq/site':
+        specifier: workspace:*
+        version: link:../site
       '@maycombhq/speckit':
         specifier: workspace:*
         version: link:../speckit
@@ -785,6 +788,16 @@ importers:
       zod:
         specifier: ^4.6.0
         version: 4.6.7
+
+  packages/site:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   packages/speckit:
     dependencies:

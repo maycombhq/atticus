@@ -11,7 +11,8 @@ import {
   workspaceSync,
 } from "./workspace-commands.js";
 import { catalogDiff, scanCommand } from "./scan-commands.js";
-import { impactCommand, indexRebuild, queryCommand } from "./index-commands.js";
+import { askCommand, impactCommand, indexRebuild, queryCommand } from "./index-commands.js";
+import { guideCommand, siteBuildCommand } from "./site-commands.js";
 import { aliasCommand, reconcileCommand } from "./reconcile-commands.js";
 import {
   coverageCommand,
@@ -131,6 +132,9 @@ Usage:
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
           [--limit n] [--json]         (see docs/query-language.md)
   atticus impact <id>                  What a change to a record reaches, with owners and open questions
+  atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
+  atticus guide <system> [--json]      A system's guide, generated from the catalog: parts, calls, data, runtime, decisions
+  atticus site build <dir> [--title t] The read-only catalog site as static files (only systems open to everyone)
           [--depth n] [--json]
   atticus index rebuild                Rebuild the local index from the catalog files
   atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
@@ -399,6 +403,21 @@ export async function main(argv: string[], io: Output): Promise<number> {
       },
       io,
     );
+  if (group === "guide") return guideCommand(root, command, { json: values.json === true }, io);
+  if (group === "site" && command === "build")
+    return siteBuildCommand(
+      root,
+      positionals[2],
+      { ...(typeof values.title === "string" && values.title ? { title: values.title } : {}) },
+      io,
+    );
+  if (group === "ask") {
+    if (!command) {
+      io.err('ask needs a question, for example: atticus ask "who calls ledger-api?"');
+      return 2;
+    }
+    return askCommand(root, command, { json: values.json === true }, io);
+  }
   if (group === "query") {
     if (!command) {
       io.err('query needs a query, for example: atticus query "kind:interface via:gateway"');

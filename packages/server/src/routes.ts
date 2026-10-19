@@ -13,7 +13,14 @@ import {
   type Finding,
 } from "@maycombhq/core";
 import { changeStore } from "@maycombhq/changes";
-import { graph, impact, openIndex, QueryError, type CatalogIndex } from "@maycombhq/index";
+import {
+  graph,
+  impact,
+  openIndex,
+  QueryError,
+  translate,
+  type CatalogIndex,
+} from "@maycombhq/index";
 import { readRound, reviewedGates, roundsOf } from "@maycombhq/naysayer";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import { badRequest, intParam, notFound, strParam, type Router } from "./http.js";
@@ -133,6 +140,41 @@ export function apiRoutes(r: Router, ctx: Context): Router {
         if (e instanceof QueryError) throw badRequest(e.message);
         throw e;
       }
+    })
+    .add("GET", "/api/ask", async ({ query }) => {
+      const q = strParam(query, "q");
+      if (!q) throw badRequest("Ask a question: ?q=<plain words>.");
+      return {
+        status: 200,
+        body: await withIndex(root, (ix) => {
+          const lookup = (w: string) => {
+            const r = ix.find(w)[0];
+            return r ? { id: r.id, kind: r.kind } : undefined;
+          };
+          const asked = translate(q, lookup);
+          if (asked.action === "impact")
+            return { question: q, ...asked, impact: impact(ix, asked.id, 4) };
+          if (asked.action === "owner") {
+            const r = ix.find(asked.id)[0] as unknown as Record<string, unknown> | undefined;
+            const owner =
+              (r?.owner as string | undefined) ??
+              (r?.ownerComponent as string | undefined) ??
+              (r
+                ? (
+                    ix.find(String(r.system ?? ""))[0] as unknown as
+                      Record<string, unknown> | undefined
+                  )?.owner
+                : undefined);
+            return { question: q, ...asked, owner: owner ?? null };
+          }
+          try {
+            return { question: q, ...asked, result: ix.query(asked.query, { limit: 60 }) };
+          } catch (e) {
+            if (e instanceof QueryError) return { question: q, ...asked, error: e.message };
+            throw e;
+          }
+        }),
+      };
     })
     .add("GET", "/api/graph", async ({ query }) => {
       const depth = intParam(query, "depth", 1, 6);

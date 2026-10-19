@@ -70,11 +70,15 @@ export function useChange(hash: string, screen: string) {
 
 /** Inline `code` spans and **bold**, as React nodes (never HTML). */
 function inline(s: string): ReactNode[] {
-  return s.split(/(`[^`]+`|\*\*[^*]+\*\*)/).map((part, i) =>
+  return s.split(/(`[^`]+`|\*\*[^*]+\*\*|_\([^)]*\)_)/).map((part, i) =>
     part.startsWith("`") && part.endsWith("`") && part.length > 1 ? (
       <code key={i} className="mono" style={{ fontSize: "0.92em", color: "var(--accent)" }}>
         {part.slice(1, -1)}
       </code>
+    ) : part.startsWith("_(") && part.endsWith(")_") ? (
+      <span key={i} className="muted mono" style={{ fontSize: "0.85em" }}>
+        {part.slice(1, -1)}
+      </span>
     ) : part.startsWith("**") && part.endsWith("**") && part.length > 3 ? (
       <strong key={i}>{part.slice(2, -2)}</strong>
     ) : (

@@ -1,5 +1,7 @@
 import { useApi, useLiveEvents } from "../api/client.js";
 import { GraphView, type Graph } from "../app/graph.js";
+import { ACTION_LABEL, useMe, ViewPicker } from "../app/me.js";
+import { baseRole, inboxFor, type InboxData } from "../app/roles.js";
 import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
 
 interface ChangeSummary {
@@ -53,7 +55,21 @@ export function CommandCenter() {
   const changes = useApi<ChangeSummary[]>("/api/changes");
   const findings = useApi<Finding[]>("/api/findings?state=open");
   const kinds = useApi<KindCount[]>("/api/catalog/kinds");
-  const qs = useApi<{ data: { questions?: unknown[] } | null }>("/api/view/questions");
+  const qs = useApi<{ data: { questions?: InboxData["questions"] } | null }>("/api/view/questions");
+  const triage = useApi<{ data: { items?: InboxData["triage"] } | null }>("/api/view/triage");
+  const todo = useApi<{ steps: InboxData["steps"] }>("/api/todo");
+  const { me } = useMe();
+  const role = baseRole(me?.view ?? null, me?.roles ?? []);
+  const roleName = me?.roles.find((r) => r.id === me.view)?.name;
+  const inbox = role
+    ? inboxFor(role, {
+        changes: changes.state === "ready" ? changes.data : [],
+        findings: findings.state === "ready" ? findings.data : [],
+        questions: qs.state === "ready" ? (qs.data.data?.questions ?? []) : [],
+        triage: triage.state === "ready" ? (triage.data.data?.items ?? []) : [],
+        steps: todo.state === "ready" ? todo.data.steps : [],
+      })
+    : [];
   const graph = useApi<Graph>("/api/graph");
   useLiveEvents((e) => {
     if (e.type === "index.rebuilt" || e.type === "file.changed") {
@@ -86,8 +102,50 @@ export function CommandCenter() {
             ? `${blocking.length + gaps.length} things need attention.`
             : "Nothing is blocked right now."}
         </p>
-        <span className="hud">Live from your metarepo</span>
+        <span className="hud">
+          {me?.view
+            ? `${roleName ?? me.view} view · ${me.source === "group" ? `from ${me.sourceGroup}` : "chosen by you"}`
+            : "Live from your metarepo"}
+        </span>
       </div>
+      {me && !me.view && (
+        <div className="bento">
+          <Panel title="Welcome to Atticus" kind="hero" span="1 / -1">
+            <div className="row" style={{ gap: 24, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <p style={{ margin: 0, maxWidth: 620, lineHeight: 1.6 }}>
+                Pick the view you work in. It decides your home and the screens in your sidebar;
+                every screen stays under All screens. What you can approve never comes from the
+                view: it comes from ownership (CODEOWNERS and the org pack).
+              </p>
+              <div style={{ minWidth: 260 }}>
+                <ViewPicker id="first-view" />
+              </div>
+            </div>
+          </Panel>
+        </div>
+      )}
+      {me && me.view && (
+        <div className="row" style={{ flexWrap: "wrap", gap: 6 }} aria-label="Approvals you hold">
+          <span className="hud" style={{ fontSize: 10 }}>
+            You approve
+          </span>
+          {me.approvals.length === 0 && me.owns.length === 0 ? (
+            <span className="muted" style={{ fontSize: 12 }}>
+              nothing outside your own PRs yet
+            </span>
+          ) : null}
+          {me.approvals.map((a) => (
+            <span key={a.action} className="chip done" title={a.because}>
+              {(ACTION_LABEL[a.action] ?? a.action).toUpperCase()}
+            </span>
+          ))}
+          {me.owns.map((o) => (
+            <span key={o} className="chip dim" title="CODEOWNERS">
+              {o}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="bento" role="list" aria-label="Key numbers">
         {[
@@ -189,18 +247,33 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel title="Interfaces" kind="dark" span="span 3">
-          <View of={kinds}>
-            {() => (
-              <div className="stack">
-                <span className="big">{interfaces}</span>
-                <span className="hud" style={{ fontSize: 10 }}>
-                  Interfaces in the catalog
-                </span>
-              </div>
-            )}
-          </View>
-        </Panel>
+        {role && !["architect", "data-architect", "security-reviewer"].includes(role) ? (
+          <Panel title="Your phase" kind="dark" span="span 3">
+            <div className="stack">
+              <span className="big">{inbox.filter((x) => x.kind === "phase").length}</span>
+              <span className="hud" style={{ fontSize: 10 }}>
+                Changes waiting on {roleName ?? "you"}
+              </span>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {inbox.length - inbox.filter((x) => x.kind === "phase").length} other items in your
+                inbox
+              </span>
+            </div>
+          </Panel>
+        ) : (
+          <Panel title="Interfaces" kind="dark" span="span 3">
+            <View of={kinds}>
+              {() => (
+                <div className="stack">
+                  <span className="big">{interfaces}</span>
+                  <span className="hud" style={{ fontSize: 10 }}>
+                    Interfaces in the catalog
+                  </span>
+                </div>
+              )}
+            </View>
+          </Panel>
+        )}
 
         <Panel
           title="System map"
@@ -218,30 +291,43 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel title="Your queue" span="span 4" meta={`${blocking.length + gaps.length}`}>
-          <View of={findings} empty={(f) => f.length === 0} emptyText="Nothing waiting on you.">
-            {() => (
-              <div className="stack" style={{ gap: 0 }}>
-                {[...blocking, ...gaps].slice(0, 6).map((f) => (
-                  <div
-                    key={`${f.change}/${f.id}`}
+        <Panel title="Waiting on you" span="span 4" meta={role ? inbox.length : undefined}>
+          {!role ? (
+            <div className="state">Pick a view to see what waits on you.</div>
+          ) : inbox.length === 0 ? (
+            <div className="state">Nothing waiting on you.</div>
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {inbox.slice(0, 5).map((x, k) => (
+                <li key={k}>
+                  <a
+                    href={x.href}
                     className="list-row"
-                    style={{ alignItems: "flex-start" }}
+                    style={{ alignItems: "flex-start", textDecoration: "none", color: "inherit" }}
                   >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5 }}>{f.question?.text ?? f.summary}</div>
-                      <div className="hud" style={{ fontSize: 9.5 }}>
-                        {f.change} · {f.gate} · {f.lens ?? "checks"}
-                      </div>
-                    </div>
-                    <span className={`chip ${f.severity === "blocking" ? "blocking" : "warn"}`}>
-                      {f.severity === "blocking" ? "BLOCKING" : "ASK"}
+                    <span style={{ minWidth: 0 }}>
+                      <span className="clamp2" style={{ fontSize: 12.5 }}>
+                        {x.title}
+                      </span>
+                      <span className="hud" style={{ fontSize: 9.5 }}>
+                        {x.detail}
+                      </span>
                     </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </View>
+                    <span
+                      className={`chip ${x.kind === "finding" ? "blocking" : x.kind === "phase" ? "" : "warn"}`}
+                    >
+                      {x.kind.toUpperCase()}
+                    </span>
+                  </a>
+                </li>
+              ))}
+              {inbox.length > 5 && (
+                <li className="muted" style={{ fontSize: 12, paddingTop: 6 }}>
+                  and {inbox.length - 5} more
+                </li>
+              )}
+            </ul>
+          )}
         </Panel>
 
         <Panel title="Findings by lens" span="span 4">

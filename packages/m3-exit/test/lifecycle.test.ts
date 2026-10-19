@@ -172,6 +172,16 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
         "Created add-transfer-limit (feature, from the feature template). It is in define.",
         "Write the brief: openspec/changes/add-transfer-limit/brief.md",
       ]);
+      // Pin the creation date: Spec Kit hand-down stamps it into spec.md and plan.md, and the
+      // recorded AI answers are found by a hash of prompts that include those files.
+      const changeFile = join(e.root, "openspec/changes", CHANGE, "change.yaml");
+      await writeFile(
+        changeFile,
+        (await readFile(changeFile, "utf8")).replace(
+          /^createdAt: .*$/m,
+          "createdAt: 2026-10-18T09:00:00Z",
+        ),
+      );
       const s = await run("change", "status", CHANGE);
       expect(s.out).toContain("State: define");
       expect(s.text).toMatch(

@@ -1,0 +1,93 @@
+{
+  "numTotalTestSuites": 3,
+  "numPassedTestSuites": 1,
+  "numFailedTestSuites": 2,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 5,
+  "numPassedTests": 0,
+  "numFailedTests": 1,
+  "numPendingTests": 4,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1792369585907,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["system guides"],
+          "fullName": "system guides writes Ledger's guide from the catalog: owner, components, interfaces, data, runtime, decisions",
+          "status": "failed",
+          "title": "writes Ledger's guide from the catalog: owner, components, interfaces, data, runtime, decisions",
+          "duration": 151.70352400000002,
+          "failureMessages": [
+            "AssertionError: expected '# Ledger (ledger)\\n\\nProduct system ·…' to be '' // Object.is equality\n    at /home/claude/atticus/packages/site/test/site.test.ts:66:24\n    at file:///home/claude/atticus/node_modules/.pnpm/vitest@5.0.5_@types+node@22.20.5_vite@8.3.4_@types+node@22.20.5_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///home/claude/atticus/node_modules/.pnpm/vitest@5.0.5_@types+node@22.20.5_vite@8.3.4_@types+node@22.20.5_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///home/claude/atticus/node_modules/.pnpm/vitest@5.0.5_@types+node@22.20.5_vite@8.3.4_@types+node@22.20.5_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///home/claude/atticus/node_modules/.pnpm/vitest@5.0.5_@types+node@22.20.5_vite@8.3.4_@types+node@22.20.5_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///home/claude/atticus/node_modules/.pnpm/vitest@5.0.5_@types+node@22.20.5_vite@8.3.4_@types+node@22.20.5_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/claude/atticus/node_modules/.pnpm/vitest@5.0.5_@types+node@22.20.5_vite@8.3.4_@types+node@22.20.5_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)\n    at file:///home/claude/atticus/node_modules/.pnpm/vitest@5.0.5_@types+node@22.20.5_vite@8.3.4_@types+node@22.20.5_yaml@2.9.1_/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64"
+          ],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["system guides"],
+          "fullName": "system guides says what is missing instead of leaving a section blank",
+          "status": "skipped",
+          "title": "says what is missing instead of leaving a section blank",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["system guides"],
+          "fullName": "system guides refuses a system the catalog doesn't have",
+          "status": "skipped",
+          "title": "refuses a system the catalog doesn't have",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["the read-only catalog site"],
+          "fullName": "the read-only catalog site writes an index, a page per open system and a search file, and leaves restricted systems out",
+          "status": "skipped",
+          "title": "writes an index, a page per open system and a search file, and leaves restricted systems out",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["the read-only catalog site"],
+          "fullName": "the read-only catalog site escapes catalog text, so a record can't put markup on the page",
+          "status": "skipped",
+          "title": "escapes catalog text, so a record can't put markup on the page",
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1792369586558,
+      "endTime": 1792369586709.7036,
+      "status": "failed",
+      "message": "",
+      "name": "/home/claude/atticus/packages/site/test/site.test.ts"
+    }
+  ]
+}

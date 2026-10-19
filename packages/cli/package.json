@@ -42,6 +42,7 @@
     "@maycombhq/reconcile": "workspace:*",
     "@maycombhq/scanner": "workspace:*",
     "@maycombhq/server": "workspace:*",
+    "@maycombhq/site": "workspace:*",
     "@maycombhq/speckit": "workspace:*",
     "@maycombhq/stubs": "workspace:*",
     "@maycombhq/taskrun": "workspace:*",

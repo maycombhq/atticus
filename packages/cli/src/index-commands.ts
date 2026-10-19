@@ -1,4 +1,4 @@
-import { impact, openIndex, QueryError, type CatalogIndex } from "@maycombhq/index";
+import { impact, openIndex, QueryError, translate, type CatalogIndex } from "@maycombhq/index";
 import type { Output } from "./commands.js";
 
 /** Lay rows out in columns, with a header. */
@@ -28,6 +28,30 @@ async function withIndex<T>(
 }
 
 /** atticus query "<query>": records matching the catalog query language. Exit 2 for a bad query. */
+/** atticus ask "<question>": the question read as a query or an impact walk, shown, then run. */
+export async function askCommand(
+  root: string,
+  question: string,
+  o: { json?: boolean },
+  io: Output,
+): Promise<number> {
+  const asked = await withIndex(root, io, (ix) => {
+    const lookup = (w: string) => {
+      const r = ix.find(w)[0];
+      return r ? { id: r.id, kind: r.kind } : undefined;
+    };
+    return translate(question, lookup);
+  });
+  if (!o.json) {
+    io.out(asked.explanation);
+    io.out(`Query: ${asked.query}`);
+    io.out("");
+  }
+  if (asked.action === "impact")
+    return impactCommand(root, asked.id, { json: o.json === true }, io);
+  return queryCommand(root, asked.query, { json: o.json === true }, io);
+}
+
 export async function queryCommand(
   root: string,
   q: string,

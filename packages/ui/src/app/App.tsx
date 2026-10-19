@@ -3,6 +3,9 @@ import { useApi } from "../api/client.js";
 import { SCREEN_COMPONENTS } from "../screens/registry.js";
 import { NotBuilt } from "../screens/NotBuilt.js";
 import { ScreenBoundary } from "./boundary.js";
+import { MeProvider, useMe, ViewPicker } from "./me.js";
+import { CommandPalette } from "./palette.js";
+import { screensFor } from "./roles.js";
 import { GROUPS, SCREENS, screenOf, type ScreenDef } from "./screens.js";
 
 interface Health {
@@ -42,26 +45,46 @@ function Logo() {
 }
 
 function Nav({ current }: { current: ScreenDef }) {
+  const { me } = useMe();
+  const mine = screensFor(me?.view ?? null, me?.roles ?? []);
+  const inMine = mine.includes(current.id);
   return (
     <nav aria-label="Main" className="nav">
       <div className="brand">
         <Logo />
         ATTICUS
       </div>
-      {GROUPS.map((g) => (
-        <div key={g} role="group" aria-label={g}>
-          <div className="group">{g}</div>
-          {SCREENS.filter((s) => s.group === g).map((s) => (
-            <a
-              key={s.id}
-              href={`#/${s.id}`}
-              aria-current={s.id === current.id ? "page" : undefined}
-            >
+      <div style={{ padding: "4px 12px 8px" }}>
+        <ViewPicker id="view-picker" compact />
+      </div>
+      <div role="group" aria-label="Your screens">
+        <div className="group">My work</div>
+        {mine.map((id) => {
+          const s = SCREENS.find((x) => x.id === id)!;
+          return (
+            <a key={id} href={`#/${id}`} aria-current={id === current.id ? "page" : undefined}>
               {s.label}
             </a>
-          ))}
-        </div>
-      ))}
+          );
+        })}
+      </div>
+      <details className="all-screens" open={!inMine || undefined}>
+        <summary className="group">All screens · {SCREENS.length}</summary>
+        {GROUPS.map((g) => (
+          <div key={g} role="group" aria-label={g}>
+            <div className="group sub">{g}</div>
+            {SCREENS.filter((s) => s.group === g).map((s) => (
+              <a
+                key={s.id}
+                href={`#/${s.id}`}
+                aria-current={s.id === current.id && !inMine ? "page" : undefined}
+              >
+                {s.label}
+              </a>
+            ))}
+          </div>
+        ))}
+      </details>
       <a className="ask" href="#/explore">
         <span
           aria-hidden="true"
@@ -83,7 +106,7 @@ function TopBar({ health }: { health?: Health }) {
   const [q, setQ] = useState("");
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    location.hash = `#/explore?q=${encodeURIComponent(q)}`;
+    if (q.trim()) location.hash = `#/explore?ask=${encodeURIComponent(q.trim())}`;
   };
   return (
     <header className="topbar">
@@ -101,6 +124,9 @@ function TopBar({ health }: { health?: Health }) {
           Ask
         </button>
       </form>
+      <span className="hud" style={{ fontSize: 9.5, whiteSpace: "nowrap" }} aria-hidden="true">
+        Ctrl K
+      </span>
       {health && (
         <span className="chip dim" title={health.root}>
           {health.user} · v{health.version}
@@ -118,25 +144,28 @@ export function App() {
     document.title = `${current.label} · Atticus`;
   }, [current]);
   return (
-    <div className="shell">
-      <a className="skip" href="#main">
-        Skip to content
-      </a>
-      <Nav current={current} />
-      <main id="main" className="main" tabIndex={-1}>
-        <TopBar health={health.state === "ready" ? health.data : undefined} />
-        <h1 className="sr">{current.label}</h1>
-        {(() => {
-          const S = SCREEN_COMPONENTS[current.id];
-          return S ? (
-            <ScreenBoundary key={current.id} name={current.label}>
-              <S hash={hash} />
-            </ScreenBoundary>
-          ) : (
-            <NotBuilt screen={current} />
-          );
-        })()}
-      </main>
-    </div>
+    <MeProvider>
+      <div className="shell">
+        <a className="skip" href="#main">
+          Skip to content
+        </a>
+        <Nav current={current} />
+        <CommandPalette />
+        <main id="main" className="main" tabIndex={-1}>
+          <TopBar health={health.state === "ready" ? health.data : undefined} />
+          <h1 className="sr">{current.label}</h1>
+          {(() => {
+            const S = SCREEN_COMPONENTS[current.id];
+            return S ? (
+              <ScreenBoundary key={current.id} name={current.label}>
+                <S hash={hash} />
+              </ScreenBoundary>
+            ) : (
+              <NotBuilt screen={current} />
+            );
+          })()}
+        </main>
+      </div>
+    </MeProvider>
   );
 }

@@ -5,3 +5,4 @@ packages/core/schema/
 fixtures/
 docs/api/
 docs/evidence/
+packages/site/test/golden/

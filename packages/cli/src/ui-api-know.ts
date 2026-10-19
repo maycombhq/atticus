@@ -1,5 +1,7 @@
 import { Api } from "@maycombhq/core";
 import { initiativeStatus, readView } from "@maycombhq/initiatives";
+import { systemGuide } from "@maycombhq/site";
+import { catalogRecords, openChanges } from "./site-commands.js";
 import {
   badRequest,
   HttpError,
@@ -106,6 +108,20 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
       }
       ctx.events.publish({ type: "file.changed", path: "catalog/curated" });
       return { status: 200, body: { item: params.itemId, option: b.data.option, lines: out } };
+    })
+    .add("GET", "/api/guide/{system}", async ({ params }) => {
+      const id = params.system!;
+      if (!ID.test(id)) throw badRequest(`${id} isn't an id.`);
+      try {
+        return {
+          status: 200,
+          body: systemGuide(await catalogRecords(ctx.root), id, {
+            changes: await openChanges(ctx.root),
+          }),
+        };
+      } catch (e) {
+        throw notFound((e as Error).message);
+      }
     })
     .add("GET", "/api/initiatives", async () => {
       const v = await readView(ctx.root);

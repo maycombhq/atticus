@@ -293,6 +293,9 @@ export const CheckLessonRequest = z.strictObject({
 });
 export const SandboxRequest = z.strictObject({ dir: z.string().trim().min(1) });
 
+/** ADR 0044: the view (role) a person works in; it changes what they see, never what they approve. */
+export const SaveViewRequest = z.strictObject({ view: RecordId });
+
 /** ADR 0043: choose one of a triage item's numbered options; it writes a curated decision. */
 export const TriageDecideRequest = z.strictObject({
   option: z.number().int().min(1),
@@ -367,6 +370,26 @@ const OPS: Record<string, Record<string, Op>> = {
       summary: "Versions, the metarepo root and who is signed in",
       tag: "system",
       ok: { status: 200, schema: "Health", description: "OK" },
+    },
+  },
+  "/api/me": {
+    get: {
+      id: "getMe",
+      summary: "Who is signed in, their view and where it came from, and what they may approve",
+      tag: "system",
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["user", "view", "roles"] },
+        description: "OK",
+      },
+    },
+    put: {
+      id: "saveView",
+      summary: "Choose the view to work in; remembered per person in .atticus/me.yaml",
+      tag: "system",
+      body: SaveViewRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Saved" },
+      errors: [400],
     },
   },
   "/api/catalog/kinds": {
@@ -473,6 +496,20 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/guide/{system}": {
+    get: {
+      id: "getGuide",
+      summary: "A system's guide, generated from the catalog, with what it doesn't know yet",
+      tag: "views",
+      params: [p("system")],
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["system", "markdown", "gaps"] },
+        description: "OK",
+      },
+      errors: [400, 404],
+    },
+  },
   "/api/triage/{itemId}/decide": {
     post: {
       id: "decideTriage",
@@ -514,6 +551,21 @@ const OPS: Record<string, Record<string, Op>> = {
             problems: { type: "array", items: str },
           },
         },
+        description: "OK",
+      },
+      errors: [400],
+    },
+  },
+  "/api/ask": {
+    get: {
+      id: "ask",
+      summary:
+        "Answer a plain-language question from the catalog; the query used is always returned",
+      tag: "catalog",
+      params: [q("q", str, "The question, e.g. who calls ledger-api?")],
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["question", "action", "query", "explanation"] },
         description: "OK",
       },
       errors: [400],

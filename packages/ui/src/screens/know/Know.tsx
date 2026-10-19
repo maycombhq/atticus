@@ -2,7 +2,16 @@ import { useState, type FormEvent } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
-import { Note, Table, list, queryParam, setQueryParam, useAction, useView } from "./common.js";
+import {
+  Markdown,
+  Note,
+  Table,
+  list,
+  queryParam,
+  setQueryParam,
+  useAction,
+  useView,
+} from "./common.js";
 
 interface Coverage {
   systems: {
@@ -39,6 +48,23 @@ const CELL: Record<string, { bg: string; label: string }> = {
   "document-only": { bg: "rgba(255,181,71,0.45)", label: "from documents only" },
   unknown: { bg: "rgba(255,255,255,0.05)", label: "unknown" },
 };
+
+function SystemGuide({ system }: { system: string }) {
+  const g = useApi<{ markdown: string; gaps: string[] }>(
+    `/api/guide/${encodeURIComponent(system)}`,
+  );
+  return (
+    <Panel title={`Guide · ${system}`} span="1 / -1" meta="Generated from the catalog">
+      <View of={g}>
+        {(d) => (
+          <div style={{ maxHeight: 560, overflowY: "auto", paddingRight: 6 }}>
+            <Markdown text={d.markdown} />
+          </div>
+        )}
+      </View>
+    </Panel>
+  );
+}
 
 export function EcosystemMap() {
   const graph = useApi<Graph>("/api/graph");
@@ -114,6 +140,9 @@ export function EcosystemMap() {
           )}
         </View>
       </Panel>
+      {focus && cov.state === "ready" && cov.data.systems.some((x) => x.system === focus) && (
+        <SystemGuide system={focus} />
+      )}
       <Panel title="What the catalog knows" span="span 8">
         <View of={cov} empty={(c) => c.systems.length === 0} emptyText="No systems yet.">
           {(c) => {
