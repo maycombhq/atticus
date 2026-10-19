@@ -132,3 +132,18 @@ describe("a view on a metarepo with nothing scanned", () => {
     }
   });
 });
+
+describe("the machine checks in the app", () => {
+  it("answers GET /api/doctor and starts the setup checklist with the machine", async () => {
+    const d = await fetch(`${srv.url}/api/doctor`, { headers: { "X-Atticus-Token": srv.token } });
+    const body = (await d.json()) as { checks: { id: string; detail: string }[]; ok: boolean };
+    expect(d.status).toBe(200);
+    expect(body.checks.map((c) => c.id)).toEqual(
+      expect.arrayContaining(["node", "git", "openspec", "tls"]),
+    );
+    // The app holds the port itself, so that's never reported.
+    expect(body.checks.find((c) => c.id === "port")!.detail).toMatch(/free/);
+    const s = await get("/api/setup");
+    expect((s.body as unknown as { steps: { id: string }[] }).steps[0]!.id).toBe("machine");
+  });
+});

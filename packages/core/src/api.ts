@@ -595,6 +595,26 @@ const OPS: Record<string, Record<string, Op>> = {
       },
     },
   },
+  "/api/doctor": {
+    get: {
+      id: "getDoctor",
+      summary:
+        "What this machine needs for Atticus (Node, Git, OpenSpec, proxy, TLS, disk, assistant), each with a fix; never a secret",
+      tag: "system",
+      params: [
+        q(
+          "fresh",
+          { type: "string", enum: ["1"] },
+          "Check again instead of the last five minutes' result",
+        ),
+      ],
+      ok: {
+        status: 200,
+        schema: { type: "object", required: ["checks", "ok"] },
+        description: "OK",
+      },
+    },
+  },
   "/api/baseline": {
     post: {
       id: "acceptBaseline",

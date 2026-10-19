@@ -4,6 +4,7 @@ import { systemGuide } from "@maycombhq/site";
 import { catalogRecords, openChanges } from "./site-commands.js";
 import { baselineCommand, setupSteps } from "./baseline-commands.js";
 import { meView } from "./ui-api-me.js";
+import { doctorChecks, type DoctorCheck } from "./doctor.js";
 import {
   badRequest,
   HttpError,
@@ -46,6 +47,17 @@ const DIAGRAM_VIEWS = ["context", "container", "data", "event", "sequence"];
 const scanFirst = (words: string) => /catalog is empty|scan first/i.test(words);
 
 export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
+  // The machine doesn't change between page loads: check it at most every five minutes.
+  let checked: { at: number; checks: DoctorCheck[] } | undefined;
+  const machine = async (fresh = false) => {
+    if (fresh || !checked || Date.now() - checked.at > 300_000)
+      checked = {
+        at: Date.now(),
+        // The app itself holds the default port: that isn't a problem to report.
+        checks: await doctorChecks(ctx.root, { portFree: async () => true }),
+      };
+    return checked.checks;
+  };
   const view = async (name: string, arg?: string) => {
     const build = VIEWS[name];
     if (!build) throw notFound(`There is no view ${name}.`);
@@ -130,7 +142,14 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
       ctx.events.publish({ type: "file.changed", path: "catalog/curated" });
       return { status: 200, body: { item: params.itemId, option: b.data.option, lines: out } };
     })
-    .add("GET", "/api/setup", async () => ({ status: 200, body: await setupSteps(ctx.root) }))
+    .add("GET", "/api/setup", async () => ({
+      status: 200,
+      body: await setupSteps(ctx.root, { doctor: await machine() }),
+    }))
+    .add("GET", "/api/doctor", async ({ query }) => {
+      const checks = await machine(query.get("fresh") === "1");
+      return { status: 200, body: { checks, ok: !checks.some((c) => c.status === "fail") } };
+    })
     .add("POST", "/api/baseline", async ({ body }) => {
       const b = Api.BaselineRequest.safeParse(body ?? {});
       if (!b.success) throw badRequest("Some fields aren't right.");
@@ -157,7 +176,10 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
       );
       if (code !== 0) throw new HttpError(422, "Atticus refused", [...err, ...out].join("\n"));
       ctx.events.publish({ type: "file.changed", path: "catalog/baseline.yaml" });
-      return { status: 200, body: { lines: out, ...(await setupSteps(ctx.root)) } };
+      return {
+        status: 200,
+        body: { lines: out, ...(await setupSteps(ctx.root, { doctor: await machine() })) },
+      };
     })
     .add("GET", "/api/guide/{system}", async ({ params }) => {
       const id = params.system!;

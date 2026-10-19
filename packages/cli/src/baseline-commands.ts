@@ -13,6 +13,7 @@ import { buildSite } from "@maycombhq/site";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { catalogRecords, openChanges } from "./site-commands.js";
+import { doctorChecks, type DoctorCheck } from "./doctor.js";
 
 /**
  * Guided setup (ADR 0047): the checklist from install to an accepted catalog, each step with a
@@ -54,7 +55,10 @@ async function countFiles(dir: string): Promise<number> {
 
 export async function setupSteps(
   root: string,
+  o: { doctor?: DoctorCheck[] } = {},
 ): Promise<{ steps: SetupStep[]; baselined: boolean }> {
+  const doctor = o.doctor ?? (await doctorChecks(root));
+  const failing = doctor.filter((c) => c.status === "fail");
   const op = await loadOrgPack(orgPackDirOf(root));
   const repos = await loadRepos(root).catch(() => []);
   let cloned = 0;
@@ -72,6 +76,17 @@ export async function setupSteps(
   const wikis = op.sources.wikis.length;
   const baseline = await readBaseline(root);
   const steps: SetupStep[] = [
+    {
+      id: "machine",
+      label: "This machine has what Atticus needs",
+      done: failing.length === 0,
+      detail: failing.length
+        ? `to fix: ${failing.map((c) => c.label).join(", ")}`
+        : `${doctor.filter((c) => c.status === "warn").length} to look at`,
+      fix: failing.length
+        ? `Run atticus doctor: ${failing.map((c) => c.fix ?? c.label).join(" ")}`
+        : "Run atticus doctor for the details.",
+    },
     {
       id: "org-pack",
       label: "The org pack is valid",

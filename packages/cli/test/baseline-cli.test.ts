@@ -48,6 +48,7 @@ describe("atticus setup: the checklist until the catalog is accepted", () => {
     expect(r.code).toBe(1);
     const steps = (JSON.parse(r.out) as { steps: Step[] }).steps;
     expect(steps.map((s) => s.id)).toEqual([
+      "machine",
       "org-pack",
       "repos",
       "clones",

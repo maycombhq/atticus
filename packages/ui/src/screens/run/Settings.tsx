@@ -111,6 +111,62 @@ const AI_MODE: Record<string, { label: string; what: string }> = {
   },
 };
 
+interface Doctor {
+  checks: {
+    id: string;
+    label: string;
+    status: "ok" | "warn" | "fail";
+    detail: string;
+    fix?: string;
+  }[];
+  ok: boolean;
+}
+
+/** What this machine needs (atticus doctor, ADR 0049): each check with its fix. */
+function MachinePanel() {
+  const [fresh, setFresh] = useState(0);
+  const d = useApi<Doctor>(`/api/doctor${fresh ? `?fresh=1&n=${fresh}` : ""}`);
+  const chip = { ok: "done", warn: "warn", fail: "blocking" } as const;
+  return (
+    <Panel
+      title="This machine"
+      meta={d.state === "ready" ? (d.data.ok ? "READY" : "NEEDS FIXING") : undefined}
+      span="span 12"
+    >
+      <View of={d} empty={(x) => x.checks.length === 0} emptyText="No checks ran.">
+        {(x) => (
+          <div className="stack" style={{ gap: 6 }}>
+            {x.checks.map((c) => (
+              <div key={c.id} className="row between" style={{ alignItems: "flex-start", gap: 10 }}>
+                <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+                  <span style={{ fontSize: 12.5 }}>
+                    {c.label} <span className="muted">· {c.detail}</span>
+                  </span>
+                  {c.status !== "ok" && c.fix && (
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      {c.fix}
+                    </span>
+                  )}
+                </span>
+                <span className={`chip ${chip[c.status]}`}>{c.status.toUpperCase()}</span>
+              </div>
+            ))}
+            <div className="row" style={{ gap: 8 }}>
+              <button type="button" className="btn" onClick={() => setFresh(fresh + 1)}>
+                Check again
+              </button>
+              <span className="muted" style={{ fontSize: 12 }}>
+                The same checks as <code className="mono">atticus doctor</code>. Nothing leaves this
+                machine, and no secret is shown.
+              </span>
+            </div>
+          </div>
+        )}
+      </View>
+    </Panel>
+  );
+}
+
 /** The person's own digest settings: how often, and where it goes. Kept in .atticus/me.yaml. */
 function NotifyPanel() {
   const { me, saveNotify } = useMe();
@@ -349,6 +405,8 @@ export function Settings() {
             )}
           </View>
         </Panel>
+
+        <MachinePanel />
 
         <NotifyPanel />
 

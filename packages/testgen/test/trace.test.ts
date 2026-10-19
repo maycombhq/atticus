@@ -260,3 +260,36 @@ describe("traceability", () => {
     expect(csv).toHaveLength(m.rows.length + 2);
   });
 });
+
+describe("tests found in task worktrees (M3 live finding 4)", () => {
+  it("cites each test in the worktree of the task that wrote it, not another task's copy", async () => {
+    const root = await prepared();
+    const tasks = join(root, "workspace/.worktrees", CHANGE, ".tasks");
+    const rel = "src/test/java/forge/ledger/LimitEndpointTest.java";
+    // Every task worktree is a full checkout: the file exists in both, but only task 1.2's copy
+    // (story s2) has the new test in it.
+    await put(join(tasks, "1.1/forge-ledger", rel), "class LimitEndpointTest {}\n");
+    await put(
+      join(tasks, "1.2/forge-ledger", rel),
+      '// story s2-remaining-limit\nclass LimitEndpointTest { void getLimit() { get("/accounts/1/limit"); } }\n',
+    );
+    const m = await traceMatrix(root, CHANGE, { git });
+    const hits = m.found.filter((f) => f.path.endsWith(rel));
+    expect(hits.map((h) => h.path)).toEqual([
+      `workspace/.worktrees/${CHANGE}/.tasks/1.2/forge-ledger/${rel}`,
+    ]);
+    expect(hits[0]!.refs!.stories).toEqual(["s2-remaining-limit"]);
+  });
+
+  it("cites a test that is the same in several worktrees once, in its own story's worktree", async () => {
+    const root = await prepared();
+    const tasks = join(root, "workspace/.worktrees", CHANGE, ".tasks");
+    const rel = "src/test/java/forge/ledger/VelocityCheckTest.java";
+    const text = "// story s3-northwind-pay-velocity-checks\nclass VelocityCheckTest {}\n";
+    for (const t of ["1.1", "1.2", "1.3"]) await put(join(tasks, t, "forge-ledger", rel), text);
+    const m = await traceMatrix(root, CHANGE, { git });
+    expect(m.found.filter((f) => f.path.endsWith(rel)).map((f) => f.path)).toEqual([
+      `workspace/.worktrees/${CHANGE}/.tasks/1.3/forge-ledger/${rel}`,
+    ]);
+  });
+});

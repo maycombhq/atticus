@@ -208,6 +208,9 @@ async function codeOf(
   return [...out].sort();
 }
 
+/** A task worktree (Run with AI's own checkout) rather than the change worktree or base clone. */
+const isTaskPlace = (dir: string) => /[\\/]\.tasks[\\/]/.test(dir);
+
 export async function traceMatrix(
   root: string,
   changeId: string,
@@ -241,16 +244,19 @@ export async function traceMatrix(
   const found: TraceTest[] = [];
   const dirs = new Map<string, string>();
   for (const repo of [...repos].sort()) {
-    const seen = new Set<string>();
-    const places = [
-      ...new Set(
-        stories
-          .filter((s) => s.repos.includes(repo) || s.tasks.some((t) => t.repo === repo))
-          .map((s) => repoPlace(ctx, s, repo, changeRepos))
-          .filter((p) => p.dir)
-          .map((p) => p.dir!),
-      ),
-    ];
+    // Each story's place for this repo: its task's worktree when Run with AI made one, else the
+    // change worktree or the base clone. Task worktrees are full checkouts, so the same file is
+    // in several; each copy is read, and a test is cited where its own story's task wrote it.
+    const storiesAt = new Map<string, Set<string>>();
+    for (const s of stories.filter(
+      (x) => x.repos.includes(repo) || x.tasks.some((t) => t.repo === repo),
+    )) {
+      const d = repoPlace(ctx, s, repo, changeRepos).dir;
+      if (!d) continue;
+      if (!storiesAt.has(d)) storiesAt.set(d, new Set());
+      storiesAt.get(d)!.add(s.id);
+    }
+    const places = [...storiesAt.keys()];
     const fallback = repoPlace(
       ctx,
       { tasks: [] } as unknown as StoryContext,
@@ -258,35 +264,46 @@ export async function traceMatrix(
       changeRepos,
     ).dir;
     if (fallback && !places.includes(fallback)) places.push(fallback);
-    if (places[0]) dirs.set(repo, places[0]);
+    if (places[0]) dirs.set(repo, fallback && !isTaskPlace(fallback) ? fallback : places[0]);
+    // rel path + content → the places holding that exact copy, in order.
+    const copies = new Map<string, { rel: string; text: string; dirs: string[] }>();
     for (const dir of places) {
       for (const rel of await walk(dir)) {
-        if (seen.has(rel)) continue;
-        seen.add(rel);
-        const path = posix(relative(root, join(dir, rel)));
-        if (generatedPaths.has(path)) continue;
         const text = await readFile(join(dir, rel), "utf8").catch(() => "");
         if (text.length > 512 * 1024) continue;
-        const refs = {
-          stories: stories
-            .filter((s) => new RegExp(`\\b${escape(s.id)}\\b`).test(text))
-            .map((s) => s.id),
-          scenarios: scenarioNames
-            .filter((r) => text.toLowerCase().includes(r.scenario!.toLowerCase()))
-            .map((r) => r.key),
-          endpoints: [
-            ...new Set(
-              restHops
-                .filter((h) => pathPattern(h.path!).test(text))
-                .map((h) => `${h.method} ${h.path}`),
-            ),
-          ],
-        };
-        if (refs.stories.length || refs.scenarios.length || refs.endpoints.length)
-          found.push({ kind: "found", path, repo, refs });
+        const key = `${rel}\u0000${text}`;
+        const c = copies.get(key);
+        if (c) c.dirs.push(dir);
+        else copies.set(key, { rel, text, dirs: [dir] });
       }
     }
+    for (const { rel, text, dirs: at } of copies.values()) {
+      const refs = {
+        stories: stories
+          .filter((s) => new RegExp(`\\b${escape(s.id)}\\b`).test(text))
+          .map((s) => s.id),
+        scenarios: scenarioNames
+          .filter((r) => text.toLowerCase().includes(r.scenario!.toLowerCase()))
+          .map((r) => r.key),
+        endpoints: [
+          ...new Set(
+            restHops
+              .filter((h) => pathPattern(h.path!).test(text))
+              .map((h) => `${h.method} ${h.path}`),
+          ),
+        ],
+      };
+      if (!refs.stories.length && !refs.scenarios.length && !refs.endpoints.length) continue;
+      // Where to cite it: the worktree of a story it names, else a shared checkout, else the first.
+      const own = at.find((d) => refs.stories.some((id) => storiesAt.get(d)?.has(id)));
+      const shared = at.find((d) => !isTaskPlace(d));
+      const dir = own ?? shared ?? at[0]!;
+      const path = posix(relative(root, join(dir, rel)));
+      if (generatedPaths.has(path)) continue;
+      found.push({ kind: "found", path, repo, refs });
+    }
   }
+  found.sort((a, b) => a.path.localeCompare(b.path));
 
   // ---- rows
   const capabilities = ctx.records.filter(

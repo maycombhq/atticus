@@ -1022,6 +1022,55 @@
         }
       }
     },
+    "/api/doctor": {
+      "get": {
+        "operationId": "getDoctor",
+        "summary": "What this machine needs for Atticus (Node, Git, OpenSpec, proxy, TLS, disk, assistant), each with a fix; never a secret",
+        "tags": [
+          "system"
+        ],
+        "parameters": [
+          {
+            "name": "fresh",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Check again instead of the last five minutes' result",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "checks",
+                    "ok"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/baseline": {
       "post": {
         "operationId": "acceptBaseline",
