@@ -44,6 +44,19 @@ const RelativePosixPath = z
     "a relative path inside the repo, written with forward slashes",
   );
 
+/**
+ * A host a component answers on, as calls name it: "ledger-api.apps.bank.internal", or with *
+ * for one label or part of one, "pay-api-*.apps.bank.internal". Lower case; a port is ignored.
+ */
+const HostPattern = z
+  .string()
+  .min(1)
+  .max(253)
+  .regex(
+    /^[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?(\.[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?)*$/,
+    "a host name, lower case, * for any part of a label",
+  );
+
 export const ManifestRepo = z.strictObject({
   /** Repo id; also the base clone's folder name under workspace/. */
   id: RecordId,
@@ -74,6 +87,12 @@ export const ManifestRepo = z.strictObject({
   build: z.string().min(1).optional(),
   /** Archived repos stay listed for history but are not cloned or scanned. */
   archived: z.boolean().default(false),
+  /**
+   * Hosts this repo's component answers on (ADR 0053). A call to one joins this component
+   * whatever its first label says; on a repo with gateway routes, they are the gateway's hosts,
+   * and only calls to them go through the gateway.
+   */
+  hosts: z.array(HostPattern).default([]),
 });
 export type ManifestRepo = z.infer<typeof ManifestRepo>;
 

@@ -35,6 +35,7 @@ repos:
     type: gateway
     owner: team-platform
     sparse: [proxies/ledger-v1]
+    hosts: [gateway.forge.example]
   - id: forge-events
     url: https://git.example.com/forge/forge-events.git
     type: event-config

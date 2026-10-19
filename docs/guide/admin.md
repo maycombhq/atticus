@@ -8,7 +8,7 @@ Home shows it until the catalog is accepted; `atticus setup` prints it. Each ste
 
 1. **This machine has what Atticus needs** (`atticus doctor`).
 2. **The org pack is valid** (`atticus orgpack validate`).
-3. **Repos are listed** (`atticus repos discover <folder>`, then add the proposals to `repos.manifest.yaml`).
+3. **Repos are listed** (`atticus repos discover <folder>`, then add the proposals to `repos.manifest.yaml`). Give each repo the `hosts` its component answers on, and the gateway repo its gateway's hosts (`hosts: [api-gw.example.internal]`, `*` for any part of a label): calls join components and go through gateways only on hosts listed here (ADR 0053). A scan note names each undeclared host that looks like a gateway.
 4. **Repos are cloned here** (`atticus workspace sync`, or _Sync repos_ on the Scans screen).
 5. **The first scan is done** (`atticus scan`, or _Scan now_). Scans read files only: no network, no AI.
 6. **Groups are mapped to roles** (`org-pack/roles.yaml`, below).

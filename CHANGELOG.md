@@ -6,6 +6,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### No facts made from what the code doesn't spell out
 
+- `repos.manifest.yaml` takes `hosts` per repo (ADR 0053). Calls go through a gateway only on hosts listed for the gateway repo, and a call to a host listed for a component joins it whatever the host's labels say. Before, any unknown host whose path started with a gateway basepath was joined through the gateway, which invented interfaces. A scan note names each undeclared host that looks like a gateway.
+- Merge never matches an endpoint of another method, and never joins a relative call on a generic path (`/health`, `/actuator/...`).
+
 - A Spring path made from a constant (`@RequestMapping(ApiPaths.CARDS)`, `"/v2" + ApiPaths.CARDS`) is no longer a verified endpoint named `/ApiPaths.CARDS/...`: it is an `http-endpoint` loose end showing the name, `GET ${ApiPaths.CARDS}/${ApiPaths.BY_ID}`, until its value is known. Feign paths and listener topics made from constants show the name the same way, and stay loose ends.
 - Merge never joins publishers and subscribers on a topic the code names but doesn't spell out.
 

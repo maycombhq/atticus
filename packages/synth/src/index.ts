@@ -265,6 +265,8 @@ export function generateEstate(o: EstateOptions): Estate {
         dialects: r.type === "forge-service" ? ["forge"] : [],
         sparse: [],
         archived: false,
+        // The gateway's host, so calls to it go through its routes (ADR 0053).
+        hosts: r.type === "gateway" ? ["gateway.synth.example"] : [],
       })),
     },
     ["schemaVersion", "platform", "id"],

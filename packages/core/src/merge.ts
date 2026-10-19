@@ -24,6 +24,8 @@ export interface MergeRepo {
   component?: string;
   system?: string;
   type: string;
+  /** Hosts the repo's component (or, for a gateway repo, the gateway) answers on (ADR 0053). */
+  hosts?: string[];
 }
 
 export interface MergeSystem {
@@ -48,6 +50,12 @@ export interface MergeInput {
   patterns?: MergePattern[];
   /** Where the systems came from, for their evidence (e.g. "org-pack/profiles/forge/profile.yaml"). */
   profilePath?: string;
+  /**
+   * Route a call to an undeclared host through the gateway route its path starts with, as before
+   * ADR 0053. Only for callers without the repos manifest (drift on a fetched copy of the
+   * catalog), where no host is declared; a full scan never sets it.
+   */
+  gatewayByBasepath?: boolean;
 }
 
 export interface MergeResult {
@@ -55,6 +63,8 @@ export interface MergeResult {
   /** Records merge produced that failed C1 (a bug if ever non-empty). */
   invalid: { record: unknown; issues: RecordIssue[] }[];
   stats: { interfaces: number; verified: number; unresolved: number };
+  /** Things worth knowing that aren't wrong, e.g. hosts that look like a gateway nobody declared. */
+  notes: string[];
 }
 
 type Rec = Record<string, unknown> & {
@@ -284,13 +294,34 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   };
 
   const routes = [...byKey.values()].filter((r) => r.kind === "GatewayRoute");
+  // An endpoint of another method is a different endpoint: never matched (it once made a GET
+  // call "verified" against a POST endpoint).
   const findEndpoint = (component: string, method: string | undefined, norm: string) =>
     restEndpoints.find(
       (e) =>
         e.component === component &&
         e.normalizedPath === norm &&
         (!method || method === "ANY" || e.method === method),
-    ) ?? restEndpoints.find((e) => e.component === component && e.normalizedPath === norm);
+    );
+
+  // Hosts the manifest declares (ADR 0053). A repo with gateway routes is a gateway: its hosts
+  // are the gateway's, and only calls to them go through it.
+  const routeRepos = new Set(
+    routes.flatMap((r) => r.evidence.map((e) => String(e.repo ?? ""))).filter(Boolean),
+  );
+  const declaredHosts = input.repos.flatMap((r) =>
+    (r.hosts ?? []).map((h) => ({
+      re: hostPattern(h),
+      repo: r,
+      gateway: routeRepos.has(r.id) || r.type === "gateway",
+    })),
+  );
+  const declaredFor = (host: string) => declaredHosts.find((d) => d.re.test(host));
+  /** Components that list their hosts are reached through them only, not by a host's first label. */
+  const hostedComponents = new Set(
+    input.repos.filter((r) => (r.hosts ?? []).length > 0).map((r) => r.component ?? r.id),
+  );
+  const undeclaredGatewayHosts = new Set<string>();
 
   /** Callee-side evidence of an endpoint: code on the serving side, else its definition re-labelled. */
   const calleeEvidence = (e: Rec | undefined): Evidence[] => {
@@ -324,16 +355,35 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     let route: Rec | undefined;
     let calleePath = path;
 
+    const declared = host ? declaredFor(host) : undefined;
     const hostComponent = host ? host.split(".")[0]! : undefined;
     const hostKnown = hostComponent
       ? components.has(hostComponent) || systemsById.has(hostComponent)
       : false;
-    const gw = routes
-      .filter(
-        (r) => path === r.basepath || path.startsWith(`${String(r.basepath).replace(/\/$/, "")}/`),
-      )
-      .sort((a, b) => String(b.basepath).length - String(a.basepath).length)[0];
-    if (host && gw && !hostKnown) {
+    const onBasepath = (r: Rec) =>
+      path === r.basepath || path.startsWith(`${String(r.basepath).replace(/\/$/, "")}/`);
+    const longest = (rs: Rec[]) =>
+      rs.sort((a, b) => String(b.basepath).length - String(a.basepath).length)[0];
+    // Only a declared gateway host routes through a gateway, and only to its own routes.
+    const gw = declared?.gateway
+      ? longest(
+          routes.filter(
+            (r) => onBasepath(r) && r.evidence.some((e) => e.repo === declared.repo.id),
+          ),
+        )
+      : input.gatewayByBasepath && host && !declared && !hostKnown
+        ? longest(routes.filter(onBasepath))
+        : undefined;
+    const byFirstLabel = hostKnown && !hostedComponents.has(hostComponent!);
+    if (
+      !input.gatewayByBasepath &&
+      host &&
+      !declared &&
+      !byFirstLabel &&
+      longest(routes.filter(onBasepath))
+    )
+      undeclaredGatewayHosts.add(host);
+    if (host && gw) {
       route = gw;
       via = "gateway";
       calleePath = path.slice(String(gw.basepath).replace(/\/$/, "").length) || "/";
@@ -343,9 +393,11 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       to = targetHost?.host
         ? resolveComponent(targetHost.host.split(".")[0]!, caller[0]!)
         : undefined;
-    } else if (host) {
+    } else if (declared && !declared.gateway) {
+      to = declared.repo.component ?? declared.repo.id;
+    } else if (host && !declared && !hostedComponents.has(hostComponent!)) {
       to = resolveComponent(hostComponent!, caller[0]!);
-    } else {
+    } else if (!host && !GENERIC_PATH.test(path)) {
       // Relative URL: served by a component of the caller's own system with a matching endpoint.
       const sys = systemOf(owner);
       const norm = normalizePath(path);
@@ -649,8 +701,28 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       verified: ifs.filter((r) => r.confidence === "verified").length,
       unresolved: records.filter((r) => r.kind === "Unresolved").length,
     },
+    notes: [...undeclaredGatewayHosts]
+      .sort()
+      .map(
+        (h) =>
+          `Calls to ${h} start with a gateway route's basepath, but no gateway repo lists that host; if it is a gateway, add it under hosts: for the gateway repo in repos.manifest.yaml (until then those calls stay loose ends).`,
+      ),
   };
 }
+
+/** "pay-api-*.apps.bank.internal" → a RegExp matching whole host names; * is any part of a label. */
+function hostPattern(p: string): RegExp {
+  const body = p
+    .toLowerCase()
+    .split("*")
+    .map((x) => x.replace(/[.\\^$+?()[\]{}|]/g, (c) => `\\${c}`))
+    .join("[a-z0-9-]*");
+  return new RegExp(`^${body}$`);
+}
+
+/** Paths every service serves (health, metrics): a relative call to one names no particular callee. */
+const GENERIC_PATH =
+  /^\/(health|healthz|ready|readiness|live|liveness|ping|status|info|metrics|prometheus|actuator)(\/|$)/;
 
 /** The Setting key that says a component runs in a service mesh (ADR 0040); its value names the mesh. */
 export const MESH_KEY = "mesh";

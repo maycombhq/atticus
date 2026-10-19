@@ -88,6 +88,7 @@ async function forge() {
         type: r.type,
         ...(r.component ? { component: r.component } : {}),
         ...(r.system ? { system: r.system } : {}),
+        hosts: r.hosts,
       })),
     ),
     systems: op.profiles.flatMap((p) => p.profile?.systems ?? []),

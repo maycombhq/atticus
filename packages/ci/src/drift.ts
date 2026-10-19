@@ -590,12 +590,15 @@ export async function repoDrift(o: DriftOptions): Promise<DriftReport> {
     .map((r) => strip(r, repoId, components))
     .filter((r): r is CatalogRecord => !!r);
   const merged = mergeCatalog({
+    // A fetched copy of the catalog has no manifest, so no declared hosts: route by basepath.
+    ...(orgPackDir ? {} : { gatewayByBasepath: true }),
     records: [...context, ...otherEnds(catalog.records, repoId, components), ...scan.records],
     repos: manifest.map((r) => ({
       id: r.id,
       type: r.type,
       ...(r.component ? { component: r.component } : {}),
       ...(r.system ? { system: r.system } : {}),
+      hosts: r.hosts,
     })),
     // Without the org pack (a fetched copy of the catalog), the catalog's systems stand in for
     // the profile's.

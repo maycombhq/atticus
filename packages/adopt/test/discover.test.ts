@@ -141,6 +141,7 @@ describe("reposDiscover from a folder of clones", () => {
         dialects: [],
         sparse: [],
         archived: false,
+        hosts: [],
       },
     ]);
   });

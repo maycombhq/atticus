@@ -244,6 +244,7 @@ export async function reposDiscover(
         dialects: [],
         sparse: [],
         archived: false,
+        hosts: [],
       };
       found.push({ entry, detection: det, dir });
     }
@@ -264,6 +265,7 @@ export async function reposDiscover(
           dialects: [],
           sparse: [],
           archived: l.archived ?? false,
+          hosts: [],
         },
         detection: det,
       });

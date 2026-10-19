@@ -221,3 +221,107 @@ describe("mergeCatalog: events on a topic the code names but doesn't spell out",
     expect(r.records.filter((x) => x.kind !== "Unresolved" && x.id.includes("topics"))).toEqual([]);
   });
 });
+
+describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {
+  const at = (repo: string, side: "caller" | "callee" | "definition") => [
+    { ...ev[0]!, repo, side },
+  ];
+  const endpoint = (componentId: string, method: string, path: string) =>
+    ({
+      ...base,
+      kind: "Endpoint",
+      id: endpointId(componentId, method, path),
+      component: componentId,
+      endpointType: "rest",
+      method,
+      pathOrTopic: path,
+      normalizedPath: path,
+      evidence: at(`forge-${componentId}`, "callee"),
+    }) as unknown as CatalogRecord;
+  const route = (id: string, basepath: string, target: string) =>
+    ({
+      ...base,
+      kind: "GatewayRoute",
+      id,
+      proxy: id,
+      basepath,
+      target,
+      evidence: at("forge-gateway", "definition"),
+    }) as unknown as CatalogRecord;
+  const call = (owner: string, raw: string) =>
+    ({
+      ...base,
+      confidence: "inferred",
+      kind: "Unresolved",
+      id: `${owner}-${raw.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
+      unresolvedKind: "http-call",
+      raw,
+      owner,
+      evidence: at(`forge-${owner}`, "caller"),
+    }) as unknown as CatalogRecord;
+  const records = [
+    component("bff", "portal"),
+    component("api", "ledger"),
+    component("cards", "ledger"),
+    endpoint("api", "POST", "/transfers"),
+    endpoint("api", "GET", "/health"),
+    endpoint("cards", "GET", "/cards/{id}"),
+    route("gw-ledger-v1", "/ledger/v1", "http://api.forge.internal"),
+  ];
+  const repos = [
+    { id: "forge-bff", component: "bff", type: "spring-boot", hosts: [] },
+    {
+      id: "forge-api",
+      component: "api",
+      type: "spring-boot",
+      hosts: ["pay-api-*.apps.bank.internal"],
+    },
+    { id: "forge-cards", component: "cards", type: "spring-boot", hosts: [] },
+    { id: "forge-gateway", type: "gateway", hosts: ["gateway.forge.example"] },
+  ];
+  const run = (extra: CatalogRecord[], r = repos) =>
+    mergeCatalog({ records: [...records, ...extra], repos: r, systems, patterns: [] });
+  const ifs = (m: ReturnType<typeof run>) =>
+    m.records
+      .filter((x) => x.kind === "Interface")
+      .map((x) => {
+        const i = x as unknown as {
+          from: string;
+          to: string;
+          via: string;
+          method?: string;
+          normalizedPath: string;
+          confidence: string;
+        };
+        return `${i.from}->${i.to} ${i.via} ${i.method ?? ""} ${i.normalizedPath} ${i.confidence}`;
+      });
+
+  it("goes through a gateway only on a host declared for the gateway repo", () => {
+    const m = run([
+      call("bff", "POST https://gateway.forge.example/ledger/v1/transfers"),
+      // Same basepath, but a host nobody declared: not the gateway, so not joined.
+      call("bff", "POST https://api.partner-bank.example/ledger/v1/transfers"),
+    ]);
+    expect(ifs(m)).toEqual(["bff->api gateway POST /transfers verified"]);
+    expect(m.notes).toContainEqual(expect.stringContaining("api.partner-bank.example"));
+  });
+
+  it("joins a call to a host declared for a component, whatever its first label", () => {
+    expect(
+      ifs(run([call("bff", "POST https://pay-api-uat.apps.bank.internal/transfers")])),
+    ).toEqual(["bff->api direct POST /transfers verified"]);
+  });
+
+  it("never matches an endpoint of another method", () => {
+    // GET /transfers isn't served; POST /transfers is. The call stays unverified.
+    expect(ifs(run([call("bff", "GET https://pay-api-uat.apps.bank.internal/transfers")]))).toEqual(
+      ["bff->api direct GET /transfers inferred"],
+    );
+  });
+
+  it("doesn't join a relative call on a generic path such as /health", () => {
+    const m = run([call("cards", "GET /health")]);
+    expect(ifs(m)).toEqual([]);
+    expect(m.records.filter((x) => x.kind === "Unresolved")).toHaveLength(1);
+  });
+});

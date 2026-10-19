@@ -316,6 +316,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       type: r.type,
       ...(r.component ? { component: r.component } : {}),
       ...(r.system ? { system: r.system } : {}),
+      hosts: r.hosts,
     })),
     systems: op.profiles.flatMap((p) => p.profile?.systems ?? []),
     patterns: op.patterns,
@@ -385,7 +386,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     orgPackDir,
   });
   // The glossary is an enrichment: what it can't read (a missing wiki folder) is a note, not a scan failure.
-  const notes = glossary.problems.map((p) => `glossary: ${p}`);
+  const notes = [...merged.notes, ...glossary.problems.map((p) => `glossary: ${p}`)];
   const withFeatures = [...glossary.records, ...fedRecords].sort((a, b) =>
     a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
   );
