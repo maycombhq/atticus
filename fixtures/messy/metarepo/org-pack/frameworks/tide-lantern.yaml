@@ -1,0 +1,35 @@
+# Lantern: Tidewater's React SPA and Node BFF framework (invented), written by hand by the web
+# platform team (ADR 0055). Its calls and routes read the same way in any language.
+schemaVersion: 1
+name: tide-lantern
+packages: ["@tide/lantern"]
+calls:
+  - function: useApi
+    from: "@tide/lantern"
+    language: js
+    service: { arg: 0, key: service }
+    httpMethod: { arg: 0, key: method }
+    path: { arg: 0, key: path }
+    source: { kind: person, ref: "@tide-web-platform" }
+  - function: call
+    receiver: lantern
+    language: js
+    service: { arg: 0 }
+    httpMethod: { arg: 1 }
+    path: { arg: 2 }
+    source: { kind: person, ref: "@tide-web-platform" }
+routes:
+  - function: defineRoute
+    language: js
+    httpMethod: { arg: 0, key: method }
+    path: { arg: 0, key: path }
+    source: { kind: person, ref: "@tide-web-platform" }
+  - function: route
+    receiver: router
+    language: js
+    httpMethod: { arg: 0 }
+    path: { arg: 1 }
+    source: { kind: person, ref: "@tide-web-platform" }
+services:
+  web-bff: { value: "https://web-bff.tide.internal", source: { kind: person, ref: "@tide-web-platform" } }
+  cards: { value: "https://cards.tide.internal", source: { kind: person, ref: "@tide-web-platform" } }

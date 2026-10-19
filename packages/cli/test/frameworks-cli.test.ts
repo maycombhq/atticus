@@ -140,7 +140,7 @@ describe("atticus frameworks discover", () => {
     expect(c.out[0]).toBe("tide.platform:tide-web-starter: 3.2.0 in tide-cards");
     expect(c.out[1]).toMatch(/^ {2}JAR: .*tide-web-starter-3\.2\.0\.jar$/);
     expect(c.out).toContain(
-      "Not cloned here, so not read: tide-payments, tide-gateway (atticus workspace sync).",
+      "Not cloned here, so not read: tide-payments, tide-gateway, tide-web, tide-bff (atticus workspace sync).",
     );
     expect(c.out).toContainEqual(
       expect.stringMatching(

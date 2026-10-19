@@ -21,3 +21,16 @@ repos:
     owner: team-platform
     system: gateway
     hosts: [api-gw.tide.internal]
+  - id: tide-web
+    url: https://git.example.com/tide/tide-web.git
+    type: spa
+    owner: team-web
+    component: web
+    system: web
+  - id: tide-bff
+    url: https://git.example.com/tide/tide-bff.git
+    type: node
+    owner: team-web
+    component: web-bff
+    system: web
+    hosts: [web-bff.tide.internal]

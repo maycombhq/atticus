@@ -9,6 +9,7 @@ import {
 } from "./more.js";
 import { openapiExtractor } from "./openapi.js";
 import { springExtractor } from "./spring.js";
+import { houseExtractor } from "./house.js";
 
 export * from "./facts.js";
 export * from "./dialect.js";
@@ -40,6 +41,7 @@ export { CLIENT_PACKAGES, READ_ANNOTATIONS, settingSlug } from "./spring.js";
 export * from "./frameworks.js";
 export * from "./learn-framework.js";
 export * from "./dependencies.js";
+export { houseExtractor };
 
 /** Every built-in extractor, in a stable order. Dialect engines are added by the scanner. */
 export const BUILT_IN_EXTRACTORS: readonly Extractor[] = [
@@ -47,6 +49,7 @@ export const BUILT_IN_EXTRACTORS: readonly Extractor[] = [
   openapiExtractor,
   apigeeExtractor,
   springExtractor,
+  houseExtractor,
   frontendExtractor,
   topicsExtractor,
   migrationsExtractor,

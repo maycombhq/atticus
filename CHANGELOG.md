@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### House frameworks in any language
+
+- Framework models describe calls and routes in any language (ADR 0055): `calls` (a function, its receiver, the module it comes from, which argument or object property holds the method, service and path; HTTP, events or queues) and `routes` (calls that register a served route). A new built-in extractor applies them to JavaScript and TypeScript (JSX and TSX too), C#, Python and Go, in files that import the framework, filling names from the repo's own exported constants and the model's service ids. Service ids may be plain (`payments`) and packages may be npm modules (`@tide/lantern`).
+- The messy estate gains Lantern, an invented React SPA and Node BFF framework: the SPA's `useApi({ service, path, method })` and `lantern.call(...)` calls reach the BFF through its declared host, the BFF's `defineRoute` and `router.route` registrations are endpoints, and the chain continues from the TypeScript BFF to the Java service's house controller.
+
 ### House frameworks, read through framework models
 
 - `org-pack/frameworks/<name>.yaml` (ADR 0054): what a house framework means, in terms the scanner already reads. Its annotations stand for Spring's (`@InternalApi` → `@RestController` + `@RequestMapping`, `@Op(verb, path)` → `@RequestMapping`), its wrapper client is an HTTP call (`bankHttp.exchange(Services.AUDIT, "POST", "/audit/events")`), and its service ids and constants have values. Every entry says where it was learned (code, bytecode, a document or a person); only code and bytecode make verified facts. `atticus orgpack validate` checks the files.

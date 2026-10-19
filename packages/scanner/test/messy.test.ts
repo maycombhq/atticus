@@ -46,9 +46,11 @@ describe("the messy estate (phase 2 gate)", () => {
   it("scans every repo with no problems, a broken template file included", () => {
     expect(scan.problems).toEqual([]);
     expect(scan.repos.map((r) => r.repo).sort()).toEqual([
+      "tide-bff",
       "tide-cards",
       "tide-gateway",
       "tide-payments",
+      "tide-web",
     ]);
   });
 
@@ -111,7 +113,7 @@ describe("the messy estate (phase 2 gate)", () => {
     const cards = scan.coverage.find((c) => c.repo === "tide-cards")!;
     expect(cards.joined).toBeGreaterThanOrEqual(1);
     expect(cards.open).toBeGreaterThanOrEqual(5);
-    expect(scan.coverage).toHaveLength(3);
+    expect(scan.coverage).toHaveLength(5);
   });
 
   // ---- Phase 3: the house starter, read through its framework model (ADR 0054;
@@ -128,5 +130,37 @@ describe("the messy estate (phase 2 gate)", () => {
 
   it("reads a call through the platform's wrapper client, with the service id's URL", () => {
     expect(loose("http-call")).toContain("POST https://audit.tide.internal/audit/events");
+  });
+
+  // ---- ADR 0055: a house framework in another language. Lantern (React SPA and Node BFF),
+  // read through org-pack/frameworks/tide-lantern.yaml, written by a person.
+
+  it("reads the SPA's calls through Lantern's hook and client, to the BFF's declared host", () => {
+    const web = recs()
+      .filter((r) => r.kind === "Unresolved" && r.owner === "web")
+      .map((r) => String(r.raw))
+      .sort();
+    // Joined calls leave no loose end; what is left is nothing the model didn't explain.
+    expect(web).toEqual([]);
+    expect(
+      interfaces()
+        .filter((i) => i.startsWith("web->"))
+        .sort(),
+    ).toEqual([
+      "web->web-bff direct GET /statements/{} verified",
+      "web->web-bff direct POST /limits verified",
+    ]);
+  });
+
+  it("reads the BFF's Lantern routes as endpoints, inferred (a person wrote the model)", () => {
+    const eps = recs()
+      .filter((r) => r.kind === "Endpoint" && r.component === "web-bff")
+      .map((r) => `${r.method} ${r.pathOrTopic} ${r.confidence}`)
+      .sort();
+    expect(eps).toEqual(["GET /statements/{id} inferred", "POST /limits inferred"]);
+  });
+
+  it("follows the chain across languages: SPA (TSX) to BFF (TS) to the house Java service", () => {
+    expect(interfaces()).toContain("web-bff->cards-svc direct GET /statements/{} verified");
   });
 });

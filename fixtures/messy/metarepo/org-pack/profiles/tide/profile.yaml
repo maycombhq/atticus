@@ -5,4 +5,5 @@ systems:
   - { id: cards, name: Cards, boundary: product, owner: team-cards, aliases: [] }
   - { id: payments, name: Payments, boundary: product, owner: team-payments, aliases: [] }
   - { id: gateway, name: API gateway, boundary: internal, aliases: [] }
+  - { id: web, name: Web banking, boundary: product, owner: team-web, aliases: [] }
 environments: [dev, uat, prod]

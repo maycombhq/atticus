@@ -58,6 +58,49 @@ export const FrameworkClient = z.strictObject({
   source: FrameworkSource,
 });
 
+/**
+ * One part of a call in any language (ADR 0055): an argument by position, a property of an
+ * object argument (`{ arg: 0, key: "path" }` for `useApi({ path: "/x" })`), or a fixed value.
+ */
+const AnyCallPart = z.union([
+  z.strictObject({ arg: z.number().int().min(0), key: z.string().min(1).optional() }),
+  z.strictObject({ value: z.string().min(1) }),
+]);
+
+/** Languages the house-framework extractor reads (js covers JavaScript and TypeScript). */
+export const FrameworkLanguage = z.enum(["js", "csharp", "python", "go"]);
+
+const CallShape = {
+  /** The called name: useApi, call, defineRoute. */
+  function: SimpleName,
+  /** What it is called on, as written before the name: lantern in lantern.call(...). */
+  receiver: z.string().min(1).optional(),
+  /** The module or package it is imported from: @tide/lantern. */
+  from: z.string().min(1).optional(),
+  /** Only in this language; any when left out. */
+  language: FrameworkLanguage.optional(),
+  source: FrameworkSource,
+};
+
+/** A call that reaches another system (ADR 0055). */
+export const FrameworkCall = z.strictObject({
+  ...CallShape,
+  kind: z
+    .enum(["http-call", "event-publish", "event-subscribe", "mq-publish", "mq-subscribe"])
+    .default("http-call"),
+  httpMethod: AnyCallPart.optional(),
+  service: AnyCallPart.optional(),
+  /** The path (with service), the whole URL, or the topic or queue. */
+  path: AnyCallPart,
+});
+
+/** A call that registers a route the code serves (ADR 0055). */
+export const FrameworkRoute = z.strictObject({
+  ...CallShape,
+  httpMethod: AnyCallPart,
+  path: AnyCallPart,
+});
+
 export const FrameworkValue = z.strictObject({
   value: z.string(),
   source: FrameworkSource,
@@ -67,15 +110,36 @@ export const FrameworkModel = z.strictObject({
   schemaVersion: z.literal(FRAMEWORK_SCHEMA_VERSION),
   name: RecordId,
   /** Import prefixes that mark a file as using the framework: tide.platform. */
-  packages: z.array(z.string().regex(/^[a-z][\w]*(\.[\w]+)*$/, "a package prefix")).min(1),
+  packages: z
+    .array(
+      z
+        .string()
+        .regex(
+          /^(@[\w.-]+\/)?[\w.-]+(\/[\w.-]+)*$/,
+          "a package or module prefix: tide.platform, @tide/lantern",
+        ),
+    )
+    .min(1),
   /** The artifacts it ships as, when known: tide.platform:tide-web-starter. */
   artifacts: z
     .array(z.string().regex(/^[\w.-]+:[\w.-]+(:[\w.-]+)?$/, "group:artifact[:version]"))
     .default([]),
   annotations: z.array(FrameworkAnnotation).default([]),
   clients: z.array(FrameworkClient).default([]),
-  /** A service id and the base URL it stands for: { Services.AUDIT: https://audit.tide.internal }. */
-  services: z.record(QualifiedName, FrameworkValue).default({}),
+  /** Calls that reach another system, in any language (ADR 0055). */
+  calls: z.array(FrameworkCall).default([]),
+  /** Calls that register a served route, in any language (ADR 0055). */
+  routes: z.array(FrameworkRoute).default([]),
+  /**
+   * A service id and the base URL it stands for: { Services.AUDIT: https://audit.tide.internal },
+   * or a plain id: { payments: https://payments.tide.internal }.
+   */
+  services: z
+    .record(
+      z.string().regex(/^[A-Za-z_$][\w$.-]*$/, "a service id or a qualified constant"),
+      FrameworkValue,
+    )
+    .default({}),
   /** A constant and its value: { Topics.CARD_ISSUED: cards.issued }. */
   constants: z.record(QualifiedName, FrameworkValue).default({}),
 });

@@ -266,8 +266,9 @@ describe("framework models (ADR 0054)", () => {
   it("loads frameworks/*.yaml from the org pack, with no problems", async () => {
     const op = await loadOrgPack(MESSY);
     expect(op.problems).toEqual([]);
-    expect(op.frameworks.map((f) => f.name)).toEqual(["tide-platform"]);
-    expect(op.frameworks[0]!.annotations.map((a) => a.name)).toEqual(["InternalApi", "Op"]);
+    expect(op.frameworks.map((f) => f.name)).toEqual(["tide-lantern", "tide-platform"]);
+    expect(op.frameworks[1]!.annotations.map((a) => a.name)).toEqual(["InternalApi", "Op"]);
+    expect(op.frameworks[0]!.calls.map((c) => c.function)).toEqual(["useApi", "call"]);
   });
 
   it("refuses an annotation that stands for nothing, and a constant without a source", () => {

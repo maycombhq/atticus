@@ -1,0 +1,8 @@
+{
+  "name": "tide-bff",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@tide/lantern": "4.1.0"
+  }
+}
