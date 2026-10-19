@@ -111,12 +111,22 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
+/** On every response: no other site may embed, open or read what this server hands out. */
+export const HARDENING = {
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Cross-Origin-Resource-Policy": "same-origin",
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Referrer-Policy": "no-referrer",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), usb=(), payment=()",
+} as const;
+
 function send(res: ServerResponse, status: number, body: unknown, type = "application/json") {
   const text = body === undefined ? "" : JSON.stringify(body);
   res.writeHead(status, {
+    ...HARDENING,
     "Content-Type": `${type}; charset=utf-8`,
     "Cache-Control": "no-store",
-    "X-Content-Type-Options": "nosniff",
   });
   res.end(text);
 }
@@ -192,10 +202,9 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
           throw new HttpError(404, "Not found", `Nothing is served at ${url.pathname}.`);
         const f = await staticFile(o.staticDir, url.pathname, token);
         res.writeHead(f.status, {
+          ...HARDENING,
           "Content-Type": f.type,
           "Cache-Control": f.cache,
-          "X-Content-Type-Options": "nosniff",
-          "Referrer-Policy": "no-referrer",
           "Content-Security-Policy": appCsp(port),
         });
         res.end(req.method === "HEAD" ? undefined : f.body);

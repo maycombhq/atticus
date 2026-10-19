@@ -318,6 +318,80 @@ function wsFirstMessage(path: string): Promise<{ status: number; message?: strin
   });
 }
 
+describe("hardening (threat model S1, D1)", () => {
+  it("sends headers that stop other sites embedding, opening or reading the API", async () => {
+    const r = await fetch(srv.url + "/api/health", { headers: { "X-Atticus-Token": srv.token } });
+    expect(r.headers.get("x-frame-options")).toBe("DENY");
+    expect(r.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+    expect(r.headers.get("cross-origin-opener-policy")).toBe("same-origin");
+    expect(r.headers.get("access-control-allow-origin")).toBeNull();
+    const refused = await fetch(srv.url + "/api/health");
+    expect(refused.headers.get("x-frame-options")).toBe("DENY");
+  });
+
+  it("caps a request body and accepts only JSON", async () => {
+    const big = await fetch(srv.url + "/api/jobs/none/cancel", {
+      method: "POST",
+      headers: { "X-Atticus-Token": srv.token, "Content-Type": "application/json" },
+      body: "x".repeat(5 * 1024 * 1024),
+    }).catch(() => undefined);
+    // The server answers 413 or drops the connection once the cap is passed.
+    if (big) expect(big.status).toBe(413);
+    const form = await fetch(srv.url + "/api/jobs/none/cancel", {
+      method: "POST",
+      headers: {
+        "X-Atticus-Token": srv.token,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: "id=x",
+    });
+    expect(form.status).toBe(415);
+  });
+
+  it("refuses live events opened from another site", async () => {
+    const status = await new Promise<number>((resolve, reject) => {
+      const sock = connect(srv.port, "127.0.0.1", () => {
+        sock.write(
+          [
+            `GET /api/events?token=${srv.token} HTTP/1.1`,
+            `Host: 127.0.0.1:${srv.port}`,
+            "Origin: https://evil.example",
+            "Upgrade: websocket",
+            "Connection: Upgrade",
+            `Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}`,
+            "Sec-WebSocket-Version: 13",
+            "",
+            "",
+          ].join("\r\n"),
+        );
+      });
+      let head = "";
+      sock.on("data", (b) => {
+        head += b.toString();
+        if (head.includes("\r\n")) {
+          resolve(Number(head.split(" ")[1]));
+          sock.destroy();
+        }
+      });
+      sock.on("error", reject);
+    });
+    expect(status).toBe(403);
+  });
+
+  it("reports each API call by method and path, never its query", async () => {
+    const seen: { method: string; path: string; status: number }[] = [];
+    const s = await startServer({ root, port: 0, onRequest: (r) => seen.push(r) });
+    try {
+      await fetch(`${s.url}/api/health?secret=abc`, { headers: { "X-Atticus-Token": s.token } });
+      expect(seen).toEqual([
+        expect.objectContaining({ method: "GET", path: "/api/health", status: 200 }),
+      ]);
+    } finally {
+      await s.close();
+    }
+  });
+});
+
 describe("live events on /api/events", () => {
   it("needs the token, then streams events as JSON text frames", async () => {
     expect((await wsFirstMessage("/api/events")).status).toBe(401);
