@@ -60,8 +60,13 @@ describe("the messy estate (phase 2 gate)", () => {
       const path = String(r.pathOrTopic ?? r.normalizedPath ?? "");
       expect(path, r.id).not.toMatch(/\$\{|[A-Z][A-Za-z]+\.[A-Z_]+/);
     }
-    // The controller on constants is a loose end that shows its names.
-    expect(loose("http-endpoint")).toEqual(["GET ${ApiPaths.CARDS}/${ApiPaths.BY_ID}"]);
+    // The controller on constants is read through ApiPaths.java, in the same repo: verified.
+    expect(loose("http-endpoint")).toEqual([]);
+    const cards = recs().find(
+      (r) =>
+        r.kind === "Endpoint" && r.component === "cards-svc" && r.pathOrTopic === "/cards/{id}",
+    );
+    expect(cards?.confidence).toBe("verified");
   });
 
   it("joins the @Value base URL + constant path through the declared gateway host, verified", () => {

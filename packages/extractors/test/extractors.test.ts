@@ -403,6 +403,53 @@ class Audit {
     ]);
   });
 
+  it("fills names from constants anywhere in the repo, Java and Kotlin, but not ambiguous ones", async () => {
+    const repo = memoryRepo("x", SHA, {
+      "src/main/java/a/ApiPaths.java": `package a;
+public final class ApiPaths {
+  public static final String CARDS = "/cards";
+  public static final String BY_ID = "/{id}";
+  public static final String TWICE = "/one";
+}`,
+      "src/main/kotlin/a/Topics.kt": `package a
+object Topics {
+  const val CARD_ISSUED = "cards.issued"
+}`,
+      "src/main/java/b/Other.java": `package b;
+public final class ApiPaths { public static final String TWICE = "/two"; }`,
+      "src/main/java/a/CardsController.java": `package a;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.kafka.core.KafkaTemplate;
+@RestController
+@RequestMapping(ApiPaths.CARDS)
+class CardsController {
+  @GetMapping(ApiPaths.BY_ID) Card card(String id) { return null; }
+  @GetMapping(ApiPaths.TWICE) Card twice() { return null; }
+  void issued(Card c) { kafkaTemplate.send(Topics.CARD_ISSUED, c); }
+}`,
+    });
+    const s = await scanRepo({ repo, extractors: [springExtractor], repoInfo: { component: "x" } });
+    const kinds = (k: string) =>
+      s.records
+        .filter((r) => r.kind === k)
+        .map((r) => {
+          const x = r as unknown as {
+            method?: string;
+            pathOrTopic?: string;
+            raw?: string;
+            confidence: string;
+          };
+          return `${x.method ?? ""} ${x.pathOrTopic ?? x.raw} ${x.confidence}`.trim();
+        })
+        .sort();
+    expect(kinds("Endpoint")).toEqual(["GET /cards/{id} verified"]);
+    // ApiPaths.TWICE has two values in the repo: not known, so not verified.
+    expect(kinds("Unresolved")).toEqual([
+      "GET /cards/${ApiPaths.TWICE} inferred",
+      "cards.issued inferred",
+    ]);
+  });
+
   it("reads WebClient and exchange calls", async () => {
     const repo = memoryRepo("x", SHA, {
       "src/main/java/A.java": `import org.springframework.web.reactive.function.client.WebClient;

@@ -1,5 +1,5 @@
 import type { CatalogRecord } from "@maycombhq/core";
-import { defineExtractor } from "@maycombhq/sdk";
+import { defineExtractor, type RepoHandle } from "@maycombhq/sdk";
 import { componentOf, looseEnd, repoConfig, restEndpoint } from "./facts.js";
 import { resolvePlaceholders, type ConfigValue } from "./lang/config.js";
 import {
@@ -63,6 +63,29 @@ const REST_TEMPLATE: Record<string, string> = {
   patchForObject: "PATCH",
   exchange: "ANY",
 };
+
+/**
+ * String constants a repo's code defines (Java `static final String X = "..."`, Kotlin
+ * `const val X = "..."`), as Class.NAME → value, the class being the file's first type. A name
+ * defined twice with different values is left out: it can't be known which is meant.
+ */
+async function constantsOf(repo: RepoHandle): Promise<Map<string, string>> {
+  const seen = new Map<string, string | null>();
+  for await (const path of repo.listFiles(["**/*.java", "**/*.kt"])) {
+    if (/(^|\/)src\/test\//.test(path)) continue;
+    const text = await repo.readText(path);
+    const owner = /\b(?:class|interface|enum|object)\s+([A-Za-z_]\w*)/.exec(text)?.[1];
+    if (!owner) continue;
+    for (const m of text.matchAll(
+      /(?:static\s+final\s+String|const\s+val)\s+(\w+)\s*(?::\s*String\s*)?=\s*"((?:[^"\\$]|\\.)*)"/g,
+    )) {
+      const key = `${owner}.${m[1]!}`;
+      const prev = seen.get(key);
+      seen.set(key, prev === undefined || prev === m[2]! ? m[2]! : null);
+    }
+  }
+  return new Map([...seen].filter((e): e is [string, string] => e[1] !== null));
+}
 
 /** Receivers that are HTTP clients by name, for calls whose URL isn't a literal (not map.put). */
 const CLIENT_RECEIVER = /rest|template|client|http|web/i;
@@ -143,6 +166,8 @@ export const springExtractor = defineExtractor({
     const component = componentOf(repo, ctx);
     const config = await repoConfig(repo);
     const resolve = (s: string) => resolvePlaceholders(s, config);
+    // Constants the repo's own code defines, anywhere in it: Class.NAME → value.
+    const repoConstants = await constantsOf(repo);
 
     for await (const path of repo.listFiles(["**/*.java", "**/*.kt"])) {
       if (/(^|\/)src\/test\//.test(path)) continue;
@@ -173,12 +198,14 @@ export const springExtractor = defineExtractor({
       const fill = (shown: string) =>
         shown.replace(
           /\$\{([A-Za-z_][\w.]*)\}/g,
-          (m, n: string) => known.get(n) ?? values.get(n)?.value ?? m,
+          (m, n: string) => known.get(n) ?? repoConstants.get(n) ?? values.get(n)?.value ?? m,
         );
-      // For a served path: only names whose value was learned from code or bytecode, so the
-      // endpoint it makes can be verified.
+      // For a served path: only names whose value was learned from code or bytecode (this
+      // repo's constants, a model's code entries), so the endpoint it makes can be verified.
       const fillVerified = (shown: string) =>
         shown.replace(/\$\{([A-Za-z_][\w.]*)\}/g, (m, n: string) => {
+          const r = repoConstants.get(n);
+          if (r !== undefined) return r;
           const v = values.get(n);
           return v?.verified ? v.value : m;
         });
