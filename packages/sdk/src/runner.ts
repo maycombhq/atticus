@@ -1,6 +1,7 @@
 import { parseRecord, type CatalogRecord, type RecordIssue } from "@maycombhq/core";
 import type { ScanCache, ScanCacheKey } from "./cache.js";
-import type { Extractor, RepoHandle, ScanContext } from "./plugin.js";
+import { tooLargeMessage, type FsRepoHandle } from "./fs-repo.js";
+import { globToRegExp, type Extractor, type RepoHandle, type ScanContext } from "./plugin.js";
 
 export interface ScanRepoOptions {
   repo: RepoHandle;
@@ -177,6 +178,13 @@ export async function scanRepo(options: ScanRepoOptions): Promise<RepoScan> {
           warn: (message, path) =>
             warnings.push(path === undefined ? { message } : { message, path }),
         };
+        // A file the repo left out for its size (fsRepo) is this extractor's warning when it
+        // claims it: kept in the cache with the extractor's results, so a rescan still says so.
+        const claimed = extractor.claims.map(globToRegExp);
+        const skippedNow = () =>
+          (repo as Partial<FsRepoHandle>)
+            .skippedFiles?.()
+            .filter((f) => claimed.some((m) => m.test(f.path))) ?? [];
         for await (const emitted of extractor.scan(repo, ctx)) {
           const parsed = parseRecord(stampEvidence(emitted, repo, tag, scannedAt));
           if (!parsed.ok) {
@@ -192,6 +200,11 @@ export async function scanRepo(options: ScanRepoOptions): Promise<RepoScan> {
           ids.add(id);
           records.push(parsed.record);
         }
+        for (const f of skippedNow())
+          warnings.push({
+            message: tooLargeMessage(f.bytes, (repo as FsRepoHandle).maxFileBytes),
+            path: f.path,
+          });
         run.records = records.length;
         run.rejected = rejected;
         run.warnings = warnings.length;

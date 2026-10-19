@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,12 +21,12 @@ const expected = (
     },
 );
 
-async function scanForge(opts: { root?: string; cache?: null } = {}) {
+async function scanForge(opts: { root?: string; cache?: null; repos?: string } = {}) {
   const root = opts.root ?? (await mkdtemp(join(tmpdir(), "atticus-scan-")));
   const scan = await scanEstate({
     root,
     orgPack: join(FORGE, "metarepo/org-pack"),
-    repoDir: (id) => join(FORGE, "repos", id),
+    repoDir: (id) => join(opts.repos ?? join(FORGE, "repos"), id),
     repoState: async () => ({ commit: "a".repeat(40), dirty: false }),
     ...(opts.cache === null ? { cache: null } : {}),
     scannedAt: "2026-10-18T09:00:00Z",
@@ -89,6 +89,29 @@ describe("scan of the Forge fixture (M1 exit)", () => {
       expect(ifs.find((i) => i.id === "if-e7344c9455608119")!.pattern).toBeUndefined();
       expect(ifs.find((i) => i.id === "if-e7344c9455608119")!.confidence).toBe("verified");
       expect(ifs.find((i) => i.id === "if-5c55930b735276a9")!.pattern).toBeUndefined();
+    },
+    T,
+  );
+
+  it(
+    "leaves a file over 5 MB out with a warning, and keeps everything else the repo shows",
+    async () => {
+      const repos = join(await mkdtemp(join(tmpdir(), "atticus-scan-big-")), "repos");
+      await cp(join(FORGE, "repos"), repos, { recursive: true });
+      const big = "src/api/vendor.min.ts";
+      await writeFile(join(repos, "forge-portal-ui", big), "x".repeat(5 * 1024 * 1024 + 1));
+      const { scan: plain } = await scanForge({ cache: null });
+      const { scan } = await scanForge({ cache: null, repos });
+      expect(scan.problems).toEqual([]);
+      expect(scan.records).toEqual(plain.records);
+      const ui = scan.repos.find((r) => r.repo === "forge-portal-ui")!;
+      expect(ui.warnings).toContainEqual(
+        expect.objectContaining({
+          path: big,
+          message: `left out: ${5 * 1024 * 1024 + 1} bytes is over the 5 MB a file may be`,
+        }),
+      );
+      expect(scan.stats.warnings).toBeGreaterThanOrEqual(1);
     },
     T,
   );

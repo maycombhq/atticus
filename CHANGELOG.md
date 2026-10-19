@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Scans that finish and say what they couldn't read
+
+- The Java and Kotlin reader always moves on: a stray `}`, `)` or `]` inside an annotation (templates, archetypes, half-edited files) used to loop forever and stop the whole estate scan.
+- A file over 5 MB (a committed `vendor.min.js`, a data dump) is left out of the scan with a warning. Before, it made the extractor that met it fail for the whole repo, losing everything else it had found there.
+- `atticus scan` says how many warnings the scan had (files left out, rules that couldn't fill a template) and `--warnings` lists them; `--json` has them under `warnings`, and the scan's stats count them. Warnings don't fail the scan.
+
 ### Windows build and install
 
 - `pnpm lint`, `pnpm licences`, `pnpm bundle` and `pnpm bundle:test` run on Windows: script paths come from `fileURLToPath`, the bundle imports through a file URL, and pnpm is started the way Windows needs. A new check in `pnpm lint` (`scripts/check-portable-paths.mjs`) refuses `URL.pathname` used as a file path and `import()` of a plain path.

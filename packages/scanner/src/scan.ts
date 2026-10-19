@@ -94,6 +94,8 @@ export interface EstateScan {
     interfaces: number;
     verified: number;
     unresolved: number;
+    /** Distinct warnings (repo, path, message) across RepoScan.warnings: worth a look, not a failure. */
+    warnings: number;
   };
   /** What intake read from inputs/ (documents, versions, triage items). */
   inputs?: ScanInputsResult;
@@ -407,6 +409,10 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       ranRuns: runs.filter((r) => r.status === "ran").length,
       records: merged.records.length,
       ...merged.stats,
+      // A file several extractors left out is one warning.
+      warnings: new Set(
+        results.flatMap((s) => s.warnings.map((w) => JSON.stringify([s.repo, w.path, w.message]))),
+      ).size,
     },
     ...(inputs ? { inputs } : {}),
     curated: { applied: applied.applied, suppressed: applied.suppressed },

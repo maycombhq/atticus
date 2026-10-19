@@ -350,6 +350,41 @@ describe("fsRepo", () => {
       fsRepo("demo", dir, SHA, { maxFileBytes: 1000 }).readText("big.json"),
     ).rejects.toThrow(/larger/);
   });
+
+  it("leaves files over the size limit out of listings and says which, so one can't sink an extractor", async () => {
+    // A committed vendor.min.js used to throw inside the extractor, which lost every record it
+    // had found in the repo.
+    const dir = await mkdtemp(join(tmpdir(), "atticus-fsrepo-"));
+    await mkdir(join(dir, "src"), { recursive: true });
+    await writeFile(join(dir, "src", "app.ts"), 'http.get("/api/a");\n');
+    await writeFile(join(dir, "src", "vendor.min.ts"), "x".repeat(2000));
+    const repo = fsRepo("demo", dir, SHA, { maxFileBytes: 1000 });
+    const reader = defineExtractor({
+      id: "calls",
+      version: "1.0.0",
+      claims: ["src/**/*.ts"],
+      async *scan(r) {
+        for await (const path of r.listFiles(this.claims)) {
+          const text = await r.readText(path);
+          if (text.includes("/api/a"))
+            yield {
+              kind: "Unresolved",
+              id: "calls-a",
+              schemaVersion: 1,
+              status: "current",
+              unresolvedKind: "http-call",
+              raw: "GET /api/a",
+              confidence: "inferred",
+              evidence: [{ source: "code", path, line: 1 }],
+            };
+        }
+      },
+    });
+    const scan = await scanRepo({ repo, extractors: [reader], scannedAt: AT });
+    expect(scan.runs[0]!.status).toBe("ran");
+    expect(scan.records.map((r) => r.id)).toEqual(["calls-a"]);
+    expect(repo.skippedFiles()).toEqual([{ path: "src/vendor.min.ts", bytes: 2000 }]);
+  });
 });
 
 describe("golden: the runner over the Forge fixture", () => {

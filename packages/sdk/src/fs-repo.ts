@@ -1,4 +1,4 @@
-import { lstat, readdir, readFile, realpath } from "node:fs/promises";
+import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { globToRegExp, type RepoHandle } from "./plugin.js";
 
@@ -20,8 +20,25 @@ export const DEFAULT_IGNORES = [
 export interface FsRepoOptions {
   /** Folder names skipped anywhere in the tree. Defaults to DEFAULT_IGNORES. */
   ignore?: readonly string[];
-  /** Files larger than this are listed but readText refuses them. Default 5 MB. */
+  /**
+   * Files larger than this (minified bundles, data dumps) are left out of listings and readText
+   * refuses them; skippedFiles() says which were left out. Default 5 MB.
+   */
   maxFileBytes?: number;
+}
+
+/** A RepoHandle over a folder, which can also say which files it left out for their size. */
+export interface FsRepoHandle extends RepoHandle {
+  /** The size limit: files over it are left out of listings. */
+  readonly maxFileBytes: number;
+  /** Files a listing left out because they are over maxFileBytes, in path order. */
+  skippedFiles(): { path: string; bytes: number }[];
+}
+
+/** The warning for a file left out for its size: "left out: 5242881 bytes is over the 5 MB a file may be". */
+export function tooLargeMessage(bytes: number, maxBytes: number): string {
+  const mb = maxBytes / 1024 / 1024;
+  return `left out: ${bytes} bytes is over the ${Number.isInteger(mb) ? `${mb} MB` : `${maxBytes} bytes`} a file may be`;
 }
 
 export class RepoReadError extends Error {
@@ -44,11 +61,14 @@ export function fsRepo(
   dir: string,
   commit: string,
   options: FsRepoOptions = {},
-): RepoHandle {
+): FsRepoHandle {
   const root = resolve(dir);
   const ignore = new Set(options.ignore ?? DEFAULT_IGNORES);
   const maxBytes = options.maxFileBytes ?? 5 * 1024 * 1024;
   let cache: string[] | undefined;
+  /** Size of each file a listing matched, read once. */
+  const sizes = new Map<string, number>();
+  const skipped = new Map<string, number>();
 
   async function walk(abs: string, out: string[]): Promise<void> {
     const entries = await readdir(abs, { withFileTypes: true });
@@ -101,7 +121,23 @@ export function fsRepo(
     commit,
     async *listFiles(globs) {
       const matchers = globs.map(globToRegExp);
-      for (const p of await allFiles()) if (matchers.some((m) => m.test(p))) yield p;
+      for (const p of await allFiles()) {
+        if (!matchers.some((m) => m.test(p))) continue;
+        if (!sizes.has(p))
+          sizes.set(p, (await stat(join(root, ...p.split("/"))).catch(() => undefined))?.size ?? 0);
+        const bytes = sizes.get(p)!;
+        if (bytes > maxBytes) {
+          skipped.set(p, bytes);
+          continue;
+        }
+        yield p;
+      }
+    },
+    maxFileBytes: maxBytes,
+    skippedFiles() {
+      return [...skipped]
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([path, bytes]) => ({ path, bytes }));
     },
     async readText(path) {
       const text = await readFile(await safePath(path), "utf8");

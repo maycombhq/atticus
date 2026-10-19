@@ -31,6 +31,8 @@ export interface ScanCommandOptions {
   json?: boolean;
   /** Skip the drift check for open changes in build or qa that runs after the catalog is written. */
   noDrift?: boolean;
+  /** List every warning (files left out, rules that couldn't fill a template), not just the count. */
+  warnings?: boolean;
 }
 
 function driftLine(d: DriftAfterScan): string {
@@ -99,6 +101,19 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
     ...before.problems.map((p) => ({ source: `catalog/generated/${p.file}`, message: p.message })),
     ...scan.problems,
   ];
+  // Warnings don't fail the scan, but they are what it couldn't read: never dropped silently.
+  // The same file left out by several extractors is one warning.
+  const seen = new Set<string>();
+  const warnings = scan.repos.flatMap((r) =>
+    r.warnings
+      .map((w) => ({ repo: r.repo, ...w }))
+      .filter((w) => {
+        const k = `${w.repo}\u0000${w.path ?? ""}\u0000${w.message}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      }),
+  );
   if (o.json) {
     io.out(
       JSON.stringify(
@@ -106,6 +121,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           stats: scan.stats,
           diff,
           problems,
+          warnings,
           notes: scan.notes,
           written: write !== undefined,
           files: write ?? null,
@@ -131,6 +147,13 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
     else io.out("Dry run: nothing written.");
     for (const d of drift) io.out(driftLine(d));
     for (const n of scan.notes) io.out(`note: ${n}`);
+    if (o.warnings)
+      for (const w of warnings)
+        io.out(`warning: ${w.repo}: ${w.path ? `${w.path}: ` : ""}${w.message}`);
+    else if (warnings.length)
+      io.out(
+        `${warnings.length} warning${warnings.length === 1 ? "" : "s"}: atticus scan --warnings lists ${warnings.length === 1 ? "it" : "them"}`,
+      );
     for (const p of problems)
       io.err(`${"repo" in p && p.repo ? `${p.repo}: ` : ""}${p.source}: ${p.message}`);
   }

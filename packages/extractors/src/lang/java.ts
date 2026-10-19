@@ -182,6 +182,8 @@ function readValue(tk: Token[], i: number): { v: AnnValue; i: number } {
     const items: string[] = [];
     i++;
     while (i < tk.length && !(tk[i]!.t === "p" && tk[i]!.v === "}")) {
+      // A ")" before the "}" closes the annotation: the list was never closed.
+      if (tk[i]!.t === "p" && tk[i]!.v === ")") return { v: items, i };
       if (tk[i]!.t === "p" && tk[i]!.v === ",") {
         i++;
         continue;
@@ -189,7 +191,8 @@ function readValue(tk: Token[], i: number): { v: AnnValue; i: number } {
       const r = readValue(tk, i);
       if (typeof r.v === "string") items.push(r.v);
       else items.push(...r.v);
-      i = r.i;
+      // Always move on, even past a token that is no value (a stray "]").
+      i = Math.max(r.i, i + 1);
     }
     return { v: items, i: i + 1 };
   }
@@ -236,7 +239,10 @@ function readAnnotation(tk: Token[], i: number): { a: Annotation; i: number } | 
       }
       const r = readValue(tk, j);
       attrs[key] = r.v;
-      j = r.i;
+      // Always move on, even past a token that is no value (a stray "}" or "]"). An empty value
+      // (`x = )`) stops on the ")" or ",", which the loop handles.
+      const stop = tk[r.i]?.t === "p" && (tk[r.i]!.v === ")" || tk[r.i]!.v === ",");
+      j = r.i > j || stop ? r.i : j + 1;
     }
     j++;
   }

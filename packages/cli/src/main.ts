@@ -143,6 +143,7 @@ Usage:
           [--repos a,b]                Only these repos
           [--full]                     Ignore the scan cache
           [--dry-run]                  Show what would change; write nothing
+          [--warnings]                 List what the scan left out or couldn't read, not just how many
           [--json]                     Print the result as JSON
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
           [--limit n] [--json]         (see docs/query-language.md)
@@ -386,6 +387,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       epic: { type: "string" },
       "no-ai": { type: "boolean" },
       "no-drift": { type: "boolean" },
+      warnings: { type: "boolean" },
       "no-rescan": { type: "boolean" },
       refresh: { type: "string" },
       export: { type: "string" },
@@ -471,6 +473,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
         dryRun: values["dry-run"] === true,
         json: values.json === true,
         noDrift: values["no-drift"] === true,
+        warnings: values.warnings === true,
       },
       io,
     );

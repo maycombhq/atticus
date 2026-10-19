@@ -14,6 +14,7 @@ Usage:
           [--repos a,b]                Only these repos
           [--full]                     Ignore the scan cache
           [--dry-run]                  Show what would change; write nothing
+          [--warnings]                 List what the scan left out or couldn't read, not just how many
           [--json]                     Print the result as JSON
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
           [--limit n] [--json]         (see docs/query-language.md)
