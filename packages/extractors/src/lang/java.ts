@@ -110,6 +110,12 @@ export interface Annotation {
   name: string;
   /** Attributes; a single unnamed value is stored as "value". */
   attrs: Record<string, AnnValue>;
+  /**
+   * For attributes whose value has a bare name in it (a constant such as ApiPaths.CARDS, not a
+   * string literal): the value with each name shown as ${Name}, e.g. "/v2${ApiPaths.CARDS}".
+   * A name's value isn't known here, so what it makes is a loose end, never a verified fact.
+   */
+  named?: Record<string, AnnValue>;
   line: number;
 }
 
@@ -175,28 +181,50 @@ const MODIFIERS = new Set([
   "var",
 ]);
 
-/** Read a value inside annotation parentheses: "a" + "b", {"x","y"}, Name.CONST, 42, true. */
-function readValue(tk: Token[], i: number): { v: AnnValue; i: number } {
+const LITERAL_NAMES = new Set(["true", "false", "null"]);
+
+/**
+ * Read a value inside annotation parentheses: "a" + "b", {"x","y"}, Name.CONST, 42, true.
+ * `shown` is the value with each bare name as ${Name}, when there is one.
+ */
+function readValue(tk: Token[], i: number): { v: AnnValue; i: number; shown?: AnnValue } {
   const tok = tk[i];
   if (tok?.t === "p" && tok.v === "{") {
     const items: string[] = [];
+    const shownItems: string[] = [];
+    let named = false;
+    const add = (r: { v: AnnValue; shown?: AnnValue }) => {
+      const v = typeof r.v === "string" ? [r.v] : r.v;
+      items.push(...v);
+      if (r.shown !== undefined) named = true;
+      const sh = r.shown ?? r.v;
+      shownItems.push(...(typeof sh === "string" ? [sh] : sh));
+    };
+    const done = (at: number) =>
+      named ? { v: items, i: at, shown: shownItems } : { v: items, i: at };
     i++;
     while (i < tk.length && !(tk[i]!.t === "p" && tk[i]!.v === "}")) {
       // A ")" before the "}" closes the annotation: the list was never closed.
-      if (tk[i]!.t === "p" && tk[i]!.v === ")") return { v: items, i };
+      if (tk[i]!.t === "p" && tk[i]!.v === ")") return done(i);
       if (tk[i]!.t === "p" && tk[i]!.v === ",") {
         i++;
         continue;
       }
       const r = readValue(tk, i);
-      if (typeof r.v === "string") items.push(r.v);
-      else items.push(...r.v);
+      add(r);
       // Always move on, even past a token that is no value (a stray "]").
       i = Math.max(r.i, i + 1);
     }
-    return { v: items, i: i + 1 };
+    return done(i + 1);
   }
   let v = "";
+  let shown = "";
+  let inName = false;
+  let named = false;
+  const closeName = () => {
+    if (inName) shown += "}";
+    inName = false;
+  };
   let depth = 0;
   while (i < tk.length) {
     const t = tk[i]!;
@@ -206,12 +234,28 @@ function readValue(tk: Token[], i: number): { v: AnnValue; i: number } {
       depth--;
     }
     if (depth === 0 && t.t === "p" && (t.v === "," || t.v === "}")) break;
-    if (t.t === "str") v += t.v;
-    else if (t.t === "id" || t.t === "num") v += t.v;
-    else if (t.t === "p" && t.v === ".") v += ".";
+    if (t.t === "str") {
+      closeName();
+      v += t.v;
+      shown += t.v;
+    } else if (t.t === "num" || (t.t === "id" && LITERAL_NAMES.has(t.v) && !inName)) {
+      closeName();
+      v += t.v;
+      shown += t.v;
+    } else if (t.t === "id") {
+      if (!inName) shown += "${";
+      inName = true;
+      named = true;
+      v += t.v;
+      shown += t.v;
+    } else if (t.t === "p" && t.v === ".") {
+      v += ".";
+      shown += ".";
+    } else closeName();
     i++;
   }
-  return { v, i };
+  closeName();
+  return named ? { v, i, shown } : { v, i };
 }
 
 function readAnnotation(tk: Token[], i: number): { a: Annotation; i: number } | undefined {
@@ -225,6 +269,7 @@ function readAnnotation(tk: Token[], i: number): { a: Annotation; i: number } | 
     j += 2;
   }
   const attrs: Record<string, AnnValue> = {};
+  const named: Record<string, AnnValue> = {};
   if (tk[j]?.t === "p" && tk[j]!.v === "(") {
     j++;
     while (j < tk.length && !(tk[j]!.t === "p" && tk[j]!.v === ")")) {
@@ -239,6 +284,7 @@ function readAnnotation(tk: Token[], i: number): { a: Annotation; i: number } | 
       }
       const r = readValue(tk, j);
       attrs[key] = r.v;
+      if (r.shown !== undefined) named[key] = r.shown;
       // Always move on, even past a token that is no value (a stray "}" or "]"). An empty value
       // (`x = )`) stops on the ")" or ",", which the loop handles.
       const stop = tk[r.i]?.t === "p" && (tk[r.i]!.v === ")" || tk[r.i]!.v === ",");
@@ -246,7 +292,9 @@ function readAnnotation(tk: Token[], i: number): { a: Annotation; i: number } | 
     }
     j++;
   }
-  return { a: { name, attrs, line: nameTok.line }, i: j };
+  const a: Annotation = { name, attrs, line: nameTok.line };
+  if (Object.keys(named).length > 0) a.named = named;
+  return { a, i: j };
 }
 
 /**
@@ -487,6 +535,19 @@ export function parseJava(src: string): JavaFile {
 export function attr(a: Annotation | undefined, name = "value"): string | undefined {
   const v = a?.attrs[name];
   return Array.isArray(v) ? v[0] : v;
+}
+
+/**
+ * A list attribute as written, with each bare name shown as ${Name}: what a constant makes when
+ * its value isn't known. `named` says whether there was one.
+ */
+export function attrsShown(
+  a: Annotation | undefined,
+  name = "value",
+): { values: string[]; named: boolean } {
+  const v = a?.named?.[name];
+  if (v === undefined) return { values: attrs(a, name), named: false };
+  return { values: Array.isArray(v) ? v : [v], named: true };
 }
 
 /** A list attribute (a single string becomes a one-item list). */

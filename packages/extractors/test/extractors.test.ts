@@ -171,6 +171,63 @@ describe("spring", () => {
     ]);
   });
 
+  it("never makes a verified endpoint from a constant it can't read: it leaves a loose end", async () => {
+    // Bank code style forbids literal paths, so constants are the common case. They used to
+    // become endpoints such as "GET /ApiPaths.CARDS/ApiPaths.BY_ID", marked verified.
+    const repo = memoryRepo("x", SHA, {
+      "src/main/java/CardsController.java": `import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping(ApiPaths.CARDS)
+class CardsController {
+  @GetMapping(ApiPaths.BY_ID)
+  Card get(String id) { return null; }
+  @PostMapping("/v2" + ApiPaths.CARDS)
+  Card create(Card c) { return null; }
+}`,
+      "src/main/java/LimitsController.java": `import org.springframework.web.bind.annotation.*;
+@RestController
+@RequestMapping("/api")
+class LimitsController {
+  @GetMapping(value = "/limits", produces = MediaType.APPLICATION_JSON_VALUE)
+  Limit limits() { return null; }
+}`,
+      "src/main/java/LedgerClient.java": `import org.springframework.cloud.openfeign.FeignClient;
+@FeignClient(name = "ledger", url = "\${ledger.url}")
+interface LedgerClient {
+  @GetMapping(LedgerPaths.BALANCE)
+  Balance balance(String id);
+}`,
+      "src/main/java/PaymentEvents.java": `import org.springframework.kafka.annotation.KafkaListener;
+class PaymentEvents {
+  @KafkaListener(topics = Topics.PAYMENTS)
+  void on(String m) {}
+}`,
+    });
+    const s = await scanRepo({ repo, extractors: [springExtractor], repoInfo: { component: "x" } });
+    const endpoints = s.records
+      .filter((r) => r.kind === "Endpoint")
+      .map(
+        (r) =>
+          `${(r as unknown as { method: string }).method} ${(r as unknown as { pathOrTopic: string }).pathOrTopic}`,
+      );
+    // Only the path written out in full is an endpoint; produces = a constant doesn't matter.
+    expect(endpoints).toEqual(["GET /api/limits"]);
+    expect(
+      s.records
+        .filter((r) => r.kind === "Unresolved")
+        .map((r) => {
+          const u = r as unknown as { unresolvedKind: string; raw: string; confidence: string };
+          return `${u.unresolvedKind} ${u.raw} ${u.confidence}`;
+        })
+        .sort(),
+    ).toEqual([
+      "event-subscribe ${Topics.PAYMENTS} inferred",
+      "http-call GET ${ledger.url}/${LedgerPaths.BALANCE} inferred",
+      "http-endpoint GET ${ApiPaths.CARDS}/${ApiPaths.BY_ID} inferred",
+      "http-endpoint POST ${ApiPaths.CARDS}/v2${ApiPaths.CARDS} inferred",
+    ]);
+  });
+
   it("reads WebClient and exchange calls", async () => {
     const repo = memoryRepo("x", SHA, {
       "src/main/java/A.java": `import org.springframework.web.reactive.function.client.WebClient;

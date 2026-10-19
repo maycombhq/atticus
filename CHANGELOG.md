@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### No facts made from what the code doesn't spell out
+
+- A Spring path made from a constant (`@RequestMapping(ApiPaths.CARDS)`, `"/v2" + ApiPaths.CARDS`) is no longer a verified endpoint named `/ApiPaths.CARDS/...`: it is an `http-endpoint` loose end showing the name, `GET ${ApiPaths.CARDS}/${ApiPaths.BY_ID}`, until its value is known. Feign paths and listener topics made from constants show the name the same way, and stay loose ends.
+- Merge never joins publishers and subscribers on a topic the code names but doesn't spell out.
+
 ### Scans that finish and say what they couldn't read
 
 - The Java and Kotlin reader always moves on: a stray `}`, `)` or `]` inside an annotation (templates, archetypes, half-edited files) used to loop forever and stop the whole estate scan.

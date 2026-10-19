@@ -17,8 +17,17 @@ import { flattenProperties, flattenYaml, type ConfigValue } from "./lang/config.
  *   db-connection     "jdbc-or-host URL"
  * The merge step resolves them into Interfaces, Tables' readers and writers, and so on.
  */
+/**
+ * What a loose end is. http-endpoint: a served path the code makes from a name (a constant) whose
+ * value isn't known, so it can't be a verified Endpoint until it is.
+ */
 export type LooseEndKind =
-  "http-call" | "event-publish" | "event-subscribe" | "db-access" | "db-connection";
+  | "http-call"
+  | "http-endpoint"
+  | "event-publish"
+  | "event-subscribe"
+  | "db-access"
+  | "db-connection";
 
 export interface Ev {
   source: z.infer<typeof EvidenceSource>;

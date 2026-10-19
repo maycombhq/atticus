@@ -424,6 +424,17 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     topics.set(t, entry);
   }
   for (const [topic, { pub, sub }] of [...topics.entries()].sort()) {
+    // A topic the code names but doesn't spell out (${Topics.PAYMENTS}, a constant) isn't known:
+    // its publishers and subscribers stay loose ends, never an interface.
+    if (topic.includes("${")) {
+      for (const l of loose.filter(
+        (x) =>
+          (x.unresolvedKind === "event-publish" || x.unresolvedKind === "event-subscribe") &&
+          x.raw === topic,
+      ))
+        unresolved.push(l);
+      continue;
+    }
     const ep = byKey.get(`Topic|${topic}`);
     const def = ep ? ep.evidence.filter((e) => e.side === "definition") : [];
     const firstCodePub = [...pub.entries()].find(([, ev]) =>

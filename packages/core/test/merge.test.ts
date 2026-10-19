@@ -184,3 +184,40 @@ describe("mergeCatalog: code is the source of truth", () => {
     expect(r.records.find((x) => x.id === "api")!.status).toBe("current");
   });
 });
+
+describe("mergeCatalog: events on a topic the code names but doesn't spell out", () => {
+  const loose = (owner: string, kind: string, raw: string, side: "caller" | "callee") =>
+    ({
+      ...base,
+      confidence: "inferred",
+      kind: "Unresolved",
+      id: `${owner}-${kind}-${raw.replace(/[^a-z]+/gi, "-").toLowerCase()}`,
+      unresolvedKind: kind,
+      raw,
+      owner,
+      evidence: [{ ...ev[0]!, side }],
+    }) as unknown as CatalogRecord;
+
+  it("joins a publisher and a subscriber of a written-out topic, but not of a constant", () => {
+    const r = merged([
+      component("bff", "portal"),
+      component("api", "ledger"),
+      loose("bff", "event-publish", "payments.initiated", "caller"),
+      loose("api", "event-subscribe", "payments.initiated", "callee"),
+      // @KafkaListener(topics = Topics.PAYMENTS): the topic's real name isn't known.
+      loose("bff", "event-publish", "${Topics.PAYMENTS}", "caller"),
+      loose("api", "event-subscribe", "${Topics.PAYMENTS}", "callee"),
+    ]);
+    const ifs = r.records.filter((x) => x.kind === "Interface") as unknown as {
+      normalizedPath: string;
+    }[];
+    expect(ifs.map((i) => i.normalizedPath)).toEqual(["payments.initiated"]);
+    expect(
+      r.records
+        .filter((x) => x.kind === "Unresolved")
+        .map((x) => (x as unknown as { raw: string }).raw)
+        .sort(),
+    ).toEqual(["${Topics.PAYMENTS}", "${Topics.PAYMENTS}"]);
+    expect(r.records.filter((x) => x.kind !== "Unresolved" && x.id.includes("topics"))).toEqual([]);
+  });
+});

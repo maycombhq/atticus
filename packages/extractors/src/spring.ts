@@ -2,7 +2,15 @@ import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor } from "@maycombhq/sdk";
 import { componentOf, looseEnd, repoConfig, restEndpoint } from "./facts.js";
 import { resolvePlaceholders, type ConfigValue } from "./lang/config.js";
-import { attr, attrs, findAnnotation, parseJava, type Annotation, type Decl } from "./lang/java.js";
+import {
+  attr,
+  attrs,
+  attrsShown,
+  findAnnotation,
+  parseJava,
+  type Annotation,
+  type Decl,
+} from "./lang/java.js";
 import { looksLikeSql, tablesInQuery } from "./lang/sql.js";
 
 const MAPPINGS: Record<string, string | undefined> = {
@@ -14,13 +22,23 @@ const MAPPINGS: Record<string, string | undefined> = {
   RequestMapping: undefined,
 };
 
-/** The HTTP method and path of a mapping annotation. RequestMapping without a method means any. */
-function mapping(a: Annotation): { method: string; paths: string[] } | undefined {
+/**
+ * The HTTP method and path of a mapping annotation. RequestMapping without a method means any.
+ * A path made from a constant (`@GetMapping(ApiPaths.BY_ID)`) is shown as ${ApiPaths.BY_ID} and
+ * `named` is set: its value isn't known, so it can't make a verified endpoint.
+ */
+function mapping(a: Annotation): { method: string; paths: string[]; named: boolean } | undefined {
   if (!(a.name in MAPPINGS)) return undefined;
   const fixed = MAPPINGS[a.name];
   const methods = attrs(a, "method").map((m) => m.replace(/^.*\./, "").toUpperCase());
-  const paths = [...attrs(a, "value"), ...attrs(a, "path")];
-  return { method: fixed ?? methods[0] ?? "ANY", paths: paths.length > 0 ? paths : [""] };
+  const value = attrsShown(a, "value");
+  const path = attrsShown(a, "path");
+  const paths = [...value.values, ...path.values];
+  return {
+    method: fixed ?? methods[0] ?? "ANY",
+    paths: paths.length > 0 ? paths : [""],
+    named: value.named || path.named,
+  };
 }
 
 const join = (a: string, b: string) => {
@@ -114,11 +132,21 @@ export const springExtractor = defineExtractor({
           const m = mapping(a);
           if (!m) continue;
           const classMap = findAnnotation(type, "RequestMapping");
-          const prefixes = classMap ? (mapping(classMap)?.paths ?? [""]) : [""];
+          const cm = classMap ? mapping(classMap) : undefined;
+          const prefixes = cm?.paths ?? [""];
+          const named = m.named || !!cm?.named;
           for (const prefix of prefixes) {
             for (const p of m.paths) {
               const full = join(prefix, p);
-              if (isController && !feign) {
+              if (isController && !feign && named) {
+                // A served path made from a constant: seen, but not known well enough to verify.
+                yield looseEnd(repo, ctx, "http-endpoint", `${m.method} ${full}`, {
+                  source: "code",
+                  path,
+                  line: a.line,
+                  side: "callee",
+                });
+              } else if (isController && !feign) {
                 yield restEndpoint(repo, component, m.method, full, {
                   source: "code",
                   path,
@@ -126,8 +154,9 @@ export const springExtractor = defineExtractor({
                   side: "callee",
                 });
               } else if (feign) {
+                const url = attrsShown(feign, "url");
                 const base =
-                  attr(feign, "url") ??
+                  url.values[0] ??
                   `http://${attr(feign, "name") ?? attr(feign, "value") ?? "unknown"}`;
                 yield looseEnd(repo, ctx, "http-call", `${m.method} ${resolve(join(base, full))}`, {
                   source: "code",
@@ -153,7 +182,8 @@ export const springExtractor = defineExtractor({
         }
         // Kafka listeners.
         const listener = findAnnotation(d, "KafkaListener");
-        for (const topic of attrs(listener, "topics")) {
+        // topics = Topics.PAYMENTS shows as ${Topics.PAYMENTS}: a loose end, never joined.
+        for (const topic of attrsShown(listener, "topics").values) {
           yield looseEnd(repo, ctx, "event-subscribe", resolve(topic), {
             source: "code",
             path,
