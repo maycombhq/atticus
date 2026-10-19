@@ -55,6 +55,8 @@ Usage:
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
   atticus frameworks learn <name> --from <repo|jar>   Learn what a house framework means from its source or JAR
           [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
+  atticus frameworks discover --group <a.b>[,...]   The house artifacts the repos build on, and their JARs here
+          [--jars <dir>]... [--learn] [--json]   (Maven and Gradle caches too; never downloads)
   atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, approvals and test kinds

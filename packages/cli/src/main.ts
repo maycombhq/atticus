@@ -128,7 +128,7 @@ import {
   dialectRun,
   dialectTest,
 } from "./dialect-commands.js";
-import { frameworksLearn } from "./framework-commands.js";
+import { frameworksDiscover, frameworksLearn } from "./framework-commands.js";
 
 import { VERSION } from "./version.js";
 export { VERSION };
@@ -185,6 +185,8 @@ Usage:
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
   atticus frameworks learn <name> --from <repo|jar>   Learn what a house framework means from its source or JAR
           [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
+  atticus frameworks discover --group <a.b>[,...]   The house artifacts the repos build on, and their JARs here
+          [--jars <dir>]... [--learn] [--json]   (Maven and Gradle caches too; never downloads)
   atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, approvals and test kinds
@@ -364,6 +366,8 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       "from-catalog": { type: "boolean" },
       from: { type: "string" },
       package: { type: "string" },
+      jars: { type: "string", multiple: true },
+      learn: { type: "boolean" },
       type: { type: "string" },
       template: { type: "string" },
       id: { type: "string" },
@@ -1313,6 +1317,24 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       return 2;
     }
     return stubCheck(arg, io);
+  }
+  if (group === "frameworks" && command === "discover") {
+    const strings = (v: unknown) =>
+      (Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string");
+    const groups = strings(values.group)
+      .flatMap((g) => g.split(","))
+      .map((g) => g.trim())
+      .filter(Boolean);
+    return frameworksDiscover(
+      root,
+      {
+        groups,
+        jars: strings(values.jars),
+        learn: values.learn === true,
+        json: values.json === true,
+      },
+      io,
+    );
   }
   if (group === "frameworks") {
     const from = str(values.from);

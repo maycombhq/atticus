@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { FrameworkModel } from "@maycombhq/core";
 import { scanEstate } from "@maycombhq/scanner";
-import { frameworksLearn } from "../src/framework-commands.js";
+import { frameworksDiscover, frameworksLearn } from "../src/framework-commands.js";
 
 const MESSY = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/messy");
 const T = 120_000;
@@ -109,5 +109,58 @@ describe("atticus frameworks learn", () => {
     const bad = capture();
     expect(await frameworksLearn(root, "x", join(root, "nowhere"), {}, bad.io)).toBe(2);
     expect(bad.err[0]).toMatch(/isn't a folder or a \.jar/);
+  });
+});
+
+describe("atticus frameworks discover", () => {
+  /** The messy metarepo with tide-cards cloned, and a home whose Maven cache may hold the starter. */
+  async function estate(withJar: boolean) {
+    const root = await metarepo();
+    await cp(join(MESSY, "repos/tide-cards"), join(root, "workspace/tide-cards"), {
+      recursive: true,
+    });
+    const home = await mkdtemp(join(tmpdir(), "atticus-home-"));
+    if (withJar) {
+      const dir = join(home, ".m2/repository/tide/platform/tide-web-starter/3.2.0");
+      await mkdir(dir, { recursive: true });
+      await cp(
+        join(MESSY, "jars/tide-web-starter-3.2.0.jar"),
+        join(dir, "tide-web-starter-3.2.0.jar"),
+      );
+    }
+    return { root, home };
+  }
+
+  it("finds the house starter a repo builds on, its JAR in the Maven cache, and learns it", async () => {
+    const { root, home } = await estate(true);
+    const c = capture();
+    expect(
+      await frameworksDiscover(root, { groups: ["tide.platform"], learn: true, home }, c.io),
+    ).toBe(0);
+    expect(c.out[0]).toBe("tide.platform:tide-web-starter: 3.2.0 in tide-cards");
+    expect(c.out[1]).toMatch(/^ {2}JAR: .*tide-web-starter-3\.2\.0\.jar$/);
+    expect(c.out).toContain(
+      "Not cloned here, so not read: tide-payments, tide-gateway (atticus workspace sync).",
+    );
+    expect(c.out).toContainEqual(
+      expect.stringMatching(
+        /^Wrote org-pack\/frameworks\/tide-web-starter\.yaml from tide-web-starter-3\.2\.0\.jar: 3 annotations, 2 wrapper methods, 2 constants \(all from bytecode\)\.$/,
+      ),
+    );
+    const model = FrameworkModel.parse(
+      parse(await readFile(join(root, "org-pack/frameworks/tide-web-starter.yaml"), "utf8")),
+    );
+    expect(model.artifacts).toEqual(["tide.platform:tide-web-starter"]);
+  });
+
+  it("names a JAR that isn't on this machine instead of downloading it", async () => {
+    const { root, home } = await estate(false);
+    const c = capture();
+    expect(await frameworksDiscover(root, { groups: ["tide.platform"], home }, c.io)).toBe(0);
+    expect(c.out[1]).toBe(
+      "  JAR: not on this machine. Put tide-web-starter-3.2.0.jar (from your artifact repository) in a folder and pass --jars <folder>; tide.platform:tide-web-starter isn't downloaded.",
+    );
+    const none = capture();
+    expect(await frameworksDiscover(root, { groups: [] }, none.io)).toBe(2);
   });
 });
