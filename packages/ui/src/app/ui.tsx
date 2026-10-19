@@ -50,6 +50,8 @@ export function View<T>(p: {
         <div className="skeleton" style={{ width: "70%" }} />
       </div>
     );
+  // "Scan first" and the like: an empty state that names the step, not an error.
+  if (p.of.state === "error" && p.of.notYet) return <div className="state">{p.of.error}</div>;
   if (p.of.state === "error")
     return (
       <div className="state error" role="alert">

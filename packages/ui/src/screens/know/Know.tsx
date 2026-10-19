@@ -911,7 +911,12 @@ interface Triage {
   }[];
 }
 
-function TriageOptions(p: { item: string; options: { label: string }[]; done: () => void }) {
+function TriageOptions(p: {
+  item: string;
+  options: { label: string }[];
+  /** Called with what was decided; the item leaves the list, so the panel shows the outcome. */
+  done: (decided: string) => void;
+}) {
   const act = useAction();
   if (p.options.length === 0) return null;
   return (
@@ -929,7 +934,7 @@ function TriageOptions(p: { item: string; options: { label: string }[]; done: ()
                   api(`/api/triage/${encodeURIComponent(p.item)}/decide`, {
                     method: "POST",
                     body: { option: i + 1 },
-                  }).then(p.done),
+                  }).then(() => p.done(`Decided: ${o.label}.`)),
                 `Decided: ${o.label}.`,
               )
             }
@@ -938,7 +943,8 @@ function TriageOptions(p: { item: string; options: { label: string }[]; done: ()
           </button>
         ))}
       </div>
-      <Note note={act.note} />
+      {/* Success shows above the list: this item leaves it. */}
+      <Note note={act.note?.ok ? undefined : act.note} />
     </div>
   );
 }
@@ -956,6 +962,7 @@ const DOC_COLOR: Record<string, string> = {
 export function IntakeScreen() {
   const intake = useView<Intake>("intake");
   const triage = useView<Triage>("triage");
+  const [decided, setDecided] = useState<string | undefined>();
   const docs = intake.state === "ready" ? intake.data.documents : [];
   const byStatus = [...new Set(docs.map((d) => d.status))];
   const facts = docs.reduce((a, d) => a + d.records.length, 0);
@@ -1058,6 +1065,7 @@ export function IntakeScreen() {
         <View of={triage} empty={(d) => d.items.length === 0} emptyText="Nothing to triage.">
           {(d) => (
             <div className="stack">
+              {decided && <Note note={{ ok: true, text: decided }} />}
               {d.items.map((t) => (
                 <div
                   key={t.id}
@@ -1074,7 +1082,14 @@ export function IntakeScreen() {
                     {t.id} · {t.source.path}
                     {t.source.line ? `:${t.source.line}` : ""}
                   </span>
-                  <TriageOptions item={t.id} options={t.options} done={() => triage.reload()} />
+                  <TriageOptions
+                    item={t.id}
+                    options={t.options}
+                    done={(text) => {
+                      setDecided(text);
+                      triage.reload();
+                    }}
+                  />
                 </div>
               ))}
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>

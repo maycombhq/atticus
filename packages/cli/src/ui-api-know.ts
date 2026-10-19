@@ -42,6 +42,9 @@ const VIEWS: Record<string, (arg?: string) => string[] | undefined> = {
 /** Diagram views `atticus diagram render` draws as Mermaid text; container and sequence need a focus. */
 const DIAGRAM_VIEWS = ["context", "container", "data", "event", "sequence"];
 
+/** A refusal that names the step to take first (a scan): the app shows it as an empty state. */
+const scanFirst = (words: string) => /catalog is empty|scan first/i.test(words);
+
 export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
   const view = async (name: string, arg?: string) => {
     const build = VIEWS[name];
@@ -58,7 +61,13 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
       err: (l) => err.push(l),
     });
     const text = out.join("\n").trim();
-    if (code === 2) throw badRequest(err.join("\n") || "The command refused the request.");
+    if (code === 2) {
+      const words = err.join("\n") || "The command refused the request.";
+      // A refusal that names the step to take first (a scan) is an empty state, not a failure.
+      if (scanFirst(words))
+        throw new HttpError(422, "Atticus can't show that yet", words, { notYet: true });
+      throw badRequest(words);
+    }
     let body: unknown;
     try {
       body = text ? JSON.parse(text) : null;
@@ -66,12 +75,16 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
       // A command that printed words, not JSON, on a refusal.
       body = undefined;
     }
-    if (body === undefined)
+    if (body === undefined) {
+      const words = [...err, ...out].join("\n") || "No output.";
+      // A refusal that names the step to take first (a scan) is an empty state, not a failure.
       throw new HttpError(
         422,
         "Atticus can't show that yet",
-        [...err, ...out].join("\n") || "No output.",
+        words,
+        scanFirst(words) ? { notYet: true } : undefined,
       );
+    }
     return { status: 200, body: { code, data: body, problems: err } };
   };
   /** Run a command that prints text, not JSON; returns the text. */
@@ -83,7 +96,13 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
       out: (l) => out.push(l),
       err: (l) => err.push(l),
     });
-    if (code === 2) throw badRequest(err.join("\n") || "The command refused the request.");
+    if (code === 2) {
+      const words = err.join("\n") || "The command refused the request.";
+      // A refusal that names the step to take first (a scan) is an empty state, not a failure.
+      if (scanFirst(words))
+        throw new HttpError(422, "Atticus can't show that yet", words, { notYet: true });
+      throw badRequest(words);
+    }
     return { code, text: out.join("\n"), problems: err };
   };
   return r

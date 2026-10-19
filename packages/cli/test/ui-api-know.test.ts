@@ -114,3 +114,21 @@ describe("guided setup from the app (ADR 0047)", () => {
     expect(after.steps.find((s) => s.id === "baseline")!.done).toBe(true);
   });
 });
+
+describe("a view on a metarepo with nothing scanned", () => {
+  it("says to scan first as a not-yet answer, which the app shows as an empty state", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-empty-"));
+    await cp(join(FIXTURES, "forge/metarepo"), root, { recursive: true });
+    const empty = await startServer({ root, port: 0, extend: (r, ctx) => uiKnowRoutes(r, ctx) });
+    try {
+      const r = await fetch(`${empty.url}/api/view/coverage`, {
+        headers: { "X-Atticus-Token": empty.token },
+      });
+      const body = (await r.json()) as { detail?: string; notYet?: boolean };
+      expect(body.detail).toMatch(/scan/i);
+      expect(body.notYet).toBe(true);
+    } finally {
+      await empty.close();
+    }
+  });
+});

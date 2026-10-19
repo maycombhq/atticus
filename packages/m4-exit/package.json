@@ -1,0 +1,17 @@
+{
+  "name": "@maycombhq/m4-exit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The M4 exit check: the onboarding, knowledge-source and drafted-org-pack bars, measured on a fresh practice sandbox through the atticus command line and the local API.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=120000 --hookTimeout=120000"
+  },
+  "dependencies": {
+    "@maycombhq/cli": "workspace:*",
+    "@maycombhq/core": "workspace:*",
+    "yaml": "^2.9.1"
+  }
+}

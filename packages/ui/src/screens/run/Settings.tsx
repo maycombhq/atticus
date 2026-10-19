@@ -120,7 +120,7 @@ function NotifyPanel() {
   const d = digest ?? me?.notify?.digest ?? "off";
   const c = channel ?? me?.notify?.channel ?? "";
   return (
-    <Panel title="Your notifications" meta=".atticus/me.yaml" span="span 7">
+    <Panel title="Your notifications" meta=".atticus/me.yaml" span="span 12">
       {!me ? (
         <div className="stack" aria-busy="true">
           <span className="sr">Loading</span>
@@ -142,7 +142,10 @@ function NotifyPanel() {
             Your digest lists the hand-offs waiting on your review and the blocking findings on
             changes you own. Atticus sends it only when you press Send it to me on Home, or when
             your own scheduled job runs{" "}
-            <code className="mono">atticus digest --as {me.user} --send</code>.
+            <code className="mono" style={{ whiteSpace: "nowrap" }}>
+              atticus digest --as {me.user} --send
+            </code>
+            .
           </p>
           <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div className="stack" style={{ gap: 4 }}>

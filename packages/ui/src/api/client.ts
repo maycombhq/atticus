@@ -12,6 +12,8 @@ export interface Problem {
   detail?: string;
   errors?: { path: string; message: string }[];
   needs?: { role: string; names: string[] };
+  /** Nothing to show until a step is done (a scan, say); the detail says which. Not a failure. */
+  notYet?: boolean;
 }
 
 export class ApiError extends Error {
@@ -51,7 +53,9 @@ export async function api<T>(
 }
 
 export type Loaded<T> =
-  { state: "loading" } | { state: "error"; error: string } | { state: "ready"; data: T };
+  | { state: "loading" }
+  | { state: "error"; error: string; notYet?: boolean }
+  | { state: "ready"; data: T };
 
 /** Load a GET call; reload() runs it again (after a live event, say). */
 export function useApi<T>(path: string | undefined): Loaded<T> & { reload: () => void } {
@@ -65,7 +69,11 @@ export function useApi<T>(path: string | undefined): Loaded<T> & { reload: () =>
       (data) => set({ state: "ready", data }),
       (e: unknown) => {
         if (ctl.signal.aborted) return;
-        set({ state: "error", error: e instanceof Error ? e.message : String(e) });
+        set({
+          state: "error",
+          error: e instanceof Error ? e.message : String(e),
+          ...(e instanceof ApiError && e.problem.notYet ? { notYet: true } : {}),
+        });
       },
     );
     return () => ctl.abort();
