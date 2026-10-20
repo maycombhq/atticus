@@ -1,0 +1,48 @@
+# A house edge gateway's route files (invented case): each route forwards a prefix to a service.
+schemaVersion: 1
+name: house-gateway
+version: 0.1.0
+description: The house edge's route files, one gateway route per route.
+appliesTo: {}
+rules:
+  - id: route-tls
+    description: A route forwards requests under its prefix to a service over TLS.
+    match: { jsonPath: "$.routes[*]", files: ["**/routes/*.routes.yaml"] }
+    where:
+      - { value: "${attr.forward.tls}", matches: "^true$" }
+    emit:
+      kind: GatewayRoute
+      id: "edge-${node.up.team}-${attr.match.prefix | slug}"
+      fields:
+        proxy: "${node.up.team}"
+        basepath: "${attr.match.prefix}"
+        target: "https://${attr.forward.service}:${attr.forward.port}"
+      evidence: { source: gateway, side: gateway }
+    confidence: verified
+  - id: route-plain
+    description: A route forwards requests under its prefix to a service without TLS.
+    match: { jsonPath: "$.routes[*]", files: ["**/routes/*.routes.yaml"] }
+    where:
+      - { value: "${attr.forward.tls | default('false')}", matches: "^false$" }
+    emit:
+      kind: GatewayRoute
+      id: "edge-${node.up.team}-${attr.match.prefix | slug}"
+      fields:
+        proxy: "${node.up.team}"
+        basepath: "${attr.match.prefix}"
+        target: "http://${attr.forward.service}:${attr.forward.port}"
+      evidence: { source: gateway, side: gateway }
+    confidence: verified
+tests:
+  - name: a route with TLS and one without
+    files:
+      routes/orders.routes.yaml: |
+        team: orders
+        routes:
+          - match: { prefix: /orders }
+            forward: { service: orders-svc, port: 8443, tls: true }
+          - match: { prefix: /orders-admin }
+            forward: { service: orders-admin, port: 8080 }
+    expect:
+      - { kind: GatewayRoute, id: edge-orders-orders, basepath: /orders, target: "https://orders-svc:8443" }
+      - { kind: GatewayRoute, id: edge-orders-orders-admin, basepath: /orders-admin, target: "http://orders-admin:8080" }

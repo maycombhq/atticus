@@ -29,6 +29,6 @@ The model is whatever `runtime.yaml` allows (`model` with the organisation's pro
 ## Consequences
 
 - A repo on technology Atticus has never seen is one command and a review away from being read, instead of a code change.
-- The quality of a draft is measured, not trusted: the checks are the same for every draft, and the gateway dialects are the reference to grade drafts against. Grading real models across ecosystems needs those models, so it runs where they are (the organisation's runtime), not in CI.
+- The quality of a draft is measured, not trusted: the checks are the same for every draft, and `atticus onboard eval` grades drafts against reference dialects (`fixtures/onboard-eval`: seven invented ecosystems) by what they read, as precision and recall. Grading a real model needs that model, so it runs where it is (`--mode model` with the organisation's runtime); CI runs the harness with a stand-in that answers with the references.
 - Framework models (code repos, ADR 0055) are drafted with `atticus frameworks kit` for now; the same loop for them is a follow-up.
 - What no repo holds (a vault, a config server) no draft can read; the survey and hand-over say so.

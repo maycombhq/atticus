@@ -21,6 +21,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - `atticus scan` names the repos it read nothing from though they have structured files no reader knows, with the command to onboard them.
 - It also names rules that need re-drafting: a dialect a repo's manifest entry names whose tests now fail (the scan leaves it out), or that reads nothing in that repo any more (a framework upgrade, a renamed file). `atticus onboard <repo> --name <dialect>` re-drafts it; `onboard accept <dialect> --replace` takes the new draft. Coverage (`--json`) lists them per repo. Coverage (`--json`) lists each repo's unread structured files.
 - The dialect kit ships the three gateway dialects as worked examples.
+- `atticus onboard eval <dir>` scores the assistant's drafts: for each case (a repo and a reference dialect a person wrote) it compares what the draft reads from the repo with what the reference reads, by content, and reports precision and recall. `fixtures/onboard-eval` has seven invented ecosystems: Apigee with target servers, Kong, Azure APIM, AWS API Gateway, a house edge gateway, a house HTTP client in three languages, and house Terraform topics. CI runs it with a stand-in that answers with the references; run it with `--mode model` where your model is.
+- Dialect templates read nested fields of structured files with dots: `${attr.forward.service}`, `${node.up.match.prefix}`; a match's ancestors include the document's top-level fields.
 
 ### Dialect rules v3: any gateway, read through rules
 

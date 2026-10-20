@@ -1,0 +1,3 @@
+name: house-http
+repo: repo
+reference: ../../../packages/assistant-kit/kit/examples/house-http-client.yaml

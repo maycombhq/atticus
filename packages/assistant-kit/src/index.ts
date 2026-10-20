@@ -8,3 +8,4 @@ export * from "./cli-reference.js";
 export * from "./export.js";
 export * from "./grade.js";
 export * from "./onboard.js";
+export * from "./onboard-eval.js";

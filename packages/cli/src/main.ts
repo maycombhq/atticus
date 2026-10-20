@@ -136,7 +136,7 @@ import {
   frameworksLearn,
   frameworksSurvey,
 } from "./framework-commands.js";
-import { onboardAccept, onboardCheck, onboardDraft } from "./onboard-commands.js";
+import { onboardAccept, onboardCheck, onboardDraft, onboardEval } from "./onboard-commands.js";
 
 import { VERSION } from "./version.js";
 export { VERSION };
@@ -194,6 +194,7 @@ Usage:
   atticus dialect tree <file> [--language l]   Print a file's syntax tree, for syntax matches
   atticus onboard <repo> [--name n] [--attempts 3] [--mode m]   Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal
   atticus onboard check <name> --repo <repo>   Check a proposal (drafted, handed off or hand-written)
+  atticus onboard eval <dir> [--mode m] [--json]   Score the assistant's drafts against reference dialects
   atticus onboard accept <name> [--replace]   Accept a proposal into org-pack/dialects/
   atticus frameworks learn <name> --from <repo|jar|tgz>   Learn what a house framework means from its source, JAR or npm package
           [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
@@ -1353,6 +1354,26 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
         return 2;
       }
       return onboardAccept(root, arg, { replace: values.replace === true }, io);
+    }
+    if (command === "eval") {
+      if (!arg) {
+        io.err(
+          "onboard eval needs a folder of cases: atticus onboard eval fixtures/onboard-eval --mode model",
+        );
+        return 2;
+      }
+      try {
+        const { runtime } = await runtimeForCli(root, {
+          ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+        });
+        return await onboardEval(root, arg, { json }, { runtime }, io);
+      } catch (e) {
+        if (e instanceof RuntimeConfigError) {
+          io.err(e.message);
+          return 2;
+        }
+        throw e;
+      }
     }
     if (!command) {
       io.err(

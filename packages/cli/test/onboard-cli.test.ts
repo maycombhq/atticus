@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 import { MockRuntime } from "@maycombhq/ai";
 import { scanEstate } from "@maycombhq/scanner";
 import { baseClonePath } from "@maycombhq/workspace";
-import { onboardAccept, onboardCheck, onboardDraft } from "../src/onboard-commands.js";
+import { loadEvalCases } from "@maycombhq/assistant-kit";
+import { onboardAccept, onboardCheck, onboardDraft, onboardEval } from "../src/onboard-commands.js";
 
 const GW = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/gateways");
 const NOW = new Date("2026-10-19T12:00:00Z");
@@ -107,4 +108,36 @@ describe("atticus onboard (ADR 0059)", () => {
     expect(await onboardDraft(root, "nope", {}, { runtime }, capture().io)).toBe(2);
     expect(await onboardAccept(root, "nope", {}, capture().io)).toBe(2);
   });
+});
+
+describe("atticus onboard eval (ADR 0059)", () => {
+  it("scores each case's draft against its reference, and exits 1 unless every case is exact", async () => {
+    const root = await estate();
+    const EVAL = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/onboard-eval");
+    const refs = new Map((await loadEvalCases(EVAL)).map((c) => [`eval-${c.name}`, c.reference]));
+    // A stand-in assistant: each case's reference, named as the task asks; apim spoilt if asked.
+    const texts = new Map<string, string>();
+    for (const [name, file] of refs)
+      texts.set(name, (await readFile(file, "utf8")).replace(/^name: .*$/m, `name: ${name}`));
+    const runtime = (spoil: boolean) =>
+      new MockRuntime(
+        (r) => {
+          const name = /Name it `(eval-[a-z0-9-]+)`/.exec(r.pack.prompt)![1]!;
+          return spoil && name === "eval-apim" ? "not: a dialect" : texts.get(name)!;
+        },
+        { now: () => NOW },
+      );
+    const good = capture();
+    expect(await onboardEval(root, EVAL, {}, { runtime: runtime(false), now: NOW }, good.io)).toBe(
+      0,
+    );
+    expect(good.out.at(-1)).toBe("7 of 7 cases read exactly what the reference reads.");
+    const bad = capture();
+    expect(
+      await onboardEval(root, EVAL, { attempts: 1 }, { runtime: runtime(true), now: NOW }, bad.io),
+    ).toBe(1);
+    expect(bad.out).toContain(
+      "apim: failed in 1 attempt, read 0 of 1 expected records (precision 0%, recall 0%)",
+    );
+  }, 600_000);
 });

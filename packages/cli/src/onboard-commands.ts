@@ -2,7 +2,13 @@ import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { parse } from "yaml";
 import { type AiRuntime } from "@maycombhq/ai";
-import { checkDraft, draftDialect } from "@maycombhq/assistant-kit";
+import {
+  checkDraft,
+  draftDialect,
+  evalOnboarding,
+  formatEval,
+  loadEvalCases,
+} from "@maycombhq/assistant-kit";
 import { Dialect, loadOrgPack, orgPackDirOf, RecordId } from "@maycombhq/core";
 import { runDialectTests } from "@maycombhq/extractors";
 import { fsRepo } from "@maycombhq/sdk";
@@ -173,4 +179,39 @@ export async function onboardAccept(
     } Commit the org pack for review, as with any change to it.`,
   );
   return 0;
+}
+
+/**
+ * atticus onboard eval <dir> [--json]: how well the assistant drafts dialects for ecosystems it
+ * hasn't seen (ADR 0059). Each case's draft is scored against its reference dialect by what it
+ * reads from the case's repo. Exit 0 when every case is exact, 1 otherwise.
+ */
+export async function onboardEval(
+  root: string,
+  dir: string,
+  o: { json?: boolean; attempts?: number },
+  deps: OnboardDeps,
+  io: Output,
+): Promise<number> {
+  if (!(await isDir(resolve(dir)))) {
+    io.err(`${dir} isn't a folder of evaluation cases (each <case>/case.yaml).`);
+    return 2;
+  }
+  const cases = await loadEvalCases(resolve(dir));
+  if (cases.length === 0) {
+    io.err(`${dir} has no cases (each <case>/case.yaml names a repo and a reference dialect).`);
+    return 2;
+  }
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const results = await evalOnboarding(cases, {
+    runtime: deps.runtime,
+    orgPack: op,
+    maxAttempts: o.attempts ?? 3,
+    ...(deps.now ? { now: deps.now } : {}),
+  });
+  if (o.json) io.out(JSON.stringify(results, null, 2));
+  else for (const l of formatEval(results)) io.out(l);
+  return results.every((r) => r.status === "drafted" && r.precision === 1 && r.recall === 1)
+    ? 0
+    : 1;
 }

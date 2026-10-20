@@ -60,11 +60,14 @@ interface Place {
 }
 
 /** An object's plain (non-object) fields as text. */
-const plainFields = (v: unknown): Record<string, string> => {
-  const out: Record<string, string> = {};
+/** An object's plain fields as text; a nested object's are dotted (forward.service). */
+const plainFields = (v: unknown, prefix = "", out: Record<string, string> = {}) => {
   if (v && typeof v === "object" && !Array.isArray(v))
-    for (const [k, x] of Object.entries(v as Record<string, unknown>))
-      if (x !== null && x !== undefined && typeof x !== "object") out[k] = String(x);
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      if (x === null || x === undefined) continue;
+      if (typeof x !== "object") out[`${prefix}${k}`] = String(x);
+      else if (!Array.isArray(x)) plainFields(x, `${prefix}${k}.`, out);
+    }
   return out;
 };
 
@@ -136,6 +139,8 @@ function jsonPath(
     return [];
   };
   const descend = (n: unknown): Node[] => children(n).flatMap((c) => [c.node, ...descend(c.node)]);
+  // The root as plain data, so a match's ancestors include the document's own fields.
+  current = [{ ...current[0]!, value: toJs(doc) }];
   for (const raw of tokens) {
     const next: Hit[] = [];
     if (raw.startsWith("..")) {
@@ -288,11 +293,7 @@ async function places(
       const lc = new LineCounter();
       const doc = parseDocument(await repo.readText(path), { lineCounter: lc });
       for (const hit of jsonPath(doc.contents, m.jsonPath, lc)) {
-        const attrs: Record<string, string> = {};
-        if (hit.value && typeof hit.value === "object" && !Array.isArray(hit.value)) {
-          for (const [k, v] of Object.entries(hit.value as Record<string, unknown>))
-            if (v !== null && typeof v !== "object") attrs[k] = String(v);
-        }
+        const attrs = plainFields(hit.value);
         out.push({
           path,
           line: hit.line,

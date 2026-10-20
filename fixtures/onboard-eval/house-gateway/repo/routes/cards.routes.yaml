@@ -1,0 +1,7 @@
+# Tidewater's in-house edge (invented): one file per team, each route an upstream service.
+team: cards
+routes:
+  - match: { prefix: /cards }
+    forward: { service: cards-svc, port: 8443, tls: true }
+  - match: { prefix: /statements }
+    forward: { service: statements-svc, port: 8080, tls: false }

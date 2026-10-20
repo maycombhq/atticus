@@ -100,8 +100,9 @@ function parseSource(raw: string, template: string): TemplateSource {
     return { type: "subject", name: s };
   const parts = s.split(".");
   const [head, ...rest] = parts;
-  if (head === "attr" && rest.length === 1 && IDENT.test(rest[0]!))
-    return { type: "attr", name: rest[0]! };
+  // A nested field of a structured match is dotted: ${attr.forward.service} (ADR 0058).
+  if (head === "attr" && rest.length >= 1 && rest.every((p) => IDENT.test(p)))
+    return { type: "attr", name: rest.join(".") };
   if (head === "annotation" && rest.length === 2 && rest.every((p) => IDENT.test(p))) {
     return { type: "annotation", annotation: rest[0]!, name: rest[1]! };
   }
@@ -109,9 +110,13 @@ function parseSource(raw: string, template: string): TemplateSource {
     let up = 0;
     while (rest[up] === "up") up++;
     const name = rest.slice(up);
-    if (name.length !== 1 || !IDENT.test(name[0]!) || (up === 0 && name[0] !== "key"))
+    if (
+      name.length < 1 ||
+      !name.every((p) => IDENT.test(p)) ||
+      (up === 0 && (name.length !== 1 || name[0] !== "key"))
+    )
       fail("expected node.key, node.up.<field> or node.up.key");
-    return { type: "node", up, name: name[0]! };
+    return { type: "node", up, name: name.join(".") };
   }
   if (head === "capture" && rest.length === 1 && IDENT.test(rest[0]!))
     return { type: "capture", name: rest[0]! };

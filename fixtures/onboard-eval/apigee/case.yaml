@@ -1,0 +1,3 @@
+name: apigee
+repo: ../../gateways/repos/gw-apigee
+reference: ../../gateways/metarepo/org-pack/dialects/tide-apigee.yaml

@@ -1,0 +1,19 @@
+openapi: 3.0.1
+info: { title: Tidewater statements API, version: "1.0" }
+paths:
+  /statements/{id}:
+    get:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: GET
+        uri: https://statements.tide.internal/v1/statements/{id}
+  /limits:
+    post:
+      x-amazon-apigateway-integration:
+        type: http_proxy
+        httpMethod: POST
+        uri: https://limits.tide.internal/v1/limits
+  /ping:
+    get:
+      x-amazon-apigateway-integration:
+        type: mock

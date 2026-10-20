@@ -1,0 +1,36 @@
+# AWS API Gateway (invented case): each path's HTTP proxy integration is a gateway route to its
+# backend URI. Mock integrations have no backend and give nothing.
+schemaVersion: 1
+name: aws-apigw
+version: 0.1.0
+description: AWS API Gateway OpenAPI exports, one gateway route per HTTP proxy integration.
+appliesTo: {}
+rules:
+  - id: http-proxy
+    description: A path's http_proxy integration routes it to the integration's backend URI.
+    match: { jsonPath: "$.paths.*.*.x-amazon-apigateway-integration", files: ["**/*.yaml", "**/*.yml", "**/*.json"] }
+    where:
+      - { value: "${attr.type}", matches: "^http(_proxy)?$" }
+    emit:
+      kind: GatewayRoute
+      id: "apigw-${node.up.key | lower}-${node.up.up.key | slug}"
+      fields:
+        proxy: "${node.up.up.key}"
+        basepath: "${node.up.up.key}"
+        target: "${attr.uri}"
+      evidence: { source: gateway, side: gateway }
+    confidence: verified
+tests:
+  - name: a proxied path, and a mock that gives nothing
+    files:
+      openapi.yaml: |
+        openapi: 3.0.1
+        paths:
+          /orders:
+            post:
+              x-amazon-apigateway-integration: { type: http_proxy, httpMethod: POST, uri: "https://orders.tide.internal/v1/orders" }
+          /ping:
+            get:
+              x-amazon-apigateway-integration: { type: mock }
+    expect:
+      - { kind: GatewayRoute, id: apigw-post-orders, basepath: /orders, target: "https://orders.tide.internal/v1/orders" }
