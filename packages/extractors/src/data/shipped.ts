@@ -6,8 +6,8 @@ import { parse } from "yaml";
 import { Dialect } from "@maycombhq/core";
 
 /**
- * Dialects shipped with Atticus (C2 YAML in packages/extractors/dialects): jaxrs, micronaut
- * and quarkus-reactive-messaging. The folder sits two levels above this module both in src/
+ * Dialects shipped with Atticus (C2 YAML in packages/extractors/dialects): jaxrs, micronaut,
+ * quarkus-reactive-messaging, and terraform-aws, terraform-azure and terraform-gcp (ADR 0063). The folder sits two levels above this module both in src/
  * and in dist/, so the same path works when running from source and when built.
  */
 export const SHIPPED_DIALECTS_DIR = resolve(

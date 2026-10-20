@@ -23,6 +23,17 @@ describe("onboarding a repo Atticus can't read (ADR 0059)", () => {
     expect(s.files.map((f) => f.path)).toEqual(["kong/kong.yml"]);
   });
 
+  it("counts what the shipped cloud dialects read as read (ADR 0063)", async () => {
+    const repo = memoryRepo("forge-cloud", "0".repeat(40), {
+      "db.tf":
+        'resource "aws_db_instance" "x" {\n  identifier = "orders-db"\n  engine = "postgres"\n}\n',
+      "house.tf": 'module "t" {\n  source = "git::https://git.forge.internal/topic.git"\n}\n',
+    });
+    const s = await surveyForOnboarding(repo);
+    expect(s.text).toContain("DataStore");
+    expect(s.files.map((f) => f.path)).toEqual(["house.tf"]);
+  });
+
   it("hands what was wrong back to the assistant, and keeps the draft that passes", async () => {
     const prompts: string[] = [];
     const replies = [

@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Cloud resources and Terraform modules
+
+- Shipped dialects `terraform-aws`, `terraform-azure` and `terraform-gcp` (ADR 0063) read cloud resources from Terraform in every repo with a `.tf` file: SNS topics, EventBridge buses, Kafka topics, Service Bus topics and event hubs as event topics; Service Bus and Cloud Tasks queues, DynamoDB, Cosmos DB, MSK, Redis caches and Spanner as data stores; Lambda and Azure function apps as function components with a deployment; ECS services and App Service web apps as deployments; API Gateway v2 routes, first-level v1 resources and API Management APIs as gateway routes. An org-pack dialect of the same name replaces one.
+- Terraform databases (Cloud SQL, RDS instances and clusters, Azure PostgreSQL and SQL servers) moved from the infra extractor's regular expression into those dialects: the same records, now with names and engines resolved from variables, and blocks read by the HCL parser. Azure PostgreSQL single servers and MySQL flexible servers are read too. The infra extractor no longer reads `.tf` files.
+- Local Terraform modules are followed: a `module` block whose source is a folder of the repo makes an instance of that folder with the caller's values, so each instantiation's resources give their own records, nested modules included. A module folder that is called is no longer read on its own with its defaults, and a resource in it whose name the caller doesn't give is skipped rather than named after its label. Remote modules stay module blocks a dialect matches.
+- Dialect templates: filters `before('x')` and `after('x')`; in `hclBlock` matches an object attribute's fields are dotted (`${attr.tags.env}`) and a reference to another resource is `${attr.<name>.ref}`, for lookups.
+- `atticus onboard`'s survey counts what the shipped cloud dialects read as read.
+- Not read yet: Lambda triggers, API Gateway integrations, EventBridge rules, module outputs, `count` and `for_each`; clusters (EKS, AKS, GKE) give no record.
+
 ### Pipelines from any CI/CD tool, and what org templates do
 
 - Shipped dialects for Harness pipelines, Tekton Pipelines and Argo CD Applications (ADR 0062): a Harness or Tekton pipeline is a pipeline QualityAsset with stages, environments, deploy targets, test steps and templates, like the built-in readers write; an Argo CD Application is a GitOps Deployment.

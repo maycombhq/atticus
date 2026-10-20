@@ -540,55 +540,24 @@ function column(c: SqlColumn, ev: Ev): StateColumn {
 // ------------------------------------------------------------------ infrastructure as code
 
 /**
- * Kubernetes Deployments (component, environment from namespace, replicas, limits),
- * Terraform databases (google_sql_database_instance, aws_db_instance, azurerm_*_server)
- * and alert definitions kept as YAML.
+ * Kubernetes Deployments (component, environment from namespace, replicas, limits) and alert
+ * definitions kept as YAML. Terraform databases are read by the shipped terraform-aws,
+ * terraform-azure and terraform-gcp dialects (ADR 0063).
  */
 export const infraExtractor = defineExtractor({
   id: "infra",
-  version: "1.0.0",
+  version: "1.1.0",
   claims: [
     "**/k8s/**/*.yaml",
     "**/k8s/**/*.yml",
     "**/kubernetes/**/*.yaml",
     "**/manifests/**/*.yaml",
-    "**/*.tf",
     "**/alerts/*.yaml",
     "**/alerts/*.yml",
   ],
   async *scan(repo) {
     for await (const path of repo.listFiles(this.claims)) {
       const text = await repo.readText(path);
-      if (path.endsWith(".tf")) {
-        for (const m of text.matchAll(
-          /resource\s+"(google_sql_database_instance|aws_db_instance|aws_rds_cluster|azurerm_postgresql_flexible_server|azurerm_mssql_server)"\s+"[^"]+"\s*\{([\s\S]*?)\n\}/g,
-        )) {
-          const body = m[2]!;
-          const name = /\b(?:name|identifier|cluster_identifier)\s*=\s*"([^"]+)"/.exec(body)?.[1];
-          if (!name) continue;
-          const ver = /(?:database_version|engine)\s*=\s*"([^"]+)"/.exec(body)?.[1] ?? "";
-          const storeType =
-            /postgres/i.test(ver) || /postgres/.test(m[1]!)
-              ? "postgresql"
-              : /mysql/i.test(ver)
-                ? "mysql"
-                : /mssql|sqlserver/i.test(ver + m[1]!)
-                  ? "sqlserver"
-                  : "unknown";
-          const line = text.slice(0, m.index).split("\n").length;
-          yield {
-            schemaVersion: 1,
-            kind: "DataStore",
-            id: slug(name),
-            status: "current",
-            confidence: "verified",
-            storeType,
-            entitiesHeld: [],
-            evidence: [evidence(repo, { source: "infrastructure", path, line })],
-          } as unknown as CatalogRecord;
-        }
-        continue;
-      }
       const flat = flattenYaml(text, path);
       if (flat.get("kind")?.value === "Deployment") {
         const name = flat.get("metadata.name")?.value;

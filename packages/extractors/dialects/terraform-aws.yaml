@@ -1,0 +1,267 @@
+# AWS resources in Terraform as catalog records. Shipped with Atticus (C2, ADR 0063).
+#
+# Applies to any repo with a .tf file (repoTypes "*", ADR 0062). Attribute values are resolved
+# from the folder's variables, terraform.tfvars, *.auto.tfvars and locals, and a local module's
+# resources get the values its caller passes, once per instantiation (ADR 0063).
+#
+# What it reads:
+#   aws_sns_topic, aws_cloudwatch_event_bus, kafka_topic   event-topic Endpoints (the publisher
+#                                                          isn't in Terraform: component unknown,
+#                                                          filled by merge from the code)
+#   aws_msk_cluster                                        DataStore, storeType stream
+#   aws_dynamodb_table                                     DataStore, storeType key-value
+#   aws_db_instance, aws_rds_cluster                       DataStore by engine (postgresql, mysql,
+#                                                          sqlserver, else unknown); these moved
+#                                                          here from the infra extractor
+#   aws_lambda_function                                    Component (function) and Deployment
+#   aws_ecs_service                                        Deployment (platform ecs)
+#   aws_apigatewayv2_route                                 GatewayRoute of its HTTP API
+#   aws_api_gateway_resource (first level only)            GatewayRoute of its REST API
+#
+# Left to built-in readers: aws_s3_bucket, aws_sqs_queue, aws_redshift_cluster and ElastiCache
+# (cloud-stores), aws_sagemaker_endpoint (ml). No record: aws_eks_cluster (a cluster is where
+# deployments run, not a C1 record). Not read: Lambda triggers (event source mappings,
+# permissions), API Gateway integrations and nested REST resources, EventBridge rules.
+#
+# A Deployment's environment is the resource's `env` tag, else "default".
+schemaVersion: 1
+name: terraform-aws
+version: 1.0.0
+description: AWS resources declared in Terraform as topics, stores, functions, deployments and gateway routes.
+appliesTo:
+  repoTypes: ["*"]
+  marker: "**/*.tf"
+lookups:
+  httpApis:
+    match: { hclBlock: resource.aws_apigatewayv2_api, files: ["**/*.tf"] }
+    key: "${match.1}.${match.0}"
+    values: { name: "${attr.name}" }
+  restApis:
+    match: { hclBlock: resource.aws_api_gateway_rest_api, files: ["**/*.tf"] }
+    key: "${match.1}.${match.0}"
+    values: { name: "${attr.name}" }
+rules:
+  # ---- messaging
+  - id: sns-topic
+    description: An SNS topic is an event topic.
+    match: { hclBlock: resource.aws_sns_topic, files: ["**/*.tf"] }
+    emit:
+      kind: Endpoint
+      id: "topic.${attr.name | slug}"
+      fields: { component: unknown, endpointType: event-topic, pathOrTopic: "${attr.name}" }
+      evidence: { source: infrastructure, side: definition }
+    confidence: verified
+  - id: eventbridge-bus
+    description: An EventBridge event bus is an event topic.
+    match: { hclBlock: resource.aws_cloudwatch_event_bus, files: ["**/*.tf"] }
+    emit:
+      kind: Endpoint
+      id: "topic.${attr.name | slug}"
+      fields: { component: unknown, endpointType: event-topic, pathOrTopic: "${attr.name}" }
+      evidence: { source: infrastructure, side: definition }
+    confidence: verified
+  - id: kafka-topic
+    description: A Kafka topic (the kafka provider, used with MSK) is an event topic.
+    match: { hclBlock: resource.kafka_topic, files: ["**/*.tf"] }
+    emit:
+      kind: Endpoint
+      id: "topic.${attr.name | slug}"
+      fields: { component: unknown, endpointType: event-topic, pathOrTopic: "${attr.name}" }
+      evidence: { source: infrastructure, side: definition }
+    confidence: verified
+  - id: msk-cluster
+    description: An MSK cluster is a stream store.
+    match: { hclBlock: resource.aws_msk_cluster, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.cluster_name | slug}"
+      fields: { storeType: stream, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+
+  # ---- data
+  - id: dynamodb-table
+    description: A DynamoDB table is a key-value store.
+    match: { hclBlock: resource.aws_dynamodb_table, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: key-value, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: db-instance-postgresql
+    description: An RDS instance with a PostgreSQL engine.
+    match: { hclBlock: resource.aws_db_instance, files: ["**/*.tf"] }
+    where: [{ value: "${attr.engine | default('') | lower}", matches: "postgres" }]
+    emit:
+      kind: DataStore
+      id: "${attr.identifier | slug}"
+      fields: { storeType: postgresql, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: db-instance-mysql
+    description: An RDS instance with a MySQL engine.
+    match: { hclBlock: resource.aws_db_instance, files: ["**/*.tf"] }
+    where: [{ value: "${attr.engine | default('') | lower}", matches: "^(?!.*postgres).*mysql" }]
+    emit:
+      kind: DataStore
+      id: "${attr.identifier | slug}"
+      fields: { storeType: mysql, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: db-instance-sqlserver
+    description: An RDS instance with a SQL Server engine.
+    match: { hclBlock: resource.aws_db_instance, files: ["**/*.tf"] }
+    where:
+      - value: "${attr.engine | default('') | lower}"
+        matches: "^(?!.*(postgres|mysql)).*(mssql|sqlserver)"
+    emit:
+      kind: DataStore
+      id: "${attr.identifier | slug}"
+      fields: { storeType: sqlserver, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: db-instance-other
+    description: An RDS instance with another engine, or none written.
+    match: { hclBlock: resource.aws_db_instance, files: ["**/*.tf"] }
+    where:
+      - value: "${attr.engine | default('') | lower}"
+        matches: "^(?!.*(postgres|mysql|mssql|sqlserver))"
+    emit:
+      kind: DataStore
+      id: "${attr.identifier | slug}"
+      fields: { storeType: unknown, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: rds-cluster-postgresql
+    description: An Aurora or RDS cluster with a PostgreSQL engine.
+    match: { hclBlock: resource.aws_rds_cluster, files: ["**/*.tf"] }
+    where: [{ value: "${attr.engine | default('') | lower}", matches: "postgres" }]
+    emit:
+      kind: DataStore
+      id: "${attr.cluster_identifier | slug}"
+      fields: { storeType: postgresql, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: rds-cluster-mysql
+    description: An Aurora or RDS cluster with a MySQL engine.
+    match: { hclBlock: resource.aws_rds_cluster, files: ["**/*.tf"] }
+    where: [{ value: "${attr.engine | default('') | lower}", matches: "^(?!.*postgres).*mysql" }]
+    emit:
+      kind: DataStore
+      id: "${attr.cluster_identifier | slug}"
+      fields: { storeType: mysql, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: rds-cluster-other
+    description: An Aurora or RDS cluster with another engine, or none written.
+    match: { hclBlock: resource.aws_rds_cluster, files: ["**/*.tf"] }
+    where:
+      - value: "${attr.engine | default('') | lower}"
+        matches: "^(?!.*(postgres|mysql|mssql|sqlserver))"
+    emit:
+      kind: DataStore
+      id: "${attr.cluster_identifier | slug}"
+      fields: { storeType: unknown, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+
+  # ---- compute
+  - id: lambda-function
+    description: A Lambda function is a function component deployed on Lambda.
+    match: { hclBlock: resource.aws_lambda_function, files: ["**/*.tf"] }
+    emit:
+      - kind: Component
+        id: "${attr.function_name | slug}"
+        fields:
+          system: "${attr.function_name | slug}"
+          repo: "${repo.name}"
+          type: function
+          runtime: lambda
+        evidence: { source: infrastructure }
+      - kind: Deployment
+        id: "${attr.function_name | slug}.${attr.tags.env | default('default') | slug}"
+        fields:
+          component: "${attr.function_name | slug}"
+          env: "${attr.tags.env | default('default')}"
+          platform: lambda
+        evidence: { source: infrastructure }
+    confidence: verified
+  - id: ecs-service
+    description: An ECS service is a deployment of the component it is named after.
+    match: { hclBlock: resource.aws_ecs_service, files: ["**/*.tf"] }
+    emit:
+      kind: Deployment
+      id: "${attr.name | slug}.${attr.tags.env | default('default') | slug}"
+      fields:
+        component: "${attr.name | slug}"
+        env: "${attr.tags.env | default('default')}"
+        platform: ecs
+      evidence: { source: infrastructure }
+    confidence: verified
+
+  # ---- gateway
+  - id: http-api-route
+    description: An API Gateway v2 route ("GET /orders") is a route of its HTTP API; $default has no path.
+    match: { hclBlock: resource.aws_apigatewayv2_route, files: ["**/*.tf"] }
+    where: [{ value: "${attr.route_key}", matches: "^[A-Z]+ /" }]
+    emit:
+      kind: GatewayRoute
+      id: "${lookup:httpApis(attr.api_id.ref).name | slug}.${attr.route_key | slug}"
+      fields:
+        proxy: "${lookup:httpApis(attr.api_id.ref).name}"
+        basepath: "${attr.route_key | after(' ')}"
+      evidence: { source: infrastructure, side: gateway }
+    confidence: verified
+  - id: rest-api-resource
+    description: A first-level API Gateway v1 resource is a route of its REST API.
+    match: { hclBlock: resource.aws_api_gateway_resource, files: ["**/*.tf"] }
+    where: [{ value: "${attr.parent_id.ref}", matches: '^aws_api_gateway_rest_api\.' }]
+    emit:
+      kind: GatewayRoute
+      id: "${lookup:restApis(attr.rest_api_id.ref).name | slug}.${attr.path_part | slug}"
+      fields:
+        proxy: "${lookup:restApis(attr.rest_api_id.ref).name}"
+        basepath: "/${attr.path_part}"
+      evidence: { source: infrastructure, side: gateway }
+    confidence: verified
+tests:
+  - name: the Forge AWS estate
+    fixture: fixtures/terraform-aws/forge-aws-infra
+    expect:
+      - {
+          kind: Endpoint,
+          id: topic.forge-order-events-prod,
+          pathOrTopic: forge-order-events-prod,
+          component: unknown,
+        }
+      - { kind: Endpoint, id: topic.forge-payments, endpointType: event-topic }
+      - { kind: Endpoint, id: topic.orders.placed, pathOrTopic: orders.placed }
+      - { kind: DataStore, id: forge-events, storeType: stream }
+      - { kind: DataStore, id: forge-carts, storeType: key-value }
+      - { kind: DataStore, id: orders-db, storeType: postgresql }
+      - { kind: DataStore, id: sessions-db, storeType: mysql }
+      - { kind: DataStore, id: billing-db, storeType: sqlserver }
+      - { kind: DataStore, id: erp-db, storeType: unknown }
+      - { kind: DataStore, id: ledger-cluster, storeType: postgresql }
+      - { kind: DataStore, id: carts-cluster, storeType: mysql }
+      - { kind: DataStore, id: audit-cluster, storeType: unknown }
+      - { kind: Component, id: invoice-renderer, type: function, runtime: lambda }
+      - { kind: Deployment, id: invoice-renderer.prod, env: prod, platform: lambda }
+      - { kind: Deployment, id: checkout-svc.prod, component: checkout-svc, platform: ecs }
+      - { kind: GatewayRoute, id: shop-api.get-orders, proxy: shop-api, basepath: /orders }
+      - { kind: GatewayRoute, id: shop-api.post-orders, basepath: /orders }
+      - { kind: GatewayRoute, id: partner-api.quotes, proxy: partner-api, basepath: /quotes }
+    absent: [forge-invoices, forge-prod, partner-api.id]
+  - name: an engine-less instance, a function without an env tag
+    files:
+      main.tf: |
+        resource "aws_db_instance" "x" {
+          identifier = "plain-db"
+        }
+        resource "aws_lambda_function" "f" {
+          function_name = "nightly-sweep"
+        }
+    expect:
+      - { kind: DataStore, id: plain-db, storeType: unknown }
+      - { kind: Deployment, id: nightly-sweep.default, env: default }

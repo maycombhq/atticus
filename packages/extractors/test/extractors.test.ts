@@ -525,7 +525,7 @@ describe("topics, migrations, infra", () => {
     }
   });
 
-  it("infrastructure gives deployments, the database and alerts", async () => {
+  it("infrastructure gives deployments and alerts (databases: the terraform dialects, ADR 0063)", async () => {
     const recs = await scan("forge-infra", [infraExtractor]);
     like(
       recs.find((r) => r.id === "ledger-api.prod"),
@@ -542,9 +542,7 @@ describe("topics, migrations, infra", () => {
       "ledger-api.alert.error-rate",
       ["component", "assetKind", "name"],
     );
-    expect(
-      (recs.find((r) => r.kind === "DataStore") as unknown as { storeType: string }).storeType,
-    ).toBe("postgresql");
+    expect(recs.filter((r) => r.kind === "DataStore")).toEqual([]);
   });
 
   it("every built-in extractor runs on every Forge repo without rejected records", async () => {

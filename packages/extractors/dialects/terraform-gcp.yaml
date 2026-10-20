@@ -1,0 +1,109 @@
+# Google Cloud resources in Terraform as catalog records. Shipped with Atticus (C2, ADR 0063).
+#
+# Applies to any repo with a .tf file (repoTypes "*", ADR 0062); values resolve from the
+# folder's variables, tfvars and locals, and through local modules (ADR 0063).
+#
+# What it reads:
+#   google_sql_database_instance     DataStore by database_version (postgresql, mysql, sqlserver,
+#                                    else unknown); moved here from the infra extractor
+#   google_redis_instance            DataStore, storeType cache
+#   google_cloud_tasks_queue         DataStore, storeType queue
+#   google_spanner_database          DataStore, storeType relational, id <instance>-<database>
+#
+# Left to built-in readers, which do more than a rule can (environments from folders, owners
+# from labels and push endpoints, triggers): Cloud Run services, Pub/Sub topics and
+# subscriptions and IAM (gcp extractor), Cloud Functions (serverless), Cloud Scheduler (batch),
+# storage buckets and BigQuery datasets (cloud-stores). No record: google_container_cluster.
+schemaVersion: 1
+name: terraform-gcp
+version: 1.0.0
+description: Google Cloud databases, caches and task queues declared in Terraform as data stores.
+appliesTo:
+  repoTypes: ["*"]
+  marker: "**/*.tf"
+rules:
+  - id: sql-instance-postgresql
+    description: A Cloud SQL instance running PostgreSQL.
+    match: { hclBlock: resource.google_sql_database_instance, files: ["**/*.tf"] }
+    where: [{ value: "${attr.database_version | default('') | lower}", matches: "postgres" }]
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: postgresql, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: sql-instance-mysql
+    description: A Cloud SQL instance running MySQL.
+    match: { hclBlock: resource.google_sql_database_instance, files: ["**/*.tf"] }
+    where:
+      - value: "${attr.database_version | default('') | lower}"
+        matches: "^(?!.*postgres).*mysql"
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: mysql, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: sql-instance-sqlserver
+    description: A Cloud SQL instance running SQL Server.
+    match: { hclBlock: resource.google_sql_database_instance, files: ["**/*.tf"] }
+    where:
+      - value: "${attr.database_version | default('') | lower}"
+        matches: "^(?!.*(postgres|mysql)).*(mssql|sqlserver)"
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: sqlserver, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: sql-instance-other
+    description: A Cloud SQL instance whose version isn't written or isn't one of the above.
+    match: { hclBlock: resource.google_sql_database_instance, files: ["**/*.tf"] }
+    where:
+      - value: "${attr.database_version | default('') | lower}"
+        matches: "^(?!.*(postgres|mysql|mssql|sqlserver))"
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: unknown, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: redis-instance
+    description: A Memorystore for Redis instance is a cache.
+    match: { hclBlock: resource.google_redis_instance, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: cache, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: cloud-tasks-queue
+    description: A Cloud Tasks queue is a queue store.
+    match: { hclBlock: resource.google_cloud_tasks_queue, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: queue, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: spanner-database
+    description: A Spanner database is a relational store, named with its instance.
+    match: { hclBlock: resource.google_spanner_database, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.instance | slug}-${attr.name | slug}"
+      fields: { storeType: relational, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+tests:
+  - name: the Forge Google Cloud estate
+    fixture: fixtures/terraform-gcp/forge-gcp-infra
+    expect:
+      - { kind: DataStore, id: ledger-db, storeType: postgresql }
+      - { kind: DataStore, id: loyalty-db, storeType: mysql }
+      - { kind: DataStore, id: reporting-db, storeType: sqlserver }
+      - { kind: DataStore, id: scratch-db, storeType: unknown }
+      - { kind: DataStore, id: forge-sessions, storeType: cache }
+      - { kind: DataStore, id: forge-emails, storeType: queue }
+      - { kind: DataStore, id: forge-spanner-accounts, storeType: relational }
+    absent: [forge-gke, topic.orders]

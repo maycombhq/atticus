@@ -6,7 +6,7 @@ import { attr, findAnnotation, parseJava, type Decl } from "../lang/java.js";
 import { topicName } from "./gcp.js";
 import { attrOf, child } from "./hcl.js";
 import { loadManifests, MANIFEST_GLOBS, warnSkipped } from "./manifests.js";
-import { findResource, loadTerraform, refsIn, TF_GLOBS, tfString } from "./terraform.js";
+import { findResource, loadTerraform, refsIn, TF_GLOBS, tfName, tfString } from "./terraform.js";
 import {
   at,
   componentFor,
@@ -200,7 +200,8 @@ async function* cloudScheduler(repo: RepoHandle, ctx: ScanContext): AsyncGenerat
   for (const mod of await loadTerraform(repo, ctx, /\bgoogle_cloud_scheduler_job\b/)) {
     for (const r of mod.resources) {
       if (r.type !== "google_cloud_scheduler_job") continue;
-      const name = tfString(mod, attrOf(r.block, "name")) ?? r.name;
+      const name = tfName(mod, r, "name");
+      if (!name) continue;
       const schedule = tfString(mod, attrOf(r.block, "schedule"));
       if (!schedule) continue;
       const zone = tfString(mod, attrOf(r.block, "time_zone"));

@@ -122,6 +122,8 @@ match: { hclBlock: module, files: ["**/*.tf"] }
 
 - Terraform (HCL) blocks of a type: `module`, `resource`, `data`... `resource.aws_sqs_queue` also requires the first label. Nested blocks are searched too.
 - Supplies `${attr.<name>}` for each plain attribute, resolved the way Terraform would from the folder: variable defaults, then `terraform.tfvars` and `*.auto.tfvars`, locals, and other resources' plain attributes. An attribute of a nested block is `${attr.<block>.<name>}`. A value that still holds `${...}` after resolving is not set.
+- An object attribute's fields are dotted: `${attr.tags.env}`. An attribute that references another resource (`api_id = aws_apigatewayv2_api.shop.id`) also gives `${attr.api_id.ref}`, the resource as `type.name` (`aws_apigatewayv2_api.shop`), to key a lookup over that resource type: `key: "${match.1}.${match.0}"`.
+- Local modules are followed (ADR 0063): a block in a folder that a `module` block with a local `source` calls is matched once per call, with the caller's values for the module's variables.
 - Supplies `${match.0}` (the block's last label, its name) and `${match.1}`, ... (its labels in order).
 
 ### `syntax`
@@ -213,6 +215,8 @@ A template is literal text with `${...}` expressions: `"${yaml:forge.yaml#servic
 | `map('a=b,c=d')` | A tool's word to Atticus's: with `map('K8sRollingDeploy=kubernetes,HelmDeploy=helm')` a step type `HelmDeploy` gives `helm`. A value with no entry is unknown, so a `default` filter after it can fill it.                                           |
 | `parent`         | A path without its last segment: `a/b/c.xml` gives `a/b`. Chain it to climb folders.                                                                                                                                                                 |
 | `basename`       | A path's last segment: `a/b/c.xml` gives `c.xml`.                                                                                                                                                                                                    |
+| `before('x')`    | The text before the first `x`; empty when there is none. `GET /orders` with `before(' ')` gives `GET`.                                                                                                                                               |
+| `after('x')`     | The text after the first `x`; empty when there is none. `GET /orders` with `after(' ')` gives `/orders`.                                                                                                                                             |
 
 After rendering, the engine also applies `normalize.stripPathPrefixes` to `normalizedPath` and `pathOrTopic`, and `normalizePath` once more to an Interface's `normalizedPath`.
 

@@ -556,6 +556,7 @@ export async function repoDrift(o: DriftOptions): Promise<DriftReport> {
       .filter(
         (d) =>
           (entry?.dialects ?? []).includes(d.name) ||
+          d.appliesTo.repoTypes.includes("*") ||
           (entry?.type ? d.appliesTo.repoTypes.includes(entry.type) : false),
       )
       .map((d) => dialectExtractor(d, byName)),

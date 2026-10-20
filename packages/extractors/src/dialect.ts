@@ -1,13 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
-import {
-  isMap,
-  isScalar,
-  isSeq,
-  LineCounter,
-  parseAllDocuments,
-  type Node,
-} from "yaml";
+import { isMap, isScalar, isSeq, LineCounter, parseAllDocuments, type Node } from "yaml";
 import {
   interfaceId,
   matchType,
@@ -38,7 +31,12 @@ import { parseXml, type XmlElement } from "./lang/xml.js";
 import { querySyntax, syntaxLanguageOf } from "./lang/syntax.js";
 import { componentOf } from "./facts.js";
 import { isRef, parseHcl, type HclBlock, type HclValue } from "./platform/hcl.js";
-import { loadTerraform, resolve as tfResolve, type TfModule } from "./platform/terraform.js";
+import {
+  loadTerraform,
+  refsIn,
+  resolve as tfResolve,
+  type TfModule,
+} from "./platform/terraform.js";
 import { dirOf } from "./platform/util.js";
 
 /** An HCL value as a template value: plain values only, and nothing still holding ${...}. */
@@ -46,6 +44,33 @@ function hclString(v: HclValue | undefined): string | undefined {
   if (typeof v === "number" || typeof v === "boolean") return String(v);
   if (typeof v === "string") return v.includes("${") ? undefined : v;
   return undefined;
+}
+
+/**
+ * A block's attributes as template values: plain ones; an object's fields dotted (tags.env);
+ * and for a reference to another resource its `type.name` as <attr>.ref, to key a lookup
+ * (ADR 0063).
+ */
+function hclAttrs(
+  b: HclBlock,
+  value: (v: HclValue | undefined) => string | undefined,
+  mod: TfModule | undefined,
+  prefix = "",
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, a] of b.attrs) {
+    const v = value(isRef(a.value) || typeof a.value !== "object" ? a.value : undefined);
+    if (v !== undefined) out[`${prefix}${k}`] = v;
+  }
+  for (const [k, a] of b.attrs) {
+    const ref = isRef(a.value) ? refsIn(a.value)[0] : undefined;
+    if (ref && !(`${prefix}${k}.ref` in out)) out[`${prefix}${k}.ref`] = `${ref.type}.${ref.name}`;
+    const obj = mod ? tfResolve(mod, a.value) : a.value;
+    if (obj && typeof obj === "object" && !Array.isArray(obj) && !isRef(obj) && !("$expr" in obj))
+      for (const [f, x] of Object.entries(plainFields(obj)))
+        if (!x.includes("${") && !(`${prefix}${k}.${f}` in out)) out[`${prefix}${k}.${f}`] = x;
+  }
+  return out;
 }
 
 /**
@@ -242,7 +267,8 @@ async function places(
   repo: RepoHandle,
   rule: Pick<DialectRule, "match">,
   ctx: ScanContext,
-  terraform: () => Promise<Map<string, TfModule>>,
+  /** Each folder's Terraform modules: one, or one per instantiation of a local module (ADR 0063). */
+  terraform: () => Promise<Map<string, TfModule[]>>,
 ): Promise<Place[]> {
   const m = rule.match;
   const out: Place[] = [];
@@ -400,7 +426,9 @@ async function places(
       }
     } else if (type === "hclBlock" && "hclBlock" in m) {
       const [blockType, label] = m.hclBlock.split(".");
-      const mod = (await terraform()).get(dirOf(path));
+      // A local module's folder is read once per instantiation, with that caller's values (ADR 0063).
+      const mods = (await terraform()).get(dirOf(path)) ?? [undefined];
+      let mod: TfModule | undefined;
       const hcl = parseHcl(await repo.readText(path));
       const value = (v: HclValue | undefined) => hclString(mod ? tfResolve(mod, v) : v);
       const fieldsOf = (b: HclBlock) => {
@@ -414,16 +442,10 @@ async function places(
       const stack: HclBlock[] = [];
       const visit = (b: HclBlock) => {
         if (b.type === blockType && (!label || b.labels[0] === label)) {
-          const attrs: Record<string, string> = {};
-          for (const [k, a] of b.attrs) {
-            const v = value(isRef(a.value) || typeof a.value !== "object" ? a.value : undefined);
-            if (v !== undefined) attrs[k] = v;
-          }
+          const attrs = hclAttrs(b, value, mod);
           for (const nb of b.blocks)
-            for (const [k, a] of nb.attrs) {
-              const v = value(a.value);
-              if (v !== undefined && !(`${nb.type}.${k}` in attrs)) attrs[`${nb.type}.${k}`] = v;
-            }
+            for (const [k, v] of Object.entries(hclAttrs(nb, value, mod, `${nb.type}.`)))
+              if (!(k in attrs)) attrs[k] = v;
           out.push({
             path,
             line: b.line,
@@ -442,7 +464,7 @@ async function places(
         b.blocks.forEach(visit);
         stack.pop();
       };
-      hcl.blocks.forEach(visit);
+      for (mod of mods) hcl.blocks.forEach(visit);
       void ctx;
     } else if (type === "syntax" && "syntax" in m) {
       const lang = m.language ?? syntaxLanguageOf(path);
@@ -547,6 +569,7 @@ export function dialectExtractor(
     async *scan(repo: RepoHandle, ctx: ScanContext) {
       if (
         dialect.appliesTo.repoTypes.length > 0 &&
+        !dialect.appliesTo.repoTypes.includes("*") &&
         ctx.repoType &&
         !dialect.appliesTo.repoTypes.includes(ctx.repoType) &&
         !dialect.appliesTo.repoTypes.includes("*") &&
@@ -572,9 +595,13 @@ export function dialectExtractor(
         return yamlCache.get(file)!.get(key)?.value;
       };
 
-      let tf: Promise<Map<string, TfModule>> | undefined;
+      let tf: Promise<Map<string, TfModule[]>> | undefined;
       const terraform = () =>
-        (tf ??= loadTerraform(repo, ctx, /./).then((mods) => new Map(mods.map((x) => [x.dir, x]))));
+        (tf ??= loadTerraform(repo, ctx, /./).then((mods) => {
+          const byDir = new Map<string, TfModule[]>();
+          for (const x of mods) byDir.set(x.dir, [...(byDir.get(x.dir) ?? []), x]);
+          return byDir;
+        }));
 
       /** Templates' yaml:file#key values, read ahead so rendering stays synchronous. */
       const yamlFor = async (templates: string[]) => {

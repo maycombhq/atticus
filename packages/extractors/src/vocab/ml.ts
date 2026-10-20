@@ -8,9 +8,8 @@ import {
   withTree,
   type CodeCall,
 } from "../lang/code-tree.js";
-import { attrOf } from "../platform/hcl.js";
 import { loadManifests, readYamlDocs } from "../platform/manifests.js";
-import { loadTerraform, tfString } from "../platform/terraform.js";
+import { loadTerraform, tfName } from "../platform/terraform.js";
 import {
   arr,
   at,
@@ -169,7 +168,8 @@ export const mlExtractor = defineExtractor({
     for (const mod of await loadTerraform(repo, ctx, /\baws_sagemaker_endpoint\b/)) {
       for (const r of mod.resources) {
         if (r.type !== "aws_sagemaker_endpoint") continue;
-        const name = tfString(mod, attrOf(r.block, "name")) ?? r.name;
+        const name = tfName(mod, r, "name");
+        if (!name) continue;
         const comp = componentFor(ctx, [name]);
         addComponent(comp, "sagemaker", "infrastructure", r.file, r.block.line);
         const env = envOf({ path: r.file, name }) ?? "default";
