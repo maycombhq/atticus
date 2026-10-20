@@ -123,6 +123,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           problems,
           warnings,
           coverage: scan.coverage,
+          unmodelled: scan.unmodelled,
           notes: scan.notes,
           written: write !== undefined,
           files: write ?? null,
@@ -163,6 +164,19 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
               `${c.repo} (${c.unreadConfig.length} file${c.unreadConfig.length === 1 ? "" : "s"})`,
           )
           .join(", ")}. Have your assistant draft a dialect: atticus onboard ${toOnboard[0]!.repo}`,
+      );
+    // House frameworks with no model, and models that read nothing any more (ADR 0066).
+    for (const f of scan.unmodelled)
+      io.out(
+        `House framework ${f.framework} is imported by ${f.repos.length} repos and no framework model covers it: ${f.repos.join(", ")}. Onboard it: atticus onboard framework ${f.name} --from <its source, JAR or package> --users ${f.repos.join(",")}`,
+      );
+    const idle = new Map<string, string[]>();
+    for (const c of scan.coverage)
+      for (const r of c.redraftFrameworks)
+        idle.set(r.framework, [...(idle.get(r.framework) ?? []), c.repo]);
+    for (const [framework, repos] of idle)
+      io.out(
+        `Framework model ${framework} read nothing in ${repos.join(", ")}, which import${repos.length === 1 ? "s" : ""} it; the framework may have changed. Have your assistant re-draft it: atticus onboard framework ${framework} --from <its source, JAR or package> --users ${repos.join(",")} (then onboard accept framework ${framework} --replace)`,
       );
     for (const l of diffLines(diff)) io.out(l);
     if (write)

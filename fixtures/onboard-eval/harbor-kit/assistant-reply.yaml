@@ -1,0 +1,49 @@
+# A recorded answer from an assistant (invented, ADR 0066): only what the learner couldn't
+# read. The learned entries are left out; Atticus keeps them as they are.
+schemaVersion: 1
+name: harbor-kit
+packages: [harbor.kit]
+clients:
+  - type: Dock
+    method: relay
+    service: { arg: 0 }
+    httpMethod: { value: POST }
+    path: { arg: 1 }
+    source: { kind: document, ref: "harbor-kit:src/main/java/harbor/kit/http/Dock.java" }
+services:
+  Systems.LEDGER:
+    value: https://ledger.harbor.internal
+    source: { kind: document, ref: "harbor-kit:src/main/resources/harbor-systems.properties" }
+  Systems.NOTIFY:
+    value: https://notify.harbor.internal
+    source: { kind: document, ref: "harbor-kit:src/main/resources/harbor-systems.properties" }
+pipeline:
+  - step: harborDeploy
+    environmentFrom: env
+    stages: [Smoke tests]
+    deployTargets: [helm]
+    testSteps: [smoke tests]
+    source: { kind: document, ref: "harbor-kit:vars/harborDeploy.groovy" }
+tests:
+  - name: a Harbor API that calls two systems
+    files:
+      src/main/java/harbor/x/Api.java: |
+        package harbor.x;
+        import harbor.kit.http.Dock;
+        import harbor.kit.http.Systems;
+        import harbor.kit.web.Fetch;
+        import harbor.kit.web.HarborApi;
+        @HarborApi(root = "/orders")
+        public class Api {
+          private final Dock dock;
+          @Fetch("/{id}")
+          public Order order(String id) { return null; }
+          void place(Order o) {
+            dock.send(Systems.LEDGER, "POST", "/ledger/entries", o);
+            dock.relay(Systems.NOTIFY, "/notifications/orders", o);
+          }
+        }
+    expect:
+      - "endpoint GET /orders/{id}"
+      - "http-call POST https://ledger.harbor.internal/ledger/entries"
+      - "http-call POST https://notify.harbor.internal/notifications/orders"

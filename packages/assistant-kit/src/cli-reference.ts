@@ -87,6 +87,16 @@ export const FRAMEWORK_KIT_COMMANDS: readonly KitCommand[] = [
     ],
   },
   {
+    usage: "atticus onboard check framework <name> --from <source|jar|tgz> --users <repo>,...",
+    summary:
+      "Run the onboarding checks (ADR 0066) on proposals/frameworks/<name>.yaml, when Atticus handed you an onboarding task.",
+    details: [
+      "The framework is read again: an entry with `source: code` or `bytecode` must be exactly what the learner reads, and an entry you added must cite a `document` or a `person`.",
+      "The model must be valid, its tests must pass, and on the repos that use the framework it must read something they don't give without it, with no invalid record. Entries that change nothing there are listed.",
+      "Exit 0 when it passes (the proposal is rewritten with what the learner read), 1 with every problem otherwise. A person then accepts it.",
+    ],
+  },
+  {
     usage: "atticus orgpack validate [dir]",
     summary: "Check the whole org pack against its schemas, framework models included.",
     details: ["Exit 0 when every file is valid, 1 otherwise."],

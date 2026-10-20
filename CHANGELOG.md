@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Onboarding framework models
+
+- `atticus onboard framework <name> --from <source|jar|tgz> [--users <repo>,...]` (ADR 0066): the learner reads the house framework first, then your organisation's assistant drafts only what it couldn't (base URLs of service ids, wrapper methods whose parameters don't name the method or path, what pipeline templates and Jenkins shared-library steps do), with the framework kit as instructions and the code as data. Checks decide: valid C6, every entry with a source, nothing read from code changed by the draft, drafted entries citing a document or a person, its tests pass, and the repos that use it give something with it they don't without it and no invalid record. Failures go back to the next attempt (`--attempts`, default 3). A passing model is a proposal in `proposals/frameworks/`, listing what it reads per repo, which records came from drafted entries, and entries that change nothing. With AI off or `--no-ai`, the learned model alone is checked.
+- `atticus onboard check framework <name>` runs the same checks on a hand-written or handed-off model (with `--from`, the learner's entries are confirmed and merged in); `atticus onboard accept framework <name> [--replace]` (or `onboard accept <name>`) moves it into the org pack.
+- `atticus scan` names house frameworks several repos import that no model covers, with the command to onboard each (`unmodelled` in `--json`), and models that read nothing any more in repos that import them (`coverage[].redraftFrameworks`), with the re-draft command.
+- `atticus onboard eval` grades framework cases too (`kind: framework` in `case.yaml`): the first, `harbor-kit`, an invented Java starter and two repos using it; the eval runs 11 cases.
+- `frameworks survey` and the scan share one import reader (moved to `@maycombhq/extractors`); the survey's output is unchanged.
+
 ### Model providers
 
 - Model mode can call a real model (ADR 0065). A new package, `@maycombhq/model-providers`, ships three providers the CLI registers when it starts: `anthropic` (Messages API, directly or through a gateway), `openai-compatible` (Chat Completions, for internal LLM gateways, vLLM and similar; `flavour: azure` for Azure OpenAI deployments with `api-key` and `api-version`, also as `type: azure-openai`) and `bedrock` (the Converse API, SigV4 signed with `node:crypto` from the standard AWS environment variables; no AWS SDK).

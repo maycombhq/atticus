@@ -19,3 +19,6 @@ references, which checks the harness, not a model.
 | `harness`       | Harness pipelines with parallel stages and an org template       |
 | `tekton`        | Tekton Pipelines                                                 |
 | `argocd`        | Argo CD Applications per environment folder                      |
+| `harbor-kit`    | A framework case (ADR 0066): a house Java starter with a wrapper the learner can't read, base URLs in a properties file and a Jenkins shared-library step, two repos using it, a recorded assistant answer (`assistant-reply.yaml`) and the reference model |
+
+A framework case's `case.yaml` has `kind: framework`, `from` (the framework's source), `users` (the repos that use it) and `reference` (the model a person accepted). The learner reads `from` first; the draft is graded by what it adds to the `users` repos (records they give with the model and not without), compared with what the reference adds.

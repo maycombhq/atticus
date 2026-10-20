@@ -10,6 +10,7 @@ Pick the way in that matches what you have. They combine: each keeps what the ot
 | Only its JAR                             | `atticus frameworks learn <name> --from <starter.jar>`, or `atticus frameworks discover --group <your.group> --learn` to find the JARs your repos use.          |
 | Only its npm package (JS or TS)          | `atticus frameworks learn <name> --from <package.tgz>` reads its typings, or `atticus frameworks discover --group @your-scope --jars <folder of .tgz> --learn`. |
 | Documents, a wiki, or people who know it | Write the model by hand, or have an assistant draft it with the kit (below). Entries cite their source and make inferred facts.                                 |
+| The source, and repos that use it        | `atticus onboard framework <name> --from <source, JAR or package> --users <repos>`: learned first, your assistant drafts the rest, checks decide (below).       |
 | Nothing yet                              | `atticus frameworks survey --package <your prefixes>` shows which house modules the repos import and how they call them. Start with the most used.              |
 
 ## Cloud resources in Terraform
@@ -27,6 +28,27 @@ To change what a resource type gives, copy the shipped file into `org-pack/diale
 3. Review the rules and their tests, then `atticus onboard accept <name>`, and commit the org pack.
 
 The assistant is whatever `runtime.yaml` allows. With `hand-off`, your own assistant writes the draft; save it in `proposals/dialects/` and run `atticus onboard check <name> --repo <repo>`.
+
+## House frameworks with no model: onboard them
+
+`atticus scan` names the house frameworks several of your repos import that no model covers: modules in your organisation's own namespace (the roots of the packages, namespaces and npm scopes your repos declare, such as `tide` or `@tide`) that two or more repos import without declaring them. It prints the command for each:
+
+```text
+House framework harbor.kit is imported by 2 repos and no framework model covers it: harbor-billing, harbor-orders. Onboard it: atticus onboard framework harbor-kit --from <its source, JAR or package> --users harbor-billing,harbor-orders
+```
+
+1. `atticus onboard framework <name> --from <its source folder, JAR or .tgz> --users <repos that use it>` (ADR 0066). Leave out `--users` and the cloned repos that import its packages are used.
+2. Atticus's learner reads the framework first. What it reads from code or bytecode is a verified fact, and no draft may change it.
+3. Your organisation's assistant drafts only what the learner couldn't read: the base URLs behind service ids (often in a properties file or a registry), wrapper methods whose parameter names don't say which argument is the method or the path, and what pipeline templates or Jenkins shared-library steps do (give the template repo or the library as `--from`, with `--package` for the prefix its users import, if any). Every drafted entry cites the file or person it came from.
+4. Atticus checks every draft (valid, its own tests pass, nothing learned is changed, drafted entries cite a document or person, and the repos that use it give something with it that they don't without it, with no invalid record) and hands back what failed, up to three attempts (`--attempts`).
+5. A draft that passes is a proposal in `proposals/frameworks/`. The command lists what it reads in each repo, marks what came from drafted entries, lists entries that change nothing there, and names the drafted entries to review first. Nothing scans with it yet.
+6. Review it, then `atticus onboard accept framework <name>` (`--replace` over an existing model), and commit the org pack.
+
+With `hand-off`, the learned model is left in `proposals/frameworks/<name>.yaml` for your assistant to add to; then `atticus onboard check framework <name> --from <source> --users <repos>`. With AI off (or `--no-ai`), the learned model alone is checked and proposed.
+
+**When a model stops reading.** If a model reads nothing in a repo that imports its packages (the framework renamed an annotation or changed its client), `atticus scan` says so and gives the command to re-draft it; accept the new one with `--replace`. The current model is given to the assistant as data, so entries a person added can be carried over; check the proposal keeps the ones you still want.
+
+What this doesn't do: the learner doesn't read pipeline templates or Jenkins libraries (the assistant drafts those entries from their files); a framework used only through configuration or a build plugin, with no imports, isn't named by the scan; and a value no file holds (a URL only a person knows) can't be drafted: add it by hand, citing the person.
 
 ## Drafting a model with an assistant
 

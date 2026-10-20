@@ -30,7 +30,13 @@ import {
   runDialectTests,
   runFrameworkTests,
   applyPipelineModels,
+  MODEL_READERS,
+  modelCovers,
+  repoImports,
   SHIPPED_DIALECTS_DIR,
+  unmodelledFrameworks,
+  type RepoImports,
+  type UnmodelledFramework,
 } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
 import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
@@ -106,6 +112,11 @@ export interface RepoCoverage {
    * so the scan left them out, or they read nothing in this repo. `atticus onboard` re-drafts.
    */
   redraft: { dialect: string; why: "tests-fail" | "reads-nothing" }[];
+  /**
+   * Framework models that read nothing in this repo though it imports their packages (ADR
+   * 0066): the framework changed under the model. `atticus onboard framework` re-drafts.
+   */
+  redraftFrameworks: { framework: string; why: "reads-nothing" }[];
 }
 
 /** Structured files a dialect could read; build and tool config is left out. */
@@ -140,6 +151,11 @@ export interface EstateScan {
    * nothing (warnings). Low numbers are where dialects or hosts are missing.
    */
   coverage: RepoCoverage[];
+  /**
+   * House frameworks several repos import that no framework model covers (ADR 0066): what to
+   * onboard with `atticus onboard framework`.
+   */
+  unmodelled: UnmodelledFramework[];
   /** Federated metarepos and what they contributed, when there are any. */
   federated?: FederatedContribution[];
 }
@@ -296,6 +312,52 @@ async function usableFrameworks(op: OrgPack, problems: ScanProblem[]): Promise<F
   return ok;
 }
 
+interface ModelReading {
+  handle: ReturnType<typeof fsRepo>;
+  repoInfo: NonNullable<Parameters<typeof scanRepo>[0]["repoInfo"]>;
+  dialects: string[];
+  dirty: boolean;
+  imports: RepoImports;
+}
+
+/**
+ * The models that read nothing in a repo that imports their packages (ADR 0066): the repo read
+ * through the extractors that use models, with every usable model and without this one, gives
+ * the same records. The same options as the scan, so the reading with every model comes from
+ * the cache when the scan's did.
+ */
+async function modelsReadingNothing(
+  x: ModelReading,
+  models: FrameworkModel[],
+  cache: ScanCache | undefined,
+  scannedAt: string,
+): Promise<string[]> {
+  const used = models.filter((m) =>
+    [...x.imports.modules.keys()].some((mod) => modelCovers(m, mod)),
+  );
+  if (used.length === 0) return [];
+  const read = async (with_: FrameworkModel[]) => {
+    const s = await scanRepo({
+      repo: x.handle,
+      extractors: [...MODEL_READERS],
+      dialects: x.dialects,
+      scannedAt,
+      dirty: x.dirty,
+      ...(cache ? { cache } : {}),
+      frameworks: with_,
+      repoInfo: x.repoInfo,
+    });
+    return applyPipelineModels(s.records, with_)
+      .map((r) => JSON.stringify({ ...r, evidence: undefined }))
+      .sort()
+      .join("\n");
+  };
+  const all = await read(models);
+  const out: string[] = [];
+  for (const m of used) if ((await read(models.filter((o) => o !== m))) === all) out.push(m.name);
+  return out;
+}
+
 /**
  * Scan every repo in the org pack's manifests with the built-in extractors and the dialects
  * whose tests pass, then merge into one catalog. Unchanged repos come from the cache.
@@ -327,6 +389,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const structuredOf = new Map<string, string[]>();
   /** Each repo's modules with their own component (ADR 0057): the manifest's, else found. */
   const modulesOf = new Map<string, { path: string; component: string; hosts: string[] }[]>();
+  /** Each repo as scanned, with its imports: for the framework signals (ADR 0066). */
+  const readers = new Map<string, ModelReading>();
   let done = 0;
   for (const r of repos) {
     const dir = o.repoDir?.(r.id) ?? inPlace(o.root, r.url) ?? baseClonePath(o.root, r.id);
@@ -364,6 +428,14 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     for await (const f of handle.listFiles(["**/*"]))
       if (STRUCTURED.test(f) && !TOOLING.test(f)) structured.push(f);
     structuredOf.set(r.id, structured.sort());
+    const repoInfo = {
+      ...(modules.length
+        ? { modules: modules.map(({ path, component }) => ({ path, component })) }
+        : {}),
+      ...(r.component ? { component: r.component } : {}),
+      ...(r.system ? { system: r.system } : {}),
+      repoType: r.type,
+    };
     const scan = await scanRepo({
       repo: handle,
       extractors,
@@ -376,14 +448,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         return d ? configHash({ dialect: JSON.stringify(d) }) : undefined;
       },
       frameworks,
-      repoInfo: {
-        ...(modules.length
-          ? { modules: modules.map(({ path, component }) => ({ path, component })) }
-          : {}),
-        ...(r.component ? { component: r.component } : {}),
-        ...(r.system ? { system: r.system } : {}),
-        repoType: r.type,
-      },
+      repoInfo,
+    });
+    // What it imports, for naming house frameworks with no model (ADR 0066).
+    readers.set(r.id, {
+      handle,
+      repoInfo,
+      dialects: r.dialects,
+      dirty: state.dirty,
+      imports: await repoImports(handle),
     });
     for (const run of scan.runs.filter((x) => x.status === "failed"))
       problems.push({ repo: r.id, source: run.extractor, message: run.error ?? "failed" });
@@ -504,6 +577,14 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       message: `invalid record: ${i.issues.map((x) => `${x.path}: ${x.message}`).join("; ")}`,
     });
   const runs = results.flatMap((s) => s.runs);
+  // House frameworks with no model, and models that read nothing where they're imported (ADR 0066).
+  const unmodelled = unmodelledFrameworks(
+    [...readers.values()].map((x) => x.imports),
+    op.frameworks,
+  );
+  const idleModels = new Map<string, string[]>();
+  for (const [id, x] of readers)
+    idleModels.set(id, await modelsReadingNothing(x, frameworks, cache, scannedAt));
   const coverage: RepoCoverage[] = repos
     .filter((r) => results.some((s) => s.repo === r.id))
     .map((r) => {
@@ -543,10 +624,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
             ? [{ dialect: name, why: "reads-nothing" }]
             : [];
         }),
+        redraftFrameworks: (idleModels.get(r.id) ?? []).map((framework) => ({
+          framework,
+          why: "reads-nothing" as const,
+        })),
       };
     });
   return {
     coverage,
+    unmodelled,
     records: merged.records,
     repos: results,
     problems,
