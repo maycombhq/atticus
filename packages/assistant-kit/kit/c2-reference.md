@@ -124,16 +124,37 @@ match: { hclBlock: module, files: ["**/*.tf"] }
 - Supplies `${attr.<name>}` for each plain attribute, resolved the way Terraform would from the folder: variable defaults, then `terraform.tfvars` and `*.auto.tfvars`, locals, and other resources' plain attributes. An attribute of a nested block is `${attr.<block>.<name>}`. A value that still holds `${...}` after resolving is not set.
 - Supplies `${match.0}` (the block's last label, its name) and `${match.1}`, ... (its labels in order).
 
+### `syntax`
+
+```yaml
+match:
+  syntax: |
+    (method_invocation
+      name: (identifier) @m (#eq? @m "exchange")
+      arguments: (argument_list . (_) @service . (string_literal) @verb . (string_literal) @path))
+  files: ["**/src/main/java/**/*.java"]
+```
+
+- A [tree-sitter query](https://tree-sitter.github.io/tree-sitter/using-parsers/queries/) over the file's syntax tree. **Use it for all code.** It sees code as code: a call in a comment or inside a string is not a call, line breaks and spacing don't matter, and a renamed variable still matches.
+- Grammars ship with Atticus: `java`, `kotlin`, `typescript`, `tsx`, `javascript` (JSX too), `c_sharp`, `python`, `go`, `scala`, `ruby`, `php`, `rust`. The file's extension picks one; `language:` sets it.
+- Node names come from the grammar. **Look, don't guess**: `atticus dialect tree <file>` prints a file's tree with the names a query uses (`method_invocation`, `argument_list`, `string_literal`). In `atticus onboard`, the sample files come with their trees.
+- Each match is a place. `${capture.<name>}` is a capture's text; a string literal's capture is its value without the quotes. The place's line is the first capture's.
+- Predicates: `(#eq? @m "exchange")`, `(#match? @m "^(get|post)$")` (on a captured name, not the file's text). `.` anchors a child as first, last or next to another.
+- Use a `lookups` table over another query for values defined elsewhere: the repo's constants, a client's base URL. See `examples/house-http-client.yaml`.
+- A query that doesn't compile fails the dialect's tests: the dialect never loads.
+
 ### `regex`
 
 ```yaml
 match: { regex: 'QUEUE\s*=\s*"([^"]+)"', files: ["**/*.java"] }
 ```
 
-- A JavaScript regular expression over each file's whole text, applied with flags `g` and `m` (`^` and `$` match at line breaks). Use it only when nothing else fits: it can't tell code from comments.
+- **Deprecated (ADR 0060); never in a drafted dialect, which `atticus onboard` refuses.** For code use `syntax`; for structured files `jsonPath`, `xpath`, `configKey` or `hclBlock`. A JavaScript regular expression over each file's whole text, applied with flags `g` and `m` (`^` and `$` match at line breaks). Use it only when nothing else fits: it can't tell code from comments.
 - Supplies `${match.0}` (the whole match), `${match.1}`, ... (groups; a group that didn't take part is empty) and `${file.line}` (where the match starts).
 
 ### What each match supplies
+
+`${capture.<name>}` is for `syntax` matches only (rejected for others).
 
 | Template value                             | annotation | baseClass | methodCall | configKey | xpath | jsonPath | hclBlock | regex |
 | ------------------------------------------ | ---------- | --------- | ---------- | --------- | ----- | -------- | -------- | ----- |
@@ -174,6 +195,7 @@ A template is literal text with `${...}` expressions: `"${yaml:forge.yaml#servic
 | `${file.line}`             | The line of the match.                                                                                                                                                                                                                  |
 | `${repo.name}`             | The repo's id (in tests: `dialect-test` for inline files, the folder name for a fixture).                                                                                                                                               |
 | `${match.<N>}`             | For `regex`: the whole match (0) and groups. For `configKey`: the value (0) and key segments. For `xpath` and `jsonPath`: the value (0).                                                                                                |
+| `${capture.<name>}`        | For `syntax`: a capture of the query, a string literal without its quotes.                                                                                                                                                              |
 | `${node.key}`              | For `jsonPath`, `xpath` and `hclBlock`: the matched node's key (its field name or array index, element name, or block label).                                                                                                           |
 | `${node.up.<field>}`       | A plain field of the nearest object above the match (an XML parent's attribute or leaf child, an enclosing HCL block's attribute). `node.up.up` is the one above that; arrays are stepped over. `node.up.key` is that object's own key. |
 | `${lookup:<t>(<key>).<v>}` | Value `v` of the row of lookup table `t` whose key is `<key>`, any template value with filters: `${lookup:servers(attr.name).host}`. Unknown when no row has that key, or two rows give it different values.                            |

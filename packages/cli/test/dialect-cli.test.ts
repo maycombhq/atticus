@@ -254,7 +254,7 @@ describe("atticus dialect kit and grade", () => {
     const out = await mkdtemp(join(tmpdir(), "atticus-cli-kit-"));
     const c = capture();
     expect(await dialectKit(out, c.io)).toBe(0);
-    expect(c.out).toEqual([`Wrote the dialect build kit (11 files) to ${out}`]);
+    expect(c.out).toEqual([`Wrote the dialect build kit (12 files) to ${out}`]);
     expect(await readdir(out)).toContain("cli.md");
   });
 
@@ -271,5 +271,24 @@ describe("atticus dialect kit and grade", () => {
       await dialectGrade(join(root, "org-pack/dialects/forge-messaging.yaml"), EVAL, bad.io),
     ).toBe(1);
     expect(bad.out.at(-1)).toMatch(/^FAIL: /);
+  });
+});
+
+describe("atticus dialect tree (ADR 0060)", () => {
+  it("prints a file's syntax tree, and refuses a file no grammar reads", async () => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { dialectTree } = await import("../src/dialect-commands.js");
+    const dir = await mkdtemp(join(tmpdir(), "atticus-tree-"));
+    await writeFile(join(dir, "A.kt"), 'fun f() = http.exchange(S.A, "POST", "/a")');
+    const out: string[] = [];
+    const err: string[] = [];
+    const io = { out: (l: string) => out.push(l), err: (l: string) => err.push(l) };
+    expect(await dialectTree(join(dir, "A.kt"), {}, io)).toBe(0);
+    expect(out[0]).toMatch(/^\(source_file \(function_declaration .*\(call_expression/);
+    await writeFile(join(dir, "notes.txt"), "x");
+    expect(await dialectTree(join(dir, "notes.txt"), {}, io)).toBe(2);
+    expect(err[0]).toMatch(/^No grammar for .*notes\.txt\. Grammars: java, kotlin/);
   });
 });

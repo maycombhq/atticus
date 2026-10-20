@@ -17,6 +17,7 @@ export * from "./lang/java.js";
 export * from "./lang/config.js";
 export * from "./lang/xml.js";
 export * from "./lang/sql.js";
+export * from "./lang/syntax.js";
 export * from "./backends/index.js";
 import { BACKEND_EXTRACTORS } from "./backends/index.js";
 export * from "./platform/index.js";

@@ -1,4 +1,4 @@
-import { mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { stringify } from "yaml";
 import { RecordId, orgPackDirOf } from "@maycombhq/core";
@@ -15,6 +15,12 @@ import {
   testDialect,
   type LoadedDialect,
 } from "@maycombhq/assistant-kit";
+import {
+  SYNTAX_LANGUAGES,
+  syntaxLanguageOf,
+  syntaxOutline,
+  type SyntaxLanguage,
+} from "@maycombhq/extractors";
 import type { Output } from "./commands.js";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -228,4 +234,29 @@ export async function dialectGrade(file: string, evalDir: string, io: Output): P
   const g = await gradeDialect(resolve(file), resolve(evalDir));
   for (const l of formatGrade(g)) io.out(l);
   return g.pass ? 0 : 1;
+}
+
+/**
+ * atticus dialect tree <file> [--language l]: print a file's syntax tree, with the node names a
+ * syntax match's query uses (ADR 0060).
+ */
+export async function dialectTree(
+  file: string,
+  o: { language?: string },
+  io: Output,
+): Promise<number> {
+  const lang = (o.language ?? syntaxLanguageOf(file)) as SyntaxLanguage | undefined;
+  if (!lang || !(SYNTAX_LANGUAGES as readonly string[]).includes(lang)) {
+    io.err(
+      `No grammar for ${file}${o.language ? ` (${o.language})` : ""}. Grammars: ${SYNTAX_LANGUAGES.join(", ")}.`,
+    );
+    return 2;
+  }
+  const text = await readFile(resolve(file), "utf8").catch(() => undefined);
+  if (text === undefined) {
+    io.err(`${file} can't be read.`);
+    return 2;
+  }
+  io.out(await syntaxOutline(lang, text, Number.MAX_SAFE_INTEGER));
+  return 0;
 }

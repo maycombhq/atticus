@@ -31,6 +31,22 @@ const Template = z.string().superRefine((t, ctx) => {
   }
 });
 
+/** Grammars shipped with Atticus for syntax matches (ADR 0060). */
+export const SyntaxLanguage = z.enum([
+  "java",
+  "kotlin",
+  "typescript",
+  "tsx",
+  "javascript",
+  "c_sharp",
+  "python",
+  "go",
+  "scala",
+  "ruby",
+  "php",
+  "rust",
+]);
+
 /** Exactly one way to match, each with the files it looks in. */
 export const DialectMatch = z.union([
   z.strictObject({
@@ -54,6 +70,13 @@ export const DialectMatch = z.union([
   }),
   z.strictObject({ xpath: z.string().min(1), files: Globs }),
   z.strictObject({ jsonPath: z.string().regex(/^\$/, "JSONPath starts with $"), files: Globs }),
+  z.strictObject({
+    /** A tree-sitter query over the file's syntax tree (ADR 0060); its captures are ${capture.x}. */
+    syntax: z.string().min(1),
+    /** The grammar; by default the file's extension says. */
+    language: SyntaxLanguage.optional(),
+    files: Globs,
+  }),
   z.strictObject({
     /** A Terraform (HCL) block type, optionally with its first label: "module", "resource.aws_sqs_queue" (ADR 0056). */
     hclBlock: z
@@ -89,6 +112,7 @@ export function matchType(
   | "xpath"
   | "jsonPath"
   | "hclBlock"
+  | "syntax"
   | "regex" {
   for (const k of [
     "annotation",
@@ -98,6 +122,7 @@ export function matchType(
     "xpath",
     "jsonPath",
     "hclBlock",
+    "syntax",
     "regex",
   ] as const) {
     if (k in m) return k;
@@ -295,6 +320,12 @@ export const Dialect = z
                 message: "${match.N} needs a regex, configKey, xpath, jsonPath or hclBlock match",
               });
             }
+            if (s.type === "capture" && matchType(r.match) !== "syntax")
+              ctx.addIssue({
+                code: "custom",
+                path: ["rules", i],
+                message: "${capture.*} needs a syntax match",
+              });
             if (s.type === "lookup" && !d.lookups?.[s.table])
               ctx.addIssue({
                 code: "custom",

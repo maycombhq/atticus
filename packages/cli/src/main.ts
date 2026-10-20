@@ -124,6 +124,7 @@ import {
 import {
   dialectGrade,
   dialectKit,
+  dialectTree,
   dialectNew,
   dialectRun,
   dialectTest,
@@ -190,6 +191,7 @@ Usage:
   atticus dialect test <name>          Run a dialect's own tests
   atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
+  atticus dialect tree <file> [--language l]   Print a file's syntax tree, for syntax matches
   atticus onboard <repo> [--name n] [--attempts 3] [--mode m]   Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal
   atticus onboard check <name> --repo <repo>   Check a proposal (drafted, handed off or hand-written)
   atticus onboard accept <name> [--replace]   Accept a proposal into org-pack/dialects/
@@ -396,6 +398,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       title: { type: "string" },
       name: { type: "string" },
       attempts: { type: "string" },
+      language: { type: "string" },
       replace: { type: "boolean" },
       into: { type: "string" },
       level: { type: "string" },
@@ -1441,6 +1444,17 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
   if (group === "dialect") {
     const rest = positionals.slice(3);
     if (command === "kit") return dialectKit(resolve(arg ?? "dialect-kit"), io);
+    if (command === "tree") {
+      if (!arg) {
+        io.err("dialect tree needs a file: atticus dialect tree src/A.java [--language java]");
+        return 2;
+      }
+      return dialectTree(
+        arg,
+        { ...(str(values.language) ? { language: str(values.language)! } : {}) },
+        io,
+      );
+    }
     if (!arg) {
       io.err(
         `dialect ${command ?? ""} needs a dialect name, for example: atticus dialect test forge`.replace(

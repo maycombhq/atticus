@@ -3,7 +3,13 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { buildContextPack, type AiRuntime, type SourceInput } from "@maycombhq/ai";
 import { AgentDefinition, Dialect, type CatalogRecord, type OrgPack } from "@maycombhq/core";
-import { BUILT_IN_EXTRACTORS, dialectExtractor, runDialectTests } from "@maycombhq/extractors";
+import {
+  BUILT_IN_EXTRACTORS,
+  dialectExtractor,
+  runDialectTests,
+  syntaxLanguageOf,
+  syntaxOutline,
+} from "@maycombhq/extractors";
 import { scanRepo, type RepoHandle } from "@maycombhq/sdk";
 import { KIT_DIR } from "./export.js";
 import { kindsMarkdown } from "./kinds-doc.js";
@@ -48,7 +54,10 @@ Write the dialect that reads it, following the reference and checklist below.
 - Name it \`${name}\` (the \`name\` field) and give it version 0.1.0.
 - Read the survey first: what Atticus already reads from this repo, and which files it doesn't.
 - Describe the technology, not this repo: values come from templates, never written into rules.
-- Use \`lookups\` when a value lives in another file, \`\${node.up...}\` for nesting, \`where\` to narrow.
+- Read code with \`syntax\` matches: tree-sitter queries over the syntax trees in the data
+  blocks, using the node names you see there. Never \`regex\`: a draft with one is refused.
+- Use \`lookups\` when a value lives in another file (constants, servers), \`\${node.up...}\` for
+  nesting in structured files, \`where\` to narrow.
 - Ship tests with inline \`files\` copied from the repo (trimmed) and the exact records they give.
   Every rule must produce a record in some test.
 - Reply with the dialect file only: YAML, no prose, no code fences.
@@ -88,8 +97,12 @@ const SKIP =
  */
 export async function surveyForOnboarding(
   repo: RepoHandle,
-  o: { maxFiles?: number; maxLines?: number } = {},
-): Promise<{ text: string; files: { path: string; excerpt: string }[] }> {
+  o: { maxFiles?: number; maxLines?: number; maxCode?: number } = {},
+): Promise<{
+  text: string;
+  files: { path: string; excerpt: string }[];
+  code: { path: string; excerpt: string; tree: string }[];
+}> {
   const all: string[] = [];
   for await (const p of repo.listFiles(["**/*"])) if (!SKIP.test(p)) all.push(p);
   all.sort();
@@ -100,9 +113,12 @@ export async function surveyForOnboarding(
   }
   const scan = await scanRepo({ repo, extractors: BUILT_IN_EXTRACTORS });
   const read = new Set(
-    scan.records.flatMap((r) =>
-      (r as unknown as { evidence: { path?: string }[] }).evidence.map((e) => e.path ?? ""),
-    ),
+    // The Component cites a file only to show there is code: that isn't reading it.
+    scan.records
+      .filter((r) => r.kind !== "Component")
+      .flatMap((r) =>
+        (r as unknown as { evidence: { path?: string }[] }).evidence.map((e) => e.path ?? ""),
+      ),
   );
   const kinds = new Map<string, number>();
   for (const r of scan.records) kinds.set(r.kind, (kinds.get(r.kind) ?? 0) + 1);
@@ -118,6 +134,17 @@ export async function surveyForOnboarding(
         (lines.length > maxLines ? `\n... (${lines.length - maxLines} more lines)` : ""),
     });
   }
+  // Code nothing cites, with its syntax tree, so a query uses the grammar's real node names.
+  const code: { path: string; excerpt: string; tree: string }[] = [];
+  for (const p of all.filter((x) => syntaxLanguageOf(x) && !read.has(x)).slice(0, o.maxCode ?? 5)) {
+    const src = await repo.readText(p);
+    const lines = src.split(/\r?\n/);
+    code.push({
+      path: p,
+      excerpt: lines.slice(0, maxLines).join("\n"),
+      tree: await syntaxOutline(syntaxLanguageOf(p)!, src, 3000),
+    });
+  }
   const text = [
     `Repo ${repo.name}: ${all.length} files.`,
     `By extension: ${[...byExt]
@@ -129,7 +156,7 @@ export async function surveyForOnboarding(
     }.`,
     `Structured files nothing reads (${unread.length}): ${unread.slice(0, 60).join(", ")}${unread.length > 60 ? ", ..." : ""}.`,
   ].join("\n");
-  return { text, files };
+  return { text, files, code };
 }
 
 /** The draft as YAML: the reply, without code fences if the assistant added them anyway. */
@@ -162,6 +189,13 @@ export async function checkDraft(
   if (d.name !== name) problems.push(`name is ${d.name}; it must be ${name}`);
   if (d.extends.length) problems.push("extends isn't allowed in a drafted dialect");
   if (d.plugin) problems.push("plugin isn't allowed in a drafted dialect: rules only");
+  // Drafts read syntax trees and structured files, never text patterns (ADR 0060).
+  for (const r of d.rules)
+    if ("regex" in r.match)
+      problems.push(`rule ${r.id}: regex isn't allowed in a drafted dialect; use a syntax match`);
+  for (const [n, l] of Object.entries(d.lookups ?? {}))
+    if ("regex" in l.match)
+      problems.push(`lookup ${n}: regex isn't allowed in a drafted dialect; use a syntax match`);
   for (const f of await runDialectTests(d, ".")) problems.push(`test "${f.test}": ${f.message}`);
   const s = await scanRepo({
     repo,
@@ -248,6 +282,14 @@ export async function draftDialect(
       classification: "internal",
       priority: 20,
     },
+    ...survey.code.map((f) => ({
+      id: `4-code-${f.path}`,
+      kind: "code" as const,
+      origin: `${repo.name}:${f.path}`,
+      text: `${f.path}\n${f.excerpt}\n\nIts syntax tree:\n${f.tree}`,
+      classification: "internal",
+      priority: 15,
+    })),
     ...survey.files.map((f) => ({
       id: `4-file-${f.path}`,
       kind: "code" as const,

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MockRuntime } from "@maycombhq/ai";
-import { fsRepo } from "@maycombhq/sdk";
+import { fsRepo, memoryRepo } from "@maycombhq/sdk";
 import { draftDialect, KIT_DIR, surveyForOnboarding } from "../src/index.js";
 
 const GW = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/gateways");
@@ -92,5 +92,47 @@ describe("onboarding a repo Atticus can't read (ADR 0059)", () => {
       expect(readFileSync(join(KIT_DIR, "examples", f), "utf8")).toBe(
         readFileSync(join(GW, "metarepo/org-pack/dialects", f), "utf8"),
       );
+  });
+
+  it("refuses a draft that reads text with regex, and gives the assistant syntax trees instead", async () => {
+    const repo = memoryRepo("house", "0".repeat(40), {
+      "src/main/java/x/Audit.java":
+        'class Audit { void r() { bankHttp.exchange(Services.AUDIT, "POST", "/audit"); } }',
+    });
+    const survey = await surveyForOnboarding(repo);
+    expect(survey.code.map((c) => c.path)).toEqual(["src/main/java/x/Audit.java"]);
+    expect(survey.code[0]!.tree).toContain(
+      "(method_invocation object: (identifier) name: (identifier) arguments: (argument_list",
+    );
+    const regexDraft = `schemaVersion: 1
+name: house
+version: 0.1.0
+appliesTo: {}
+rules:
+  - id: call
+    description: An exchange call.
+    match: { regex: 'exchange\\(\\w+\\.\\w+, "(\\w+)", "([^"]+)"\\)', files: ["**/*.java"] }
+    emit:
+      kind: Unresolved
+      id: "house.http-call.\${file.line}"
+      fields: { unresolvedKind: http-call, raw: "\${match.1} \${match.2}", owner: house }
+    confidence: inferred
+tests:
+  - name: t
+    files:
+      A.java: 'class A { void r() { c.exchange(S.A, "POST", "/a"); } }'
+    expect:
+      - { kind: Unresolved, id: house.http-call.1, raw: "POST /a" }
+`;
+    const r = await draftDialect(repo, {
+      name: "house",
+      runtime: new MockRuntime(() => regexDraft, { now: () => NOW }),
+      maxAttempts: 1,
+      now: NOW,
+    });
+    expect(r.status).toBe("failed");
+    expect(r.attempts[0]!.problems).toEqual([
+      "rule call: regex isn't allowed in a drafted dialect; use a syntax match",
+    ]);
   });
 });

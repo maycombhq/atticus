@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Rules read syntax trees, not text patterns
+
+- A `syntax` match (ADR 0060): a tree-sitter query over the file's syntax tree, for Java, Kotlin, TypeScript, TSX, JavaScript, C#, Python, Go, Scala, Ruby, PHP and Rust. Captures are `${capture.<name>}` (string literals unquoted) in templates, `where` and `lookups`, so a lookup over the tree can be the repo's constants. A call in a comment or a string isn't a call. The grammars ship with Atticus (web-tree-sitter 0.22.6, tree-sitter-wasms 0.1.13); nothing is downloaded or compiled.
+- `atticus dialect tree <file>` prints a file's syntax tree, with the node names a query uses.
+- `atticus onboard` gives the assistant the syntax trees of sample code files, and refuses a draft with a `regex` match. `regex` is deprecated in hand-written dialects.
+- The dialect kit's reference documents `syntax`, and a worked example reads a house client in Java, Kotlin and TypeScript.
+
 ### Onboarding: your assistant drafts the dialect
 
 - `atticus onboard <repo>` (ADR 0059): a deterministic survey of the repo (what is read already, the structured files nothing reads), a draft dialect from the organisation's assistant through the AI runtime (the dialect kit as instructions, the repo as data), and checks: valid C2, its own tests pass and exercise every rule, it reads records from the repo and none is invalid. What failed goes back to the next attempt (`--attempts`, default 3). A passing draft is a proposal in `proposals/dialects/`; `atticus onboard accept <name>` (a person) moves it into the org pack. `atticus onboard check <name> --repo <repo>` checks a hand-written or handed-off draft the same way.

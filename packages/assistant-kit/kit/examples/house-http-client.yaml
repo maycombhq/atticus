@@ -1,0 +1,102 @@
+# A house HTTP wrapper read from code in Java, Kotlin and TypeScript, through syntax trees
+# (ADR 0060): bankHttp.exchange(Services.AUDIT, "POST", "/audit/events"). The service id is a
+# constant; a lookup over the tree of the constants class gives its value. No text patterns.
+schemaVersion: 1
+name: house-http-client
+version: 0.1.0
+description: The house HTTP wrapper's exchange(service, verb, path) calls, in Java, Kotlin and TypeScript.
+appliesTo:
+  repoTypes: []
+lookups:
+  constants:
+    match:
+      syntax: |
+        (class_declaration
+          name: (identifier) @cls
+          body: (class_body
+            (field_declaration
+              declarator: (variable_declarator name: (identifier) @name value: (string_literal) @value))))
+      files: ["**/*.java"]
+    key: "${capture.cls}.${capture.name}"
+    values: { value: "${capture.value}" }
+rules:
+  - id: exchange-java
+    description: exchange(service, verb, path) on the wrapper is an HTTP call to that service.
+    match:
+      syntax: |
+        (method_invocation
+          name: (identifier) @m (#eq? @m "exchange")
+          arguments: (argument_list . (_) @service . (string_literal) @verb . (string_literal) @path))
+      files: ["**/src/main/java/**/*.java"]
+    emit:
+      kind: Unresolved
+      id: "${repo.name}.http-call.${file.path | basename | slug}-${file.line}"
+      fields:
+        unresolvedKind: http-call
+        raw: "${capture.verb | upper} ${lookup:constants(capture.service).value | default('')}${capture.path}"
+        owner: "${repo.name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+  - id: exchange-kotlin
+    description: The same call written in Kotlin.
+    match:
+      syntax: |
+        (call_expression
+          (navigation_expression (navigation_suffix (simple_identifier) @m (#eq? @m "exchange")))
+          (call_suffix (value_arguments
+            . (value_argument (_) @service)
+            . (value_argument (string_literal) @verb)
+            . (value_argument (string_literal) @path))))
+      files: ["**/src/main/kotlin/**/*.kt"]
+    emit:
+      kind: Unresolved
+      id: "${repo.name}.http-call.${file.path | basename | slug}-${file.line}"
+      fields:
+        unresolvedKind: http-call
+        raw: "${capture.verb | upper} ${lookup:constants(capture.service).value | default('')}${capture.path}"
+        owner: "${repo.name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+  - id: exchange-ts
+    description: The same call from the house TypeScript client.
+    match:
+      syntax: |
+        (call_expression
+          function: (member_expression property: (property_identifier) @m (#eq? @m "exchange"))
+          arguments: (arguments . (_) @service . (string) @verb . (string) @path))
+      files: ["**/src/**/*.ts"]
+    emit:
+      kind: Unresolved
+      id: "${repo.name}.http-call.${file.path | basename | slug}-${file.line}"
+      fields:
+        unresolvedKind: http-call
+        raw: "${capture.verb | upper} ${lookup:constants(capture.service).value | default('')}${capture.path}"
+        owner: "${repo.name}"
+      evidence: { source: code, side: caller }
+    confidence: inferred
+tests:
+  - name: the call in each language, with the service id's value from the constants class
+    files:
+      src/main/java/x/Services.java: |
+        public final class Services { public static final String AUDIT = "https://audit.example.internal"; }
+      src/main/java/x/Audit.java: |
+        class Audit {
+          // bankHttp.exchange(Services.OLD, "GET", "/a-comment-is-not-a-call");
+          void r() { bankHttp.exchange(Services.AUDIT, "POST", "/audit/events"); }
+        }
+      src/main/kotlin/x/Cards.kt: |
+        fun f() {
+          bankHttp.exchange(Services.AUDIT, "get", "/audit/cards")
+        }
+      web/src/api.ts: |
+        export const g = () => bank.exchange(Services.AUDIT, 'DELETE', '/audit/x');
+    expect:
+      - kind: Unresolved
+        id: dialect-test.http-call.audit.java-3
+        raw: POST https://audit.example.internal/audit/events
+      - kind: Unresolved
+        id: dialect-test.http-call.cards.kt-2
+        raw: GET https://audit.example.internal/audit/cards
+      - kind: Unresolved
+        id: dialect-test.http-call.api.ts-1
+        raw: DELETE https://audit.example.internal/audit/x

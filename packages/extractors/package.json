@@ -24,6 +24,8 @@
   "dependencies": {
     "@maycombhq/core": "workspace:*",
     "@maycombhq/sdk": "workspace:*",
+    "tree-sitter-wasms": "0.1.13",
+    "web-tree-sitter": "0.22.6",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
   }

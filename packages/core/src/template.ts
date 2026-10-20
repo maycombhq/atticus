@@ -14,6 +14,7 @@ import { normalizePath } from "./identity.js";
  *   "${node.key}" "${node.up.url}"        the structure around a jsonPath, xpath or hclBlock
  *                                        match: its key, a field of the object above (ADR 0058)
  *   "${lookup:servers(attr.name).host}"  a value from a dialect lookup table, by key (ADR 0058)
+ *   "${capture.path}"                    a capture of a syntax match's query (ADR 0060)
  *   "${system}" "${field}" "${kind}"     subject of a checklist need (questions only)
  *
  * Filters follow a pipe: "${attr.method | upper}", "${attr.path | normalizePath}",
@@ -39,6 +40,8 @@ export type TemplateSource =
   | { type: "yaml"; file: string; key: string }
   | { type: "member" | "class" | "file" | "repo"; name: string }
   | { type: "match"; group: number }
+  /** A capture of a `syntax` match's tree-sitter query (ADR 0060). */
+  | { type: "capture"; name: string }
   /** The matched node's key (name "key"), or a field of an object `up` levels above it. */
   | { type: "node"; up: number; name: string }
   /** A row of a dialect lookup table, by the value of `key`. */
@@ -110,6 +113,8 @@ function parseSource(raw: string, template: string): TemplateSource {
       fail("expected node.key, node.up.<field> or node.up.key");
     return { type: "node", up, name: name[0]! };
   }
+  if (head === "capture" && rest.length === 1 && IDENT.test(rest[0]!))
+    return { type: "capture", name: rest[0]! };
   if (head === "match" && rest.length === 1 && /^\d+$/.test(rest[0]!))
     return { type: "match", group: Number(rest[0]) };
   if (head && head in BUILTIN && rest.length === 1 && BUILTIN[head]!.includes(rest[0]!)) {

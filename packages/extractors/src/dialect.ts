@@ -26,6 +26,7 @@ import {
 import { flattenProperties, flattenYaml, relaxedKey, type ConfigValue } from "./lang/config.js";
 import { parseJava, type Annotation, type Decl, type JavaFile } from "./lang/java.js";
 import { parseXml, type XmlElement } from "./lang/xml.js";
+import { querySyntax, syntaxLanguageOf } from "./lang/syntax.js";
 import { isRef, parseHcl, type HclBlock, type HclValue } from "./platform/hcl.js";
 import { loadTerraform, resolve as tfResolve, type TfModule } from "./platform/terraform.js";
 import { dirOf } from "./platform/util.js";
@@ -62,6 +63,8 @@ interface Place {
   /** Annotations on the enclosing type (or the type itself for class-level matches). */
   typeAnnotations: Annotation[];
   match: string[];
+  /** A syntax match's captures (ADR 0060). */
+  captures?: Record<string, string>;
   /** Around a jsonPath, xpath or hclBlock match (ADR 0058): its key, and the objects above it. */
   node?: { key: string; ups: { key: string; fields: Record<string, string> }[] };
 }
@@ -365,6 +368,18 @@ async function places(
       };
       hcl.blocks.forEach(visit);
       void ctx;
+    } else if (type === "syntax" && "syntax" in m) {
+      const lang = m.language ?? syntaxLanguageOf(path);
+      if (!lang) continue;
+      for (const hit of await querySyntax(lang, await repo.readText(path), m.syntax))
+        out.push({
+          path,
+          line: hit.line,
+          attrs: {},
+          typeAnnotations: [],
+          match: [],
+          captures: Object.fromEntries(Object.entries(hit.captures).map(([k, v]) => [k, v.value])),
+        });
     } else if (type === "regex" && "regex" in m) {
       const text = await repo.readText(path);
       for (const g of text.matchAll(new RegExp(m.regex, "gm"))) {
@@ -527,6 +542,8 @@ export function dialectExtractor(
               return repo.name;
             case "match":
               return place.match[s.group];
+            case "capture":
+              return place.captures?.[s.name];
             case "node": {
               if (!place.node) return undefined;
               if (s.up === 0) return place.node.key;

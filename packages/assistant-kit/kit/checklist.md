@@ -13,6 +13,7 @@ Go through every line. Each one is a mistake that has made a dialect fail.
 - [ ] One rule per framework construct; every rule has a one-sentence `description` saying what the construct means.
 - [ ] No rule contains a value from a particular repo: app names, service names, topics, queues, paths, hosts, config values. They all come from templates (`${attr...}`, `${yaml:...}`, `${annotation...}`, `${match...}`, `${config:...}`).
 - [ ] `files` globs read production code only (for example `src/main/java/**/*.java`, not `**/*.java`, when tests live in `src/test`).
+- [ ] Code is read with `syntax` queries written against `atticus dialect tree` output, never `regex`.
 - [ ] Every `annotation` match has the right `target` (`method`, `class`, `field`).
 - [ ] A value that lives in another file (a server's host, a base path elsewhere in a bundle) comes from a `lookups` table, not from a value written into the rule.
 - [ ] A rule that should apply only to some matches says so with `where` (a module's `source`, an attribute's value) or `receiverType`, not with a repo's file names.

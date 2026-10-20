@@ -42,6 +42,7 @@ describe("exportKit", () => {
       "checklist.md",
       "cli.md",
       "dialect.schema.json",
+      "examples/house-http-client.yaml",
       "examples/tide-apigee.yaml",
       "examples/tide-apim.yaml",
       "examples/tide-kong.yaml",
@@ -72,7 +73,7 @@ describe("exportKit", () => {
     const out = await mkdtemp(join(tmpdir(), "atticus-kit-"));
     await exportKit(out);
     const again = await exportKit(out);
-    expect(again).toHaveLength(11);
+    expect(again).toHaveLength(12);
   });
 });
 
@@ -87,6 +88,7 @@ describe("the kit's content", () => {
       "xpath",
       "jsonPath",
       "hclBlock",
+      "syntax",
       "regex",
     ])
       expect(ref).toContain(`\`${m}\``);
@@ -103,6 +105,7 @@ describe("the kit's content", () => {
       "${match.",
       "${node.",
       "${lookup:",
+      "${capture.",
     ])
       expect(ref).toContain(t);
     for (const f of TEMPLATE_FILTERS) expect(ref).toContain(`\`${f}`);
@@ -153,6 +156,17 @@ describe("the kit's content", () => {
     ).repos.flatMap((r) => r.records.map((x) => x.id));
     for (const { f, text } of await allDocs()) {
       for (const n of [...names, ...ids]) expect(text, `${f} mentions ${n}`).not.toContain(n);
+    }
+  });
+});
+
+describe("the kit's worked examples", () => {
+  it("each pass their own tests", async () => {
+    const { readdirSync } = await import("node:fs");
+    const dir = join(KIT_DIR, "examples");
+    for (const f of readdirSync(dir)) {
+      const d = Dialect.parse(parse(readFileSync(join(dir, f), "utf8")));
+      expect(await runDialectTests(d, dir), f).toEqual([]);
     }
   });
 });
