@@ -128,7 +128,7 @@ async function* springAndQuartz(repo: RepoHandle, ctx: ScanContext): AsyncGenera
     if (/(^|\/)src\/test\//.test(path)) continue;
     const src = await readOrWarn(repo, ctx, path);
     if (src === undefined || !/@Scheduled|cronSchedule|setCronExpression/.test(src)) continue;
-    const file = await parseJava(src, path);
+    const file = await parseJava(src, path, repo.parseCache);
 
     // Spring @Scheduled on methods.
     for (const d of file.decls) {

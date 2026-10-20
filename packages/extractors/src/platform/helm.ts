@@ -9,6 +9,7 @@ import {
 } from "./gotemplate.js";
 import { arr, at, dirOf, isObj, slug, str, type Obj } from "./util.js";
 import { readYamlDocs, type PathSeg, type YamlDoc } from "./yamldoc.js";
+import type { ParseCache } from "@maycombhq/sdk";
 
 /**
  * Helm charts read without running Helm (ADR 0064). For each chart (a folder with Chart.yaml
@@ -127,7 +128,12 @@ function registerPaths(v: unknown, path: PathSeg[], into: WeakMap<object, PathSe
   }
 }
 
-export async function renderCharts(paths: readonly string[], read: ReadText): Promise<HelmResult> {
+export async function renderCharts(
+  paths: readonly string[],
+  read: ReadText,
+  /** The repo scan's parse cache (ADR 0067): values files and charts parsed once. */
+  cache?: ParseCache,
+): Promise<HelmResult> {
   const result: HelmResult = { rendered: [], warnings: [], chartFiles: new Set() };
   const all = new Set(paths);
   const chartDirs = paths
@@ -143,7 +149,7 @@ export async function renderCharts(paths: readonly string[], read: ReadText): Pr
   const yamlOf = async (file: string): Promise<YamlDoc | undefined> => {
     if (!yamlCache.has(file)) {
       const text = await read(file);
-      const docs = text === undefined ? undefined : readYamlDocs(text);
+      const docs = text === undefined ? undefined : readYamlDocs(text, { cache, path: file });
       if (text !== undefined && !docs)
         result.warnings.push({
           message: "Could not read this file as YAML; skipped it.",

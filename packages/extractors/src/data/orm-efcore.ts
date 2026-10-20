@@ -14,6 +14,7 @@ import {
   type CodeCall,
   type Node,
 } from "../lang/code-tree.js";
+import { at } from "../lang/parsed.js";
 import { isTestOrBuildPath } from "./common.js";
 import type { OrmColumn, OrmModel, OrmTable, Where } from "./orm-model.js";
 
@@ -274,57 +275,67 @@ export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
   for (const [path, text] of texts) {
     // Only files that name EF's types can declare a context or a configuration.
     if (!text.includes("DbContext") && !text.includes("IEntityTypeConfiguration")) continue;
-    await withTree("c_sharp", text, (root) => {
-      const fluentTable = (entity: string, table: string | undefined) => {
-        if (table && !fluent.has(entity)) fluent.set(entity, table);
-      };
-      for (const n of descendants(root)) {
-        if (n.type === "class_declaration") {
-          const bases = basesOf(n);
-          const first = bases[0];
-          const nameNode = n.childForFieldName("name");
-          if (first && nameNode && /^(Identity)?DbContext$/.test(baseName(first) ?? ""))
-            storeAt ??= { path, line: lineOf(nameNode) };
-          for (const b of bases)
-            if (baseName(b) === "IEntityTypeConfiguration")
-              for (const entity of baseTypeArgs(b)) {
-                configured.add(entity);
-                fluentTable(entity, toTableIn(n.childForFieldName("body") ?? undefined));
-              }
-        } else if (n.type === "property_declaration" || n.type === "variable_declaration") {
-          const type = n.childForFieldName("type");
-          const name =
-            n.type === "property_declaration"
-              ? n.childForFieldName("name")
-              : kids(n)
-                  .find((c) => c.type === "variable_declarator")
-                  ?.childForFieldName("name");
-          if (type?.type === "generic_name" && baseName(type) === "DbSet" && name) {
-            const entity = baseTypeArgs(type)[0];
-            if (entity && !sets.has(entity)) sets.set(entity, name.text);
+    await withTree(
+      "c_sharp",
+      text,
+      (root) => {
+        const fluentTable = (entity: string, table: string | undefined) => {
+          if (table && !fluent.has(entity)) fluent.set(entity, table);
+        };
+        for (const n of descendants(root)) {
+          if (n.type === "class_declaration") {
+            const bases = basesOf(n);
+            const first = bases[0];
+            const nameNode = n.childForFieldName("name");
+            if (first && nameNode && /^(Identity)?DbContext$/.test(baseName(first) ?? ""))
+              storeAt ??= { path, line: lineOf(nameNode) };
+            for (const b of bases)
+              if (baseName(b) === "IEntityTypeConfiguration")
+                for (const entity of baseTypeArgs(b)) {
+                  configured.add(entity);
+                  fluentTable(entity, toTableIn(n.childForFieldName("body") ?? undefined));
+                }
+          } else if (n.type === "property_declaration" || n.type === "variable_declaration") {
+            const type = n.childForFieldName("type");
+            const name =
+              n.type === "property_declaration"
+                ? n.childForFieldName("name")
+                : kids(n)
+                    .find((c) => c.type === "variable_declarator")
+                    ?.childForFieldName("name");
+            if (type?.type === "generic_name" && baseName(type) === "DbSet" && name) {
+              const entity = baseTypeArgs(type)[0];
+              if (entity && !sets.has(entity)) sets.set(entity, name.text);
+            }
+          } else if (n.type === "invocation_expression") {
+            const c = callOf(n);
+            if (c?.name !== "Entity" || c.typeArgs.length !== 1) continue;
+            const entity = c.typeArgs[0]!.split(".").pop()!;
+            configured.add(entity);
+            // b => b.ToTable("x") in the call, else .ToTable("x") later in its chain.
+            let inArgs: string | undefined;
+            for (const a of c.args) inArgs ??= toTableIn(a);
+            fluentTable(entity, inArgs ?? toTableInChain(c));
           }
-        } else if (n.type === "invocation_expression") {
-          const c = callOf(n);
-          if (c?.name !== "Entity" || c.typeArgs.length !== 1) continue;
-          const entity = c.typeArgs[0]!.split(".").pop()!;
-          configured.add(entity);
-          // b => b.ToTable("x") in the call, else .ToTable("x") later in its chain.
-          let inArgs: string | undefined;
-          for (const a of c.args) inArgs ??= toTableIn(a);
-          fluentTable(entity, inArgs ?? toTableInChain(c));
         }
-      }
-    });
+      },
+      at(repo, path),
+    );
   }
-  for (const text of texts.values()) {
+  for (const [path, text] of texts) {
     if (!/\.Use(Npgsql|SqlServer|MySql|MySQL|Sqlite|Oracle|Cosmos)\b/.test(text)) continue;
-    const engine = await withTree("c_sharp", text, (root) => {
-      for (const c of callsIn(root)) {
-        const m = /^Use(Npgsql|SqlServer|MySql|MySQL|Sqlite|Oracle|Cosmos)$/.exec(c.name);
-        if (m && c.receiver) return ENGINES[m[1]!];
-      }
-      return undefined;
-    });
+    const engine = await withTree(
+      "c_sharp",
+      text,
+      (root) => {
+        for (const c of callsIn(root)) {
+          const m = /^Use(Npgsql|SqlServer|MySql|MySQL|Sqlite|Oracle|Cosmos)$/.exec(c.name);
+          if (m && c.receiver) return ENGINES[m[1]!];
+        }
+        return undefined;
+      },
+      at(repo, path),
+    );
     if (engine) {
       storeType = engine;
       break;
@@ -337,7 +348,7 @@ export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
   const enums = new Set<string>();
   for (const [path, text] of texts) {
     if (![...wanted].some((w) => text.includes(w))) continue;
-    const r = await withTree("c_sharp", text, (root) => readCsClasses(root, path));
+    const r = await withTree("c_sharp", text, (root) => readCsClasses(root, path), at(repo, path));
     for (const c of r.classes) if (!classes.has(c.name)) classes.set(c.name, c);
     for (const e of r.enums) enums.add(e);
   }

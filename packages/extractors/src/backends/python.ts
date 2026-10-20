@@ -119,7 +119,12 @@ export const pythonExtractor = defineExtractor({
       files.get(file)?.ev.lookup(name, at);
 
     for (const path of paths) {
-      const src = await SourceFile.parse(path, await repo.readText(path), "python");
+      const src = await SourceFile.parse(
+        path,
+        await repo.readText(path),
+        "python",
+        repo.parseCache,
+      );
       const imports = readImports(src);
       const pf: PyFile = {
         src,

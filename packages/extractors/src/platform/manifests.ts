@@ -93,8 +93,8 @@ export async function loadManifests(
   };
   let skip = new Set<string>();
   if (options.rendered) {
-    const helm = await renderCharts(files, read);
-    const kust = await buildKustomizations(files, read);
+    const helm = await renderCharts(files, read, repo.parseCache);
+    const kust = await buildKustomizations(files, read, repo.parseCache);
     for (const w of [...helm.warnings, ...kust.warnings]) ctx.warn(w.message, w.path);
     skip = new Set([...helm.chartFiles, ...kust.consumed]);
     for (const r of helm.rendered) {
@@ -140,7 +140,7 @@ export async function loadManifests(
     if (skip.has(file) || file.endsWith(".tpl")) continue;
     const text = await read(file);
     if (text === undefined || !relevant.test(text) || GO_TEMPLATE.test(text)) continue;
-    const docs = readYamlDocs(text);
+    const docs = readYamlDocs(text, { cache: repo.parseCache, path: file });
     if (!docs) {
       ctx.warn(MALFORMED_YAML, file);
       continue;

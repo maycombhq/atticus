@@ -118,18 +118,21 @@ export const serverlessExtractor = defineExtractor({
         if (doc) cloudFormation(doc, path, fns, triggers);
         else ctx.warn("Could not read this file as YAML; skipped it.", path);
       } else if (/^serverless\.ya?ml$/.test(name) && /^functions\s*:/m.test(text)) {
-        const doc = readYamlDocs(text)?.[0];
+        const doc = readYamlDocs(text, { cache: repo.parseCache, path })?.[0];
         if (doc) serverlessFramework(doc, path, fns, triggers);
         else ctx.warn("Could not read this file as YAML; skipped it.", path);
       } else if (name === "function.json" && /Trigger"/.test(text)) {
-        const doc = readYamlDocs(text)?.[0];
+        const doc = readYamlDocs(text, { cache: repo.parseCache, path })?.[0];
         if (doc) azureFunctionJson(doc, path, fns, triggers);
       }
     }
     for (const path of await sources(repo, CS)) {
       const text = await read(repo, ctx, path);
       if (text !== undefined && /\[Function\s*\(/.test(text))
-        await withTree("c_sharp", text, (root) => azureIsolated(root, path, fns, triggers));
+        await withTree("c_sharp", text, (root) => azureIsolated(root, path, fns, triggers), {
+          cache: repo.parseCache,
+          path,
+        });
     }
 
     // The repo's function app.
@@ -252,20 +255,24 @@ async function* handlerEvents(
       const lang = syntaxLanguageOf(path);
       if (text === undefined || !lang || !/kafka/i.test(text)) continue;
       const python = lang === "python";
-      const topics = await withTree(lang, text, (root) =>
-        callsIn(root).flatMap((c) => {
-          if (!c.receiver) return [];
-          // Python producer.send("x", ...) / .produce(topic="x"); kafkajs producer.send({ topic: "x" }).
-          const node = python
-            ? c.name === "send" || c.name === "produce"
-              ? (c.args[0] ?? c.kwargs.get("topic"))
-              : undefined
-            : c.name === "send"
-              ? objectProperty(c.args[0], "topic")
-              : undefined;
-          const topic = stringValue(node, !python);
-          return node && topic && /^\S+$/.test(topic) ? [{ topic, line: lineOf(node) }] : [];
-        }),
+      const topics = await withTree(
+        lang,
+        text,
+        (root) =>
+          callsIn(root).flatMap((c) => {
+            if (!c.receiver) return [];
+            // Python producer.send("x", ...) / .produce(topic="x"); kafkajs producer.send({ topic: "x" }).
+            const node = python
+              ? c.name === "send" || c.name === "produce"
+                ? (c.args[0] ?? c.kwargs.get("topic"))
+                : undefined
+              : c.name === "send"
+                ? objectProperty(c.args[0], "topic")
+                : undefined;
+            const topic = stringValue(node, !python);
+            return node && topic && /^\S+$/.test(topic) ? [{ topic, line: lineOf(node) }] : [];
+          }),
+        { cache: repo.parseCache, path },
       );
       for (const { topic, line } of topics) {
         const key = `${topic}|${path}|${line}`;

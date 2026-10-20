@@ -5,6 +5,7 @@
  * strings as written ("a-${var.env}"); callers resolve what they need. It never evaluates
  * anything and never fails: an unclosed block ends the read and is reported with its line.
  */
+import type { ParsedAt } from "../lang/parsed.js";
 
 export interface HclRef {
   /** A traversal such as `var.env` or `google_pubsub_topic.t.name`. */
@@ -359,7 +360,15 @@ class Parser {
   }
 }
 
-export function parseHcl(text: string): HclFile {
+/**
+ * Read an HCL file. With the repo scan's parse cache (ADR 0067) it is read once for every reader
+ * (Terraform, dialect hclBlock rules, observability) and the same frozen result handed to each.
+ */
+export function parseHcl(text: string, at?: ParsedAt): HclFile {
+  return at?.cache ? at.cache.get("hcl", at.path, text, readHcl) : readHcl(text);
+}
+
+function readHcl(text: string): HclFile {
   const p = new Parser(text, tokenize(text));
   const { attrs, blocks } = p.body(false);
   return { attrs, blocks, ...(p.error ? { error: p.error } : {}) };

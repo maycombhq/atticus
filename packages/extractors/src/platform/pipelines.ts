@@ -1,5 +1,10 @@
 import type { CatalogRecord, FrameworkModel } from "@maycombhq/core";
-import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
+import {
+  defineExtractor,
+  type ParseCache,
+  type RepoHandle,
+  type ScanContext,
+} from "@maycombhq/sdk";
 import { componentOf, type Ev } from "../facts.js";
 import { MALFORMED_YAML, readYamlDocs, type PathSeg, type YamlDoc } from "./manifests.js";
 import { arr, at, dirOf, ev, isEnvWord, isObj, readOrWarn, slug, str, type Obj } from "./util.js";
@@ -174,7 +179,7 @@ export const pipelinesExtractor = defineExtractor({
     for await (const path of repo.listFiles(JENKINS)) {
       const text = await readOrWarn(repo, ctx, path);
       if (text === undefined) continue;
-      const f = await jenkinsPipeline(path, text, models);
+      const f = await jenkinsPipeline(path, text, models, repo.parseCache);
       if (f) yield* emit("jenkins", path, path.split("/").pop() ?? path, f);
     }
   },
@@ -187,7 +192,7 @@ async function readDoc(
 ): Promise<YamlDoc | undefined> {
   const text = await readOrWarn(repo, ctx, path);
   if (text === undefined) return undefined;
-  const docs = readYamlDocs(text);
+  const docs = readYamlDocs(text, { cache: repo.parseCache, path });
   if (!docs) {
     ctx.warn(MALFORMED_YAML, path);
     return undefined;
@@ -429,7 +434,7 @@ async function azureTemplate(ref: string, passed: unknown, c: AzCtx, f: Facts) {
     c.ctx.warn(`Template ${ref} was not found; skipped it.`, c.file);
     return;
   }
-  const doc = readYamlDocs(text)?.[0];
+  const doc = readYamlDocs(text, { cache: c.repo.parseCache, path })?.[0];
   if (!doc || !isObj(doc.value)) {
     c.ctx.warn(MALFORMED_YAML, path);
     return;
@@ -590,7 +595,7 @@ async function gitlabPipeline(
       ctx.warn(`Include ${local} was not found; skipped it.`, path);
       continue;
     }
-    const doc = readYamlDocs(text)?.[0];
+    const doc = readYamlDocs(text, { cache: repo.parseCache, path: p })?.[0];
     if (!doc) {
       ctx.warn(MALFORMED_YAML, p);
       continue;
@@ -654,8 +659,9 @@ async function jenkinsPipeline(
   path: string,
   raw: string,
   models: readonly FrameworkModel[] = [],
+  cache?: ParseCache,
 ): Promise<Facts | undefined> {
-  const calls = await groovyCalls(raw);
+  const calls = await groovyCalls(raw, { cache, path });
   // A shared-library step a pipeline model names (ADR 0062): deployToProd(app: 'cards').
   const steps = models.flatMap((m) =>
     m.pipeline.flatMap((e) => (e.step ? [{ m, e, step: e.step }] : [])),

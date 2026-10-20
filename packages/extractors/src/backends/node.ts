@@ -262,7 +262,7 @@ export const nodeExtractor = defineExtractor({
     );
     const files = new Map<string, NodeFile>();
     for (const path of paths) {
-      const src = await SourceFile.parse(path, await repo.readText(path), "js");
+      const src = await SourceFile.parse(path, await repo.readText(path), "js", repo.parseCache);
       const envOf = (key: string) => env.get(key)?.value ?? unresolved(key);
       const ev = new Evaluator(src, {
         name: (dotted) => (dotted.startsWith("process.env.") ? envOf(dotted.slice(12)) : undefined),

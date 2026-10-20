@@ -206,7 +206,8 @@ export const mlExtractor = defineExtractor({
     let offline: string | undefined;
     for (const path of await sources(repo, FEAST)) {
       const text = await read(repo, ctx, path);
-      const doc = text !== undefined ? readYamlDocs(text)?.[0] : undefined;
+      const doc =
+        text !== undefined ? readYamlDocs(text, { cache: repo.parseCache, path })?.[0] : undefined;
       const project = str(at(doc?.value, "project"));
       if (!doc || !project) continue;
       // The feature store is its online store when that names a host (the cache cluster Terraform
@@ -234,35 +235,40 @@ export const mlExtractor = defineExtractor({
     for (const path of await sources(repo, PY)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !/\bfeast\b/.test(text)) continue;
-      const found = await withTree("python", text, (root) => {
-        const views: { name: string; line: number }[] = [];
-        const sourcesRead: { table: string; line: number }[] = [];
-        const reads: { view: string; line: number }[] = [];
-        const kw = (c: CodeCall, k: string) => {
-          const v = c.kwargs.get(k);
-          const s = stringValue(v);
-          return v && s !== undefined ? { value: s, line: lineOf(v.parent ?? v) } : undefined;
-        };
-        for (const c of callsIn(root)) {
-          const name = c.name === "FeatureView" ? kw(c, "name") : undefined;
-          if (name && /^[\w-]+$/.test(name.value))
-            views.push({ name: name.value, line: name.line });
-          const table = c.name === "RedshiftSource" ? kw(c, "table") : undefined;
-          if (table && /^[\w.]+$/.test(table.value))
-            sourcesRead.push({ table: table.value, line: table.line });
-          if (/^get_(online|historical)_features$/.test(c.name)) {
-            const named = new Set<string>();
-            for (const a of [...c.args, ...c.kwargs.values()])
-              for (const n of descendants(a)) {
-                const v = stringValue(n);
-                const m = v !== undefined ? /^([\w-]+):[\w-]+$/.exec(v) : null;
-                if (m) named.add(m[1]!);
-              }
-            for (const view of named) reads.push({ view, line: c.line });
+      const found = await withTree(
+        "python",
+        text,
+        (root) => {
+          const views: { name: string; line: number }[] = [];
+          const sourcesRead: { table: string; line: number }[] = [];
+          const reads: { view: string; line: number }[] = [];
+          const kw = (c: CodeCall, k: string) => {
+            const v = c.kwargs.get(k);
+            const s = stringValue(v);
+            return v && s !== undefined ? { value: s, line: lineOf(v.parent ?? v) } : undefined;
+          };
+          for (const c of callsIn(root)) {
+            const name = c.name === "FeatureView" ? kw(c, "name") : undefined;
+            if (name && /^[\w-]+$/.test(name.value))
+              views.push({ name: name.value, line: name.line });
+            const table = c.name === "RedshiftSource" ? kw(c, "table") : undefined;
+            if (table && /^[\w.]+$/.test(table.value))
+              sourcesRead.push({ table: table.value, line: table.line });
+            if (/^get_(online|historical)_features$/.test(c.name)) {
+              const named = new Set<string>();
+              for (const a of [...c.args, ...c.kwargs.values()])
+                for (const n of descendants(a)) {
+                  const v = stringValue(n);
+                  const m = v !== undefined ? /^([\w-]+):[\w-]+$/.exec(v) : null;
+                  if (m) named.add(m[1]!);
+                }
+              for (const view of named) reads.push({ view, line: c.line });
+            }
           }
-        }
-        return { views, sourcesRead, reads };
-      });
+          return { views, sourcesRead, reads };
+        },
+        { cache: repo.parseCache, path },
+      );
       // The name argument defines the view, whatever line `FeatureView(` is on.
       if (store)
         for (const v of found.views)

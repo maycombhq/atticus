@@ -1,4 +1,6 @@
-import { isMap, isScalar, isSeq, LineCounter, parseAllDocuments, type Node } from "yaml";
+import type { ParseCache } from "@maycombhq/sdk";
+import { isMap, isScalar, isSeq, type Node } from "yaml";
+import { parseYamlStream } from "./yaml.js";
 
 /** One flattened configuration value with where it came from. */
 export interface ConfigValue {
@@ -14,15 +16,27 @@ export interface ConfigValue {
 export function flattenYamlDocuments(
   text: string,
   file: string,
+  /** The repo scan's parse cache (ADR 0067), with `file` the file's path: flattened once. */
+  cache?: ParseCache,
 ): { profile?: string; values: Map<string, ConfigValue> }[] {
-  const lc = new LineCounter();
-  let docs;
+  return cache
+    ? cache.get("yaml-flat", file, text, (t) => flattenDocs(t, file, cache))
+    : flattenDocs(text, file);
+}
+
+function flattenDocs(
+  text: string,
+  file: string,
+  cache?: ParseCache,
+): { profile?: string; values: Map<string, ConfigValue> }[] {
+  let stream;
   try {
-    docs = parseAllDocuments(text, { lineCounter: lc, keepSourceTokens: false, uniqueKeys: false });
+    stream = parseYamlStream(text, { cache, path: file });
   } catch {
     return [];
   }
-  if (!Array.isArray(docs)) return [];
+  const { docs, lc } = stream;
+  if (!docs) return [];
   const lineOf = (n: Node | null | undefined) => (n?.range ? lc.linePos(n.range[0]).line : 1);
   return docs.map((doc) => {
     const out = new Map<string, ConfigValue>();
@@ -55,15 +69,44 @@ export function flattenYamlDocuments(
  * Sequences are indexed: "spring.kafka.topics[0]". Only documents that belong to no profile
  * (flattenYamlDocuments has the others).
  */
-export function flattenYaml(text: string, file: string): Map<string, ConfigValue> {
-  const out = new Map<string, ConfigValue>();
-  for (const d of flattenYamlDocuments(text, file))
-    if (!d.profile) for (const [k, v] of d.values) if (!out.has(k)) out.set(k, v);
-  return out;
+export function flattenYaml(
+  text: string,
+  file: string,
+  /** The repo scan's parse cache (ADR 0067): the same frozen Map for every reader. */
+  cache?: ParseCache,
+): Map<string, ConfigValue> {
+  const flatten = (t: string) => {
+    const out = new Map<string, ConfigValue>();
+    for (const d of flattenYamlDocuments(t, file, cache))
+      if (!d.profile) for (const [k, v] of d.values) if (!out.has(k)) out.set(k, v);
+    return out;
+  };
+  return cache ? cache.get("yaml-config", file, text, flatten) : flatten(text);
+}
+
+/** A configuration file flattened: .properties as properties, anything else as YAML. */
+export function flattenConfig(
+  text: string,
+  file: string,
+  cache?: ParseCache,
+): Map<string, ConfigValue> {
+  return file.endsWith(".properties")
+    ? flattenProperties(text, file, cache)
+    : flattenYaml(text, file, cache);
 }
 
 /** Flatten a .properties file. */
-export function flattenProperties(text: string, file: string): Map<string, ConfigValue> {
+export function flattenProperties(
+  text: string,
+  file: string,
+  cache?: ParseCache,
+): Map<string, ConfigValue> {
+  return cache
+    ? cache.get("properties", file, text, (t) => flattenProps(t, file))
+    : flattenProps(text, file);
+}
+
+function flattenProps(text: string, file: string): Map<string, ConfigValue> {
   const out = new Map<string, ConfigValue>();
   text.split(/\r?\n/).forEach((raw, i) => {
     const line = raw.trim();

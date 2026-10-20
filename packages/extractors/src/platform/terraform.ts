@@ -87,7 +87,7 @@ export async function loadTerraform(
       calls: [],
     };
     for (const file of list) {
-      const hcl = parseHcl(file.text);
+      const hcl = parseHcl(file.text, { cache: repo.parseCache, path: file.path });
       if (hcl.error && file.path.endsWith(".tf") && relevant.test(file.text))
         ctx.warn(
           `Read this file up to line ${hcl.error.line} only: the block there isn't closed.`,

@@ -165,7 +165,7 @@ export const goExtractor = defineExtractor({
 
     const paths = await listSources(repo, ["**/*.go"]);
     for (const path of paths) {
-      const src = await SourceFile.parse(path, await repo.readText(path), "go");
+      const src = await SourceFile.parse(path, await repo.readText(path), "go", repo.parseCache);
       const dir = dirOf(path);
       const pkg = packageNames.get(dir) ?? new Map<string, string>();
       packageNames.set(dir, pkg);

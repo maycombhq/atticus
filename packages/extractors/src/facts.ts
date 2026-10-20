@@ -171,11 +171,11 @@ async function configSources(
       out.push({
         file: f,
         ...(fileProfile ? { profile: fileProfile } : {}),
-        values: flattenProperties(text, f),
+        values: flattenProperties(text, f, repo.parseCache),
       });
       continue;
     }
-    for (const d of flattenYamlDocuments(text, f)) {
+    for (const d of flattenYamlDocuments(text, f, repo.parseCache)) {
       const profile = d.profile ?? fileProfile;
       out.push({ file: f, ...(profile ? { profile } : {}), values: d.values });
     }

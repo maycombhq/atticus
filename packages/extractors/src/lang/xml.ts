@@ -3,6 +3,8 @@
  * descriptors. It handles elements, attributes, text, comments, CDATA and the XML
  * declaration; it does not validate or expand entities beyond the five standard ones.
  */
+import type { ParsedAt } from "./parsed.js";
+
 export interface XmlElement {
   name: string;
   attrs: Record<string, string>;
@@ -20,7 +22,12 @@ const ENTITIES: Record<string, string> = {
 };
 const decode = (s: string) => s.replace(/&(lt|gt|amp|quot|apos);/g, (m) => ENTITIES[m]!);
 
-export function parseXml(src: string): XmlElement | undefined {
+/** Read an XML file; once per repo scan for every reader with its parse cache (ADR 0067). */
+export function parseXml(src: string, at?: ParsedAt): XmlElement | undefined {
+  return at?.cache ? at.cache.get("xml", at.path, src, readXml) : readXml(src);
+}
+
+function readXml(src: string): XmlElement | undefined {
   const root: XmlElement = { name: "#document", attrs: {}, children: [], text: "", line: 1 };
   const stack: XmlElement[] = [root];
   let i = 0;

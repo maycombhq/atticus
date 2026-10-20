@@ -89,7 +89,7 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 
 - Done: the model-provider plugin, `packages/model-providers` (ADR 0065): Anthropic, OpenAI-compatible endpoints (Azure OpenAI, internal gateways, vLLM) and AWS Bedrock, through a corporate proxy and custom CA. Not built: streaming, Vertex AI, AWS profiles and SSO, Azure managed identity; not yet called against a real endpoint.
 - Done: the onboarding loop for framework models (`atticus onboard framework`, ADR 0066): learner first, the assistant drafts the rest, deterministic checks, proposals and `onboard accept framework`; the scan names house frameworks with no model and models to re-draft; one framework case in the onboarding eval. Not built: a learner for pipeline templates and Jenkins libraries (the assistant drafts them), and tests for `services` and `pipeline` entries inside a model.
-- A shared parse cache: each file parsed once per repo scan, shared by every reader.
+- Done: a shared parse cache (ADR 0067): each file read and parsed once per repo scan, shared by every reader, frozen and bounded; on the M1 exit estate parses per file went from 2.9 to 1.0 and reads per file from 9.1 to 1.0.
 
 ## Later (skipped for now, not forgotten)
 
@@ -99,7 +99,7 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 - `docs/coverage.md`: what is read and done, partly, or not at all, per area, updated with every change.
 - A full `pnpm test` run after the in-progress work lands, and the spec, API and command docs regenerated.
 - Reading not built: Harness triggers, Tekton PipelineRuns and Triggers, Argo CD ApplicationSets, helmfile; Spinnaker, TeamCity, Bamboo, Octopus and CircleCI (onboarding can draft them); EKS, AKS and GKE clusters (C1 has no kind); from Terraform, Lambda triggers, API Gateway integrations, EventBridge rules, module outputs, `count` and `for_each`; manifest readers other than openshift and ingress reading built Helm and Kustomize objects; Kustomize remote bases.
-- Test stability: `packages/cli/test/frameworks-cli.test.ts` crashes its worker (exit 0x80000003) when another file runs beside it, and some test files crash or time out at 5 s under parallel load on a 7 GB machine; they pass alone. Find the native memory cause rather than re-running.
+- Test stability: the native memory cause of the worker crashes (exit 0x80000003) is found and fixed (ADR 0067): V8 tiering the tree-sitter grammars up to optimised code took up to 2.2 GB of transient memory per process, and a worker died where the machine didn't have it. Grammars now run as baseline code; the `packages/cli/test/frameworks-cli.test.ts` worker peaks at 184 MB instead of 2.6 GB, and it passes beside other files. Still to confirm: a full parallel `pnpm test` on the 7 GB machine, and whether the 5 s timeouts under load go too.
 
 ## How to work
 

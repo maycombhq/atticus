@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Shared parse cache
+
+- Each file is read and parsed once per repo scan and shared by every reader (ADR 0067): built-in extractors, dialects and their rules, the Helm and Kustomize builders, Terraform and the framework survey. Tree-sitter trees, JavaFiles, SourceFiles, YAML documents, flattened configuration, HCL, XML and Groovy calls are cached, keyed by path and content. Values are frozen, so a reader that changed one fails instead of changing another's; the cache is bounded (8M characters of plain values, 1M of syntax trees, 16M of file text, least recently used first out) and frees every tree when the repo's scan ends, on error too. The SDK's `RepoHandle` gains an optional `parseCache` (`createParseCache`, `withParseCache`); handles without one work as before. Records are byte-for-byte unchanged. On the M1 exit estate parses per file went from 2.9 to 1 and the first scan of 300 repos from 59 to 90 s to 32 to 41 s.
+- Tree-sitter grammars run as baseline WebAssembly code: V8 compiling them to optimised code took up to 2.2 GB of transient memory per process and killed test workers under load ("Fatal process out of memory: Zone", exit 0x80000003). The `frameworks-cli` test worker now peaks at 184 MB instead of 2.6 GB.
+
 ### Onboarding framework models
 
 - `atticus onboard framework <name> --from <source|jar|tgz> [--users <repo>,...]` (ADR 0066): the learner reads the house framework first, then your organisation's assistant drafts only what it couldn't (base URLs of service ids, wrapper methods whose parameters don't name the method or path, what pipeline templates and Jenkins shared-library steps do), with the framework kit as instructions and the code as data. Checks decide: valid C6, every entry with a source, nothing read from code changed by the draft, drafted entries citing a document or a person, its tests pass, and the repos that use it give something with it they don't without it and no invalid record. Failures go back to the next attempt (`--attempts`, default 3). A passing model is a proposal in `proposals/frameworks/`, listing what it reads per repo, which records came from drafted entries, and entries that change nothing. With AI off or `--no-ai`, the learned model alone is checked.
