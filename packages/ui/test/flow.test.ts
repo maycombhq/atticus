@@ -84,3 +84,89 @@ describe("flowLayout", () => {
     expect(l.edges.find((e) => e.id === "3")!.async).toBe(true);
   });
 });
+
+describe("graphView", () => {
+  it("draws a system with components as a group, a vendor as a node, and keeps every link", async () => {
+    const { graphView } = await import("../src/app/graph.js");
+    const v = graphView({
+      nodes: [
+        { id: "ledger", kind: "System", label: "Ledger", status: "current" },
+        { id: "northwind-pay", kind: "System", label: "Northwind Pay", status: "current" },
+        {
+          id: "ledger-api",
+          kind: "Component",
+          label: "ledger-api",
+          status: "current",
+          system: "ledger",
+        },
+        {
+          id: "ledger-core",
+          kind: "Component",
+          label: "ledger-core",
+          status: "current",
+          system: "ledger",
+        },
+      ],
+      edges: [
+        {
+          id: "u",
+          from: "ledger-api",
+          to: "ledger-core",
+          via: "uses",
+          confidence: "verified",
+          status: "current",
+        },
+        {
+          id: "c",
+          from: "ledger-api",
+          to: "northwind-pay",
+          via: "direct",
+          confidence: "verified",
+          status: "current",
+        },
+        {
+          id: "e",
+          from: "ledger-core",
+          to: "northwind-pay",
+          via: "event-bus",
+          confidence: "inferred",
+          status: "current",
+        },
+      ],
+    });
+    expect(v.groups.map((g) => g.id)).toEqual(["ledger"]);
+    expect(v.nodes.map((n) => `${n.id}:${n.kind}:${n.group ?? "-"}`)).toEqual([
+      "northwind-pay:system:-",
+      "ledger-api:component:ledger",
+      "ledger-core:component:ledger",
+    ]);
+    expect(v.edges.map((e) => `${e.from}>${e.to}:${e.label}:${e.async}`)).toEqual([
+      "ledger-api>ledger-core:uses:false",
+      "ledger-api>northwind-pay:direct:false",
+      "ledger-core>northwind-pay:event-bus:true",
+    ]);
+    expect(flowLayout(v).edges).toHaveLength(3);
+  });
+});
+
+describe("graphView with many calls between two boxes", () => {
+  it("draws them as one edge with their count", async () => {
+    const { graphView } = await import("../src/app/graph.js");
+    const call = (id: string) => ({
+      id,
+      from: "web",
+      to: "api",
+      via: "direct",
+      confidence: "verified",
+      status: "current",
+    });
+    const v = graphView({
+      nodes: [
+        { id: "web", kind: "Component", label: "web", status: "current" },
+        { id: "api", kind: "Component", label: "api", status: "current" },
+      ],
+      edges: [call("a"), call("b"), call("c")],
+    });
+    expect(v.edges.map((e) => e.label)).toEqual(["3 × direct"]);
+  });
+});

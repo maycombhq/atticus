@@ -181,9 +181,25 @@ export function flowLayout(v: FlowViewData): FlowLayout {
  * A catalog view drawn with its own groups, nodes and edges. Pointing at (or focusing) a node
  * lights its edges and names them; the Mermaid text beside it is the same view as text.
  */
-export function FlowCanvas({ view, height = 460 }: { view: FlowViewData; height?: number }) {
+export function FlowCanvas({
+  view,
+  height = 460,
+  selected,
+  highlight = [],
+  onPick,
+}: {
+  view: FlowViewData;
+  height?: number;
+  /** A node lit from the start (a focus), with its edges. */
+  selected?: string;
+  /** Nodes marked as found (search results, what a change reaches). */
+  highlight?: string[];
+  /** Called when a box is clicked, with its id. */
+  onPick?: (id: string) => void;
+}) {
   const l = useMemo(() => flowLayout(view), [view]);
-  const [hot, setHot] = useState<string | undefined>();
+  const [hot, setHot] = useState<string | undefined>(selected);
+  const marked = new Set(highlight);
   const lit = (e: { from: string; to: string }) =>
     hot !== undefined && (e.from === hot || e.to === hot);
   const label = (id: string) => view.nodes.find((n) => n.id === id)?.label ?? id;
@@ -278,7 +294,10 @@ export function FlowCanvas({ view, height = 460 }: { view: FlowViewData; height?
                 style={{ cursor: "pointer", outline: "none" }}
                 onMouseEnter={() => setHot(n.id)}
                 onFocus={() => setHot(n.id)}
-                onClick={() => setHot(on ? undefined : n.id)}
+                onClick={() => {
+                  setHot(on ? undefined : n.id);
+                  onPick?.(n.id);
+                }}
               >
                 <rect
                   x={b.x}
@@ -286,8 +305,16 @@ export function FlowCanvas({ view, height = 460 }: { view: FlowViewData; height?
                   width={b.w}
                   height={b.h}
                   rx={n.kind === "table" ? 3 : 6}
-                  fill={on ? "rgba(46,230,246,0.22)" : "#0B1016"}
-                  stroke={on ? "#7FF4FF" : n.kind === "table" ? "#3B8F99" : "#2EE6F6"}
+                  fill={
+                    on
+                      ? "rgba(46,230,246,0.22)"
+                      : marked.has(n.id)
+                        ? "rgba(46,230,246,0.12)"
+                        : "#0B1016"
+                  }
+                  stroke={
+                    on || marked.has(n.id) ? "#7FF4FF" : n.kind === "table" ? "#3B8F99" : "#2EE6F6"
+                  }
                   strokeWidth={on ? 1.6 : 1}
                 />
                 <text

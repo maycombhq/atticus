@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { FlowCanvas, type FlowViewData } from "./flow.js";
 
 export interface Graph {
   nodes: { id: string; kind: string; label: string; status: string; system?: string }[];
@@ -12,42 +13,56 @@ export interface Graph {
   }[];
 }
 
+const ASYNC = new Set(["event-bus", "pubsub", "mq"]);
+const KIND: Record<string, FlowViewData["nodes"][number]["kind"]> = {
+  System: "system",
+  Component: "component",
+  Table: "table",
+  Endpoint: "topic",
+};
+
 /**
- * A deterministic layout (the same catalog draws the same map): systems on a ring, their
- * components around them; a focus, when given, sits in the middle with its neighbours on a ring.
+ * The catalog graph (systems, components and the links between them) as a view the canvas
+ * draws: a system with components is a group around them, a system without is a node, and
+ * every link is an edge labelled with how it travels. The same catalog draws the same picture.
  */
-function layout(g: Graph, w: number, h: number, focus?: string) {
-  const pos = new Map<string, { x: number; y: number }>();
-  const cx = w / 2;
-  const cy = h / 2;
-  if (focus && g.nodes.some((n) => n.id === focus)) {
-    pos.set(focus, { x: cx, y: cy });
-    const others = g.nodes.filter((n) => n.id !== focus);
-    others.forEach((n, i) => {
-      const a = (i / Math.max(others.length, 1)) * Math.PI * 2 - Math.PI / 2;
-      pos.set(n.id, { x: cx + Math.cos(a) * w * 0.34, y: cy + Math.sin(a) * h * 0.38 });
-    });
-    return pos;
+export function graphView(g: Graph, title = "Map"): FlowViewData {
+  const members = new Set(g.nodes.map((n) => n.system).filter((s): s is string => !!s));
+  const groups = g.nodes
+    .filter((n) => n.kind === "System" && members.has(n.id))
+    .map((n) => ({ id: n.id, label: n.label || n.id, kind: "system" as const }));
+  const grouped = new Set(groups.map((x) => x.id));
+  const nodes = g.nodes
+    .filter((n) => !grouped.has(n.id))
+    .map((n) => ({
+      id: n.id,
+      label: n.label || n.id,
+      kind: KIND[n.kind] ?? ("box" as const),
+      ...(n.system && grouped.has(n.system) ? { group: n.system } : {}),
+    }));
+  // Links between the same two boxes the same way are one edge with their count.
+  const merged = new Map<
+    string,
+    { id: string; from: string; to: string; via: string; n: number }
+  >();
+  for (const e of g.edges) {
+    if (grouped.has(e.from) || grouped.has(e.to)) continue;
+    const key = `${e.from}\u0000${e.to}\u0000${e.via}`;
+    const m = merged.get(key);
+    if (m) m.n++;
+    else merged.set(key, { id: e.id, from: e.from, to: e.to, via: e.via, n: 1 });
   }
-  const systems = [...new Set(g.nodes.map((n) => n.system ?? n.id))].sort();
-  systems.forEach((s, i) => {
-    const a = (i / Math.max(systems.length, 1)) * Math.PI * 2 - Math.PI / 2;
-    const sx = cx + Math.cos(a) * (w * 0.33);
-    const sy = cy + Math.sin(a) * (h * 0.33);
-    const members = g.nodes.filter((n) => (n.system ?? n.id) === s);
-    // The system sits in the middle of its cluster, its components on a ring around it.
-    const centre = members.find((n) => n.kind === "System");
-    if (centre) pos.set(centre.id, { x: sx, y: sy });
-    const ring = members.filter((n) => n !== centre);
-    ring.forEach((n, j) => {
-      const b = (j / Math.max(ring.length, 1)) * Math.PI * 2 - Math.PI / 2;
-      const r = ring.length > 1 || centre ? 34 + ring.length * 4 : 0;
-      pos.set(n.id, { x: sx + Math.cos(b) * r, y: sy + Math.sin(b) * r * 0.75 });
-    });
-  });
-  return pos;
+  const edges = [...merged.values()].map((e) => ({
+    id: e.id,
+    from: e.from,
+    to: e.to,
+    label: e.n > 1 ? `${e.n} × ${e.via}` : e.via,
+    async: ASYNC.has(e.via),
+  }));
+  return { type: "context", title, groups, nodes, edges };
 }
 
+/** The catalog graph on the canvas, lit at a focus and marking what a search or change found. */
 export function GraphView({
   g,
   focus,
@@ -61,135 +76,15 @@ export function GraphView({
   onPick?: (id: string) => void;
   height?: number;
 }) {
-  const W = 820;
-  const H = height;
-  const pos = useMemo(() => layout(g, W, H, focus), [g, H, focus]);
-  const hot = new Set([...(focus ? [focus] : []), ...highlight]);
-  const halos =
-    focus && g.nodes.some((n) => n.id === focus)
-      ? []
-      : g.nodes
-          .filter(
-            (n) => n.kind === "System" && g.nodes.some((m) => m.system === n.id && m.id !== n.id),
-          )
-          .map((n) => {
-            const c = pos.get(n.id)!;
-            const ms = g.nodes.filter((m) => m.system === n.id).map((m) => pos.get(m.id)!);
-            const r = Math.max(28, ...ms.map((m) => Math.hypot(m.x - c.x, m.y - c.y))) + 22;
-            return { id: n.id, x: c.x, y: c.y, r };
-          });
-  const labelled = new Set(
-    g.nodes
-      .filter((n) => hot.has(n.id) || n.kind === "Component" || g.nodes.length < 30)
-      .map((n) => n.id),
-  );
+  const view = useMemo(() => graphView(g), [g]);
   return (
-    <svg
-      role="img"
-      aria-label={`Graph: ${g.nodes.length} systems and components, ${g.edges.length} interfaces${focus ? `, centred on ${focus}` : ""}.`}
-      viewBox={`0 0 ${W} ${H}`}
-      style={{ width: "100%", height: "100%", minHeight: Math.min(H, 360), display: "block" }}
-    >
-      <defs>
-        <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2.2" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-      </defs>
-      {halos.map((h) => (
-        <circle
-          key={`halo-${h.id}`}
-          cx={h.x}
-          cy={h.y}
-          r={h.r}
-          fill="rgba(46,230,246,0.03)"
-          stroke="#2EE6F6"
-          strokeOpacity={0.18}
-          strokeDasharray="2 5"
-        />
-      ))}
-      <g strokeWidth={0.9}>
-        {g.edges.map((e) => {
-          const a = pos.get(e.from);
-          const b = pos.get(e.to);
-          if (!a || !b) return null;
-          const lit = hot.has(e.from) || hot.has(e.to);
-          return (
-            <line
-              key={e.id}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              stroke={lit ? "#7FF4FF" : "#2EE6F6"}
-              opacity={lit ? 0.95 : 0.35}
-              strokeDasharray={e.confidence !== "verified" ? "4 4" : undefined}
-              filter={lit ? "url(#glow)" : undefined}
-            />
-          );
-        })}
-      </g>
-      {g.nodes.map((n) => {
-        const p = pos.get(n.id);
-        if (!p) return null;
-        const lit = hot.has(n.id);
-        return (
-          <g key={n.id}>
-            <circle
-              cx={p.x}
-              cy={p.y}
-              r={lit ? 6 : n.kind === "System" ? 4 : 2.6}
-              fill={lit ? "#2EE6F6" : "#BFFAFF"}
-              filter="url(#glow)"
-            />
-            {onPick && (
-              <circle
-                cx={p.x}
-                cy={p.y}
-                r={12}
-                fill="transparent"
-                style={{ cursor: "pointer" }}
-                onClick={() => onPick(n.id)}
-                aria-hidden="true"
-              />
-            )}
-            {(() => {
-              const h = halos.find((x) => x.id === n.id);
-              if (h)
-                return (
-                  <text
-                    x={h.x}
-                    y={h.y + h.r + 13}
-                    textAnchor="middle"
-                    fontFamily="Rajdhani, sans-serif"
-                    fontWeight={700}
-                    fontSize={11}
-                    letterSpacing="0.18em"
-                    fill={lit ? "#7FF4FF" : "#5FD8E6"}
-                  >
-                    {n.label.toUpperCase()}
-                  </text>
-                );
-              if (!labelled.has(n.id)) return null;
-              return (
-                <text
-                  x={p.x > W * 0.62 ? p.x - 8 : p.x + 8}
-                  y={p.y - 7}
-                  textAnchor={p.x > W * 0.62 ? "end" : "start"}
-                  fontFamily="JetBrains Mono, monospace"
-                  fontSize={lit ? 12 : 10.5}
-                  fill={lit ? "#E9F6FA" : "#BFEFF7"}
-                >
-                  {n.label}
-                </text>
-              );
-            })()}
-          </g>
-        );
-      })}
-    </svg>
+    <FlowCanvas
+      key={focus ?? ""}
+      view={view}
+      height={height}
+      {...(focus ? { selected: focus } : {})}
+      highlight={highlight}
+      {...(onPick ? { onPick } : {})}
+    />
   );
 }

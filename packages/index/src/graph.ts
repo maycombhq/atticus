@@ -36,7 +36,7 @@ export function graph(
   ix: CatalogIndex,
   o: { focus?: string; depth?: number; status?: string } = {},
 ): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  const hops = (
+  const hops: Hop[] = (
     ix.db
       .prepare(
         `SELECT id, json_extract(json, '$.from') AS "from", json_extract(json, '$.to') AS "to", json_extract(json, '$.via') AS via,
@@ -45,6 +45,27 @@ export function graph(
       )
       .all(...(o.status ? [o.status] : [])) as unknown as (Hop & { pattern: string | null })[]
   ).map((h) => ({ ...h, pattern: h.pattern ?? undefined }));
+  // What a module builds on (ADR 0068): a build-time link, drawn and followed like a call.
+  for (const c of ix.db
+    .prepare(
+      `SELECT id, json_extract(json, '$.uses') AS uses, confidence, status FROM records
+       WHERE kind = 'Component' AND json_extract(json, '$.uses') IS NOT NULL${o.status ? " AND status = ?" : ""} ORDER BY id`,
+    )
+    .all(...(o.status ? [o.status] : [])) as unknown as {
+    id: string;
+    uses: string;
+    confidence: GraphEdge["confidence"];
+    status: string;
+  }[])
+    for (const to of JSON.parse(c.uses) as string[])
+      hops.push({
+        id: `uses.${c.id}.${to}`,
+        from: c.id,
+        to,
+        via: "uses",
+        confidence: c.confidence,
+        status: c.status,
+      });
   const nodeRows = ix.db
     .prepare(
       "SELECT kind, id, name, status, system FROM records WHERE kind IN ('System', 'Component') ORDER BY kind DESC, id",
