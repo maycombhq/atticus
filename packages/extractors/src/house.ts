@@ -102,7 +102,12 @@ export const houseExtractor = defineExtractor({
     const repoConstants = new JsConstants();
     const users = new Map<string, SourceFile>();
     for (const path of files) {
-      const src = await SourceFile.parse(path, await repo.readText(path), langOf(path)!);
+      const src = await SourceFile.parse(
+        path,
+        await repo.readText(path),
+        langOf(path)!,
+        repo.parseCache,
+      );
       repoConstants.add(src);
       if (models.some((m) => m.packages.some((p) => src.imported(p)))) users.set(path, src);
     }

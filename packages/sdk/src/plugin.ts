@@ -4,6 +4,7 @@ import {
   type FrameworkModel,
   type RecordIssue,
 } from "@maycombhq/core";
+import { createParseCache, withParseCache, type ParseCache } from "./parse-cache.js";
 
 /**
  * Contract C4 (v0): the plugin interfaces. Extractors read files and emit catalog records.
@@ -19,6 +20,11 @@ export interface RepoHandle {
   /** Repo-relative paths matching the extractor's claims. */
   listFiles(globs: readonly string[]): AsyncIterable<string>;
   readText(path: string): Promise<string>;
+  /**
+   * What files parse to, shared by every reader of this repo scan (ADR 0067): optional, so
+   * handles without it still work and readers parse for themselves. Values are frozen.
+   */
+  readonly parseCache?: ParseCache;
 }
 
 export interface ScanContext {
@@ -99,10 +105,17 @@ export async function runExtractor(
     scannedAt: options.scannedAt ?? new Date().toISOString(),
     warn: (message, path) => out.warnings.push(path ? { message, path } : { message }),
   };
-  for await (const emitted of extractor.scan(repo, ctx)) {
-    const result = parseRecord(emitted);
-    if (result.ok) out.records.push(result.record);
-    else out.rejected.push({ record: emitted, issues: result.issues });
+  // A parse cache for this run when the caller didn't give one; freed when the run ends.
+  const own = repo.parseCache ? undefined : createParseCache();
+  const r = own ? withParseCache(repo, own) : repo;
+  try {
+    for await (const emitted of extractor.scan(r, ctx)) {
+      const result = parseRecord(emitted);
+      if (result.ok) out.records.push(result.record);
+      else out.rejected.push({ record: emitted, issues: result.issues });
+    }
+  } finally {
+    own?.dispose();
   }
   return out;
 }

@@ -227,39 +227,44 @@ export const grpcExtractor = defineExtractor({
         continue;
       const lang = syntaxLanguageOf(path);
       if (!lang) continue;
-      await withTree(lang, text, (root) => {
-        const all = callsIn(root);
-        for (const list of servedIn(root, all))
-          for (const s of list)
-            if (!served.has(s.service)) served.set(s.service, { path, line: s.line });
-        const isNode = /\.(ts|js|mjs)$/.test(path);
-        const grpcJs = [...descendants(root)].some((n) => stringValue(n) === "@grpc/grpc-js");
-        if (isNode && grpcJs)
+      await withTree(
+        lang,
+        text,
+        (root) => {
+          const all = callsIn(root);
+          for (const list of servedIn(root, all))
+            for (const s of list)
+              if (!served.has(s.service)) served.set(s.service, { path, line: s.line });
+          const isNode = /\.(ts|js|mjs)$/.test(path);
+          const grpcJs = [...descendants(root)].some((n) => stringValue(n) === "@grpc/grpc-js");
+          if (isNode && grpcJs)
+            for (const c of all) {
+              if (!c.isNew || !c.path || c.path.length < 2) continue;
+              const first = c.args[0];
+              if (!(first && stringValue(first, true) !== undefined) && !passesCredentials(c))
+                continue;
+              const pkg = c.path.slice(1, -1).join(".");
+              const service = pkg ? `${pkg}.${c.name}` : c.name;
+              calls.push({
+                service,
+                path,
+                line: lineOf(c.node),
+                methods: methodCalls(c, all, rpcsOf(service)),
+              });
+            }
           for (const c of all) {
-            if (!c.isNew || !c.path || c.path.length < 2) continue;
-            const first = c.args[0];
-            if (!(first && stringValue(first, true) !== undefined) && !passesCredentials(c))
-              continue;
-            const pkg = c.path.slice(1, -1).join(".");
-            const service = pkg ? `${pkg}.${c.name}` : c.name;
-            calls.push({
-              service,
-              path,
-              line: lineOf(c.node),
-              methods: methodCalls(c, all, rpcsOf(service)),
-            });
+            const service = clientService(c, path);
+            if (service)
+              calls.push({
+                service,
+                path,
+                line: lineOf(c.node),
+                methods: methodCalls(c, all, rpcsOf(service)),
+              });
           }
-        for (const c of all) {
-          const service = clientService(c, path);
-          if (service)
-            calls.push({
-              service,
-              path,
-              line: lineOf(c.node),
-              methods: methodCalls(c, all, rpcsOf(service)),
-            });
-        }
-      });
+        },
+        { cache: repo.parseCache, path },
+      );
     }
     const short = (s: string) => s.split(".").pop()!;
     const called = new Set(calls.map((c) => short(c.service)));

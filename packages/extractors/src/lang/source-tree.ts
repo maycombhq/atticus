@@ -1,5 +1,6 @@
 import type Parser from "web-tree-sitter";
-import { parseSyntax, syntaxLanguageOf, type SyntaxLanguage } from "./syntax.js";
+import type { ParseCache } from "@maycombhq/sdk";
+import { syntaxLanguageOf, useSyntaxTree, type SyntaxLanguage } from "./syntax.js";
 
 /**
  * The generic-tier call layer read from syntax trees (ADR 0060): for C#, Python, Go and
@@ -85,18 +86,22 @@ export function grammarOf(path: string, lang: SourceLang): SyntaxLanguage {
     : "typescript";
 }
 
-/** Parse a file and read it; the tree is freed before this returns. */
+/**
+ * Parse a file and read it. The tree is the scan's shared one with a parse cache (ADR 0067),
+ * else parsed here and freed before this returns.
+ */
 export async function readSourceFile(
   path: string,
   text: string,
   lang: SourceLang,
+  cache?: ParseCache,
 ): Promise<SourceRead> {
-  const tree = await parseSyntax(grammarOf(path, lang), text);
-  try {
-    return readSource(tree.rootNode, text, lang);
-  } finally {
-    tree.delete();
-  }
+  return useSyntaxTree(
+    grammarOf(path, lang),
+    text,
+    (tree) => readSource(tree.rootNode, text, lang),
+    { cache, path },
+  );
 }
 
 // ---------------------------------------------------------------- node kinds

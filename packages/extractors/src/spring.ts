@@ -166,13 +166,14 @@ export const springExtractor = defineExtractor({
     const parsed = new Map<string, JavaFile>();
     for await (const path of repo.listFiles(["**/*.java", "**/*.kt"])) {
       if (/(^|\/)src\/test\//.test(path)) continue;
-      parsed.set(path, await parseJava(await repo.readText(path), path));
+      parsed.set(path, await parseJava(await repo.readText(path), path, repo.parseCache));
     }
     // Constants the repo's own code defines, anywhere in it: Class.NAME → value.
     const repoConstants = constantsOf(parsed.values());
     const housePackages = (ctx.frameworks ?? []).flatMap((m) => m.packages);
 
-    for (const [path, file] of parsed) {
+    for (const [path, shared] of parsed) {
+      let file = shared;
       const fileConfig = configFor(path);
       resolve = (s: string) => resolvePlaceholders(s, fileConfig);
       const types = new Set(file.variables.map((v) => v.type));
@@ -200,7 +201,12 @@ export const springExtractor = defineExtractor({
       const component = componentOf(repo, ctx, path);
       // House frameworks this file uses (ADR 0054): their annotations read as Spring's.
       const models = modelsFor(file, ctx.frameworks);
-      applyAnnotations(file, models);
+      // The parse is shared by every reader and frozen (ADR 0067): the house annotations go
+      // on this extractor's own copy, so no other reader sees them.
+      if (models.length > 0) {
+        file = structuredClone(shared);
+        applyAnnotations(file, models);
+      }
       const values = modelValues(models);
       // Names this file gives a value: same-file String constants and @Value fields
       // (base → ${nw.endpoints.payments}), so base + PAY reads as a URL resolve() can finish.

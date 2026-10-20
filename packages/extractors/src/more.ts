@@ -122,7 +122,7 @@ export const frontendExtractor = defineExtractor({
       // Only a file naming one of the clients can hold such a call: skip the rest unparsed.
       if (!["fetch", "axios", "http"].some((w) => text.includes(w))) continue;
       if (path.endsWith(".vue")) text = vueScript(text);
-      const src = await SourceFile.parse(path, text, "js");
+      const src = await SourceFile.parse(path, text, "js", repo.parseCache);
       for (const c of src.calls) {
         const call = frontendCall(src, c);
         if (!call) continue;
@@ -169,7 +169,7 @@ export const topicsExtractor = defineExtractor({
   async *scan(repo) {
     for await (const path of repo.listFiles(this.claims)) {
       const text = await repo.readText(path);
-      const flat = flattenYaml(text, path);
+      const flat = flattenYaml(text, path, repo.parseCache);
       const topic = flat.get("topic") ?? flat.get("name");
       if (!topic) continue;
       const list = (k: string) =>
@@ -558,7 +558,7 @@ export const infraExtractor = defineExtractor({
   async *scan(repo) {
     for await (const path of repo.listFiles(this.claims)) {
       const text = await repo.readText(path);
-      const flat = flattenYaml(text, path);
+      const flat = flattenYaml(text, path, repo.parseCache);
       if (flat.get("kind")?.value === "Deployment") {
         const name = flat.get("metadata.name")?.value;
         if (!name) continue;

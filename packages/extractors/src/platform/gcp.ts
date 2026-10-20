@@ -93,7 +93,7 @@ async function* appEngine(repo: RepoHandle, ctx: ScanContext): AsyncGenerator<Ca
   for await (const path of repo.listFiles(APP_ENGINE)) {
     const text = await readOrWarn(repo, ctx, path);
     if (text === undefined || !/^runtime\s*:/m.test(text)) continue;
-    const docs = readYamlDocs(text);
+    const docs = readYamlDocs(text, { cache: repo.parseCache, path });
     if (!docs) {
       ctx.warn(MALFORMED_YAML, path);
       continue;

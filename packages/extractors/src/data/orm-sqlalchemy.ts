@@ -10,6 +10,7 @@ import {
   type CodeCall,
   type Node,
 } from "../lang/code-tree.js";
+import { at } from "../lang/parsed.js";
 import { isTestOrBuildPath } from "./common.js";
 import type { OrmColumn, OrmModel, OrmTable } from "./orm-model.js";
 
@@ -191,19 +192,25 @@ export async function readSqlAlchemy(repo: RepoHandle): Promise<OrmModel> {
     if (isTestOrBuildPath(path) || /(^|\/)(alembic|migrations)\/versions\//.test(path)) continue;
     const src = await repo.readText(path);
     if (!src.includes("__tablename__")) continue;
-    await withTree("python", src, (root) => {
-      // A mapped class's own nested classes are not tables of their own.
-      const inside: Node[] = [];
-      for (const n of descendants(root)) {
-        if (n.type !== "class_definition") continue;
-        if (inside.some((o) => n.startIndex >= o.startIndex && n.endIndex <= o.endIndex)) continue;
-        const t = readTable(n, path);
-        if (t) {
-          tables.push(t);
-          inside.push(n);
+    await withTree(
+      "python",
+      src,
+      (root) => {
+        // A mapped class's own nested classes are not tables of their own.
+        const inside: Node[] = [];
+        for (const n of descendants(root)) {
+          if (n.type !== "class_definition") continue;
+          if (inside.some((o) => n.startIndex >= o.startIndex && n.endIndex <= o.endIndex))
+            continue;
+          const t = readTable(n, path);
+          if (t) {
+            tables.push(t);
+            inside.push(n);
+          }
         }
-      }
-    });
+      },
+      at(repo, path),
+    );
   }
   return { tables };
 }

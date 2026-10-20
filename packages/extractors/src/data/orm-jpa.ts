@@ -1,4 +1,4 @@
-import type { RepoHandle } from "@maycombhq/sdk";
+import type { ParseCache, RepoHandle } from "@maycombhq/sdk";
 import { repoConfig } from "../facts.js";
 import { parseJavaClasses, type AnnotationTree } from "../lang/java-tree.js";
 import { isTestOrBuildPath } from "./common.js";
@@ -41,8 +41,12 @@ interface JClass {
 const PRIMITIVES = new Set(["int", "long", "short", "byte", "boolean", "double", "float", "char"]);
 
 /** Classes in a Java file with their annotations, superclass and fields. */
-export async function readJavaClasses(src: string, path: string): Promise<JClass[]> {
-  return (await parseJavaClasses(src)).map((c) => ({
+export async function readJavaClasses(
+  src: string,
+  path: string,
+  cache?: ParseCache,
+): Promise<JClass[]> {
+  return (await parseJavaClasses(src, { cache, path })).map((c) => ({
     name: c.name,
     line: c.line,
     ...(c.superclass ? { superName: c.superclass } : {}),
@@ -96,7 +100,7 @@ export async function readJpa(repo: RepoHandle): Promise<OrmModel> {
     if (isTestOrBuildPath(path)) continue;
     const text = await repo.readText(path);
     if (!/@(Entity|MappedSuperclass)\b/.test(text)) continue;
-    for (const c of await readJavaClasses(text, path))
+    for (const c of await readJavaClasses(text, path, repo.parseCache))
       if (!classes.has(c.name)) classes.set(c.name, c);
   }
   const entities = [...classes.values()].filter((c) => ann(c.annotations, "Entity"));

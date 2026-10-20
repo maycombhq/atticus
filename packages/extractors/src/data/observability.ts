@@ -3,6 +3,7 @@ import { defineExtractor } from "@maycombhq/sdk";
 import type { z } from "zod";
 import { componentOf, evidence } from "../facts.js";
 import { flattenYaml } from "../lang/config.js";
+import { at } from "../lang/parsed.js";
 import { attrOf, parseHcl } from "../platform/hcl.js";
 import {
   get,
@@ -138,7 +139,7 @@ export const observabilityExtractor = defineExtractor({
         let component = fallback;
         const fm = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/.exec(text);
         if (fm) {
-          const meta = flattenYaml(fm[1]!, path);
+          const meta = flattenYaml(fm[1]!, path, repo.parseCache);
           component = meta.get("component")?.value ?? meta.get("service")?.value ?? fallback;
           body = text.slice(fm[0].length);
           offset = fm[0].split("\n").length - 1;
@@ -153,7 +154,7 @@ export const observabilityExtractor = defineExtractor({
           out.push(asset(fallback, "log-config", base, "config", path, lineAt(text, root.index)));
       } else if (path.endsWith(".tf")) {
         // Terraform, read with the HCL parser: datadog_monitor (alert), datadog_dashboard (dashboard).
-        for (const r of parseHcl(text).blocks) {
+        for (const r of parseHcl(text, at(repo, path)).blocks) {
           const type = r.labels[0];
           if (r.type !== "resource" || (type !== "datadog_monitor" && type !== "datadog_dashboard"))
             continue;

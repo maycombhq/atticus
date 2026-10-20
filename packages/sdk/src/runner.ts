@@ -5,6 +5,7 @@ import {
   type RecordIssue,
 } from "@maycombhq/core";
 import type { ScanCache, ScanCacheKey } from "./cache.js";
+import { createParseCache, withParseCache } from "./parse-cache.js";
 import { tooLargeMessage, type FsRepoHandle } from "./fs-repo.js";
 import { globToRegExp, type Extractor, type RepoHandle, type ScanContext } from "./plugin.js";
 
@@ -120,6 +121,17 @@ function compareRecords(
  * unchanged. Output order is deterministic.
  */
 export async function scanRepo(options: ScanRepoOptions): Promise<RepoScan> {
+  // One parse cache for every extractor of this repo scan (ADR 0067), unless the caller gave
+  // the repo its own; ours is freed when the scan ends, however it ends.
+  const own = options.repo.parseCache ? undefined : createParseCache();
+  try {
+    return await scanWith(own ? { ...options, repo: withParseCache(options.repo, own) } : options);
+  } finally {
+    own?.dispose();
+  }
+}
+
+async function scanWith(options: ScanRepoOptions): Promise<RepoScan> {
   const { repo } = options;
   const dialects = [...(options.dialects ?? [])].sort();
   const scannedAt = options.scannedAt ?? new Date().toISOString();

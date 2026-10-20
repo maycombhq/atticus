@@ -205,7 +205,7 @@ async function appsettings(repo: RepoHandle): Promise<Map<string, ConfigValue>> 
   );
   const out = new Map<string, ConfigValue>();
   for (const f of files) {
-    const flat = flattenYaml(stripJsonComments(await repo.readText(f)), f);
+    const flat = flattenYaml(stripJsonComments(await repo.readText(f)), f, repo.parseCache);
     for (const [k, v] of flat) if (!out.has(k.toLowerCase())) out.set(k.toLowerCase(), v);
   }
   return out;
@@ -270,7 +270,12 @@ export const dotnetExtractor = defineExtractor({
     const env = await dotenv(repo);
     const files: { path: string; src: SourceFile; ev: Evaluator }[] = [];
     for (const path of await listSources(repo, ["**/*.cs"])) {
-      const src = await SourceFile.parse(path, await repo.readText(path), "csharp");
+      const src = await SourceFile.parse(
+        path,
+        await repo.readText(path),
+        "csharp",
+        repo.parseCache,
+      );
       const ev = new Evaluator(src, {
         index: (recv, key) =>
           isConfig(recv) ? (config.get(configKey(key))?.value ?? unresolved(key)) : undefined,

@@ -1,6 +1,6 @@
 import type { FrameworkModel } from "@maycombhq/core";
 import { SourceFile, type SourceLang } from "@maycombhq/extractors";
-import type { RepoHandle } from "@maycombhq/sdk";
+import { createParseCache, type ParseCache, type RepoHandle } from "@maycombhq/sdk";
 
 /**
  * A deterministic survey of how an estate's repos use house frameworks, in any language, for
@@ -160,6 +160,7 @@ async function usesIn(
   path: string,
   lang: SurveyLang,
   names: string[],
+  cache?: ParseCache,
 ): Promise<{ use: string; line: number }[]> {
   const out: { use: string; line: number }[] = [];
   if (lang === "java") {
@@ -182,7 +183,7 @@ async function usesIn(
   }
   let src: SourceFile;
   try {
-    src = await SourceFile.parse(path, text, lang);
+    src = await SourceFile.parse(path, text, lang, cache);
   } catch {
     return out;
   }
@@ -228,37 +229,44 @@ export async function surveyFrameworks(
     }
   >();
   for (const repo of repos) {
-    for await (const path of repo.listFiles(CLAIMS)) {
-      if (SKIP.test(path)) continue;
-      const lang = LANG_OF.find(([re]) => re.test(path))?.[1];
-      if (!lang) continue;
-      const text = await repo.readText(path);
-      const lines = text.split(/\r?\n/);
-      for (const imp of importsOf(text, lang)) {
-        if (!isHouse(imp.module, prefixes)) continue;
-        const key = `${lang}\u0000${imp.module}`;
-        const m = mods.get(key) ?? {
-          language: lang,
-          repos: new Set<string>(),
-          files: 0,
-          names: new Set<string>(),
-          uses: new Map(),
-        };
-        m.repos.add(repo.name);
-        m.files++;
-        for (const n of imp.names) m.names.add(n);
-        for (const u of await usesIn(text, path, lang, imp.names)) {
-          const e = m.uses.get(u.use) ?? {
-            count: 0,
+    // A file importing several house modules is parsed once (ADR 0067); freed after each repo.
+    const own = repo.parseCache ? undefined : createParseCache();
+    const cache = repo.parseCache ?? own;
+    try {
+      for await (const path of repo.listFiles(CLAIMS)) {
+        if (SKIP.test(path)) continue;
+        const lang = LANG_OF.find(([re]) => re.test(path))?.[1];
+        if (!lang) continue;
+        const text = await repo.readText(path);
+        const lines = text.split(/\r?\n/);
+        for (const imp of importsOf(text, lang)) {
+          if (!isHouse(imp.module, prefixes)) continue;
+          const key = `${lang}\u0000${imp.module}`;
+          const m = mods.get(key) ?? {
+            language: lang,
             repos: new Set<string>(),
-            sample: { repo: repo.name, path, line: u.line, text: shown(lines[u.line - 1] ?? "") },
+            files: 0,
+            names: new Set<string>(),
+            uses: new Map(),
           };
-          e.count++;
-          e.repos.add(repo.name);
-          m.uses.set(u.use, e);
+          m.repos.add(repo.name);
+          m.files++;
+          for (const n of imp.names) m.names.add(n);
+          for (const u of await usesIn(text, path, lang, imp.names, cache)) {
+            const e = m.uses.get(u.use) ?? {
+              count: 0,
+              repos: new Set<string>(),
+              sample: { repo: repo.name, path, line: u.line, text: shown(lines[u.line - 1] ?? "") },
+            };
+            e.count++;
+            e.repos.add(repo.name);
+            m.uses.set(u.use, e);
+          }
+          mods.set(key, m);
         }
-        mods.set(key, m);
       }
+    } finally {
+      own?.dispose();
     }
   }
   const modelOf = (mod: string) =>

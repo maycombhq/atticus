@@ -1,5 +1,5 @@
 import type Parser from "web-tree-sitter";
-import { parseSyntax } from "./syntax.js";
+import { useSyntaxTree, type ParsedAt } from "./syntax.js";
 import type { AnnValue, Annotation, Call, Decl, DeclKind, JavaFile } from "./java.js";
 
 /**
@@ -250,8 +250,11 @@ function annotationTreesOf(n: Node): AnnotationTree[] {
  * The classes of a Java file (nested ones too) with their annotations, superclass and every
  * field: what an ORM mapping reads, where a JPA entity maps fields that carry no annotation.
  */
-export async function parseJavaClasses(src: string): Promise<JavaClass[]> {
-  const tree = await parseSyntax("java", src);
+export async function parseJavaClasses(src: string, at?: ParsedAt): Promise<JavaClass[]> {
+  return useSyntaxTree("java", src, (tree) => javaClassesOf(tree.rootNode), at);
+}
+
+function javaClassesOf(root: Node): JavaClass[] {
   const out: JavaClass[] = [];
   const walk = (n: Node): void => {
     if (n.type === "class_declaration") {
@@ -290,8 +293,7 @@ export async function parseJavaClasses(src: string): Promise<JavaClass[]> {
     }
     for (const c of named(n)) walk(c);
   };
-  walk(tree.rootNode);
-  tree.delete();
+  walk(root);
   return out;
 }
 
@@ -299,8 +301,12 @@ export async function parseJavaClasses(src: string): Promise<JavaClass[]> {
 export async function parseJavaTree(
   src: string,
   lang: "java" | "kotlin" = "java",
+  at?: ParsedAt,
 ): Promise<JavaFile> {
-  const tree = await parseSyntax(lang, src);
+  return useSyntaxTree(lang, src, (tree) => javaFileOf(tree.rootNode, src, lang), at);
+}
+
+function javaFileOf(root: Node, src: string, lang: "java" | "kotlin"): JavaFile {
   const kotlin = lang === "kotlin";
   const decls: Decl[] = [];
   const calls: Call[] = [];
@@ -550,8 +556,7 @@ export async function parseJavaTree(
     }
     for (const c of named(n)) walk(c, type, method);
   };
-  walk(tree.rootNode, undefined, undefined);
-  tree.delete();
+  walk(root, undefined, undefined);
   calls.sort((a, b) => at.get(a)! - at.get(b)!);
   return { ...(packageName ? { packageName } : {}), imports, decls, calls, constants, variables };
 }
@@ -590,8 +595,15 @@ export interface JavaAnnotationMember {
  */
 export async function parseJavaMembers(
   src: string,
+  at?: ParsedAt,
 ): Promise<{ methods: JavaMethod[]; annotationMembers: JavaAnnotationMember[] }> {
-  const tree = await parseSyntax("java", src);
+  return useSyntaxTree("java", src, (tree) => javaMembersOf(tree.rootNode), at);
+}
+
+function javaMembersOf(root: Node): {
+  methods: JavaMethod[];
+  annotationMembers: JavaAnnotationMember[];
+} {
   const methods: JavaMethod[] = [];
   const annotationMembers: JavaAnnotationMember[] = [];
   const walk = (n: Node, owner: string | undefined): void => {
@@ -643,7 +655,6 @@ export async function parseJavaMembers(
     }
     for (const c of named(n)) walk(c, owner);
   };
-  walk(tree.rootNode, undefined);
-  tree.delete();
+  walk(root, undefined);
   return { methods, annotationMembers };
 }

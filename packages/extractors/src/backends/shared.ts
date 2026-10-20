@@ -1,5 +1,5 @@
 import type { CatalogRecord } from "@maycombhq/core";
-import type { RepoHandle, ScanContext } from "@maycombhq/sdk";
+import type { ParseCache, RepoHandle, ScanContext } from "@maycombhq/sdk";
 import { componentOf, evidence, looseEnd, restEndpoint, type LooseEndKind } from "../facts.js";
 import {
   readSourceFile,
@@ -136,9 +136,19 @@ export class SourceFile {
   private readonly byStart = new Map<number, SrcCall>();
   private readonly chainedBy = new Map<SrcCall, SrcCall>();
 
-  /** Parse a file and read it from its syntax tree. */
-  static async parse(path: string, text: string, lang: SourceLang): Promise<SourceFile> {
-    return new SourceFile(path, text, lang, await readSourceFile(path, text, lang));
+  /**
+   * Parse a file and read it from its syntax tree. With the repo scan's parse cache (ADR 0067)
+   * every reader of the file gets the same frozen SourceFile, read from the shared tree.
+   */
+  static async parse(
+    path: string,
+    text: string,
+    lang: SourceLang,
+    cache?: ParseCache,
+  ): Promise<SourceFile> {
+    const make = async (t: string) =>
+      new SourceFile(path, t, lang, await readSourceFile(path, t, lang, cache));
+    return cache ? cache.getAsync(`source:${lang}`, path, text, make) : make(text);
   }
 
   constructor(

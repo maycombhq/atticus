@@ -124,7 +124,12 @@ async function* airflow(
   for (const path of await sources(repo, PY)) {
     const text = await read(repo, ctx, path);
     if (text === undefined || !/\bDAG\b|@dag\b/.test(text) || !/airflow/.test(text)) continue;
-    dags.push(...(await withTree("python", text, (root) => dagsIn(root, path))));
+    dags.push(
+      ...(await withTree("python", text, (root) => dagsIn(root, path), {
+        cache: repo.parseCache,
+        path,
+      })),
+    );
   }
   // One DAG in the whole repo, in a repo the manifest gives a component: the DAG is that component.
   const lone = dags.length === 1 ? ctx.component : undefined;
@@ -220,7 +225,8 @@ async function profileWarehouse(
 ): Promise<{ id: string; path: string; line: number | undefined } | undefined> {
   for (const path of await sources(repo, PROFILES)) {
     const text = await read(repo, ctx, path);
-    const doc = text !== undefined ? readYamlDocs(text)?.[0] : undefined;
+    const doc =
+      text !== undefined ? readYamlDocs(text, { cache: repo.parseCache, path })?.[0] : undefined;
     const prof = at(doc?.value, profile);
     if (!doc || prof === undefined) continue;
     const outputs = at(prof, "outputs");
@@ -254,7 +260,7 @@ async function declaredSources(
     if (!path.startsWith(modelsDir)) continue;
     const text = await read(repo, ctx, path);
     if (text === undefined || !/^sources\s*:/m.test(text)) continue;
-    const doc = readYamlDocs(text)?.[0];
+    const doc = readYamlDocs(text, { cache: repo.parseCache, path })?.[0];
     const list = at(doc?.value, "sources");
     if (!doc || !Array.isArray(list)) continue;
     for (const [si, s] of list.entries()) {
@@ -285,7 +291,7 @@ async function* dbt(
   for (const projectFile of await sources(repo, DBT)) {
     const text = await read(repo, ctx, projectFile);
     if (text === undefined) continue;
-    const project = readYamlDocs(text)?.[0]?.value;
+    const project = readYamlDocs(text, { cache: repo.parseCache, path: projectFile })?.[0]?.value;
     const name = /^name\s*:\s*["']?([\w-]+)/m.exec(text)?.[1] ?? "dbt";
     const profile = /^profile\s*:\s*["']?([\w-]+)/m.exec(text)?.[1] ?? name;
     const root = projectFile.includes("/")
@@ -429,24 +435,29 @@ async function* spark(
     const text = await read(repo, ctx, path);
     if (text === undefined || !/\bspark\b|SparkSession/.test(text)) continue;
     const name = (s: string) => s.split(".").pop()!;
-    const found = await withTree(path.endsWith(".py") ? "python" : "scala", text, (root) => {
-      const out: { access: "read" | "write"; table: string; line: number }[] = [];
-      for (const c of callsIn(root)) {
-        const table = stringValue(c.args[0]);
-        if (!table || !/^[\w.]+$/.test(table)) continue;
-        const p = c.path?.join(".");
-        // spark.read.table("x") and spark.table("x") read; .saveAsTable("x") and .insertInto("x") write.
-        if (p === "spark.read.table" || p === "spark.table")
-          out.push({ access: "read", table, line: lineOf(c.node) });
-        else if ((c.name === "saveAsTable" || c.name === "insertInto") && c.receiver)
-          out.push({ access: "write", table, line: c.line });
-      }
-      // Reads first, then writes, each in source order.
-      return [
-        ...out.filter((x) => x.access === "read"),
-        ...out.filter((x) => x.access === "write"),
-      ];
-    });
+    const found = await withTree(
+      path.endsWith(".py") ? "python" : "scala",
+      text,
+      (root) => {
+        const out: { access: "read" | "write"; table: string; line: number }[] = [];
+        for (const c of callsIn(root)) {
+          const table = stringValue(c.args[0]);
+          if (!table || !/^[\w.]+$/.test(table)) continue;
+          const p = c.path?.join(".");
+          // spark.read.table("x") and spark.table("x") read; .saveAsTable("x") and .insertInto("x") write.
+          if (p === "spark.read.table" || p === "spark.table")
+            out.push({ access: "read", table, line: lineOf(c.node) });
+          else if ((c.name === "saveAsTable" || c.name === "insertInto") && c.receiver)
+            out.push({ access: "write", table, line: c.line });
+        }
+        // Reads first, then writes, each in source order.
+        return [
+          ...out.filter((x) => x.access === "read"),
+          ...out.filter((x) => x.access === "write"),
+        ];
+      },
+      { cache: repo.parseCache, path },
+    );
     for (const f of found)
       yield loose(repo, comp, "db-access", `${f.access} ${name(f.table)}`, path, f.line);
   }

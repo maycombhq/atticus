@@ -165,7 +165,7 @@ export const appsExtractor = defineExtractor({
     for (const path of await sources(repo, KOTLIN)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !(android || /retrofit2/.test(text))) continue;
-      const routes = (await parseJava(text, path)).decls.flatMap((d) =>
+      const routes = (await parseJava(text, path, repo.parseCache)).decls.flatMap((d) =>
         d.kind !== "method"
           ? []
           : d.annotations.flatMap((a) => {
@@ -180,12 +180,17 @@ export const appsExtractor = defineExtractor({
       );
       kotlin.push({ path, routes });
       if (text.includes("baseUrl"))
-        await withTree(path.endsWith(".java") ? "java" : "kotlin", text, (root) => {
-          for (const c of callsIn(root)) {
-            const url = stringValue(c.args[0]);
-            if (c.name === "baseUrl" && c.receiver && url) bases.add(url);
-          }
-        });
+        await withTree(
+          path.endsWith(".java") ? "java" : "kotlin",
+          text,
+          (root) => {
+            for (const c of callsIn(root)) {
+              const url = stringValue(c.args[0]);
+              if (c.name === "baseUrl" && c.receiver && url) bases.add(url);
+            }
+          },
+          { cache: repo.parseCache, path },
+        );
     }
     const base = bases.size === 1 ? [...bases][0] : undefined;
     for (const { path, routes } of kotlin)

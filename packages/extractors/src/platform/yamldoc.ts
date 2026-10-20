@@ -1,4 +1,6 @@
-import { isMap, isScalar, isSeq, LineCounter, parseAllDocuments } from "yaml";
+import { isMap, isScalar, isSeq } from "yaml";
+import type { ParsedAt } from "../lang/parsed.js";
+import { parseYamlStream } from "../lang/yaml.js";
 import { at } from "./util.js";
 
 /** Multi-document YAML (and JSON, which YAML reads too) with line numbers. */
@@ -14,11 +16,19 @@ export interface YamlDoc {
 
 export const MALFORMED_YAML = "Could not read this file as YAML; skipped it.";
 
-/** Parse every document in a file. Undefined when any document has a syntax error. */
-export function readYamlDocs(text: string): YamlDoc[] | undefined {
-  const lc = new LineCounter();
-  const docs = parseAllDocuments(text, { lineCounter: lc, uniqueKeys: false });
-  if (!Array.isArray(docs)) return undefined; // an empty stream
+/**
+ * Parse every document in a file. Undefined when any document has a syntax error. With the repo
+ * scan's parse cache (ADR 0067) every reader of the file gets the same frozen documents.
+ */
+export function readYamlDocs(text: string, where?: ParsedAt): YamlDoc[] | undefined {
+  return where?.cache
+    ? where.cache.get("yaml-docs", where.path, text, (t) => yamlDocs(t, where))
+    : yamlDocs(text);
+}
+
+function yamlDocs(text: string, where?: ParsedAt): YamlDoc[] | undefined {
+  const { docs, lc } = parseYamlStream(text, where);
+  if (!docs) return undefined; // an empty stream
   if (docs.some((d) => d.errors.length > 0)) return undefined;
   const out: YamlDoc[] = [];
   for (const d of docs) {

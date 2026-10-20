@@ -270,14 +270,17 @@ export const graphqlExtractor = defineExtractor({
         continue;
       const lang = syntaxLanguageOf(path);
       if (!lang) continue;
-      const bodies = await withTree(lang, text, (root) => templates(root));
+      const bodies = await withTree(lang, text, (root) => templates(root), {
+        cache: repo.parseCache,
+        path,
+      });
       for (const b of bodies) readGql(b.body, b.at, path, "code", text);
     }
     for (const path of await sources(repo, JAVA)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !/@(Query|Mutation|Subscription|Schema)Mapping/.test(text))
         continue;
-      for (const d of (await parseJava(text, path)).decls) {
+      for (const d of (await parseJava(text, path, repo.parseCache)).decls) {
         if (d.kind !== "method") continue;
         const found = javaField(d);
         if (found) serve(found.op, found.field, path, found.line, "code");
@@ -286,7 +289,10 @@ export const graphqlExtractor = defineExtractor({
     for (const path of await sources(repo, PY)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !/\b(strawberry|graphene)\b/.test(text)) continue;
-      for (const f of await withTree("python", text, pythonFields))
+      for (const f of await withTree("python", text, pythonFields, {
+        cache: repo.parseCache,
+        path,
+      }))
         serve(f.op, f.name, path, f.line, "code");
     }
 
