@@ -9,7 +9,12 @@ import {
   RecordId,
   toCanonicalYaml,
 } from "@maycombhq/core";
-import { houseDependencies, learnFramework, learnFrameworkFromJar } from "@maycombhq/extractors";
+import {
+  houseDependencies,
+  learnFramework,
+  learnFrameworkFromJar,
+  runFrameworkTests,
+} from "@maycombhq/extractors";
 import { fsRepo } from "@maycombhq/sdk";
 import { baseClonePath } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -50,6 +55,7 @@ function merge(
       clients,
       services: { ...existing.services, ...learned.services },
       constants: { ...existing.constants, ...learned.constants },
+      tests: existing.tests,
     }),
     keptServices: keptServices.length,
     keptOther,
@@ -293,4 +299,54 @@ export async function frameworksDiscover(
     }
   }
   return code;
+}
+
+/**
+ * atticus frameworks check [<name>]: run each framework model's own tests (ADR 0055). A model
+ * whose tests fail, or with a drafted entry no test exercises, is left out of scans until they
+ * pass; one with no tests is used as written, and said so.
+ */
+export async function frameworksCheck(
+  root: string,
+  name: string | undefined,
+  io: Output,
+): Promise<number> {
+  const op = await loadOrgPack(orgPackDirOf(root));
+  let bad = 0;
+  for (const p of op.problems.filter((x) => x.file.startsWith("frameworks/"))) {
+    io.err(`org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
+    bad++;
+  }
+  const models = op.frameworks.filter((m) => !name || m.name === name);
+  if (name && models.length === 0) {
+    io.err(
+      `There's no framework model named ${name} in org-pack/frameworks/ (or it isn't valid; see above).`,
+    );
+    return 2;
+  }
+  if (models.length === 0 && bad === 0) {
+    io.out(
+      "There are no framework models in org-pack/frameworks/ yet: atticus frameworks learn or frameworks kit makes one.",
+    );
+    return 0;
+  }
+  for (const m of models) {
+    if (m.tests.length === 0) {
+      io.out(
+        `${m.name}: no tests. Scans use it as written; add tests so a wrong entry can't go unnoticed.`,
+      );
+      continue;
+    }
+    const failures = await runFrameworkTests(m);
+    if (failures.length === 0) {
+      io.out(
+        `${m.name}: ${plural(m.tests.length, "test")} ${m.tests.length === 1 ? "passes" : "pass"}; every drafted entry is exercised.`,
+      );
+      continue;
+    }
+    bad++;
+    for (const f of failures) io.err(`${m.name}: test "${f.test}": ${f.message}`);
+    io.err(`${m.name} isn't used by scans until its tests pass.`);
+  }
+  return bad > 0 ? 1 : 0;
 }

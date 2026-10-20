@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { FrameworkModel } from "@maycombhq/core";
 import { scanEstate } from "@maycombhq/scanner";
-import { frameworksDiscover, frameworksLearn } from "../src/framework-commands.js";
+import { frameworksCheck, frameworksDiscover, frameworksLearn } from "../src/framework-commands.js";
 
 const MESSY = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/messy");
 const T = 120_000;
@@ -163,4 +163,43 @@ describe("atticus frameworks discover", () => {
     const none = capture();
     expect(await frameworksDiscover(root, { groups: [] }, none.io)).toBe(2);
   });
+});
+
+describe("atticus frameworks check", () => {
+  it(
+    "runs each model's own tests, and says which model scans won't use and why",
+    async () => {
+      const root = await metarepo();
+      const ok = capture();
+      expect(await frameworksCheck(root, undefined, ok.io)).toBe(0);
+      expect(ok.out).toEqual([
+        "tide-lantern: 2 tests pass; every drafted entry is exercised.",
+        "tide-platform: 1 test passes; every drafted entry is exercised.",
+      ]);
+
+      const file = join(root, "org-pack/frameworks/tide-lantern.yaml");
+      const yaml = await readFile(file, "utf8");
+      await writeFile(file, yaml.replace(/tests:[\s\S]*/, "tests: []\n"));
+      const none = capture();
+      expect(await frameworksCheck(root, "tide-lantern", none.io)).toBe(0);
+      expect(none.out).toEqual([
+        "tide-lantern: no tests. Scans use it as written; add tests so a wrong entry can't go unnoticed.",
+      ]);
+
+      await writeFile(
+        file,
+        yaml.replace('"endpoint POST /limits inferred"', '"endpoint PUT /limits"'),
+      );
+      const bad = capture();
+      expect(await frameworksCheck(root, "tide-lantern", bad.io)).toBe(1);
+      expect(bad.err).toEqual([
+        `tide-lantern: test "the BFF's routes": expected "endpoint PUT /limits"; got: endpoint GET /statements/{id} inferred, endpoint POST /limits inferred`,
+        "tide-lantern isn't used by scans until its tests pass.",
+      ]);
+
+      const missing = capture();
+      expect(await frameworksCheck(root, "nope", missing.io)).toBe(2);
+    },
+    T,
+  );
 });

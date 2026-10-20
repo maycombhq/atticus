@@ -41,6 +41,7 @@ export { CLIENT_PACKAGES, READ_ANNOTATIONS, settingSlug } from "./spring.js";
 export * from "./frameworks.js";
 export * from "./learn-framework.js";
 export * from "./dependencies.js";
+export * from "./framework-tests.js";
 export { houseExtractor };
 
 /** Every built-in extractor, in a stable order. Dialect engines are added by the scanner. */

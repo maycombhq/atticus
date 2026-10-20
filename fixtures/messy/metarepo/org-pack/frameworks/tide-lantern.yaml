@@ -33,3 +33,24 @@ routes:
 services:
   web-bff: { value: "https://web-bff.tide.internal", source: { kind: person, ref: "@tide-web-platform" } }
   cards: { value: "https://cards.tide.internal", source: { kind: person, ref: "@tide-web-platform" } }
+# The model's own examples: `atticus frameworks check tide-lantern` runs them, and a scan uses
+# the model only while they pass and every entry above is exercised.
+tests:
+  - name: the SPA's hook and client
+    files:
+      src/cards.tsx: |
+        import { lantern, useApi } from "@tide/lantern";
+        export const Card = ({ id }) => useApi({ service: "web-bff", method: "GET", path: `/statements/${id}` });
+        lantern.call("cards", "POST", "/cards");
+    expect:
+      - "http-call GET https://web-bff.tide.internal/statements/{id}"
+      - "http-call POST https://cards.tide.internal/cards"
+  - name: the BFF's routes
+    files:
+      src/routes.ts: |
+        import { defineRoute, router } from "@tide/lantern";
+        defineRoute({ method: "POST", path: "/limits", handler: setLimit });
+        router.route("GET", "/statements/:id", getStatement);
+    expect:
+      - "endpoint POST /limits inferred"
+      - "endpoint GET /statements/{id} inferred"

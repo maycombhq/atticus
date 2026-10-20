@@ -19,6 +19,7 @@ import {
   mergeCatalog,
   type CatalogRecord,
   type Dialect,
+  type FrameworkModel,
   type OrgPack,
 } from "@maycombhq/core";
 import {
@@ -26,6 +27,7 @@ import {
   dialectExtractor,
   loadShippedDialects,
   runDialectTests,
+  runFrameworkTests,
   SHIPPED_DIALECTS_DIR,
 } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
@@ -250,6 +252,30 @@ async function usableDialects(
 }
 
 /**
+ * The org pack's framework models whose own tests pass (ADR 0055). A model that fails a test,
+ * or has an entry no test exercises, is left out with a problem, so a wrong draft can't
+ * quietly shape the catalog. A model with no tests loads as before.
+ */
+async function usableFrameworks(op: OrgPack, problems: ScanProblem[]): Promise<FrameworkModel[]> {
+  const ok: FrameworkModel[] = [];
+  for (const m of op.frameworks) {
+    const failures = await runFrameworkTests(m).catch((e: Error) => [
+      { test: "(load)", message: e.message },
+    ]);
+    if (failures.length > 0) {
+      for (const f of failures)
+        problems.push({
+          source: `framework ${m.name}`,
+          message: `test "${f.test}": ${f.message}; the model is not used`,
+        });
+      continue;
+    }
+    ok.push(m);
+  }
+  return ok;
+}
+
+/**
  * Scan every repo in the org pack's manifests with the built-in extractors and the dialects
  * whose tests pass, then merge into one catalog. Unchanged repos come from the cache.
  */
@@ -264,6 +290,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     message: `${p.path ? `${p.path}: ` : ""}${p.message}`,
   }));
   const dialects = await usableDialects(op, orgPackDir, problems);
+  const frameworks = await usableFrameworks(op, problems);
   const byName = new Map(dialects.map((d) => [d.name, d]));
   const dialectExtractors = dialects.map((d) => ({ d, x: dialectExtractor(d, byName) }));
   const cache =
@@ -307,7 +334,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         const d = dialectExtractors.find((de) => de.x === x)?.d;
         return d ? configHash({ dialect: JSON.stringify(d) }) : undefined;
       },
-      frameworks: op.frameworks,
+      frameworks,
       repoInfo: {
         ...(r.component ? { component: r.component } : {}),
         ...(r.system ? { system: r.system } : {}),

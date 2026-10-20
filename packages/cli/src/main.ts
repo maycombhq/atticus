@@ -128,7 +128,7 @@ import {
   dialectRun,
   dialectTest,
 } from "./dialect-commands.js";
-import { frameworksDiscover, frameworksLearn } from "./framework-commands.js";
+import { frameworksCheck, frameworksDiscover, frameworksLearn } from "./framework-commands.js";
 
 import { VERSION } from "./version.js";
 export { VERSION };
@@ -187,6 +187,7 @@ Usage:
           [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
   atticus frameworks discover --group <a.b>[,...]   The house artifacts the repos build on, and their JARs here
           [--jars <dir>]... [--learn] [--json]   (Maven and Gradle caches too; never downloads)
+  atticus frameworks check [name]      Run each framework model's own tests; a failing model isn't used
   atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, approvals and test kinds
@@ -1318,6 +1319,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     }
     return stubCheck(arg, io);
   }
+  if (group === "frameworks" && command === "check") return frameworksCheck(root, arg, io);
   if (group === "frameworks" && command === "discover") {
     const strings = (v: unknown) =>
       (Array.isArray(v) ? v : []).filter((x): x is string => typeof x === "string");

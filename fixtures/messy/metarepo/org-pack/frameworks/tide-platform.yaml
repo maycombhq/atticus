@@ -22,3 +22,22 @@ clients:
     source: { kind: person, ref: "@tide-platform-team" }
 services:
   Services.AUDIT: { value: "https://audit.tide.internal", source: { kind: person, ref: "@tide-platform-team" } }
+# The model's own examples (ADR 0055): a scan uses the model only while they pass.
+tests:
+  - name: a controller and the wrapper client
+    files:
+      src/main/java/tide/x/Api.java: |
+        package tide.x;
+        import tide.platform.web.InternalApi;
+        import tide.platform.web.Op;
+        import tide.platform.http.BankHttp;
+        @InternalApi(basePath = "/statements")
+        public class Api {
+          private final BankHttp bankHttp;
+          @Op(verb = "GET", path = "/{id}")
+          public Statement statement(String id) { return null; }
+          void record(AuditEvent e) { bankHttp.exchange(Services.AUDIT, "POST", "/audit/events", e); }
+        }
+    expect:
+      - "endpoint GET /statements/{id}"
+      - "http-call POST https://audit.tide.internal/audit/events"

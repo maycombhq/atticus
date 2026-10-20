@@ -106,6 +106,18 @@ export const FrameworkValue = z.strictObject({
   source: FrameworkSource,
 });
 
+/**
+ * A test a model ships (ADR 0055): sample files and the records reading them must give, one per
+ * line: "http-call POST https://x/y", "endpoint GET /x/{id} inferred", "event-publish t". A model
+ * with tests loads only when every test passes and every entry is exercised; an assistant's
+ * draft always ships them.
+ */
+export const FrameworkTest = z.strictObject({
+  name: z.string().min(1),
+  files: z.record(z.string().min(1), z.string()),
+  expect: z.array(z.string().min(1)).min(1),
+});
+
 export const FrameworkModel = z.strictObject({
   schemaVersion: z.literal(FRAMEWORK_SCHEMA_VERSION),
   name: RecordId,
@@ -142,5 +154,6 @@ export const FrameworkModel = z.strictObject({
     .default({}),
   /** A constant and its value: { Topics.CARD_ISSUED: cards.issued }. */
   constants: z.record(QualifiedName, FrameworkValue).default({}),
+  tests: z.array(FrameworkTest).default([]),
 });
 export type FrameworkModel = z.infer<typeof FrameworkModel>;

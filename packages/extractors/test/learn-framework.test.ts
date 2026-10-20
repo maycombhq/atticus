@@ -69,6 +69,7 @@ describe("learning a framework model from a starter's source (ADR 0054)", () => 
       ],
       calls: [],
       routes: [],
+      tests: [],
       services: {},
       constants: {
         "Services.AUDIT": { value: "audit", source: code(`${HTTP}/Services.java`) },
