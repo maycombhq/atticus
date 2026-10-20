@@ -98,7 +98,7 @@ export const realtimeExtractor = defineExtractor({
       if (prefix) appPrefix = prefix[1]!;
     }
     for (const { path, text } of javaFiles) {
-      const file = parseJava(text);
+      const file = await parseJava(text, path);
       for (const d of file.decls) {
         if (d.kind !== "method") continue;
         const mm = findAnnotation(d, "MessageMapping");

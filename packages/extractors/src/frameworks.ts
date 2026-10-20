@@ -72,7 +72,6 @@ export function modelValues(
 /** Wrapper calls in a file: each with its HTTP method and URL, as far as they can be read. */
 export function wrapperCalls(
   file: JavaFile,
-  src: string,
   models: readonly FrameworkModel[],
   fill: (shown: string) => string,
 ): { call: Call; method: string; url: string }[] {
@@ -81,11 +80,7 @@ export function wrapperCalls(
   for (const m of models)
     for (const c of m.clients) {
       // Fields and variables declared with the wrapper's type are its receivers.
-      const receivers = new Set(
-        [...src.matchAll(new RegExp(`\\b${c.type}(?:<[^>]*>)?\\s+(\\w+)\\s*[;=,)]`, "g"))].map(
-          (x) => x[1]!,
-        ),
-      );
+      const receivers = new Set(file.variables.filter((v) => v.type === c.type).map((v) => v.name));
       for (const call of file.calls) {
         if (call.method !== c.method || !call.receiver || !receivers.has(call.receiver)) continue;
         const part = (p: { arg: number } | { value: string }) =>

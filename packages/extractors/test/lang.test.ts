@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   flattenProperties,
   flattenYaml,
@@ -30,14 +30,17 @@ public class BalanceController extends BaseController implements Audited {
   @PostMapping(path = "/transfers")
   public void transfer() { rest.postForObject("\${audit.url}/audit/events", null, Void.class); }
 }`;
-  const f = parseJava(src);
+  let f: Awaited<ReturnType<typeof parseJava>>;
+  beforeAll(async () => {
+    f = await parseJava(src);
+  });
 
-  it("skips comments and reads the package", () => {
+  it("skips comments and reads the package", async () => {
     expect(f.packageName).toBe("forge.portal");
     expect(f.decls.flatMap((d) => d.annotations).map((a) => a.name)).not.toContain("Fake");
   });
 
-  it("attaches annotations to the right declarations, with lines and attributes", () => {
+  it("attaches annotations to the right declarations, with lines and attributes", async () => {
     const cls = f.decls.find((d) => d.kind === "class")!;
     expect(cls).toMatchObject({
       name: "BalanceController",
@@ -59,7 +62,7 @@ public class BalanceController extends BaseController implements Audited {
     expect(f.decls.find((d) => d.kind === "field")).toMatchObject({ name: "ledger" });
   });
 
-  it("records method calls with literal arguments and where they are", () => {
+  it("records method calls with literal arguments and where they are", async () => {
     const c = f.calls.find((x) => x.method === "postForObject")!;
     expect(c).toMatchObject({
       receiver: "rest",
@@ -69,25 +72,29 @@ public class BalanceController extends BaseController implements Audited {
     expect(c.inMethod?.name).toBe("transfer");
   });
 
-  it("always moves on: a stray bracket in an annotation can't stop the reader", () => {
+  it("always moves on: a stray bracket in an annotation can't stop the reader", async () => {
     // Templates, archetypes and half-edited files have these; one used to hang a whole scan.
     for (const bad of ["@A(})", "@A({)", '@A({"x"])', "@A(x = })", "@A({{)", "@A(", "@A({"]) {
-      const r = parseJava(`class C {\n  ${bad}\n  void m() {}\n}\n@RestController class D {}\n`);
+      const r = await parseJava(
+        `class C {\n  ${bad}\n  void m() {}\n}\n@RestController class D {}\n`,
+      );
       expect(
         r.decls.map((d) => d.name),
         bad,
       ).toContain("C");
     }
     // An empty value keeps the annotation's own closing parenthesis.
-    const empty = parseJava('class C {\n  @A(x = )\n  @GetMapping("/ok")\n  void m() {}\n}\n');
+    const empty = await parseJava(
+      'class C {\n  @A(x = )\n  @GetMapping("/ok")\n  void m() {}\n}\n',
+    );
     expect(empty.decls.find((d) => d.name === "m")!.annotations.map((a) => a.name)).toEqual([
       "A",
       "GetMapping",
     ]);
   });
 
-  it("shows every call argument, with what isn't a literal as ${...}", () => {
-    const r = parseJava(`class P {
+  it("shows every call argument, with what isn't a literal as ${...}", async () => {
+    const r = await parseJava(`class P {
   void a() { rest.postForObject(base + PAY, body, Resp.class); }
   void b() { rest.getForObject("/limits/{id}", Limit.class, id); }
 }`);
@@ -99,12 +106,13 @@ public class BalanceController extends BaseController implements Audited {
     expect(b!.shown[0]).toBe("/limits/{id}");
   });
 
-  it("records imports, and reads Kotlin, which ends lines without semicolons", () => {
-    const java = parseJava(
+  it("records imports, and reads Kotlin, which ends lines without semicolons", async () => {
+    const java = await parseJava(
       "package a.b;\nimport org.springframework.web.client.RestTemplate;\nimport static x.Y.*;\nclass C {}\n",
     );
     expect(java.imports).toEqual(["org.springframework.web.client.RestTemplate", "x.Y.*"]);
-    const kt = parseJava(`package forge.cards
+    const kt = await parseJava(
+      `package forge.cards
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
 
@@ -113,14 +121,16 @@ class CardsController {
   @GetMapping("/cards/{id}")
   fun card(id: String) = id
 }
-`);
+`,
+      "kotlin",
+    );
     expect(kt.packageName).toBe("forge.cards");
     expect(kt.imports).toHaveLength(2);
     const cls = kt.decls.find((d) => d.name === "CardsController")!;
     expect(cls.annotations.map((a) => a.name)).toEqual(["RestController"]);
   });
 
-  it("tokenises text blocks and escapes", () => {
+  it("tokenises text blocks and escapes", async () => {
     const t = tokenize('String s = """\\n  SELECT *\\n  FROM entry""";\nchar c = \'\\n\';').filter(
       (x) => x.t === "str",
     );
@@ -129,7 +139,7 @@ class CardsController {
 });
 
 describe("config", () => {
-  it("flattens YAML with line numbers and indexes lists", () => {
+  it("flattens YAML with line numbers and indexes lists", async () => {
     const m = flattenYaml(
       "ledger:\n  client:\n    read-timeout: 2000ms\nlist:\n  - a\n  - b\n",
       "a.yml",
@@ -142,7 +152,7 @@ describe("config", () => {
     expect(m.get("list[1]")?.value).toBe("b");
   });
 
-  it("reads properties and resolves placeholders loosely, keeping unknown ones", () => {
+  it("reads properties and resolves placeholders loosely, keeping unknown ones", async () => {
     const p = flattenProperties(
       "# c\ngateway.url=https://gw.example\naudit.read_timeout: 5s\n",
       "a.properties",
@@ -155,7 +165,7 @@ describe("config", () => {
 });
 
 describe("XML", () => {
-  it("parses elements, attributes, text and lines, and selects paths", () => {
+  it("parses elements, attributes, text and lines, and selects paths", async () => {
     const x = parseXml(
       '<?xml version="1.0"?>\n<ProxyEndpoint name="default">\n  <!-- c -->\n  <HTTPProxyConnection>\n    <BasePath>/ledger/v1</BasePath>\n  </HTTPProxyConnection>\n  <Step><Name>A &amp; B</Name></Step>\n</ProxyEndpoint>',
     );
@@ -169,7 +179,7 @@ describe("XML", () => {
 });
 
 describe("SQL", () => {
-  it("reads tables, columns, keys and indexes with lines", () => {
+  it("reads tables, columns, keys and indexes with lines", async () => {
     const d = parseDdl(`-- schema
 CREATE TABLE IF NOT EXISTS public."entry" (
   id BIGINT PRIMARY KEY,
@@ -206,7 +216,7 @@ ALTER TABLE entry ADD COLUMN posted_at timestamp;`);
     ]);
   });
 
-  it("finds the tables a query reads and writes", () => {
+  it("finds the tables a query reads and writes", async () => {
     expect(
       tablesInQuery(
         "SELECT a FROM entry e JOIN account a ON a.id = e.account_id WHERE x IN (SELECT 1 FROM holds)",

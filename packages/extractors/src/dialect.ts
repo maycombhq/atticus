@@ -31,16 +31,6 @@ import { isRef, parseHcl, type HclBlock, type HclValue } from "./platform/hcl.js
 import { loadTerraform, resolve as tfResolve, type TfModule } from "./platform/terraform.js";
 import { dirOf } from "./platform/util.js";
 
-/** Names a Java source declares with a type (fields, parameters, variables): name → simple type. */
-function declaredTypes(src: string): Map<string, Set<string>> {
-  const out = new Map<string, Set<string>>();
-  for (const m of src.matchAll(
-    /\b([A-Z][\w]*)(?:<[^<>;]*(?:<[^<>;]*>[^<>;]*)*>)?\s+(\w+)\s*[;=,)]/g,
-  ))
-    out.set(m[2]!, (out.get(m[2]!) ?? new Set()).add(m[1]!));
-  return out;
-}
-
 /** An HCL value as a template value: plain values only, and nothing still holding ${...}. */
 function hclString(v: HclValue | undefined): string | undefined {
   if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -184,7 +174,7 @@ async function places(
   const type = matchType(m);
   const javaCache = new Map<string, JavaFile>();
   const java = async (p: string) => {
-    if (!javaCache.has(p)) javaCache.set(p, parseJava(await repo.readText(p)));
+    if (!javaCache.has(p)) javaCache.set(p, await parseJava(await repo.readText(p), p));
     return javaCache.get(p)!;
   };
   for await (const path of repo.listFiles(m.files)) {
@@ -224,13 +214,16 @@ async function places(
         ? m.methodCall.split(".")
         : [undefined, m.methodCall];
       // receiverType (ADR 0056): the receiver must be declared with that type, or be the type.
-      const types = m.receiverType ? declaredTypes(await repo.readText(path)) : undefined;
+      const types = new Map<string, Set<string>>();
+      if (m.receiverType)
+        for (const v of (await java(path)).variables)
+          types.set(v.name, (types.get(v.name) ?? new Set()).add(v.type));
       const want = m.receiverType ? simple(m.receiverType) : undefined;
       for (const c of (await java(path)).calls) {
         if (c.method !== name || (recv && c.receiver !== recv)) continue;
         if (want) {
           const r = (c.receiver ?? "").replace(/^this\./, "");
-          if (r !== want && !types!.get(r)?.has(want)) continue;
+          if (r !== want && !types.get(r)?.has(want)) continue;
         }
         const attrs: Record<string, string> = {};
         c.args.forEach((v, i) => v !== undefined && (attrs[`arg${i}`] = v));

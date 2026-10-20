@@ -277,7 +277,7 @@ export const graphqlExtractor = defineExtractor({
       const text = await read(repo, ctx, path);
       if (text === undefined || !/@(Query|Mutation|Subscription|Schema)Mapping/.test(text))
         continue;
-      for (const d of parseJava(text).decls) {
+      for (const d of (await parseJava(text, path)).decls) {
         if (d.kind !== "method") continue;
         const found = javaField(d);
         if (found) serve(found.op, found.field, path, found.line, "code");

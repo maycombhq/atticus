@@ -168,7 +168,7 @@ export async function learnFramework(
       }
       continue;
     }
-    const file = parseJava(text);
+    const file = await parseJava(text, path);
     if (file.packageName) c.packages.add(file.packageName);
     for (const d of file.decls.filter((x) => x.kind === "annotation-type")) {
       const aliases = new Map<string, { annotation?: string; attribute: string }>();

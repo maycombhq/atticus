@@ -206,7 +206,7 @@ export async function surveyRepos(dirs: string[]): Promise<RepoSurvey> {
     for (const path of sources) {
       const text = await r.readText(path);
       const lines = text.split(/\r?\n/);
-      for (const d of parseJava(text).decls) {
+      for (const d of (await parseJava(text, path)).decls) {
         const target: AnnotationTarget =
           d.kind === "method" ? "method" : d.kind === "field" ? "field" : "class";
         const around = d.kind === "method" || d.kind === "field" ? d.parent : undefined;

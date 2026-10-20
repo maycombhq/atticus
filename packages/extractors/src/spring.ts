@@ -1,5 +1,5 @@
 import type { CatalogRecord } from "@maycombhq/core";
-import { defineExtractor, type RepoHandle } from "@maycombhq/sdk";
+import { defineExtractor } from "@maycombhq/sdk";
 import { componentOf, looseEnd, repoConfig, repoConfigFor, restEndpoint } from "./facts.js";
 import { resolvePlaceholders, type ConfigValue } from "./lang/config.js";
 import {
@@ -10,6 +10,7 @@ import {
   parseJava,
   type Annotation,
   type Decl,
+  type JavaFile,
 } from "./lang/java.js";
 import { looksLikeSql, tablesInQuery } from "./lang/sql.js";
 import { cleanJdbcUrl, SECRET_NAME } from "./backends/shared.js";
@@ -69,21 +70,14 @@ const REST_TEMPLATE: Record<string, string> = {
  * `const val X = "..."`), as Class.NAME → value, the class being the file's first type. A name
  * defined twice with different values is left out: it can't be known which is meant.
  */
-async function constantsOf(repo: RepoHandle): Promise<Map<string, string>> {
+function constantsOf(files: Iterable<JavaFile>): Map<string, string> {
   const seen = new Map<string, string | null>();
-  for await (const path of repo.listFiles(["**/*.java", "**/*.kt"])) {
-    if (/(^|\/)src\/test\//.test(path)) continue;
-    const text = await repo.readText(path);
-    const owner = /\b(?:class|interface|enum|object)\s+([A-Za-z_]\w*)/.exec(text)?.[1];
-    if (!owner) continue;
-    for (const m of text.matchAll(
-      /(?:static\s+final\s+String|const\s+val)\s+(\w+)\s*(?::\s*String\s*)?=\s*"((?:[^"\\$]|\\.)*)"/g,
-    )) {
-      const key = `${owner}.${m[1]!}`;
+  for (const f of files)
+    for (const c of f.constants) {
+      const key = `${c.owner}.${c.name}`;
       const prev = seen.get(key);
-      seen.set(key, prev === undefined || prev === m[2]! ? m[2]! : null);
+      seen.set(key, prev === undefined || prev === c.value ? c.value : null);
     }
-  }
   return new Map([...seen].filter((e): e is [string, string] => e[1] !== null));
 }
 
@@ -168,22 +162,40 @@ export const springExtractor = defineExtractor({
     // Each file resolves placeholders from its own module's config first (multi-module repos).
     const configFor = await repoConfigFor(repo);
     let resolve = (s: string) => resolvePlaceholders(s, config);
-    // Constants the repo's own code defines, anywhere in it: Class.NAME → value.
-    const repoConstants = await constantsOf(repo);
-
+    // Every Java and Kotlin file, read once from its syntax tree.
+    const parsed = new Map<string, JavaFile>();
     for await (const path of repo.listFiles(["**/*.java", "**/*.kt"])) {
       if (/(^|\/)src\/test\//.test(path)) continue;
-      const src = await repo.readText(path);
+      parsed.set(path, await parseJava(await repo.readText(path), path));
+    }
+    // Constants the repo's own code defines, anywhere in it: Class.NAME → value.
+    const repoConstants = constantsOf(parsed.values());
+    const housePackages = (ctx.frameworks ?? []).flatMap((m) => m.packages);
+
+    for (const [path, file] of parsed) {
       const fileConfig = configFor(path);
       resolve = (s: string) => resolvePlaceholders(s, fileConfig);
-      const housePackages = (ctx.frameworks ?? []).flatMap((m) => m.packages);
+      const types = new Set(file.variables.map((v) => v.type));
+      const annotations = new Set(file.decls.flatMap((d) => d.annotations.map((a) => a.name)));
+      const imported = (p: string) =>
+        file.imports.some((i) => i === p || i.startsWith(`${p}.`)) ||
+        file.packageName === p ||
+        file.packageName?.startsWith(`${p}.`) === true;
+      // Files that use Spring, its clients, or a modelled house framework.
       if (
-        !/springframework|@FeignClient|KafkaTemplate|JdbcTemplate|@KafkaListener/.test(src) &&
-        !housePackages.some((p) => src.includes(p))
+        !imported("org.springframework") &&
+        !["FeignClient", "KafkaListener", "JmsListener"].some((a) => annotations.has(a)) &&
+        ![
+          "KafkaTemplate",
+          "JdbcTemplate",
+          "JmsTemplate",
+          "RestTemplate",
+          "WebClient",
+          "RestClient",
+        ].some((t) => types.has(t)) &&
+        !housePackages.some(imported)
       )
         continue;
-      const file = parseJava(src);
-      const lines = src.split("\n");
       // The module's component when the repo builds more than one (ADR 0057).
       const component = componentOf(repo, ctx, path);
       // House frameworks this file uses (ADR 0054): their annotations read as Spring's.
@@ -192,11 +204,7 @@ export const springExtractor = defineExtractor({
       const values = modelValues(models);
       // Names this file gives a value: same-file String constants and @Value fields
       // (base → ${nw.endpoints.payments}), so base + PAY reads as a URL resolve() can finish.
-      const known = new Map<string, string>();
-      for (const m of src.matchAll(
-        /static\s+final\s+String\s+(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*;/g,
-      ))
-        known.set(m[1]!, m[2]!);
+      const known = new Map<string, string>(file.constants.map((c) => [c.name, c.value]));
       for (const d of file.decls.filter((x) => x.kind === "field")) {
         const v = attr(findAnnotation(d, "Value"));
         if (v) known.set(d.name, v);
@@ -317,9 +325,14 @@ export const springExtractor = defineExtractor({
       }
 
       // ---- calling side: RestTemplate, WebClient, Kafka publish, JDBC
-      const usesRest = /RestTemplate|RestClient/.test(src);
-      const usesKafka = /KafkaTemplate/.test(src);
-      const usesJms = /JmsTemplate|JmsListener/.test(src);
+      const uses = (...names: string[]) =>
+        names.some(
+          (n) =>
+            types.has(n) || annotations.has(n) || file.imports.some((i) => i.endsWith(`.${n}`)),
+        );
+      const usesRest = uses("RestTemplate", "RestClient");
+      const usesKafka = uses("KafkaTemplate");
+      const usesJms = uses("JmsTemplate", "JmsListener");
       const found: CatalogRecord[] = [];
       file.calls.forEach((c, i) => {
         const url = c.args[0];
@@ -331,7 +344,10 @@ export const springExtractor = defineExtractor({
         if (usesRest && REST_TEMPLATE[c.method] && target) {
           let method = REST_TEMPLATE[c.method]!;
           if (method === "ANY")
-            method = /HttpMethod\.(\w+)/.exec(lines[c.line - 1] ?? "")?.[1] ?? "ANY";
+            method =
+              c.shown
+                .find((a) => a.startsWith("${HttpMethod.") && a.endsWith("}"))
+                ?.slice("${HttpMethod.".length, -1) ?? "ANY";
           found.push(
             looseEnd(repo, ctx, "http-call", `${method} ${resolve(target)}`, {
               source: "code",
@@ -407,7 +423,7 @@ export const springExtractor = defineExtractor({
         }
       });
       // Calls through a house framework's wrapper client (ADR 0054).
-      for (const w of wrapperCalls(file, src, models, fill))
+      for (const w of wrapperCalls(file, models, fill))
         found.push(
           looseEnd(repo, ctx, "http-call", `${w.method} ${resolve(w.url)}`, {
             source: "code",
