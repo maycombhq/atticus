@@ -6,7 +6,14 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { FrameworkModel } from "@maycombhq/core";
 import { scanEstate } from "@maycombhq/scanner";
-import { frameworksCheck, frameworksDiscover, frameworksLearn } from "../src/framework-commands.js";
+import { baseClonePath } from "@maycombhq/workspace";
+import {
+  frameworksCheck,
+  frameworksDiscover,
+  frameworksKit,
+  frameworksLearn,
+  frameworksSurvey,
+} from "../src/framework-commands.js";
 
 const MESSY = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/messy");
 const T = 120_000;
@@ -202,4 +209,39 @@ describe("atticus frameworks check", () => {
     },
     T,
   );
+});
+
+describe("atticus frameworks survey and kit", () => {
+  it(
+    "surveys the cloned repos for house modules, and names the ones not cloned",
+    async () => {
+      const root = await metarepo();
+      for (const r of ["tide-web", "tide-bff"])
+        await cp(join(MESSY, "repos", r), baseClonePath(root, r), { recursive: true });
+      const c = capture();
+      expect(await frameworksSurvey(root, { prefixes: ["@tide/"] }, c.io)).toBe(0);
+      expect(c.out[0]).toBe("@tide/lantern (js): 2 files in 1 repo, modelled by tide-lantern");
+      expect(c.out.at(-1)).toBe(
+        "Not cloned, so not surveyed: tide-cards, tide-gateway, tide-payments (atticus workspace sync clones them).",
+      );
+      const j = capture();
+      await frameworksSurvey(root, { prefixes: ["@tide/"], json: true }, j.io);
+      const parsed = JSON.parse(j.out.join("\n")) as { modules: { module: string }[] };
+      expect(parsed.modules.map((m) => m.module)).toEqual([
+        "@tide/lantern",
+        "@tide/lantern/server",
+      ]);
+    },
+    T,
+  );
+
+  it("exports the kit", async () => {
+    const dir = join(await mkdtemp(join(tmpdir(), "atticus-fwkit-")), "kit");
+    const c = capture();
+    expect(await frameworksKit(dir, c.io)).toBe(0);
+    expect(c.out).toEqual([`Wrote the framework-model kit (7 files) to ${dir}`]);
+    expect(await readFile(join(dir, "README.md"), "utf8")).toContain(
+      "# Writing an Atticus framework model",
+    );
+  });
 });

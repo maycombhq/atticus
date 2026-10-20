@@ -6,6 +6,7 @@ import { pythonExtractor } from "./python.js";
 
 export { dotnetExtractor, goExtractor, nodeExtractor, pythonExtractor };
 export { lexSource, type SourceLang, type SrcTok } from "../lang/lexer.js";
+export { SourceFile, Evaluator, type Arg, type SrcCall } from "./shared.js";
 
 /** The generic-tier backend extractors (.NET, Go, Node, Python), in id order. */
 export const BACKEND_EXTRACTORS: readonly Extractor[] = [

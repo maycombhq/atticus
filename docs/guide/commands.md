@@ -58,6 +58,8 @@ Usage:
   atticus frameworks discover --group <a.b>[,...]   The house artifacts the repos build on, and their JARs here
           [--jars <dir>]... [--learn] [--json]   (Maven and Gradle caches too; never downloads)
   atticus frameworks check [name]      Run each framework model's own tests; a failing model isn't used
+  atticus frameworks survey [--package <prefix>[,...]]   How the repos use house frameworks, any language [--json]
+  atticus frameworks kit [dir]         Export the framework-model kit for an assistant
   atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, approvals and test kinds

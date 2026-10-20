@@ -14,7 +14,8 @@
   },
   "files": [
     "dist",
-    "kit"
+    "kit",
+    "frameworks-kit"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

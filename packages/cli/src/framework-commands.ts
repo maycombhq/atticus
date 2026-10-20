@@ -15,6 +15,11 @@ import {
   learnFrameworkFromJar,
   runFrameworkTests,
 } from "@maycombhq/extractors";
+import {
+  exportFrameworksKit,
+  formatFrameworkSurvey,
+  surveyFrameworks,
+} from "@maycombhq/assistant-kit";
 import { fsRepo } from "@maycombhq/sdk";
 import { baseClonePath } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -349,4 +354,47 @@ export async function frameworksCheck(
     io.err(`${m.name} isn't used by scans until its tests pass.`);
   }
   return bad > 0 ? 1 : 0;
+}
+
+/**
+ * atticus frameworks survey [--package <prefix>[,...]] [--json]: how the estate's repos use
+ * house frameworks, in any language (ADR 0055): the house modules they import, which model
+ * covers each, and how each imported name is called or annotated, with a sample line. What an
+ * assistant drafting a model starts from; nothing is guessed.
+ */
+export async function frameworksSurvey(
+  root: string,
+  o: { prefixes: string[]; json?: boolean },
+  io: Output,
+): Promise<number> {
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const handles = [];
+  const missing: string[] = [];
+  for (const r of op.profiles.flatMap((p) => (p.repos?.repos ?? []).filter((x) => !x.archived))) {
+    const dir = baseClonePath(root, r.id);
+    if ((await stat(dir).catch(() => undefined))?.isDirectory())
+      handles.push(fsRepo(r.id, dir, "0".repeat(40)));
+    else missing.push(r.id);
+  }
+  const survey = await surveyFrameworks(handles, {
+    prefixes: o.prefixes,
+    models: op.frameworks,
+  });
+  if (o.json) {
+    io.out(JSON.stringify({ ...survey, notCloned: missing }, null, 2));
+    return 0;
+  }
+  for (const l of formatFrameworkSurvey(survey)) io.out(l);
+  if (missing.length)
+    io.out(
+      `Not cloned, so not surveyed: ${missing.sort().join(", ")} (atticus workspace sync clones them).`,
+    );
+  return 0;
+}
+
+/** atticus frameworks kit [dir]: export the framework-model kit for an assistant. */
+export async function frameworksKit(outDir: string, io: Output): Promise<number> {
+  const files = await exportFrameworksKit(outDir);
+  io.out(`Wrote the framework-model kit (${plural(files.length, "file")}) to ${outDir}`);
+  return 0;
 }
