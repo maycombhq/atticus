@@ -155,12 +155,12 @@ const shown = (line: string) => {
 };
 
 /** How a file uses the names it imports from one module. */
-function usesIn(
+async function usesIn(
   text: string,
   path: string,
   lang: SurveyLang,
   names: string[],
-): { use: string; line: number }[] {
+): Promise<{ use: string; line: number }[]> {
   const out: { use: string; line: number }[] = [];
   if (lang === "java") {
     // Comments are blanked, keeping lines, so a name in a comment isn't a use.
@@ -182,7 +182,7 @@ function usesIn(
   }
   let src: SourceFile;
   try {
-    src = new SourceFile(path, text, lang);
+    src = await SourceFile.parse(path, text, lang);
   } catch {
     return out;
   }
@@ -247,7 +247,7 @@ export async function surveyFrameworks(
         m.repos.add(repo.name);
         m.files++;
         for (const n of imp.names) m.names.add(n);
-        for (const u of usesIn(text, path, lang, imp.names)) {
+        for (const u of await usesIn(text, path, lang, imp.names)) {
           const e = m.uses.get(u.use) ?? {
             count: 0,
             repos: new Set<string>(),

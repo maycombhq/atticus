@@ -6,6 +6,7 @@ import {
   dotenv,
   Emitter,
   Evaluator,
+  frontendCall,
   joinPath,
   joinUrl,
   listSources,
@@ -44,21 +45,9 @@ const EXTS = [".ts", ".js", ".mjs", ".cjs", ".mts", ".cts"];
 // calls whose first argument is a literal starting with "/" or "http". Those call sites
 // are left to it, so each call is reported once; this extractor reports the rest.
 const FRONTEND_EXT = /\.(ts|tsx|js|jsx|mjs|vue)$/;
-const FRONTEND_PREFILTER = /\bfetch\s*\(|axios|\.get\s*\(|\.post\s*\(|HttpClient/;
 
-function frontendCovers(path: string, src: SourceFile, c: SrcCall): boolean {
-  if (!FRONTEND_EXT.test(path) || !FRONTEND_PREFILTER.test(src.text) || c.generics.length)
-    return false;
-  const segs = c.callee.split(".");
-  const tail = segs[segs.length - 1]!;
-  const prev = segs[segs.length - 2];
-  const verb = /^(get|post|put|delete|patch)$/.test(tail);
-  if (!(tail === "fetch" || tail === "axios" || (verb && (prev === "axios" || prev === "http"))))
-    return false;
-  const a = c.args[0];
-  const t = a ? src.tok(a.from) : undefined;
-  return !!t && t.t === "str" && /^(\/|https?:)/.test(t.v);
-}
+const frontendCovers = (path: string, src: SourceFile, c: SrcCall): boolean =>
+  FRONTEND_EXT.test(path) && frontendCall(src, c) !== undefined;
 
 interface NodeFile {
   src: SourceFile;
@@ -273,7 +262,7 @@ export const nodeExtractor = defineExtractor({
     );
     const files = new Map<string, NodeFile>();
     for (const path of paths) {
-      const src = new SourceFile(path, await repo.readText(path), "js");
+      const src = await SourceFile.parse(path, await repo.readText(path), "js");
       const envOf = (key: string) => env.get(key)?.value ?? unresolved(key);
       const ev = new Evaluator(src, {
         name: (dotted) => (dotted.startsWith("process.env.") ? envOf(dotted.slice(12)) : undefined),
@@ -395,9 +384,7 @@ export const nodeExtractor = defineExtractor({
         }
     const fastifyRepo =
       /"fastify"/.test(pkgs.join(" ")) ||
-      [...files.values()].some((f) =>
-        /from\s+["']fastify["']|require\(["']fastify["']\)/.test(f.src.text),
-      );
+      [...files.values()].some((f) => f.src.imports.some((i) => i.spec === "fastify"));
     if (fastifyRepo)
       for (const [path, nf] of files)
         for (const fn of nf.funcs)
@@ -512,7 +499,7 @@ export const nodeExtractor = defineExtractor({
           globalPrefix = nf.ev.arg(nf.src.arg(c, 0)) ?? globalPrefix;
     for (const [path, nf] of files) {
       const { src, ev } = nf;
-      if (!/@nestjs\//.test(src.text)) continue;
+      if (!src.imports.some((i) => i.spec.startsWith("@nestjs/"))) continue;
       const nestPaths = (a: Arg | undefined): string[] => {
         if (!a) return [""];
         if (src.is(a.from, "{")) {
@@ -651,10 +638,9 @@ function* events(
   src: SourceFile,
   ev: Evaluator,
 ): Generator<{ kind: "event-publish" | "event-subscribe"; topic: string; line: number }> {
-  const text = src.text;
-  const kafka = /kafkajs/.test(text);
-  const amqp = /amqplib/.test(text);
-  const bus = /@azure\/service-bus/.test(text);
+  const kafka = src.imported("kafkajs");
+  const amqp = src.imported("amqplib");
+  const bus = src.imported("@azure/service-bus");
   const known = (v: string | undefined) => (v && !/[{}]/.test(v) ? v : undefined);
   const one = (a: Arg | undefined) => {
     const topic = a ? known(ev.arg(a)) : undefined;

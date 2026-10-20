@@ -270,7 +270,7 @@ export const dotnetExtractor = defineExtractor({
     const env = await dotenv(repo);
     const files: { path: string; src: SourceFile; ev: Evaluator }[] = [];
     for (const path of await listSources(repo, ["**/*.cs"])) {
-      const src = new SourceFile(path, await repo.readText(path), "csharp");
+      const src = await SourceFile.parse(path, await repo.readText(path), "csharp");
       const ev = new Evaluator(src, {
         index: (recv, key) =>
           isConfig(recv) ? (config.get(configKey(key))?.value ?? unresolved(key)) : undefined,
@@ -326,7 +326,7 @@ export const dotnetExtractor = defineExtractor({
     const graph = new RouteGraph();
     for (const { path, src, ev } of files) {
       const { types, members } = structure(src);
-      const text = src.text;
+      const usesRefit = src.imported("Refit") || src.mentions("Refit");
 
       // ---- controllers
       for (const m of members) {
@@ -467,8 +467,7 @@ export const dotnetExtractor = defineExtractor({
       // ---- Refit interfaces
       for (const m of members) {
         const ty = m.parent;
-        if (!ty || ty.kind !== "interface" || !(refitTypes.has(ty.name) || /\bRefit\b/.test(text)))
-          continue;
+        if (!ty || ty.kind !== "interface" || !(refitTypes.has(ty.name) || usesRefit)) continue;
         for (const a of m.attrs) {
           const method = REFIT_ATTRS[a.name];
           const tpl = method ? ev.arg(a.args.find((x) => !x.name)) : undefined;
@@ -478,7 +477,7 @@ export const dotnetExtractor = defineExtractor({
       }
 
       // ---- events
-      for (const e of events(src, ev, text))
+      for (const e of events(src, ev))
         em.loose(e.kind, e.topic, path, e.line, e.kind === "event-publish" ? "caller" : "callee");
     }
 
@@ -513,10 +512,13 @@ function routeArg(a: Attr): Arg | undefined {
 function* events(
   src: SourceFile,
   ev: Evaluator,
-  text: string,
 ): Generator<{ kind: "event-publish" | "event-subscribe"; topic: string; line: number }> {
-  const kafka = /Confluent\.Kafka/.test(text);
-  const bus = /ServiceBus/.test(text);
+  const kafka =
+    src.imported("Confluent.Kafka") ||
+    src.toks.some((t, k) => t.v === "Confluent" && src.dotted(k, k + 3) === "Confluent.Kafka");
+  const bus =
+    src.imports.some((i) => i.spec.includes("ServiceBus")) ||
+    src.toks.some((t) => t.t === "id" && t.v.includes("ServiceBus"));
   const known = (v: string | undefined) => (v && !/[{}]/.test(v) ? v : undefined);
   const one = (a: Arg | undefined) => {
     const topic = a ? known(ev.arg(a)) : undefined;

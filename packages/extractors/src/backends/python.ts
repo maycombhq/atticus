@@ -71,53 +71,17 @@ function moduleFile(files: Map<string, PyFile>, from: string, module: string): s
   return undefined;
 }
 
+/** Imported names from the file's import statements: `import a.b` binds a, `from m import x as y` binds y. */
 function readImports(src: SourceFile): Map<string, { module: string; attr?: string }> {
   const out = new Map<string, { module: string; attr?: string }>();
-  const t = src.toks;
-  const atLineStart = (k: number) => k === 0 || t[k - 1]!.line < t[k]!.line;
-  for (let k = 0; k < t.length; k++) {
-    if (t[k]!.t !== "id" || !atLineStart(k)) continue;
-    if (t[k]!.v === "from") {
-      let m = "";
-      let j = k + 1;
-      while (j < t.length && (t[j]!.v === "." || t[j]!.t === "id") && t[j]!.v !== "import")
-        m += t[j++]!.v;
-      if (t[j]?.v !== "import") continue;
-      j++;
-      let end: number;
-      if (src.is(j, "(")) {
-        end = src.pairs[j]! < 0 ? t.length : src.pairs[j]!;
-        j++;
-      } else {
-        end = j;
-        while (end < t.length && t[end]!.line === t[k]!.line) end++;
-      }
-      for (; j < end; j++) {
-        if (t[j]!.t !== "id") continue;
-        if (t[j]!.v === "as" && t[j + 1]?.t === "id") {
-          const prev = t[j - 1]!.v;
-          out.delete(prev);
-          out.set(t[j + 1]!.v, { module: m, attr: prev });
-          j++;
-          continue;
-        }
-        out.set(t[j]!.v, { module: m, attr: t[j]!.v });
-      }
-    } else if (t[k]!.v === "import") {
-      let j = k + 1;
-      while (j < t.length && t[j]!.line === t[k]!.line) {
-        let m = "";
-        while (j < t.length && (t[j]!.t === "id" || t[j]!.v === ".") && t[j]!.v !== "as")
-          m += t[j++]!.v;
-        if (t[j]?.v === "as" && t[j + 1]?.t === "id") {
-          out.set(t[j + 1]!.v, { module: m });
-          j += 2;
-        } else if (m) out.set(m.split(".")[0]!, { module: m.split(".")[0]! });
-        if (t[j]?.v === ",") j++;
-        else break;
-      }
-    }
-  }
+  for (const i of src.imports)
+    for (const n of i.names)
+      out.set(
+        n.local,
+        n.name === "*"
+          ? { module: n.local === i.spec.split(".")[0] ? n.local : i.spec }
+          : { module: i.spec, attr: n.name },
+      );
   return out;
 }
 
@@ -155,7 +119,7 @@ export const pythonExtractor = defineExtractor({
       files.get(file)?.ev.lookup(name, at);
 
     for (const path of paths) {
-      const src = new SourceFile(path, await repo.readText(path), "python");
+      const src = await SourceFile.parse(path, await repo.readText(path), "python");
       const imports = readImports(src);
       const pf: PyFile = {
         src,
@@ -186,11 +150,10 @@ export const pythonExtractor = defineExtractor({
         },
       });
       files.set(path, pf);
-      const lines = src.text.split("\n");
       for (const [name, list] of src.assigns) {
         if (!/^[A-Z][A-Z0-9_]*$/.test(name)) continue;
         for (const a of list)
-          if (!/^\s/.test(lines[src.tok(a.at)!.line - 1] ?? "")) {
+          if (a.top) {
             const l = constants.get(name) ?? [];
             l.push({ file: path, at: a.at });
             constants.set(name, l);
@@ -296,7 +259,6 @@ export const pythonExtractor = defineExtractor({
     // ---- outgoing calls, events and databases
     for (const [path, pf] of files) {
       const { src, ev } = pf;
-      const text = src.text;
       const clients = new Map<string, string | undefined>();
       for (const c of src.calls) {
         if (!CLIENT_CTORS.has(c.callee)) continue;
@@ -305,12 +267,12 @@ export const pythonExtractor = defineExtractor({
         const base = src.arg(c, 99, "base_url");
         clients.set(name, base ? ev.arg(base) : undefined);
       }
-      const usesRequests = /^\s*(import|from)\s+(requests|httpx)\b/m.test(text);
+      const usesRequests = src.imported("requests") || src.imported("httpx");
       for (const c of src.calls) {
         const req = httpCall(c, src, ev, clients, usesRequests);
         if (req) em.call(req.method, req.url, path, c.line);
       }
-      for (const e of events(src, ev, text))
+      for (const e of events(src, ev))
         em.loose(e.kind, e.topic, path, e.line, e.kind === "event-publish" ? "caller" : "callee");
       for (const c of src.calls) {
         if (!/^(sqlalchemy\.)?create(_async)?_engine$/.test(c.callee)) continue;
@@ -355,11 +317,10 @@ function httpCall(
 function* events(
   src: SourceFile,
   ev: Evaluator,
-  text: string,
 ): Generator<{ kind: "event-publish" | "event-subscribe"; topic: string; line: number }> {
-  const kafka = /confluent_kafka|aiokafka|^\s*(from|import)\s+kafka\b/m.test(text);
-  const pika = /\bpika\b/.test(text);
-  const bus = /azure\.servicebus/.test(text);
+  const kafka = ["confluent_kafka", "aiokafka", "kafka"].some((m) => src.imported(m));
+  const pika = src.imported("pika") || src.mentions("pika");
+  const bus = src.imported("azure.servicebus");
   const known = (v: string | undefined) => (v && !/[{}]/.test(v) ? v : undefined);
   const one = (a: ReturnType<SourceFile["arg"]>) =>
     a ? { topic: known(ev.arg(a)), line: src.tok(a.from)!.line } : undefined;

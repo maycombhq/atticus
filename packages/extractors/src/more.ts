@@ -1,5 +1,6 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
+import { frontendCall, SourceFile } from "./backends/shared.js";
 import { componentOf, evidence, looseEnd, repoConfig, splitUrl } from "./facts.js";
 import { LIQUIBASE_CLAIMS, liquibaseChangeSets } from "./data/liquibase.js";
 import { flattenYaml, yamlKeyLine } from "./lang/config.js";
@@ -117,34 +118,42 @@ export const frontendExtractor = defineExtractor({
         /\.(test|spec|d)\.[jt]sx?$/.test(path)
       )
         continue;
-      const src = await repo.readText(path);
-      if (!/\bfetch\s*\(|axios|\.get\s*\(|\.post\s*\(|HttpClient/.test(src)) continue;
-      const lines = src.split("\n");
-      const re =
-        /\b(fetch|axios(?:\.(get|post|put|delete|patch))?|(?:this\.)?http\.(get|post|put|delete|patch))\s*\(\s*(`([^`]*)`|'([^']*)'|"([^"]*)")/g;
-      for (const m of src.matchAll(re)) {
-        const raw = m[5] ?? m[6] ?? m[7] ?? "";
-        const url = raw.replace(
-          /\$\{\s*([^}]+?)\s*\}/g,
-          (_w, expr: string) => `{${expr.split(".").pop()!.replace(/\W/g, "")}}`,
-        );
-        if (!/^(\/|https?:)/.test(url)) continue;
-        const line = src.slice(0, m.index).split("\n").length;
-        let method = (m[2] ?? m[3] ?? "").toUpperCase();
-        if (!method) {
-          const tail = lines.slice(line - 1, line + 2).join(" ");
-          method = /method\s*:\s*["'`](\w+)["'`]/i.exec(tail)?.[1]?.toUpperCase() ?? "GET";
-        }
-        yield looseEnd(repo, ctx, "http-call", `${method} ${url}`, {
+      let text = await repo.readText(path);
+      // Only a file naming one of the clients can hold such a call: skip the rest unparsed.
+      if (!["fetch", "axios", "http"].some((w) => text.includes(w))) continue;
+      if (path.endsWith(".vue")) text = vueScript(text);
+      const src = await SourceFile.parse(path, text, "js");
+      for (const c of src.calls) {
+        const call = frontendCall(src, c);
+        if (!call) continue;
+        yield looseEnd(repo, ctx, "http-call", `${call.method} ${call.url}`, {
           source: "code",
           path,
-          line,
+          line: c.line,
           side: "caller",
         });
       }
     }
   },
 });
+
+/**
+ * A Vue single-file component with everything outside its `<script>` blocks blanked (line
+ * breaks kept), so the script parses as TypeScript and lines still match the file.
+ */
+function vueScript(text: string): string {
+  let out = "";
+  let at = 0;
+  for (;;) {
+    const open = text.indexOf("<script", at);
+    const body = open < 0 ? -1 : text.indexOf(">", open);
+    const close = body < 0 ? -1 : text.indexOf("</script>", body);
+    const blank = (s: string) => s.replace(/[^\n]/g, " ");
+    if (close < 0) return out + blank(text.slice(at));
+    out += blank(text.slice(at, body + 1)) + text.slice(body + 1, close);
+    at = close;
+  }
+}
 
 // ------------------------------------------------------------------ topic configs
 
