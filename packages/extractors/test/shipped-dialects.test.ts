@@ -48,6 +48,9 @@ describe("listShippedDialects", () => {
       "jaxrs.yaml",
       "micronaut.yaml",
       "quarkus-reactive-messaging.yaml",
+      "terraform-aws.yaml",
+      "terraform-azure.yaml",
+      "terraform-gcp.yaml",
     ]);
     for (const p of paths) {
       expect(isAbsolute(p)).toBe(true);
@@ -61,6 +64,9 @@ describe("listShippedDialects", () => {
       "jaxrs@1.0.0",
       "micronaut@1.0.0",
       "quarkus-reactive-messaging@1.0.0",
+      "terraform-aws@1.0.0",
+      "terraform-azure@1.0.0",
+      "terraform-gcp@1.0.0",
     ]);
     for (const [i, d] of dialects.entries())
       expect(await runDialectTests(d, dirname(listShippedDialects()[i]!)), d.name).toEqual([]);

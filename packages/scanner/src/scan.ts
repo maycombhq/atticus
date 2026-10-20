@@ -344,7 +344,12 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       ...BUILT_IN_EXTRACTORS,
       ...(o.extractors ?? []),
       ...dialectExtractors
-        .filter(({ d }) => r.dialects.includes(d.name) || d.appliesTo.repoTypes.includes(r.type))
+        .filter(
+          ({ d }) =>
+            r.dialects.includes(d.name) ||
+            d.appliesTo.repoTypes.includes(r.type) ||
+            d.appliesTo.repoTypes.includes("*"),
+        )
         .map(({ x }) => x),
     ];
     // .atticus/ is Atticus's own folder (an adopted repo scans itself): never read as code.

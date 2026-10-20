@@ -5,7 +5,14 @@ import { dirOf, readOrWarn } from "./util.js";
 /**
  * Terraform modules as folders of .tf files: their resources, and the variables (defaults,
  * then terraform.tfvars and *.auto.tfvars) and locals needed to resolve names such as
- * "reports-job-${var.env}". Values are resolved only from what is written in the folder.
+ * "reports-job-${var.env}". Values are resolved only from what is written in the repo.
+ *
+ * Local modules are followed (ADR 0063): a `module` block whose source is a folder of the repo
+ * ("./x", "../modules/queue") makes an instance of that folder whose variables take the values
+ * the caller passes (resolved in the caller), over the module's defaults. Each instantiation
+ * is its own TfModule, nested modules included; a folder that some folder calls is read only
+ * through its instances, not on its own. Remote sources (registry, git::, http) stay module
+ * blocks.
  */
 
 export interface TfResource {
@@ -20,9 +27,39 @@ export interface TfModule {
   resources: TfResource[];
   vars: Map<string, HclValue>;
   locals: Map<string, HclValue>;
+  /** For a local module's instance: the caller's module block. */
+  call?: { name: string; file: string; line: number };
 }
 
 export const TF_GLOBS = ["**/*.tf", "**/terraform.tfvars", "**/*.auto.tfvars"];
+
+/** How deep local modules are followed; deeper calls (or a cycle) stop there. */
+const MAX_MODULE_DEPTH = 8;
+
+interface Folder {
+  dir: string;
+  relevant: boolean;
+  resources: TfResource[];
+  /** Variable defaults; tfvars apply to a folder read on its own, not to an instance. */
+  defaults: Map<string, HclValue>;
+  tfvars: [string, HclValue][];
+  locals: Map<string, HclValue>;
+  calls: { name: string; source: string; block: HclBlock; file: string }[];
+}
+
+/** A module source that is a folder of this repo, resolved against the caller's folder. */
+export function localSource(callerDir: string, source: string): string | undefined {
+  if (!/^\.\.?(\/|$)/.test(source)) return undefined;
+  const parts = callerDir ? callerDir.split("/") : [];
+  for (const seg of source.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      if (parts.length === 0) return undefined;
+      parts.pop();
+    } else parts.push(seg);
+  }
+  return parts.join("/");
+}
 
 /** Read every Terraform folder whose files match `relevant`, warning about unclosed blocks. */
 export async function loadTerraform(
@@ -38,36 +75,112 @@ export async function loadTerraform(
     if (text === undefined) continue;
     byDir.set(dirOf(path), [...(byDir.get(dirOf(path)) ?? []), { path, text }]);
   }
-  const out: TfModule[] = [];
+  const folders = new Map<string, Folder>();
   for (const [dir, list] of [...byDir.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    if (!list.some((f) => f.path.endsWith(".tf") && relevant.test(f.text))) continue;
-    const mod: TfModule = { dir, resources: [], vars: new Map(), locals: new Map() };
-    const overrides: [string, HclValue][] = [];
-    for (const f of list) {
-      const hcl = parseHcl(f.text);
-      if (hcl.error && f.path.endsWith(".tf") && relevant.test(f.text))
+    const f: Folder = {
+      dir,
+      relevant: list.some((x) => x.path.endsWith(".tf") && relevant.test(x.text)),
+      resources: [],
+      defaults: new Map(),
+      tfvars: [],
+      locals: new Map(),
+      calls: [],
+    };
+    for (const file of list) {
+      const hcl = parseHcl(file.text);
+      if (hcl.error && file.path.endsWith(".tf") && relevant.test(file.text))
         ctx.warn(
           `Read this file up to line ${hcl.error.line} only: the block there isn't closed.`,
-          f.path,
+          file.path,
         );
-      if (!f.path.endsWith(".tf")) {
-        for (const [k, a] of hcl.attrs) overrides.push([k, a.value]);
+      if (!file.path.endsWith(".tf")) {
+        for (const [k, a] of hcl.attrs) f.tfvars.push([k, a.value]);
         continue;
       }
       for (const b of hcl.blocks) {
         if (b.type === "resource" && b.labels.length >= 2)
-          mod.resources.push({ type: b.labels[0]!, name: b.labels[1]!, block: b, file: f.path });
+          f.resources.push({ type: b.labels[0]!, name: b.labels[1]!, block: b, file: file.path });
         else if (b.type === "variable" && b.labels[0]) {
           const d = attrOf(b, "default");
-          if (d !== undefined && !mod.vars.has(b.labels[0])) mod.vars.set(b.labels[0], d);
-        } else if (b.type === "locals")
-          for (const [k, a] of b.attrs) if (!mod.locals.has(k)) mod.locals.set(k, a.value);
+          if (d !== undefined && !f.defaults.has(b.labels[0])) f.defaults.set(b.labels[0], d);
+        } else if (b.type === "locals") {
+          for (const [k, a] of b.attrs) if (!f.locals.has(k)) f.locals.set(k, a.value);
+        } else if (b.type === "module" && b.labels[0]) {
+          const src = attrOf(b, "source");
+          if (typeof src === "string")
+            f.calls.push({ name: b.labels[0], source: src, block: b, file: file.path });
+        }
       }
     }
-    for (const [k, v] of overrides) mod.vars.set(k, v);
-    out.push(mod);
+    folders.set(dir, f);
+  }
+
+  const targetOf = (f: Folder, source: string) => {
+    const t = localSource(f.dir, source);
+    return t !== undefined && t !== f.dir && folders.has(t) ? t : undefined;
+  };
+  const called = new Set<string>();
+  for (const f of folders.values())
+    for (const c of f.calls) {
+      const t = targetOf(f, c.source);
+      if (t) called.add(t);
+    }
+
+  const out: TfModule[] = [];
+  const expand = (caller: TfModule, f: Folder, depth: number, seen: Set<string>) => {
+    if (depth >= MAX_MODULE_DEPTH) return;
+    for (const c of f.calls) {
+      const t = targetOf(f, c.source);
+      if (!t || seen.has(t)) continue;
+      const target = folders.get(t)!;
+      const vars = new Map(target.defaults);
+      for (const [k, a] of c.block.attrs) {
+        if (["source", "version", "count", "for_each", "providers", "depends_on"].includes(k))
+          continue;
+        vars.set(k, passed(resolve(caller, a.value)));
+      }
+      const inst: TfModule = {
+        dir: t,
+        resources: target.resources,
+        vars,
+        locals: target.locals,
+        call: { name: c.name, file: c.file, line: c.block.line },
+      };
+      if (target.relevant) out.push(inst);
+      expand(inst, target, depth + 1, new Set([...seen, t]));
+    }
+  };
+  for (const f of folders.values()) {
+    if (called.has(f.dir)) continue;
+    const mod: TfModule = {
+      dir: f.dir,
+      resources: f.resources,
+      vars: new Map(f.defaults),
+      locals: f.locals,
+    };
+    for (const [k, v] of f.tfvars) mod.vars.set(k, v);
+    if (f.relevant) out.push(mod);
+    expand(mod, f, 0, new Set([f.dir]));
   }
   return out;
+}
+
+/**
+ * A caller's value as the module sees it. What the caller couldn't resolve (another module's
+ * output, a data source, a function) is kept as an opaque expression, so it can't be resolved
+ * again against the module's own variables of the same name.
+ */
+function passed(v: HclValue | undefined): HclValue {
+  if (v === undefined) return { $expr: "" };
+  if (isRef(v)) return { $expr: v.$ref };
+  if (typeof v === "string" && v.includes("${")) return { $expr: v };
+  if (Array.isArray(v)) return v.map((x) => passed(x));
+  if (v !== null && typeof v === "object" && !("$expr" in v)) {
+    const o: { [k: string]: HclValue } = {};
+    for (const [k, x] of Object.entries(v)) o[k] = passed(x as HclValue);
+    return o;
+  }
+  return v;
 }
 
 /** A reference to another resource's attribute: `type.name.attr`. */
@@ -161,4 +274,13 @@ export function tfObject(
     !("$expr" in r)
     ? (r as Record<string, HclValue>)
     : undefined;
+}
+
+/**
+ * A resource's name: the attribute, resolved, else the resource's own label. In a local
+ * module's instance the label is the module's generic one ("this") and the name comes from the
+ * caller, so an unresolved name gives nothing (ADR 0063).
+ */
+export function tfName(mod: TfModule, r: TfResource, attr: string): string | undefined {
+  return tfString(mod, attrOf(r.block, attr)) ?? (mod.call ? undefined : r.name);
 }

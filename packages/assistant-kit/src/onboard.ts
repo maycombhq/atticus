@@ -6,6 +6,7 @@ import { AgentDefinition, Dialect, type CatalogRecord, type OrgPack } from "@may
 import {
   BUILT_IN_EXTRACTORS,
   dialectExtractor,
+  loadShippedDialects,
   runDialectTests,
   syntaxLanguageOf,
   syntaxOutline,
@@ -111,7 +112,14 @@ export async function surveyForOnboarding(
     const ext = /\.([^./]+)$/.exec(p)?.[1]?.toLowerCase() ?? "(none)";
     byExt.set(ext, (byExt.get(ext) ?? 0) + 1);
   }
-  const scan = await scanRepo({ repo, extractors: BUILT_IN_EXTRACTORS });
+  // Shipped dialects that apply to any repo (the cloud ones, ADR 0063) read what a scan reads.
+  const anyRepo = (await loadShippedDialects().catch(() => [] as Dialect[])).filter((d) =>
+    d.appliesTo.repoTypes.includes("*"),
+  );
+  const scan = await scanRepo({
+    repo,
+    extractors: [...BUILT_IN_EXTRACTORS, ...anyRepo.map((d) => dialectExtractor(d))],
+  });
   const read = new Set(
     // The Component cites a file only to show there is code: that isn't reading it.
     scan.records

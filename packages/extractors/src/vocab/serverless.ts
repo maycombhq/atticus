@@ -17,7 +17,7 @@ import { syntaxLanguageOf } from "../lang/syntax.js";
 import { topicName } from "../platform/gcp.js";
 import { attrOf, child } from "../platform/hcl.js";
 import { loadManifests, readYamlDocs, type YamlDoc } from "../platform/manifests.js";
-import { loadTerraform, tfString } from "../platform/terraform.js";
+import { loadTerraform, tfName, tfString } from "../platform/terraform.js";
 import { arr, at, componentFor, deployment, envOf, isObj, str } from "../platform/util.js";
 import { component, endpoint, ev, loose, own, read, setting, slug, sources } from "./common.js";
 
@@ -590,7 +590,8 @@ async function* infraFunctions(repo: RepoHandle, ctx: ScanContext): AsyncGenerat
         r.type !== "google_cloudfunctions_function"
       )
         continue;
-      const name = tfString(mod, attrOf(r.block, "name")) ?? r.name;
+      const name = tfName(mod, r, "name");
+      if (!name) continue;
       const comp = componentFor(ctx, [name]);
       const env = envOf({ path: r.file, name }) ?? "default";
       yield component({

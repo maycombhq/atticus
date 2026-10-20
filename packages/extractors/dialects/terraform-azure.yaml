@@ -1,0 +1,212 @@
+# Azure resources in Terraform (azurerm) as catalog records. Shipped with Atticus (C2, ADR 0063).
+#
+# Applies to any repo with a .tf file (repoTypes "*", ADR 0062); values resolve from the
+# folder's variables, tfvars and locals, and through local modules (ADR 0063).
+#
+# What it reads:
+#   azurerm_servicebus_queue                      DataStore, storeType queue (as SQS queues are)
+#   azurerm_servicebus_topic, azurerm_eventhub    event-topic Endpoints (component unknown,
+#                                                 filled by merge from the publishing code)
+#   azurerm_linux_function_app, _windows_function_app, azurerm_function_app
+#                                                 Component (function) and Deployment
+#   azurerm_linux_web_app, _windows_web_app, azurerm_app_service
+#                                                 Deployment (platform app-service)
+#   azurerm_api_management_api                    GatewayRoute, with the ids the APIOps dialects use
+#   azurerm_cosmosdb_account                      DataStore, storeType document
+#   azurerm_mssql_server                          DataStore sqlserver   (moved from the infra extractor)
+#   azurerm_postgresql_flexible_server            DataStore postgresql  (moved from the infra extractor)
+#   azurerm_postgresql_server                     DataStore postgresql
+#   azurerm_mysql_flexible_server                 DataStore mysql
+#   azurerm_redis_cache                           DataStore cache
+#
+# Left to built-in readers: azurerm_storage_container (cloud-stores). No record:
+# azurerm_kubernetes_cluster. Not read: function triggers (they are in the function's code,
+# read by the serverless extractor), APIM operations and policies.
+#
+# A Deployment's environment is the resource's `env` tag, else "default".
+schemaVersion: 1
+name: terraform-azure
+version: 1.0.0
+description: Azure resources declared in Terraform as queues, topics, stores, functions, deployments and gateway routes.
+appliesTo:
+  repoTypes: ["*"]
+  marker: "**/*.tf"
+rules:
+  # ---- messaging
+  - id: servicebus-queue
+    description: A Service Bus queue is a queue store.
+    match: { hclBlock: resource.azurerm_servicebus_queue, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: queue, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: servicebus-topic
+    description: A Service Bus topic is an event topic.
+    match: { hclBlock: resource.azurerm_servicebus_topic, files: ["**/*.tf"] }
+    emit:
+      kind: Endpoint
+      id: "topic.${attr.name | slug}"
+      fields: { component: unknown, endpointType: event-topic, pathOrTopic: "${attr.name}" }
+      evidence: { source: infrastructure, side: definition }
+    confidence: verified
+  - id: eventhub
+    description: An event hub is an event topic.
+    match: { hclBlock: resource.azurerm_eventhub, files: ["**/*.tf"] }
+    emit:
+      kind: Endpoint
+      id: "topic.${attr.name | slug}"
+      fields: { component: unknown, endpointType: event-topic, pathOrTopic: "${attr.name}" }
+      evidence: { source: infrastructure, side: definition }
+    confidence: verified
+
+  # ---- compute
+  - id: linux-function-app
+    description: A Linux function app is a function component deployed on Azure Functions.
+    match: { hclBlock: resource.azurerm_linux_function_app, files: ["**/*.tf"] }
+    emit: &function-app
+      - kind: Component
+        id: "${attr.name | slug}"
+        fields:
+          system: "${attr.name | slug}"
+          repo: "${repo.name}"
+          type: function
+          runtime: azure-functions
+        evidence: { source: infrastructure }
+      - kind: Deployment
+        id: "${attr.name | slug}.${attr.tags.env | default('default') | slug}"
+        fields:
+          component: "${attr.name | slug}"
+          env: "${attr.tags.env | default('default')}"
+          platform: azure-functions
+        evidence: { source: infrastructure }
+    confidence: verified
+  - id: windows-function-app
+    description: A Windows function app is a function component deployed on Azure Functions.
+    match: { hclBlock: resource.azurerm_windows_function_app, files: ["**/*.tf"] }
+    emit: *function-app
+    confidence: verified
+  - id: function-app
+    description: A function app (the older resource type) is a function component deployed on Azure Functions.
+    match: { hclBlock: resource.azurerm_function_app, files: ["**/*.tf"] }
+    emit: *function-app
+    confidence: verified
+  - id: linux-web-app
+    description: A Linux web app is a deployment on App Service of the component it is named after.
+    match: { hclBlock: resource.azurerm_linux_web_app, files: ["**/*.tf"] }
+    emit: &web-app
+      kind: Deployment
+      id: "${attr.name | slug}.${attr.tags.env | default('default') | slug}"
+      fields:
+        component: "${attr.name | slug}"
+        env: "${attr.tags.env | default('default')}"
+        platform: app-service
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: windows-web-app
+    description: A Windows web app is a deployment on App Service.
+    match: { hclBlock: resource.azurerm_windows_web_app, files: ["**/*.tf"] }
+    emit: *web-app
+    confidence: verified
+  - id: app-service
+    description: An app service (the older resource type) is a deployment on App Service.
+    match: { hclBlock: resource.azurerm_app_service, files: ["**/*.tf"] }
+    emit: *web-app
+    confidence: verified
+
+  # ---- gateway
+  - id: api-management-api
+    description: An API Management API is a gateway route from its path to its backend.
+    match: { hclBlock: resource.azurerm_api_management_api, files: ["**/*.tf"] }
+    emit:
+      kind: GatewayRoute
+      id: "apim-${attr.path | default('') | slug | default('root')}"
+      fields:
+        proxy: "${attr.display_name}"
+        basepath: "/${attr.path | default('') | trimSlash}"
+        target: "${attr.service_url}"
+      evidence: { source: infrastructure, side: gateway }
+    confidence: verified
+
+  # ---- data
+  - id: cosmosdb-account
+    description: A Cosmos DB account is a document store.
+    match: { hclBlock: resource.azurerm_cosmosdb_account, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: document, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: mssql-server
+    description: An Azure SQL server.
+    match: { hclBlock: resource.azurerm_mssql_server, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: sqlserver, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: postgresql-flexible-server
+    description: An Azure Database for PostgreSQL flexible server.
+    match: { hclBlock: resource.azurerm_postgresql_flexible_server, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: postgresql, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: postgresql-server
+    description: An Azure Database for PostgreSQL single server.
+    match: { hclBlock: resource.azurerm_postgresql_server, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: postgresql, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: mysql-flexible-server
+    description: An Azure Database for MySQL flexible server.
+    match: { hclBlock: resource.azurerm_mysql_flexible_server, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: mysql, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+  - id: redis-cache
+    description: An Azure Cache for Redis is a cache.
+    match: { hclBlock: resource.azurerm_redis_cache, files: ["**/*.tf"] }
+    emit:
+      kind: DataStore
+      id: "${attr.name | slug}"
+      fields: { storeType: cache, entitiesHeld: [] }
+      evidence: { source: infrastructure }
+    confidence: verified
+tests:
+  - name: the Forge Azure estate
+    fixture: fixtures/terraform-azure/forge-azure-infra
+    expect:
+      - { kind: DataStore, id: orders-in, storeType: queue }
+      - { kind: Endpoint, id: topic.order-events, pathOrTopic: order-events, component: unknown }
+      - { kind: Endpoint, id: topic.device-telemetry, endpointType: event-topic }
+      - { kind: Component, id: billing-func, type: function, runtime: azure-functions }
+      - { kind: Deployment, id: billing-func.prod, env: prod, platform: azure-functions }
+      - { kind: Deployment, id: legacy-billing-func.default, env: default }
+      - { kind: Deployment, id: notifier-func.default, platform: azure-functions }
+      - { kind: Deployment, id: portal-web.prod, platform: app-service }
+      - { kind: Deployment, id: backoffice-web.default, platform: app-service }
+      - { kind: Deployment, id: statements-web.default, platform: app-service }
+      - kind: GatewayRoute
+        id: apim-orders
+        proxy: Orders API
+        basepath: /orders
+        target: "https://orders.forge.internal"
+      - { kind: DataStore, id: forge-catalog, storeType: document }
+      - { kind: DataStore, id: forge-reports-sql, storeType: sqlserver }
+      - { kind: DataStore, id: forge-ledger-pg, storeType: postgresql }
+      - { kind: DataStore, id: forge-legacy-pg, storeType: postgresql }
+      - { kind: DataStore, id: forge-loyalty-mysql, storeType: mysql }
+      - { kind: DataStore, id: forge-sessions, storeType: cache }
+    absent: [statements, forge-aks]

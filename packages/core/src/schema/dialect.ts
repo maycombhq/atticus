@@ -212,7 +212,7 @@ export const Dialect = z
     extends: z.array(RecordId).default([]),
     appliesTo: z.strictObject({
       /** Repo types from repos.manifest.yaml; empty means any repo that lists this dialect. */
-      repoTypes: z.array(RecordId).default([]),
+      repoTypes: z.array(z.union([RecordId, z.literal("*")])).default([]),
       /** A file that must exist for the dialect to apply, e.g. "forge.yaml". */
       marker: Glob.optional(),
     }),

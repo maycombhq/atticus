@@ -18,7 +18,9 @@ import { normalizePath } from "./identity.js";
  *   "${system}" "${field}" "${kind}"     subject of a checklist need (questions only)
  *
  * Filters follow a pipe: "${attr.method | upper}", "${attr.path | normalizePath}",
- * "${attr.name | default('unknown')}". Anything outside ${...} is literal text.
+ * "${attr.name | default('unknown')}", "${attr.route_key | after(' ')}" (ADR 0063: the text after,
+ * or with before the text before, the first occurrence; empty when it isn't there). Anything
+ * outside ${...} is literal text.
  */
 
 export const TEMPLATE_FILTERS = [
@@ -30,6 +32,8 @@ export const TEMPLATE_FILTERS = [
   "default",
   "parent",
   "basename",
+  "before",
+  "after",
 ] as const;
 export type TemplateFilter = (typeof TEMPLATE_FILTERS)[number];
 
@@ -154,9 +158,10 @@ function parseExpr(body: string, template: string): TemplateExpr {
       throw new TemplateError(`unknown filter "${p.trim()}"`, template);
     }
     const name = m[1] as TemplateFilter;
-    if (name === "default" && m[2] === undefined)
-      throw new TemplateError("default needs a value: default('x')", template);
-    if (name !== "default" && m[2] !== undefined)
+    const takesArg = name === "default" || name === "before" || name === "after";
+    if (takesArg && m[2] === undefined)
+      throw new TemplateError(`${name} needs a value: ${name}('x')`, template);
+    if (!takesArg && m[2] !== undefined)
       throw new TemplateError(`${name} takes no argument`, template);
     return m[2] === undefined ? { name } : { name, arg: m[2] };
   });
@@ -204,6 +209,8 @@ const FILTERS: Record<TemplateFilter, (v: string, arg?: string) => string> = {
   default: (v, arg) => (v === "" ? (arg ?? "") : v),
   parent: (v) => (v.includes("/") ? v.slice(0, v.replace(/\/+$/, "").lastIndexOf("/")) : ""),
   basename: (v) => v.replace(/\/+$/, "").split("/").pop() ?? "",
+  before: (v, arg) => (arg && v.includes(arg) ? v.slice(0, v.indexOf(arg)) : ""),
+  after: (v, arg) => (arg && v.includes(arg) ? v.slice(v.indexOf(arg) + arg.length) : ""),
 };
 
 /** One expression's value with its filters applied, or undefined when unknown with no default. */

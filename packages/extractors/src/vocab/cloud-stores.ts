@@ -1,7 +1,6 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor } from "@maycombhq/sdk";
-import { attrOf } from "../platform/hcl.js";
-import { loadTerraform, tfString } from "../platform/terraform.js";
+import { loadTerraform, tfName } from "../platform/terraform.js";
 import { ev, slug } from "./common.js";
 
 /**
@@ -42,8 +41,8 @@ export const cloudStoresExtractor = defineExtractor({
       for (const r of mod.resources) {
         const kind = KINDS[r.type];
         if (!kind) continue;
-        const name = tfString(mod, attrOf(r.block, kind.nameAttr)) ?? r.name;
-        const id = slug(name);
+        const name = tfName(mod, r, kind.nameAttr);
+        const id = name ? slug(name) : undefined;
         if (!id) continue;
         yield {
           schemaVersion: 2,

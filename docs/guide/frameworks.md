@@ -12,6 +12,12 @@ Pick the way in that matches what you have. They combine: each keeps what the ot
 | Documents, a wiki, or people who know it | Write the model by hand, or have an assistant draft it with the kit (below). Entries cite their source and make inferred facts.                                 |
 | Nothing yet                              | `atticus frameworks survey --package <your prefixes>` shows which house modules the repos import and how they call them. Start with the most used.              |
 
+## Cloud resources in Terraform
+
+Atticus reads common AWS, Azure and Google Cloud resources from Terraform in any repo with a `.tf` file, through three dialects it ships: `terraform-aws`, `terraform-azure` and `terraform-gcp` (ADR 0063). Each file's header in `packages/extractors/dialects/` lists the resource types it reads and the records they give: topics, queues, databases and other stores, functions, deployments and gateway routes. Names are resolved from variables, `terraform.tfvars`, `*.auto.tfvars` and locals, and through your local modules: `module "orders_queue" { source = "../modules/queue" name = "orders" }` gives the module's resources named with `orders`, once per instantiation.
+
+To change what a resource type gives, copy the shipped file into `org-pack/dialects/` under the same name and edit it: the org pack's replaces the shipped one. A house module from a registry or a git URL is a `module` block a dialect of your own matches (`hclBlock: module` with a `where` on its `source`).
+
 ## Repos Atticus can't read yet: onboard them
 
 `atticus scan` names the repos it read nothing from though they have config files no reader knows (a gateway's routes, a house Terraform module, a pipeline template). For each:
