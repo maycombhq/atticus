@@ -87,7 +87,7 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 ## In progress (bank readiness)
 
 - A model-provider plugin (Anthropic, OpenAI-compatible endpoints such as Azure OpenAI and internal gateways).
-- The onboarding loop for framework models (`atticus onboard` for house frameworks).
+- Done: the onboarding loop for framework models (`atticus onboard framework`, ADR 0066): learner first, the assistant drafts the rest, deterministic checks, proposals and `onboard accept framework`; the scan names house frameworks with no model and models to re-draft; one framework case in the onboarding eval. Not built: a learner for pipeline templates and Jenkins libraries (the assistant drafts them), and tests for `services` and `pipeline` entries inside a model.
 - A shared parse cache: each file parsed once per repo scan, shared by every reader.
 
 ## Later (skipped for now, not forgotten)

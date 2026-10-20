@@ -16,6 +16,7 @@ describe("the onboarding evaluation (ADR 0059)", () => {
       "apim",
       "argocd",
       "aws-apigw",
+      "harbor-kit",
       "harness",
       "house-gateway",
       "house-http",
@@ -36,7 +37,7 @@ describe("the onboarding evaluation (ADR 0059)", () => {
       cases.map((c) => [c.name, "drafted", 1, 1, true]),
     );
     expect(formatEval(results).at(-1)).toBe(
-      "10 of 10 cases read exactly what the reference reads.",
+      "11 of 11 cases read exactly what the reference reads.",
     );
   }, 300_000);
 
@@ -57,6 +58,41 @@ describe("the onboarding evaluation (ADR 0059)", () => {
     expect([r!.status, r!.matched, r!.expected, r!.precision]).toEqual(["drafted", 2, 3, 1]);
     expect(r!.missing).toEqual([
       'GatewayRoute basepath="/ledger-v1" target="http://ledger.tide.internal:8080/api"',
+    ]);
+  }, 300_000);
+
+  it("grades a framework draft by what it adds to the repos that use it (ADR 0066)", async () => {
+    const [harbor] = (await loadEvalCases(EVAL)).filter((c) => c.name === "harbor-kit");
+    expect(harbor!.kind).toBe("framework");
+    const answer = readFileSync(join(EVAL, "harbor-kit/assistant-reply.yaml"), "utf8").replace(
+      /^name: .*$/m,
+      "name: eval-harbor-kit",
+    );
+    const [exact] = await evalOnboarding([harbor!], {
+      runtime: new MockRuntime(() => answer, { now: () => NOW }),
+      now: NOW,
+    });
+    expect([exact!.status, exact!.precision, exact!.recall, exact!.expected]).toEqual([
+      "drafted",
+      1,
+      1,
+      7,
+    ]);
+    // Without the shared-library step, the pipelines read as before: recall drops, precision doesn't.
+    const noStep = answer.replace(/pipeline:\n(?: {2}.*\n)+/, "");
+    const [partial] = await evalOnboarding([harbor!], {
+      runtime: new MockRuntime(() => noStep, { now: () => NOW }),
+      now: NOW,
+    });
+    expect([partial!.status, partial!.matched, partial!.expected, partial!.precision]).toEqual([
+      "drafted",
+      5,
+      7,
+      1,
+    ]);
+    expect(partial!.missing.map((m) => m.split(" ").slice(0, 2).join(" "))).toEqual([
+      "harbor-billing: QualityAsset",
+      "harbor-orders: QualityAsset",
     ]);
   }, 300_000);
 });

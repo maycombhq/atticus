@@ -23,7 +23,7 @@ export * from "./lang/groovy.js";
 export * from "./backends/index.js";
 import { BACKEND_EXTRACTORS } from "./backends/index.js";
 export * from "./platform/index.js";
-import { PLATFORM_EXTRACTORS } from "./platform/index.js";
+import { PLATFORM_EXTRACTORS, pipelinesExtractor } from "./platform/index.js";
 export * from "./data/index.js";
 import { DATA_EXTRACTORS } from "./data/index.js";
 export * from "./speckit/index.js";
@@ -48,7 +48,19 @@ export * from "./modules.js";
 export * from "./dependencies.js";
 export * from "./framework-tests.js";
 export * from "./pipeline-models.js";
+export * from "./house-imports.js";
 export { houseExtractor };
+
+/**
+ * The built-in extractors that read framework models (ADR 0054, 0055, 0062): a model changes
+ * what these give and nothing else, so onboarding and the scan compare a repo read with and
+ * without a model through these alone (ADR 0066).
+ */
+export const MODEL_READERS: readonly Extractor[] = [
+  springExtractor,
+  houseExtractor,
+  pipelinesExtractor,
+];
 
 /** Every built-in extractor, in a stable order. Dialect engines are added by the scanner. */
 export const BUILT_IN_EXTRACTORS: readonly Extractor[] = [

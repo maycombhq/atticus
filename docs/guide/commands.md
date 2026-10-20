@@ -57,7 +57,11 @@ Usage:
   atticus onboard <repo> [--name n] [--attempts 3] [--mode m]   Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal
   atticus onboard check <name> --repo <repo>   Check a proposal (drafted, handed off or hand-written)
   atticus onboard eval <dir> [--mode m] [--json]   Score the assistant's drafts against reference dialects
-  atticus onboard accept <name> [--replace]   Accept a proposal into org-pack/dialects/
+  atticus onboard accept <name> [--replace]   Accept a proposal into org-pack/dialects/ (or frameworks/)
+  atticus onboard framework <name> --from <source|jar|tgz> [--users <repo>,...]   Learn a house framework, your assistant drafts what the learner couldn't; checked, kept as a proposal
+          [--attempts 3] [--package a.b] [--mode m] [--no-ai]
+  atticus onboard check framework <name> [--from <source>] [--users <repo>,...]   Check a framework proposal (drafted, handed off or hand-written)
+  atticus onboard accept framework <name> [--replace]   Accept a framework proposal into org-pack/frameworks/
   atticus frameworks learn <name> --from <repo|jar|tgz>   Learn what a house framework means from its source, JAR or npm package
           [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
   atticus frameworks discover --group <a.b|@scope>[,...]   The house artifacts and npm packages the repos build on, found here

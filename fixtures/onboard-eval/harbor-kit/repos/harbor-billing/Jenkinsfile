@@ -1,0 +1,17 @@
+@Library('harbor-kit') _
+
+pipeline {
+  agent any
+  stages {
+    stage('Build') {
+      steps {
+        sh './gradlew build'
+      }
+    }
+    stage('Release') {
+      steps {
+        harborDeploy(env: 'uat')
+      }
+    }
+  }
+}

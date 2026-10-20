@@ -1,5 +1,13 @@
 import type { FrameworkModel } from "@maycombhq/core";
-import { SourceFile, type SourceLang } from "@maycombhq/extractors";
+import {
+  importsInText,
+  isWellKnownModule,
+  LANG_OF,
+  SOURCE_GLOBS,
+  SOURCE_SKIP,
+  SourceFile,
+  type SurveyLang,
+} from "@maycombhq/extractors";
 import type { RepoHandle } from "@maycombhq/sdk";
 
 /**
@@ -10,7 +18,7 @@ import type { RepoHandle } from "@maycombhq/sdk";
  * checked by the model's own tests.
  */
 
-export type SurveyLang = SourceLang | "java";
+export type { SurveyLang };
 
 export interface SurveyUse {
   /** `useApi(...)`, `lantern.call(...)`, `@InternalApi`, `BankHttp.exchange(...)`. */
@@ -38,116 +46,10 @@ export interface FrameworkSurvey {
   modules: ModuleSurvey[];
 }
 
-const LANG_OF: [RegExp, SurveyLang][] = [
-  [/\.(m?[jt]sx?|cjs|cts|mts)$/i, "js"],
-  [/\.cs$/i, "csharp"],
-  [/\.py$/i, "python"],
-  [/\.go$/i, "go"],
-  [/\.(java|kt)$/i, "java"],
-];
-const SKIP =
-  /(^|\/)(node_modules|dist|build|coverage|target|bin|obj|vendor|\.venv|\.git)\/|\.(test|spec|d)\.[jt]sx?$|(^|\/)src\/test\//;
-const CLAIMS = [
-  "js",
-  "jsx",
-  "mjs",
-  "cjs",
-  "ts",
-  "tsx",
-  "mts",
-  "cts",
-  "cs",
-  "py",
-  "go",
-  "java",
-  "kt",
-].map((e) => `**/*.${e}`);
-
-/** Modules every estate imports that are never a house framework. */
-const KNOWN =
-  /^(node:|react($|[-/])|react-dom|next($|\/)|vue|@angular\/|express$|axios$|lodash|rxjs|zod$|vitest|jest|@testing-library\/|java\.|javax\.|jakarta\.|kotlin\.|kotlinx\.|org\.springframework|org\.junit|org\.slf4j|lombok|com\.fasterxml|System($|\.)|Microsoft\.|typing$|os$|sys$|json$|re$|datetime$|logging$|requests$|flask$|fastapi$|django|pydantic|fmt$|net\/|encoding\/|context$|errors$|strings$|time$|os$|github\.com\/stretchr)/;
-const BUILTIN_JS = new Set([
-  "fs",
-  "path",
-  "os",
-  "url",
-  "http",
-  "https",
-  "crypto",
-  "util",
-  "events",
-  "stream",
-  "child_process",
-  "assert",
-]);
-
-interface Import {
-  module: string;
-  names: string[];
-}
-
-/** What a file imports, by language. */
-function importsOf(text: string, lang: SurveyLang): Import[] {
-  const out: Import[] = [];
-  const names = (s: string) =>
-    s
-      .split(",")
-      .map((n) =>
-        n
-          .trim()
-          .replace(/^type\s+/, "")
-          .split(/\s+as\s+/)
-          .pop()!
-          .trim(),
-      )
-      .filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
-  if (lang === "js") {
-    for (const m of text.matchAll(/\bimport\s+([^;]*?)\s+from\s+["']([^"']+)["']/g)) {
-      const clause = m[1]!;
-      const n: string[] = [];
-      const braces = /\{([^}]*)\}/.exec(clause);
-      if (braces) n.push(...names(braces[1]!));
-      const star = /\*\s+as\s+([A-Za-z_$][\w$]*)/.exec(clause);
-      if (star) n.push(star[1]!);
-      const def = /^\s*([A-Za-z_$][\w$]*)\s*(,|$)/.exec(clause);
-      if (def && def[1] !== "type") n.push(def[1]!);
-      out.push({ module: m[2]!, names: n });
-    }
-    for (const m of text.matchAll(
-      /\b(?:const|let|var)\s+(\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*require\(\s*["']([^"']+)["']\s*\)/g,
-    ))
-      out.push({
-        module: m[2]!,
-        names: m[1]!.startsWith("{") ? names(m[1]!.slice(1, -1).replace(/:\s*/g, " as ")) : [m[1]!],
-      });
-  } else if (lang === "python") {
-    for (const m of text.matchAll(/^\s*from\s+([\w.]+)\s+import\s+\(?([^)\n]*)\)?/gm))
-      out.push({ module: m[1]!, names: names(m[2]!) });
-    for (const m of text.matchAll(/^\s*import\s+([\w.]+)(?:\s+as\s+(\w+))?/gm))
-      out.push({ module: m[1]!, names: [m[2] ?? m[1]!.split(".").pop()!] });
-  } else if (lang === "csharp") {
-    for (const m of text.matchAll(/^\s*using\s+(?:static\s+)?([\w.]+)\s*;/gm))
-      out.push({ module: m[1]!, names: [] });
-  } else if (lang === "go") {
-    const block = /\bimport\s*\(([^)]*)\)/.exec(text)?.[1] ?? "";
-    const single = [...text.matchAll(/\bimport\s+(\w+\s+)?"([^"]+)"/g)].map(
-      (m) => `${m[1] ?? ""}"${m[2]!}"`,
-    );
-    for (const line of [...block.split("\n"), ...single]) {
-      const m = /^\s*(\w+)?\s*"([^"]+)"/.exec(line);
-      if (m) out.push({ module: m[2]!, names: [m[1] ?? m[2]!.split("/").pop()!] });
-    }
-  } else {
-    for (const m of text.matchAll(/^\s*import\s+(?!static\b)([\w.]+)\.([A-Z]\w*)\s*;?\s*$/gm))
-      out.push({ module: m[1]!, names: [m[2]!] });
-  }
-  return out;
-}
-
 const isHouse = (mod: string, prefixes: string[]) =>
   prefixes.length > 0
     ? prefixes.some((p) => mod === p || mod.startsWith(p))
-    : !mod.startsWith(".") && !mod.startsWith("/") && !BUILTIN_JS.has(mod) && !KNOWN.test(mod);
+    : !isWellKnownModule(mod);
 
 const shown = (line: string) => {
   const t = line.trim();
@@ -228,13 +130,13 @@ export async function surveyFrameworks(
     }
   >();
   for (const repo of repos) {
-    for await (const path of repo.listFiles(CLAIMS)) {
-      if (SKIP.test(path)) continue;
+    for await (const path of repo.listFiles(SOURCE_GLOBS)) {
+      if (SOURCE_SKIP.test(path)) continue;
       const lang = LANG_OF.find(([re]) => re.test(path))?.[1];
       if (!lang) continue;
       const text = await repo.readText(path);
       const lines = text.split(/\r?\n/);
-      for (const imp of importsOf(text, lang)) {
+      for (const imp of importsInText(text, lang)) {
         if (!isHouse(imp.module, prefixes)) continue;
         const key = `${lang}\u0000${imp.module}`;
         const m = mods.get(key) ?? {

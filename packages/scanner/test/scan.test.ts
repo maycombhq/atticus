@@ -136,6 +136,7 @@ describe("scan of the Forge fixture (M1 exit)", () => {
         unreadConfig: [],
         needsOnboarding: false,
         redraft: [],
+        redraftFrameworks: [],
       });
       expect(ifs).toBeGreaterThan(0);
       // Repos that call nothing (topic configs, infrastructure) are listed with zeros.

@@ -39,7 +39,7 @@ import {
 } from "./run-commands.js";
 import { featureSuggestNames } from "./feature-commands.js";
 import { isTaskRun } from "@maycombhq/taskrun";
-import { runtimeForCli, RuntimeConfigError } from "@maycombhq/ai";
+import { AiOffError, runtimeForCli, RuntimeConfigError, type AiRuntime } from "@maycombhq/ai";
 import {
   adoSync,
   planStories,
@@ -136,7 +136,15 @@ import {
   frameworksLearn,
   frameworksSurvey,
 } from "./framework-commands.js";
-import { onboardAccept, onboardCheck, onboardDraft, onboardEval } from "./onboard-commands.js";
+import {
+  onboardAccept,
+  onboardCheck,
+  onboardDraft,
+  onboardEval,
+  onboardFramework,
+  onboardFrameworkAccept,
+  onboardFrameworkCheck,
+} from "./onboard-commands.js";
 
 import { VERSION } from "./version.js";
 export { VERSION };
@@ -195,7 +203,11 @@ Usage:
   atticus onboard <repo> [--name n] [--attempts 3] [--mode m]   Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal
   atticus onboard check <name> --repo <repo>   Check a proposal (drafted, handed off or hand-written)
   atticus onboard eval <dir> [--mode m] [--json]   Score the assistant's drafts against reference dialects
-  atticus onboard accept <name> [--replace]   Accept a proposal into org-pack/dialects/
+  atticus onboard accept <name> [--replace]   Accept a proposal into org-pack/dialects/ (or frameworks/)
+  atticus onboard framework <name> --from <source|jar|tgz> [--users <repo>,...]   Learn a house framework, your assistant drafts what the learner couldn't; checked, kept as a proposal
+          [--attempts 3] [--package a.b] [--mode m] [--no-ai]
+  atticus onboard check framework <name> [--from <source>] [--users <repo>,...]   Check a framework proposal (drafted, handed off or hand-written)
+  atticus onboard accept framework <name> [--replace]   Accept a framework proposal into org-pack/frameworks/
   atticus frameworks learn <name> --from <repo|jar|tgz>   Learn what a house framework means from its source, JAR or npm package
           [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
   atticus frameworks discover --group <a.b|@scope>[,...]   The house artifacts and npm packages the repos build on, found here
@@ -399,6 +411,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       title: { type: "string" },
       name: { type: "string" },
       attempts: { type: "string" },
+      users: { type: "string" },
       language: { type: "string" },
       replace: { type: "boolean" },
       into: { type: "string" },
@@ -1338,6 +1351,63 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     return stubCheck(arg, io);
   }
   if (group === "onboard") {
+    // Framework models (ADR 0066): onboard framework, onboard check framework, onboard accept framework.
+    const list = (v: unknown) =>
+      (str(v) ?? "")
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean);
+    const fwOptions = () => ({
+      ...(str(values.from) ? { from: str(values.from)! } : {}),
+      ...(list(values.users).length ? { users: list(values.users) } : {}),
+      ...(list(values.package).length ? { packages: list(values.package) } : {}),
+    });
+    if ((command === "check" || command === "accept") && arg === "framework") {
+      const name = positionals[3];
+      if (!name) {
+        io.err(
+          `onboard ${command} framework needs the model's name: atticus onboard ${command} framework <name>`,
+        );
+        return 2;
+      }
+      return command === "check"
+        ? onboardFrameworkCheck(root, name, fwOptions(), io)
+        : onboardFrameworkAccept(root, name, { replace: values.replace === true }, io);
+    }
+    if (command === "framework") {
+      if (!arg) {
+        io.err(
+          "onboard framework needs a name and the framework's source: atticus onboard framework <name> --from <source|jar|tgz> [--users <repo>,...]",
+        );
+        return 2;
+      }
+      const attempts = Number(str(values.attempts) ?? "3");
+      if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) {
+        io.err("--attempts is a whole number from 1 to 10.");
+        return 2;
+      }
+      let runtime: AiRuntime | undefined;
+      if (values["no-ai"] !== true)
+        try {
+          runtime = (
+            await runtimeForCli(root, { ...(str(values.mode) ? { mode: str(values.mode)! } : {}) })
+          ).runtime;
+        } catch (e) {
+          if (e instanceof AiOffError)
+            io.out("AI is off here: the learned model alone is checked.");
+          else if (e instanceof RuntimeConfigError) {
+            io.err(e.message);
+            return 2;
+          } else throw e;
+        }
+      return onboardFramework(
+        root,
+        arg,
+        { ...fwOptions(), attempts },
+        { ...(runtime ? { runtime } : {}) },
+        io,
+      );
+    }
     if (command === "check") {
       const repo = str(values.repo);
       if (!arg || !repo) {

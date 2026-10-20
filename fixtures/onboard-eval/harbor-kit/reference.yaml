@@ -1,0 +1,75 @@
+# The model a person accepted for the invented Harbor kit (ADR 0066): what `atticus frameworks
+# learn` reads from its source (source: code), and what the assistant had to draft because no
+# learner can read it (source: document): the relay client, whose parameters don't name a verb
+# or a path; the systems' base URLs, which are in a properties file; and the Jenkins
+# shared-library step.
+schemaVersion: 1
+name: harbor-kit
+packages: [harbor.kit]
+artifacts: ["harbor.kit:harbor-web-starter"]
+annotations:
+  - name: Fetch
+    means: [GetMapping]
+    attributes: { value: path }
+    source: { kind: code, ref: "harbor-kit:src/main/java/harbor/kit/web/Fetch.java" }
+  - name: HarborApi
+    means: [RestController, RequestMapping]
+    attributes: { root: path }
+    source: { kind: code, ref: "harbor-kit:src/main/java/harbor/kit/web/HarborApi.java" }
+clients:
+  - type: Dock
+    method: send
+    service: { arg: 0 }
+    httpMethod: { arg: 1 }
+    path: { arg: 2 }
+    source: { kind: code, ref: "harbor-kit:src/main/java/harbor/kit/http/Dock.java" }
+  - type: Dock
+    method: relay
+    service: { arg: 0 }
+    httpMethod: { value: POST }
+    path: { arg: 1 }
+    source: { kind: document, ref: "harbor-kit:src/main/java/harbor/kit/http/Dock.java" }
+services:
+  Systems.LEDGER:
+    value: https://ledger.harbor.internal
+    source: { kind: document, ref: "harbor-kit:src/main/resources/harbor-systems.properties" }
+  Systems.NOTIFY:
+    value: https://notify.harbor.internal
+    source: { kind: document, ref: "harbor-kit:src/main/resources/harbor-systems.properties" }
+constants:
+  Systems.LEDGER:
+    value: ledger
+    source: { kind: code, ref: "harbor-kit:src/main/java/harbor/kit/http/Systems.java" }
+  Systems.NOTIFY:
+    value: notify
+    source: { kind: code, ref: "harbor-kit:src/main/java/harbor/kit/http/Systems.java" }
+pipeline:
+  - step: harborDeploy
+    environmentFrom: env
+    stages: [Smoke tests]
+    deployTargets: [helm]
+    testSteps: [smoke tests]
+    source: { kind: document, ref: "harbor-kit:vars/harborDeploy.groovy" }
+tests:
+  - name: a Harbor API that calls two systems
+    files:
+      src/main/java/harbor/x/Api.java: |
+        package harbor.x;
+        import harbor.kit.http.Dock;
+        import harbor.kit.http.Systems;
+        import harbor.kit.web.Fetch;
+        import harbor.kit.web.HarborApi;
+        @HarborApi(root = "/orders")
+        public class Api {
+          private final Dock dock;
+          @Fetch("/{id}")
+          public Order order(String id) { return null; }
+          void place(Order o) {
+            dock.send(Systems.LEDGER, "POST", "/ledger/entries", o);
+            dock.relay(Systems.NOTIFY, "/notifications/orders", o);
+          }
+        }
+    expect:
+      - "endpoint GET /orders/{id}"
+      - "http-call POST https://ledger.harbor.internal/ledger/entries"
+      - "http-call POST https://notify.harbor.internal/notifications/orders"

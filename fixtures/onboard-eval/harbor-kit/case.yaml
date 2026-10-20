@@ -1,0 +1,5 @@
+name: harbor-kit
+kind: framework
+from: repos/harbor-kit
+users: [repos/harbor-orders, repos/harbor-billing]
+reference: reference.yaml

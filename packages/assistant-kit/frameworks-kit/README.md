@@ -32,6 +32,16 @@ Every entry has a `source`: where the meaning came from. You will use `{ kind: d
 5. **Check.** `atticus frameworks check <name>` until it passes. It fails when a test doesn't give exactly what it expects, and when an entry you wrote isn't exercised by any test (take it out and nothing changes). **A scan doesn't use a model whose check fails.**
 6. **Self-review** with `checklist.md`, then hand the file to a person to review. They own it; you drafted it.
 
+## When Atticus has read the framework first
+
+`atticus onboard framework` (ADR 0066) runs Atticus's learner on the framework's source, JAR or npm package before it asks you. What the learner read has `source: { kind: code }` or `{ kind: bytecode }`: those entries are verified facts. **Never change them**; leave them out of your answer (they are kept) or copy them unchanged. Add only what no learner can read:
+
+- a service id's base URL (`services`, keyed as the code writes the id, `Systems.LEDGER`), often in a properties file, a registry config or a wiki page;
+- a wrapper method whose parameter names don't say which argument is the method or the path (`relay(system, route, payload)` that always POSTs);
+- what a pipeline template or a Jenkins shared-library step does (`pipeline`, with `uses` or `step`), read from the template repo or the library's `vars/`.
+
+The checks then decide: the model is valid, nothing read from code is changed, your entries cite a `document` or a `person`, its tests pass, and on the repos that use the framework it reads something they don't give without it. What fails comes back to you.
+
 ## Tests
 
 ```yaml
