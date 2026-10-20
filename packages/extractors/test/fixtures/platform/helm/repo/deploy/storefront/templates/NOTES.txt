@@ -1,0 +1,1 @@
+Storefront is installed as {{ .Release.Name }}.

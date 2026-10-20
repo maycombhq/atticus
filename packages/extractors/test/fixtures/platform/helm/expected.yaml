@@ -1,0 +1,180 @@
+# Expected output of the openshift extractor over ./repo (repo "forge-storefront-deploy", type infra).
+# The chart is read without running Helm (ADR 0064): one set of records per values-<env>.yaml file,
+# layered over values.yaml. The release is named after the chart, so fullname is "storefront".
+# prod: autoscaling is on, so the template leaves replicas out and the HPA gives min and max; the
+# cart subchart is on. uat: cart.enabled is false, so no cart. FEATURE_FLAGS (tpl) and the
+# checksum annotation (sha256sum) are template forms Atticus does not evaluate: left out.
+records:
+  - kind: Deployment
+    id: cart.prod
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/templates/deployment.yaml, line: 2 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/values.yaml, line: 3 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 42 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 33 }
+    component: cart
+    env: prod
+    platform: kubernetes
+    replicas: 2
+    networkPolicies: []
+  - kind: Deployment
+    id: storefront.prod
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/deployment.yaml, line: 2 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 4 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/hpa.yaml, line: 3 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 9 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 25 }
+    component: storefront
+    env: prod
+    platform: kubernetes
+    resources: { cpu: "1", memory: 1Gi }
+    autoscaling: { min: 3, max: 10 }
+    networkPolicies: []
+  - kind: Deployment
+    id: storefront.uat
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/deployment.yaml, line: 2 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-uat.yaml, line: 1 }
+    component: storefront
+    env: uat
+    platform: kubernetes
+    replicas: 2
+    resources: { cpu: 250m, memory: 256Mi }
+    networkPolicies: []
+  - kind: Setting
+    id: cart.prod.env-redis-host
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/templates/deployment.yaml, line: 21 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/values.yaml, line: 3 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 42 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 33 }
+    component: cart
+    env: prod
+    settingKind: config
+    key: env.REDIS_HOST
+    valueOrRef: cart-redis
+  - kind: Setting
+    id: cart.prod.env-redis-password
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/templates/deployment.yaml, line: 23 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/values.yaml, line: 3 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 42 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 33 }
+    component: cart
+    env: prod
+    settingKind: config
+    key: env.REDIS_PASSWORD
+    valueOrRef: secret:cart-redis/password
+  - kind: Setting
+    id: cart.prod.env-region
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/templates/deployment.yaml, line: 28 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/values.yaml, line: 3 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 42 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 33 }
+    component: cart
+    env: prod
+    settingKind: config
+    key: env.REGION
+    valueOrRef: eu-west-2
+  - kind: Setting
+    id: cart.prod.image
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/templates/deployment.yaml, line: 19 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/charts/cart/values.yaml, line: 3 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 42 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 33 }
+    component: cart
+    env: prod
+    settingKind: config
+    key: image
+    valueOrRef: registry.forge.example/storefront/cart:1.2.0
+  - kind: Setting
+    id: storefront.prod.env-cart-url
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/deployment.yaml, line: 31 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 4 }
+    component: storefront
+    env: prod
+    settingKind: config
+    key: env.CART_URL
+    valueOrRef: http://storefront-cart:8080
+  - kind: Setting
+    id: storefront.prod.env-log-level
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/deployment.yaml, line: 31 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 4 }
+    component: storefront
+    env: prod
+    settingKind: config
+    key: env.LOG_LEVEL
+    valueOrRef: info
+  - kind: Setting
+    id: storefront.prod.image
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/deployment.yaml, line: 24 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 4 }
+    component: storefront
+    env: prod
+    settingKind: config
+    key: image
+    valueOrRef: registry.forge.example/storefront/web:2.7.1-hotfix1
+  - kind: Setting
+    id: storefront.uat.env-cart-url
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/deployment.yaml, line: 31 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-uat.yaml, line: 1 }
+    component: storefront
+    env: uat
+    settingKind: config
+    key: env.CART_URL
+    valueOrRef: http://storefront-cart:8080
+  - kind: Setting
+    id: storefront.uat.env-log-level
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/deployment.yaml, line: 31 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-uat.yaml, line: 1 }
+    component: storefront
+    env: uat
+    settingKind: config
+    key: env.LOG_LEVEL
+    valueOrRef: debug
+  - kind: Setting
+    id: storefront.uat.image
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/deployment.yaml, line: 24 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-uat.yaml, line: 1 }
+    component: storefront
+    env: uat
+    settingKind: config
+    key: image
+    valueOrRef: registry.forge.example/storefront/web:2.7.1
+warnings:
+  - path: deploy/storefront/Chart.yaml
+    message: Chart dependency forge-common (https://charts.forge.example/stable) is not in the repo; its templates are not read.
+  - path: deploy/storefront/templates/pdb.yaml
+    message: "Could not read this Helm template at line 2: a condition depends on an unknown value. Its objects are not read."
+  - path: deploy/storefront/templates/worker.yaml
+    message: "Skipped a Deployment: its name comes from a template form Atticus doesn't evaluate."

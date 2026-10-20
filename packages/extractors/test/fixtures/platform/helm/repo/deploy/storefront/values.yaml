@@ -1,0 +1,45 @@
+# Defaults for every environment; values-<env>.yaml files override them.
+replicaCount: 1
+
+image:
+  repository: registry.forge.example/storefront/web
+  tag: ""
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: nginx
+  hosts:
+    - host: shop.dev.forge.example
+      paths:
+        - path: /
+  tls: []
+
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+
+env:
+  LOG_LEVEL: debug
+  CART_URL: http://storefront-cart:8080
+
+featureFlagsTemplate: "checkout={{ .Values.checkout }}"
+
+global:
+  region: eu-west-2
+
+cart:
+  enabled: true

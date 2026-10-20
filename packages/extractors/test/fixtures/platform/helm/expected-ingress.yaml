@@ -1,0 +1,38 @@
+# Expected output of the ingress extractor over ./repo (repo "forge-storefront-deploy", type infra).
+# The Ingress template renders only where ingress.enabled is true (prod and uat), with hosts from
+# the environment values file and TLS from its ingress.tls list.
+records:
+  - kind: Deployment
+    id: storefront.prod
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/ingress.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 9 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-prod.yaml, line: 7 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/service.yaml, line: 2 }
+    component: storefront
+    env: prod
+    platform: kubernetes
+    networkPolicies: []
+    ingress:
+      - { host: shop.forge.example, path: /, tls: true }
+      - { host: shop.forge.example, path: /api, tls: true }
+  - kind: Deployment
+    id: storefront.uat
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/ingress.yaml, line: 5 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values.yaml, line: 9 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/values-uat.yaml, line: 4 }
+      - { source: infrastructure, repo: forge-storefront-deploy, path: deploy/storefront/templates/service.yaml, line: 2 }
+    component: storefront
+    env: uat
+    platform: kubernetes
+    networkPolicies: []
+    ingress:
+      - { host: shop.uat.forge.example, path: /, tls: false }
+warnings:
+  - path: deploy/storefront/Chart.yaml
+    message: Chart dependency forge-common (https://charts.forge.example/stable) is not in the repo; its templates are not read.
+  - path: deploy/storefront/templates/pdb.yaml
+    message: "Could not read this Helm template at line 2: a condition depends on an unknown value. Its objects are not read."

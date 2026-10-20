@@ -1,0 +1,41 @@
+# Expected output of the ingress extractor over ./repo (repo "tide-ledger-deploy", type infra).
+# The backend Service name follows the namePrefix (dev-tide-ledger); the prod host and TLS come
+# from the JSON 6902 patch.
+records:
+  - kind: Deployment
+    id: tide-ledger.dev
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/ingress.yaml, line: 2 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/service.yaml, line: 2 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 5 }
+    component: tide-ledger
+    env: dev
+    platform: kubernetes
+    networkPolicies: []
+    ingress:
+      - { host: ledger.dev.tide.example, path: /, tls: false }
+  - kind: Deployment
+    id: tide-ledger.prod
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/ingress.yaml, line: 2 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 5 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/ingress-patch.yaml, line: 1 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/service.yaml, line: 2 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 5 }
+    component: tide-ledger
+    env: prod
+    platform: kubernetes
+    networkPolicies: []
+    ingress:
+      - { host: ledger.tide.example, path: /, tls: true }
+warnings:
+  - path: apps/ledger/overlays/prod/kustomization.yaml
+    message: Kustomize field replacements is not read; the objects may differ from what kustomize builds.
+  - path: apps/ledger/overlays/qa/kustomization.yaml
+    message: Remote base https://git.tide.example/platform/ledger-base//deploy?ref=v2.3.0 is not fetched; its objects are not read.

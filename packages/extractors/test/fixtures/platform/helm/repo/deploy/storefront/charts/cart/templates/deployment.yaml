@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cart.fullname" . }}
+  labels:
+    {{- include "cart.selectorLabels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "cart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cart.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: cart
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          env:
+            - name: REDIS_HOST
+              value: {{ .Values.redisHost | quote }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cart-redis
+                  key: password
+            - name: REGION
+              value: {{ .Values.global.region | default "eu-west-1" | quote }}

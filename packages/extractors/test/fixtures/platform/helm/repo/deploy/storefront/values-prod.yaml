@@ -1,0 +1,33 @@
+replicaCount: 3
+
+image:
+  tag: "2.7.1-hotfix1"
+
+ingress:
+  enabled: true
+  hosts:
+    - host: shop.forge.example
+      paths:
+        - path: /
+        - path: /api
+          pathType: Prefix
+  tls:
+    - hosts:
+        - shop.forge.example
+      secretName: shop-tls
+
+resources:
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+
+env:
+  LOG_LEVEL: info
+
+cart:
+  replicaCount: 2

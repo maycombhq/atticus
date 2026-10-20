@@ -1,0 +1,14 @@
+apiVersion: v2
+name: storefront
+description: Forge storefront web app and its cart service (invented)
+type: application
+version: 1.4.0
+appVersion: "2.7.1"
+dependencies:
+  - name: cart
+    version: 0.3.0
+    repository: file://charts/cart
+    condition: cart.enabled
+  - name: forge-common
+    version: 1.x.x
+    repository: https://charts.forge.example/stable

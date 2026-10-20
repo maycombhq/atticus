@@ -82,6 +82,23 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 2. **For a person (M3):** grade the namers' and drafters' output in `docs/evidence/m3-live/for-a-person.md`, and do the real assistant smoke runs listed in `docs/m3-exit.md` (Claude Code, VS Code Copilot, IntelliJ Copilot).
 3. **For a person (M4):** time the onboarding bars with someone new on a sandbox, accept a drafted org pack, and a screen-reader pass (`docs/m4-exit.md`, "For a person").
 4. **For a person (M5):** run the full CI matrix (Windows, Node 24 and the offline bundle on both systems), install the bundle on the target laptop and run `atticus doctor`, hand the threat model, SBOM and licences to the security review, then decide 1.0 (`docs/m5-exit.md`).
+5. **Review ADRs 0053–0064** (Tom George).
+
+## In progress (bank readiness)
+
+- A model-provider plugin (Anthropic, OpenAI-compatible endpoints such as Azure OpenAI and internal gateways).
+- The onboarding loop for framework models (`atticus onboard` for house frameworks).
+- A shared parse cache: each file parsed once per repo scan, shared by every reader.
+
+## Later (skipped for now, not forgotten)
+
+- **Phase 4, install and security:** the dialect `plugin:` loader and its trust model; Intune/SCCM packaging and signing; dependency scanning; session-token and port hardening.
+- **Phase 5, bank workflow:** the manual ADO path as a first-class flow; ADO over MCP or REST switched on by config; parallel work in the same repos; paging in the screens; the critic saying "could not evaluate".
+- **Phase 6, pilot:** needs the bank's phase 0 (access and installs).
+- `docs/coverage.md`: what is read and done, partly, or not at all, per area, updated with every change.
+- A full `pnpm test` run after the in-progress work lands, and the spec, API and command docs regenerated.
+- Reading not built: Harness triggers, Tekton PipelineRuns and Triggers, Argo CD ApplicationSets, helmfile; Spinnaker, TeamCity, Bamboo, Octopus and CircleCI (onboarding can draft them); EKS, AKS and GKE clusters (C1 has no kind); from Terraform, Lambda triggers, API Gateway integrations, EventBridge rules, module outputs, `count` and `for_each`; manifest readers other than openshift and ingress reading built Helm and Kustomize objects; Kustomize remote bases.
+- Test stability: `packages/cli/test/frameworks-cli.test.ts` crashes its worker (exit 0x80000003) when another file runs beside it, and some test files crash or time out at 5 s under parallel load on a 7 GB machine; they pass alone. Find the native memory cause rather than re-running.
 
 ## How to work
 

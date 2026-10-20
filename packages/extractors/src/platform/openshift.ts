@@ -1,6 +1,7 @@
 import { defineExtractor, globToRegExp } from "@maycombhq/sdk";
 import { infraExtractor } from "../more.js";
 import {
+  CHART_GLOBS,
   loadManifests,
   MANIFEST_GLOBS,
   sameScope,
@@ -10,7 +11,9 @@ import {
 } from "./manifests.js";
 import {
   at,
+  arr,
   componentFor,
+  configSetting,
   deployment,
   envOf,
   ev,
@@ -41,6 +44,7 @@ const INFRA_PATHS = infraExtractor.claims.map(globToRegExp);
  */
 const infraSees = (o: K8sObject) =>
   o.kind === "Deployment" &&
+  !o.origin &&
   !o.nested &&
   o.docIndex === 0 &&
   !o.file.endsWith(".json") &&
@@ -73,10 +77,14 @@ const labelsOf = (v: unknown): Record<string, string> => {
  */
 export const openshiftExtractor = defineExtractor({
   id: "openshift",
-  version: "0.2.0",
-  claims: MANIFEST_GLOBS,
+  version: "0.3.0",
+  claims: [...MANIFEST_GLOBS, ...CHART_GLOBS],
   async *scan(repo, ctx) {
-    const set = await loadManifests(repo, ctx, RELEVANT);
+    const set = await loadManifests(repo, ctx, RELEVANT, MANIFEST_GLOBS, { rendered: true });
+    const evOf = (x: K8sObject) => [
+      ev(repo, "infrastructure", x.file, x.line()),
+      ...(x.sources ?? []).map((s) => ev(repo, "infrastructure", s.file, s.line)),
+    ];
     warnSkipped(ctx, set, HANDLED);
     const objects = set.objects;
     const of = (kind: string) => objects.filter((o) => o.kind === kind);
@@ -88,7 +96,7 @@ export const openshiftExtractor = defineExtractor({
       // Same environment and component rules as the infra extractor for what it reads.
       const env = seen
         ? (o.namespace ?? "default")
-        : (envOf({ namespace: o.namespace, path: o.file, name: o.name }) ?? "default");
+        : (o.env ?? envOf({ namespace: o.namespace, path: o.file, name: o.name }) ?? "default");
       const component = seen
         ? slug(o.name)
         : componentFor(ctx, [o.labels.app, o.labels["app.kubernetes.io/name"], o.name]);
@@ -135,7 +143,7 @@ export const openshiftExtractor = defineExtractor({
         e.objs.push(...objs);
         routed.set(w, e);
       } else {
-        const env = envOf({ namespace: r.namespace, path: r.file }) ?? "default";
+        const env = r.env ?? envOf({ namespace: r.namespace, path: r.file }) ?? "default";
         const component = componentFor(ctx, [toName]);
         const key = `${component}|${env}`;
         const e = orphans.get(key) ?? { component, env, routes: [], objs: [] };
@@ -179,10 +187,10 @@ export const openshiftExtractor = defineExtractor({
         ...(max ? { autoscaling: { min, max } } : {}),
         networkPolicies: nps.map((p) => p.name),
         ...(ingress ? { ingress: ingress.routes } : {}),
-        evidence: [w.o, ...hpa, ...nps, ...(ingress?.objs ?? [])].map((x) =>
-          ev(repo, "infrastructure", x.file, x.line()),
-        ),
+        evidence: dedupe([w.o, ...hpa, ...nps, ...(ingress?.objs ?? [])].flatMap(evOf)),
       });
+      // Built from a chart or an overlay: its images and environment variables, per environment.
+      if (w.o.origin) yield* containerSettings(repo, w, of("ConfigMap"));
     }
 
     for (const o of orphans.values())
@@ -191,7 +199,94 @@ export const openshiftExtractor = defineExtractor({
         env: o.env,
         platform: "openshift",
         ingress: o.routes,
-        evidence: o.objs.map((x) => ev(repo, "infrastructure", x.file, x.line())),
+        evidence: dedupe(o.objs.flatMap(evOf)),
       });
   },
 });
+
+type Evidence = ReturnType<typeof ev>;
+
+const dedupe = (list: Evidence[]) =>
+  list.filter((e, i) => list.findIndex((x) => x.path === e.path && x.line === e.line) === i);
+
+/**
+ * Settings for a workload built from a Helm chart or a Kustomize overlay (ADR 0064): each
+ * container's image (`image`, or `image.<container>` when there are several) and environment
+ * variables (`env.<NAME>`, or `env.<container>.<NAME>`). A value from a ConfigMap built in the
+ * same release or overlay is filled in; a Secret stays a reference (`secret:<name>/<key>`),
+ * never a value. A value the template reader left unknown gives no setting.
+ */
+function* containerSettings(
+  repo: Parameters<typeof ev>[0],
+  w: Workload,
+  configMaps: K8sObject[],
+): Generator<ReturnType<typeof configSetting>> {
+  const base = ["spec", "template", "spec", "containers"];
+  const containers = arr(at(w.o.obj, ...base));
+  const single = containers.length === 1;
+  const sources = (w.o.sources ?? []).map((s) => ev(repo, "infrastructure", s.file, s.line));
+  const evAt = (path: (string | number)[]) =>
+    dedupe([ev(repo, "infrastructure", w.o.file, w.o.line(path) ?? w.o.line()), ...sources]);
+  const cmOf = (name: string | undefined) =>
+    name ? configMaps.find((c) => c.name === name && sameScope(c, w.o)) : undefined;
+  const seen = new Set<string>();
+  const out: ReturnType<typeof configSetting>[] = [];
+  const add = (key: string, value: string, evidence: Evidence[]) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(configSetting({ component: w.component, env: w.env, key, value, evidence }));
+  };
+  containers.forEach((c, i) => {
+    if (!isObj(c)) return;
+    const cname = str(c.name) ?? String(i);
+    const image = str(c.image);
+    if (image) add(single ? "image" : `image.${cname}`, image, evAt([...base, i, "image"]));
+    const envKey = (n: string) => (single ? `env.${n}` : `env.${cname}.${n}`);
+    arr(c.env).forEach((e, j) => {
+      const name = str(at(e, "name"));
+      if (!name) return;
+      const path = [...base, i, "env", j];
+      const literal = str(at(e, "value"));
+      if (literal !== undefined) return add(envKey(name), literal, evAt(path));
+      const cmRef = at(e, "valueFrom", "configMapKeyRef");
+      const secretRef = at(e, "valueFrom", "secretKeyRef");
+      const fieldPath = str(at(e, "valueFrom", "fieldRef", "fieldPath"));
+      if (isObj(cmRef)) {
+        const cmName = str(cmRef.name);
+        const key = str(cmRef.key);
+        const cm = cmOf(cmName);
+        const v = key ? str(at(cm?.obj, "data", key)) : undefined;
+        if (v !== undefined && cm && key)
+          add(envKey(name), v, dedupe([...evAt(path), ...evOfCm(repo, cm, key)]));
+        else if (cmName && key) add(envKey(name), `configmap:${cmName}/${key}`, evAt(path));
+      } else if (isObj(secretRef)) {
+        const sName = str(secretRef.name);
+        const key = str(secretRef.key);
+        if (sName && key) add(envKey(name), `secret:${sName}/${key}`, evAt(path));
+      } else if (fieldPath) add(envKey(name), `field:${fieldPath}`, evAt(path));
+    });
+    arr(c.envFrom).forEach((e, j) => {
+      const cm = cmOf(str(at(e, "configMapRef", "name")));
+      const data = at(cm?.obj, "data");
+      if (!cm || !isObj(data)) return;
+      const prefix = str(at(e, "prefix")) ?? "";
+      for (const key of Object.keys(data).sort()) {
+        const v = str(data[key]);
+        if (v === undefined) continue;
+        add(
+          envKey(prefix + key),
+          v,
+          dedupe([...evAt([...base, i, "envFrom", j]), ...evOfCm(repo, cm, key)]),
+        );
+      }
+    });
+  });
+  yield* out;
+}
+
+function evOfCm(repo: Parameters<typeof ev>[0], cm: K8sObject, key: string): Evidence[] {
+  return [
+    ev(repo, "infrastructure", cm.file, cm.line(["data", key]) ?? cm.line()),
+    ...(cm.sources ?? []).map((s) => ev(repo, "infrastructure", s.file, s.line)),
+  ];
+}

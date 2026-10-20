@@ -15,6 +15,15 @@ Home shows it until the catalog is accepted; `atticus setup` prints it. Each ste
 7. **Existing knowledge is added** (optional): diagrams, partner specs and exports in `inputs/` (`atticus intake add <files>`), wikis in `sources.yaml` (`atticus sources add`).
 8. **The catalog is accepted**: walk the ecosystem map with the architect, then `atticus baseline --by <you>` or _Accept the catalog_ on Home. Every later scan, document and change is compared with this baseline.
 
+### Helm charts and Kustomize overlays
+
+A scan reads deployment repos the way they are kept, without running `helm` or `kustomize` (ADR 0064):
+
+- **Helm**: each chart (a folder with `Chart.yaml`) once per environment values file (`values-prod.yaml`, `values.uat.yaml`, `environments/<env>/values.yaml` and the like), layered over `values.yaml`, with local subcharts under `charts/`. The release is taken to be named after the chart. Atticus evaluates the common template forms (`.Values`, `.Chart`, `.Release.Name`, `default`, `quote`, `include` of the `helm create` helpers, `if`, `with`, `range`, `toYaml | nindent` and similar); anything else (`tpl`, `lookup`, `.Files`, `.Capabilities`, `.Release.Namespace`) is left unknown, so that field is missing from the catalog rather than guessed. A template whose condition depends on such a form is skipped, and the scan's problems name it with its line.
+- **Kustomize**: each overlay (a kustomization no other one uses) is built: bases, components, patches (strategic merge and JSON 6902), name prefixes and suffixes, namespace, labels, images, replicas and `configMapGenerator` literals. Remote bases are never fetched; the scan names them.
+
+Deployments, routes, autoscaling and network policies come out per environment, with each container's image and environment variables as settings (a secret stays a reference, never a value). Evidence points at the template or resource file and at the values file, kustomization entry or patch behind the value.
+
 ## The org pack
 
 Everything a team might want to change is in `org-pack/`: configuration and rule files, never code. Changes to it go through pull requests like any other code. The full schema is [contract C6](../spec/contracts/c6-org-pack.md); the files a team touches most:

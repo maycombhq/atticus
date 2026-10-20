@@ -1,0 +1,16 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tide-ledger
+spec:
+  template:
+    spec:
+      containers:
+        - name: ledger
+          env:
+            - name: DB_HOST
+              value: ledger-db.prod.tide.example
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi

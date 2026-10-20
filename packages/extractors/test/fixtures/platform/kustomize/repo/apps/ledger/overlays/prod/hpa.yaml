@@ -1,0 +1,11 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: tide-ledger
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: tide-ledger
+  minReplicas: 4
+  maxReplicas: 12
