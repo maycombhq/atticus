@@ -82,11 +82,12 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 2. **For a person (M3):** grade the namers' and drafters' output in `docs/evidence/m3-live/for-a-person.md`, and do the real assistant smoke runs listed in `docs/m3-exit.md` (Claude Code, VS Code Copilot, IntelliJ Copilot).
 3. **For a person (M4):** time the onboarding bars with someone new on a sandbox, accept a drafted org pack, and a screen-reader pass (`docs/m4-exit.md`, "For a person").
 4. **For a person (M5):** run the full CI matrix (Windows, Node 24 and the offline bundle on both systems), install the bundle on the target laptop and run `atticus doctor`, hand the threat model, SBOM and licences to the security review, then decide 1.0 (`docs/m5-exit.md`).
-5. **Review ADRs 0053–0064** (Tom George).
+5. **Review ADRs 0053–0065** (Tom George).
+6. **For a person (ADR 0065):** call each model provider once against a real endpoint (Anthropic, Azure OpenAI or the internal gateway, Bedrock) from a laptop behind the corporate proxy, and record the result.
 
 ## In progress (bank readiness)
 
-- A model-provider plugin (Anthropic, OpenAI-compatible endpoints such as Azure OpenAI and internal gateways).
+- Done: the model-provider plugin, `packages/model-providers` (ADR 0065): Anthropic, OpenAI-compatible endpoints (Azure OpenAI, internal gateways, vLLM) and AWS Bedrock, through a corporate proxy and custom CA. Not built: streaming, Vertex AI, AWS profiles and SSO, Azure managed identity; not yet called against a real endpoint.
 - The onboarding loop for framework models (`atticus onboard` for house frameworks).
 - A shared parse cache: each file parsed once per repo scan, shared by every reader.
 

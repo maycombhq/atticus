@@ -40,6 +40,7 @@ import {
 import { featureSuggestNames } from "./feature-commands.js";
 import { isTaskRun } from "@maycombhq/taskrun";
 import { runtimeForCli, RuntimeConfigError } from "@maycombhq/ai";
+import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
 import {
   adoSync,
   planStories,
@@ -320,6 +321,9 @@ export async function main(
   o: { quiet?: boolean } = {},
 ): Promise<number> {
   const started = Date.now();
+  // runtime.yaml adapters.model.type anthropic, openai-compatible, azure-openai and bedrock work
+  // out of the box (ADR 0065); every command that builds a runtime finds them registered.
+  registerBuiltInModelProviders();
   const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
   const flags = [
     ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),

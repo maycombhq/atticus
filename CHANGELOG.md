@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Model providers
+
+- Model mode can call a real model (ADR 0065). A new package, `@maycombhq/model-providers`, ships three providers the CLI registers when it starts: `anthropic` (Messages API, directly or through a gateway), `openai-compatible` (Chat Completions, for internal LLM gateways, vLLM and similar; `flavour: azure` for Azure OpenAI deployments with `api-key` and `api-version`, also as `type: azure-openai`) and `bedrock` (the Converse API, SigV4 signed with `node:crypto` from the standard AWS environment variables; no AWS SDK).
+- Keys stay out of `runtime.yaml`: `keyEnv` names the environment variable that holds the key, a setting that looks like a key or token is refused, and messages, run records and inspected objects never show a key. `baseUrl` must be `https://` except on this machine.
+- Corporate networks: `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` (with proxy credentials in the URL, never printed), `NODE_EXTRA_CA_CERTS` and a `caFile` setting. Timeouts (`timeoutMs`), cancellation, and bounded retries with backoff on 429 and 5xx that honour `Retry-After` up to 60 seconds. Each failure says what to check: the key variable on 401, the model or deployment on 404, the proxy on 407, the CA on an untrusted certificate.
+- Usage comes from the response's token counts. An answer cut off at the output limit or declined by the provider fails the run rather than being used.
+- Contracts, additive: C5 `registerModelProvider` (an organisation's own provider registers the same way), C6 `adapters.model.type: openai-compatible`. `models.allowed`, `modes.allowed`, `ai: off` and text-only work as before.
+- New dependency: undici (MIT), for the proxy. Not built: streaming, Vertex AI, AWS profiles and SSO, Azure managed identity, images and tools. No provider has been called against a real endpoint from this repo; tests use an injected transport or servers on 127.0.0.1.
+
 ### Helm and Kustomize
 
 - Helm charts are read without running Helm (ADR 0064): each chart once per environment values file (`values-<env>.yaml`, `values.<env>.yaml`, `values/<env>.yaml`, `environments/<env>/values.yaml` and the like) layered over `values.yaml`, with local subcharts (`charts/<name>`, `file://`, `alias`, `condition`, `tags`, globals). Templates go through a small Go-template reader (a tokenizer and parser for `{{ }}` actions, not text patterns) that evaluates `.Values`, `.Chart`, `.Release.Name`, variables, `if`/`else`, `with`, `range`, `include` of the `helm create` helpers and the common functions (`default`, `quote`, `toYaml`, `nindent`, `printf`, `trunc`, `trimSuffix`, ...). Anything else (`tpl`, `lookup`, `.Files`, `.Capabilities`, `.Release.Namespace`, unknown functions) is left unknown: the field is dropped, never guessed, and a template whose condition depends on one is skipped with a warning naming its line. The release is taken to be named after the chart. Dependencies that aren't in the repo are reported, not fetched.

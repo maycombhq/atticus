@@ -34,9 +34,11 @@ import {
  * runs an AI step gets the same answer to "how does AI run here?".
  *
  * - `hand-off` (the default): the person's own assistant does the step.
- * - `model`: a direct call through a model-provider adapter. Provider adapters are plugins;
- *   none ships in core, so without one installed the factory says so plainly. `mock` is the
- *   test provider.
+ * - `model`: a direct call through a model-provider adapter. Provider adapters are plugins,
+ *   passed in or registered with `registerModelProvider`; this package ships none. The CLI
+ *   registers the built-in ones from `@maycombhq/model-providers` (anthropic,
+ *   openai-compatible, azure-openai, bedrock; ADR 0065). With none for the configured type the
+ *   factory says so plainly. `mock` is the test provider.
  * - `headless-claude-code`: `claude -p` in a worktree with a prompt file, behind a runner
  *   interface so tests use a fake and never start the real CLI.
  * - `replay` and `mock`: for tests and CI. They send nothing anywhere, so runtime.yaml doesn't
@@ -238,6 +240,33 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
 
 type Settings = Record<string, string | number | boolean | string[]>;
 
+/** Builds a model provider from runtime.yaml `adapters.model.settings` (ADR 0065). */
+export type ModelProviderFactory = (settings: Settings) => ModelProvider;
+
+const registered = new Map<string, ModelProviderFactory>();
+
+/**
+ * Register a model-provider plugin under a runtime.yaml `adapters.model.type` (ADR 0065).
+ * The CLI registers the built-in ones from `@maycombhq/model-providers` when it starts; an
+ * organisation's own provider registers the same way. Providers passed to `createRuntime`
+ * directly win over registered ones. `mock` is reserved for tests.
+ */
+export function registerModelProvider(type: string, factory: ModelProviderFactory): void {
+  if (type === "mock")
+    throw new RuntimeConfigError("mock is the test provider; it can't be replaced");
+  registered.set(type, factory);
+}
+
+/** The registered model-provider types (for messages and checks). */
+export function registeredModelProviders(): string[] {
+  return [...registered.keys()].sort();
+}
+
+/** Forget every registered provider (tests). */
+export function clearModelProviders(): void {
+  registered.clear();
+}
+
 export interface CreateRuntimeOptions {
   /** The metarepo root (hand-off runs and headless prompt files go under .runs/). */
   root: string;
@@ -249,7 +278,7 @@ export interface CreateRuntimeOptions {
   /** Checks a hand-off output file. Default: the file must not be empty. */
   handoffValidate?: HandoffOptions["validate"];
   /** Model-provider adapters by runtime.yaml `adapters.model.type`; plugins register here. */
-  providers?: Record<string, (settings: Settings) => ModelProvider>;
+  providers?: Record<string, ModelProviderFactory>;
   /** Answers for mock mode. */
   respond?: (request: AiRequest) => string;
   /** Answers of the mock model provider (runtime.yaml `adapters.model.type: mock`), from the prompt. */
@@ -300,6 +329,7 @@ export async function createRuntime(
         );
       const make =
         o.providers?.[cfg.type] ??
+        registered.get(cfg.type) ??
         (cfg.type === "mock"
           ? (s: Settings) =>
               new MockModelProvider(
