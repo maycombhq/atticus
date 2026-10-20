@@ -56,6 +56,11 @@ export const Component = record("Component", {
   /** Where it runs today, e.g. kubernetes, openshift, cloud-run, vm. */
   runtime: z.string().optional(),
   migration: z.enum(["not-started", "in-progress", "done", "not-applicable"]).optional(),
+  /**
+   * Components it builds on (ADR 0068): the modules of the same repo its build file depends on
+   * (a pom's dependencies, a package.json's packages). Left out when there are none.
+   */
+  uses: z.array(Ref).optional(),
 });
 
 export const Auth = z.enum(["none", "oauth2", "mtls", "api-key", "basic", "other"]);

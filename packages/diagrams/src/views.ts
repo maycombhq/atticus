@@ -251,6 +251,11 @@ export function containerView(records: CatalogRecord[], system: string): FlowVie
     }
     edges.push(c.interfaceEdge(i, i.from, i.to));
   }
+  // What each component builds on, among the system's own (ADR 0068): a build-time edge.
+  for (const id of own)
+    for (const to of (c.components.get(id) as { uses?: string[] } | undefined)?.uses ?? [])
+      if (nodes.has(to))
+        edges.push({ id: `uses.${id}.${to}`, from: id, to, label: "uses", async: false });
   groups.push(...[...neighbourGroups.values()].sort((a, b) => cmp(a.id, b.id)));
   const order = new Map(groups.map((g, n) => [g.id, n]));
   const sorted = [...nodes.values()].sort(

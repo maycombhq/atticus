@@ -366,8 +366,12 @@ export function tablesInQuery(query: string): TableAccess[] {
     const table = unquote(name.split(".").pop()!);
     if (!out.some((o) => o.table === table && o.access === access)) out.push({ table, access });
   };
-  for (const m of q.matchAll(/\b(?:insert\s+into|update|merge\s+into)\s+([\w."`]+)/gi))
-    add(m[1]!, "write");
+  // An UPDATE after DO (PostgreSQL ON CONFLICT), KEY (MySQL ON DUPLICATE KEY) or FOR (a locking
+  // read) names no table: the upsert's table is its INSERT's.
+  for (const m of q.matchAll(
+    /\b(?:insert\s+into|(?<!\b(?:do|key|for)\s+)update|merge\s+into)\s+([\w."`]+)/gi,
+  ))
+    if (!/^set$/i.test(m[1]!)) add(m[1]!, "write");
   for (const m of q.matchAll(/\bdelete\s+from\s+([\w."`]+)/gi)) add(m[1]!, "write");
   for (const m of q.matchAll(/\b(delete\s+)?(?:from|join)\s+([\w."`]+)/gi)) {
     if (m[1] || /^(select|\()/i.test(m[2]!)) continue;

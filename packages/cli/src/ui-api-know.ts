@@ -215,6 +215,34 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
         body: await text(["diagram", "render", name, ...(focus ? ["--focus", focus] : [])]),
       };
     })
+    .add("GET", "/api/diagram/{view}/graph", async ({ params, query }) => {
+      const name = params.view!;
+      if (!DIAGRAM_VIEWS.includes(name) || name === "sequence")
+        throw badRequest(
+          `${name} has no canvas. Views: ${DIAGRAM_VIEWS.filter((v) => v !== "sequence").join(", ")}.`,
+        );
+      const focus = query.get("focus") ?? undefined;
+      if (focus !== undefined && !ID.test(focus)) throw badRequest(`${focus} isn't an id.`);
+      const r = await text([
+        "diagram",
+        "render",
+        name,
+        "--format",
+        "json",
+        ...(focus ? ["--focus", focus] : []),
+      ]);
+      const out = r.text.trim();
+      if (!out.startsWith("{")) {
+        const words = r.problems.join("\n") || "Nothing to draw.";
+        throw new HttpError(
+          422,
+          "Atticus can't show that yet",
+          words,
+          scanFirst(words) ? { notYet: true } : undefined,
+        );
+      }
+      return { status: 200, body: { view: JSON.parse(out) as unknown } };
+    })
     .add("GET", "/api/view/{name}", ({ params }) => view(params.name!))
     .add("GET", "/api/view/{name}/{id}", ({ params }) => view(params.name!, params.id!));
 }

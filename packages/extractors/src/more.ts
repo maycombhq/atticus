@@ -3,6 +3,7 @@ import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/s
 import { frontendCall, SourceFile } from "./backends/shared.js";
 import { componentOf, evidence, looseEnd, repoConfig, splitUrl } from "./facts.js";
 import { LIQUIBASE_CLAIMS, liquibaseChangeSets } from "./data/liquibase.js";
+import { moduleUses } from "./module-uses.js";
 import { flattenYaml, yamlKeyLine } from "./lang/config.js";
 import {
   parseDdl,
@@ -47,7 +48,7 @@ const SOURCES = [
 
 export const componentExtractor = defineExtractor({
   id: "component",
-  version: "1.0.0",
+  version: "1.1.0",
   claims: [...BUILD_FILES, ...SOURCES],
   async *scan(repo, ctx) {
     if (ctx.repoType && NOT_COMPONENTS.has(ctx.repoType)) return;
@@ -65,10 +66,16 @@ export const componentExtractor = defineExtractor({
     }
     if (!marker) return;
     const id = componentOf(repo, ctx);
+    // What each module builds on, among the repo's own modules (ADR 0068).
+    const uses = (ctx.modules ?? []).length
+      ? await moduleUses(repo, [{ path: "", component: id }, ...(ctx.modules ?? [])])
+      : new Map<string, string[]>();
+    const usesOf = (c: string) => (uses.get(c) ? { uses: uses.get(c) } : {});
     yield {
       schemaVersion: 1,
       kind: "Component",
       id,
+      ...usesOf(id),
       status: "current",
       confidence: "verified",
       system: ctx.system ?? id,
@@ -90,6 +97,7 @@ export const componentExtractor = defineExtractor({
         schemaVersion: 1,
         kind: "Component",
         id: m.component,
+        ...usesOf(m.component),
         status: "current",
         confidence: "verified",
         system: ctx.system ?? id,

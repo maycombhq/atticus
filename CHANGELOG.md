@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Diagrams draw the view; modules show what they build on
+
+- The Diagrams screen draws the chosen view itself (ADR 0068): Data shows each component's reads and writes to the tables inside their store, Container a system's components and their links, with a layered layout where no label sits on another. Pointing at a box lights its edges. `GET /api/diagram/{view}/graph` and `atticus diagram render <view> --format json` give a view's groups, nodes and edges.
+- `Component.uses` (C1, optional): the modules of the same repo a module's pom or package.json depends on. The container view draws them as `uses` edges.
+- A JPQL `@Query` is read against the entity's table (`@Table`, `@Entity(name)`, else Spring's naming), not the entity's name; a PostgreSQL or MySQL upsert and `SELECT ... FOR UPDATE` no longer give a table called `set` or similar.
+
 ### Discover: a clone's subfolders are its modules
 
 - `atticus repos discover <folder>` on a folder that is itself a Git clone proposes one repo, with each subfolder that builds (a pom, a package.json, a pyproject and so on) as a module with its own component (ADR 0057). A clone inside it stays a repo of its own. A folder of clones is read as before. Discover now writes `modules` into the manifest.

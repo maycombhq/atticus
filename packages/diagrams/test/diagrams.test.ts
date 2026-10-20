@@ -282,3 +282,44 @@ describe("shape library", () => {
     expect(inflate(vendor.xml)).toContain("shape=cloud");
   });
 });
+
+describe("modules a component builds on (ADR 0068)", () => {
+  it("draws each uses as an edge inside the system's container view", () => {
+    const comp = (id: string, uses?: string[]) => {
+      const p = parseRecord({
+        schemaVersion: 2,
+        kind: "Component",
+        id,
+        status: "current",
+        confidence: "verified",
+        system: "ledger",
+        type: "spring-boot",
+        evidence: [
+          {
+            repo: "tide-ledger",
+            commit: "0".repeat(40),
+            extractor: "component@1.1.0",
+            source: "config",
+            path: `${id}/pom.xml`,
+          },
+        ],
+        ...(uses ? { uses } : {}),
+      });
+      if (!p.ok) throw new Error(id);
+      return p.record;
+    };
+    const v = containerView(
+      [
+        comp("ledger-api", ["ledger-core", "ledger-rules"]),
+        comp("ledger-rules", ["ledger-core"]),
+        comp("ledger-core"),
+      ],
+      "ledger",
+    );
+    expect(v.edges.map((e) => `${e.from} ${e.label} ${e.to}`)).toEqual([
+      "ledger-api uses ledger-core",
+      "ledger-api uses ledger-rules",
+      "ledger-rules uses ledger-core",
+    ]);
+  });
+});

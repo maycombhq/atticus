@@ -235,4 +235,22 @@ ALTER TABLE entry ADD COLUMN posted_at timestamp;`);
       { table: "entry", access: "write" },
     ]);
   });
+
+  it("reads an upsert as a write to its table, not to a table called set", () => {
+    // PostgreSQL, MySQL and a locking read: none of these UPDATEs names a table.
+    expect(
+      tablesInQuery(
+        "insert into public_item (user_id, ref) values (?, ?) on conflict (user_id, ref) do update set shown = excluded.shown",
+      ),
+    ).toEqual([{ table: "public_item", access: "write" }]);
+    expect(
+      tablesInQuery("INSERT INTO hold (id, n) VALUES (?, ?) ON DUPLICATE KEY UPDATE n = n + 1"),
+    ).toEqual([{ table: "hold", access: "write" }]);
+    expect(tablesInQuery("SELECT id FROM account WHERE id = ? FOR UPDATE SKIP LOCKED")).toEqual([
+      { table: "account", access: "read" },
+    ]);
+    expect(tablesInQuery("UPDATE account SET n = 1")).toEqual([
+      { table: "account", access: "write" },
+    ]);
+  });
 });

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useApi, useLiveEvents } from "../../api/client.js";
+import { FlowCanvas, type FlowViewData } from "../../app/flow.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { Table, queryParam, setQueryParam, useView } from "./common.js";
@@ -505,8 +506,16 @@ export function Diagrams({ hash }: { hash: string }) {
       ? undefined
       : `/api/diagram/${v.id}${v.focus && f ? `?focus=${encodeURIComponent(f)}` : ""}`,
   );
+  // The canvas draws the chosen view itself (its groups, nodes and edges); a sequence view,
+  // which has no canvas form, keeps the map of its system.
+  const canvas = v.id !== "sequence";
+  const flow = useApi<{ view: FlowViewData }>(
+    !canvas || (v.focus && !f)
+      ? undefined
+      : `/api/diagram/${v.id}/graph${v.focus && f ? `?focus=${encodeURIComponent(f)}` : ""}`,
+  );
   const graph = useApi<Graph>(
-    v.focus && f ? `/api/graph?focus=${encodeURIComponent(f)}&depth=1` : "/api/graph",
+    canvas ? undefined : f ? `/api/graph?focus=${encodeURIComponent(f)}&depth=1` : "/api/graph",
   );
   const [copied, setCopied] = useState(false);
   return (
@@ -558,13 +567,23 @@ export function Diagrams({ hash }: { hash: string }) {
         </div>
       </Panel>
       <Panel title={`${v.label} view`} kind="hero" span="span 7" rows="span 2">
-        <View
-          of={graph}
-          empty={(g) => g.nodes.length === 0}
-          emptyText="The catalog is empty. Run a scan first."
-        >
-          {(g) => <GraphView g={g} {...(v.focus && f ? { focus: f } : {})} height={460} />}
-        </View>
+        {canvas ? (
+          <View
+            of={flow}
+            empty={(x) => x.view.nodes.length === 0}
+            emptyText={`Nothing to draw: the catalog has nothing for the ${v.label.toLowerCase()} view.`}
+          >
+            {(x) => <FlowCanvas view={x.view} height={460} />}
+          </View>
+        ) : (
+          <View
+            of={graph}
+            empty={(g) => g.nodes.length === 0}
+            emptyText="The catalog is empty. Run a scan first."
+          >
+            {(g) => <GraphView g={g} {...(v.focus && f ? { focus: f } : {})} height={460} />}
+          </View>
+        )}
       </Panel>
       <Panel
         title="Mermaid"

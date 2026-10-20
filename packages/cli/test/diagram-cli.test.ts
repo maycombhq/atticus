@@ -43,6 +43,31 @@ async function forgeRoot(): Promise<string> {
 }
 
 describe("atticus diagram render", () => {
+  it("prints a catalog view as JSON for the app's canvas: its groups, nodes and edges", async () => {
+    const root = await forgeRoot();
+    const c = capture();
+    expect(await diagramRender(root, { view: "data", format: "json" }, c.io)).toBe(0);
+    const v = JSON.parse(c.out.join("\n")) as {
+      type: string;
+      groups: { id: string }[];
+      nodes: { id: string; group?: string }[];
+      edges: { from: string; to: string; label: string }[];
+    };
+    expect(v.type).toBe("data");
+    expect(v.edges.length).toBeGreaterThan(0);
+    // Every edge joins two nodes of the view, and every grouped node's group is drawn.
+    const ids = new Set(v.nodes.map((n) => n.id));
+    for (const e of v.edges) expect([ids.has(e.from), ids.has(e.to)]).toEqual([true, true]);
+    const groups = new Set(v.groups.map((g) => g.id));
+    for (const n of v.nodes) if (n.group) expect(groups.has(n.group)).toBe(true);
+    // A sequence view has no canvas form.
+    const s = capture();
+    expect(
+      await diagramRender(root, { view: "sequence", focus: "portal-ui", format: "json" }, s.io),
+    ).toBe(2);
+    expect(s.err.join("\n")).toMatch(/Mermaid only/);
+  });
+
   it("prints a catalog view as Mermaid", async () => {
     const root = await forgeRoot();
     const c = capture();

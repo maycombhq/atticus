@@ -67,3 +67,60 @@ describe("one component per deployable module (ADR 0057)", () => {
     ]);
   });
 });
+
+describe("what each module builds on (ADR 0068)", () => {
+  it("records the sibling modules a module's pom or package.json depends on, as uses", async () => {
+    const pom = (id: string, deps: string[] = [], managed: string[] = []) =>
+      `<project><groupId>io.tide</groupId><artifactId>${id}</artifactId>${
+        managed.length
+          ? `<dependencyManagement><dependencies>${managed
+              .map(
+                (d) =>
+                  `<dependency><groupId>io.tide</groupId><artifactId>${d}</artifactId></dependency>`,
+              )
+              .join("")}</dependencies></dependencyManagement>`
+          : ""
+      }<dependencies>${deps
+        .map(
+          (d) => `<dependency><groupId>io.tide</groupId><artifactId>${d}</artifactId></dependency>`,
+        )
+        .join(
+          "",
+        )}<dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId></dependency></dependencies></project>`;
+    const repo = memoryRepo("tide-ledger", SHA, {
+      // The parent only manages versions: that isn't using anything.
+      "pom.xml": pom("ledger-parent", [], ["ledger-core", "ledger-rules"]),
+      "ledger-api/pom.xml": pom("ledger-api", ["ledger-core", "ledger-rules"]),
+      "ledger-rules/pom.xml": pom("ledger-rules", ["ledger-core"]),
+      "ledger-core/pom.xml": pom("ledger-core"),
+      "ledger-web/package.json": JSON.stringify({
+        name: "@tide/ledger-web",
+        dependencies: { "@tide/ui-kit": "workspace:*", react: "18.3.1" },
+      }),
+      "ui-kit/package.json": JSON.stringify({ name: "@tide/ui-kit" }),
+    });
+    const modules = ["ledger-api", "ledger-core", "ledger-rules", "ledger-web", "ui-kit"].map(
+      (m) => ({ path: m, component: m }),
+    );
+    const s = await scanRepo({
+      repo,
+      extractors: BUILT_IN_EXTRACTORS,
+      repoInfo: { system: "ledger", repoType: "spring-boot", modules },
+    });
+    const uses = Object.fromEntries(
+      s.records
+        .filter((r) => r.kind === "Component")
+        .map((r) => [r.id, (r as unknown as { uses?: string[] }).uses]),
+    );
+    // Hand-written: only dependencies on another module of this repo, sorted; none is left out.
+    expect(uses).toEqual({
+      "tide-ledger": undefined,
+      "ledger-api": ["ledger-core", "ledger-rules"],
+      "ledger-core": undefined,
+      "ledger-rules": ["ledger-core"],
+      "ledger-web": ["ui-kit"],
+      "ui-kit": undefined,
+    });
+    expect(s.rejected).toEqual([]);
+  });
+});

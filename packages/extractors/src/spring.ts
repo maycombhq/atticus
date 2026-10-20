@@ -15,6 +15,7 @@ import {
 import { looksLikeSql, tablesInQuery } from "./lang/sql.js";
 import { cleanJdbcUrl, SECRET_NAME } from "./backends/shared.js";
 import { applyAnnotations, modelsFor, modelValues, wrapperCalls } from "./frameworks.js";
+import { springName } from "./data/orm-jpa.js";
 
 const MAPPINGS: Record<string, string | undefined> = {
   GetMapping: "GET",
@@ -148,7 +149,7 @@ export function settingSlug(key: string): string {
  */
 export const springExtractor = defineExtractor({
   id: "spring",
-  version: "1.0.0",
+  version: "1.1.0",
   claims: [
     "**/*.java",
     "**/*.kt",
@@ -170,6 +171,20 @@ export const springExtractor = defineExtractor({
     }
     // Constants the repo's own code defines, anywhere in it: Class.NAME → value.
     const repoConstants = constantsOf(parsed.values());
+    // JPA entities by name (any case, as queries are read), to their tables: a JPQL query names
+    // entities, not tables.
+    const standardNames = /PhysicalNamingStrategyStandardImpl/.test(
+      config.get("spring.jpa.hibernate.naming.physical-strategy")?.value ?? "",
+    );
+    const entityTables = new Map<string, string>();
+    for (const f of parsed.values())
+      for (const d of f.decls) {
+        const e = findAnnotation(d, "Entity");
+        if (!e) continue;
+        const entity = attr(e, "name") ?? d.name;
+        const table = attr(findAnnotation(d, "Table"), "name") ?? entity;
+        entityTables.set(entity.toLowerCase(), standardNames ? table : springName(table));
+      }
     const housePackages = (ctx.frameworks ?? []).flatMap((m) => m.packages);
 
     for (const [path, shared] of parsed) {
@@ -294,14 +309,21 @@ export const springExtractor = defineExtractor({
         const q = findAnnotation(d, "Query");
         const qs = attr(q, "value");
         if (q && qs && looksLikeSql(qs)) {
+          const native = attr(q, "nativeQuery") === "true";
           for (const t of tablesInQuery(qs))
             serving.push(
-              looseEnd(repo, ctx, "db-access", `${t.access} ${t.table}`, {
-                source: "code",
-                path,
-                line: q.line,
-                side: "caller",
-              }),
+              looseEnd(
+                repo,
+                ctx,
+                "db-access",
+                `${t.access} ${native ? t.table : (entityTables.get(t.table) ?? t.table)}`,
+                {
+                  source: "code",
+                  path,
+                  line: q.line,
+                  side: "caller",
+                },
+              ),
             );
         }
         // Kafka listeners.
