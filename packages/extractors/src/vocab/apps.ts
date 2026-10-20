@@ -1,5 +1,7 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
+import { callsIn, stringValue, withTree } from "../lang/code-tree.js";
+import { parseJava } from "../lang/java.js";
 import {
   component,
   ev,
@@ -37,6 +39,8 @@ const MARKERS = [
   "**/tauri.conf.json",
   "**/*.csproj",
 ];
+/** Retrofit's HTTP method annotations. */
+const HTTP_METHODS = new Set(["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"]);
 const KOTLIN = ["**/*.kt", "**/*.java"];
 const SWIFT = ["**/*.swift"];
 const DART = ["**/*.dart"];
@@ -155,20 +159,37 @@ export const appsExtractor = defineExtractor({
         loose(repo, comp, "http-call", `${method.toUpperCase()} ${templatePath(url)}`, path, line),
       );
 
-    // Retrofit
-    const kotlin: { path: string; text: string }[] = [];
+    // Retrofit, read from the Java and Kotlin syntax trees.
+    const kotlin: { path: string; routes: { method: string; path: string; line: number }[] }[] = [];
     const bases = new Set<string>();
     for (const path of await sources(repo, KOTLIN)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !(android || /retrofit2/.test(text))) continue;
-      const clean = stripComments(text, "c");
-      kotlin.push({ path, text: clean });
-      for (const m of clean.matchAll(/\.baseUrl\s*\(\s*"([^"]+)"/g)) bases.add(m[1]!);
+      const routes = (await parseJava(text, path)).decls.flatMap((d) =>
+        d.kind !== "method"
+          ? []
+          : d.annotations.flatMap((a) => {
+              const v = a.attrs.value;
+              return HTTP_METHODS.has(a.name) &&
+                typeof v === "string" &&
+                Object.keys(a.attrs).length === 1 &&
+                !a.named
+                ? [{ method: a.name, path: v, line: a.line }]
+                : [];
+            }),
+      );
+      kotlin.push({ path, routes });
+      if (text.includes("baseUrl"))
+        await withTree(path.endsWith(".java") ? "java" : "kotlin", text, (root) => {
+          for (const c of callsIn(root)) {
+            const url = stringValue(c.args[0]);
+            if (c.name === "baseUrl" && c.receiver && url) bases.add(url);
+          }
+        });
     }
     const base = bases.size === 1 ? [...bases][0] : undefined;
-    for (const { path, text } of kotlin)
-      for (const m of text.matchAll(/@(GET|POST|PUT|DELETE|PATCH|HEAD)\s*\(\s*"([^"]*)"\s*\)/g))
-        call(m[1]!, joinBase(base, m[2]!), path, lineAt(text, m.index));
+    for (const { path, routes } of kotlin)
+      for (const r of routes) call(r.method, joinBase(base, r.path), path, r.line);
 
     // Swift
     for (const path of await sources(repo, SWIFT)) {

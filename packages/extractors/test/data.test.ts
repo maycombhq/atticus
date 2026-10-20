@@ -182,6 +182,41 @@ describe("orm", () => {
     ]);
   });
 
+  it("reads mappings from syntax trees: layout doesn't matter, comments and strings aren't code", async () => {
+    const repo = memoryRepo("x", SHA, {
+      // A docstring that shows a mapping is not one.
+      "app/models.py":
+        'class Note(Base):\n    """Example:\n    __tablename__ = "fake"\n    """\n    pass\n\n' +
+        'class Tag(Base):\n    __tablename__ = "tag"\n    id = Column(Integer, primary_key=True)  # a comment\n',
+      // An attribute and its property on one line, and an attribute over two lines.
+      "Data/Ctx.cs":
+        "public class Ctx : DbContext { public DbSet<Card> Cards { get; set; } }\n" +
+        '[Index(nameof(Code),\n  IsUnique = true)]\npublic class Card {\n  [Key] public string Code { get; set; }\n  /* [Column("old")] */ public int Pin { get; set; }\n}\n',
+      // A nested @Index in a text block or a comment is not an index.
+      "src/main/java/x/Ledger.java":
+        '@Entity\n@Table(name = "ledger", indexes = {\n  // @Index(name = "ix_old", columnList = "a")\n  @Index(name = "ix_ledger_code", columnList = "code")\n})\npublic class Ledger {\n  @Id private Long id;\n  private String code = """\n    @Index(name = "ix_fake")""";\n}\n',
+    });
+    const s = await scanRepo({ repo, extractors: [ormExtractor], repoInfo: { component: "x" } });
+    expect(s.rejected).toEqual([]);
+    const tables = s.records.filter((r) => r.kind === "Table").map((r) => r.id);
+    expect(tables).toEqual(["x-db.cards", "x-db.ledger", "x-db.tag"]);
+    const cols = (t: string) =>
+      s.records
+        .filter((r) => r.kind === "Column" && r.id.startsWith(`x-db.${t}.`))
+        .map((r) => (r as unknown as Rec).name);
+    expect(cols("cards")).toEqual(["Code", "Pin"]);
+    const ix = s.records
+      .filter((r) => r.kind === "IndexConstraint")
+      .map((r) => `${r.id} ${String((r as unknown as Rec).constraintKind)}`);
+    expect(ix).toEqual([
+      "x-db.cards.ix-cards-code unique",
+      "x-db.cards.pk primary-key",
+      "x-db.ledger.ix-ledger-code index",
+      "x-db.ledger.pk primary-key",
+      "x-db.tag.pk primary-key",
+    ]);
+  });
+
   it("gives nothing for plain classes, test code or a repo without ORM mappings", async () => {
     const repo = memoryRepo("x", SHA, {
       "src/main/java/x/Plain.java": "public class Plain {\n  private Long id;\n}\n",

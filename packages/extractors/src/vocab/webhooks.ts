@@ -2,7 +2,17 @@ import { normalizePath, type CatalogRecord } from "@maycombhq/core";
 import { defineExtractor } from "@maycombhq/sdk";
 import { readYamlDocs } from "../platform/manifests.js";
 import { isObj } from "../platform/util.js";
-import { endpoint, lineAt, loose, own, read, sources, stripComments } from "./common.js";
+import {
+  descendants,
+  enclosingCalls,
+  isString,
+  keyOf,
+  lineOf,
+  stringValue,
+  withTree,
+} from "../lang/code-tree.js";
+import { syntaxLanguageOf } from "../lang/syntax.js";
+import { endpoint, loose, own, read, sources } from "./common.js";
 
 /**
  * Webhooks (ADR 0040).
@@ -25,8 +35,19 @@ import { endpoint, lineAt, loose, own, read, sources, stripComments } from "./co
 const SPECS = ["**/*.yaml", "**/*.yml", "**/*.json"];
 const CODE = ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.py"];
 const METHODS = ["get", "put", "post", "delete", "patch", "head", "options"];
-const CALLBACK_KEY =
-  /["']?\b(url|callbackUrl|callback_url|webhookUrl|webhook_url|notificationUrl|notification_url|notifyUrl|notify_url)\b["']?\s*[:=]\s*["'`](https?:\/\/[^"'`\s]+)["'`]/g;
+const CALLBACK_KEYS = new Set([
+  "url",
+  "callbackUrl",
+  "callback_url",
+  "webhookUrl",
+  "webhook_url",
+  "notificationUrl",
+  "notification_url",
+  "notifyUrl",
+  "notify_url",
+]);
+/** An absolute http(s) URL written whole in one literal. */
+const HTTP_URL = /^https?:\/\/\S+$/;
 const GENERIC = new Set([
   "client",
   "api",
@@ -42,26 +63,6 @@ const GENERIC = new Set([
   "session",
   "await",
 ]);
-
-/** The outermost call still open at `index`, within a short window before it. */
-function openCall(text: string, index: number): { callee: string; start: number } | undefined {
-  const from = Math.max(0, index - 500);
-  const window = text.slice(from, index);
-  let found: { callee: string; start: number } | undefined;
-  for (const m of window.matchAll(/([A-Za-z_$][\w$.]*)\s*\(/g)) {
-    let depth = 0;
-    let closed = false;
-    for (let i = from + m.index + m[0].length - 1; i < index && !closed; i++) {
-      if (text[i] === "(") depth++;
-      else if (text[i] === ")") closed = --depth === 0;
-    }
-    if (!closed) {
-      found = { callee: m[1]!, start: from + m.index };
-      break; // the first open call is the outermost
-    }
-  }
-  return found;
-}
 
 export const webhooksExtractor = defineExtractor({
   id: "webhooks",
@@ -112,16 +113,46 @@ export const webhooksExtractor = defineExtractor({
 
     for (const path of await sources(repo, CODE)) {
       const text = await read(repo, ctx, path);
-      if (text === undefined || !/hook/i.test(text)) continue;
-      const clean = stripComments(text, path.endsWith(".py") ? "hash" : "c");
-      for (const m of clean.matchAll(CALLBACK_KEY)) {
-        const call = openCall(clean, m.index);
-        if (!call) continue;
-        const callText = clean.slice(call.start, m.index);
-        if (!/hook/i.test(call.callee + callText)) continue;
-        const callback = m[2]!;
+      const lang = syntaxLanguageOf(path);
+      if (text === undefined || !lang || !/hook/i.test(text)) continue;
+      const found = await withTree(lang, text, (root) => {
+        const out: { callback: string; line: number; registrar?: string }[] = [];
+        for (const n of descendants(root)) {
+          const keyNode =
+            n.type === "pair"
+              ? n.childForFieldName("key")
+              : n.type === "keyword_argument"
+                ? n.childForFieldName("name")
+                : null;
+          const key = n.type === "pair" ? keyOf(n) : keyNode?.text;
+          const callback = stringValue(n.childForFieldName("value"), true);
+          if (!keyNode || !key || !CALLBACK_KEYS.has(key) || !callback || !HTTP_URL.test(callback))
+            continue;
+          // The outermost call the key is written in, within its function.
+          const call = enclosingCalls(n).at(-1);
+          if (!call) continue;
+          const callee = call.path?.join(".") ?? call.name;
+          const before = [...descendants(call.node)].filter(
+            (x) => x.endIndex <= keyNode.startIndex,
+          );
+          const said = before
+            .filter((x) => x.childCount === 0 || isString(x))
+            .map((x) => x.text)
+            .join(" ");
+          if (!/hook/i.test(`${callee} ${said}`)) continue;
+          const url = before
+            .filter(isString)
+            .map((x) => stringValue(x, true))
+            .find((v) => v !== undefined && HTTP_URL.test(v));
+          const root0 = callee.split(".")[0]!;
+          const registrar =
+            url ?? (GENERIC.has(root0.toLowerCase()) ? undefined : root0.toLowerCase());
+          out.push({ callback, line: lineOf(keyNode), ...(registrar ? { registrar } : {}) });
+        }
+        return out;
+      });
+      for (const { callback, line, registrar } of found) {
         const cbPath = /^https?:\/\/[^/]+(\/[^?#]*)?/.exec(callback)?.[1] ?? "/";
-        const line = lineAt(clean, m.index);
         add(
           endpoint({
             repo,
@@ -137,9 +168,6 @@ export const webhooksExtractor = defineExtractor({
             line,
           }),
         );
-        const url = /["'`](https?:\/\/[^"'`\s]+)["'`]/.exec(callText)?.[1];
-        const root = call.callee.split(".")[0]!;
-        const registrar = url ?? (GENERIC.has(root.toLowerCase()) ? undefined : root.toLowerCase());
         if (registrar)
           looseEnds.push(
             loose(repo, comp, "webhook-callback", `POST ${cbPath} ${registrar}`, path, line),

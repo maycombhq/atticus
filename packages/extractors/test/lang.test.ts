@@ -8,7 +8,6 @@ import {
   resolvePlaceholders,
   select,
   tablesInQuery,
-  tokenize,
 } from "../src/index.js";
 
 describe("Java reader", () => {
@@ -130,11 +129,14 @@ class CardsController {
     expect(cls.annotations.map((a) => a.name)).toEqual(["RestController"]);
   });
 
-  it("tokenises text blocks and escapes", async () => {
-    const t = tokenize('String s = """\\n  SELECT *\\n  FROM entry""";\nchar c = \'\\n\';').filter(
-      (x) => x.t === "str",
+  it("reads text blocks and escapes from the tree", async () => {
+    const f = await parseJava(
+      'class Q {\n  static final String SQL = """\n  SELECT *\n  FROM entry""";\n  static final String T = "a\\tb";\n  char c = \'"\';\n}',
     );
-    expect(t.length).toBe(2);
+    expect(f.constants.map((c) => [c.name, c.value])).toEqual([
+      ["SQL", "\n  SELECT *\n  FROM entry"],
+      ["T", "a\tb"],
+    ]);
   });
 });
 

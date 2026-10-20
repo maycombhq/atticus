@@ -3,6 +3,7 @@ import { defineExtractor } from "@maycombhq/sdk";
 import type { z } from "zod";
 import { componentOf, evidence } from "../facts.js";
 import { flattenYaml } from "../lang/config.js";
+import { attrOf, parseHcl } from "../platform/hcl.js";
 import {
   get,
   isTestOrBuildPath,
@@ -151,23 +152,28 @@ export const observabilityExtractor = defineExtractor({
         if (root)
           out.push(asset(fallback, "log-config", base, "config", path, lineAt(text, root.index)));
       } else if (path.endsWith(".tf")) {
-        for (const m of text.matchAll(
-          /resource\s+"(datadog_monitor|datadog_dashboard)"\s+"[^"]+"\s*\{([\s\S]*?)\n\}/g,
-        )) {
-          const body = m[2]!;
-          const name = /\b(?:name|title)\s*=\s*"([^"]+)"/.exec(body)?.[1];
+        // Terraform, read with the HCL parser: datadog_monitor (alert), datadog_dashboard (dashboard).
+        for (const r of parseHcl(text).blocks) {
+          const type = r.labels[0];
+          if (r.type !== "resource" || (type !== "datadog_monitor" && type !== "datadog_dashboard"))
+            continue;
+          const monitor = type === "datadog_monitor";
+          const str = (k: string) => {
+            const v = attrOf(r, k);
+            return typeof v === "string" ? v : undefined;
+          };
+          const name = monitor ? (str("name") ?? str("title")) : (str("title") ?? str("name"));
           if (!name) continue;
-          const tags = [
-            ...(/\btags\s*=\s*\[([^\]]*)\]/.exec(body)?.[1] ?? "").matchAll(/"([^"]+)"/g),
-          ].map((t) => t[1]!);
+          const t = attrOf(r, "tags");
+          const tags = Array.isArray(t) ? t.filter((x): x is string => typeof x === "string") : [];
           out.push(
             asset(
               taggedComponent(tags) ?? fallback,
-              m[1] === "datadog_monitor" ? "alert" : "dashboard",
+              monitor ? "alert" : "dashboard",
               name,
               "infrastructure",
               path,
-              lineAt(text, m.index),
+              r.line,
             ),
           );
         }

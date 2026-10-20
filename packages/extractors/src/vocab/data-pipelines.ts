@@ -1,20 +1,19 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
+import {
+  callOf,
+  callsIn,
+  descendants,
+  lineOf,
+  stringValue,
+  withTree,
+  type CodeCall,
+  type Node,
+} from "../lang/code-tree.js";
 import { tablesInQuery } from "../lang/sql.js";
 import { loadManifests, readYamlDocs } from "../platform/manifests.js";
 import { at, componentFor, envOf, str } from "../platform/util.js";
-import {
-  component,
-  ev,
-  lineAt,
-  loose,
-  own,
-  read,
-  setting,
-  slug,
-  sources,
-  stripComments,
-} from "./common.js";
+import { component, ev, lineAt, loose, own, read, setting, slug, sources } from "./common.js";
 
 /**
  * Data pipelines (ADR 0040): Components of type `data-pipeline`, `schedule` Settings and table
@@ -48,12 +47,6 @@ const PROFILES = ["**/profiles.yml"];
 const SQL = ["**/*.sql"];
 const MANIFESTS = ["**/*.yaml", "**/*.yml"];
 
-/** The value of a keyword argument written as a string literal, with its offset. */
-function kwarg(args: string, name: string): { value: string; at: number } | undefined {
-  const m = new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`).exec(args);
-  return m ? { value: m[1] ?? m[2]!, at: m.index } : undefined;
-}
-
 export const dataPipelinesExtractor = defineExtractor({
   id: "data-pipelines",
   version: "0.1.1",
@@ -70,12 +63,56 @@ export const dataPipelinesExtractor = defineExtractor({
 interface Dag {
   id: string;
   path: string;
-  clean: string;
-  at: number;
-  args: string;
-  argsAt: number;
-  /** Where the DAG's body ends: the next DAG of the file, or the file's end. */
-  end: number;
+  line: number;
+  schedule?: { value: string; line: number };
+  /** SQL written as `sql=` arguments between this DAG and the next one in the file. */
+  sql: { query: string; line: number }[];
+}
+
+/** A keyword argument written as a string literal, with its line. */
+function kwarg(c: CodeCall, name: string): { value: string; line: number } | undefined {
+  const v = c.kwargs.get(name);
+  const s = stringValue(v);
+  return v && s !== undefined ? { value: s, line: lineOf(v.parent ?? v) } : undefined;
+}
+
+/** The DAGs a Python file declares: `DAG(...)`, `with DAG(...)` and `@dag(...)` functions. */
+function dagsIn(root: Node, path: string): Dag[] {
+  const found: (Omit<Dag, "sql"> & { at: number })[] = [];
+  for (const n of descendants(root)) {
+    const c = callOf(n);
+    if (!c) continue;
+    const schedule = kwarg(c, "schedule") ?? kwarg(c, "schedule_interval");
+    const common = { path, line: lineOf(n), at: n.startIndex, ...(schedule ? { schedule } : {}) };
+    if (c.name === "DAG") {
+      const id = kwarg(c, "dag_id")?.value ?? stringValue(c.args[0]);
+      if (id) found.push({ id, ...common });
+    } else if (c.name === "dag" && !c.receiver && n.parent?.type === "decorator") {
+      const fn = n.parent.parent?.childForFieldName("definition");
+      const id = kwarg(c, "dag_id")?.value ?? fn?.childForFieldName("name")?.text;
+      if (id) found.push({ id, ...common });
+    }
+  }
+  found.sort((a, b) => a.at - b.at);
+  // sql="..." given to an operator, or sql = "..." assigned for one.
+  const sql = [...descendants(root)].flatMap((n) => {
+    const [k, v] =
+      n.type === "keyword_argument"
+        ? [n.childForFieldName("name"), n.childForFieldName("value")]
+        : n.type === "assignment"
+          ? [n.childForFieldName("left"), n.childForFieldName("right")]
+          : [null, null];
+    if (k?.type !== "identifier" || k.text !== "sql") return [];
+    const q = stringValue(v);
+    return q !== undefined ? [{ query: q, line: lineOf(n), at: n.startIndex }] : [];
+  });
+  return found.map(({ at, ...d }, i) => {
+    const end = found[i + 1]?.at ?? Infinity;
+    return {
+      ...d,
+      sql: sql.filter((s) => s.at >= at && s.at < end).map(({ query, line }) => ({ query, line })),
+    };
+  });
 }
 
 async function* airflow(
@@ -86,29 +123,8 @@ async function* airflow(
   const dags: Dag[] = [];
   for (const path of await sources(repo, PY)) {
     const text = await read(repo, ctx, path);
-    if (text === undefined || !/\bDAG\s*\(|@dag\b/.test(text) || !/airflow/.test(text)) continue;
-    const clean = stripComments(text, "hash");
-    const found: Omit<Dag, "end">[] = [];
-    for (const m of clean.matchAll(/\bDAG\s*\(/g)) {
-      const open = m.index + m[0].length;
-      const close = closeParen(clean, open - 1);
-      const args = clean.slice(open, close);
-      const id =
-        kwarg(args, "dag_id")?.value ??
-        /^\s*(?:"([^"]+)"|'([^']+)')/.exec(args)?.slice(1).find(Boolean);
-      if (id) found.push({ id, path, clean, at: m.index, args, argsAt: open });
-    }
-    for (const m of clean.matchAll(/@dag\s*\(/g)) {
-      const open = m.index + m[0].length;
-      const close = closeParen(clean, open - 1);
-      const args = clean.slice(open, close);
-      const fn = /\bdef\s+(\w+)/.exec(clean.slice(close))?.[1];
-      const id = kwarg(args, "dag_id")?.value ?? fn;
-      if (id) found.push({ id, path, clean, at: m.index, args, argsAt: open });
-    }
-    found.sort((a, b) => a.at - b.at);
-    for (const [i, d] of found.entries())
-      dags.push({ ...d, end: found[i + 1]?.at ?? clean.length });
+    if (text === undefined || !/\bDAG\b|@dag\b/.test(text) || !/airflow/.test(text)) continue;
+    dags.push(...(await withTree("python", text, (root) => dagsIn(root, path))));
   }
   // One DAG in the whole repo, in a repo the manifest gives a component: the DAG is that component.
   const lone = dags.length === 1 ? ctx.component : undefined;
@@ -124,39 +140,25 @@ async function* airflow(
         runtime: "airflow",
         source: "code",
         path: d.path,
-        line: lineAt(d.clean, d.at),
+        line: d.line,
       });
     }
-    const sched = kwarg(d.args, "schedule") ?? kwarg(d.args, "schedule_interval");
-    if (sched)
+    if (d.schedule)
       yield setting({
         repo,
         component: comp,
         settingKind: "schedule",
         key: `schedule.${d.id}`,
-        value: sched.value,
+        value: d.schedule.value,
         source: "code",
         path: d.path,
-        line: lineAt(d.clean, d.argsAt + sched.at),
+        line: d.schedule.line,
       });
     // SQL written in the file, up to the next DAG.
-    const body = d.clean.slice(d.at, d.end);
-    for (const s of body.matchAll(/\bsql\s*=\s*(?:"""([\s\S]*?)"""|"([^"]*)"|'([^']*)')/g)) {
-      const q = s[1] ?? s[2] ?? s[3] ?? "";
-      const line = lineAt(d.clean, d.at + s.index);
-      for (const t of tablesInQuery(q))
-        yield loose(repo, comp, "db-access", `${t.access} ${t.table}`, d.path, line);
-    }
+    for (const s of d.sql)
+      for (const t of tablesInQuery(s.query))
+        yield loose(repo, comp, "db-access", `${t.access} ${t.table}`, d.path, s.line);
   }
-}
-
-function closeParen(text: string, open: number): number {
-  let depth = 0;
-  for (let i = open; i < text.length; i++) {
-    if (text[i] === "(") depth++;
-    else if (text[i] === ")" && --depth === 0) return i;
-  }
-  return text.length;
 }
 
 /**
@@ -426,13 +428,26 @@ async function* spark(
   for (const path of await sources(repo, [...PY, ...SCALA])) {
     const text = await read(repo, ctx, path);
     if (text === undefined || !/\bspark\b|SparkSession/.test(text)) continue;
-    const clean = stripComments(text, path.endsWith(".py") ? "hash" : "c");
     const name = (s: string) => s.split(".").pop()!;
-    for (const m of clean.matchAll(
-      /\bspark\s*\.\s*(?:read\s*\.\s*table|table)\s*\(\s*["']([\w.]+)["']/g,
-    ))
-      yield loose(repo, comp, "db-access", `read ${name(m[1]!)}`, path, lineAt(clean, m.index));
-    for (const m of clean.matchAll(/\.\s*(?:saveAsTable|insertInto)\s*\(\s*["']([\w.]+)["']/g))
-      yield loose(repo, comp, "db-access", `write ${name(m[1]!)}`, path, lineAt(clean, m.index));
+    const found = await withTree(path.endsWith(".py") ? "python" : "scala", text, (root) => {
+      const out: { access: "read" | "write"; table: string; line: number }[] = [];
+      for (const c of callsIn(root)) {
+        const table = stringValue(c.args[0]);
+        if (!table || !/^[\w.]+$/.test(table)) continue;
+        const p = c.path?.join(".");
+        // spark.read.table("x") and spark.table("x") read; .saveAsTable("x") and .insertInto("x") write.
+        if (p === "spark.read.table" || p === "spark.table")
+          out.push({ access: "read", table, line: lineOf(c.node) });
+        else if ((c.name === "saveAsTable" || c.name === "insertInto") && c.receiver)
+          out.push({ access: "write", table, line: c.line });
+      }
+      // Reads first, then writes, each in source order.
+      return [
+        ...out.filter((x) => x.access === "read"),
+        ...out.filter((x) => x.access === "write"),
+      ];
+    });
+    for (const f of found)
+      yield loose(repo, comp, "db-access", `${f.access} ${name(f.table)}`, path, f.line);
   }
 }

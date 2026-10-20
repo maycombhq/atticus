@@ -396,6 +396,87 @@ describe("cloud-stores", () => {
   });
 });
 
+describe("vocabulary readers read code from syntax trees (ADR 0060)", () => {
+  const scan = async (ex: Extractor, files: Record<string, string>) => {
+    const s = await scanRepo({
+      repo: memoryRepo("x", SHA, files),
+      extractors: [ex],
+      repoInfo: { component: "x" },
+    });
+    expect(s.rejected).toEqual([]);
+    return s.records as unknown as Rec[];
+  };
+  const evidenceLine = (r: Rec) => (r.evidence as { line?: number }[])[0]?.line;
+
+  it("realtime: code in a string is not a route; a call over several lines is", async () => {
+    const r = await scan(realtimeExtractor, {
+      "Hubs/Program.cs":
+        'var log = "app.MapHub<OldHub>(\\"/hubs/old\\")";\napp.MapHub<ChatHub>(\n  "/hubs/chat");\n',
+      "api/ws.py":
+        'from fastapi import FastAPI\napp = FastAPI()\nHELP = """@app.websocket("/ws/fake")"""\n\n@app.websocket(\n    "/ws/real")\nasync def real(ws):\n    pass\n',
+    });
+    expect(r.map((x) => `${String(x.pathOrTopic)} ${String(evidenceLine(x))}`).sort()).toEqual([
+      "/hubs/chat 2",
+      "/ws/real 5",
+    ]);
+  });
+
+  it("gRPC: a stub named in a string is not a client", async () => {
+    const r = await scan(grpcExtractor, {
+      "worker/settle.py":
+        'import ledger_pb2_grpc\nDOC = "ledger_pb2_grpc.OldStub(channel)"\nstub = ledger_pb2_grpc.LedgerStub(channel)\n',
+    });
+    expect(r.map((x) => x.raw)).toEqual(["Ledger"]);
+  });
+
+  it("webhooks: a callback in a log message is not a registration", async () => {
+    const r = await scan(webhooksExtractor, {
+      "src/hooks.ts":
+        'log.info("hooks.register({ url: \\"https://x.example/hooks/old\\" })");\n' +
+        'await partner.webhooks.register({\n  url:\n    "https://x.example/hooks/new",\n});\n',
+    });
+    expect(r.map((x) => `${x.kind} ${String(x.pathOrTopic ?? x.raw)}`).sort()).toEqual([
+      "Endpoint /hooks/new",
+      "Unresolved POST /hooks/new partner",
+    ]);
+  });
+
+  it("data pipelines: a DAG in a docstring is not a DAG", async () => {
+    const r = await scan(dataPipelinesExtractor, {
+      "dags/a.py":
+        'from airflow import DAG\n"""Example: DAG(dag_id="fake", schedule="@daily")"""\nwith DAG(\n    dag_id="real",\n    schedule="@hourly",\n) as d:\n    pass\n',
+    });
+    expect(r.map((x) => `${x.kind} ${String(x.id)}`).sort()).toEqual([
+      "Component x",
+      "Setting x.schedule-real",
+    ]);
+  });
+
+  it("serverless: Azure attributes over several lines; one in a string is not read", async () => {
+    const r = await scan(serverlessExtractor, {
+      "Functions/F.cs":
+        'public class F {\n  const string Doc = "[Function(\\"Fake\\")]";\n  [Function(\n    "Nightly")]\n  public void Run(\n    [TimerTrigger(\n      "0 0 2 * * *")] object t) { }\n}\n',
+    });
+    expect(
+      r
+        .filter((x) => x.kind === "Endpoint")
+        .map((x) => `${String(x.id)} ${String(evidenceLine(x))}`),
+    ).toEqual(["x.function.nightly.schedule-0-0-2 6"]);
+  });
+
+  it("apps: Retrofit routes in a comment or a string are not routes; a top-level base URL is read", async () => {
+    const r = await scan(appsExtractor, {
+      "app/src/main/AndroidManifest.xml": "<manifest><application/></manifest>\n",
+      "app/src/main/java/a/Api.kt":
+        'package a\n\nval retrofit = Retrofit.Builder().baseUrl("https://api.x.example/v1/").build()\n\n' +
+        'interface Api {\n    /* @GET("old") */\n    @GET("items")\n    suspend fun items(): List<Item>\n    val doc: String get() = "@POST(\\"fake\\")"\n}\n',
+    });
+    expect(r.filter((x) => x.kind === "Unresolved").map((x) => x.raw)).toEqual([
+      "GET https://api.x.example/v1/items",
+    ]);
+  });
+});
+
 describe("vocabulary extractors are deterministic", () => {
   it("give identical output on two runs over every fixture", async () => {
     const fixtures = [

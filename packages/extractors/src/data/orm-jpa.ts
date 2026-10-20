@@ -1,12 +1,14 @@
 import type { RepoHandle } from "@maycombhq/sdk";
 import { repoConfig } from "../facts.js";
-import { tokenize, type Token } from "../lang/java.js";
+import { parseJavaClasses, type AnnotationTree } from "../lang/java-tree.js";
 import { isTestOrBuildPath } from "./common.js";
 import type { OrmColumn, OrmForeignKey, OrmIndex, OrmModel, OrmTable } from "./orm-model.js";
 
 /**
- * JPA / Hibernate entities in Java. The shared Java reader only records annotated fields, but
- * JPA maps every non-transient field, so this module walks class bodies itself.
+ * JPA / Hibernate entities in Java, read from the syntax tree (ADR 0060). The shared Java
+ * reader only records annotated fields, but JPA maps every non-transient field, so this
+ * module reads every field of a class (parseJavaClasses), with nested annotations such as
+ * `@Table(indexes = @Index(...))`. An annotation in a comment or a string is never read.
  *
  * Naming: Spring Boot's default physical naming (CamelCaseToUnderscoresNamingStrategy) turns
  * ownerName into owner_name, for explicit names too; with PhysicalNamingStrategyStandardImpl
@@ -17,13 +19,7 @@ import type { OrmColumn, OrmForeignKey, OrmIndex, OrmModel, OrmTable } from "./o
  */
 
 type AttrValue = string | string[];
-
-interface JAnn {
-  name: string;
-  attrs: Record<string, AttrValue>;
-  nested: JAnn[];
-  line: number;
-}
+type JAnn = AnnotationTree;
 
 interface JField {
   name: string;
@@ -42,192 +38,18 @@ interface JClass {
   path: string;
 }
 
-const MODIFIERS = new Set([
-  "public",
-  "protected",
-  "private",
-  "static",
-  "final",
-  "transient",
-  "volatile",
-  "abstract",
-  "synchronized",
-  "native",
-  "default",
-  "sealed",
-  "non",
-]);
 const PRIMITIVES = new Set(["int", "long", "short", "byte", "boolean", "double", "float", "char"]);
 
-const isP = (t: Token | undefined, v: string) => t?.t === "p" && t.v === v;
-
-/** Read an annotation starting at tk[i] ("@"); nested annotations in its arguments are kept. */
-function readAnn(tk: Token[], i: number): { a: JAnn; i: number } {
-  let j = i + 1;
-  let name = tk[j]?.t === "id" ? tk[j]!.v : "";
-  const line = tk[j]?.line ?? 1;
-  j++;
-  while (isP(tk[j], ".") && tk[j + 1]?.t === "id") {
-    name = tk[j + 1]!.v;
-    j += 2;
-  }
-  const a: JAnn = { name, attrs: {}, nested: [], line };
-  if (!isP(tk[j], "(")) return { a, i: j };
-  j++;
-  let seg: Token[] = [];
-  const flush = () => {
-    if (seg.length === 0) return;
-    let key = "value";
-    let vals = seg;
-    if (seg[0]?.t === "id" && isP(seg[1], "=")) {
-      key = seg[0].v;
-      vals = seg.slice(2);
-    }
-    const strs = vals.filter((t) => t.t === "str").map((t) => t.v);
-    if (isP(vals[0], "{")) a.attrs[key] = strs;
-    else if (strs.length > 0) a.attrs[key] = strs.join("");
-    else
-      a.attrs[key] = vals
-        .filter((t) => t.t === "id" || t.t === "num" || isP(t, "."))
-        .map((t) => t.v)
-        .join("");
-    seg = [];
-  };
-  let depth = 0;
-  while (j < tk.length) {
-    const t = tk[j]!;
-    if (isP(t, "@")) {
-      const r = readAnn(tk, j);
-      a.nested.push(r.a);
-      j = r.i;
-      continue;
-    }
-    if (isP(t, "(") || isP(t, "{")) depth++;
-    if (isP(t, ")") || isP(t, "}")) {
-      if (depth === 0) break;
-      depth--;
-    }
-    if (depth === 0 && isP(t, ",")) flush();
-    else seg.push(t);
-    j++;
-  }
-  flush();
-  return { a, i: j + 1 };
-}
-
-/** Skip from an opening brace at tk[i] to just past its matching close. */
-function skipBlock(tk: Token[], i: number): number {
-  let depth = 0;
-  for (; i < tk.length; i++) {
-    if (isP(tk[i], "{")) depth++;
-    else if (isP(tk[i], "}") && --depth === 0) return i + 1;
-  }
-  return i;
-}
-
 /** Classes in a Java file with their annotations, superclass and fields. */
-export function readJavaClasses(src: string, path: string): JClass[] {
-  const tk = tokenize(src);
-  const out: JClass[] = [];
-  const walk = (i: number, end: number, owner: JClass | undefined): void => {
-    let pending: JAnn[] = [];
-    while (i < end) {
-      const t = tk[i]!;
-      if (isP(t, "@") && !(tk[i + 1]?.t === "id" && tk[i + 1]!.v === "interface")) {
-        const r = readAnn(tk, i);
-        pending.push(r.a);
-        i = r.i;
-        continue;
-      }
-      if (
-        t.t === "id" &&
-        ["class", "interface", "enum", "record"].includes(t.v) &&
-        tk[i + 1]?.t === "id"
-      ) {
-        const cls: JClass = {
-          name: tk[i + 1]!.v,
-          line: tk[i + 1]!.line,
-          annotations: pending,
-          fields: [],
-          path,
-        };
-        pending = [];
-        let j = i + 2;
-        while (j < end && !isP(tk[j], "{") && !isP(tk[j], ";")) {
-          if (tk[j]!.t === "id" && tk[j]!.v === "extends" && tk[j + 1]?.t === "id")
-            cls.superName = tk[j + 1]!.v;
-          j++;
-        }
-        if (isP(tk[j], "{")) {
-          const close = skipBlock(tk, j);
-          if (t.v === "class") out.push(cls);
-          walk(j + 1, close - 1, t.v === "class" ? cls : undefined);
-          i = close;
-        } else i = j + 1;
-        continue;
-      }
-      if (!owner) {
-        if (isP(t, "{")) i = skipBlock(tk, i);
-        else {
-          if (isP(t, ";")) pending = [];
-          i++;
-        }
-        continue;
-      }
-      // A member of a class body: find where its declaration stops.
-      let j = i;
-      let paren = 0;
-      let sawParen = false;
-      while (j < end) {
-        const x = tk[j]!;
-        if (isP(x, "(")) {
-          paren++;
-          sawParen = true;
-        } else if (isP(x, ")")) paren--;
-        else if (paren === 0 && (isP(x, ";") || isP(x, "{") || isP(x, "="))) break;
-        j++;
-      }
-      const stop = tk[j];
-      if (sawParen || isP(stop, "{")) {
-        // Method, constructor or initializer: skip its body.
-        let k = j;
-        while (k < end && !isP(tk[k], "{") && !isP(tk[k], ";")) k++;
-        i = isP(tk[k], "{") ? skipBlock(tk, k) : k + 1;
-        pending = [];
-        continue;
-      }
-      const decl = tk.slice(i, j);
-      if (isP(stop, "=")) {
-        // Skip the initializer to the end of the statement.
-        let depth = 0;
-        while (j < end && !(depth === 0 && isP(tk[j], ";"))) {
-          if (isP(tk[j], "(") || isP(tk[j], "{")) depth++;
-          if (isP(tk[j], ")") || isP(tk[j], "}")) depth--;
-          j++;
-        }
-      }
-      const modifiers = new Set<string>();
-      let k = 0;
-      while (k < decl.length && decl[k]!.t === "id" && MODIFIERS.has(decl[k]!.v))
-        modifiers.add(decl[k++]!.v);
-      const rest = decl.slice(k);
-      const nameTok = [...rest].reverse().find((x) => x.t === "id");
-      if (nameTok && rest.length >= 2) {
-        const typeToks = rest.slice(0, rest.lastIndexOf(nameTok));
-        owner.fields.push({
-          name: nameTok.v,
-          type: typeToks.map((x) => x.v).join(""),
-          line: nameTok.line,
-          annotations: pending,
-          modifiers,
-        });
-      }
-      pending = [];
-      i = j + 1;
-    }
-  };
-  walk(0, tk.length, undefined);
-  return out;
+export async function readJavaClasses(src: string, path: string): Promise<JClass[]> {
+  return (await parseJavaClasses(src)).map((c) => ({
+    name: c.name,
+    line: c.line,
+    ...(c.superclass ? { superName: c.superclass } : {}),
+    annotations: c.annotations,
+    fields: c.fields.map((f) => ({ ...f, modifiers: new Set(f.modifiers) })),
+    path,
+  }));
 }
 
 const str = (v: AttrValue | undefined) => (Array.isArray(v) ? v[0] : v);
@@ -274,7 +96,8 @@ export async function readJpa(repo: RepoHandle): Promise<OrmModel> {
     if (isTestOrBuildPath(path)) continue;
     const text = await repo.readText(path);
     if (!/@(Entity|MappedSuperclass)\b/.test(text)) continue;
-    for (const c of readJavaClasses(text, path)) if (!classes.has(c.name)) classes.set(c.name, c);
+    for (const c of await readJavaClasses(text, path))
+      if (!classes.has(c.name)) classes.set(c.name, c);
   }
   const entities = [...classes.values()].filter((c) => ann(c.annotations, "Entity"));
   if (entities.length === 0) return { tables: [] };

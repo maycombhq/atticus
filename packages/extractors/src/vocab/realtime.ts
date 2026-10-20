@@ -1,7 +1,21 @@
 import { normalizePath, type CatalogRecord } from "@maycombhq/core";
 import { defineExtractor } from "@maycombhq/sdk";
-import { attr, attrs, findAnnotation, parseJava, type Decl } from "../lang/java.js";
-import { endpoint, lineAt, own, read, sources, stripComments } from "./common.js";
+import {
+  callOf,
+  callsIn,
+  descendants,
+  isString,
+  kids,
+  lineOf,
+  objectProperty,
+  stringValue,
+  withTree,
+  type CodeCall,
+  type Node,
+} from "../lang/code-tree.js";
+import { attr, attrs, findAnnotation, parseJava, type Decl, type JavaFile } from "../lang/java.js";
+import { syntaxLanguageOf } from "../lang/syntax.js";
+import { endpoint, own, read, sources } from "./common.js";
 
 /**
  * WebSocket and server-sent events (ADR 0040): `websocket` and `sse` Endpoints, id
@@ -32,15 +46,12 @@ const joinPath = (a: string, b: string) =>
 
 const SSE = /TEXT_EVENT_STREAM|text\/event-stream/;
 
-/** The text inside the parentheses that open at `open`, nested calls included. */
-function argsOf(text: string, open: number): string {
-  let depth = 0;
-  for (let i = open; i < text.length; i++) {
-    if (text[i] === "(") depth++;
-    else if (text[i] === ")" && --depth === 0) return text.slice(open + 1, i);
-  }
-  return text.slice(open + 1);
-}
+/** A string or a name that says the response is an event stream. */
+const mentionsSse = (n: Node) =>
+  isString(n)
+    ? SSE.test(stringValue(n, true) ?? "")
+    : /identifier$/.test(n.type) && SSE.test(n.text);
+
 const MAPPINGS: Record<string, string> = {
   GetMapping: "GET",
   PostMapping: "POST",
@@ -80,7 +91,7 @@ export const realtimeExtractor = defineExtractor({
     };
 
     // ---- Spring
-    const javaFiles: { path: string; text: string }[] = [];
+    const javaFiles: { path: string; file: JavaFile }[] = [];
     let appPrefix = "";
     for (const path of await sources(repo, JAVA)) {
       const text = await read(repo, ctx, path);
@@ -91,14 +102,14 @@ export const realtimeExtractor = defineExtractor({
         )
       )
         continue;
-      javaFiles.push({ path, text });
-      const prefix = /setApplicationDestinationPrefixes\s*\(\s*"([^"]+)"/.exec(
-        stripComments(text, "c"),
-      );
-      if (prefix) appPrefix = prefix[1]!;
-    }
-    for (const { path, text } of javaFiles) {
       const file = await parseJava(text, path);
+      javaFiles.push({ path, file });
+      const prefix = file.calls.find(
+        (c) => c.method === "setApplicationDestinationPrefixes" && c.args[0] !== undefined,
+      );
+      if (prefix) appPrefix = prefix.args[0]!;
+    }
+    for (const { path, file } of javaFiles) {
       for (const d of file.decls) {
         if (d.kind !== "method") continue;
         const mm = findAnnotation(d, "MessageMapping");
@@ -131,52 +142,81 @@ export const realtimeExtractor = defineExtractor({
     // ---- Node
     for (const path of await sources(repo, NODE)) {
       const text = await read(repo, ctx, path);
-      if (text === undefined || !/\bws\b|socket\.io|event-stream/.test(text)) continue;
-      const clean = stripComments(text, "c");
-      if (/["']ws["']/.test(clean))
-        for (const m of clean.matchAll(
-          /new\s+(?:WebSocketServer|WebSocket\.Server|\w+\.Server)\s*\(\s*\{([^}]*)\}/g,
-        )) {
-          const p = /\bpath\s*:\s*["'`]([^"'`]+)["'`]/.exec(m[1]!)?.[1];
-          if (p) add("websocket", p, path, lineAt(clean, m.index));
+      const lang = syntaxLanguageOf(path);
+      if (text === undefined || !lang || !/\bws\b|socket\.io|event-stream/.test(text)) continue;
+      await withTree(lang, text, (root) => {
+        const strings = new Set<string>();
+        for (const n of descendants(root)) {
+          const v = stringValue(n);
+          if (v !== undefined) strings.add(v);
         }
-      if (/["']socket\.io["']/.test(clean)) {
-        for (const m of clean.matchAll(/new\s+Server\s*\(/g)) {
-          const p = /\bpath\s*:\s*["'`]([^"'`]+)["'`]/.exec(
-            argsOf(clean, m.index + m[0].length - 1),
-          )?.[1];
-          add("websocket", p ?? "/socket.io", path, lineAt(clean, m.index));
+        const calls = callsIn(root);
+        /** The `path` option of an options object among a call's arguments. */
+        const pathOption = (c: CodeCall) => {
+          for (const a of c.args) {
+            const v = stringValue(objectProperty(a, "path"), true);
+            if (v !== undefined) return v;
+          }
+          return undefined;
+        };
+        if (strings.has("ws"))
+          for (const c of calls) {
+            const p = c.path?.join(".") ?? "";
+            if (!c.isNew || !/^(WebSocketServer|WebSocket\.Server|\w+\.Server)$/.test(p)) continue;
+            const v = c.args[0]?.type === "object" ? pathOption(c) : undefined;
+            if (v) add("websocket", v, path, lineOf(c.node));
+          }
+        if (strings.has("socket.io")) {
+          for (const c of calls)
+            if (c.isNew && c.path?.join(".") === "Server")
+              add("websocket", pathOption(c) ?? "/socket.io", path, lineOf(c.node));
+          for (const c of calls) {
+            const ns = stringValue(c.args[0], true);
+            if (c.name === "of" && c.receiver && ns?.startsWith("/"))
+              add("websocket", ns, path, c.line);
+          }
         }
-        for (const m of clean.matchAll(/\.of\s*\(\s*["'`](\/[^"'`]*)["'`]/g))
-          add("websocket", m[1]!, path, lineAt(clean, m.index));
-      }
-      if (SSE.test(clean)) {
-        const routes = [
-          ...clean.matchAll(/\b(?:app|router|server)\.get\s*\(\s*["'`](\/[^"'`]*)["'`]/g),
-        ];
-        routes.forEach((m, i) => {
-          const body = clean.slice(m.index, routes[i + 1]?.index ?? clean.length);
-          if (SSE.test(body)) add("sse", m[1]!, path, lineAt(clean, m.index), "GET");
-        });
-      }
+        // An Express-style GET route whose handler sends an event stream.
+        for (const c of calls) {
+          const route = stringValue(c.args[0], true);
+          if (
+            c.name !== "get" ||
+            !/^(app|router|server)$/.test(c.receiver?.text ?? "") ||
+            !route?.startsWith("/")
+          )
+            continue;
+          const sse = c.args.slice(1).some((a) => [...descendants(a)].some(mentionsSse));
+          if (sse) add("sse", route, path, lineOf(c.node), "GET");
+        }
+      });
     }
 
     // ---- ASP.NET SignalR
     for (const path of await sources(repo, CS)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !/MapHub/.test(text)) continue;
-      const clean = stripComments(text, "c");
-      for (const m of clean.matchAll(/\bMapHub\s*<\s*\w+\s*>\s*\(\s*"([^"]+)"/g))
-        add("websocket", m[1]!, path, lineAt(clean, m.index));
+      await withTree("c_sharp", text, (root) => {
+        for (const c of callsIn(root)) {
+          const hub = stringValue(c.args[0]);
+          if (c.name === "MapHub" && c.typeArgs.length === 1 && hub)
+            add("websocket", hub, path, c.line);
+        }
+      });
     }
 
     // ---- Python
     for (const path of await sources(repo, PY)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !/\.websocket\s*\(/.test(text)) continue;
-      const clean = stripComments(text, "hash");
-      for (const m of clean.matchAll(/@\w+\.websocket\s*\(\s*["'](\/[^"']*)["']/g))
-        add("websocket", m[1]!, path, lineAt(clean, m.index));
+      await withTree("python", text, (root) => {
+        for (const n of descendants(root)) {
+          if (n.type !== "decorator") continue;
+          const c = kids(n)[0] ? callOf(kids(n)[0]!) : undefined;
+          const p = stringValue(c?.args[0]);
+          if (c?.name === "websocket" && c.path?.length === 2 && p?.startsWith("/"))
+            add("websocket", p, path, lineOf(n));
+        }
+      });
     }
 
     yield* out.values();

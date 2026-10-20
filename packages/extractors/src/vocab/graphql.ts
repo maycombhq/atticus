@@ -1,7 +1,21 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor } from "@maycombhq/sdk";
 import { findAnnotation, attr, parseJava, type Decl } from "../lang/java.js";
-import { endpoint, lineAt, loose, own, read, sources, stripComments } from "./common.js";
+import {
+  callOf,
+  callsIn,
+  descendants,
+  isComment,
+  keyOf,
+  kids,
+  lineOf,
+  namePath,
+  same,
+  withTree,
+  type Node,
+} from "../lang/code-tree.js";
+import { syntaxLanguageOf } from "../lang/syntax.js";
+import { endpoint, lineAt, loose, own, read, sources } from "./common.js";
 
 /**
  * GraphQL (ADR 0040): served operations become `graphql` Endpoints and client operations
@@ -254,24 +268,10 @@ export const graphqlExtractor = defineExtractor({
         !/\b(gql|graphql|typeDefs)\b|`\s*(query|mutation|subscription)\b/i.test(text)
       )
         continue;
-      const clean = stripComments(text, "c");
-      const done = new Set<number>();
-      const take = (body: string, start: number) => {
-        if (done.has(start)) return;
-        done.add(start);
-        readGql(body, start, path, "code", text);
-      };
-      // Tagged templates (gql`...`, graphql(`...`)) and a typeDefs string.
-      const re = /(?:\b(?:gql|graphql)\s*(?:\(\s*)?|\btypeDefs\s*[:=]\s*)`([^`]*)`/g;
-      for (const m of clean.matchAll(re)) take(m[1]!, m.index + m[0].indexOf("`") + 1);
-      // A template marked with the GraphQL hint comment (editors and codegen read it), which
-      // the comment stripping above would otherwise hide.
-      for (const m of text.matchAll(/\/\*\s*GraphQL\s*\*\/\s*`([^`]*)`/g))
-        take(m[1]!, m.index + m[0].indexOf("`") + 1);
-      // An untagged template that is an operation document: it opens with a complete operation
-      // header (query Name($id: ID!) {), which prose and log messages don't.
-      for (const m of clean.matchAll(/`(\s*(?:query|mutation|subscription)\b[^`]*)`/g))
-        if (OPERATION_HEADER.test(m[1]!)) take(m[1]!, m.index + 1);
+      const lang = syntaxLanguageOf(path);
+      if (!lang) continue;
+      const bodies = await withTree(lang, text, (root) => templates(root));
+      for (const b of bodies) readGql(b.body, b.at, path, "code", text);
     }
     for (const path of await sources(repo, JAVA)) {
       const text = await read(repo, ctx, path);
@@ -286,7 +286,7 @@ export const graphqlExtractor = defineExtractor({
     for (const path of await sources(repo, PY)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !/\b(strawberry|graphene)\b/.test(text)) continue;
-      for (const f of pythonFields(stripComments(text, "hash")))
+      for (const f of await withTree("python", text, pythonFields))
         serve(f.op, f.name, path, f.line, "code");
     }
 
@@ -328,46 +328,92 @@ function javaField(d: Decl): { op: Op; field: string; line: number } | undefined
   return undefined;
 }
 
+/**
+ * GraphQL written in JavaScript templates, as body text and the offset it starts at: tagged
+ * templates (gql`...`, graphql(`...`)) and a typeDefs template first, then templates marked with
+ * the GraphQL hint comment, then untagged templates that open with an operation header.
+ */
+function templates(root: Node): { body: string; at: number }[] {
+  const tagged: Node[] = [];
+  const hinted: Node[] = [];
+  const untagged: Node[] = [];
+  for (const n of descendants(root)) {
+    if (n.type !== "template_string") continue;
+    const p = n.parent;
+    const call =
+      p?.type === "call_expression"
+        ? callOf(p)
+        : p?.type === "arguments" && p.parent
+          ? callOf(p.parent)
+          : undefined;
+    const tag = !!call && /^(gql|graphql)$/.test(call.name) && same(call.args[0], n);
+    const typeDefs =
+      (p?.type === "pair" && keyOf(p) === "typeDefs") ||
+      (p?.type === "variable_declarator" && p.childForFieldName("name")?.text === "typeDefs") ||
+      (p?.type === "assignment_expression" &&
+        namePath(p.childForFieldName("left"))?.at(-1) === "typeDefs");
+    const prev = n.previousSibling;
+    if (tag || typeDefs) tagged.push(n);
+    else if (prev && isComment(prev) && /^\/\*\s*GraphQL\s*\*\/$/.test(prev.text)) hinted.push(n);
+    else if (OPERATION_HEADER.test(n.text.slice(1, -1))) untagged.push(n);
+  }
+  return [...tagged, ...hinted, ...untagged].map((n) => ({
+    body: n.text.slice(1, -1),
+    at: n.startIndex + 1,
+  }));
+}
+
+/** Is a decorator `@strawberry.<what>` or `@strawberry.<what>(...)`? */
+const strawberry = (d: Node, ...what: string[]) => {
+  const e = kids(d)[0];
+  const p = e?.type === "call" ? namePath(e.childForFieldName("function")) : namePath(e);
+  return p?.length === 2 && p[0] === "strawberry" && what.includes(p[1]!);
+};
+
 /** Root-type fields of Strawberry and Graphene classes. */
-function pythonFields(text: string): { op: Op; name: string; line: number }[] {
+function pythonFields(root: Node): { op: Op; name: string; line: number }[] {
   const out: { op: Op; name: string; line: number }[] = [];
-  const lines = text.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const cls = /^class\s+(Query|Mutation|Subscription)\b\s*(\(([^)]*)\))?\s*:/.exec(lines[i]!);
-    if (!cls) continue;
-    const decorated = /@strawberry\.type\b/.test(lines[i - 1] ?? "");
-    const graphene = /graphene\.ObjectType/.test(cls[3] ?? "");
+  for (const top of kids(root)) {
+    const cls = top.type === "decorated_definition" ? top.childForFieldName("definition") : top;
+    if (cls?.type !== "class_definition") continue;
+    const name = cls.childForFieldName("name")?.text ?? "";
+    if (!/^(Query|Mutation|Subscription)$/.test(name)) continue;
+    const decorated =
+      top.type === "decorated_definition" &&
+      kids(top).some((d) => d.type === "decorator" && strawberry(d, "type"));
+    const graphene = kids(cls.childForFieldName("superclasses")).some(
+      (b) => namePath(b)?.join(".") === "graphene.ObjectType",
+    );
     if (!decorated && !graphene) continue;
-    const op = cls[1]!.toUpperCase() as Op;
-    let pendingField = false;
-    for (let j = i + 1; j < lines.length; j++) {
-      const l = lines[j]!;
-      if (l.trim() === "") continue;
-      if (!/^\s/.test(l)) break; // dedent: the class ended
-      if (!/^ {4}\S|^\t\S/.test(l)) continue; // only the class's own members
-      const s = l.trim();
-      if (/^@strawberry\.(field|mutation|subscription)\b/.test(s)) {
-        pendingField = true;
-        continue;
-      }
-      const def = /^(?:async\s+)?def\s+(\w+)\s*\(/.exec(s);
-      if (def) {
+    const op = name.toUpperCase() as Op;
+    for (const m of kids(cls.childForFieldName("body"))) {
+      if (m.type === "decorated_definition") {
         // Graphene's resolve_<field> methods resolve fields declared as attributes.
-        if (decorated && pendingField) out.push({ op, name: camel(def[1]!), line: j + 1 });
-        pendingField = false;
+        const fn = m.childForFieldName("definition");
+        const field = kids(m).some(
+          (d) => d.type === "decorator" && strawberry(d, "field", "mutation", "subscription"),
+        );
+        const fnName = fn?.type === "function_definition" ? fn.childForFieldName("name") : null;
+        if (decorated && field && fnName)
+          out.push({ op, name: camel(fnName.text), line: lineOf(fnName) });
         continue;
       }
-      pendingField = false;
-      const annotated = /^(\w+)\s*:\s*[^=]+(?:=.*)?$/.exec(s);
-      if (decorated && annotated && !annotated[1]!.startsWith("_")) {
-        out.push({ op, name: camel(annotated[1]!), line: j + 1 });
+      const a = m.type === "expression_statement" ? kids(m)[0] : undefined;
+      const left = a?.type === "assignment" ? a.childForFieldName("left") : null;
+      if (!a || left?.type !== "identifier" || left.text.startsWith("_")) continue;
+      if (a.childForFieldName("type")) {
+        if (decorated) out.push({ op, name: camel(left.text), line: lineOf(m) });
         continue;
       }
-      const assigned = /^(\w+)\s*=\s*(.+)$/.exec(s);
-      if (graphene && assigned && !assigned[1]!.startsWith("_")) {
-        if (/\bgraphene\.\w+\(|\.Field\(\)/.test(assigned[2]!))
-          out.push({ op, name: camel(assigned[1]!), line: j + 1 });
-      }
+      const value = a.childForFieldName("right");
+      const fieldCall =
+        !!value &&
+        callsIn(value).some(
+          (c) =>
+            (c.path?.length === 2 && c.path[0] === "graphene") ||
+            (c.name === "Field" && !!c.receiver && c.args.length === 0 && c.kwargs.size === 0),
+        );
+      if (graphene && fieldCall) out.push({ op, name: camel(left.text), line: lineOf(m) });
     }
   }
   return out;
