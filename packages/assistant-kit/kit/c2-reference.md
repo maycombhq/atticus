@@ -136,7 +136,7 @@ match:
 ```
 
 - A [tree-sitter query](https://tree-sitter.github.io/tree-sitter/using-parsers/queries/) over the file's syntax tree. **Use it for all code.** It sees code as code: a call in a comment or inside a string is not a call, line breaks and spacing don't matter, and a renamed variable still matches.
-- Grammars ship with Atticus: `java`, `kotlin`, `typescript`, `tsx`, `javascript` (JSX too), `c_sharp`, `python`, `go`, `scala`, `ruby`, `php`, `rust`. The file's extension picks one; `language:` sets it.
+- Grammars ship with Atticus: `java`, `kotlin`, `typescript`, `tsx`, `javascript` (JSX too), `c_sharp`, `python`, `go`, `scala`, `ruby`, `php`, `rust`, `groovy` (`.gradle`, `Jenkinsfile`). The file's extension picks one; `language:` sets it.
 - Node names come from the grammar. **Look, don't guess**: `atticus dialect tree <file>` prints a file's tree with the names a query uses (`method_invocation`, `argument_list`, `string_literal`). In `atticus onboard`, the sample files come with their trees.
 - Each match is a place. `${capture.<name>}` is a capture's text; a string literal's capture is its value without the quotes. The place's line is the first capture's.
 - Predicates: `(#eq? @m "exchange")`, `(#match? @m "^(get|post)$")` (on a captured name, not the file's text). `.` anchors a child as first, last or next to another.

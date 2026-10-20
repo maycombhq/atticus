@@ -1,0 +1,11 @@
+[
+  {
+    "name": "tree-sitter-groovy",
+    "version": "0.1.2",
+    "licence": "MIT",
+    "file": "tree-sitter-groovy.wasm",
+    "licenceFile": "tree-sitter-groovy.LICENSE",
+    "source": "https://github.com/amaanq/tree-sitter-groovy",
+    "sha256": "0e68bb48ac166de25c381e05bbfbc90769f25d4709c14e180dd593696a73c197"
+  }
+]

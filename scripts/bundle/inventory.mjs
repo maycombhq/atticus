@@ -101,6 +101,22 @@ export function inventory(deployDir) {
       text: licenceText(dir),
       own: pkg.name.startsWith("@maycombhq/"),
     });
+    // Files a package vendors (a prebuilt grammar, ADR 0060), each with its own licence.
+    const vendored = join(dir, "grammars", "vendored.json");
+    if (existsSync(vendored))
+      for (const v of JSON.parse(readFileSync(vendored, "utf8"))) {
+        const vkey = `${v.name}@${v.version}`;
+        if (out.has(vkey)) continue;
+        out.set(vkey, {
+          name: v.name,
+          version: v.version,
+          licence: v.licence,
+          text: readFileSync(join(dir, "grammars", v.licenceFile), "utf8"),
+          own: false,
+          purl: `pkg:generic/${v.name}@${v.version}?vcs_url=${encodeURIComponent(v.source)}`,
+          hashes: [{ alg: "SHA-256", content: v.sha256 }],
+        });
+      }
   };
   // Every node_modules folder, nested ones included (a package that needs another version).
   const walk = (nm) => {
@@ -146,7 +162,8 @@ export function cyclonedx(items, o) {
         type: "library",
         name: i.name,
         version: i.version,
-        purl: purl(i),
+        purl: i.purl ?? purl(i),
+        ...(i.hashes ? { hashes: i.hashes } : {}),
         ...(i.licence
           ? {
               licenses: [

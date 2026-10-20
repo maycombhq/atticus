@@ -45,6 +45,7 @@ export const SyntaxLanguage = z.enum([
   "ruby",
   "php",
   "rust",
+  "groovy",
 ]);
 
 /** Exactly one way to match, each with the files it looks in. */

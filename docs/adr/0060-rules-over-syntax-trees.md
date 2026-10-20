@@ -21,12 +21,12 @@ match:
   files: ["**/*.java"]
 ```
 
-- `language` is optional; by default it follows the file's extension: Java, Kotlin, TypeScript, TSX, JavaScript (and JSX), C#, Python, Go, Scala, Ruby, PHP, Rust.
+- `language` is optional; by default it follows the file's extension: Java, Kotlin, TypeScript, TSX, JavaScript (and JSX), C#, Python, Go, Scala, Ruby, PHP, Rust, and Groovy (`.groovy`, `.gradle`, `Jenkinsfile`).
 - Each match is a place; `${capture.<name>}` is a capture's text. A capture that is a string literal gives its value without the quotes. The place's line is the first capture's.
 - Captures work in `where`, `emit` and `lookups`: a lookup over `(variable_declarator name: (identifier) @name value: (string_literal) @value)` is a table of the repo's string constants, so `${lookup:constants(capture.service).value}` fills a constant used as an argument.
 - A query that doesn't compile fails the rule, which fails the dialect's tests: it never loads.
 
-**Parsers ship with Atticus**, offline: `web-tree-sitter` (MIT) and prebuilt grammars from `tree-sitter-wasms` (Unlicense; each grammar under its own permissive licence), pinned together (runtime 0.22.6, grammars 0.1.13; newer runtimes don't load these builds). Nothing is downloaded or compiled at run time. Structured files keep their own parsers (`jsonPath`, `xpath`, `configKey`, `hclBlock`).
+**Parsers ship with Atticus**, offline: `web-tree-sitter` (MIT) and prebuilt grammars from `tree-sitter-wasms` (Unlicense; each grammar under its own permissive licence), pinned together (runtime 0.22.6, grammars 0.1.13; newer runtimes don't load these builds). Groovy's prebuilt grammar (tree-sitter-groovy 0.1.2, MIT) is vendored in `packages/extractors/grammars/` with its licence, because its package also installs a native build Atticus doesn't use. Nothing is downloaded or compiled at run time. Structured files keep their own parsers (`jsonPath`, `xpath`, `configKey`, `hclBlock`).
 
 **Drafted dialects read trees and structured files only.** `atticus onboard` refuses a draft with a `regex` match. The survey gives the assistant the syntax tree of sample code files, so it writes queries against the node names the grammar really uses, and `atticus dialect tree <file>` prints the same tree for a person.
 
@@ -35,6 +35,7 @@ match:
 ## Consequences
 
 - One rule language reads code in a dozen languages and the configs around it, and an assistant can draft it for anything with a grammar.
-- The built-in extractors' lexical readers (Java, the JS/C#/Python/Go call layer) can become rules on the same engine, shipped as dialects; that migration is staged, behind golden tests that must give the same records.
+- Every built-in extractor reads code from the same trees (Java and Kotlin through one reader shared by Spring, dialects and the learners; the JS, C#, Python and Go call layer; the ORM and vocabulary readers), checked against the golden tests and fixtures.
+- **Built-in extractors for mainstream frameworks stay code, reading trees; they don't become rule files.** Spring's reading needs placeholder resolution from layered config, constants from the whole repo, confidence from where a framework model was learned, and path joining; a rule language that expressed those would be a programming language, harder for an assistant to draft and a person to review. Public frameworks are stable; what an organisation customises (house annotations, wrapper clients, gateways, infra modules) is what rules and framework models describe, and what onboarding drafts.
 - The offline bundle grows by the grammars it carries (about 18 MB for the twelve languages above); the bundle can carry fewer.
-- Languages without a prebuilt grammar here (Groovy, COBOL, PL/I) need one added to the bundle before rules can read them.
+- Languages without a prebuilt grammar (COBOL, PL/I, Swift, SQL dialects) keep their existing readers until a grammar can be built for the bundle (it needs a tree-sitter toolchain with Emscripten, which the build doesn't have yet).

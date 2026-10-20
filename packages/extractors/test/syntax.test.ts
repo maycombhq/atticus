@@ -41,6 +41,10 @@ describe("syntax trees (ADR 0060)", () => {
       ["ruby", "x = 1"],
       ["php", "<?php echo 1;"],
       ["rust", "fn f() {}"],
+      [
+        "groovy",
+        'pipeline { stages { stage("Deploy") { steps { sh "helm upgrade cards ./chart" } } } }',
+      ],
     ] as const)
       expect(await syntaxOutline(lang, src), lang).not.toMatch(/ERROR|MISSING/);
   });
@@ -147,5 +151,29 @@ describe("syntax trees (ADR 0060)", () => {
     });
     const f = await runDialectTests(d, ".");
     expect(f[0]!.message).toMatch(/^failed: the java query doesn't compile/);
+  });
+});
+
+describe("vendored grammars", () => {
+  it("are the files their manifest names, by checksum, each with its licence beside it", async () => {
+    const { createHash } = await import("node:crypto");
+    const { existsSync, readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const dir = fileURLToPath(new URL("../grammars/", import.meta.url));
+    const list = JSON.parse(readFileSync(dir + "vendored.json", "utf8")) as {
+      file: string;
+      licenceFile: string;
+      sha256: string;
+    }[];
+    expect(list.length).toBeGreaterThan(0);
+    for (const v of list) {
+      expect(
+        createHash("sha256")
+          .update(readFileSync(dir + v.file))
+          .digest("hex"),
+        v.file,
+      ).toBe(v.sha256);
+      expect(existsSync(dir + v.licenceFile), v.licenceFile).toBe(true);
+    }
   });
 });

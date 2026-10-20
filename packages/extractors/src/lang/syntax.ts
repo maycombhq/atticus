@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import Parser from "web-tree-sitter";
 
 /**
@@ -23,6 +24,7 @@ export const SYNTAX_LANGUAGES = [
   "ruby",
   "php",
   "rust",
+  "groovy",
 ] as const;
 export type SyntaxLanguage = (typeof SYNTAX_LANGUAGES)[number];
 
@@ -39,6 +41,7 @@ const BY_EXTENSION: [RegExp, SyntaxLanguage][] = [
   [/\.rb$/i, "ruby"],
   [/\.php$/i, "php"],
   [/\.rs$/i, "rust"],
+  [/(\.groovy|\.gradle|(^|\/)Jenkinsfile(\.[^/]*)?)$/i, "groovy"],
 ];
 
 /** The language a file's name says, if a grammar for it ships. */
@@ -55,7 +58,12 @@ async function language(lang: SyntaxLanguage): Promise<Parser.Language> {
   if (!languages.has(lang))
     languages.set(
       lang,
-      Parser.Language.load(require.resolve(`tree-sitter-wasms/out/tree-sitter-${lang}.wasm`)),
+      Parser.Language.load(
+        // Groovy is vendored in grammars/ (its package brings a native build we don't need).
+        lang === "groovy"
+          ? fileURLToPath(new URL("../../grammars/tree-sitter-groovy.wasm", import.meta.url))
+          : require.resolve(`tree-sitter-wasms/out/tree-sitter-${lang}.wasm`),
+      ),
     );
   return languages.get(lang)!;
 }

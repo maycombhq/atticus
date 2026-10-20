@@ -14,7 +14,8 @@
   },
   "files": [
     "dist",
-    "dialects"
+    "dialects",
+    "grammars"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

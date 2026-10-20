@@ -10,6 +10,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - The Spring extractor no longer scans source text: constants (`static final String`, `const val`), the declared types of fields, parameters and locals (for wrapper clients and `receiverType`), whether a file uses Spring or a client, and `HttpMethod.X` all come from the tree. The JPA reader still tokenises, until it moves too.
 - A `syntax` match (ADR 0060): a tree-sitter query over the file's syntax tree, for Java, Kotlin, TypeScript, TSX, JavaScript, C#, Python, Go, Scala, Ruby, PHP and Rust. Captures are `${capture.<name>}` (string literals unquoted) in templates, `where` and `lookups`, so a lookup over the tree can be the repo's constants. A call in a comment or a string isn't a call. The grammars ship with Atticus (web-tree-sitter 0.22.6, tree-sitter-wasms 0.1.13); nothing is downloaded or compiled.
 - `atticus dialect tree <file>` prints a file's syntax tree, with the node names a query uses.
+- Groovy (`.groovy`, `.gradle`, `Jenkinsfile`) is a syntax language too: its prebuilt grammar is vendored with its licence.
 - `atticus onboard` gives the assistant the syntax trees of sample code files, and refuses a draft with a `regex` match. `regex` is deprecated in hand-written dialects.
 - The dialect kit's reference documents `syntax`, and a worked example reads a house client in Java, Kotlin and TypeScript.
 
