@@ -125,11 +125,15 @@ const SKIP_FOLDERS = new Set([
   "specs",
 ]);
 
-async function localCandidates(
-  dir: string,
-): Promise<{ repos: { dir: string; repo: RepoHandle }[]; skipped: DiscoverResult["skipped"] }> {
+const SELF_IGNORE = [".git", "node_modules", ".atticus", "openspec", "specs", ".specify"];
+
+async function localCandidates(dir: string): Promise<{
+  repos: { dir: string; repo: RepoHandle; modules?: string[] }[];
+  skipped: DiscoverResult["skipped"];
+}> {
   const skipped: DiscoverResult["skipped"] = [];
-  const repos: { dir: string; repo: RepoHandle }[] = [];
+  const repos: { dir: string; repo: RepoHandle; modules?: string[] }[] = [];
+  const builds: string[] = [];
   const entries = (await readdir(dir, { withFileTypes: true }))
     .filter((e) => e.isDirectory() && !SKIP_FOLDERS.has(e.name) && !e.name.startsWith("."))
     .map((e) => e.name)
@@ -139,13 +143,27 @@ async function localCandidates(
     const repo = fsRepo(name, sub, "0000000");
     const isClone = await isDir(join(sub, ".git"));
     const det = await detectRepoType(repo);
-    if (isClone || det.type !== "unknown" || det.component) repos.push({ dir: sub, repo });
+    if (isClone) repos.push({ dir: sub, repo });
+    else if (det.type !== "unknown" || det.component) builds.push(name);
     else skipped.push({ path: name, reason: "no build file, code or platform files" });
   }
+  // A folder that is itself a clone is one repo: its subfolders that build are its modules,
+  // and a clone inside it is a repo of its own (ADR 0057).
+  if (await isDir(join(dir, ".git"))) {
+    const nested = repos.map((r) => basename(r.dir));
+    const self = fsRepo(basename(resolve(dir)), dir, "0000000", {
+      ignore: [...SELF_IGNORE, ...nested],
+    });
+    return { repos: [{ dir, repo: self, modules: builds }, ...repos], skipped };
+  }
+  // Otherwise each subfolder that builds is a repo of its own (a folder of clones).
+  for (const name of builds)
+    repos.push({ dir: join(dir, name), repo: fsRepo(name, join(dir, name), "0000000") });
+  repos.sort((a, b) => (basename(a.dir) < basename(b.dir) ? -1 : 1));
   // The folder itself is one repo when it has no repos inside but builds something.
   if (repos.length === 0) {
     const self = fsRepo(basename(resolve(dir)), dir, "0000000", {
-      ignore: [".git", "node_modules", ".atticus", "openspec", "specs", ".specify"],
+      ignore: SELF_IGNORE,
     });
     const det = await detectRepoType(self);
     if ((await isDir(join(dir, ".git"))) || det.type !== "unknown" || det.component)
@@ -224,7 +242,7 @@ export async function reposDiscover(
   if ("dir" in source) {
     const c = await localCandidates(source.dir);
     skipped = c.skipped;
-    for (const { dir, repo } of c.repos) {
+    for (const { dir, repo, modules } of c.repos) {
       const det = await detectRepoType(repo);
       const rel = toPosix(relative(root, dir));
       const inside = !rel.startsWith("..") && !isAbsolute(rel);
@@ -245,7 +263,7 @@ export async function reposDiscover(
         sparse: [],
         archived: false,
         hosts: [],
-        modules: [],
+        modules: (modules ?? []).map((m) => ({ path: m, component: slug(m), hosts: [] })),
       };
       found.push({ entry, detection: det, dir });
     }
@@ -294,6 +312,15 @@ export async function reposDiscover(
           ...(r.system ? { system: r.system } : {}),
           ...(r.component ? { component: r.component } : {}),
           ...(r.archived ? { archived: true } : {}),
+          ...(r.modules.length
+            ? {
+                modules: r.modules.map((m) => ({
+                  path: m.path,
+                  component: m.component,
+                  ...(m.hosts.length ? { hosts: m.hosts } : {}),
+                })),
+              }
+            : {}),
         })),
       },
       { lineWidth: 0 },

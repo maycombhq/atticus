@@ -146,6 +146,85 @@ describe("reposDiscover from a folder of clones", () => {
       },
     ]);
   });
+
+  it("reads a folder that is one clone as one repo, with each subfolder that builds as a module", async () => {
+    const root = await metarepo();
+    const src = join(await tempDir(), "tide-ledger");
+    const put = async (path: string, text: string) => {
+      await mkdir(join(src, path, ".."), { recursive: true });
+      await writeFile(join(src, path), text, "utf8");
+    };
+    await put(
+      ".git/config",
+      '[remote "origin"]\n\turl = https://git.example.com/tide/ledger.git\n',
+    );
+    await put(".git/HEAD", "ref: refs/heads/beta\n");
+    const pom = (id: string, boot: boolean) =>
+      `<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>${
+        boot
+          ? "<parent><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-parent</artifactId><version>3.3.4</version></parent>"
+          : ""
+      }<groupId>com.example</groupId><artifactId>${id}</artifactId><version>1.0.0</version></project>\n`;
+    await put("pom.xml", pom("ledger-parent", false));
+    await put("ledger-api/pom.xml", pom("ledger-api", true));
+    await put("ledger-core/pom.xml", pom("ledger-core", false));
+    await put(
+      "Ledger_Web/package.json",
+      '{ "name": "ledger-web", "dependencies": { "react": "18.3.1" } }\n',
+    );
+    await put("notes/README.md", "# Notes\n");
+    // A clone inside the clone is a repo of its own, not a module.
+    await put("vendor-rates/.git/HEAD", "ref: refs/heads/main\n");
+    await put("vendor-rates/go.mod", "module example.com/rates\n");
+
+    const r = await reposDiscover(root, { dir: src });
+    // Hand-written: one entry for the clone (its origin, its branch, the root's type) with the
+    // three building subfolders as modules in name order, and the nested clone on its own.
+    expect(r.repos.map((x) => x.entry)).toEqual([
+      {
+        id: "tide-ledger",
+        url: "https://git.example.com/tide/ledger.git",
+        defaultBranch: "beta",
+        type: "java",
+        owner: UNASSIGNED,
+        extractors: [],
+        dialects: [],
+        sparse: [],
+        archived: false,
+        hosts: [],
+        modules: [
+          { path: "Ledger_Web", component: "ledger_web", hosts: [] },
+          { path: "ledger-api", component: "ledger-api", hosts: [] },
+          { path: "ledger-core", component: "ledger-core", hosts: [] },
+        ],
+      },
+      {
+        id: "vendor-rates",
+        url: toPosix(resolve(src, "vendor-rates")),
+        defaultBranch: "main",
+        type: "go",
+        owner: UNASSIGNED,
+        extractors: [],
+        dialects: [],
+        sparse: [],
+        archived: false,
+        hosts: [],
+        modules: [],
+      },
+    ]);
+    expect(r.skipped).toEqual([{ path: "notes", reason: "no build file, code or platform files" }]);
+    // The manifest keeps the modules, and the org pack still validates.
+    const manifest = parse(await readFile(join(root, r.file!), "utf8")) as {
+      repos: { id: string; modules?: unknown[] }[];
+    };
+    expect(manifest.repos[0]!.modules).toEqual([
+      { path: "Ledger_Web", component: "ledger_web" },
+      { path: "ledger-api", component: "ledger-api" },
+      { path: "ledger-core", component: "ledger-core" },
+    ]);
+    expect(manifest.repos[1]!.modules).toBeUndefined();
+    expect((await loadOrgPack(join(root, "org-pack"))).problems).toEqual([]);
+  });
 });
 
 describe("reposDiscover from a Git host organisation (mock)", () => {
