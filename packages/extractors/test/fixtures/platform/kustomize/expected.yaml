@@ -1,0 +1,220 @@
+# Expected output of the openshift extractor over ./repo (repo "tide-ledger-deploy", type infra).
+# Each overlay is built without running kustomize (ADR 0064). dev: namePrefix dev-, namespace
+# tide-dev, a new image tag and a merged ConfigMap literal. prod: a component adds an env var
+# (JSON 6902), a strategic-merge patch changes DB_HOST and limits, images renames the image,
+# replicas sets 4, and the HPA and NetworkPolicy of the overlay apply. qa has only a remote base.
+records:
+  - kind: Deployment
+    id: tide-ledger.dev
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 2 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 8 }
+    component: tide-ledger
+    env: dev
+    platform: kubernetes
+    replicas: 1
+    resources: { cpu: 250m, memory: 256Mi }
+    networkPolicies: []
+  - kind: Deployment
+    id: tide-ledger.prod
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 2 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 5 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/components/tracing/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/deployment-patch.yaml, line: 1 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 23 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 19 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/hpa.yaml, line: 2 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/network-policy.yaml, line: 2 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 7 }
+    component: tide-ledger
+    env: prod
+    platform: kubernetes
+    replicas: 4
+    resources: { cpu: "1", memory: 1Gi }
+    autoscaling: { min: 4, max: 12 }
+    networkPolicies: [ ledger-allow-gateway ]
+  - kind: Setting
+    id: tide-ledger.dev.env-audit-enabled
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 29 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 8 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 10 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 11 }
+    component: tide-ledger
+    env: dev
+    settingKind: config
+    key: env.AUDIT_ENABLED
+    valueOrRef: "true"
+  - kind: Setting
+    id: tide-ledger.dev.env-db-host
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 21 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 8 }
+    component: tide-ledger
+    env: dev
+    settingKind: config
+    key: env.DB_HOST
+    valueOrRef: ledger-db.dev.tide.example
+  - kind: Setting
+    id: tide-ledger.dev.env-db-password
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 23 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 8 }
+    component: tide-ledger
+    env: dev
+    settingKind: config
+    key: env.DB_PASSWORD
+    valueOrRef: secret:ledger-db/password
+  - kind: Setting
+    id: tide-ledger.dev.env-ledger-currency
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 29 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 8 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 10 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 11 }
+    component: tide-ledger
+    env: dev
+    settingKind: config
+    key: env.LEDGER_CURRENCY
+    valueOrRef: EUR
+  - kind: Setting
+    id: tide-ledger.dev.image
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 17 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 6 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/dev/kustomization.yaml, line: 8 }
+    component: tide-ledger
+    env: dev
+    settingKind: config
+    key: image
+    valueOrRef: registry.tide.example/ledger/api:1.1.0-rc2
+  - kind: Setting
+    id: tide-ledger.prod.env-audit-enabled
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 29 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 5 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/components/tracing/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/deployment-patch.yaml, line: 1 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 23 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 19 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 10 }
+    component: tide-ledger
+    env: prod
+    settingKind: config
+    key: env.AUDIT_ENABLED
+    valueOrRef: "false"
+  - kind: Setting
+    id: tide-ledger.prod.env-db-host
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 21 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 5 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/components/tracing/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/deployment-patch.yaml, line: 1 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 23 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 19 }
+    component: tide-ledger
+    env: prod
+    settingKind: config
+    key: env.DB_HOST
+    valueOrRef: ledger-db.prod.tide.example
+  - kind: Setting
+    id: tide-ledger.prod.env-db-password
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 23 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 5 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/components/tracing/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/deployment-patch.yaml, line: 1 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 23 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 19 }
+    component: tide-ledger
+    env: prod
+    settingKind: config
+    key: env.DB_PASSWORD
+    valueOrRef: secret:ledger-db/password
+  - kind: Setting
+    id: tide-ledger.prod.env-ledger-currency
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 29 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 5 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/components/tracing/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/deployment-patch.yaml, line: 1 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 23 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 19 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 10 }
+    component: tide-ledger
+    env: prod
+    settingKind: config
+    key: env.LEDGER_CURRENCY
+    valueOrRef: EUR
+  - kind: Setting
+    id: tide-ledger.prod.env-otel-exporter-otlp-endpoint
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 2 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 5 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/components/tracing/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/deployment-patch.yaml, line: 1 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 23 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 19 }
+    component: tide-ledger
+    env: prod
+    settingKind: config
+    key: env.OTEL_EXPORTER_OTLP_ENDPOINT
+    valueOrRef: http://otel-collector.observability:4317
+  - kind: Setting
+    id: tide-ledger.prod.image
+    confidence: verified
+    evidence:
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/deployment.yaml, line: 17 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/base/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 5 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/components/tracing/kustomization.yaml, line: 4 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/deployment-patch.yaml, line: 1 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 23 }
+      - { source: infrastructure, repo: tide-ledger-deploy, path: apps/ledger/overlays/prod/kustomization.yaml, line: 19 }
+    component: tide-ledger
+    env: prod
+    settingKind: config
+    key: image
+    valueOrRef: registry.tide.example/ledger/api-hardened:1.0.4
+warnings:
+  - path: apps/ledger/overlays/prod/kustomization.yaml
+    message: Kustomize field replacements is not read; the objects may differ from what kustomize builds.
+  - path: apps/ledger/overlays/qa/kustomization.yaml
+    message: Remote base https://git.tide.example/platform/ledger-base//deploy?ref=v2.3.0 is not fetched; its objects are not read.

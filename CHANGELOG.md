@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Helm and Kustomize
+
+- Helm charts are read without running Helm (ADR 0064): each chart once per environment values file (`values-<env>.yaml`, `values.<env>.yaml`, `values/<env>.yaml`, `environments/<env>/values.yaml` and the like) layered over `values.yaml`, with local subcharts (`charts/<name>`, `file://`, `alias`, `condition`, `tags`, globals). Templates go through a small Go-template reader (a tokenizer and parser for `{{ }}` actions, not text patterns) that evaluates `.Values`, `.Chart`, `.Release.Name`, variables, `if`/`else`, `with`, `range`, `include` of the `helm create` helpers and the common functions (`default`, `quote`, `toYaml`, `nindent`, `printf`, `trunc`, `trimSuffix`, ...). Anything else (`tpl`, `lookup`, `.Files`, `.Capabilities`, `.Release.Namespace`, unknown functions) is left unknown: the field is dropped, never guessed, and a template whose condition depends on one is skipped with a warning naming its line. The release is taken to be named after the chart. Dependencies that aren't in the repo are reported, not fetched.
+- Kustomize overlays are built without running kustomize: resources, bases and components, strategic-merge and JSON 6902 patches, namespace, namePrefix/nameSuffix (references to renamed objects follow), commonLabels and labels, commonAnnotations, images, replicas and `configMapGenerator` literals. Remote bases are never fetched and fields not read (`replacements`, `vars`, `helmCharts`, ...) are reported.
+- The openshift (0.3.0) and ingress (0.2.0) extractors read the built objects: Deployments, Ingress hosts, HPAs and NetworkPolicies per environment, with evidence at the template or resource line and at the values file, kustomization entry or patch behind it. A workload from a chart or overlay also gives `image` and `env.<NAME>` settings per environment (ConfigMap values filled in, secrets as `secret:<name>/<key>` references).
+- Behaviour change: in a repo with kustomizations, base objects come out once per overlay rather than once under no environment, and overlay patch files are no longer read as objects of their own. Other manifest readers and repos without charts or kustomizations read as before.
+
 ### Rules read syntax trees, not text patterns
 
 - Java and Kotlin are read from their syntax trees (ADR 0060): one reader for the Spring extractor, dialects, the framework learner, batch, GraphQL and realtime. It gives what the hand-written lexer gave on every fixture file, and more: Kotlin `object` declarations, interface methods without a body, constants declared in companion objects. Calls are listed in source order, so a WebClient chain still reads its verb.

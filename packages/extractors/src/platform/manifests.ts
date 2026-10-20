@@ -1,76 +1,19 @@
-import { isMap, isScalar, isSeq, LineCounter, parse, parseAllDocuments } from "yaml";
+import { parse } from "yaml";
 import type { RepoHandle, ScanContext } from "@maycombhq/sdk";
+import { dropUnknown } from "./gotemplate.js";
+import { renderCharts, type Source } from "./helm.js";
+import { buildKustomizations } from "./kustomize.js";
 import { arr, at, isObj, readOrWarn, str, type Obj } from "./util.js";
+import { MALFORMED_YAML, readYamlDocs, subDoc, type PathSeg, type YamlDoc } from "./yamldoc.js";
+
+export { MALFORMED_YAML, readYamlDocs, subDoc, type PathSeg, type YamlDoc };
 
 /**
- * Multi-document YAML (and JSON, which YAML reads too) with line numbers, and the
- * Kubernetes and OpenShift objects in it: List items are unpacked and OpenShift Templates
- * are processed with their parameter defaults, so extractors see plain objects.
+ * The Kubernetes and OpenShift objects in a repo's YAML (and JSON): List items are unpacked
+ * and OpenShift Templates are processed with their parameter defaults, so extractors see plain
+ * objects. With `rendered`, Helm charts are evaluated per environment values file and Kustomize
+ * overlays are built (ADR 0064), and their objects come with the environment they are for.
  */
-
-export type PathSeg = string | number;
-
-/** One parsed document: its plain value and the line of any key path in it. */
-export interface YamlDoc {
-  value: unknown;
-  /** Line of the key at `path` (of the item, for a sequence index). Undefined when absent. */
-  line(path: readonly PathSeg[]): number | undefined;
-}
-
-export const MALFORMED_YAML = "Could not read this file as YAML; skipped it.";
-
-/** Parse every document in a file. Undefined when any document has a syntax error. */
-export function readYamlDocs(text: string): YamlDoc[] | undefined {
-  const lc = new LineCounter();
-  const docs = parseAllDocuments(text, { lineCounter: lc, uniqueKeys: false });
-  if (!Array.isArray(docs)) return undefined; // an empty stream
-  if (docs.some((d) => d.errors.length > 0)) return undefined;
-  const out: YamlDoc[] = [];
-  for (const d of docs) {
-    if (d.contents === null) continue;
-    let value: unknown;
-    try {
-      value = d.toJS({ maxAliasCount: 100 });
-    } catch {
-      return undefined;
-    }
-    const lineAt = (pos: number) => lc.linePos(pos).line;
-    const root = d.contents;
-    out.push({
-      value,
-      line(path) {
-        let node: unknown = root;
-        let line: number | undefined = root.range ? lineAt(root.range[0]) : undefined;
-        for (const seg of path) {
-          if (isMap(node)) {
-            const pair = node.items.find(
-              (p) => (isScalar(p.key) ? String(p.key.value) : String(p.key)) === String(seg),
-            );
-            if (!pair) return undefined;
-            const k = pair.key as { range?: [number, number, number] } | null;
-            if (k?.range) line = lineAt(k.range[0]);
-            node = pair.value;
-          } else if (isSeq(node) && typeof seg === "number") {
-            const item = node.items[seg] as { range?: [number, number, number] } | undefined;
-            if (!item) return undefined;
-            if (item.range) line = lineAt(item.range[0]);
-            node = item;
-          } else return undefined;
-        }
-        return line;
-      },
-    });
-  }
-  return out;
-}
-
-/** A view of part of a document, with lines still relative to the file. */
-export function subDoc(doc: YamlDoc, prefix: readonly PathSeg[]): YamlDoc {
-  return {
-    value: at(doc.value, ...prefix),
-    line: (path) => doc.line([...prefix, ...path]),
-  };
-}
 
 // ------------------------------------------------------------------ Kubernetes objects
 
@@ -89,14 +32,24 @@ export interface K8sObject {
   nested: boolean;
   /** Line of a key path inside the object; with no path, the line of its `kind`. */
   line(path?: readonly PathSeg[]): number | undefined;
+  /** Set for objects from a Helm chart or a Kustomize build. */
+  origin?: "helm" | "kustomize";
+  /** The environment of the values file or overlay the object was built for. */
+  env?: string;
+  /** Values, kustomization and patch files (and lines) behind the object, beyond `file`. */
+  sources?: Source[];
+  /** The Helm release and environment, or the kustomization, the object was built in. */
+  group?: string;
 }
 
-/** A Template object left out because a parameter it uses has no value. */
+/** An object left out: a Template parameter with no value, or a name that can't be read. */
 export interface SkippedObject {
   kind: string;
   name: string;
   file: string;
   params: string[];
+  /** Why, when it isn't a missing parameter. */
+  reason?: string;
 }
 
 export interface ManifestSet {
@@ -105,24 +58,87 @@ export interface ManifestSet {
 }
 
 export const MANIFEST_GLOBS = ["**/*.yaml", "**/*.yml", "**/*.json"];
+/** Helm's named-template files, read with the charts they belong to. */
+export const CHART_GLOBS = ["**/templates/**/*.tpl"];
 
-/** Helm and other Go templates (`{{ .Values.x }}`) can't be read without rendering them. */
+/** Helm and other Go templates (`{{ .Values.x }}`) are only read as part of a chart. */
 const GO_TEMPLATE = /(^|[^$])\{\{/m;
+
+export interface LoadOptions {
+  /** Also evaluate Helm charts and build Kustomize overlays (ADR 0064). */
+  rendered?: boolean;
+}
 
 /**
  * Read the Kubernetes-style objects in every claimed file whose text matches `relevant`.
- * A relevant file that isn't valid YAML is reported and skipped; Helm templates are skipped
- * quietly, since they need rendering first.
+ * A relevant file that isn't valid YAML is reported and skipped; a Go template outside a
+ * chart is skipped quietly. With `rendered`, chart templates and the files a kustomization
+ * uses come out as built objects instead, one set per environment.
  */
 export async function loadManifests(
   repo: RepoHandle,
   ctx: ScanContext,
   relevant: RegExp,
   globs: readonly string[] = MANIFEST_GLOBS,
+  options: LoadOptions = {},
 ): Promise<ManifestSet> {
   const out: ManifestSet = { objects: [], skipped: [] };
-  for await (const file of repo.listFiles(globs)) {
-    const text = await readOrWarn(repo, ctx, file);
+  const files: string[] = [];
+  for await (const file of repo.listFiles(options.rendered ? [...globs, ...CHART_GLOBS] : globs))
+    files.push(file);
+  const texts = new Map<string, string | undefined>();
+  const read = async (file: string) => {
+    if (!texts.has(file)) texts.set(file, await readOrWarn(repo, ctx, file));
+    return texts.get(file);
+  };
+  let skip = new Set<string>();
+  if (options.rendered) {
+    const helm = await renderCharts(files, read);
+    const kust = await buildKustomizations(files, read);
+    for (const w of [...helm.warnings, ...kust.warnings]) ctx.warn(w.message, w.path);
+    skip = new Set([...helm.chartFiles, ...kust.consumed]);
+    for (const r of helm.rendered) {
+      const docs = readYamlDocs(r.text);
+      if (!docs) {
+        ctx.warn(
+          `The rendered Helm template is not valid YAML${r.env ? ` for ${r.env}` : ""}; skipped it.`,
+          r.file,
+        );
+        continue;
+      }
+      docs.forEach((d, docIndex) => {
+        const mapped: YamlDoc = {
+          value: dropUnknown(d.value),
+          line: (path) => {
+            const l = d.line(path);
+            return l === undefined ? undefined : (r.lines[l - 1] ?? l);
+          },
+        };
+        const extra: Extra = {
+          origin: "helm",
+          ...(r.env ? { env: r.env } : {}),
+          sources: r.sources,
+          group: `helm:${r.release}|${r.env ?? ""}`,
+        };
+        collect(mapped, r.file, docIndex, false, out, extra);
+      });
+    }
+    for (const ov of kust.overlays)
+      for (const k of ov.objects) {
+        const extra: Extra = {
+          origin: "kustomize",
+          ...(ov.env ? { env: ov.env } : {}),
+          sources: k.sources,
+          group: `kustomize:${ov.file}`,
+        };
+        const doc: YamlDoc = { value: k.obj, line: (p) => k.line(p) };
+        const o = toObject(k.obj, doc, k.file, k.docIndex, true, extra);
+        if (o) out.objects.push(o);
+      }
+  }
+  for (const file of files) {
+    if (skip.has(file) || file.endsWith(".tpl")) continue;
+    const text = await read(file);
     if (text === undefined || !relevant.test(text) || GO_TEMPLATE.test(text)) continue;
     const docs = readYamlDocs(text);
     if (!docs) {
@@ -134,19 +150,36 @@ export async function loadManifests(
   return out;
 }
 
-function collect(doc: YamlDoc, file: string, docIndex: number, nested: boolean, out: ManifestSet) {
+type Extra = Pick<K8sObject, "origin" | "env" | "sources" | "group">;
+
+function collect(
+  doc: YamlDoc,
+  file: string,
+  docIndex: number,
+  nested: boolean,
+  out: ManifestSet,
+  extra: Extra = {},
+) {
   const v = doc.value;
   if (!isObj(v) || typeof v.kind !== "string") return;
   if (v.kind === "List" && Array.isArray(v.items)) {
-    v.items.forEach((_, i) => collect(subDoc(doc, ["items", i]), file, docIndex, true, out));
+    v.items.forEach((_, i) => collect(subDoc(doc, ["items", i]), file, docIndex, true, out, extra));
     return;
   }
   if (v.kind === "Template" && Array.isArray(v.objects)) {
     processTemplate(doc, file, docIndex, out);
     return;
   }
-  const o = toObject(v, doc, file, docIndex, nested);
+  const o = toObject(v, doc, file, docIndex, nested, extra);
   if (o) out.objects.push(o);
+  else if (extra.origin === "helm")
+    out.skipped.push({
+      kind: v.kind,
+      name: "",
+      file,
+      params: [],
+      reason: "its name comes from a template form Atticus doesn't evaluate",
+    });
 }
 
 function toObject(
@@ -155,6 +188,7 @@ function toObject(
   file: string,
   docIndex: number,
   nested: boolean,
+  extra: Extra = {},
 ): K8sObject | undefined {
   const kind = str(v.kind);
   const name = str(at(v, "metadata", "name"));
@@ -175,6 +209,10 @@ function toObject(
     docIndex,
     nested,
     line: (path = ["kind"]) => doc.line(path),
+    ...(extra.origin ? { origin: extra.origin } : {}),
+    ...(extra.env ? { env: extra.env } : {}),
+    ...(extra.sources?.length ? { sources: extra.sources } : {}),
+    ...(extra.group !== undefined ? { group: extra.group } : {}),
   };
 }
 
@@ -240,13 +278,20 @@ function processTemplate(doc: YamlDoc, file: string, docIndex: number, out: Mani
 
 /** Report Template objects of the given kinds that were left out for want of a parameter value. */
 export function warnSkipped(ctx: ScanContext, set: ManifestSet, kinds: ReadonlySet<string>) {
+  const seen = new Set<string>();
   for (const s of set.skipped) {
     if (!kinds.has(s.kind)) continue;
-    const params =
-      s.params.length === 1
+    const why =
+      s.reason ??
+      (s.params.length === 1
         ? `template parameter ${s.params[0]} has no value`
-        : `template parameters ${s.params.join(", ")} have no value`;
-    ctx.warn(`Skipped ${s.kind} ${s.name}: ${params}.`, s.file);
+        : `template parameters ${s.params.join(", ")} have no value`);
+    const message = s.name
+      ? `Skipped ${s.kind} ${s.name}: ${why}.`
+      : `Skipped a ${s.kind}: ${why}.`;
+    if (seen.has(`${s.file}|${message}`)) continue;
+    seen.add(`${s.file}|${message}`);
+    ctx.warn(message, s.file);
   }
 }
 
@@ -275,6 +320,9 @@ export function selects(selector: unknown, labels: Record<string, string>): bool
 
 /** Two objects apply to each other when they share a namespace, or both have none and share a folder. */
 export function sameScope(a: K8sObject, b: K8sObject): boolean {
+  // Objects of one Helm release or Kustomize build for one environment go together, only.
+  if (a.group !== undefined || b.group !== undefined)
+    return a.group === b.group && a.namespace === b.namespace;
   if (a.namespace || b.namespace) return a.namespace === b.namespace;
   const dir = (f: string) => f.slice(0, Math.max(0, f.lastIndexOf("/")));
   return dir(a.file) === dir(b.file);

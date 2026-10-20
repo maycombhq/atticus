@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tide-ledger
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      component: api
+  template:
+    metadata:
+      labels:
+        component: api
+    spec:
+      containers:
+        - name: ledger
+          image: registry.tide.example/ledger/api:1.0.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DB_HOST
+              value: ledger-db.dev.tide.example
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ledger-db
+                  key: password
+          envFrom:
+            - configMapRef:
+                name: ledger-config
+          resources:
+            limits:
+              cpu: 250m
+              memory: 256Mi

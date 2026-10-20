@@ -1,5 +1,6 @@
 import { defineExtractor } from "@maycombhq/sdk";
 import {
+  CHART_GLOBS,
   loadManifests,
   MANIFEST_GLOBS,
   sameScope,
@@ -31,7 +32,9 @@ import { ev } from "./common.js";
  * in-mesh routing, not ingress. Manifests of other kinds (Services, workloads, Gateways) are read
  * from any file of the repo, not only the one holding the route. The
  * Deployment carries only the routes (platform kubernetes, or openshift for a
- * DeploymentConfig); merge joins it to the full Deployment of the same id.
+ * DeploymentConfig); merge joins it to the full Deployment of the same id. Helm charts and
+ * Kustomize overlays are read too (ADR 0064): their routes are per environment, with the
+ * values, kustomization and patch files behind them as evidence.
  */
 
 const RELEVANT =
@@ -54,10 +57,10 @@ function serverHostMatches(entry: string | undefined, host: string): boolean {
 
 export const ingressExtractor = defineExtractor({
   id: "ingress",
-  version: "0.1.1",
-  claims: MANIFEST_GLOBS,
+  version: "0.2.0",
+  claims: [...MANIFEST_GLOBS, ...CHART_GLOBS],
   async *scan(repo, ctx) {
-    const set = await loadManifests(repo, ctx, RELEVANT);
+    const set = await loadManifests(repo, ctx, RELEVANT, MANIFEST_GLOBS, { rendered: true });
     const objs = set.objects;
     const services = objs.filter((o) => o.kind === "Service" && o.apiVersion === "v1");
     const workloads = objs.filter((o) => WORKLOADS.has(o.kind));
@@ -94,6 +97,7 @@ export const ingressExtractor = defineExtractor({
         w ? [w.labels.app, w.labels["app.kubernetes.io/name"], w.name] : [serviceName],
       );
       const env =
+        (w ?? from).env ??
         envOf({ namespace: (w ?? from).namespace, path: (w ?? from).file, name: w?.name }) ??
         "default";
       const key = `${component}|${env}`;
@@ -204,7 +208,14 @@ export const ingressExtractor = defineExtractor({
         env: e.env,
         platform: e.platform,
         ingress: e.routes,
-        evidence: e.objs.map((x) => ev(repo, "infrastructure", x.file, x.line())),
+        evidence: e.objs
+          .flatMap((x) => [
+            ev(repo, "infrastructure", x.file, x.line()),
+            ...(x.sources ?? []).map((s) => ev(repo, "infrastructure", s.file, s.line)),
+          ])
+          .filter(
+            (v, i, all) => all.findIndex((y) => y.path === v.path && y.line === v.line) === i,
+          ),
       });
   },
 });

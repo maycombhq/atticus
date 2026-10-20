@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tide-ledger
+spec:
+  rules:
+    - host: ledger.dev.tide.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tide-ledger
+                port:
+                  number: 80

@@ -1,0 +1,11 @@
+replicaCount: 2
+
+ingress:
+  enabled: true
+  hosts:
+    - host: shop.uat.forge.example
+      paths:
+        - path: /
+
+cart:
+  enabled: false

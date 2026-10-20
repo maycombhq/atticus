@@ -1,0 +1,7 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # tpl renders a string as a template at install time: not evaluated, so the name is unknown.
+  name: {{ tpl .Values.featureFlagsTemplate . }}
+spec:
+  replicas: 1

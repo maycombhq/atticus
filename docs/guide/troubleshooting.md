@@ -16,6 +16,8 @@ Start with `atticus doctor` in the metarepo: most problems are on the machine, a
 | A screen says "The catalog is empty: run atticus scan first" | Nothing is scanned yet                        | `atticus scan`, or _Scan now_ on Scans                                                                                   |
 | Port 4321 in use                                             | Another `atticus ui` or program               | `atticus ui --port 4322`                                                                                                 |
 | A shipped dialect isn't applied                              | Its own tests failed; the scan lists why      | Check the scan's problems; for your own dialects, `atticus dialect test <name>`                                          |
+| "Could not read this Helm template at line N"                | It depends on a form Atticus doesn't evaluate | Nothing is guessed: that template's objects are left out. Move the cluster-dependent part into values if you can         |
+| "Remote base ... is not fetched"                             | A kustomization uses a URL as a base          | Scans never fetch; add the base's repo to the manifest so it is scanned as its own repo                                  |
 | An AI step waits forever                                     | Hand-off mode waits for your assistant        | Open the prompt it wrote, answer in your assistant, then `atticus handoff done <run-id>`; with AI off, write it yourself |
 | A write to a shared system became a step                     | The adapter is manual or couldn't be reached  | Do the step from To-do (every field is ready to copy), then record it: `atticus todo done <step> --by <you>`             |
 

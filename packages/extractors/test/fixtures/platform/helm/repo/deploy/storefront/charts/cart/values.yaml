@@ -1,0 +1,5 @@
+replicaCount: 1
+image:
+  repository: registry.forge.example/storefront/cart
+  tag: ""
+redisHost: cart-redis

@@ -100,7 +100,7 @@ describe("vocabulary extractors (ADR 0040): identity", () => {
       "apps@0.1.0",
       "data-pipelines@0.1.1",
       "ml@0.1.1",
-      "ingress@0.1.1",
+      "ingress@0.2.0",
       "cloud-stores@0.1.0",
     ]);
   });
