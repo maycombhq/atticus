@@ -122,5 +122,19 @@ describe("what each module builds on (ADR 0068)", () => {
       "ui-kit": undefined,
     });
     expect(s.rejected).toEqual([]);
+    // Each module's type is its own build file's, not the repo's: the React app is a UI.
+    const types = Object.fromEntries(
+      s.records
+        .filter((r) => r.kind === "Component")
+        .map((r) => [r.id, (r as unknown as { type: string }).type]),
+    );
+    expect(types).toEqual({
+      "tide-ledger": "spring-boot",
+      "ledger-api": "java",
+      "ledger-core": "java",
+      "ledger-rules": "java",
+      "ledger-web": "frontend",
+      "ui-kit": "node",
+    });
   });
 });

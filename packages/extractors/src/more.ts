@@ -3,7 +3,8 @@ import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/s
 import { frontendCall, SourceFile } from "./backends/shared.js";
 import { componentOf, evidence, looseEnd, repoConfig, splitUrl } from "./facts.js";
 import { LIQUIBASE_CLAIMS, liquibaseChangeSets } from "./data/liquibase.js";
-import { moduleUses } from "./module-uses.js";
+import { moduleType, moduleUses } from "./module-uses.js";
+import { wrapperRequests } from "./backends/js-wrappers.js";
 import { flattenYaml, yamlKeyLine } from "./lang/config.js";
 import {
   parseDdl,
@@ -48,7 +49,7 @@ const SOURCES = [
 
 export const componentExtractor = defineExtractor({
   id: "component",
-  version: "1.1.0",
+  version: "1.2.0",
   claims: [...BUILD_FILES, ...SOURCES],
   async *scan(repo, ctx) {
     if (ctx.repoType && NOT_COMPONENTS.has(ctx.repoType)) return;
@@ -102,7 +103,7 @@ export const componentExtractor = defineExtractor({
         confidence: "verified",
         system: ctx.system ?? id,
         repo: repo.name,
-        type: ctx.repoType ?? "unknown",
+        type: (await moduleType(repo, m.path)) ?? ctx.repoType ?? "unknown",
         evidence: [evidence(repo, { source: "config", path: at ?? marker })],
       } as unknown as CatalogRecord;
     }
@@ -117,10 +118,12 @@ export const componentExtractor = defineExtractor({
  */
 export const frontendExtractor = defineExtractor({
   id: "frontend",
-  version: "1.0.0",
+  version: "1.1.0",
   claims: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.vue"],
   async *scan(repo, ctx) {
+    const all: string[] = [];
     for await (const path of repo.listFiles(this.claims)) {
+      all.push(path);
       if (
         /(^|\/)(node_modules|dist|build|coverage|__tests__)\//.test(path) ||
         /\.(test|spec|d)\.[jt]sx?$/.test(path)
@@ -142,6 +145,16 @@ export const frontendExtractor = defineExtractor({
         });
       }
     }
+    // Requests through the repo's own HTTP helpers (ADR 0069).
+    for (const r of await wrapperRequests(repo, all, (p, t) =>
+      p.endsWith(".vue") ? vueScript(t) : t,
+    ))
+      yield looseEnd(repo, ctx, "http-call", `${r.method} ${r.url}`, {
+        source: "code",
+        path: r.path,
+        line: r.line,
+        side: "caller",
+      });
   },
 });
 

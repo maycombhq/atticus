@@ -560,7 +560,7 @@ describe("node", () => {
       .sort();
     expect(calls).toEqual([
       "GET http://ledger-api.forge.internal/accounts/{id}/balance @src/routes/accounts.js:13:caller node@0.1.0",
-      "POST http://audit-svc.forge.internal/audit/events @src/routes/accounts.js:19:caller frontend@1.0.0",
+      "POST http://audit-svc.forge.internal/audit/events @src/routes/accounts.js:19:caller frontend@1.1.0",
       "POST http://kyc-svc.forge.internal/checks @src/routes/accounts.js:18:caller node@0.1.0",
     ]);
     expect(recs.filter((r) => r.kind === "Component").map(ev)).toEqual(["package.json::"]);
