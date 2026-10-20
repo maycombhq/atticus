@@ -49,6 +49,7 @@ describe("the messy estate (phase 2 gate)", () => {
       "tide-bff",
       "tide-cards",
       "tide-gateway",
+      "tide-infra",
       "tide-payments",
       "tide-web",
     ]);
@@ -113,7 +114,7 @@ describe("the messy estate (phase 2 gate)", () => {
     const cards = scan.coverage.find((c) => c.repo === "tide-cards")!;
     expect(cards.joined).toBeGreaterThanOrEqual(1);
     expect(cards.open).toBeGreaterThanOrEqual(5);
-    expect(scan.coverage).toHaveLength(5);
+    expect(scan.coverage).toHaveLength(6);
   });
 
   // ---- Phase 3: the house starter, read through its framework model (ADR 0054;
@@ -154,7 +155,9 @@ describe("the messy estate (phase 2 gate)", () => {
 
   it("reads the BFF's Lantern routes as endpoints, inferred (a person wrote the model)", () => {
     const eps = recs()
-      .filter((r) => r.kind === "Endpoint" && r.component === "web-bff")
+      .filter(
+        (r) => r.kind === "Endpoint" && r.component === "web-bff" && r.endpointType === "rest",
+      )
       .map((r) => `${r.method} ${r.pathOrTopic} ${r.confidence}`)
       .sort();
     expect(eps).toEqual(["GET /statements/{id} inferred", "POST /limits inferred"]);
@@ -162,5 +165,20 @@ describe("the messy estate (phase 2 gate)", () => {
 
   it("follows the chain across languages: SPA (TSX) to BFF (TS) to the house Java service", () => {
     expect(interfaces()).toContain("web-bff->cards-svc direct GET /statements/{} verified");
+  });
+
+  // ---- ADR 0056: an infra repo, read through a dialect. Topics come from the platform team's
+  // house Terraform module (org-pack/dialects/tide-infra.yaml).
+
+  it("reads topics provisioned through the house Terraform module, with variables resolved", () => {
+    const topics = recs()
+      .filter((r) => r.kind === "Endpoint" && r.endpointType === "event-topic")
+      .map((r) => `${r.component} ${r.pathOrTopic} ${r.confidence}`)
+      .sort();
+    // tfvars wins over the variable's default; the public VPC module is left alone.
+    expect(topics).toEqual([
+      "cards-svc cards.statements.prod verified",
+      "web-bff web.limits.prod verified",
+    ]);
   });
 });

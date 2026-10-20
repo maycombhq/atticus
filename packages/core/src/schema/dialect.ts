@@ -55,6 +55,13 @@ export const DialectMatch = z.union([
   z.strictObject({ xpath: z.string().min(1), files: Globs }),
   z.strictObject({ jsonPath: z.string().regex(/^\$/, "JSONPath starts with $"), files: Globs }),
   z.strictObject({
+    /** A Terraform (HCL) block type, optionally with its first label: "module", "resource.aws_sqs_queue" (ADR 0056). */
+    hclBlock: z
+      .string()
+      .regex(/^[A-Za-z_][\w-]*(\.[A-Za-z_][\w-]*)?$/, "a block type, or type.label"),
+    files: Globs,
+  }),
+  z.strictObject({
     /** A regular expression over file text, for anything else; groups are ${match.N}. */
     regex: z
       .string()
@@ -74,7 +81,15 @@ export type DialectMatch = z.infer<typeof DialectMatch>;
 
 export function matchType(
   m: DialectMatch,
-): "annotation" | "baseClass" | "methodCall" | "configKey" | "xpath" | "jsonPath" | "regex" {
+):
+  | "annotation"
+  | "baseClass"
+  | "methodCall"
+  | "configKey"
+  | "xpath"
+  | "jsonPath"
+  | "hclBlock"
+  | "regex" {
   for (const k of [
     "annotation",
     "baseClass",
@@ -82,6 +97,7 @@ export function matchType(
     "configKey",
     "xpath",
     "jsonPath",
+    "hclBlock",
     "regex",
   ] as const) {
     if (k in m) return k;
@@ -105,10 +121,28 @@ export const DialectEmit = z.strictObject({
     .default({ source: "code" }),
 });
 
+/** A condition on a match (ADR 0056): the template's value must match the regex. */
+export const DialectWhere = z.strictObject({
+  value: Template,
+  matches: z
+    .string()
+    .min(1)
+    .refine((r) => {
+      try {
+        new RegExp(r);
+        return true;
+      } catch {
+        return false;
+      }
+    }, "not a valid regular expression"),
+});
+
 export const DialectRule = z.strictObject({
   id: RecordId,
   description: z.string().min(1),
   match: DialectMatch,
+  /** Conditions that must all hold for a match to emit; an unfilled value fails its condition. */
+  where: z.array(DialectWhere).optional(),
   emit: DialectEmit,
   /** What a rule can claim: never "asserted", which is reserved for people. */
   confidence: Confidence.exclude(["asserted"]),
@@ -216,6 +250,7 @@ export const Dialect = z
         ...Object.values(r.emit.fields).flatMap((v) =>
           typeof v === "string" ? [v] : Array.isArray(v) ? v : [],
         ),
+        ...(r.where ?? []).map((w) => w.value),
       ];
       for (const t of templates) {
         let sources;
@@ -233,22 +268,25 @@ export const Dialect = z
             });
           if (
             s.type === "match" &&
-            !["regex", "configKey", "xpath", "jsonPath"].includes(matchType(r.match))
+            !["regex", "configKey", "xpath", "jsonPath", "hclBlock"].includes(matchType(r.match))
           ) {
             ctx.addIssue({
               code: "custom",
               path: ["rules", i],
-              message: "${match.N} needs a regex, configKey, xpath or jsonPath match",
+              message: "${match.N} needs a regex, configKey, xpath, jsonPath or hclBlock match",
             });
           }
           if (
             s.type === "attr" &&
-            !["annotation", "methodCall", "xpath", "jsonPath"].includes(matchType(r.match))
+            !["annotation", "methodCall", "xpath", "jsonPath", "hclBlock"].includes(
+              matchType(r.match),
+            )
           ) {
             ctx.addIssue({
               code: "custom",
               path: ["rules", i],
-              message: "${attr.*} needs an annotation, methodCall, xpath or jsonPath match",
+              message:
+                "${attr.*} needs an annotation, methodCall, xpath, jsonPath or hclBlock match",
             });
           }
         }

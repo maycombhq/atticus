@@ -5,6 +5,7 @@ import {
   interfaceId,
   matchType,
   normalizePath,
+  RECORD_SCHEMAS,
   renderTemplate,
   type CatalogRecord,
   type Dialect,
@@ -23,6 +24,26 @@ import {
 import { flattenProperties, flattenYaml, relaxedKey, type ConfigValue } from "./lang/config.js";
 import { parseJava, type Annotation, type Decl, type JavaFile } from "./lang/java.js";
 import { parseXml, type XmlElement } from "./lang/xml.js";
+import { isRef, parseHcl, type HclBlock, type HclValue } from "./platform/hcl.js";
+import { loadTerraform, resolve as tfResolve, type TfModule } from "./platform/terraform.js";
+import { dirOf } from "./platform/util.js";
+
+/** Names a Java source declares with a type (fields, parameters, variables): name → simple type. */
+function declaredTypes(src: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const m of src.matchAll(
+    /\b([A-Z][\w]*)(?:<[^<>;]*(?:<[^<>;]*>[^<>;]*)*>)?\s+(\w+)\s*[;=,)]/g,
+  ))
+    out.set(m[2]!, (out.get(m[2]!) ?? new Set()).add(m[1]!));
+  return out;
+}
+
+/** An HCL value as a template value: plain values only, and nothing still holding ${...}. */
+function hclString(v: HclValue | undefined): string | undefined {
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (typeof v === "string") return v.includes("${") ? undefined : v;
+  return undefined;
+}
 
 /**
  * The C2 dialect rule engine: turns a dialect file into an extractor. Each rule's match
@@ -115,7 +136,12 @@ function jsonPath(
   return current.map((c) => ({ ...c, line: c.node?.range ? lc.linePos(c.node.range[0]).line : 1 }));
 }
 
-async function places(repo: RepoHandle, rule: DialectRule): Promise<Place[]> {
+async function places(
+  repo: RepoHandle,
+  rule: DialectRule,
+  ctx: ScanContext,
+  terraform: () => Promise<Map<string, TfModule>>,
+): Promise<Place[]> {
   const m = rule.match;
   const out: Place[] = [];
   const type = matchType(m);
@@ -160,8 +186,15 @@ async function places(repo: RepoHandle, rule: DialectRule): Promise<Place[]> {
       const [recv, name] = m.methodCall.includes(".")
         ? m.methodCall.split(".")
         : [undefined, m.methodCall];
+      // receiverType (ADR 0056): the receiver must be declared with that type, or be the type.
+      const types = m.receiverType ? declaredTypes(await repo.readText(path)) : undefined;
+      const want = m.receiverType ? simple(m.receiverType) : undefined;
       for (const c of (await java(path)).calls) {
         if (c.method !== name || (recv && c.receiver !== recv)) continue;
+        if (want) {
+          const r = (c.receiver ?? "").replace(/^this\./, "");
+          if (r !== want && !types!.get(r)?.has(want)) continue;
+        }
         const attrs: Record<string, string> = {};
         c.args.forEach((v, i) => v !== undefined && (attrs[`arg${i}`] = v));
         out.push({
@@ -218,6 +251,35 @@ async function places(repo: RepoHandle, rule: DialectRule): Promise<Place[]> {
           match: [typeof hit.value === "object" ? "" : String(hit.value)],
         });
       }
+    } else if (type === "hclBlock" && "hclBlock" in m) {
+      const [blockType, label] = m.hclBlock.split(".");
+      const mod = (await terraform()).get(dirOf(path));
+      const hcl = parseHcl(await repo.readText(path));
+      const value = (v: HclValue | undefined) => hclString(mod ? tfResolve(mod, v) : v);
+      const visit = (b: HclBlock) => {
+        if (b.type === blockType && (!label || b.labels[0] === label)) {
+          const attrs: Record<string, string> = {};
+          for (const [k, a] of b.attrs) {
+            const v = value(isRef(a.value) || typeof a.value !== "object" ? a.value : undefined);
+            if (v !== undefined) attrs[k] = v;
+          }
+          for (const nb of b.blocks)
+            for (const [k, a] of nb.attrs) {
+              const v = value(a.value);
+              if (v !== undefined && !(`${nb.type}.${k}` in attrs)) attrs[`${nb.type}.${k}`] = v;
+            }
+          out.push({
+            path,
+            line: b.line,
+            attrs,
+            typeAnnotations: [],
+            match: [b.labels.at(-1) ?? "", ...b.labels],
+          });
+        }
+        b.blocks.forEach(visit);
+      };
+      hcl.blocks.forEach(visit);
+      void ctx;
     } else if (type === "regex" && "regex" in m) {
       const text = await repo.readText(path);
       for (const g of text.matchAll(new RegExp(m.regex, "gm"))) {
@@ -283,6 +345,7 @@ async function repoConfigFiles(
 export function dialectExtractor(
   dialect: Dialect,
   parents: Map<string, Dialect> = new Map(),
+  o: { emitted?: (ruleId: string) => void } = {},
 ): Extractor {
   const rules = new Map<string, DialectRule>();
   const visit = (d: Dialect, seen: Set<string>) => {
@@ -332,14 +395,19 @@ export function dialectExtractor(
         return yamlCache.get(file)!.get(key)?.value;
       };
 
+      let tf: Promise<Map<string, TfModule>> | undefined;
+      const terraform = () =>
+        (tf ??= loadTerraform(repo, ctx, /./).then((mods) => new Map(mods.map((x) => [x.dir, x]))));
+
       for (const rule of [...rules.values()].sort((a, b) => a.id.localeCompare(b.id))) {
-        for (const place of await places(repo, rule)) {
+        for (const place of await places(repo, rule, ctx, terraform)) {
           // Pre-resolve yaml:file#key values the templates need (async), then render synchronously.
           const templates = [
             rule.emit.id ?? "",
             ...Object.values(rule.emit.fields).flatMap((v) =>
               typeof v === "string" ? [v] : Array.isArray(v) ? v : [],
             ),
+            ...(rule.where ?? []).map((w) => w.value),
           ];
           const yamlValues = new Map<string, string | undefined>();
           for (const t of templates) {
@@ -374,6 +442,14 @@ export function dialectExtractor(
             }
           };
           const render = (t: string) => renderTemplate(t, resolveSource);
+          // where (ADR 0056): every condition must hold; a value that can't be filled fails.
+          if (
+            !(rule.where ?? []).every((w) => {
+              const v = render(w.value);
+              return v !== undefined && new RegExp(w.matches).test(v);
+            })
+          )
+            continue;
           const fields: Record<string, unknown> = {};
           for (const [k, v] of Object.entries(rule.emit.fields)) {
             if (typeof v === "number" || typeof v === "boolean") fields[k] = v;
@@ -415,6 +491,23 @@ export function dialectExtractor(
             ctx.warn(`rule ${rule.id}: the id template could not be filled`, place.path);
             continue;
           }
+          // A field C1 requires that the rule sets but couldn't fill: skip with a warning (ADR 0056).
+          const shape = (
+            RECORD_SCHEMAS[rule.emit.kind] as unknown as {
+              shape: Record<string, { safeParse: (v: unknown) => { success: boolean } }>;
+            }
+          ).shape;
+          const unfilled = Object.keys(rule.emit.fields).filter(
+            (k) => fields[k] === undefined && shape[k] && !shape[k].safeParse(undefined).success,
+          );
+          if (unfilled.length > 0) {
+            ctx.warn(
+              `rule ${rule.id}: ${unfilled.join(", ")} could not be filled, so ${id} isn't emitted`,
+              place.path,
+            );
+            continue;
+          }
+          o.emitted?.(rule.id);
           yield {
             schemaVersion: 1,
             kind: rule.emit.kind,
@@ -451,7 +544,8 @@ export async function runDialectTests(
   parents: Map<string, Dialect> = new Map(),
 ): Promise<DialectTestFailure[]> {
   const failures: DialectTestFailure[] = [];
-  const extractor = dialectExtractor(dialect, parents);
+  const emitted = new Set<string>();
+  const extractor = dialectExtractor(dialect, parents, { emitted: (id) => emitted.add(id) });
   for (const t of dialect.tests) {
     let repo: RepoHandle;
     if (t.files) repo = memoryRepo("dialect-test", "0".repeat(40), t.files);
@@ -501,6 +595,10 @@ export async function runDialectTests(
     for (const id of t.absent)
       if (byId.has(id)) failures.push({ test: t.name, message: `${id} should not be produced` });
   }
+  // Every rule of the dialect's own must produce something in some test (ADR 0056).
+  for (const r of dialect.rules)
+    if (!emitted.has(r.id))
+      failures.push({ test: "(coverage)", message: `rule ${r.id} produces nothing in any test` });
   return failures;
 }
 

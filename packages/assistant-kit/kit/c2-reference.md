@@ -45,6 +45,60 @@ A dialect lives at `org-pack/dialects/<name>.yaml`, one dialect per file, and `n
 
 Each place the `match` finds becomes one record, rendered from the templates with the values that place supplies.
 
+### `where`
+
+```yaml
+where:
+  - { value: "${attr.source}", matches: "tide-kafka-topic" }
+```
+
+Optional. Conditions that must all hold for a place to emit: each `value` template is rendered and tested against the `matches` regular expression (unanchored; use `^` and `# Dialect file reference (contract C2)
+
+Everything a dialect file can say and exactly what the engine does with it. `dialect.schema.json` is the same schema in machine-readable form.
+
+A dialect lives at `org-pack/dialects/<name>.yaml`, one dialect per file, and `name` must equal the file name without `.yaml`.
+
+## Top-level fields
+
+| Field                         | Required | Meaning                                                                                                                                                                                                         |
+| ----------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schemaVersion`               | yes      | Always `1`.                                                                                                                                                                                                     |
+| `name`                        | yes      | Lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`; starts with a letter or digit). Repo manifests and `extends` refer to the dialect by it.                                                                           |
+| `version`                     | yes      | Semver, `MAJOR.MINOR.PATCH`. Bump it when you change rules: the scan cache is keyed by it, and every record's evidence carries `name@version`.                                                                  |
+| `description`                 | no       | One sentence: which framework, and how its apps declare things.                                                                                                                                                 |
+| `extends`                     | no       | Names of other dialects in the same org pack whose rules this one inherits (see [extends](#extends)). Default `[]`.                                                                                             |
+| `appliesTo.repoTypes`         | no       | Repo types (from the repo manifest) the dialect applies to. Empty (the default) means: only repos whose manifest entry lists the dialect by name.                                                               |
+| `appliesTo.marker`            | no       | A glob; the dialect does nothing in a repo where no file matches it. `forge.yaml` means a file at the repo root; `**/forge.yaml` means anywhere.                                                                |
+| `layout.sourceRoots`          | no       | Where the source lives, for readers. The engine does not use it: each rule's `files` decides what is read.                                                                                                      |
+| `layout.configFiles`          | no       | Globs of the config files `${config:key}` reads (YAML, JSON or `.properties`). When several files set the same key, the file whose path sorts first wins. With no config files, `${config:...}` is never known. |
+| `normalize.stripPathPrefixes` | no       | Prefixes (each starting with `/`) removed from the rendered `normalizedPath` and `pathOrTopic` fields of any record, e.g. a context path `/api`.                                                                |
+| `plugin`                      | no       | A code module for what rules can't express. Leave it out: a dialect written from this kit uses rules only.                                                                                                      |
+| `rules`                       | yes      | The rules (at least one).                                                                                                                                                                                       |
+| `tests`                       | yes      | The dialect's own tests (at least one). A dialect whose tests fail is not used.                                                                                                                                 |
+
+**When a dialect runs.** In a scan, for a repo whose manifest type is in `repoTypes` or whose manifest entry lists the dialect, and only if the marker matches a file. In `atticus dialect test` and `atticus dialect run`, `repoTypes` is ignored; the marker still applies.
+
+**Globs** are repo-relative with forward slashes: `**` spans any number of folders (including none), `*` stays within one folder name, `?` is one character. No leading `/`, no `..`. Folders `.git`, `node_modules`, `target`, `build`, `dist`, `out`, `.gradle`, `.idea`, `.vscode`, `__pycache__` and `.venv` are never read.
+
+## Rules
+
+```yaml
+- id: forge-endpoint # lowercase slug, unique in the dialect
+  description: A method annotated @ForgeEndpoint serves a REST endpoint.
+  match: { annotation: ForgeEndpoint, target: method, files: ["src/main/java/**/*.java"] }
+  emit:
+    kind: Endpoint # a kind from c1-kinds.md
+    id: "${yaml:forge.yaml#service}.${attr.method | lower}-${member.name | slug}"
+    fields:
+      component: "${yaml:forge.yaml#service}"
+      endpointType: rest
+      pathOrTopic: "${attr.path}"
+    evidence: { source: code, side: callee } # optional
+  confidence: verified # verified or inferred
+```
+
+to anchor). A value that can't be filled fails its condition. Use it to narrow a rule to what you mean (a module from one source, an annotation with one attribute value) instead of a file glob.
+
 ## Matches
 
 A rule has exactly one kind of match, and every match has `files`: a list of globs to look in.
@@ -74,7 +128,7 @@ Types whose `extends` or `implements` list names the type (matched by simple nam
 match: { methodCall: bus.publish, files: ["src/main/java/**/*.java"] }
 ```
 
-- `methodCall`: a method name (`publish`, any receiver) or `receiver.name`, where the receiver is the identifier written before the dot (usually a variable or field name, such as `kafkaTemplate.send`), not its type. `receiverType` is accepted but not applied yet; don't rely on it.
+- `methodCall`: a method name (`publish`, any receiver) or `receiver.name`, where the receiver is the identifier written before the dot (usually a variable or field name, such as `kafkaTemplate.send`), not its type. `receiverType` (a simple or qualified type name) narrows it to calls whose receiver is a field, parameter or variable declared with that type in the same file (generics allowed), or the type itself for a static call.
 - Supplies `${attr.arg0}`, `${attr.arg1}`, ... for arguments that are string literals (or concatenations of literals); other arguments are unknown. Also `${member.name}` (the method the call sits in), `${class.name}`, `${annotation.<Name>.<attr>}` (on the enclosing type), `${file.path}`, `${file.line}`.
 
 ### `configKey`
@@ -104,6 +158,16 @@ match: { jsonPath: "$.jobs[*]", files: [jobs.yaml] }
 - Over YAML or JSON files: `$.a.b`, `$.a.*`, `$.a[*]`, `$.a[0]`, `$['a']`. Recursive descent (`$..a`) is not supported.
 - Supplies `${match.0}` (the matched value when it is a plain value, else empty) and, when the match is an object, `${attr.<field>}` for each of its plain fields.
 
+### `hclBlock`
+
+```yaml
+match: { hclBlock: module, files: ["**/*.tf"] }
+```
+
+- Terraform (HCL) blocks of a type: `module`, `resource`, `data`... `resource.aws_sqs_queue` also requires the first label. Nested blocks are searched too.
+- Supplies `${attr.<name>}` for each plain attribute, resolved the way Terraform would from the folder: variable defaults, then `terraform.tfvars` and `*.auto.tfvars`, locals, and other resources' plain attributes. An attribute of a nested block is `${attr.<block>.<name>}`. A value that still holds `${...}` after resolving is not set.
+- Supplies `${match.0}` (the block's last label, its name) and `${match.1}`, ... (its labels in order).
+
 ### `regex`
 
 ```yaml
@@ -115,15 +179,15 @@ match: { regex: 'QUEUE\s*=\s*"([^"]+)"', files: ["**/*.java"] }
 
 ### What each match supplies
 
-| Template value                             | annotation | baseClass | methodCall | configKey | xpath | jsonPath | regex |
-| ------------------------------------------ | ---------- | --------- | ---------- | --------- | ----- | -------- | ----- |
-| `${attr.x}`                                | yes        | no\*      | yes        | no\*      | yes   | yes      | no\*  |
-| `${match.N}`                               | no\*       | no\*      | no\*       | yes       | yes   | yes      | yes   |
-| `${member.name}`                           | yes        | -         | yes        | -         | -     | -        | -     |
-| `${class.name}`                            | yes        | yes       | yes        | -         | -     | -        | -     |
-| `${annotation.Name.x}`                     | yes        | yes       | yes        | -         | -     | -        | -     |
-| `${file.path}` `${file.line}`              | yes        | yes       | yes        | yes       | yes   | yes      | yes   |
-| `${repo.name}` `${config:k}` `${yaml:f#k}` | yes        | yes       | yes        | yes       | yes   | yes      | yes   |
+| Template value                             | annotation | baseClass | methodCall | configKey | xpath | jsonPath | hclBlock | regex |
+| ------------------------------------------ | ---------- | --------- | ---------- | --------- | ----- | -------- | -------- | ----- |
+| `${attr.x}`                                | yes        | no\*      | yes        | no\*      | yes   | yes      | yes      | no\*  |
+| `${match.N}`                               | no\*       | no\*      | no\*       | yes       | yes   | yes      | yes      | yes   |
+| `${member.name}`                           | yes        | -         | yes        | -         | -     | -        | -        | -     |
+| `${class.name}`                            | yes        | yes       | yes        | -         | -     | -        | -        | -     |
+| `${annotation.Name.x}`                     | yes        | yes       | yes        | -         | -     | -        | -        | -     |
+| `${file.path}` `${file.line}`              | yes        | yes       | yes        | yes       | yes   | yes      | yes      | yes   |
+| `${repo.name}` `${config:k}` `${yaml:f#k}` | yes        | yes       | yes        | yes       | yes   | yes      | yes      | yes   |
 
 \* rejected when the file is checked. `-` is accepted but never known, so it leaves its field unset.
 
@@ -131,7 +195,7 @@ match: { regex: 'QUEUE\s*=\s*"([^"]+)"', files: ["**/*.java"] }
 
 - `kind`: a record kind from `c1-kinds.md`.
 - `id`: a template for the record id. Required for every kind except `Interface`, which must leave it out (see [Interfaces](#interfaces)). It must render a valid id (a lowercase slug, at most 120 characters, see [Ids](#ids)); use `lower` or `slug` on anything that may contain capitals or spaces. An id that can't be filled (an unknown value without a default, or empty) means no record, with a warning.
-- `fields`: the record's fields. Only fields `c1-kinds.md` lists for the kind are allowed. A value is a template (text), a literal number or `true`/`false`, or a list of templates (items that render unknown or empty are dropped). A field whose template can't be filled is left unset; if that field is required, the record is invalid. A template that renders the empty string sets the field to `""`, which required text fields reject.
+- `fields`: the record's fields. Only fields `c1-kinds.md` lists for the kind are allowed. A value is a template (text), a literal number or `true`/`false`, or a list of templates (items that render unknown or empty are dropped). A field whose template can't be filled is left unset; if that field is required, the record is skipped with a warning naming the rule and the field (`atticus dialect run` prints it). A template that renders the empty string sets the field to `""`, which required text fields reject.
 - `evidence` (optional): `source` (default `code`; use `config` for config files, `spec` for descriptors that are specs, or another evidence source: `code`, `config`, `spec`, `gateway`, `event-config`, `infrastructure`, `pipeline`, `migration`) and `side`: `callee` (it serves), `caller` (it calls or publishes), `gateway` or `definition`. The engine adds the repo, file, line and `dialect: <name>@<version>`.
 
 A record that fails contract C1 (a missing required field, a value outside an enum, an invalid id) is reported and never kept.
@@ -233,8 +297,9 @@ tests:
 - `absent`: ids that must not be produced.
 - A test with inline `files` and `expect: []` (or no `expect`) passes only if nothing at all is produced: that is how you test that a repo without the marker gives nothing. A `fixture` test with an empty `expect` checks nothing.
 - A record that is invalid under C1 fails the test.
+- Every rule of the dialect's own (not ones it inherits through `extends`) must produce at least one record in at least one test, or the dialect fails with `rule <id> produces nothing in any test`. A dialect whose tests fail is never used by a scan.
 - Tests ignore `repoTypes`; the marker still applies, so inline tests must include the marker file.
-- Failure messages: `expected Endpoint x.y, got a, b` (not produced; lists what was), `x.y.method: expected "GET", got "get"`, `x.y should not be produced`, `expected no records, got ...`, `produced an invalid record: ...`.
+- Failure messages: `expected Endpoint x.y, got a, b` (not produced; lists what was), `x.y.method: expected "GET", got "get"`, `x.y should not be produced`, `expected no records, got ...`, `produced an invalid record: ...`, `rule r produces nothing in any test`.
 
 ## Limits worth knowing
 

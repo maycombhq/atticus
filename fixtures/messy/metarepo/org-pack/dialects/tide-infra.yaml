@@ -1,0 +1,43 @@
+# Tidewater's infra repos (invented): topics come from the platform team's house Terraform
+# module, tide-kafka-topic. A dialect reads them (ADR 0056): an hclBlock match on module
+# blocks, a where condition on the module's source, and variables resolved from the folder.
+schemaVersion: 1
+name: tide-infra
+version: 0.1.0
+description: Kafka topics provisioned through the tide-kafka-topic Terraform module.
+appliesTo:
+  repoTypes: [terraform]
+rules:
+  - id: house-topic
+    description: A tide-kafka-topic module block provisions an event topic owned by owner_team.
+    match: { hclBlock: module, files: ["**/*.tf"] }
+    where:
+      - { value: "${attr.source}", matches: '/tide-kafka-topic(\.git)?([?/]|$)' }
+    emit:
+      kind: Endpoint
+      id: "${attr.owner_team}.topic.${attr.name | slug}"
+      fields:
+        component: "${attr.owner_team}"
+        endpointType: event-topic
+        pathOrTopic: "${attr.name}"
+      evidence: { source: infrastructure, side: definition }
+    confidence: verified
+tests:
+  - name: a house topic module, with its name from a variable
+    files:
+      main.tf: |
+        variable "env" { default = "prod" }
+        module "t" {
+          source     = "git::https://git.tide.internal/platform/tide-kafka-topic.git?ref=v2"
+          name       = "cards.issued.${var.env}"
+          owner_team = "cards-svc"
+        }
+        module "vpc" {
+          source = "terraform-aws-modules/vpc/aws"
+          name   = "core"
+        }
+    expect:
+      - kind: Endpoint
+        id: cards-svc.topic.cards.issued.prod
+        endpointType: event-topic
+        pathOrTopic: cards.issued.prod

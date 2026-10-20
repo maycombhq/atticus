@@ -34,3 +34,9 @@ repos:
     component: web-bff
     system: web
     hosts: [web-bff.tide.internal]
+  - id: tide-infra
+    url: https://git.example.com/tide/tide-infra.git
+    type: terraform
+    owner: team-platform
+    system: platform
+    dialects: [tide-infra]

@@ -4,6 +4,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Dialect rules v2: infra repos, conditions, honest rules
+
+- Dialects read Terraform (ADR 0056): an `hclBlock` match (`module`, `resource.aws_sqs_queue`) supplies each block's attributes, resolved from the folder's variable defaults, `terraform.tfvars`, `*.auto.tfvars` and locals, and its labels. With YAML and JSON (`jsonPath`) and XML (`xpath`) matches, infra and pipeline repos built on house modules, charts and templates are read through dialects.
+- Rules take `where` conditions: `{ value: "${attr.source}", matches: "tide-kafka-topic" }`. All must hold for a match to emit.
+- A record a rule can't complete (a field C1 requires couldn't be filled) is skipped with a warning naming the rule and the field, instead of being emitted invalid.
+- `receiverType` is applied: a `methodCall` rule with it matches only calls on a field, parameter or variable declared with that type, or a static call on the type. Before, it was accepted and ignored.
+- A dialect's tests must exercise every one of its rules; a rule that produces nothing in any test fails `atticus dialect test`, and a scan doesn't use the dialect. Shipped dialects gain the tests they lacked (Micronaut `@Put` and `@Patch`, Quarkus outgoing channel topics).
+- The messy estate gains an infra repo whose topics come from a house Terraform module, read through an org-pack dialect.
+- The dialect kit's reference, README and checklist cover all of it.
+
 ### House frameworks in any language
 
 - `atticus frameworks survey [--package <prefixes>]` shows how the estate's repos use house frameworks in any language: each house module they import, the model that covers it, and how each imported name is called or annotated (`useApi(...)`, `lantern.call(...)`, `@InternalApi`, `BankHttp.exchange(...)`), with counts and a sample line. `atticus frameworks kit [dir]` exports the framework-model kit for an organisation's assistant: a guide, two worked examples, the schema, a checklist and a task prompt. New guide page: [Teaching Atticus your house frameworks](docs/guide/frameworks.md).

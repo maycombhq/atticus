@@ -6,7 +6,7 @@ This kit is everything you need to write a **dialect**: a YAML file that teaches
 
 Atticus scans every repository in an estate and writes a **catalog**: one small YAML record per fact it can prove from code and config, such as an endpoint a service serves, a call from one service to another, a setting, a table. Every record has a `kind` (contract C1, listed in `c1-kinds.md`), a stable `id`, field values and evidence (repo, file, line).
 
-Built-in extractors already understand common technology: Spring (controllers, Feign, RestTemplate, WebClient, Kafka, JDBC), OpenAPI and Swagger files, Apigee-style gateway proxies, frontend `fetch`/axios/HttpClient calls, topic configs, SQL migrations, Kubernetes and Terraform. Anything home-grown is invisible to them: a company's own `@Endpoint` annotation, its service descriptor file, its client interfaces, its config conventions. A dialect closes that gap **without code**: each rule says "where you find this in the source, emit that record".
+Built-in extractors already understand common technology: Spring (controllers, Feign, RestTemplate, WebClient, Kafka, JDBC), OpenAPI and Swagger files, Apigee-style gateway proxies, frontend `fetch`/axios/HttpClient calls, topic configs, SQL migrations, Kubernetes and Terraform. Anything home-grown is invisible to them: a company's own `@Endpoint` annotation, its service descriptor file, its client interfaces, its config conventions, its house Terraform modules, Helm values and pipeline templates. A dialect closes that gap **without code**: each rule says "where you find this in the source, emit that record".
 
 Write a dialect when an organisation has repos built on a house framework (annotations, base classes, descriptor files, XML or YAML config) whose meaning the built-in extractors can't know.
 
@@ -31,7 +31,7 @@ Write a dialect when an organisation has repos built on a house framework (annot
 4. **Write the rules.** One rule per construct: a `match` (where to look), an `emit` (the record kind, an id template and field templates) and a `confidence`. Take every value from the source with templates; never write a repo's own names, paths or values into a rule, because the dialect must work on repos you haven't seen.
 5. **Look at the output.** `atticus dialect run <name> <repo>` prints the records your rules produce from one repo, ready to paste into a test, with warnings for templates that could not be filled and the reason any record is invalid. Interface ids are derived (`if-<hash>`): copy them from this output.
 6. **Write tests.** At least one test over a real repo (a `fixture` folder) that checks a record of every kind the dialect emits, small inline tests (`files`) for each edge case you noticed (attribute order, lower-case values, path parameters), and one inline test with no marker file and `expect: []` showing that nothing is produced.
-7. **Run the tests.** `atticus dialect test <name>` until it passes. A dialect whose tests fail is never used by the scanner.
+7. **Run the tests.** `atticus dialect test <name>` until it passes. It also fails when a rule produces nothing in any test. A dialect whose tests fail is never used by the scanner.
 8. **Self-review** with `checklist.md`.
 
 ## Ground rules

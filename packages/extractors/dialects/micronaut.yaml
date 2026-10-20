@@ -180,3 +180,28 @@ tests:
             public String ping() { return "pong"; }
         }
     expect: []
+  - name: PUT and PATCH methods, with the path as value or uri
+    files:
+      src/main/resources/application.yml: |
+        micronaut:
+          application:
+            name: limits-service
+      src/main/java/x/LimitsController.java: |
+        @Controller("/limits")
+        public class LimitsController {
+            @Put("/{id}")
+            public Limit replace(String id, Limit l) { return l; }
+            @Patch(uri = "/{id}/amount")
+            public Limit adjust(String id, int amount) { return null; }
+        }
+    expect:
+      - kind: Endpoint
+        id: limits-service.limits.put-replace
+        method: PUT
+        pathOrTopic: /limits/{id}
+        normalizedPath: /limits/{}
+      - kind: Endpoint
+        id: limits-service.limits.patch-adjust
+        method: PATCH
+        pathOrTopic: /limits/{id}/amount
+        normalizedPath: /limits/{}/amount

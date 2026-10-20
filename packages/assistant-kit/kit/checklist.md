@@ -4,7 +4,7 @@ Go through every line. Each one is a mistake that has made a dialect fail.
 
 ## It runs
 
-- [ ] `atticus dialect test <name>` passes: the file is valid C2 and every test passes.
+- [ ] `atticus dialect test <name>` passes: the file is valid C2, every test passes and every rule produces a record in some test.
 - [ ] `atticus dialect run <name> <repo>` over each repo you were given prints the records you expect and no `warning:` or `invalid:` lines you can't explain.
 - [ ] The file is `org-pack/dialects/<name>.yaml` and its `name` is `<name>`.
 
@@ -14,6 +14,7 @@ Go through every line. Each one is a mistake that has made a dialect fail.
 - [ ] No rule contains a value from a particular repo: app names, service names, topics, queues, paths, hosts, config values. They all come from templates (`${attr...}`, `${yaml:...}`, `${annotation...}`, `${match...}`, `${config:...}`).
 - [ ] `files` globs read production code only (for example `src/main/java/**/*.java`, not `**/*.java`, when tests live in `src/test`).
 - [ ] Every `annotation` match has the right `target` (`method`, `class`, `field`).
+- [ ] A rule that should apply only to some matches says so with `where` (a module's `source`, an attribute's value) or `receiverType`, not with a repo's file names.
 - [ ] `configKey` templates use the key's segments: `${match.N}` counts the matched key's segments from 1, and `${match.0}` is the value.
 - [ ] The `marker` is a file every repo on the framework has, and the dialect produces nothing without it.
 

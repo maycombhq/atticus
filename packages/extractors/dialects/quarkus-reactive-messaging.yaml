@@ -144,3 +144,15 @@ tests:
             public void score(Payment p) {}
         }
     expect: []
+  - name: an outgoing channel's configured topic
+    files:
+      src/main/resources/application.properties: |
+        quarkus.application.name=limits-service
+        mp.messaging.outgoing.limit-changes.connector=smallrye-kafka
+        mp.messaging.outgoing.limit-changes.topic=limits.changed
+    expect:
+      - kind: Unresolved
+        id: limits-service.publish.limit-changes
+        unresolvedKind: event-publish
+        raw: limits.changed
+        owner: limits-service
