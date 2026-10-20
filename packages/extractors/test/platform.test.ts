@@ -339,3 +339,36 @@ describe("readers", () => {
     expect(envOf({ path: "deploy/x.yaml" })).toBeUndefined();
   });
 });
+
+describe("Jenkins pipelines from the Groovy tree (ADR 0060)", () => {
+  it("reads stages, triggers and steps, and nothing that is commented out", async () => {
+    const { memoryRepo, scanRepo } = await import("@maycombhq/sdk");
+    const { pipelinesExtractor } = await import("../src/index.js");
+    const s = await scanRepo({
+      repo: memoryRepo("cards", "0".repeat(40), {
+        Jenkinsfile: [
+          "pipeline {",
+          "  triggers { cron('H 2 * * *') }",
+          "  stages {",
+          "    stage('Build') { steps { sh 'mvn -B verify' } }",
+          "    // stage('Deploy uat') { steps { sh 'helm upgrade cards ./chart' } }",
+          "    /* stage('Deploy dev') { } */",
+          "    stage('Deploy prod') { steps { sh script: \"helm upgrade cards ./chart\" } }",
+          "  }",
+          "}",
+        ].join("\n"),
+      }),
+      extractors: [pipelinesExtractor],
+      repoInfo: { component: "cards" },
+    });
+    const p = (s.records.find((r) => r.kind === "QualityAsset") as unknown as { details: unknown })
+      .details as {
+      stages: string[];
+      triggers: string[];
+      environments: string[];
+    };
+    expect(p.stages).toEqual(["Build", "Deploy prod"]);
+    expect(p.triggers).toEqual(["schedule H 2 * * *"]);
+    expect(p.environments).toEqual(["prod"]);
+  });
+});

@@ -1,4 +1,5 @@
 import type { RepoHandle } from "@maycombhq/sdk";
+import { groovyCalls } from "./lang/groovy.js";
 import type Parser from "web-tree-sitter";
 import { parseSyntax } from "./lang/syntax.js";
 import { parseXml, select, selectText } from "./lang/xml.js";
@@ -76,11 +77,17 @@ export async function houseDependencies(
     } else if (path.endsWith(".kts")) {
       for (const d of await kotlinDependencies(text)) if (ours(d.group)) out.push({ ...d, path });
     } else {
-      // Groovy build.gradle: no Groovy grammar ships yet, so quoted "group:artifact:version"
-      // coordinates are read from the text (comments included).
-      for (const m of text.matchAll(/["']([\w.-]+):([\w.-]+)(?::([\w.+-]+))?["']/g)) {
-        if (!ours(m[1]!)) continue;
-        out.push({ group: m[1]!, artifact: m[2]!, ...(m[3] ? { version: m[3] } : {}), path });
+      // Groovy build.gradle, from its syntax tree: "group:artifact[:version]" string arguments,
+      // or group:, name:, version: named ones. Comments aren't read.
+      for (const c of await groovyCalls(text)) {
+        for (const a of c.args) {
+          const m = COORDINATE.exec(a);
+          if (m && ours(m[1]!))
+            out.push({ group: m[1]!, artifact: m[2]!, ...(m[3] ? { version: m[3] } : {}), path });
+        }
+        const { group, name, version } = c.named;
+        if (group && name && ours(group))
+          out.push({ group, artifact: name, ...(version ? { version } : {}), path });
       }
     }
   }

@@ -121,4 +121,26 @@ dependencies {
       },
     ]);
   });
+
+  it("reads a Groovy build.gradle from its syntax tree, comments left out", async () => {
+    const repo = memoryRepo("app", "0".repeat(40), {
+      "build.gradle": [
+        "dependencies {",
+        "  implementation 'tide.platform:tide-web-starter:3.2.0'",
+        '  implementation group: "tide.platform", name: "tide-audit", version: "1.4.0"',
+        "  // implementation 'tide.platform:tide-old:0.1'",
+        "  testImplementation 'org.junit:junit:4.13'",
+        "}",
+      ].join("\n"),
+    });
+    expect(await houseDependencies(repo, ["tide.platform"])).toEqual([
+      { group: "tide.platform", artifact: "tide-audit", version: "1.4.0", path: "build.gradle" },
+      {
+        group: "tide.platform",
+        artifact: "tide-web-starter",
+        version: "3.2.0",
+        path: "build.gradle",
+      },
+    ]);
+  });
 });

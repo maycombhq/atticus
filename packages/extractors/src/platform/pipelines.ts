@@ -3,6 +3,7 @@ import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/s
 import { componentOf, type Ev } from "../facts.js";
 import { MALFORMED_YAML, readYamlDocs, type PathSeg, type YamlDoc } from "./manifests.js";
 import { arr, at, dirOf, ev, isEnvWord, isObj, readOrWarn, slug, str, type Obj } from "./util.js";
+import { groovyCalls } from "../lang/groovy.js";
 
 /**
  * CI/CD pipelines: Azure Pipelines (with local templates expanded), GitHub Actions
@@ -162,8 +163,9 @@ export const pipelinesExtractor = defineExtractor({
     // ---- Jenkins
     for await (const path of repo.listFiles(JENKINS)) {
       const text = await readOrWarn(repo, ctx, path);
-      if (text === undefined || !/\bstage\s*\(|\bpipeline\s*\{/.test(text)) continue;
-      yield* emit("jenkins", path, path.split("/").pop() ?? path, jenkinsPipeline(path, text));
+      if (text === undefined) continue;
+      const f = await jenkinsPipeline(path, text);
+      if (f) yield* emit("jenkins", path, path.split("/").pop() ?? path, f);
     }
   },
 });
@@ -631,60 +633,81 @@ async function gitlabPipeline(
 
 // ------------------------------------------------------------------ Jenkins
 
-/** Remove comments but keep line breaks, so line numbers stay true. */
-function stripGroovyComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
-    .replace(/^\s*\/\/.*$/gm, (m) => " ".repeat(m.length));
-}
-
-const unquote = (s: string) => s.replace(/^('''|"""|'|")/, "").replace(/('''|"""|'|")$/, "");
-
-function jenkinsPipeline(path: string, raw: string): Facts {
+/**
+ * A declarative (or scripted) Jenkins pipeline, from its Groovy syntax tree (ADR 0060): stages,
+ * triggers, shell steps, test results and coverage reports are calls, and their arguments are
+ * read as the tree has them. Comments are never read.
+ */
+async function jenkinsPipeline(path: string, raw: string): Promise<Facts | undefined> {
+  const calls = await groovyCalls(raw);
+  if (!calls.some((c) => c.name === "stage" || c.name === "pipeline")) return undefined;
   const f = new Facts();
-  const src = stripGroovyComments(raw);
-  const lineOf = (index: number) => src.slice(0, index).split("\n").length;
-  for (const m of src.matchAll(/\bstage\s*\(\s*(['"])(.*?)\1\s*\)/g)) {
-    const name = m[2]!;
-    f.add(f.stages, name);
-    if (/deploy/i.test(name))
-      f.add(
-        f.environments,
-        name
-          .split(/[^A-Za-z0-9-]+/)
-          .find((w) => isEnvWord(w))
-          ?.toLowerCase(),
-      );
-  }
-  for (const m of src.matchAll(/\bcron\s*\(\s*(['"])(.*?)\1/g))
-    f.add(f.triggers, `schedule ${m[2]}`);
-  for (const m of src.matchAll(/\bpollSCM\s*\(\s*(['"])(.*?)\1/g))
-    f.add(f.triggers, `poll ${m[2]}`);
-  if (/\bgithubPush\s*\(|\bgitlab\s*\(/.test(src)) f.add(f.triggers, "push");
-  for (const m of src.matchAll(/\bupstream\s*\(\s*(?:upstreamProjects\s*:\s*)?(['"])(.*?)\1/g))
-    f.add(f.triggers, `pipeline ${m[2]}`);
-  const cmd =
-    /\b(sh|bat|powershell|pwsh)\s*\(?\s*(?:script\s*:\s*)?('''[\s\S]*?'''|"""[\s\S]*?"""|'[^'\n]*'|"[^"\n]*")/g;
-  for (const m of src.matchAll(cmd)) f.step(undefined, unquote(m[2]!));
-  for (const m of src.matchAll(/\bjunit\s*\(?\s*(?:testResults\s*:\s*)?(['"])(.*?)\1/g))
-    f.tests.push({ files: lines(m[2]), format: "junit", path, line: lineOf(m.index!) });
-  for (const m of src.matchAll(/\bjacoco\s*\(([^)]*)\)/g)) {
-    const pattern = /execPattern\s*:\s*(['"])(.*?)\1/.exec(m[1]!)?.[2];
-    f.coverage.push({
-      files: pattern ? lines(pattern) : [],
-      tool: "jacoco",
-      path,
-      line: lineOf(m.index!),
-    });
-  }
-  for (const m of src.matchAll(/\b(recordCoverage|publishCoverage)\s*\(([^)]*)\)/g)) {
-    const pattern = /pattern\s*:\s*(['"])(.*?)\1/.exec(m[2]!)?.[2];
-    f.coverage.push({
-      files: pattern ? lines(pattern) : [],
-      tool: "coverage",
-      path,
-      line: lineOf(m.index!),
-    });
+  for (const c of calls) {
+    const first = c.args[0];
+    switch (c.name) {
+      case "stage":
+        if (first === undefined) break;
+        f.add(f.stages, first);
+        if (/deploy/i.test(first))
+          f.add(
+            f.environments,
+            first
+              .split(/[^A-Za-z0-9-]+/)
+              .find((w) => isEnvWord(w))
+              ?.toLowerCase(),
+          );
+        break;
+      case "cron":
+        if (first !== undefined) f.add(f.triggers, `schedule ${first}`);
+        break;
+      case "pollSCM":
+        if (first !== undefined) f.add(f.triggers, `poll ${first}`);
+        break;
+      case "githubPush":
+      case "gitlab":
+        f.add(f.triggers, "push");
+        break;
+      case "upstream": {
+        const up = c.named.upstreamProjects ?? first;
+        if (up !== undefined) f.add(f.triggers, `pipeline ${up}`);
+        break;
+      }
+      case "sh":
+      case "bat":
+      case "powershell":
+      case "pwsh": {
+        const script = c.named.script ?? first;
+        if (script !== undefined) f.step(undefined, script);
+        break;
+      }
+      case "junit": {
+        const results = c.named.testResults ?? first;
+        if (results !== undefined)
+          f.tests.push({ files: lines(results), format: "junit", path, line: c.line });
+        break;
+      }
+      case "jacoco": {
+        const pattern = c.named.execPattern;
+        f.coverage.push({
+          files: pattern ? lines(pattern) : [],
+          tool: "jacoco",
+          path,
+          line: c.line,
+        });
+        break;
+      }
+      case "recordCoverage":
+      case "publishCoverage": {
+        const pattern = c.named.pattern;
+        f.coverage.push({
+          files: pattern ? lines(pattern) : [],
+          tool: "coverage",
+          path,
+          line: c.line,
+        });
+        break;
+      }
+    }
   }
   f.add(f.files, path);
   return f;
