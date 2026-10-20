@@ -59,6 +59,90 @@ ai: on # on | text-only | off
 
 The app shows the mode in the top bar and on Settings. See ADR 0046.
 
+### Calling a model directly (model mode)
+
+Hand-off mode, the default, needs no model access: the person's own assistant does the step. To let Atticus call a model itself, allow model mode and name the provider in `runtime.yaml`. Three providers ship with Atticus (ADR 0065): `anthropic`, `openai-compatible` (also as `azure-openai`) and `bedrock`. `vertex` has none yet.
+
+```yaml
+modes: { allowed: [hand-off, model], default: hand-off }
+models: { allowed: [claude-opus-5-5] } # leave empty to allow any model the adapter names
+adapters:
+  model:
+    type: anthropic
+    settings:
+      model: claude-opus-5-5
+      keyEnv: ATTICUS_MODEL_KEY # the NAME of the variable holding the key
+```
+
+**The key is never in runtime.yaml.** `keyEnv` names an environment variable; set that variable in the environment Atticus runs in (a user environment variable, or your secrets tooling). Atticus refuses a setting that looks like a key or token, and never prints a key: messages name the variable instead.
+
+Settings every provider reads:
+
+| Setting      | What it does                                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `model`      | The model id; `models.allowed` is checked against it                                                             |
+| `baseUrl`    | Where to call. Must be `https://` (plain `http://` only for `localhost` or `127.0.0.1`)                          |
+| `keyEnv`     | The environment variable holding the key (not Bedrock)                                                           |
+| `timeoutMs`  | How long one request may take, default 300000 (5 minutes)                                                        |
+| `maxRetries` | Retries after 429, 5xx or a dropped connection, default 3, at most 6. `Retry-After` is honoured up to 60 seconds |
+| `maxOutput`  | The most output tokens to ask for, default 16000. Lower it for a model with a smaller limit                      |
+| `caFile`     | A PEM file of extra certificate authorities for model calls, added to Node's own list and `NODE_EXTRA_CA_CERTS`  |
+
+**Anthropic**, directly or through a gateway that speaks the Messages API:
+
+```yaml
+model:
+  type: anthropic
+  settings:
+    model: claude-opus-5-5
+    keyEnv: ATTICUS_MODEL_KEY
+    # baseUrl: https://llm-gateway.tidewater.example/anthropic   # a gateway; default https://api.anthropic.com
+    # auth: bearer                                               # if the gateway wants Authorization: Bearer
+```
+
+**Azure OpenAI** (a deployment, the `api-key` header and an API version):
+
+```yaml
+model:
+  type: azure-openai
+  settings:
+    baseUrl: https://tidewater-ai.openai.azure.com
+    deployment: atticus-gpt
+    apiVersion: "2024-10-21"
+    keyEnv: ATTICUS_AZURE_OPENAI_KEY
+    # model: gpt-4o        # what models.allowed checks; defaults to the deployment name
+    # auth: bearer         # if the variable holds a Microsoft Entra ID token instead of a key
+```
+
+**An internal LLM gateway, vLLM or another server that speaks OpenAI's Chat Completions:**
+
+```yaml
+model:
+  type: openai-compatible
+  settings:
+    baseUrl: https://llm-gateway.tidewater.example/v1 # Atticus calls {baseUrl}/chat/completions
+    model: tidewater-llm-70b
+    keyEnv: ATTICUS_GATEWAY_KEY # sent as Authorization: Bearer; leave out if the gateway takes none
+    # outputLimitField: max_completion_tokens   # for servers that reject max_tokens
+```
+
+**AWS Bedrock** (the Converse API, signed with the standard AWS environment variables):
+
+```yaml
+model:
+  type: bedrock
+  settings:
+    model: anthropic.claude-opus-5-5 # a model id or an inference profile id
+    region: us-east-1 # or AWS_REGION in the environment
+    # baseUrl: https://vpce-0abc.bedrock-runtime.us-east-1.vpce.amazonaws.com   # a VPC endpoint
+```
+
+Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and, for temporary credentials, `AWS_SESSION_TOKEN`. Atticus doesn't read AWS profiles or SSO itself; `aws configure export-credentials --format env` prints the variables for a profile. The role needs `bedrock:InvokeModel` on the model, and model access must be granted in the region.
+
+**Behind a corporate proxy.** Atticus reads `HTTPS_PROXY` (then `HTTP_PROXY`) and `NO_PROXY`, in upper or lower case, for model calls. Proxy credentials can go in the proxy URL (`http://user:password@proxy.tidewater.example:8080`); they are sent to the proxy and never printed. `NO_PROXY` takes host names, `.domain` suffixes, `host:port`, IPs and `*`, not CIDR ranges. If the proxy inspects TLS with your organisation's own certificate authority, set `NODE_EXTRA_CA_CERTS` to that CA's PEM file before starting Atticus (the same setting `atticus doctor` checks), or name it in `caFile`. Atticus never turns certificate checks off.
+
+An organisation with its own client can register a provider in code (`registerModelProvider` from `@maycombhq/ai`) under a type runtime.yaml accepts, replacing the built-in one; a new type name needs a change to contract C6. There is no loader yet that picks a provider plugin up from configuration. See ADR 0065.
+
 ### Outside systems
 
 `runtime.yaml` `adapters` names the work tracker, service desk, Git host, wiki, notifications and design tool. Each can be a live adapter (a plugin), `manual` (Atticus writes a step a person does, with every field ready to copy, and records the result) or left out. A live adapter that can't be reached falls back to manual steps on its own (ADR 0032). Every write to a shared system needs a person's approval, whatever the adapter.

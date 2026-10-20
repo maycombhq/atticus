@@ -37,6 +37,7 @@
     "@maycombhq/intake": "workspace:*",
     "@maycombhq/knowledge": "workspace:*",
     "@maycombhq/learn": "workspace:*",
+    "@maycombhq/model-providers": "workspace:*",
     "@maycombhq/naysayer": "workspace:*",
     "@maycombhq/openspec-adapter": "workspace:*",
     "@maycombhq/planner": "workspace:*",

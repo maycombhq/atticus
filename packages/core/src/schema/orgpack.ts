@@ -437,9 +437,12 @@ export const Runtime = z.strictObject({
       wiki: adapter(["confluence", "ado-wiki", "sharepoint"] as const).optional(),
       notify: adapter(["teams", "slack", "email"] as const).optional(),
       design: adapter(["figma"] as const).optional(),
-      model: adapter(["anthropic", "azure-openai", "bedrock", "vertex"] as const, {
-        manual: false,
-      }).optional(),
+      model: adapter(
+        ["anthropic", "openai-compatible", "azure-openai", "bedrock", "vertex"] as const,
+        {
+          manual: false,
+        },
+      ).optional(),
     })
     .default({}),
   /**

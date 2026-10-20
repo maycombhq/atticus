@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import { AgentDefinition, DEFAULT_RUNTIME, Runtime } from "@maycombhq/core";
 import {
   AiOffError,
+  clearModelProviders,
+  registerModelProvider,
+  registeredModelProviders,
   buildContextPack,
   createRuntime,
   DATA_RULE,
@@ -154,6 +157,34 @@ describe("createRuntime", () => {
         providers: { anthropic: (s) => provider(String(s.model)) },
       }),
     ).rejects.toThrow(/model-b is not allowed/);
+  });
+
+  it("model mode: registered providers (ADR 0065), passed-in ones win, mock is reserved", async () => {
+    const answer = (text: string) => (s: Record<string, unknown>) => ({
+      model: String(s.model),
+      complete: async () => ({ text, usage: { inputTokens: 1, outputTokens: 1 } }),
+    });
+    const cfg = rt({
+      modes: { allowed: ["model"], default: "model" },
+      adapters: { model: { type: "openai-compatible", settings: { model: "m" } } },
+    });
+    try {
+      registerModelProvider("openai-compatible", answer("registered"));
+      expect(registeredModelProviders()).toEqual(["openai-compatible"]);
+      const r = await createRuntime(cfg, { root: await tmp() });
+      expect((await r.run((await r.prepare(request())).runId)).output).toBe("registered");
+      const p = await createRuntime(cfg, {
+        root: await tmp(),
+        providers: { "openai-compatible": answer("passed in") },
+      });
+      expect((await p.run((await p.prepare(request())).runId)).output).toBe("passed in");
+      expect(() => registerModelProvider("mock", answer("x"))).toThrow(RuntimeConfigError);
+    } finally {
+      clearModelProviders();
+    }
+    await expect(createRuntime(cfg, { root: await tmp() })).rejects.toThrow(
+      "No openai-compatible model provider is installed. Add its plugin, or use hand-off mode.",
+    );
   });
 
   it("model mode with the mock provider answers from the prompt", async () => {
