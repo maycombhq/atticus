@@ -149,6 +149,16 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           ? `; ${unread} file${unread === 1 ? " uses" : "s use"} a client library with nothing read (atticus scan --warnings)`
           : ""),
     );
+    const toOnboard = scan.coverage.filter((c) => c.needsOnboarding);
+    if (toOnboard.length)
+      io.out(
+        `Read nothing from ${toOnboard.length === 1 ? "1 repo" : `${toOnboard.length} repos`} whose files no reader knows: ${toOnboard
+          .map(
+            (c) =>
+              `${c.repo} (${c.unreadConfig.length} file${c.unreadConfig.length === 1 ? "" : "s"})`,
+          )
+          .join(", ")}. Have your assistant draft a dialect: atticus onboard ${toOnboard[0]!.repo}`,
+      );
     for (const l of diffLines(diff)) io.out(l);
     if (write)
       io.out(

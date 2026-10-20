@@ -66,3 +66,25 @@ describe("any gateway, read through dialects (ADR 0058)", () => {
     ).toEqual([]);
   });
 });
+
+describe("a gateway with no dialect yet (ADR 0059)", () => {
+  it("is named as a repo to onboard, with the files no reader knows", async () => {
+    const { cp, rm } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "atticus-gateways-"));
+    const pack = join(root, "org-pack");
+    await cp(join(GW, "metarepo/org-pack"), pack, { recursive: true });
+    await rm(join(pack, "dialects/tide-kong.yaml"));
+    const s = await scanEstate({
+      root,
+      orgPack: pack,
+      repoDir: (id) => join(GW, "repos", id),
+      repoState: async () => ({ commit: "a".repeat(40), dirty: false }),
+      cache: null,
+      scannedAt: "2026-10-19T12:00:00Z",
+    });
+    const kong = s.coverage.find((c) => c.repo === "gw-kong")!;
+    expect([kong.needsOnboarding, kong.unreadConfig]).toEqual([true, ["kong/kong.yml"]]);
+    // A repo the built-in readers and its dialects read isn't one to onboard.
+    expect(s.coverage.filter((c) => c.needsOnboarding).map((c) => c.repo)).toEqual(["gw-kong"]);
+  }, 120_000);
+});

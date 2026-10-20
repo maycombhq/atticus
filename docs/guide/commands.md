@@ -53,6 +53,9 @@ Usage:
   atticus dialect test <name>          Run a dialect's own tests
   atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
+  atticus onboard <repo> [--name n] [--attempts 3] [--mode m]   Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal
+  atticus onboard check <name> --repo <repo>   Check a proposal (drafted, handed off or hand-written)
+  atticus onboard accept <name> [--replace]   Accept a proposal into org-pack/dialects/
   atticus frameworks learn <name> --from <repo|jar|tgz>   Learn what a house framework means from its source, JAR or npm package
           [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
   atticus frameworks discover --group <a.b|@scope>[,...]   The house artifacts and npm packages the repos build on, found here

@@ -108,6 +108,9 @@ importers:
 
   packages/assistant-kit:
     dependencies:
+      '@maycombhq/ai':
+        specifier: workspace:*
+        version: link:../ai
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core

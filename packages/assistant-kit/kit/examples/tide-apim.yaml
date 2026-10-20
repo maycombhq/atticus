@@ -1,0 +1,32 @@
+# Azure API Management kept as APIOps folders (ADR 0058): each API's apiInformation.json holds
+# its path and its backend. Expressible with C2 as it was; kept as the third reference.
+schemaVersion: 1
+name: tide-apim
+version: 0.1.0
+description: Azure API Management APIs from APIOps folders, each a gateway route to its backend.
+appliesTo:
+  repoTypes: [gateway]
+rules:
+  - id: api
+    description: An APIM API serves its path and forwards requests to its backend's service URL.
+    match: { jsonPath: "$.properties", files: ["**/apis/*/apiInformation.json"] }
+    emit:
+      kind: GatewayRoute
+      id: "apim-${attr.path | slug}"
+      fields:
+        proxy: "${attr.displayName}"
+        basepath: "/${attr.path | trimSlash}"
+        target: "${attr.serviceUrl}"
+      evidence: { source: gateway, side: gateway }
+    confidence: verified
+tests:
+  - name: an API's path and backend
+    files:
+      apis/orders-api/apiInformation.json: |
+        { "properties": { "displayName": "Orders API", "path": "orders", "serviceUrl": "https://orders.tide.internal" } }
+    expect:
+      - kind: GatewayRoute
+        id: apim-orders
+        proxy: Orders API
+        basepath: /orders
+        target: "https://orders.tide.internal"

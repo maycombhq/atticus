@@ -7,3 +7,4 @@ export * from "./kinds-doc.js";
 export * from "./cli-reference.js";
 export * from "./export.js";
 export * from "./grade.js";
+export * from "./onboard.js";

@@ -254,7 +254,7 @@ describe("atticus dialect kit and grade", () => {
     const out = await mkdtemp(join(tmpdir(), "atticus-cli-kit-"));
     const c = capture();
     expect(await dialectKit(out, c.io)).toBe(0);
-    expect(c.out).toEqual([`Wrote the dialect build kit (8 files) to ${out}`]);
+    expect(c.out).toEqual([`Wrote the dialect build kit (11 files) to ${out}`]);
     expect(await readdir(out)).toContain("cli.md");
   });
 

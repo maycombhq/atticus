@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Onboarding: your assistant drafts the dialect
+
+- `atticus onboard <repo>` (ADR 0059): a deterministic survey of the repo (what is read already, the structured files nothing reads), a draft dialect from the organisation's assistant through the AI runtime (the dialect kit as instructions, the repo as data), and checks: valid C2, its own tests pass and exercise every rule, it reads records from the repo and none is invalid. What failed goes back to the next attempt (`--attempts`, default 3). A passing draft is a proposal in `proposals/dialects/`; `atticus onboard accept <name>` (a person) moves it into the org pack. `atticus onboard check <name> --repo <repo>` checks a hand-written or handed-off draft the same way.
+- `atticus scan` names the repos it read nothing from though they have structured files no reader knows, with the command to onboard them. Coverage (`--json`) lists each repo's unread structured files.
+- The dialect kit ships the three gateway dialects as worked examples.
+
 ### Dialect rules v3: any gateway, read through rules
 
 - Dialects take `lookups` (ADR 0058): tables built from other files of the repo, read with `${lookup:<table>(<key>).<value>}`, the key any template value with filters. A key with no row, or with rows that disagree, leaves the value unknown.

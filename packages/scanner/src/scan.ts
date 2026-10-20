@@ -93,7 +93,19 @@ export interface RepoCoverage {
   open: number;
   /** Files that use an HTTP or messaging client but gave nothing. */
   unreadFiles: number;
+  /** Structured files (YAML, JSON, XML, Terraform...) no record cites: what a dialect could read. */
+  unreadConfig: string[];
+  /**
+   * Nothing was read from the repo beyond its component, though it has structured files no
+   * reader knows: a repo to onboard (atticus onboard, ADR 0059).
+   */
+  needsOnboarding: boolean;
 }
+
+/** Structured files a dialect could read; build and tool config is left out. */
+const STRUCTURED = /\.(ya?ml|json|xml|tf|tfvars|properties|toml|conf|hcl)$/i;
+const TOOLING =
+  /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig[^/]*\.json|\.eslintrc[^/]*|\.prettierrc[^/]*|renovate\.json|\.vscode\/.*|\.idea\/.*|pom\.xml|catalog-info\.yaml|mkdocs\.yml|codecov\.yml)$/i;
 
 export interface EstateScan {
   records: CatalogRecord[];
@@ -302,6 +314,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     .flatMap((p) => (p.repos?.repos ?? []).map((r) => ({ ...r, platform: p.platform })))
     .filter((r) => !r.archived && (!o.repos || o.repos.includes(r.id)));
   const results: RepoScan[] = [];
+  /** Each repo's structured files, to tell which no record cites. */
+  const structuredOf = new Map<string, string[]>();
   /** Each repo's modules with their own component (ADR 0057): the manifest's, else found. */
   const modulesOf = new Map<string, { path: string; component: string; hosts: string[] }[]>();
   let done = 0;
@@ -331,6 +345,10 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       ? r.modules
       : (await detectModules(handle)).map((m) => ({ ...m, hosts: [] as string[] }));
     modulesOf.set(r.id, modules);
+    const structured: string[] = [];
+    for await (const f of handle.listFiles(["**/*"]))
+      if (STRUCTURED.test(f) && !TOOLING.test(f)) structured.push(f);
+    structuredOf.set(r.id, structured.sort());
     const scan = await scanRepo({
       repo: handle,
       extractors,
@@ -477,6 +495,13 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
           .map((x) => x.id),
       ]);
       const scan = results.find((s) => s.repo === r.id)!;
+      const cited = new Set(
+        scan.records.flatMap((x) =>
+          (x as unknown as { evidence: { path?: string }[] }).evidence.map((e) => e.path ?? ""),
+        ),
+      );
+      const unreadConfig = (structuredOf.get(r.id) ?? []).filter((f) => !cited.has(f));
+      const readSomething = scan.records.some((x) => x.kind !== "Component");
       return {
         repo: r.id,
         joined: merged.records.filter(
@@ -490,6 +515,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
             .filter((w) => /but no call to it was read here/.test(w.message))
             .map((w) => w.path),
         ).size,
+        unreadConfig,
+        needsOnboarding: !readSomething && unreadConfig.length > 0,
       };
     });
   return {

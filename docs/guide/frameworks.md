@@ -12,6 +12,16 @@ Pick the way in that matches what you have. They combine: each keeps what the ot
 | Documents, a wiki, or people who know it | Write the model by hand, or have an assistant draft it with the kit (below). Entries cite their source and make inferred facts.                                 |
 | Nothing yet                              | `atticus frameworks survey --package <your prefixes>` shows which house modules the repos import and how they call them. Start with the most used.              |
 
+## Repos Atticus can't read yet: onboard them
+
+`atticus scan` names the repos it read nothing from though they have config files no reader knows (a gateway's routes, a house Terraform module, a pipeline template). For each:
+
+1. `atticus onboard <repo>` has your organisation's assistant draft a dialect. Atticus checks every draft (valid, its own tests pass on samples from the repo, it reads the repo) and hands back what failed, up to three attempts.
+2. A draft that passes is a proposal in `proposals/dialects/`. Nothing scans with it yet.
+3. Review the rules and their tests, then `atticus onboard accept <name>`, and commit the org pack.
+
+The assistant is whatever `runtime.yaml` allows. With `hand-off`, your own assistant writes the draft; save it in `proposals/dialects/` and run `atticus onboard check <name> --repo <repo>`.
+
 ## Drafting a model with an assistant
 
 1. `atticus frameworks kit` writes the framework-model kit: the guide, two worked examples (a Java starter and a React/Node framework), the schema, a checklist and a task prompt.

@@ -135,6 +135,7 @@ import {
   frameworksLearn,
   frameworksSurvey,
 } from "./framework-commands.js";
+import { onboardAccept, onboardCheck, onboardDraft } from "./onboard-commands.js";
 
 import { VERSION } from "./version.js";
 export { VERSION };
@@ -189,6 +190,9 @@ Usage:
   atticus dialect test <name>          Run a dialect's own tests
   atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
+  atticus onboard <repo> [--name n] [--attempts 3] [--mode m]   Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal
+  atticus onboard check <name> --repo <repo>   Check a proposal (drafted, handed off or hand-written)
+  atticus onboard accept <name> [--replace]   Accept a proposal into org-pack/dialects/
   atticus frameworks learn <name> --from <repo|jar|tgz>   Learn what a house framework means from its source, JAR or npm package
           [--package a.b] [--dry-run]  (writes org-pack/frameworks/<name>.yaml)
   atticus frameworks discover --group <a.b|@scope>[,...]   The house artifacts and npm packages the repos build on, found here
@@ -391,6 +395,8 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       description: { type: "string" },
       title: { type: "string" },
       name: { type: "string" },
+      attempts: { type: "string" },
+      replace: { type: "boolean" },
       into: { type: "string" },
       level: { type: "string" },
       mode: { type: "string" },
@@ -1326,6 +1332,54 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       return 2;
     }
     return stubCheck(arg, io);
+  }
+  if (group === "onboard") {
+    if (command === "check") {
+      const repo = str(values.repo);
+      if (!arg || !repo) {
+        io.err(
+          "onboard check needs a proposal and its repo: atticus onboard check <name> --repo <repo>",
+        );
+        return 2;
+      }
+      return onboardCheck(root, arg, repo, io);
+    }
+    if (command === "accept") {
+      if (!arg) {
+        io.err("onboard accept needs the proposal's name: atticus onboard accept <name>");
+        return 2;
+      }
+      return onboardAccept(root, arg, { replace: values.replace === true }, io);
+    }
+    if (!command) {
+      io.err(
+        "onboard needs a repo: atticus onboard <repo-id|folder> [--name <dialect>] [--attempts 3] [--mode model]",
+      );
+      return 2;
+    }
+    const attempts = Number(str(values.attempts) ?? "3");
+    if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) {
+      io.err("--attempts is a whole number from 1 to 10.");
+      return 2;
+    }
+    try {
+      const { runtime } = await runtimeForCli(root, {
+        ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+      });
+      return await onboardDraft(
+        root,
+        command,
+        { ...(str(values.name) ? { name: str(values.name)! } : {}), attempts },
+        { runtime },
+        io,
+      );
+    } catch (e) {
+      if (e instanceof RuntimeConfigError) {
+        io.err(e.message);
+        return 2;
+      }
+      throw e;
+    }
   }
   if (group === "frameworks" && command === "check") return frameworksCheck(root, arg, io);
   if (group === "frameworks" && command === "kit")

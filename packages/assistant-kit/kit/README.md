@@ -17,6 +17,7 @@ Write a dialect when an organisation has repos built on a house framework (annot
 | `README.md`                | First: what a dialect is and the workflow.                                                              |
 | `c2-reference.md`          | While writing: every field of the dialect file and exactly how the engine behaves. The source of truth. |
 | `worked-example.md`        | Before your first rule: a complete real dialect (Forge), explained rule by rule.                        |
+| `examples/*.yaml`          | Three gateway dialects (Apigee target servers, Kong, Azure APIM): lookups, `${node.up...}`, tests.      |
 | `c1-kinds.md`              | When choosing a record kind: every kind and the fields a rule may set (generated from the schema).      |
 | `cli.md`                   | The commands you may run.                                                                               |
 | `checklist.md`             | Before you say you are done.                                                                            |

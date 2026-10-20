@@ -42,6 +42,9 @@ describe("exportKit", () => {
       "checklist.md",
       "cli.md",
       "dialect.schema.json",
+      "examples/tide-apigee.yaml",
+      "examples/tide-apim.yaml",
+      "examples/tide-kong.yaml",
       "prompts/write-dialect.md",
       "worked-example.md",
     ]);
@@ -69,7 +72,7 @@ describe("exportKit", () => {
     const out = await mkdtemp(join(tmpdir(), "atticus-kit-"));
     await exportKit(out);
     const again = await exportKit(out);
-    expect(again).toHaveLength(8);
+    expect(again).toHaveLength(11);
   });
 });
 
@@ -83,6 +86,7 @@ describe("the kit's content", () => {
       "configKey",
       "xpath",
       "jsonPath",
+      "hclBlock",
       "regex",
     ])
       expect(ref).toContain(`\`${m}\``);
@@ -97,6 +101,8 @@ describe("the kit's content", () => {
       "${file.line}",
       "${repo.name}",
       "${match.",
+      "${node.",
+      "${lookup:",
     ])
       expect(ref).toContain(t);
     for (const f of TEMPLATE_FILTERS) expect(ref).toContain(`\`${f}`);
