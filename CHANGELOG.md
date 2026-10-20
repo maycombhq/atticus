@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Dialect rules v3: any gateway, read through rules
+
+- Dialects take `lookups` (ADR 0058): tables built from other files of the repo, read with `${lookup:<table>(<key>).<value>}`, the key any template value with filters. A key with no row, or with rows that disagree, leaves the value unknown.
+- `${node.key}`, `${node.up.<field>}` and `${node.up.up...}` read the structure around a `jsonPath`, `xpath` or `hclBlock` match: a route's service, an element's parent. New filters `parent` and `basename`. A rule's `emit` may be a list.
+- `fixtures/gateways`: an invented estate whose calls go through three gateway products, each read only through an org-pack dialect: Apigee with target servers per environment, Kong's declarative config (nested services, several paths per route), Azure API Management's APIOps folders. Every call joins end to end, caller to gateway route to service, verified at both ends. The three dialects are the reference an assistant's draft is graded against.
+- Fixed: the dialect kit's reference had a block of itself pasted into the `where` section since rules v2.
+
 ### Harbor gaps closed
 
 - Calls to a vendor join the vendor's system: a host label that is a vendor system's id, name or alias from the profile, without spaces or dashes (`api.tidewater.example` → Tidewater Payments, `api.lanternmail.example` → Lantern Mail), when exactly one vendor matches. It is checked before a host's first label, after declared hosts. Harbor's three vendor interfaces, and the h01 and h09 findings from a scanned catalog, now pass.

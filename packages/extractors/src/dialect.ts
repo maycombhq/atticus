@@ -6,9 +6,11 @@ import {
   matchType,
   normalizePath,
   RECORD_SCHEMAS,
+  renderExpr,
   renderTemplate,
   type CatalogRecord,
   type Dialect,
+  type DialectEmit,
   type DialectRule,
   type TemplateSource,
 } from "@maycombhq/core";
@@ -60,7 +62,18 @@ interface Place {
   /** Annotations on the enclosing type (or the type itself for class-level matches). */
   typeAnnotations: Annotation[];
   match: string[];
+  /** Around a jsonPath, xpath or hclBlock match (ADR 0058): its key, and the objects above it. */
+  node?: { key: string; ups: { key: string; fields: Record<string, string> }[] };
 }
+
+/** An object's plain (non-object) fields as text. */
+const plainFields = (v: unknown): Record<string, string> => {
+  const out: Record<string, string> = {};
+  if (v && typeof v === "object" && !Array.isArray(v))
+    for (const [k, x] of Object.entries(v as Record<string, unknown>))
+      if (x !== null && x !== undefined && typeof x !== "object") out[k] = String(x);
+  return out;
+};
 
 const simple = (name: string) => name.split(".").pop()!;
 
@@ -89,12 +102,31 @@ function jsonPath(
   doc: unknown,
   path: string,
   lc: LineCounter,
-): { value: unknown; node: Node | undefined; line: number }[] {
+): {
+  value: unknown;
+  node: Node | undefined;
+  line: number;
+  key: string;
+  /** Ancestors, outermost first. */
+  anc: { key: string; value: unknown }[];
+}[] {
   const tokens = path
     .replace(/^\$/, "")
     .split(/(?=\.\.)|\.(?!\.)|(?=\[)/)
     .filter(Boolean);
-  let current: { value: unknown; node: Node | undefined }[] = [{ value: doc, node: doc as Node }];
+  type Hit = {
+    value: unknown;
+    node: Node | undefined;
+    key: string;
+    anc: { key: string; value: unknown }[];
+  };
+  let current: Hit[] = [{ value: doc, node: doc as Node, key: "$", anc: [] }];
+  const step = (c: Hit, ch: { key: string; node: Node }): Hit => ({
+    value: toJs(ch.node),
+    node: ch.node,
+    key: ch.key,
+    anc: [...c.anc, { key: c.key, value: c.value }],
+  });
   const toJs = (n: unknown): unknown =>
     isScalar(n)
       ? n.value
@@ -112,24 +144,26 @@ function jsonPath(
   };
   const descend = (n: unknown): Node[] => children(n).flatMap((c) => [c.node, ...descend(c.node)]);
   for (const raw of tokens) {
-    const next: { value: unknown; node: Node | undefined }[] = [];
+    const next: Hit[] = [];
     if (raw.startsWith("..")) {
+      // Recursive descent: the ancestors in between aren't kept.
       const key = raw.slice(2);
       for (const c of current)
         for (const d of [c.node, ...descend(c.node)])
           for (const ch of children(d))
-            if (ch.key === key) next.push({ value: toJs(ch.node), node: ch.node });
+            if (ch.key === key)
+              next.push({ value: toJs(ch.node), node: ch.node, key: ch.key, anc: [] });
     } else if (raw.startsWith("[")) {
       const inner = raw.slice(1, -1);
       for (const c of current) {
         const ch = children(c.node);
         for (const x of inner === "*" ? ch : ch.filter((k) => k.key === inner.replace(/['"]/g, "")))
-          next.push({ value: toJs(x.node), node: x.node });
+          next.push(step(c, x));
       }
     } else {
       for (const c of current)
         for (const ch of children(c.node))
-          if (raw === "*" || ch.key === raw) next.push({ value: toJs(ch.node), node: ch.node });
+          if (raw === "*" || ch.key === raw) next.push(step(c, ch));
     }
     current = next;
   }
@@ -138,7 +172,7 @@ function jsonPath(
 
 async function places(
   repo: RepoHandle,
-  rule: DialectRule,
+  rule: Pick<DialectRule, "match">,
   ctx: ScanContext,
   terraform: () => Promise<Map<string, TfModule>>,
 ): Promise<Place[]> {
@@ -226,14 +260,34 @@ async function places(
       }
     } else if (type === "xpath" && "xpath" in m) {
       const root = parseXml(await repo.readText(path));
-      for (const el of xpath(root, m.xpath))
+      const parents = new Map<XmlElement, XmlElement>();
+      const index = (e: XmlElement) =>
+        e.children.forEach((c) => {
+          parents.set(c, e);
+          index(c);
+        });
+      if (root) index(root);
+      // An element's fields: its attributes, and the text of its children that have no children.
+      const fieldsOf = (e: XmlElement) => {
+        const f: Record<string, string> = { ...e.attrs };
+        for (const c of e.children)
+          if (c.children.length === 0 && !(c.name in f)) f[c.name] = c.text.trim();
+        return f;
+      };
+      for (const el of xpath(root, m.xpath)) {
+        const orig = (el as XmlElement & { orig?: XmlElement }).orig ?? el;
+        const ups: { key: string; fields: Record<string, string> }[] = [];
+        for (let a = parents.get(orig); a; a = parents.get(a))
+          ups.push({ key: a.name, fields: fieldsOf(a) });
         out.push({
           path,
           line: el.line,
           attrs: el.attrs,
           typeAnnotations: [],
           match: [el.text.trim()],
+          node: { key: orig.name, ups },
         });
+      }
     } else if (type === "jsonPath" && "jsonPath" in m) {
       const lc = new LineCounter();
       const doc = parseDocument(await repo.readText(path), { lineCounter: lc });
@@ -249,6 +303,20 @@ async function places(
           attrs,
           typeAnnotations: [],
           match: [typeof hit.value === "object" ? "" : String(hit.value)],
+          node: {
+            key: hit.key,
+            // Nearest first; arrays are stepped over, and an object's key is the one it sits under.
+            ups: hit.anc
+              .map((a, i) => ({ a, i }))
+              .filter(({ a }) => a.value && typeof a.value === "object" && !Array.isArray(a.value))
+              .map(({ a, i }) => {
+                // The key an object sits under: an array index is replaced by the array's key.
+                let k = a.key;
+                for (let j = i; j > 0 && /^\d+$/.test(k); j--) k = hit.anc[j - 1]!.key;
+                return { key: k, fields: plainFields(a.value) };
+              })
+              .reverse(),
+          },
         });
       }
     } else if (type === "hclBlock" && "hclBlock" in m) {
@@ -256,6 +324,15 @@ async function places(
       const mod = (await terraform()).get(dirOf(path));
       const hcl = parseHcl(await repo.readText(path));
       const value = (v: HclValue | undefined) => hclString(mod ? tfResolve(mod, v) : v);
+      const fieldsOf = (b: HclBlock) => {
+        const f: Record<string, string> = {};
+        for (const [k, a] of b.attrs) {
+          const v = value(isRef(a.value) || typeof a.value !== "object" ? a.value : undefined);
+          if (v !== undefined) f[k] = v;
+        }
+        return f;
+      };
+      const stack: HclBlock[] = [];
       const visit = (b: HclBlock) => {
         if (b.type === blockType && (!label || b.labels[0] === label)) {
           const attrs: Record<string, string> = {};
@@ -274,9 +351,17 @@ async function places(
             attrs,
             typeAnnotations: [],
             match: [b.labels.at(-1) ?? "", ...b.labels],
+            node: {
+              key: b.labels.at(-1) ?? b.type,
+              ups: [...stack]
+                .reverse()
+                .map((x) => ({ key: x.labels.at(-1) ?? x.type, fields: fieldsOf(x) })),
+            },
           });
         }
+        stack.push(b);
         b.blocks.forEach(visit);
+        stack.pop();
       };
       hcl.blocks.forEach(visit);
       void ctx;
@@ -321,7 +406,7 @@ function xpath(root: XmlElement | undefined, path: string): XmlElement[] {
   if (attrStep)
     return current
       .filter((e) => attrStep[1]! in e.attrs)
-      .map((e) => ({ ...e, text: e.attrs[attrStep[1]!]! }));
+      .map((e) => ({ ...e, text: e.attrs[attrStep[1]!]!, orig: e }));
   return current;
 }
 
@@ -399,49 +484,97 @@ export function dialectExtractor(
       const terraform = () =>
         (tf ??= loadTerraform(repo, ctx, /./).then((mods) => new Map(mods.map((x) => [x.dir, x]))));
 
-      for (const rule of [...rules.values()].sort((a, b) => a.id.localeCompare(b.id))) {
-        for (const place of await places(repo, rule, ctx, terraform)) {
-          // Pre-resolve yaml:file#key values the templates need (async), then render synchronously.
-          const templates = [
-            rule.emit.id ?? "",
-            ...Object.values(rule.emit.fields).flatMap((v) =>
-              typeof v === "string" ? [v] : Array.isArray(v) ? v : [],
-            ),
-            ...(rule.where ?? []).map((w) => w.value),
-          ];
-          const yamlValues = new Map<string, string | undefined>();
-          for (const t of templates) {
-            for (const m of t.matchAll(/\$\{\s*yaml:([^#}]+)#([^}|\s]+)/g))
-              yamlValues.set(`${m[1]}#${m[2]}`, await yamlKey(m[1]!, m[2]!));
-          }
-          const resolveSource = (s: TemplateSource): string | undefined => {
-            switch (s.type) {
-              case "attr":
-                return place.attrs[s.name];
-              case "annotation": {
-                const a = place.typeAnnotations.find((x) => x.name === s.annotation);
-                const v = a?.attrs[s.name];
-                return Array.isArray(v) ? v.join(",") : v;
-              }
-              case "config":
-                return config.get(s.key)?.value ?? relaxed.get(relaxedKey(s.key));
-              case "yaml":
-                return yamlValues.get(`${s.file}#${s.key}`);
-              case "member":
-                return place.member;
-              case "class":
-                return place.className;
-              case "file":
-                return s.name === "path" ? place.path : String(place.line);
-              case "repo":
-                return repo.name;
-              case "match":
-                return place.match[s.group];
-              default:
-                return undefined;
+      /** Templates' yaml:file#key values, read ahead so rendering stays synchronous. */
+      const yamlFor = async (templates: string[]) => {
+        const out = new Map<string, string | undefined>();
+        for (const t of templates)
+          for (const m of t.matchAll(/\$\{\s*yaml:([^#}]+)#([^}|\s]+)/g))
+            out.set(`${m[1]}#${m[2]}`, await yamlKey(m[1]!, m[2]!));
+        return out;
+      };
+      const templatesOf = (e: DialectEmit) => [
+        e.id ?? "",
+        ...Object.values(e.fields).flatMap((v) =>
+          typeof v === "string" ? [v] : Array.isArray(v) ? v : [],
+        ),
+      ];
+      /** What a template value is at one place; lookups come from the tables below. */
+      const resolverFor = (
+        place: Place,
+        yamlValues: Map<string, string | undefined>,
+        withLookups: boolean,
+      ) => {
+        const resolveSource = (s: TemplateSource): string | undefined => {
+          switch (s.type) {
+            case "attr":
+              return place.attrs[s.name];
+            case "annotation": {
+              const a = place.typeAnnotations.find((x) => x.name === s.annotation);
+              const v = a?.attrs[s.name];
+              return Array.isArray(v) ? v.join(",") : v;
             }
-          };
-          const render = (t: string) => renderTemplate(t, resolveSource);
+            case "config":
+              return config.get(s.key)?.value ?? relaxed.get(relaxedKey(s.key));
+            case "yaml":
+              return yamlValues.get(`${s.file}#${s.key}`);
+            case "member":
+              return place.member;
+            case "class":
+              return place.className;
+            case "file":
+              return s.name === "path" ? place.path : String(place.line);
+            case "repo":
+              return repo.name;
+            case "match":
+              return place.match[s.group];
+            case "node": {
+              if (!place.node) return undefined;
+              if (s.up === 0) return place.node.key;
+              const up = place.node.ups[s.up - 1];
+              return s.name === "key" ? up?.key : up?.fields[s.name];
+            }
+            case "lookup": {
+              if (!withLookups) return undefined;
+              const key = renderExpr(s.key, resolveSource);
+              const v = key === undefined ? undefined : tables.get(s.table)?.get(key)?.get(s.field);
+              return v === null ? undefined : v;
+            }
+            default:
+              return undefined;
+          }
+        };
+        return resolveSource;
+      };
+
+      // Lookup tables (ADR 0058): key → value name → value; null where two rows disagree.
+      const tables = new Map<string, Map<string, Map<string, string | null>>>();
+      for (const [name, l] of Object.entries(dialect.lookups ?? {})) {
+        const table = new Map<string, Map<string, string | null>>();
+        const yamlValues = await yamlFor([l.key, ...Object.values(l.values)]);
+        for (const place of await places(repo, { match: l.match }, ctx, terraform)) {
+          const resolve = resolverFor(place, yamlValues, false);
+          const key = renderTemplate(l.key, resolve);
+          if (key === undefined) continue;
+          const row = table.get(key) ?? new Map<string, string | null>();
+          for (const [field, t] of Object.entries(l.values)) {
+            const v = renderTemplate(t, resolve);
+            if (v === undefined) continue;
+            const had = row.get(field);
+            row.set(field, had === undefined || had === v ? v : null);
+          }
+          table.set(key, row);
+        }
+        tables.set(name, table);
+      }
+
+      for (const rule of [...rules.values()].sort((a, b) => a.id.localeCompare(b.id))) {
+        const emits = Array.isArray(rule.emit) ? rule.emit : [rule.emit];
+        const yamlValues = await yamlFor([
+          ...emits.flatMap(templatesOf),
+          ...(rule.where ?? []).map((w) => w.value),
+        ]);
+        for (const place of await places(repo, rule, ctx, terraform)) {
+          const render = (t: string) => renderTemplate(t, resolverFor(place, yamlValues, true));
           // where (ADR 0056): every condition must hold; a value that can't be filled fails.
           if (
             !(rule.where ?? []).every((w) => {
@@ -450,82 +583,85 @@ export function dialectExtractor(
             })
           )
             continue;
-          const fields: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(rule.emit.fields)) {
-            if (typeof v === "number" || typeof v === "boolean") fields[k] = v;
-            else if (Array.isArray(v))
-              fields[k] = v.map(render).filter((x): x is string => x !== undefined && x !== "");
-            else {
-              let r = render(v);
-              if (r !== undefined && (k === "normalizedPath" || k === "pathOrTopic")) {
-                for (const p of dialect.normalize.stripPathPrefixes)
-                  if (r.startsWith(p)) r = r.slice(p.length) || "/";
+          // Each record the rule emits for this place (ADR 0058), each checked on its own.
+          for (const emit of emits) {
+            const fields: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(emit.fields)) {
+              if (typeof v === "number" || typeof v === "boolean") fields[k] = v;
+              else if (Array.isArray(v))
+                fields[k] = v.map(render).filter((x): x is string => x !== undefined && x !== "");
+              else {
+                let r = render(v);
+                if (r !== undefined && (k === "normalizedPath" || k === "pathOrTopic")) {
+                  for (const p of dialect.normalize.stripPathPrefixes)
+                    if (r.startsWith(p)) r = r.slice(p.length) || "/";
+                }
+                if (r !== undefined) fields[k] = r;
               }
-              if (r !== undefined) fields[k] = r;
             }
-          }
-          let id: string | undefined;
-          if (rule.emit.kind === "Interface") {
-            if (
-              typeof fields.from !== "string" ||
-              typeof fields.to !== "string" ||
-              typeof fields.normalizedPath !== "string"
-            ) {
+            let id: string | undefined;
+            if (emit.kind === "Interface") {
+              if (
+                typeof fields.from !== "string" ||
+                typeof fields.to !== "string" ||
+                typeof fields.normalizedPath !== "string"
+              ) {
+                ctx.warn(
+                  `rule ${rule.id}: from, to or normalizedPath could not be filled`,
+                  place.path,
+                );
+                continue;
+              }
+              fields.normalizedPath = normalizePath(fields.normalizedPath);
+              id = interfaceId(
+                fields.from,
+                fields.to,
+                fields.method as string | undefined,
+                fields.normalizedPath as string,
+              );
+            } else {
+              id = render(emit.id!);
+            }
+            if (!id) {
+              ctx.warn(`rule ${rule.id}: the id template could not be filled`, place.path);
+              continue;
+            }
+            // A field C1 requires that the rule sets but couldn't fill: skip with a warning (ADR 0056).
+            const shape = (
+              RECORD_SCHEMAS[emit.kind] as unknown as {
+                shape: Record<string, { safeParse: (v: unknown) => { success: boolean } }>;
+              }
+            ).shape;
+            const unfilled = Object.keys(emit.fields).filter(
+              (k) => fields[k] === undefined && shape[k] && !shape[k].safeParse(undefined).success,
+            );
+            if (unfilled.length > 0) {
               ctx.warn(
-                `rule ${rule.id}: from, to or normalizedPath could not be filled`,
+                `rule ${rule.id}: ${unfilled.join(", ")} could not be filled, so ${id} isn't emitted`,
                 place.path,
               );
               continue;
             }
-            fields.normalizedPath = normalizePath(fields.normalizedPath);
-            id = interfaceId(
-              fields.from,
-              fields.to,
-              fields.method as string | undefined,
-              fields.normalizedPath as string,
-            );
-          } else {
-            id = render(rule.emit.id!);
+            o.emitted?.(rule.id);
+            yield {
+              schemaVersion: 1,
+              kind: emit.kind,
+              id,
+              status: "current",
+              confidence: rule.confidence,
+              ...fields,
+              evidence: [
+                {
+                  source: emit.evidence.source,
+                  repo: repo.name,
+                  path: place.path,
+                  line: place.line,
+                  dialect: tag,
+                  ...(emit.evidence.side ? { side: emit.evidence.side } : {}),
+                },
+              ],
+            } as unknown as CatalogRecord;
           }
-          if (!id) {
-            ctx.warn(`rule ${rule.id}: the id template could not be filled`, place.path);
-            continue;
-          }
-          // A field C1 requires that the rule sets but couldn't fill: skip with a warning (ADR 0056).
-          const shape = (
-            RECORD_SCHEMAS[rule.emit.kind] as unknown as {
-              shape: Record<string, { safeParse: (v: unknown) => { success: boolean } }>;
-            }
-          ).shape;
-          const unfilled = Object.keys(rule.emit.fields).filter(
-            (k) => fields[k] === undefined && shape[k] && !shape[k].safeParse(undefined).success,
-          );
-          if (unfilled.length > 0) {
-            ctx.warn(
-              `rule ${rule.id}: ${unfilled.join(", ")} could not be filled, so ${id} isn't emitted`,
-              place.path,
-            );
-            continue;
-          }
-          o.emitted?.(rule.id);
-          yield {
-            schemaVersion: 1,
-            kind: rule.emit.kind,
-            id,
-            status: "current",
-            confidence: rule.confidence,
-            ...fields,
-            evidence: [
-              {
-                source: rule.emit.evidence.source,
-                repo: repo.name,
-                path: place.path,
-                line: place.line,
-                dialect: tag,
-                ...(rule.emit.evidence.side ? { side: rule.emit.evidence.side } : {}),
-              },
-            ],
-          } as unknown as CatalogRecord;
         }
       }
     },

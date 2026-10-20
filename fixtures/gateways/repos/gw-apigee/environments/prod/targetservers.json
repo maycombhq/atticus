@@ -1,0 +1,3 @@
+[
+  { "name": "payments-ts", "host": "payments.tide.internal", "port": 443, "isEnabled": true, "sSLInfo": { "enabled": true } }
+]

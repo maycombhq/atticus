@@ -18,6 +18,7 @@ A dialect lives at `org-pack/dialects/<name>.yaml`, one dialect per file, and `n
 | `layout.sourceRoots`          | no       | Where the source lives, for readers. The engine does not use it: each rule's `files` decides what is read.                                                                                                      |
 | `layout.configFiles`          | no       | Globs of the config files `${config:key}` reads (YAML, JSON or `.properties`). When several files set the same key, the file whose path sorts first wins. With no config files, `${config:...}` is never known. |
 | `normalize.stripPathPrefixes` | no       | Prefixes (each starting with `/`) removed from the rendered `normalizedPath` and `pathOrTopic` fields of any record, e.g. a context path `/api`.                                                                |
+| `lookups`                     | no       | Named tables rules read values from, built from other files of the repo (see [Lookups](#lookups)).                                                                                                              |
 | `plugin`                      | no       | A code module for what rules can't express. Leave it out: a dialect written from this kit uses rules only.                                                                                                      |
 | `rules`                       | yes      | The rules (at least one).                                                                                                                                                                                       |
 | `tests`                       | yes      | The dialect's own tests (at least one). A dialect whose tests fail is not used.                                                                                                                                 |
@@ -52,52 +53,7 @@ where:
   - { value: "${attr.source}", matches: "tide-kafka-topic" }
 ```
 
-Optional. Conditions that must all hold for a place to emit: each `value` template is rendered and tested against the `matches` regular expression (unanchored; use `^` and `# Dialect file reference (contract C2)
-
-Everything a dialect file can say and exactly what the engine does with it. `dialect.schema.json` is the same schema in machine-readable form.
-
-A dialect lives at `org-pack/dialects/<name>.yaml`, one dialect per file, and `name` must equal the file name without `.yaml`.
-
-## Top-level fields
-
-| Field                         | Required | Meaning                                                                                                                                                                                                         |
-| ----------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `schemaVersion`               | yes      | Always `1`.                                                                                                                                                                                                     |
-| `name`                        | yes      | Lowercase slug (`a-z`, `0-9`, `.`, `_`, `-`; starts with a letter or digit). Repo manifests and `extends` refer to the dialect by it.                                                                           |
-| `version`                     | yes      | Semver, `MAJOR.MINOR.PATCH`. Bump it when you change rules: the scan cache is keyed by it, and every record's evidence carries `name@version`.                                                                  |
-| `description`                 | no       | One sentence: which framework, and how its apps declare things.                                                                                                                                                 |
-| `extends`                     | no       | Names of other dialects in the same org pack whose rules this one inherits (see [extends](#extends)). Default `[]`.                                                                                             |
-| `appliesTo.repoTypes`         | no       | Repo types (from the repo manifest) the dialect applies to. Empty (the default) means: only repos whose manifest entry lists the dialect by name.                                                               |
-| `appliesTo.marker`            | no       | A glob; the dialect does nothing in a repo where no file matches it. `forge.yaml` means a file at the repo root; `**/forge.yaml` means anywhere.                                                                |
-| `layout.sourceRoots`          | no       | Where the source lives, for readers. The engine does not use it: each rule's `files` decides what is read.                                                                                                      |
-| `layout.configFiles`          | no       | Globs of the config files `${config:key}` reads (YAML, JSON or `.properties`). When several files set the same key, the file whose path sorts first wins. With no config files, `${config:...}` is never known. |
-| `normalize.stripPathPrefixes` | no       | Prefixes (each starting with `/`) removed from the rendered `normalizedPath` and `pathOrTopic` fields of any record, e.g. a context path `/api`.                                                                |
-| `plugin`                      | no       | A code module for what rules can't express. Leave it out: a dialect written from this kit uses rules only.                                                                                                      |
-| `rules`                       | yes      | The rules (at least one).                                                                                                                                                                                       |
-| `tests`                       | yes      | The dialect's own tests (at least one). A dialect whose tests fail is not used.                                                                                                                                 |
-
-**When a dialect runs.** In a scan, for a repo whose manifest type is in `repoTypes` or whose manifest entry lists the dialect, and only if the marker matches a file. In `atticus dialect test` and `atticus dialect run`, `repoTypes` is ignored; the marker still applies.
-
-**Globs** are repo-relative with forward slashes: `**` spans any number of folders (including none), `*` stays within one folder name, `?` is one character. No leading `/`, no `..`. Folders `.git`, `node_modules`, `target`, `build`, `dist`, `out`, `.gradle`, `.idea`, `.vscode`, `__pycache__` and `.venv` are never read.
-
-## Rules
-
-```yaml
-- id: forge-endpoint # lowercase slug, unique in the dialect
-  description: A method annotated @ForgeEndpoint serves a REST endpoint.
-  match: { annotation: ForgeEndpoint, target: method, files: ["src/main/java/**/*.java"] }
-  emit:
-    kind: Endpoint # a kind from c1-kinds.md
-    id: "${yaml:forge.yaml#service}.${attr.method | lower}-${member.name | slug}"
-    fields:
-      component: "${yaml:forge.yaml#service}"
-      endpointType: rest
-      pathOrTopic: "${attr.path}"
-    evidence: { source: code, side: callee } # optional
-  confidence: verified # verified or inferred
-```
-
-to anchor). A value that can't be filled fails its condition. Use it to narrow a rule to what you mean (a module from one source, an annotation with one attribute value) instead of a file glob.
+Optional. Conditions that must all hold for a place to emit: each `value` template is rendered and tested against the `matches` regular expression (unanchored; use `^` and `$` to anchor). A value that can't be filled fails its condition. Use it to narrow a rule to what you mean (a module from one source, an annotation with one attribute value) instead of a file glob.
 
 ## Matches
 
@@ -193,6 +149,8 @@ match: { regex: 'QUEUE\s*=\s*"([^"]+)"', files: ["**/*.java"] }
 
 ## Emit
 
+`emit` is one record, or a list of them: each is rendered, checked and skipped on its own, so one match can give an Endpoint and the GatewayRoute in front of it.
+
 - `kind`: a record kind from `c1-kinds.md`.
 - `id`: a template for the record id. Required for every kind except `Interface`, which must leave it out (see [Interfaces](#interfaces)). It must render a valid id (a lowercase slug, at most 120 characters, see [Ids](#ids)); use `lower` or `slug` on anything that may contain capitals or spaces. An id that can't be filled (an unknown value without a default, or empty) means no record, with a warning.
 - `fields`: the record's fields. Only fields `c1-kinds.md` lists for the kind are allowed. A value is a template (text), a literal number or `true`/`false`, or a list of templates (items that render unknown or empty are dropped). A field whose template can't be filled is left unset; if that field is required, the record is skipped with a warning naming the rule and the field (`atticus dialect run` prints it). A template that renders the empty string sets the field to `""`, which required text fields reject.
@@ -204,18 +162,21 @@ A record that fails contract C1 (a missing required field, a value outside an en
 
 A template is literal text with `${...}` expressions: `"${yaml:forge.yaml#service}.${attr.method | lower}-${member.name | slug}"`. Expressions can't be nested. Filters follow a `|` and apply left to right.
 
-| Value                      | What it is                                                                                                                                                   |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `${attr.<name>}`           | An attribute of the matched annotation, a call's literal argument (`arg0`, `arg1`...), an XML element's attribute or a JSON/YAML object's field.             |
-| `${annotation.<Name>.<x>}` | Attribute `x` of annotation `Name` (simple name) on the enclosing type: the class or interface around a matched method or field, or the matched type itself. |
-| `${member.name}`           | The matched method or field; for a call, the method it sits in.                                                                                              |
-| `${class.name}`            | The enclosing (or matched) type's simple name.                                                                                                               |
-| `${config:<key>}`          | A key from `layout.configFiles`. Exact key first, then a relaxed match that ignores case, `-` and `_` (`read-timeout` = `readTimeout` = `read_timeout`).     |
-| `${yaml:<file>#<key>}`     | A dotted key (`a.b`, `items[0]`) from a named repo-relative file, read as YAML or JSON. Works with every match kind. Unknown if the file or key is missing.  |
-| `${file.path}`             | The repo-relative path of the file with the match.                                                                                                           |
-| `${file.line}`             | The line of the match.                                                                                                                                       |
-| `${repo.name}`             | The repo's id (in tests: `dialect-test` for inline files, the folder name for a fixture).                                                                    |
-| `${match.<N>}`             | For `regex`: the whole match (0) and groups. For `configKey`: the value (0) and key segments. For `xpath` and `jsonPath`: the value (0).                     |
+| Value                      | What it is                                                                                                                                                                                                                              |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `${attr.<name>}`           | An attribute of the matched annotation, a call's literal argument (`arg0`, `arg1`...), an XML element's attribute or a JSON/YAML object's field.                                                                                        |
+| `${annotation.<Name>.<x>}` | Attribute `x` of annotation `Name` (simple name) on the enclosing type: the class or interface around a matched method or field, or the matched type itself.                                                                            |
+| `${member.name}`           | The matched method or field; for a call, the method it sits in.                                                                                                                                                                         |
+| `${class.name}`            | The enclosing (or matched) type's simple name.                                                                                                                                                                                          |
+| `${config:<key>}`          | A key from `layout.configFiles`. Exact key first, then a relaxed match that ignores case, `-` and `_` (`read-timeout` = `readTimeout` = `read_timeout`).                                                                                |
+| `${yaml:<file>#<key>}`     | A dotted key (`a.b`, `items[0]`) from a named repo-relative file, read as YAML or JSON. Works with every match kind. Unknown if the file or key is missing.                                                                             |
+| `${file.path}`             | The repo-relative path of the file with the match.                                                                                                                                                                                      |
+| `${file.line}`             | The line of the match.                                                                                                                                                                                                                  |
+| `${repo.name}`             | The repo's id (in tests: `dialect-test` for inline files, the folder name for a fixture).                                                                                                                                               |
+| `${match.<N>}`             | For `regex`: the whole match (0) and groups. For `configKey`: the value (0) and key segments. For `xpath` and `jsonPath`: the value (0).                                                                                                |
+| `${node.key}`              | For `jsonPath`, `xpath` and `hclBlock`: the matched node's key (its field name or array index, element name, or block label).                                                                                                           |
+| `${node.up.<field>}`       | A plain field of the nearest object above the match (an XML parent's attribute or leaf child, an enclosing HCL block's attribute). `node.up.up` is the one above that; arrays are stepped over. `node.up.key` is that object's own key. |
+| `${lookup:<t>(<key>).<v>}` | Value `v` of the row of lookup table `t` whose key is `<key>`, any template value with filters: `${lookup:servers(attr.name).host}`. Unknown when no row has that key, or two rows give it different values.                            |
 
 | Filter          | Effect                                                                                                                                                                                                                                               |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -225,8 +186,43 @@ A template is literal text with `${...}` expressions: `"${yaml:forge.yaml#servic
 | `normalizePath` | Path parameters in any style (`{id}`, `:id`, `<id>`, `${id}`) become `{}`; query and fragment dropped; repeated and trailing `/` removed; leading `/` added. A value with no `/` (a topic name) is returned trimmed. `/a/:id/b?x=1` gives `/a/{}/b`. |
 | `trimSlash`     | Leading and trailing `/` removed.                                                                                                                                                                                                                    |
 | `default('x')`  | Use `x` when the value is unknown or empty. Without a default, an unknown value leaves the whole field unset.                                                                                                                                        |
+| `parent`        | A path without its last segment: `a/b/c.xml` gives `a/b`. Chain it to climb folders.                                                                                                                                                                 |
+| `basename`      | A path's last segment: `a/b/c.xml` gives `c.xml`.                                                                                                                                                                                                    |
 
 After rendering, the engine also applies `normalize.stripPathPrefixes` to `normalizedPath` and `pathOrTopic`, and `normalizePath` once more to an Interface's `normalizedPath`.
+
+## Lookups
+
+What a rule needs is often in another file: a proxy names a target server whose host is in an environment file; a route sits inside a service whose URL it needs. A lookup turns places in other files into a table, and a rule reads it.
+
+```yaml
+lookups:
+  basepaths:
+    match: { xpath: "//HTTPProxyConnection/BasePath", files: ["**/apiproxy/proxies/*.xml"] }
+    key: "${file.path | parent | parent}" # the bundle folder
+    values: { path: "${match.0}" }
+  targetServers:
+    match: { jsonPath: "$[*]", files: ["**/environments/prod/targetservers.json"] }
+    key: "${attr.name}"
+    values: { host: "${attr.host}", port: "${attr.port}" }
+rules:
+  - id: target-server-route
+    description: A proxy whose target is a target server routes its base path to that server's host.
+    match:
+      { xpath: "//HTTPTargetConnection/LoadBalancer/Server", files: ["**/apiproxy/targets/*.xml"] }
+    emit:
+      kind: GatewayRoute
+      id: "gw-${file.path | parent | parent | parent | basename | slug}"
+      fields:
+        proxy: "${file.path | parent | parent | parent | basename}"
+        basepath: "${lookup:basepaths(file.path | parent | parent).path}"
+        target: "https://${lookup:targetServers(attr.name).host}:${lookup:targetServers(attr.name).port}"
+```
+
+- A lookup has a `match` (any kind), a `key` template and named `values` templates, rendered at each place the match finds. A place whose key can't be filled adds no row.
+- Rows with the same key merge; where they give a value different values, it is unknown. When environments differ (dev and prod hosts), read one: the catalog describes production.
+- A lookup's templates can't use another lookup. Lookups read the same repo only.
+- Lookup values add no evidence: the record's evidence is the rule's match.
 
 ## Interfaces
 
@@ -297,6 +293,7 @@ tests:
 - `absent`: ids that must not be produced.
 - A test with inline `files` and `expect: []` (or no `expect`) passes only if nothing at all is produced: that is how you test that a repo without the marker gives nothing. A `fixture` test with an empty `expect` checks nothing.
 - A record that is invalid under C1 fails the test.
+- Kong-style nesting is one match per leaf: `$.services[*].routes[*].paths[*]` gives one place per path, `${match.0}` the path, `${node.up.name}` the route's name and `${node.up.up.url}` the service's URL.
 - Every rule of the dialect's own (not ones it inherits through `extends`) must produce at least one record in at least one test, or the dialect fails with `rule <id> produces nothing in any test`. A dialect whose tests fail is never used by a scan.
 - Tests ignore `repoTypes`; the marker still applies, so inline tests must include the marker file.
 - Failure messages: `expected Endpoint x.y, got a, b` (not produced; lists what was), `x.y.method: expected "GET", got "get"`, `x.y should not be produced`, `expected no records, got ...`, `produced an invalid record: ...`, `rule r produces nothing in any test`.

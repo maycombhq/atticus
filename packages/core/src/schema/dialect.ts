@@ -143,11 +143,23 @@ export const DialectRule = z.strictObject({
   match: DialectMatch,
   /** Conditions that must all hold for a match to emit; an unfilled value fails its condition. */
   where: z.array(DialectWhere).optional(),
-  emit: DialectEmit,
+  /** The record to emit for each match, or several (ADR 0058). */
+  emit: z.union([DialectEmit, z.array(DialectEmit).min(1)]),
   /** What a rule can claim: never "asserted", which is reserved for people. */
   confidence: Confidence.exclude(["asserted"]),
 });
 export type DialectRule = z.infer<typeof DialectRule>;
+export type DialectEmit = z.infer<typeof DialectEmit>;
+
+/**
+ * A lookup table (ADR 0058): rows from the places a match finds, each keyed by a template and
+ * holding named template values. Rules read a row with ${lookup:<table>(<key>).<value>}.
+ */
+export const DialectLookup = z.strictObject({
+  match: DialectMatch,
+  key: Template,
+  values: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_-]*$/), Template),
+});
 
 export const DialectTest = z.strictObject({
   name: z.string().min(1),
@@ -200,6 +212,8 @@ export const Dialect = z
         export: z.string().default("default"),
       })
       .optional(),
+    /** Tables rules look values up in, across files (ADR 0058). */
+    lookups: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_-]*$/), DialectLookup).optional(),
     rules: z.array(DialectRule).default([]),
     tests: z.array(DialectTest).min(1, "every dialect ships at least one test"),
   })
@@ -213,85 +227,122 @@ export const Dialect = z
           message: `duplicate rule id ${r.id}`,
         });
       ids.add(r.id);
-      const shape = (RECORD_SCHEMAS[r.emit.kind] as unknown as { shape: Record<string, unknown> })
-        .shape;
-      for (const f of Object.keys(r.emit.fields)) {
-        if (["kind", "id", "schemaVersion", "evidence", "confidence"].includes(f)) {
+      const emits = Array.isArray(r.emit) ? r.emit : [r.emit];
+      emits.forEach((emit, j) => {
+        const at: (string | number)[] = Array.isArray(r.emit)
+          ? ["rules", i, "emit", j]
+          : ["rules", i, "emit"];
+        const shape = (RECORD_SCHEMAS[emit.kind] as unknown as { shape: Record<string, unknown> })
+          .shape;
+        for (const f of Object.keys(emit.fields)) {
+          if (["kind", "id", "schemaVersion", "evidence", "confidence"].includes(f)) {
+            ctx.addIssue({
+              code: "custom",
+              path: [...at, "fields", f],
+              message: `${f} is set by the engine, not by a rule`,
+            });
+          } else if (!(f in shape)) {
+            ctx.addIssue({
+              code: "custom",
+              path: [...at, "fields", f],
+              message: `${emit.kind} has no field ${f} in contract C1`,
+            });
+          }
+        }
+        // Check each template uses only values this kind of match can supply.
+        if (emit.kind === "Interface" && emit.id !== undefined) {
           ctx.addIssue({
             code: "custom",
-            path: ["rules", i, "emit", "fields", f],
-            message: `${f} is set by the engine, not by a rule`,
-          });
-        } else if (!(f in shape)) {
-          ctx.addIssue({
-            code: "custom",
-            path: ["rules", i, "emit", "fields", f],
-            message: `${r.emit.kind} has no field ${f} in contract C1`,
+            path: [...at, "id"],
+            message: "Interface ids are derived (if-<hash>); leave id out",
           });
         }
-      }
-      // Check each template uses only values this kind of match can supply.
-      if (r.emit.kind === "Interface" && r.emit.id !== undefined) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["rules", i, "emit", "id"],
-          message: "Interface ids are derived (if-<hash>); leave id out",
-        });
-      }
-      if (r.emit.kind !== "Interface" && r.emit.id === undefined) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["rules", i, "emit", "id"],
-          message: `${r.emit.kind} needs an id template`,
-        });
-      }
-      const templates = [
-        ...(r.emit.id === undefined ? [] : [r.emit.id]),
-        ...Object.values(r.emit.fields).flatMap((v) =>
-          typeof v === "string" ? [v] : Array.isArray(v) ? v : [],
-        ),
-        ...(r.where ?? []).map((w) => w.value),
-      ];
-      for (const t of templates) {
+        if (emit.kind !== "Interface" && emit.id === undefined) {
+          ctx.addIssue({
+            code: "custom",
+            path: [...at, "id"],
+            message: `${emit.kind} needs an id template`,
+          });
+        }
+        const templates = [
+          ...(emit.id === undefined ? [] : [emit.id]),
+          ...Object.values(emit.fields).flatMap((v) =>
+            typeof v === "string" ? [v] : Array.isArray(v) ? v : [],
+          ),
+          ...(r.where ?? []).map((w) => w.value),
+        ];
+        for (const t of templates) {
+          let sources;
+          try {
+            sources = templateSources(t);
+          } catch {
+            continue; // reported by the Template refinement
+          }
+          for (const s of sources) {
+            if (s.type === "subject")
+              ctx.addIssue({
+                code: "custom",
+                path: ["rules", i],
+                message: `\${${s.name}} is only for checklist questions`,
+              });
+            if (
+              s.type === "match" &&
+              !["regex", "configKey", "xpath", "jsonPath", "hclBlock"].includes(matchType(r.match))
+            ) {
+              ctx.addIssue({
+                code: "custom",
+                path: ["rules", i],
+                message: "${match.N} needs a regex, configKey, xpath, jsonPath or hclBlock match",
+              });
+            }
+            if (s.type === "lookup" && !d.lookups?.[s.table])
+              ctx.addIssue({
+                code: "custom",
+                path: ["rules", i],
+                message: `lookup ${s.table} isn't declared under lookups`,
+              });
+            if (
+              s.type === "node" &&
+              !["xpath", "jsonPath", "hclBlock"].includes(matchType(r.match))
+            )
+              ctx.addIssue({
+                code: "custom",
+                path: ["rules", i],
+                message: "${node...} needs an xpath, jsonPath or hclBlock match",
+              });
+            if (
+              s.type === "attr" &&
+              !["annotation", "methodCall", "xpath", "jsonPath", "hclBlock"].includes(
+                matchType(r.match),
+              )
+            ) {
+              ctx.addIssue({
+                code: "custom",
+                path: ["rules", i],
+                message:
+                  "${attr.*} needs an annotation, methodCall, xpath, jsonPath or hclBlock match",
+              });
+            }
+          }
+        }
+      });
+    });
+    // A lookup's own templates can't look up another table.
+    for (const [name, l] of Object.entries(d.lookups ?? {}))
+      for (const t of [l.key, ...Object.values(l.values)]) {
         let sources;
         try {
           sources = templateSources(t);
         } catch {
-          continue; // reported by the Template refinement
+          continue;
         }
-        for (const s of sources) {
-          if (s.type === "subject")
-            ctx.addIssue({
-              code: "custom",
-              path: ["rules", i],
-              message: `\${${s.name}} is only for checklist questions`,
-            });
-          if (
-            s.type === "match" &&
-            !["regex", "configKey", "xpath", "jsonPath", "hclBlock"].includes(matchType(r.match))
-          ) {
-            ctx.addIssue({
-              code: "custom",
-              path: ["rules", i],
-              message: "${match.N} needs a regex, configKey, xpath, jsonPath or hclBlock match",
-            });
-          }
-          if (
-            s.type === "attr" &&
-            !["annotation", "methodCall", "xpath", "jsonPath", "hclBlock"].includes(
-              matchType(r.match),
-            )
-          ) {
-            ctx.addIssue({
-              code: "custom",
-              path: ["rules", i],
-              message:
-                "${attr.*} needs an annotation, methodCall, xpath, jsonPath or hclBlock match",
-            });
-          }
-        }
+        if (sources.some((x) => x.type === "lookup"))
+          ctx.addIssue({
+            code: "custom",
+            path: ["lookups", name],
+            message: "a lookup's templates can't use another lookup",
+          });
       }
-    });
     if (d.rules.length === 0 && !d.plugin) {
       ctx.addIssue({
         code: "custom",

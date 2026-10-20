@@ -1,0 +1,13 @@
+_format_version: "3.0"
+services:
+  - name: ledger
+    url: http://ledger.tide.internal:8080/api
+    routes:
+      - name: ledger-public
+        paths: [/ledger, /ledger-v1]
+        strip_path: true
+  - name: status-page
+    url: http://status.tide.internal
+    routes:
+      - name: status
+        paths: [/status]

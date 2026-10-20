@@ -1,0 +1,8 @@
+{
+  "properties": {
+    "displayName": "Limits API",
+    "path": "limits",
+    "serviceUrl": "https://limits.tide.internal",
+    "protocols": ["https"]
+  }
+}

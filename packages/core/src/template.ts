@@ -11,6 +11,9 @@ import { normalizePath } from "./identity.js";
  *   "${file.path}" "${file.line}"        where the match is
  *   "${repo.name}"                       the repo id
  *   "${match.1}"                         a regex group from the rule's match
+ *   "${node.key}" "${node.up.url}"        the structure around a jsonPath, xpath or hclBlock
+ *                                        match: its key, a field of the object above (ADR 0058)
+ *   "${lookup:servers(attr.name).host}"  a value from a dialect lookup table, by key (ADR 0058)
  *   "${system}" "${field}" "${kind}"     subject of a checklist need (questions only)
  *
  * Filters follow a pipe: "${attr.method | upper}", "${attr.path | normalizePath}",
@@ -24,6 +27,8 @@ export const TEMPLATE_FILTERS = [
   "normalizePath",
   "trimSlash",
   "default",
+  "parent",
+  "basename",
 ] as const;
 export type TemplateFilter = (typeof TEMPLATE_FILTERS)[number];
 
@@ -34,6 +39,10 @@ export type TemplateSource =
   | { type: "yaml"; file: string; key: string }
   | { type: "member" | "class" | "file" | "repo"; name: string }
   | { type: "match"; group: number }
+  /** The matched node's key (name "key"), or a field of an object `up` levels above it. */
+  | { type: "node"; up: number; name: string }
+  /** A row of a dialect lookup table, by the value of `key`. */
+  | { type: "lookup"; table: string; key: TemplateExpr; field: string }
   | { type: "subject"; name: "system" | "field" | "kind" | "record" };
 
 export interface TemplateExpr {
@@ -79,6 +88,11 @@ function parseSource(raw: string, template: string): TemplateSource {
     }
     return { type: "yaml", file: file!, key: key! };
   }
+  if (s.startsWith("lookup:")) {
+    const m = /^lookup:([A-Za-z_][A-Za-z0-9_-]*)\(([\s\S]*)\)\.([A-Za-z_][A-Za-z0-9_-]*)$/.exec(s);
+    if (!m || !m[2]!.trim()) fail("expected lookup:<table>(<key value>).<value>");
+    return { type: "lookup", table: m![1]!, key: parseExpr(m![2]!, template), field: m![3]! };
+  }
   if (s === "system" || s === "field" || s === "kind" || s === "record")
     return { type: "subject", name: s };
   const parts = s.split(".");
@@ -88,6 +102,14 @@ function parseSource(raw: string, template: string): TemplateSource {
   if (head === "annotation" && rest.length === 2 && rest.every((p) => IDENT.test(p))) {
     return { type: "annotation", annotation: rest[0]!, name: rest[1]! };
   }
+  if (head === "node") {
+    let up = 0;
+    while (rest[up] === "up") up++;
+    const name = rest.slice(up);
+    if (name.length !== 1 || !IDENT.test(name[0]!) || (up === 0 && name[0] !== "key"))
+      fail("expected node.key, node.up.<field> or node.up.key");
+    return { type: "node", up, name: name[0]! };
+  }
   if (head === "match" && rest.length === 1 && /^\d+$/.test(rest[0]!))
     return { type: "match", group: Number(rest[0]) };
   if (head && head in BUILTIN && rest.length === 1 && BUILTIN[head]!.includes(rest[0]!)) {
@@ -96,8 +118,26 @@ function parseSource(raw: string, template: string): TemplateSource {
   return fail("unknown template value");
 }
 
+/** Split at | outside parentheses, so a lookup's key can have filters of its own. */
+function splitPipes(body: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    else if (c === "|" && depth === 0) {
+      out.push(body.slice(start, i));
+      start = i + 1;
+    }
+  }
+  out.push(body.slice(start));
+  return out;
+}
+
 function parseExpr(body: string, template: string): TemplateExpr {
-  const [src = "", ...pipes] = body.split("|");
+  const [src = "", ...pipes] = splitPipes(body);
   const filters = pipes.map((p) => {
     const m = /^\s*([A-Za-z]+)\s*(?:\(\s*'([^']*)'\s*\))?\s*$/.exec(p);
     if (!m || !(TEMPLATE_FILTERS as readonly string[]).includes(m[1]!)) {
@@ -134,9 +174,11 @@ export function parseTemplate(template: string): TemplatePart[] {
   return parts;
 }
 
-/** Sources a template uses, for checking which ones a rule or question may refer to. */
+/** Sources a template uses (a lookup's key's too), for checking which ones a rule may refer to. */
 export function templateSources(template: string): TemplateSource[] {
-  return parseTemplate(template).flatMap((p) => ("expr" in p ? [p.expr.source] : []));
+  const all = (x: TemplateSource): TemplateSource[] =>
+    x.type === "lookup" ? [x, ...all(x.key.source)] : [x];
+  return parseTemplate(template).flatMap((p) => ("expr" in p ? all(p.expr.source) : []));
 }
 
 const FILTERS: Record<TemplateFilter, (v: string, arg?: string) => string> = {
@@ -150,7 +192,24 @@ const FILTERS: Record<TemplateFilter, (v: string, arg?: string) => string> = {
   normalizePath: (v) => normalizePath(v),
   trimSlash: (v) => v.replace(/^\/+|\/+$/g, ""),
   default: (v, arg) => (v === "" ? (arg ?? "") : v),
+  parent: (v) => (v.includes("/") ? v.slice(0, v.replace(/\/+$/, "").lastIndexOf("/")) : ""),
+  basename: (v) => v.replace(/\/+$/, "").split("/").pop() ?? "",
 };
+
+/** One expression's value with its filters applied, or undefined when unknown with no default. */
+export function renderExpr(
+  expr: TemplateExpr,
+  resolve: (source: TemplateSource) => string | undefined,
+): string | undefined {
+  const resolved = resolve(expr.source);
+  let value = resolved ?? "";
+  let known = resolved !== undefined;
+  for (const f of expr.filters) {
+    value = FILTERS[f.name](value, f.arg);
+    if (f.name === "default") known = true;
+  }
+  return known ? value : undefined;
+}
 
 /**
  * Render a template. `resolve` returns a source's value or undefined when unknown.
@@ -167,14 +226,8 @@ export function renderTemplate(
       out += part.text;
       continue;
     }
-    const resolved = resolve(part.expr.source);
-    let value = resolved ?? "";
-    let known = resolved !== undefined;
-    for (const f of part.expr.filters) {
-      value = FILTERS[f.name](value, f.arg);
-      if (f.name === "default") known = true;
-    }
-    if (!known) return undefined;
+    const value = renderExpr(part.expr, resolve);
+    if (value === undefined) return undefined;
     out += value;
   }
   return out;

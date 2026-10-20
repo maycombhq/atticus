@@ -14,6 +14,7 @@ Go through every line. Each one is a mistake that has made a dialect fail.
 - [ ] No rule contains a value from a particular repo: app names, service names, topics, queues, paths, hosts, config values. They all come from templates (`${attr...}`, `${yaml:...}`, `${annotation...}`, `${match...}`, `${config:...}`).
 - [ ] `files` globs read production code only (for example `src/main/java/**/*.java`, not `**/*.java`, when tests live in `src/test`).
 - [ ] Every `annotation` match has the right `target` (`method`, `class`, `field`).
+- [ ] A value that lives in another file (a server's host, a base path elsewhere in a bundle) comes from a `lookups` table, not from a value written into the rule.
 - [ ] A rule that should apply only to some matches says so with `where` (a module's `source`, an attribute's value) or `receiverType`, not with a repo's file names.
 - [ ] `configKey` templates use the key's segments: `${match.N}` counts the matched key's segments from 1, and `${match.0}` is the value.
 - [ ] The `marker` is a file every repo on the framework has, and the dialect produces nothing without it.

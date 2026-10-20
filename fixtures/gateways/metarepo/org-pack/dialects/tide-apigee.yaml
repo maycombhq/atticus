@@ -1,0 +1,56 @@
+# Apigee proxies whose targets name target servers (ADR 0058). The base path is in the bundle's
+# proxy endpoint, the host in the environment's targetservers.json: two lookups join them.
+# Production's hosts, since the catalog describes production.
+schemaVersion: 1
+name: tide-apigee
+version: 0.1.0
+description: Apigee proxies routed through target servers, with production hosts.
+appliesTo:
+  repoTypes: [gateway]
+lookups:
+  basepaths:
+    match: { xpath: "//HTTPProxyConnection/BasePath", files: ["**/apiproxy/proxies/*.xml"] }
+    key: "${file.path | parent | parent}"
+    values: { path: "${match.0}" }
+  targetServers:
+    match: { jsonPath: "$[*]", files: ["**/environments/prod/targetservers.json"] }
+    key: "${attr.name}"
+    values: { host: "${attr.host}", port: "${attr.port}" }
+rules:
+  - id: target-server-route
+    description: A proxy whose target is a target server routes its base path to that server's host.
+    match: { xpath: "//HTTPTargetConnection/LoadBalancer/Server", files: ["**/apiproxy/targets/*.xml"] }
+    emit:
+      kind: GatewayRoute
+      id: "gw-${file.path | parent | parent | parent | basename | slug}"
+      fields:
+        proxy: "${file.path | parent | parent | parent | basename}"
+        basepath: "${lookup:basepaths(file.path | parent | parent).path}"
+        target: "https://${lookup:targetServers(attr.name).host}:${lookup:targetServers(attr.name).port}"
+      evidence: { source: gateway, side: gateway }
+    confidence: verified
+tests:
+  - name: a target server's production host, joined to the bundle's base path
+    files:
+      p/orders-api/apiproxy/proxies/default.xml: |
+        <ProxyEndpoint name="default"><HTTPProxyConnection><BasePath>/orders</BasePath></HTTPProxyConnection></ProxyEndpoint>
+      p/orders-api/apiproxy/targets/default.xml: |
+        <TargetEndpoint name="default"><HTTPTargetConnection><LoadBalancer><Server name="orders-ts"/></LoadBalancer></HTTPTargetConnection></TargetEndpoint>
+      environments/prod/targetservers.json: |
+        [{ "name": "orders-ts", "host": "orders.tide.internal", "port": 443 }]
+      environments/dev/targetservers.json: |
+        [{ "name": "orders-ts", "host": "orders-dev.tide.internal", "port": 8443 }]
+    expect:
+      - kind: GatewayRoute
+        id: gw-orders-api
+        proxy: orders-api
+        basepath: /orders
+        target: "https://orders.tide.internal:443"
+  - name: a server no environment defines gives the route, without a target
+    files:
+      p/x/apiproxy/proxies/default.xml: |
+        <ProxyEndpoint name="default"><HTTPProxyConnection><BasePath>/x</BasePath></HTTPProxyConnection></ProxyEndpoint>
+      p/x/apiproxy/targets/default.xml: |
+        <TargetEndpoint name="default"><HTTPTargetConnection><LoadBalancer><Server name="nowhere"/></LoadBalancer></HTTPTargetConnection></TargetEndpoint>
+    expect:
+      - { kind: GatewayRoute, id: gw-x, basepath: /x }

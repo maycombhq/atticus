@@ -1,0 +1,6 @@
+# The gateways fixture's org pack. Contract C6.
+schemaVersion: 1
+name: tidewater-gateways
+version: 0.1.0
+owner: team-platform
+reviewWindowDays: 90

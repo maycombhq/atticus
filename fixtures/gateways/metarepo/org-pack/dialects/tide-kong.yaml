@@ -1,0 +1,44 @@
+# Kong declarative config (ADR 0058): routes nest inside services, and each of a route's paths
+# is a route of its own. ${node.up...} reads the route and the service around a path.
+schemaVersion: 1
+name: tide-kong
+version: 0.1.0
+description: Kong declarative config, one gateway route per route path, to its service's URL.
+appliesTo:
+  repoTypes: [gateway]
+rules:
+  - id: route-path
+    description: Each path of a Kong route sends requests on to its service's URL.
+    match:
+      jsonPath: "$.services[*].routes[*].paths[*]"
+      files: ["**/kong.yml", "**/kong.yaml", "**/kong/*.yml", "**/kong/*.yaml"]
+    emit:
+      kind: GatewayRoute
+      id: "kong-${node.up.name | slug}-${match.0 | slug}"
+      fields:
+        proxy: "${node.up.name}"
+        basepath: "${match.0}"
+        target: "${node.up.up.url}"
+      evidence: { source: gateway, side: gateway }
+    confidence: verified
+tests:
+  - name: two paths of one route, each a route to the service
+    files:
+      kong.yml: |
+        _format_version: "3.0"
+        services:
+          - name: orders
+            url: http://orders.tide.internal:8080/api
+            routes:
+              - name: orders-public
+                paths: [/orders, /orders-v1]
+    expect:
+      - kind: GatewayRoute
+        id: kong-orders-public-orders
+        proxy: orders-public
+        basepath: /orders
+        target: "http://orders.tide.internal:8080/api"
+      - kind: GatewayRoute
+        id: kong-orders-public-orders-v1
+        basepath: /orders-v1
+        target: "http://orders.tide.internal:8080/api"

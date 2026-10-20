@@ -1,0 +1,11 @@
+# Hand-written; matches fixtures/gateways/repos.
+schemaVersion: 1
+platform: tide
+repos:
+  - { id: gw-cards, url: https://git.example.com/tide/gw-cards.git, type: spring-boot, owner: team-cards, component: cards-svc, system: cards }
+  - { id: gw-payments, url: https://git.example.com/tide/gw-payments.git, type: spring-boot, owner: team-payments, component: payments-svc, system: payments }
+  - { id: gw-ledger, url: https://git.example.com/tide/gw-ledger.git, type: spring-boot, owner: team-ledger, component: ledger-svc, system: ledger }
+  - { id: gw-limits, url: https://git.example.com/tide/gw-limits.git, type: spring-boot, owner: team-limits, component: limits-svc, system: limits }
+  - { id: gw-apigee, url: https://git.example.com/tide/gw-apigee.git, type: gateway, owner: team-platform, system: gateway, hosts: [api-gw.tide.internal], dialects: [tide-apigee] }
+  - { id: gw-kong, url: https://git.example.com/tide/gw-kong.git, type: gateway, owner: team-platform, system: gateway, hosts: [kong.tide.internal], dialects: [tide-kong] }
+  - { id: gw-apim, url: https://git.example.com/tide/gw-apim.git, type: gateway, owner: team-platform, system: gateway, hosts: [apim.tide.internal], dialects: [tide-apim] }

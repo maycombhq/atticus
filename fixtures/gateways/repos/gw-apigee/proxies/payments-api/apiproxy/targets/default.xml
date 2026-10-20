@@ -1,0 +1,8 @@
+<TargetEndpoint name="default">
+  <HTTPTargetConnection>
+    <LoadBalancer>
+      <Server name="payments-ts"/>
+    </LoadBalancer>
+    <Path>/</Path>
+  </HTTPTargetConnection>
+</TargetEndpoint>

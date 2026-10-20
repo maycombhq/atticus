@@ -98,7 +98,7 @@ describe("C2 dialect file", () => {
   it("accepts a well-formed dialect and fills defaults", () => {
     const d = Dialect.parse(dialect);
     expect(d.extends).toEqual([]);
-    expect(d.rules[0]!.emit.evidence).toEqual({ source: "code" });
+    expect((d.rules[0]!.emit as { evidence: unknown }).evidence).toEqual({ source: "code" });
   });
 
   it("allows exactly one kind of match", () => {
