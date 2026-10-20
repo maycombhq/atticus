@@ -5,6 +5,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const builtins = new Set(builtinModules);
@@ -45,16 +46,11 @@ for (const p of pkgs) {
   // A package whose src is bundled at build time (the app) ships no imports: devDependencies do.
   const bundled = /\bvite\b/.test(pkg.scripts?.build ?? "");
   const check = (file, test) => {
-    // Comments and the code samples inside strings aren't imports.
-    const text = readFileSync(file, "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "")
-      .replace(/`(?:\\[\s\S]|[^`\\])*`/g, "``")
-      .replace(/'(?:\\.|[^'\\\n])*import[^'\n]*'/g, "''");
-    const re =
-      /(?:^|[\s;])(?:import|export)\s[^;]*?from\s+["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)|^import\s+["']([^"']+)["']/gm;
-    for (const m of text.matchAll(re)) {
-      const spec = m[1] ?? m[2] ?? m[3];
+    // The file's real imports, from TypeScript's own scanner: comments and the code samples
+    // inside strings and templates aren't imports.
+    const found = ts.preProcessFile(readFileSync(file, "utf8"), true, true).importedFiles;
+    for (const f of found) {
+      const spec = f.fileName;
       if (!spec || spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("node:"))
         continue;
       const name = spec.startsWith("@")

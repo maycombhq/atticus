@@ -51,6 +51,7 @@ export const syntaxLanguageOf = (path: string): SyntaxLanguage | undefined =>
 let ready: Promise<void> | undefined;
 const languages = new Map<SyntaxLanguage, Promise<Parser.Language>>();
 const queries = new Map<string, Parser.Query>();
+const parsers = new Map<SyntaxLanguage, Parser>();
 
 async function language(lang: SyntaxLanguage): Promise<Parser.Language> {
   ready ??= Parser.init();
@@ -72,8 +73,14 @@ async function language(lang: SyntaxLanguage): Promise<Parser.Language> {
 export async function parseSyntax(lang: SyntaxLanguage, text: string): Promise<Parser.Tree> {
   // The runtime initialises on first use: load the language before making a parser.
   const l = await language(lang);
-  const parser = new Parser();
-  parser.setLanguage(l);
+  // One parser per language, reused: a parser lives in the WebAssembly heap until deleted, so
+  // one per file would grow it without bound. Parsing is synchronous, so reuse is safe.
+  let parser = parsers.get(lang);
+  if (!parser) {
+    parser = new Parser();
+    parser.setLanguage(l);
+    parsers.set(lang, parser);
+  }
   return parser.parse(text);
 }
 
@@ -83,7 +90,9 @@ export async function syntaxOutline(
   text: string,
   maxChars = 4000,
 ): Promise<string> {
-  const s = (await parseSyntax(lang, text)).rootNode.toString();
+  const tree = await parseSyntax(lang, text);
+  const s = tree.rootNode.toString();
+  tree.delete();
   return s.length > maxChars ? `${s.slice(0, maxChars)} ...` : s;
 }
 
