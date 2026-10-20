@@ -10,7 +10,7 @@ import {
   nodeExtractor,
   pythonExtractor,
 } from "../src/backends/index.js";
-import { lexSource } from "../src/lang/lexer.js";
+import { SourceFile, type SourceLang } from "../src/backends/shared.js";
 import { componentExtractor, frontendExtractor } from "../src/index.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "fixtures");
@@ -78,34 +78,121 @@ function checkShapes(recs: CatalogRecord[], component: string, extractor: string
   }
 }
 
-describe("source lexer", () => {
-  it("skips comments and reads strings in each language", () => {
-    const strs = (src: string, lang: Parameters<typeof lexSource>[1]) =>
-      lexSource(src, lang)
+describe("source files from syntax trees", () => {
+  it("skips comments and reads strings in each language", async () => {
+    const ext: Record<SourceLang, string> = { python: "py", csharp: "cs", go: "go", js: "js" };
+    const strs = async (src: string, lang: SourceLang) =>
+      (await SourceFile.parse(`f.${ext[lang]}`, src, lang)).toks
         .filter((t) => t.t === "str")
         .map((t) => `${t.line}:${t.interp ? "i" : ""}${t.v}`);
     expect(
-      strs(
+      await strs(
         `# "no"\nx = f"{BASE}/a/{id!r}/{{lit}}"  # "no"\ny = r'\\d+' + """\nmulti "q"\n"""\nz = rb"raw"`,
         "python",
       ),
     ).toEqual(["2:i${BASE}/a/${id}/{lit}", "3:\\d+", '3:\nmulti "q"\n', "6:raw"]);
     expect(
-      strs(
+      await strs(
         `// "no"\n/* "no" */ var a = $"{x:N2}/b"; var b = @"c:\\""d";\n  #region "no"\nvar c = """\n  raw "x"\n  """; var d = '"';`,
         "csharp",
       ),
     ).toEqual(["2:i${x}/b", '2:c:\\"d', '4:\n  raw "x"\n  ']);
-    expect(strs('// `no`\nx := `a\nb` + "c\\"d" // "no"\nr := \'"\'', "go")).toEqual([
+    expect(await strs('// `no`\nx := `a\nb` + "c\\"d" // "no"\nr := \'"\'', "go")).toEqual([
       "2:a\nb",
       '3:c"d',
     ]);
     expect(
-      strs(
+      await strs(
         "const a = `x${b + `y${c}`}/z`; // 'no'\nconst re = /'no'/g; const d = 4 / 2 / 1; e('ok');",
         "js",
       ),
     ).toEqual(["1:ix${b + `y${c}`}/z", "2:ok"]);
+  });
+
+  it("reads calls from the tree: not in comments or strings, and not declarations", async () => {
+    const calls = async (path: string, src: string, lang: SourceLang) =>
+      (await SourceFile.parse(path, src, lang)).calls.map(
+        (c) =>
+          `${c.line}:${c.isNew ? "new " : ""}${c.decorator ? "@" : ""}${c.callee}` +
+          `${c.generics.length ? `<${c.generics.join(",")}>` : ""}(${c.args.length})` +
+          `${c.chained ? ` on ${c.chained.name}` : ""}`,
+      );
+    expect(
+      await calls(
+        "a.ts",
+        `// fetch("/in-a-comment")
+const s = 'fetch("/in-a-string")';
+class Api {
+  get(id: string): Promise<Book> { return this.http.get<Book>(\`/books/\${id}\`); }
+}
+for (const x of xs) await client.send(Message<string, string>(a, b), done);
+new pg.Pool({ connectionString }).connect();`,
+        "js",
+      ),
+    ).toEqual([
+      "4:this.http.get<Book>(1)",
+      "6:client.send(2)",
+      "6:Message<string,string>(2)",
+      "7:new pg.Pool(1)",
+      "7:connect(0) on Pool",
+    ]);
+    expect(
+      await calls(
+        "a.py",
+        `@app.get("/x", tags=["a"])
+def read():  # requests.get("/no")
+    raise HTTPException(status_code=404)`,
+        "python",
+      ),
+    ).toEqual(["1:@app.get(2)", "3:HTTPException(1)"]);
+    expect(
+      await calls(
+        "A.cs",
+        `[Route("api")] public class A : ControllerBase {
+  public A(HttpClient http) : base(http) { }
+  public Task<string> Get() => _http?.GetStringAsync(url: "/x");
+}`,
+        "csharp",
+      ),
+    ).toEqual(["1:Route(1)", "3:_http.GetStringAsync(1)"]);
+    expect(
+      await calls(
+        "a.go",
+        `package a
+func (s *S) Name() { for rows.Next() { go s.run(ctx) } }`,
+        "go",
+      ),
+    ).toEqual(["2:rows.Next(0)", "2:s.run(1)"]);
+  });
+
+  it("reads imports from the tree", async () => {
+    const imports = async (path: string, src: string, lang: SourceLang) =>
+      (await SourceFile.parse(path, src, lang)).imports.map((i) =>
+        `${i.spec} ${i.names.map((n) => `${n.local}=${n.name}`).join(",")}`.trim(),
+      );
+    expect(
+      await imports(
+        "a.ts",
+        `import web, { Router as R } from "express";
+import * as k from "kafkajs";
+const { a, b: c } = require("./m");
+// import x from "not-an-import";`,
+        "js",
+      ),
+    ).toEqual(["express web=default,R=Router", "kafkajs k=*", "./m"]);
+    expect(
+      await imports(
+        "a.py",
+        "import a.b, c as d\nfrom .rates import router as r, x\n# import nope",
+        "python",
+      ),
+    ).toEqual(["a.b a=*", "c d=*", ".rates r=router,x=x"]);
+    expect(await imports("A.cs", "using Confluent.Kafka;\n// using Nope;", "csharp")).toEqual([
+      "Confluent.Kafka",
+    ]);
+    expect(
+      await imports("a.go", 'package a\nimport (\n\tk "github.com/segmentio/kafka-go"\n)', "go"),
+    ).toEqual(["github.com/segmentio/kafka-go k=*"]);
   });
 });
 
@@ -651,6 +738,31 @@ func rates() { http.Get(os.Getenv("FX_URL") + "/rates") }
     ]);
     expect(golden(await scan(go, [goExtractor], { component: "b" }))).toEqual([
       "Unresolved b http-call GET ${FX_URL}/rates @main.go:5:caller",
+    ]);
+  });
+});
+
+describe("frontend calls from the tree", () => {
+  it("reports fetch, axios and http calls in code only, in TS, JSX and Vue files", async () => {
+    const repo = mem({
+      "src/api.ts": `// fetch("/in-a-comment")
+const help = 'call fetch("/in-a-string")';
+export const balance = (id: string) =>
+  fetch(\`/api/balance/\${id}\`, {
+    method: "POST",
+  });
+export const rates = () => axios.get("/api/rates");`,
+      "src/App.jsx": `export const App = () => <button onClick={() => this.http.delete("/api/session")}>fetch("/no")</button>;`,
+      "src/Cart.vue": `<template><p>fetch("/not-script")</p></template>
+<script setup lang="ts">
+const cart = await fetch("/api/cart");
+</script>`,
+    });
+    expect(golden(await scan(repo, [frontendExtractor]))).toEqual([
+      "Unresolved svc http-call DELETE /api/session @src/App.jsx:1:caller",
+      "Unresolved svc http-call GET /api/cart @src/Cart.vue:3:caller",
+      "Unresolved svc http-call GET /api/rates @src/api.ts:7:caller",
+      "Unresolved svc http-call POST /api/balance/{id} @src/api.ts:4:caller",
     ]);
   });
 });

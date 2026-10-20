@@ -1,11 +1,19 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import type { RepoHandle, ScanContext } from "@maycombhq/sdk";
 import { componentOf, evidence, looseEnd, restEndpoint, type LooseEndKind } from "../facts.js";
-import { lexSource, type SourceLang, type SrcTok } from "../lang/lexer.js";
+import {
+  readSourceFile,
+  type ImportDecl,
+  type SourceLang,
+  type SourceRead,
+  type SrcTok,
+} from "../lang/source-tree.js";
+
+export type { ImportDecl, SourceLang, SrcTok };
 
 /**
- * Shared machinery for the generic-tier backend extractors (.NET, Python, Go, Node): a
- * token-level view of one source file (calls with their arguments, simple assignments), a
+ * Shared machinery for the generic-tier backend extractors (.NET, Python, Go, Node): one
+ * source file read from its syntax tree (calls with their arguments, simple assignments), a
  * string evaluator that resolves constants and config, a route-prefix graph, path and URL
  * joining, file filters and the component gap rule.
  */
@@ -99,75 +107,7 @@ export interface SrcCall {
   /** Type names inside `<...>` before the parenthesis: `AddHttpClient<LedgerClient>(`. */
   generics: string[];
 }
-
-/** Identifiers that may stand right before a call on the same line. */
-const CALL_PREFIX = new Set([
-  "return",
-  "await",
-  "new",
-  "throw",
-  "yield",
-  "in",
-  "of",
-  "case",
-  "else",
-  "typeof",
-  "not",
-  "and",
-  "or",
-  "if",
-  "elif",
-  "while",
-  "assert",
-  "with",
-  "go",
-  "defer",
-  "del",
-  "is",
-  "void",
-  "delete",
-  "default",
-  "select",
-  "where",
-  "when",
-  "do",
-  "lambda",
-  "from",
-]);
-const NOT_CALLEE = new Set([
-  "if",
-  "for",
-  "foreach",
-  "while",
-  "switch",
-  "catch",
-  "using",
-  "lock",
-  "return",
-  "function",
-  "def",
-  "class",
-  "elif",
-  "in",
-  "not",
-  "and",
-  "or",
-  "await",
-  "typeof",
-  "sizeof",
-  "nameof",
-  "func",
-  "with",
-  "assert",
-  "fixed",
-  "checked",
-  "unchecked",
-  "super",
-  "import",
-  "print",
-]);
-const TYPEISH = new Set([".", ",", "?", "[", "]", "<", ">", "*", "&"]);
-
+/** Lines that continue an expression on the next line when they end or start with one of these. */
 const CONTINUES = new Set([".", "?.", "+", "-", "*", "/", "?", "??", "||", "&&", ":", "=>", ","]);
 
 export interface Assignment {
@@ -175,30 +115,79 @@ export interface Assignment {
   at: number;
   from: number;
   to: number;
+  /** At the top level of the file (Python module level). */
+  top: boolean;
 }
 
 /**
- * One source file as tokens, with bracket pairs, calls and simple assignments
- * (`NAME = expr`, `const NAME = expr`, `name := expr`, `const string NAME = "..."`).
+ * One source file read from its syntax tree (ADR 0060): its tokens (the tree's leaves, without
+ * comments, each string literal one token), bracket pairs, calls with their arguments, simple
+ * assignments (`NAME = expr`, `const NAME = expr`, `name := expr`, `const string NAME = "..."`)
+ * and imports. Make one with `SourceFile.parse`.
  */
 export class SourceFile {
   readonly toks: SrcTok[];
   readonly pairs: Int32Array;
   readonly calls: SrcCall[] = [];
   readonly assigns = new Map<string, Assignment[]>();
+  /** Modules the file imports (`import`, `require`, `from ... import`, `using`, Go imports). */
+  readonly imports: ImportDecl[];
   private readonly byOpen = new Map<number, SrcCall>();
   private readonly byStart = new Map<number, SrcCall>();
   private readonly chainedBy = new Map<SrcCall, SrcCall>();
+
+  /** Parse a file and read it from its syntax tree. */
+  static async parse(path: string, text: string, lang: SourceLang): Promise<SourceFile> {
+    return new SourceFile(path, text, lang, await readSourceFile(path, text, lang));
+  }
 
   constructor(
     readonly path: string,
     readonly text: string,
     readonly lang: SourceLang,
+    read: SourceRead,
   ) {
-    this.toks = lexSource(text, lang);
+    this.toks = read.toks;
+    this.imports = read.imports;
     this.pairs = matchBrackets(this.toks);
-    this.findCalls();
-    this.findAssignments();
+    for (const r of read.calls) {
+      const call: SrcCall = {
+        callee: r.callee,
+        name: r.name,
+        recv: r.recv,
+        start: r.start,
+        open: r.open,
+        close: r.close,
+        line: r.line,
+        args: r.args,
+        ...(r.chained !== undefined ? { chained: this.calls[r.chained]! } : {}),
+        isNew: r.isNew,
+        decorator: r.decorator,
+        generics: r.generics,
+      };
+      this.calls.push(call);
+      this.byOpen.set(call.open, call);
+      if (call.chained) this.chainedBy.set(call.chained, call);
+      else this.byStart.set(call.start, call);
+    }
+    for (const a of read.assigns) {
+      const list = this.assigns.get(a.name) ?? [];
+      list.push({ at: a.at, from: a.from, to: a.to, top: a.top });
+      this.assigns.set(a.name, list);
+    }
+  }
+
+  /**
+   * Does the file import this module, or something inside it? JS and Go name modules with
+   * slashes (`@tide/http`, `github.com/tide/kit`), Python and C# with dots (`tide.http`).
+   */
+  imported(mod: string): boolean {
+    const sep = this.lang === "js" || this.lang === "go" ? "/" : ".";
+    return this.imports.some((i) => i.spec === mod || i.spec.startsWith(mod + sep));
+  }
+  /** Is this identifier anywhere in the code (not in comments or strings)? */
+  mentions(id: string): boolean {
+    return this.toks.some((t) => t.t === "id" && t.v === id);
   }
 
   tok(i: number): SrcTok | undefined {
@@ -348,159 +337,6 @@ export class SourceFile {
     }
     return k;
   }
-
-  private findCalls() {
-    const toks = this.toks;
-    const byClose = new Map<number, SrcCall>();
-    for (let k = 0; k < toks.length; k++) {
-      if (!(toks[k]!.t === "p" && toks[k]!.v === "(")) continue;
-      let j = k - 1;
-      let generics: string[] = [];
-      if (this.is(j, ">")) {
-        const lt = this.genericStart(j);
-        if (lt === undefined || this.tok(lt - 1)?.t !== "id") continue;
-        generics = toks
-          .slice(lt + 1, j)
-          .filter((t) => t.t === "id")
-          .map((t) => t.v);
-        j = lt - 1;
-      }
-      const nameTok = toks[j];
-      if (!nameTok || nameTok.t !== "id" || NOT_CALLEE.has(nameTok.v)) continue;
-      let start = j;
-      let chained: SrcCall | undefined;
-      let opaque = false;
-      for (;;) {
-        const dot = toks[start - 1];
-        if (!dot || dot.t !== "p" || (dot.v !== "." && dot.v !== "?.")) break;
-        let b = start - 2;
-        if (this.is(b, "!")) b--;
-        const prev = toks[b];
-        if (prev?.t === "id") {
-          start = b;
-          continue;
-        }
-        if (prev && this.is(b, ")") && byClose.has(b)) chained = byClose.get(b);
-        // A method on a string literal ("...".format(...)): kept, with no receiver name.
-        else if (prev?.t !== "str") opaque = true;
-        break;
-      }
-      if (opaque) continue;
-      const before = toks[start - 1];
-      const sameLine = before && before.line === toks[start]!.line;
-      if (!chained && before && sameLine) {
-        if (before.t === "id" && !CALL_PREFIX.has(before.v)) continue; // a declaration
-        if (this.is(start - 1, "]")) continue; // `string[] Name(`
-        if (this.is(start - 1, ">") && (this.lang === "csharp" || this.lang === "js")) {
-          const lt = this.genericStart(start - 1);
-          if (lt !== undefined && this.tok(lt - 1)?.t === "id") continue; // `Task<T> Name(`
-        }
-        if (this.lang === "go" && this.is(start - 1, ")")) {
-          const o = this.pairs[start - 1]!;
-          if (o >= 0 && this.is(o - 1, "func", "id")) continue; // `func (s *S) Name(`
-        }
-      }
-      const close = this.pairs[k]!;
-      if (close < 0) continue;
-      const names: string[] = [];
-      for (let x = start; x <= j; x += 2) names.push(toks[x]!.v);
-      const call: SrcCall = {
-        callee: names.join("."),
-        name: nameTok.v,
-        recv: names.slice(0, -1).join("."),
-        start,
-        open: k,
-        close,
-        line: nameTok.line,
-        args: this.splitArgs(k, close),
-        ...(chained ? { chained } : {}),
-        isNew: !chained && !!before && before.t === "id" && before.v === "new",
-        decorator: !chained && this.is(start - 1, "@"),
-        generics,
-      };
-      this.calls.push(call);
-      byClose.set(close, call);
-      this.byOpen.set(k, call);
-      if (chained) this.chainedBy.set(chained, call);
-      if (!chained) this.byStart.set(start, call);
-    }
-  }
-
-  /** For a `>` at index j, the index of the matching `<` when the span looks like type arguments. */
-  private genericStart(j: number): number | undefined {
-    let depth = 0;
-    for (let k = j; k >= 0 && j - k < 40; k--) {
-      const t = this.toks[k]!;
-      if (t.t === "p") {
-        if (t.v === ">") depth++;
-        else if (t.v === "<") {
-          depth--;
-          if (depth === 0) return k;
-        } else if (!TYPEISH.has(t.v)) return undefined;
-      } else if (t.t !== "id") return undefined;
-    }
-    return undefined;
-  }
-
-  private splitArgs(open: number, close: number): Arg[] {
-    const args: Arg[] = [];
-    if (close === open + 1) return args;
-    let from = open + 1;
-    let depth = 0;
-    const finish = (to: number) => {
-      if (to <= from) return;
-      const t0 = this.toks[from]!;
-      const t1 = this.toks[from + 1];
-      const named =
-        t0.t === "id" &&
-        t1?.t === "p" &&
-        ((t1.v === "=" && this.lang === "python") || (t1.v === ":" && this.lang === "csharp")) &&
-        from + 2 < to;
-      args.push(named ? { name: t0.v, from: from + 2, to } : { from, to });
-    };
-    for (let k = open + 1; k < close; k++) {
-      const t = this.toks[k]!;
-      if (t.t !== "p") continue;
-      if ("([{".includes(t.v)) depth++;
-      else if (")]}".includes(t.v)) depth--;
-      else if (t.v === "," && depth === 0) {
-        finish(k);
-        from = k + 1;
-      }
-    }
-    finish(close);
-    return args;
-  }
-
-  private findAssignments() {
-    const toks = this.toks;
-    const stack: { ch: string; block: boolean }[] = [];
-    for (let k = 0; k < toks.length; k++) {
-      const t = toks[k]!;
-      if (t.t === "p" && "([{".includes(t.v)) {
-        stack.push({ ch: t.v, block: t.v === "(" && /^(const|var)$/.test(toks[k - 1]?.v ?? "") });
-        continue;
-      }
-      if (t.t === "p" && ")]}".includes(t.v)) {
-        stack.pop();
-        continue;
-      }
-      if (!(t.t === "p" && (t.v === "=" || t.v === ":="))) continue;
-      const top = stack[stack.length - 1];
-      if (top && top.ch === "(" && !top.block) continue;
-      if (top && top.ch === "[") continue;
-      let b = k - 1;
-      if (toks[b]?.t !== "id") continue;
-      while (toks[b - 2]?.t === "id" && (this.is(b - 1, ".") || this.is(b - 1, "?."))) b -= 2;
-      const name = this.dotted(b, k);
-      if (!name) continue;
-      const end = this.exprEnd(k + 1);
-      if (end <= k + 1) continue;
-      const list = this.assigns.get(name) ?? [];
-      list.push({ at: b, from: k + 1, to: end });
-      this.assigns.set(name, list);
-    }
-  }
 }
 
 function matchBrackets(toks: SrcTok[]): Int32Array {
@@ -523,6 +359,42 @@ function matchBrackets(toks: SrcTok[]): Int32Array {
     }
   });
   return pairs;
+}
+
+// ------------------------------------------------------------------ browser-style calls
+
+/**
+ * A fetch, axios or `http.<verb>` call whose first argument starts with a string literal
+ * beginning with "/" or "http" (the frontend extractor's calls; the Node extractor leaves
+ * them to it). Template expressions become path parameters: `/a/${id}` → /a/{id}. The method
+ * is the verb, else the `method` of the options object, else GET.
+ */
+export function frontendCall(
+  src: SourceFile,
+  c: SrcCall,
+): { method: string; url: string } | undefined {
+  if (c.generics.length) return undefined;
+  const segs = c.callee.split(".");
+  const tail = segs[segs.length - 1]!;
+  const prev = segs[segs.length - 2];
+  const verb = ["get", "post", "put", "delete", "patch"].includes(tail) ? tail : undefined;
+  if (!(tail === "fetch" || tail === "axios" || (verb && (prev === "axios" || prev === "http"))))
+    return undefined;
+  const a = c.args[0];
+  const t = a ? src.tok(a.from) : undefined;
+  if (!t || t.t !== "str") return undefined;
+  const url = t.v.replace(
+    /\$\{\s*([^}]+?)\s*\}/g,
+    (_w, expr: string) => `{${expr.split(".").pop()!.replace(/\W/g, "")}}`,
+  );
+  if (!/^(\/|https?:)/.test(url)) return undefined;
+  let method = verb?.toUpperCase();
+  if (!method) {
+    const o = src.arg(c, 1);
+    const m = o && src.is(o.from, "{") ? src.field(o.from, "method") : undefined;
+    method = (m && src.str(m)?.toUpperCase()) || "GET";
+  }
+  return { method, url };
 }
 
 // ------------------------------------------------------------------ evaluation
@@ -625,7 +497,7 @@ export class Evaluator {
     const f = this.file;
     const t0 = f.tok(from)!;
     if (to - from === 1 && t0.t === "str")
-      return { v: t0.interp ? this.interpolate(t0.v, from) : t0.v, known: true };
+      return { v: t0.interp ? this.interpolate(t0, from) : t0.v, known: true };
     // Python "…".format(a, b)
     if (
       t0.t === "str" &&
@@ -711,19 +583,23 @@ export class Evaluator {
     return undefined;
   }
 
-  private interpolate(text: string, at: number): string {
-    return text.replace(/\$\{((?:[^{}]|\{[^{}]*\})*)\}/g, (_w, expr: string) => {
-      const sub = new SourceFile(this.file.path, expr, this.file.lang);
-      const ev = new Evaluator(sub, {
-        name: (n) => this.lookup(n, at),
-        ...(this.hooks.index ? { index: this.hooks.index } : {}),
-        ...(this.hooks.call ? { call: this.hooks.call } : {}),
-      });
-      const v = sub.toks.length ? ev.value(0, sub.toks.length) : undefined;
-      if (v !== undefined) return v;
-      const ids = sub.toks.filter((t) => t.t === "id");
-      return `{${ids[ids.length - 1]?.v ?? ""}}`;
-    });
+  /** An interpolated string: its text, with each expression (read from the tree) evaluated. */
+  private interpolate(tok: SrcTok, at: number): string {
+    return (tok.parts ?? [tok.v])
+      .map((p) => {
+        if (typeof p === "string") return p;
+        const sub = new SourceFile(this.file.path, this.file.text, this.file.lang, p);
+        const ev = new Evaluator(sub, {
+          name: (n) => this.lookup(n, at),
+          ...(this.hooks.index ? { index: this.hooks.index } : {}),
+          ...(this.hooks.call ? { call: this.hooks.call } : {}),
+        });
+        const v = sub.toks.length ? ev.value(0, sub.toks.length) : undefined;
+        if (v !== undefined) return v;
+        const ids = sub.toks.filter((t) => t.t === "id");
+        return `{${ids[ids.length - 1]?.v ?? ""}}`;
+      })
+      .join("");
   }
 
   private splitTop(from: number, to: number, sep: (t: SrcTok) => boolean): [number, number][] {

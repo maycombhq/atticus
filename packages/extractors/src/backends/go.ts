@@ -165,7 +165,7 @@ export const goExtractor = defineExtractor({
 
     const paths = await listSources(repo, ["**/*.go"]);
     for (const path of paths) {
-      const src = new SourceFile(path, await repo.readText(path), "go");
+      const src = await SourceFile.parse(path, await repo.readText(path), "go");
       const dir = dirOf(path);
       const pkg = packageNames.get(dir) ?? new Map<string, string>();
       packageNames.set(dir, pkg);
@@ -381,7 +381,6 @@ export const goExtractor = defineExtractor({
     // ---- outgoing calls, events and databases
     for (const [path, gf] of files) {
       const { src, ev } = gf;
-      const text = src.text;
       const clients = new Set(["http.DefaultClient"]);
       for (const [name, list] of src.assigns) {
         for (const a of list) {
@@ -410,7 +409,7 @@ export const goExtractor = defineExtractor({
         const url = ev.arg(urlArg);
         if (url !== undefined) em.call(method, url, path, c.line);
       }
-      for (const e of events(src, ev, text))
+      for (const e of events(src, ev))
         em.loose(e.kind, e.topic, path, e.line, e.kind === "event-publish" ? "caller" : "callee");
       for (const c of src.calls) {
         let a: Arg | undefined;
@@ -440,11 +439,11 @@ function pattern(p: string): { method: string; path: string } {
 function* events(
   src: SourceFile,
   ev: Evaluator,
-  text: string,
 ): Generator<{ kind: "event-publish" | "event-subscribe"; topic: string; line: number }> {
-  const kafkaGo = /segmentio\/kafka-go/.test(text);
-  const sarama = /\bsarama\b/.test(text);
-  const confluent = /confluent-kafka-go/.test(text);
+  const imports = src.imports.map((i) => i.spec);
+  const kafkaGo = imports.some((i) => i.includes("segmentio/kafka-go"));
+  const sarama = imports.some((i) => i.split("/").includes("sarama")) || src.mentions("sarama");
+  const confluent = imports.some((i) => i.includes("confluent-kafka-go"));
   const known = (v: string | undefined) => (v && !/[{}]/.test(v) ? v : undefined);
   const t = src.toks;
   // Composite literals: kafka.Writer{Topic: "x"}, sarama.ProducerMessage{Topic: "x"}

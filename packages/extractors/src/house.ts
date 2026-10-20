@@ -1,8 +1,8 @@
 import type { CatalogRecord } from "@maycombhq/core";
-import { defineExtractor, type RepoHandle } from "@maycombhq/sdk";
+import { defineExtractor } from "@maycombhq/sdk";
 import { Evaluator, SourceFile, type Arg, type SrcCall } from "./backends/shared.js";
 import { componentOf, looseEnd, restEndpoint } from "./facts.js";
-import type { SourceLang } from "./lang/lexer.js";
+import type { SourceLang } from "./lang/source-tree.js";
 import { modelValues } from "./frameworks.js";
 
 /**
@@ -26,36 +26,52 @@ const SKIP =
 /** The language of a source file, by its name. */
 const langOf = (path: string) => LANG_OF.find(([re]) => re.test(path))?.[1];
 
-/** Does the file import (use, require) this module? */
-function imports(text: string, mod: string): boolean {
-  const m = mod.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(
-    `(from\\s+["']${m}(?:/[^"']*)?["']|require\\(\\s*["']${m}(?:/[^"']*)?["']\\)|^\\s*(?:import|using|from)\\s+${m}\\b|"${m}(?:/[^"]*)?")`,
-    "m",
-  ).test(text);
-}
-
 /**
- * String constants a repo's JS/TS code exports, as NAME and Object.KEY → value:
+ * String constants a repo's JS/TS code declares, as NAME and Object.KEY → value:
  * `export const PAY = "/v2"`, `export const Services = { BFF: "web-bff" }`. A name defined twice
  * with different values is left out.
  */
-async function jsConstants(repo: RepoHandle, files: string[]): Promise<Map<string, string>> {
-  const seen = new Map<string, string | null>();
-  const put = (k: string, v: string) => {
-    const prev = seen.get(k);
-    seen.set(k, prev === undefined || prev === v ? v : null);
-  };
-  for (const path of files) {
-    if (langOf(path) !== "js") continue;
-    const text = await repo.readText(path);
-    for (const m of text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*["'`]([^"'`$]*)["'`]/g))
-      put(m[1]!, m[2]!);
-    for (const m of text.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*\{([^{}]*)\}/g))
-      for (const f of m[2]!.matchAll(/([A-Za-z_$][\w$]*)\s*:\s*["'`]([^"'`$]*)["'`]/g))
-        put(`${m[1]!}.${f[1]!}`, f[2]!);
+class JsConstants {
+  private readonly seen = new Map<string, string | null>();
+  get(name: string): string | undefined {
+    return this.seen.get(name) ?? undefined;
   }
-  return new Map([...seen].filter((e): e is [string, string] => e[1] !== null));
+  private put(k: string, v: string) {
+    const prev = this.seen.get(k);
+    this.seen.set(k, prev === undefined || prev === v ? v : null);
+  }
+  add(src: SourceFile) {
+    if (src.lang !== "js") return;
+    for (const [name, list] of src.assigns)
+      for (const a of list) {
+        if (!src.is(a.at - 1, "const", "id")) continue;
+        // `as const` (or any `as T`) doesn't change the value.
+        const to = src.is(a.to - 2, "as", "id") ? a.to - 2 : a.to;
+        const v = literal(src, a.from, to);
+        if (v !== undefined) this.put(name, v);
+        else if (src.is(a.from, "{") && src.pairs[a.from] === to - 1)
+          // Each `KEY: "value"` directly inside the object.
+          for (let k = a.from + 1; k < to - 1; k++) {
+            const key = src.tok(k)!;
+            if (src.is(k, "{") || src.is(k, "[") || src.is(k, "(")) k = src.pairs[k]!;
+            else if (
+              key.t === "id" &&
+              src.is(k + 1, ":") &&
+              (src.is(k - 1, "{") || src.is(k - 1, ",")) &&
+              (src.is(k + 3, ",") || k + 3 === to - 1)
+            ) {
+              const fv = literal(src, k + 2, k + 3);
+              if (fv !== undefined) this.put(`${name}.${key.v}`, fv);
+            }
+          }
+      }
+  }
+}
+
+/** A plain string literal (no interpolation) filling exactly [from, to). */
+function literal(src: SourceFile, from: number, to: number): string | undefined {
+  const t = src.tok(from);
+  return to === from + 1 && t?.t === "str" && !t.interp && !t.v.includes("$") ? t.v : undefined;
 }
 
 /** Express-style `:id` and `{id}` both read as {id}. */
@@ -82,16 +98,21 @@ export const houseExtractor = defineExtractor({
     if (models.length === 0) return;
     const files: string[] = [];
     for await (const p of repo.listFiles(this.claims)) if (!SKIP.test(p)) files.push(p);
-    const repoConstants = await jsConstants(repo, files);
+    // Every file gives its constants; only files importing a model's package are kept.
+    const repoConstants = new JsConstants();
+    const users = new Map<string, SourceFile>();
+    for (const path of files) {
+      const src = await SourceFile.parse(path, await repo.readText(path), langOf(path)!);
+      repoConstants.add(src);
+      if (models.some((m) => m.packages.some((p) => src.imported(p)))) users.set(path, src);
+    }
     const values = modelValues(models);
     const known = (name: string) => repoConstants.get(name) ?? values.get(name)?.value;
 
-    for (const path of files) {
+    for (const [path, src] of users) {
       const lang = langOf(path)!;
-      const text = await repo.readText(path);
-      const used = models.filter((m) => m.packages.some((p) => imports(text, p)));
+      const used = models.filter((m) => m.packages.some((p) => src.imported(p)));
       if (used.length === 0) continue;
-      const src = new SourceFile(path, text, lang);
       const component = componentOf(repo, ctx, path);
       const ev = new Evaluator(src, { name: (dotted) => known(dotted) });
       /** One part of a call: its argument (or a property of it) evaluated, or a fixed value. */
@@ -116,7 +137,7 @@ export const houseExtractor = defineExtractor({
         c.name === e.function &&
         (!e.language || e.language === lang) &&
         (!e.receiver || c.recv === e.receiver || c.recv.endsWith(`.${e.receiver}`)) &&
-        (!e.from || imports(text, e.from));
+        (!e.from || src.imported(e.from));
       const out: CatalogRecord[] = [];
       for (const m of used) {
         for (const r of m.routes)
