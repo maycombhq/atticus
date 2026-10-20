@@ -75,3 +75,39 @@ ALTER TABLE payout RENAME COLUMN a TO z;`);
     for (let i = 0; i < w.length; i++) expect(g[i], `${w[i]!.kind}/${w[i]!.id}`).toEqual(w[i]);
   });
 });
+
+describe("golang-migrate files", () => {
+  it("take the version from <version>_<name>.up.sql, in order, and skip the .down.sql files", async () => {
+    const { memoryRepo } = await import("@maycombhq/sdk");
+    const s = await scanRepo({
+      repo: memoryRepo("catalog", SHA, {
+        "migrations/0002_add_stock.up.sql": "CREATE TABLE stock (id int);",
+        "migrations/0002_add_stock.down.sql": "DROP TABLE stock;",
+        "migrations/0010_add_price.up.sql": "ALTER TABLE products ADD COLUMN price int;",
+        "migrations/0001_create_products.up.sql": "CREATE TABLE products (id int);",
+        "migrations/0001_create_products.down.sql": "DROP TABLE products;",
+      }),
+      extractors: [migrationsExtractor],
+      repoInfo: { component: "catalog" },
+    });
+    expect(
+      s.records
+        .filter((r) => r.kind === "Migration")
+        .map((r) => {
+          const x = r as unknown as { version: string; file: string; tool: string };
+          return `${r.id} ${x.version} ${x.tool} ${x.file}`;
+        }),
+    ).toEqual([
+      "catalog-db.v0001 0001 other migrations/0001_create_products.up.sql",
+      "catalog-db.v0002 0002 other migrations/0002_add_stock.up.sql",
+      "catalog-db.v0010 0010 other migrations/0010_add_price.up.sql",
+    ]);
+    // The down migrations don't undo the tables.
+    expect(
+      s.records
+        .filter((r) => r.kind === "Table")
+        .map((r) => r.id)
+        .sort(),
+    ).toEqual(["catalog-db.products", "catalog-db.stock"]);
+  });
+});

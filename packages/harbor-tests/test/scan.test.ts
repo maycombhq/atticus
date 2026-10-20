@@ -41,8 +41,8 @@ describe("scan of the Harbor fixture", () => {
 
   it("matches every record main can already produce, field for field", () => {
     const keys = new Set(expected.map(key).filter((k) => !pending.has(k)));
-    // 131 expected records, 8 of them waiting for a producer (pending.ts).
-    expect([expected.length, keys.size]).toEqual([131, 123]);
+    // 131 expected records, 3 of them waiting for a producer (pending.ts).
+    expect([expected.length, keys.size]).toEqual([131, 128]);
     const c = compareGroup(keys);
     expect(c.missing).toEqual([]);
     expect(c.fieldDiffs).toEqual([]);

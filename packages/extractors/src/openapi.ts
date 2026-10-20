@@ -26,8 +26,8 @@ export const openapiExtractor = defineExtractor({
     "**/api/*.yml",
   ],
   async *scan(repo, ctx) {
-    const component = componentOf(repo, ctx);
     for await (const path of repo.listFiles(this.claims)) {
+      const component = componentOf(repo, ctx, path);
       // Contracts inside a Spec Kit feature are plans, read by the speckit extractor (ADR 0030).
       if (SPEC_KIT_CONTRACT.test(path)) continue;
       const text = await repo.readText(path);

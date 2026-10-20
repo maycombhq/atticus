@@ -1,0 +1,13 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>tide.accounts</groupId>
+  <artifactId>tide-accounts</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <!-- Two deployables and a library in one repo, each app deployed on its own. -->
+  <modules>
+    <module>accounts-common</module>
+    <module>accounts-api</module>
+    <module>accounts-jobs</module>
+  </modules>
+</project>

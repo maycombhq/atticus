@@ -11872,6 +11872,41 @@
               "pattern": "^[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?(\\.[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?)*$"
             }
           },
+          "modules": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "component": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "hosts": {
+                  "default": [],
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 253,
+                    "pattern": "^[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?(\\.[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?)*$"
+                  }
+                }
+              },
+              "required": [
+                "path",
+                "component",
+                "hosts"
+              ],
+              "additionalProperties": false
+            }
+          },
           "platform": {
             "type": "string",
             "minLength": 1,
@@ -11908,6 +11943,7 @@
           "sparse",
           "archived",
           "hosts",
+          "modules",
           "platform",
           "baseClone"
         ],

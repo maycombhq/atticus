@@ -4,6 +4,18 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Harbor gaps closed
+
+- Calls to a vendor join the vendor's system: a host label that is a vendor system's id, name or alias from the profile, without spaces or dashes (`api.tidewater.example` → Tidewater Payments, `api.lanternmail.example` → Lantern Mail), when exactly one vendor matches. It is checked before a host's first label, after declared hosts. Harbor's three vendor interfaces, and the h01 and h09 findings from a scanned catalog, now pass.
+- golang-migrate files are read: `<version>_<name>.up.sql` gives the version, in numeric order, and the `.down.sql` files that undo them are skipped.
+- Harbor runs 8 skipped tests, down from 12.
+
+### One component per deployable module
+
+- A repo that builds several deployables has a component for each (ADR 0057). `repos.manifest.yaml` may list a repo's `modules` (folder, component, hosts); without them, a multi-module Maven or Gradle repo with two or more `@SpringBootApplication` modules gets one component per app, named by its `spring.application.name`, else its folder. Endpoints, calls and loose ends belong to the module their file is in (Spring, house frameworks, the .NET, Node, Python and Go backends, OpenAPI files); a module's hosts join calls to it; calls between a repo's own apps are interfaces. The repo's own component stays, for what is outside every module.
+- Extractors see the modules as `ScanContext.modules` (C4, an addition).
+- The messy estate gains a multi-module repo: an API, a nightly job that calls it, and a shared library.
+
 ### Dialect rules v2: infra repos, conditions, honest rules
 
 - Dialects read Terraform (ADR 0056): an `hclBlock` match (`module`, `resource.aws_sqs_queue`) supplies each block's attributes, resolved from the folder's variable defaults, `terraform.tfvars`, `*.auto.tfvars` and locals, and its labels. With YAML and JSON (`jsonPath`) and XML (`xpath`) matches, infra and pipeline repos built on house modules, charts and templates are read through dialects.

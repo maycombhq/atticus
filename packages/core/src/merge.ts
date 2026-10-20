@@ -344,6 +344,23 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       : e.evidence.filter((x) => x.side === "definition").map((x) => ({ ...x, side: "callee" }));
   };
 
+  // Vendor systems by name: a host label that is a vendor's id, name or alias written without
+  // spaces or dashes (api.tidewater.example → Tidewater; api.lanternmail.example → Lantern
+  // Mail). Only vendor systems, and only when one matches.
+  const compact = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const vendorNames = new Map<string, Set<string>>();
+  for (const sys of input.systems.filter((x) => x.boundary === "vendor"))
+    for (const n of [sys.id, sys.name, ...sys.aliases]) {
+      const k = compact(n);
+      if (k.length >= 3) vendorNames.set(k, (vendorNames.get(k) ?? new Set()).add(sys.id));
+    }
+  const vendorFor = (host: string): string | undefined => {
+    const hits = new Set<string>();
+    for (const label of host.split(".").slice(0, -1))
+      for (const id of vendorNames.get(compact(label)) ?? []) hits.add(id);
+    return hits.size === 1 ? [...hits][0] : undefined;
+  };
+
   const interfaces = new Map<string, Rec>();
   const addInterface = (r: Rec) =>
     interfaces.set(r.id, interfaces.has(r.id) ? combine(interfaces.get(r.id)!, r) : r);
@@ -407,6 +424,9 @@ export function mergeCatalog(input: MergeInput): MergeResult {
         : undefined;
     } else if (declared && !declared.gateway) {
       to = declared.repo.component ?? declared.repo.id;
+    } else if (host && !declared && vendorFor(host)) {
+      // A vendor's name in the host says more than a first label such as api.
+      to = vendorFor(host);
     } else if (host && !declared && !hostedComponents.has(hostComponent!)) {
       to = resolveComponent(hostComponent!, caller[0]!);
     } else if (!host && !GENERIC_PATH.test(path)) {
@@ -676,7 +696,7 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       .filter((c) => c.confidence === "verified")
       .flatMap((c) => c.evidence.slice(0, 1));
     const inferredEvidence = comps.flatMap((c) => c.evidence.slice(0, 1));
-    const repos = input.repos.filter((r) => r.system === s.id).map((r) => r.id);
+    const repos = [...new Set(input.repos.filter((r) => r.system === s.id).map((r) => r.id))];
     const evidence =
       codeEvidence.length > 0
         ? codeEvidence

@@ -184,6 +184,8 @@ export const springExtractor = defineExtractor({
         continue;
       const file = parseJava(src);
       const lines = src.split("\n");
+      // The module's component when the repo builds more than one (ADR 0057).
+      const component = componentOf(repo, ctx, path);
       // House frameworks this file uses (ADR 0054): their annotations read as Spring's.
       const models = modelsFor(file, ctx.frameworks);
       applyAnnotations(file, models);

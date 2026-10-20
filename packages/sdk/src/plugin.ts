@@ -30,6 +30,11 @@ export interface ScanContext {
   readonly system?: string;
   /** The repo type from the manifest, e.g. spring-boot, gateway. */
   readonly repoType?: string;
+  /**
+   * The repo's modules that build their own component (ADR 0057): a fact in a file under
+   * `path` belongs to `component`; anything else to `component` above.
+   */
+  readonly modules?: readonly { path: string; component: string }[];
   /** ISO timestamp of this scan, for evidence. */
   readonly scannedAt: string;
   /**

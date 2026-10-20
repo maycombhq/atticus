@@ -912,7 +912,7 @@ export class Emitter {
   }
   endpoint(method: string, path: string, file: string, line: number) {
     this.add(
-      restEndpoint(this.repo, componentOf(this.repo, this.ctx), method, path, {
+      restEndpoint(this.repo, componentOf(this.repo, this.ctx, file), method, path, {
         source: "code",
         path: file,
         line,

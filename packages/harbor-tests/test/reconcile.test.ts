@@ -240,9 +240,7 @@ describe("reconcile the Harbor diagrams with the scanned catalog (end to end)", 
     }
   });
 
-  // Missing producer: merge resolving vendor hosts (pending.ts "vendor-hosts"); today the
-  // vendor calls stay unresolved, so e7 and e12 read as diagram-only.
-  it.skip("reports h01 (vendor calls direct) from the scanned catalog", async () => {
+  it("reports h01 (vendor calls direct) from the scanned catalog", async () => {
     const s = SEEDED["h01-vendor-calls-direct"]!;
     expect((await scannedRun(s.file)).items.filter(s.items)).toHaveLength(s.count);
   });

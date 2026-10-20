@@ -40,3 +40,8 @@ repos:
     owner: team-platform
     system: platform
     dialects: [tide-infra]
+  - id: tide-accounts
+    url: https://git.example.com/tide/tide-accounts.git
+    type: spring-boot
+    owner: team-accounts
+    system: accounts

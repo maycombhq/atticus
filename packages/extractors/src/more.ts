@@ -75,6 +75,28 @@ export const componentExtractor = defineExtractor({
       type: ctx.repoType ?? "unknown",
       evidence: [evidence(repo, { source: "config", path: marker })],
     } as unknown as CatalogRecord;
+    // Each module that builds its own component (ADR 0057), evidenced by its build file.
+    for (const m of ctx.modules ?? []) {
+      if (m.component === id) continue;
+      let at: string | undefined;
+      for await (const p of repo.listFiles(
+        BUILD_FILES.map((g) => `${m.path}/${g.replace(/^\*\*\//, "")}`),
+      )) {
+        at = p;
+        break;
+      }
+      yield {
+        schemaVersion: 1,
+        kind: "Component",
+        id: m.component,
+        status: "current",
+        confidence: "verified",
+        system: ctx.system ?? id,
+        repo: repo.name,
+        type: ctx.repoType ?? "unknown",
+        evidence: [evidence(repo, { source: "config", path: at ?? marker })],
+      } as unknown as CatalogRecord;
+    }
   },
 });
 
@@ -210,19 +232,24 @@ const FLYWAY_CLAIMS = ["**/db/migration/**/*.sql", "**/migrations/*.sql", "**/fl
 
 export const migrationsExtractor = defineExtractor({
   id: "migrations",
-  version: "1.2.0",
+  version: "1.3.0",
   claims: [...FLYWAY_CLAIMS, ...LIQUIBASE_CLAIMS],
   async *scan(repo, ctx) {
     const owner = componentOf(repo, ctx);
     const store = await storeFor(repo, ctx);
     const files: { path: string; version: string }[] = [];
     for await (const path of repo.listFiles(FLYWAY_CLAIMS)) {
+      // golang-migrate pairs each <version>_<name>.up.sql with a .down.sql that undoes it.
+      if (/(?:^|\/)\d+_[^/]+\.down\.sql$/i.test(path)) continue;
       const v = /(?:^|\/)V(\d+(?:[._]\d+)*)__[^/]+\.sql$/i.exec(path);
+      const go = /(?:^|\/)(\d+)_[^/]+\.up\.sql$/i.exec(path);
       files.push({
         path,
         version: v
           ? v[1]!.replace(/_/g, ".")
-          : (path.split("/").pop() ?? path).replace(/\.sql$/i, ""),
+          : go
+            ? go[1]!
+            : (path.split("/").pop() ?? path).replace(/\.sql$/i, ""),
       });
     }
     const num = (v: string) => v.split(".").map((x) => Number(x) || 0);

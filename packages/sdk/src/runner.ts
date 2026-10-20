@@ -21,7 +21,13 @@ export interface ScanRepoOptions {
   /** Hash of configuration that changes an extractor's output, e.g. its dialect rule files. */
   configFor?: (extractor: Extractor) => string | undefined;
   /** What the manifest says about the repo; passed to extractors and part of the cache key. */
-  repoInfo?: { component?: string; system?: string; repoType?: string };
+  repoInfo?: {
+    component?: string;
+    system?: string;
+    repoType?: string;
+    /** Modules that build their own component (ADR 0057). */
+    modules?: { path: string; component: string }[];
+  };
   /** Framework models for every extractor's context (ADR 0054); part of the cache key. */
   frameworks?: readonly FrameworkModel[];
 }
@@ -184,6 +190,7 @@ export async function scanRepo(options: ScanRepoOptions): Promise<RepoScan> {
           ...(info.component ? { component: info.component } : {}),
           ...(info.system ? { system: info.system } : {}),
           ...(info.repoType ? { repoType: info.repoType } : {}),
+          ...(info.modules?.length ? { modules: info.modules } : {}),
           ...(options.frameworks?.length ? { frameworks: options.frameworks } : {}),
           scannedAt,
           warn: (message, path) =>

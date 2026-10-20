@@ -24,6 +24,7 @@ import {
 } from "@maycombhq/core";
 import {
   BUILT_IN_EXTRACTORS,
+  detectModules,
   dialectExtractor,
   loadShippedDialects,
   runDialectTests,
@@ -301,6 +302,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     .flatMap((p) => (p.repos?.repos ?? []).map((r) => ({ ...r, platform: p.platform })))
     .filter((r) => !r.archived && (!o.repos || o.repos.includes(r.id)));
   const results: RepoScan[] = [];
+  /** Each repo's modules with their own component (ADR 0057): the manifest's, else found. */
+  const modulesOf = new Map<string, { path: string; component: string; hosts: string[] }[]>();
   let done = 0;
   for (const r of repos) {
     const dir = o.repoDir?.(r.id) ?? inPlace(o.root, r.url) ?? baseClonePath(o.root, r.id);
@@ -322,9 +325,14 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         .filter(({ d }) => r.dialects.includes(d.name) || d.appliesTo.repoTypes.includes(r.type))
         .map(({ x }) => x),
     ];
+    // .atticus/ is Atticus's own folder (an adopted repo scans itself): never read as code.
+    const handle = fsRepo(r.id, dir, state.commit, { ignore: [...DEFAULT_IGNORES, ".atticus"] });
+    const modules = r.modules.length
+      ? r.modules
+      : (await detectModules(handle)).map((m) => ({ ...m, hosts: [] as string[] }));
+    modulesOf.set(r.id, modules);
     const scan = await scanRepo({
-      // .atticus/ is Atticus's own folder (an adopted repo scans itself): never read as code.
-      repo: fsRepo(r.id, dir, state.commit, { ignore: [...DEFAULT_IGNORES, ".atticus"] }),
+      repo: handle,
       extractors,
       dialects: r.dialects,
       scannedAt,
@@ -336,6 +344,9 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       },
       frameworks,
       repoInfo: {
+        ...(modules.length
+          ? { modules: modules.map(({ path, component }) => ({ path, component })) }
+          : {}),
         ...(r.component ? { component: r.component } : {}),
         ...(r.system ? { system: r.system } : {}),
         repoType: r.type,
@@ -355,13 +366,25 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
 
   const mergeInput = (records: CatalogRecord[]) => ({
     records,
-    repos: repos.map((r) => ({
-      id: r.id,
-      type: r.type,
-      ...(r.component ? { component: r.component } : {}),
-      ...(r.system ? { system: r.system } : {}),
-      hosts: r.hosts,
-    })),
+    repos: repos.flatMap((r) => [
+      {
+        id: r.id,
+        type: r.type,
+        ...(r.component ? { component: r.component } : {}),
+        ...(r.system ? { system: r.system } : {}),
+        hosts: r.hosts,
+      },
+      // A module's hosts join calls to its own component (ADR 0057).
+      ...(modulesOf.get(r.id) ?? [])
+        .filter((m) => m.hosts.length > 0)
+        .map((m) => ({
+          id: r.id,
+          type: r.type,
+          component: m.component,
+          ...(r.system ? { system: r.system } : {}),
+          hosts: m.hosts,
+        })),
+    ]),
     systems: op.profiles.flatMap((p) => p.profile?.systems ?? []),
     patterns: op.patterns,
     profilePath: op.profiles[0]

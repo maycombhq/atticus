@@ -296,6 +296,45 @@ describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {
         return `${i.from}->${i.to} ${i.via} ${i.method ?? ""} ${i.normalizedPath} ${i.confidence}`;
       });
 
+  it("reaches a vendor system through a host label that is its name or alias, and only then", () => {
+    const vendors = [
+      ...systems,
+      {
+        id: "northwind-pay",
+        name: "Northwind Pay",
+        boundary: "vendor" as const,
+        aliases: ["Northwind"],
+      },
+      { id: "lantern-mail", name: "Lantern Mail", boundary: "vendor" as const, aliases: [] },
+      { id: "lantern-sms", name: "Lantern SMS", boundary: "vendor" as const, aliases: [] },
+      { id: "harbor-crm", name: "Harbor CRM", boundary: "internal" as const, aliases: ["crm"] },
+    ];
+    const m = mergeCatalog({
+      records: [
+        ...records,
+        call("bff", "POST https://api.northwind.example/v1/charges"),
+        call("bff", "POST https://api.northwindpay.example/v2/refunds"),
+        call("bff", "POST https://api.lanternmail.example/v3/messages"),
+        // "lantern" alone names two vendors: left loose.
+        call("bff", "POST https://lantern.example/x"),
+        // Not a vendor: the rule is for vendor systems only.
+        call("bff", "GET https://api.crm.example/contacts"),
+      ],
+      repos,
+      systems: vendors,
+      patterns: [],
+    });
+    expect(
+      ifs(m)
+        .filter((i) => !i.startsWith("bff->api") && !i.startsWith("bff->cards"))
+        .sort(),
+    ).toEqual([
+      "bff->lantern-mail direct POST /v3/messages inferred",
+      "bff->northwind-pay direct POST /v1/charges inferred",
+      "bff->northwind-pay direct POST /v2/refunds inferred",
+    ]);
+  });
+
   it("goes through a gateway only on a host declared for the gateway repo", () => {
     const m = run([
       call("bff", "POST https://gateway.forge.example/ledger/v1/transfers"),

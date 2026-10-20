@@ -1,0 +1,5 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>tide.accounts</groupId><artifactId>tide-accounts</artifactId><version>1.0.0</version></parent>
+  <artifactId>accounts-api</artifactId>
+</project>

@@ -80,7 +80,6 @@ export const houseExtractor = defineExtractor({
   async *scan(repo, ctx) {
     const models = (ctx.frameworks ?? []).filter((m) => m.calls.length + m.routes.length > 0);
     if (models.length === 0) return;
-    const component = componentOf(repo, ctx);
     const files: string[] = [];
     for await (const p of repo.listFiles(this.claims)) if (!SKIP.test(p)) files.push(p);
     const repoConstants = await jsConstants(repo, files);
@@ -93,6 +92,7 @@ export const houseExtractor = defineExtractor({
       const used = models.filter((m) => m.packages.some((p) => imports(text, p)));
       if (used.length === 0) continue;
       const src = new SourceFile(path, text, lang);
+      const component = componentOf(repo, ctx, path);
       const ev = new Evaluator(src, { name: (dotted) => known(dotted) });
       /** One part of a call: its argument (or a property of it) evaluated, or a fixed value. */
       const part = (

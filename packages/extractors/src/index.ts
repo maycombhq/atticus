@@ -41,6 +41,7 @@ export { CLIENT_PACKAGES, READ_ANNOTATIONS, settingSlug } from "./spring.js";
 export * from "./frameworks.js";
 export * from "./learn-framework.js";
 export * from "./learn-js-framework.js";
+export * from "./modules.js";
 export * from "./dependencies.js";
 export * from "./framework-tests.js";
 export { houseExtractor };

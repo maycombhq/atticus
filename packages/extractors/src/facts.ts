@@ -42,8 +42,19 @@ export const evidence = (repo: RepoHandle, e: Ev) => ({ repo: repo.name, ...e })
 
 const short = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 10);
 
-/** Component id for this scan: the manifest's, else the repo id. */
-export const componentOf = (repo: RepoHandle, ctx: ScanContext) => ctx.component ?? repo.name;
+/**
+ * Component id for a fact: the module's its file is in (ADR 0057), else the manifest's
+ * component, else the repo id.
+ */
+export function componentOf(repo: RepoHandle, ctx: ScanContext, path?: string): string {
+  if (path && ctx.modules?.length) {
+    let best: { path: string; component: string } | undefined;
+    for (const m of ctx.modules)
+      if (path.startsWith(`${m.path}/`) && (!best || m.path.length > best.path.length)) best = m;
+    if (best) return best.component;
+  }
+  return ctx.component ?? repo.name;
+}
 
 export function looseEnd(
   repo: RepoHandle,
@@ -52,7 +63,7 @@ export function looseEnd(
   raw: string,
   ev: Ev,
 ): CatalogRecord {
-  const owner = componentOf(repo, ctx);
+  const owner = componentOf(repo, ctx, ev.path);
   return {
     schemaVersion: 1,
     kind: "Unresolved",

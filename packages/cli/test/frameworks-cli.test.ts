@@ -147,7 +147,7 @@ describe("atticus frameworks discover", () => {
     expect(c.out[0]).toBe("tide.platform:tide-web-starter: 3.2.0 in tide-cards");
     expect(c.out[1]).toMatch(/^ {2}JAR: .*tide-web-starter-3\.2\.0\.jar$/);
     expect(c.out).toContain(
-      "Not cloned here, so not read: tide-payments, tide-gateway, tide-web, tide-bff, tide-infra (atticus workspace sync).",
+      "Not cloned here, so not read: tide-payments, tide-gateway, tide-web, tide-bff, tide-infra, tide-accounts (atticus workspace sync).",
     );
     expect(c.out).toContainEqual(
       expect.stringMatching(
@@ -322,7 +322,7 @@ describe("atticus frameworks survey and kit", () => {
       expect(await frameworksSurvey(root, { prefixes: ["@tide/"] }, c.io)).toBe(0);
       expect(c.out[0]).toBe("@tide/lantern (js): 2 files in 1 repo, modelled by tide-lantern");
       expect(c.out.at(-1)).toBe(
-        "Not cloned, so not surveyed: tide-cards, tide-gateway, tide-infra, tide-payments (atticus workspace sync clones them).",
+        "Not cloned, so not surveyed: tide-accounts, tide-cards, tide-gateway, tide-infra, tide-payments (atticus workspace sync clones them).",
       );
       const j = capture();
       await frameworksSurvey(root, { prefixes: ["@tide/"], json: true }, j.io);

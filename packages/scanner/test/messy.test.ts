@@ -46,6 +46,7 @@ describe("the messy estate (phase 2 gate)", () => {
   it("scans every repo with no problems, a broken template file included", () => {
     expect(scan.problems).toEqual([]);
     expect(scan.repos.map((r) => r.repo).sort()).toEqual([
+      "tide-accounts",
       "tide-bff",
       "tide-cards",
       "tide-gateway",
@@ -114,7 +115,7 @@ describe("the messy estate (phase 2 gate)", () => {
     const cards = scan.coverage.find((c) => c.repo === "tide-cards")!;
     expect(cards.joined).toBeGreaterThanOrEqual(1);
     expect(cards.open).toBeGreaterThanOrEqual(5);
-    expect(scan.coverage).toHaveLength(6);
+    expect(scan.coverage).toHaveLength(7);
   });
 
   // ---- Phase 3: the house starter, read through its framework model (ADR 0054;
@@ -179,6 +180,19 @@ describe("the messy estate (phase 2 gate)", () => {
     expect(topics).toEqual([
       "cards-svc cards.statements.prod verified",
       "web-bff web.limits.prod verified",
+    ]);
+  });
+
+  // ---- ADR 0057: a multi-module repo with two Spring Boot apps and a shared library.
+
+  it("makes each app in a multi-module repo its own component, and joins the call between them", () => {
+    const comps = recs()
+      .filter((r) => r.kind === "Component" && r.repo === "tide-accounts")
+      .map((r) => r.id)
+      .sort();
+    expect(comps).toEqual(["accounts-api", "accounts-jobs", "tide-accounts"]);
+    expect(interfaces().filter((i) => i.startsWith("accounts-"))).toEqual([
+      "accounts-jobs->accounts-api direct GET /accounts/{} verified",
     ]);
   });
 });

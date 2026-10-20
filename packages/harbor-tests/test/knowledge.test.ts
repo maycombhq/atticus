@@ -171,17 +171,18 @@ describe("knowledge gaps on the expected Harbor catalog", () => {
     expect(ids).toContain("q.component-source-known.fraud-score");
   });
 
-  // Missing producer: merge resolving vendor hosts (pending.ts "vendor-hosts"): until the
-  // vendor calls are interfaces, the scanned catalog has nothing for h09 to ask about.
-  it.skip("finds h09 from the scanned catalog (end to end)", async () => {
+  it("finds h09 from the scanned catalog (end to end)", async () => {
     const gaps = knowledgeGaps({
       records: (await scanHarbor()).records,
       orgPack: await harborPack(),
     });
     const h09 = gapSeeds.find((d) => d.id === "h09-no-vendor-timeouts")!;
     expect(
-      gaps.filter((g) => g.check === "call-resilience-known").flatMap((g) => g.records),
-    ).toEqual(h09.refs);
+      gaps
+        .filter((g) => g.check === "call-resilience-known")
+        .flatMap((g) => g.records)
+        .sort(),
+    ).toEqual([...h09.refs].sort());
   });
 });
 

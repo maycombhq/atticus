@@ -27,24 +27,6 @@ export const PENDING: Record<string, PendingGroup> = {
       "SaaS vendor systems tagged saas (ADR 0040 System tags convention): the System tags come from the C6 profile, which the merge copies as it is",
     records: ["System/tidewater-payments", "System/lantern-mail"],
   },
-  "vendor-hosts": {
-    producer:
-      "merge resolving a vendor host (api.tidewater.example, api.lanternmail.example) through the profile alias or the partner spec's servers; no lane owns this yet",
-    records: [
-      "Interface/if-a4ccfcea11eeebf0",
-      "Interface/if-018d1416ec04a61a",
-      "Interface/if-10465a7b9c85231e",
-    ],
-  },
-  "golang-migrate": {
-    producer:
-      "migrations extractor reading golang-migrate names (<version>_<name>.up.sql); it knows Flyway's V<n>__ only; no lane owns this yet",
-    records: ["Migration/catalog-db.v0001", "Migration/catalog-db.v0002"],
-    extraOnMain: [
-      "Migration/catalog-db.v0001-create-products.up",
-      "Migration/catalog-db.v0002-create-stock-levels.up",
-    ],
-  },
 };
 
 export const pendingKeys = (groups = Object.keys(PENDING)): Set<string> =>

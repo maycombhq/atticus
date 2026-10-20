@@ -245,6 +245,7 @@ export async function reposDiscover(
         sparse: [],
         archived: false,
         hosts: [],
+        modules: [],
       };
       found.push({ entry, detection: det, dir });
     }
@@ -266,6 +267,7 @@ export async function reposDiscover(
           sparse: [],
           archived: l.archived ?? false,
           hosts: [],
+          modules: [],
         },
         detection: det,
       });

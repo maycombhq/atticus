@@ -93,6 +93,20 @@ export const ManifestRepo = z.strictObject({
    * and only calls to them go through the gateway.
    */
   hosts: z.array(HostPattern).default([]),
+  /**
+   * Modules that build their own component (ADR 0057): a folder, its component and the hosts
+   * it answers on. When none are listed, a repo with two or more Spring Boot apps gets one per
+   * app, found by the scan.
+   */
+  modules: z
+    .array(
+      z.strictObject({
+        path: RelativePosixPath,
+        component: RecordId,
+        hosts: z.array(HostPattern).default([]),
+      }),
+    )
+    .default([]),
 });
 export type ManifestRepo = z.infer<typeof ManifestRepo>;
 
