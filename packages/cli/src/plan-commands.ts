@@ -3,6 +3,7 @@ import type { Approval, WorkTracker, ServiceDesk } from "@maycombhq/adapters";
 import { runtimeForCli, type AiRuntime, type Run } from "@maycombhq/ai";
 import { changesRelOf, proposalsRelOf } from "@maycombhq/core";
 import {
+  draftChange as draft,
   draftTemplates,
   metarepoAdapters,
   planStories as plan,
@@ -66,7 +67,7 @@ async function runtimeOf(
 export async function planStories(
   root: string,
   changeId: string | undefined,
-  o: { force?: boolean; resume?: string; mode?: string; json?: boolean },
+  o: { force?: boolean; resume?: string; mode?: string; json?: boolean; draft?: boolean },
   io: Output,
   deps: PlanDeps = {},
 ): Promise<number> {
@@ -83,6 +84,7 @@ export async function planStories(
       ...(deps.now ? { now: deps.now() } : {}),
       ...(o.force ? { force: true } : {}),
       ...(o.resume ? { resume: o.resume } : {}),
+      ...(o.draft ? { draft: true } : {}),
     });
     if (o.json) {
       io.out(
@@ -119,6 +121,10 @@ export async function planStories(
       );
       return 1;
     }
+    if (o.draft)
+      io.out(
+        "These are draft stories from the design as it stands; plan again once the design is approved.",
+      );
     io.out(
       `Planned ${plural(r.skeleton.stories.length, "story")} and ${plural(r.skeleton.tasks.length, "task")} for ${r.change} in ${plural(r.skeleton.repos.length, "repo")}.`,
     );
@@ -432,5 +438,62 @@ function reportTemplates(
       `Wrote the proposal to ${proposalsRelOf(root)}/templates/ (${plural(r.files.length, "file")}); read SUMMARY.md, then copy what you accept into org-pack/ in a pull request.`,
     );
     return 0;
+  }
+}
+
+/** atticus change draft <change> [--attempts n] [--force] [--resume <run>] [--mode <mode>] [--json] */
+export async function changeDraft(
+  root: string,
+  changeId: string | undefined,
+  o: { attempts?: number; force?: boolean; resume?: string; mode?: string; json?: boolean },
+  io: Output,
+  deps: PlanDeps = {},
+): Promise<number> {
+  if (!changeId) {
+    io.err(
+      "Usage: atticus change draft <change> [--attempts n] [--force] [--resume <run>] [--mode <mode>] [--json]",
+    );
+    return 2;
+  }
+  try {
+    const runtime = await runtimeOf(root, o.mode, deps);
+    const r = await draft(root, changeId, {
+      runtime,
+      ...(deps.now ? { now: deps.now() } : {}),
+      ...(o.attempts ? { attempts: o.attempts } : {}),
+      ...(o.force ? { force: true } : {}),
+      ...(o.resume ? { resume: o.resume } : {}),
+    });
+    if (o.json) {
+      io.out(JSON.stringify(r, null, 2));
+      return r.state === "written" ? 0 : 1;
+    }
+    if (r.state === "waiting") {
+      if (r.problems.length) {
+        io.out("The last draft went back to your assistant to fix:");
+        for (const p of r.problems) io.out(`  ${p}`);
+      }
+      io.out(
+        `Handed the draft to your assistant (run ${r.waiting!.runId}), with the brief and ${plural(r.map.length, "catalog record")} it is about. When it is done, run: atticus change draft ${changeId} --resume ${r.waiting!.runId}`,
+      );
+      return 1;
+    }
+    if (r.state === "failed") {
+      io.err(
+        `The draft still had problems after ${plural(r.attempts, "attempt")}; nothing was written:`,
+      );
+      for (const p of r.problems) io.err(`  ${p}`);
+      return 1;
+    }
+    const dir = `${changesRelOf(root)}/${r.change}`;
+    io.out(
+      `Drafted ${r.files.join(", ")} in ${dir} (${plural(r.attempts, "attempt")}), from the brief and ${plural(r.map.length, "catalog record")}. Review and edit them; they are yours now.`,
+    );
+    for (const d of r.discarded)
+      io.out(`Left out ${d}: a draft writes only the change's design files.`);
+    io.out(`Next: atticus critic ${r.change}, then atticus plan stories ${r.change}.`);
+    return 0;
+  } catch (e) {
+    return fail(io, e);
   }
 }

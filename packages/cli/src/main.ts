@@ -43,6 +43,7 @@ import { AiOffError, runtimeForCli, RuntimeConfigError, type AiRuntime } from "@
 import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
 import {
   adoSync,
+  changeDraft,
   planStories,
   snowDraft,
   snowSubmit,
@@ -217,6 +218,7 @@ Usage:
   atticus frameworks survey [--package <prefix>[,...]]   How the repos use house frameworks, any language [--json]
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
   atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
+  atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, approvals and test kinds
   atticus change handoff <id> --by <you>  Open the phase's hand-off PR for approval [--repo]
@@ -247,7 +249,7 @@ Usage:
   atticus drift <change> [--json]      Compare design, repo plans and code
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
-  atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m]
+  atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]
   atticus plan snow <change>           Draft service-desk requests the change needs [--force]
   atticus plan bar <change>            Measure the story bar [--eval file]
   atticus plan submit <change>         File the drafted requests [--dry-run] [--approve --by you]
@@ -376,6 +378,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       executor: { type: "string" },
       fixture: { type: "string" },
       force: { type: "boolean" },
+      draft: { type: "boolean" },
       full: { type: "boolean" },
       "dry-run": { type: "boolean" },
       json: { type: "boolean" },
@@ -936,6 +939,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
         arg,
         {
           force: values.force === true,
+          draft: values.draft === true,
           ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
           ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
           json,
@@ -1235,6 +1239,19 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       );
     if (command === "list") return changeList(root, { json }, io);
     if (command === "conflicts") return changeConflicts(root, { json }, io);
+    if (command === "draft")
+      return changeDraft(
+        root,
+        arg,
+        {
+          ...(str(values.attempts) ? { attempts: Number(str(values.attempts)) } : {}),
+          force: values.force === true,
+          ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
+          ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+          json,
+        },
+        io,
+      );
     if (!arg) {
       io.err(
         `change ${command ?? ""} needs a change id, for example: atticus change status add-transfer-limit`,

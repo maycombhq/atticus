@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Draft a change from its brief and the map
+
+- `atticus change draft <change>` (ADR 0070): your assistant drafts the OpenSpec proposal, spec delta and interfaces from the brief and the part of the catalog the change is about, picked without AI. Atticus checks the draft (every system, call and interface is in the catalog or marked new, every requirement has a scenario) and sends problems back before anything is written.
+- `atticus plan stories --draft` writes draft stories before the design is approved.
+- In the app, calls inside one box are counted on it instead of drawn as a loop, and every graph draws on the layered canvas.
+
 ### A repo's own HTTP helpers are followed
 
 - The frontend reader follows the helpers a repo writes around fetch and axios (ADR 0069): `post("reports")` through `post(path)` → `http(\`/api/${path}\`, { method: "POST" })`→`fetch(BASE + path)`reads as`POST /api/reports`, verified from code, across files through relative imports. An app with its own thin client now gives its calls, so its API's endpoints are entry points and features are found.
