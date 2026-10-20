@@ -15,6 +15,8 @@ import { normalizePath } from "./identity.js";
  *                                        match: its key, a field of the object above (ADR 0058)
  *   "${lookup:servers(attr.name).host}"  a value from a dialect lookup table, by key (ADR 0058)
  *   "${capture.path}"                    a capture of a syntax match's query (ADR 0060)
+ *   "${item.name}"                       the node a collecting list item is at (ADR 0061)
+ *   "${repo.component}"                  the component the matched file belongs to (ADR 0061)
  *   "${system}" "${field}" "${kind}"     subject of a checklist need (questions only)
  *
  * Filters follow a pipe: "${attr.method | upper}", "${attr.path | normalizePath}",
@@ -40,6 +42,8 @@ export type TemplateSource =
   | { type: "yaml"; file: string; key: string }
   | { type: "member" | "class" | "file" | "repo"; name: string }
   | { type: "match"; group: number }
+  /** The node a collecting list item is at (ADR 0061): itself, or a dotted field of it. */
+  | { type: "item"; name: string }
   /** A capture of a `syntax` match's tree-sitter query (ADR 0060). */
   | { type: "capture"; name: string }
   /** The matched node's key (name "key"), or a field of an object `up` levels above it. */
@@ -71,7 +75,7 @@ const BUILTIN: Record<string, readonly string[]> = {
   member: ["name"],
   class: ["name"],
   file: ["path", "line"],
-  repo: ["name"],
+  repo: ["name", "component"],
 };
 
 function parseSource(raw: string, template: string): TemplateSource {
@@ -118,6 +122,8 @@ function parseSource(raw: string, template: string): TemplateSource {
       fail("expected node.key, node.up.<field> or node.up.key");
     return { type: "node", up, name: name.join(".") };
   }
+  if (head === "item" && rest.every((p) => IDENT.test(p)))
+    return { type: "item", name: rest.join(".") };
   if (head === "capture" && rest.length === 1 && IDENT.test(rest[0]!))
     return { type: "capture", name: rest[0]! };
   if (head === "match" && rest.length === 1 && /^\d+$/.test(rest[0]!))

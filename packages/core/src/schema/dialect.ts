@@ -131,7 +131,45 @@ export function matchType(
   throw new Error("unreachable");
 }
 
-const FieldValue = z.union([Template, z.number(), z.boolean(), z.array(Template)]);
+/** A list item that collects one value per node under the match (ADR 0061). */
+export const DialectEach = z.strictObject({
+  each: z.string().regex(/^@/, "a path relative to the match starts with @"),
+  value: Template,
+});
+export type DialectEach = z.infer<typeof DialectEach>;
+
+/** A field's value: a template, a literal, a list (of templates or collecting items), or an object of them. */
+export type DialectFieldValue =
+  string | number | boolean | (string | DialectEach)[] | { [key: string]: DialectFieldValue };
+// Objects nest three levels deep (details.deploy.targets), written out rather than recursive so
+// the generated JSON Schema and spec pages stay finite.
+const FieldLeaf = z.union([
+  Template,
+  z.number(),
+  z.boolean(),
+  z.array(z.union([Template, DialectEach])),
+]);
+const FieldLevel1 = z.union([FieldLeaf, z.record(z.string().min(1), FieldLeaf)]);
+const FieldLevel2 = z.union([FieldLeaf, z.record(z.string().min(1), FieldLevel1)]);
+const FieldValue = z.union([
+  FieldLeaf,
+  z.record(z.string().min(1), FieldLevel2),
+]) as z.ZodType<DialectFieldValue>;
+
+/** Every template inside a field value, collecting items' too. */
+export function fieldTemplates(v: DialectFieldValue): string[] {
+  if (typeof v === "string") return [v];
+  if (typeof v === "number" || typeof v === "boolean") return [];
+  if (Array.isArray(v)) return v.flatMap((x) => (typeof x === "string" ? [x] : [x.value]));
+  return Object.values(v).flatMap(fieldTemplates);
+}
+
+/** Whether a field value collects anything (needs a jsonPath match). */
+export function fieldCollects(v: DialectFieldValue): boolean {
+  if (Array.isArray(v)) return v.some((x) => typeof x !== "string");
+  if (v && typeof v === "object") return Object.values(v).some(fieldCollects);
+  return false;
+}
 
 export const DialectEmit = z.strictObject({
   kind: z.enum(RECORD_KINDS as [RecordKind, ...RecordKind[]]),
@@ -290,11 +328,15 @@ export const Dialect = z
             message: `${emit.kind} needs an id template`,
           });
         }
+        if (Object.values(emit.fields).some(fieldCollects) && matchType(r.match) !== "jsonPath")
+          ctx.addIssue({
+            code: "custom",
+            path: at,
+            message: "a collecting list item ({ each, value }) needs a jsonPath match",
+          });
         const templates = [
           ...(emit.id === undefined ? [] : [emit.id]),
-          ...Object.values(emit.fields).flatMap((v) =>
-            typeof v === "string" ? [v] : Array.isArray(v) ? v : [],
-          ),
+          ...Object.values(emit.fields).flatMap(fieldTemplates),
           ...(r.where ?? []).map((w) => w.value),
         ];
         for (const t of templates) {
@@ -321,6 +363,12 @@ export const Dialect = z
                 message: "${match.N} needs a regex, configKey, xpath, jsonPath or hclBlock match",
               });
             }
+            if (s.type === "item" && !Object.values(emit.fields).some(fieldCollects))
+              ctx.addIssue({
+                code: "custom",
+                path: ["rules", i],
+                message: "${item...} is for the value of a collecting list item ({ each, value })",
+              });
             if (s.type === "capture" && matchType(r.match) !== "syntax")
               ctx.addIssue({
                 code: "custom",

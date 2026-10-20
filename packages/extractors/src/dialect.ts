@@ -6,11 +6,13 @@ import {
   matchType,
   normalizePath,
   RECORD_SCHEMAS,
+  fieldTemplates,
   renderExpr,
   renderTemplate,
   type CatalogRecord,
   type Dialect,
   type DialectEmit,
+  type DialectFieldValue,
   type DialectRule,
   type TemplateSource,
 } from "@maycombhq/core";
@@ -27,6 +29,7 @@ import { flattenProperties, flattenYaml, relaxedKey, type ConfigValue } from "./
 import { parseJava, type Annotation, type Decl, type JavaFile } from "./lang/java.js";
 import { parseXml, type XmlElement } from "./lang/xml.js";
 import { querySyntax, syntaxLanguageOf } from "./lang/syntax.js";
+import { componentOf } from "./facts.js";
 import { isRef, parseHcl, type HclBlock, type HclValue } from "./platform/hcl.js";
 import { loadTerraform, resolve as tfResolve, type TfModule } from "./platform/terraform.js";
 import { dirOf } from "./platform/util.js";
@@ -53,6 +56,8 @@ interface Place {
   /** Annotations on the enclosing type (or the type itself for class-level matches). */
   typeAnnotations: Annotation[];
   match: string[];
+  /** A jsonPath match's node as plain data, for collecting list items (ADR 0061). */
+  value?: unknown;
   /** A syntax match's captures (ADR 0060). */
   captures?: Record<string, string>;
   /** Around a jsonPath, xpath or hclBlock match (ADR 0058): its key, and the objects above it. */
@@ -72,6 +77,64 @@ const plainFields = (v: unknown, prefix = "", out: Record<string, string> = {}) 
 };
 
 const simple = (name: string) => name.split(".").pop()!;
+
+/** Nodes a relative path (@.a[*].b, @..name) finds under a plain value (ADR 0061). */
+function relativePath(root: unknown, path: string): unknown[] {
+  // Tokens: ..key (at any depth), .key, [*], [N] or ['key'].
+  const tokens: string[] = [];
+  const rest = path.replace(/^@/, "");
+  for (let j = 0; j < rest.length;) {
+    if (rest.startsWith("..", j) || rest[j] === ".") {
+      const deepKey = rest.startsWith("..", j);
+      let k = j + (deepKey ? 2 : 1);
+      while (k < rest.length && rest[k] !== "." && rest[k] !== "[") k++;
+      tokens.push(deepKey ? rest.slice(j, k) : rest.slice(j + 1, k));
+      j = k;
+    } else if (rest[j] === "[") {
+      const k = rest.indexOf("]", j);
+      tokens.push(rest.slice(j, k < 0 ? rest.length : k + 1));
+      j = k < 0 ? rest.length : k + 1;
+    } else j++;
+  }
+  const kids = (v: unknown): unknown[] =>
+    Array.isArray(v) ? v : v && typeof v === "object" ? Object.values(v) : [];
+  const deep = (v: unknown): unknown[] => kids(v).flatMap((k) => [k, ...deep(k)]);
+  let cur: unknown[] = [root];
+  for (const t of tokens) {
+    const next: unknown[] = [];
+    if (t.startsWith("..")) {
+      const key = t.slice(2);
+      for (const c of cur)
+        for (const d of [c, ...deep(c)])
+          if (d && typeof d === "object" && !Array.isArray(d) && key in d)
+            next.push((d as Record<string, unknown>)[key]);
+    } else if (t.startsWith("[")) {
+      const inner = t.slice(1, -1).replace(/['"]/g, "");
+      for (const c of cur)
+        if (inner === "*") next.push(...kids(c));
+        else if (Array.isArray(c) && /^\d+$/.test(inner)) next.push(c[Number(inner)]);
+        else if (c && typeof c === "object") next.push((c as Record<string, unknown>)[inner]);
+    } else {
+      for (const c of cur)
+        if (t === "*") next.push(...kids(c));
+        else if (c && typeof c === "object" && !Array.isArray(c))
+          next.push((c as Record<string, unknown>)[t]);
+    }
+    cur = next.filter((x) => x !== undefined && x !== null);
+  }
+  return cur;
+}
+
+/** A dotted field of a plain value, as text, or the value itself when name is "". */
+function itemValue(v: unknown, name: string): string | undefined {
+  let x = v;
+  if (name)
+    for (const k of name.split(".")) {
+      if (!x || typeof x !== "object" || Array.isArray(x)) return undefined;
+      x = (x as Record<string, unknown>)[k];
+    }
+  return x === null || x === undefined || typeof x === "object" ? undefined : String(x);
+}
 
 function annAttrs(a: Annotation): Record<string, string> {
   const out: Record<string, string> = {};
@@ -294,11 +357,13 @@ async function places(
       const doc = parseDocument(await repo.readText(path), { lineCounter: lc });
       for (const hit of jsonPath(doc.contents, m.jsonPath, lc)) {
         const attrs = plainFields(hit.value);
+        const value = hit.value;
         out.push({
           path,
           line: hit.line,
           attrs,
           typeAnnotations: [],
+          value,
           match: [typeof hit.value === "object" ? "" : String(hit.value)],
           node: {
             key: hit.key,
@@ -503,9 +568,7 @@ export function dialectExtractor(
       };
       const templatesOf = (e: DialectEmit) => [
         e.id ?? "",
-        ...Object.values(e.fields).flatMap((v) =>
-          typeof v === "string" ? [v] : Array.isArray(v) ? v : [],
-        ),
+        ...Object.values(e.fields).flatMap(fieldTemplates),
       ];
       /** What a template value is at one place; lookups come from the tables below. */
       const resolverFor = (
@@ -533,7 +596,7 @@ export function dialectExtractor(
             case "file":
               return s.name === "path" ? place.path : String(place.line);
             case "repo":
-              return repo.name;
+              return s.name === "component" ? componentOf(repo, ctx, place.path) : repo.name;
             case "match":
               return place.match[s.group];
             case "capture":
@@ -597,10 +660,38 @@ export function dialectExtractor(
           // Each record the rule emits for this place (ADR 0058), each checked on its own.
           for (const emit of emits) {
             const fields: Record<string, unknown> = {};
+            const base = resolverFor(place, yamlValues, true);
+            /** A field value rendered: nested objects and collecting items too (ADR 0061). */
+            const renderValue = (v: DialectFieldValue): unknown => {
+              if (typeof v === "number" || typeof v === "boolean") return v;
+              if (typeof v === "string") return render(v);
+              if (Array.isArray(v)) {
+                const out: string[] = [];
+                for (const x of v) {
+                  if (typeof x === "string") {
+                    const r = render(x);
+                    if (r !== undefined && r !== "") out.push(r);
+                    continue;
+                  }
+                  for (const node of relativePath(place.value, x.each)) {
+                    const r = renderTemplate(x.value, (src) =>
+                      src.type === "item" ? itemValue(node, src.name) : base(src),
+                    );
+                    if (r !== undefined && r !== "" && !out.includes(r)) out.push(r);
+                  }
+                }
+                return out;
+              }
+              const obj: Record<string, unknown> = {};
+              for (const [k, x] of Object.entries(v)) {
+                const r = renderValue(x);
+                if (r !== undefined) obj[k] = r;
+              }
+              return obj;
+            };
             for (const [k, v] of Object.entries(emit.fields)) {
               if (typeof v === "number" || typeof v === "boolean") fields[k] = v;
-              else if (Array.isArray(v))
-                fields[k] = v.map(render).filter((x): x is string => x !== undefined && x !== "");
+              else if (Array.isArray(v) || typeof v === "object") fields[k] = renderValue(v);
               else {
                 let r = render(v);
                 if (r !== undefined && (k === "normalizedPath" || k === "pathOrTopic")) {

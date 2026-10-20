@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Dialect fields: nested objects, collected lists, the component
+
+- A dialect field may be an object, nested up to three levels, and a list item may collect one value per node under the match: `{ each: "@.stages[*].stage", value: "${item.name}" }` (ADR 0061). `${repo.component}` is the component the matched file belongs to. A pipeline from any CI/CD tool can now be described as rules the way the built-in readers describe one.
+
 ### Rules read syntax trees, not text patterns
 
 - Java and Kotlin are read from their syntax trees (ADR 0060): one reader for the Spring extractor, dialects, the framework learner, batch, GraphQL and realtime. It gives what the hand-written lexer gave on every fixture file, and more: Kotlin `object` declarations, interface methods without a body, constants declared in companion objects. Calls are listed in source order, so a WebClient chain still reads its verb.
