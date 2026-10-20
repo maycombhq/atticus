@@ -51,4 +51,40 @@ describe("house dependencies: which house artifacts a repo builds on (ADR 0054)"
       },
     ]);
   });
+
+  it("reads the house npm packages package.json files depend on, by scope or name", async () => {
+    const repo = memoryRepo("web", "0".repeat(40), {
+      "package.json": JSON.stringify({
+        dependencies: { "@tide/lantern": "^4.1.0", react: "18.3.1" },
+        devDependencies: { "@tide/lint-rules": "2.0.0", "@other/x": "1.0.0" },
+      }),
+      "node_modules/@tide/lantern/package.json": JSON.stringify({
+        dependencies: { "@tide/y": "1" },
+      }),
+      "apps/admin/package.json": JSON.stringify({ dependencies: { "tide-kit": "~1.2.0" } }),
+    });
+    expect(await houseDependencies(repo, ["@tide", "tide-kit"])).toEqual([
+      {
+        group: "@tide",
+        artifact: "lantern",
+        version: "^4.1.0",
+        path: "package.json",
+        ecosystem: "npm",
+      },
+      {
+        group: "@tide",
+        artifact: "lint-rules",
+        version: "2.0.0",
+        path: "package.json",
+        ecosystem: "npm",
+      },
+      {
+        group: "tide-kit",
+        artifact: "tide-kit",
+        version: "~1.2.0",
+        path: "apps/admin/package.json",
+        ecosystem: "npm",
+      },
+    ]);
+  });
 });

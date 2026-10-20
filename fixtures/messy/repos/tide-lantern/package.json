@@ -1,0 +1,11 @@
+{
+  "name": "@tide/lantern",
+  "version": "4.1.0",
+  "description": "Tidewater's SPA and BFF framework (invented, messy-estate fixture).",
+  "type": "module",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+    "./server": { "types": "./dist/server.d.ts", "import": "./dist/server.js" }
+  },
+  "files": ["dist"]
+}

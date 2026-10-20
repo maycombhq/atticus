@@ -27,3 +27,4 @@ export * from "./fs.js";
 export * from "./log.js";
 export * from "./zip.js";
 export * from "./zip-read.js";
+export * from "./tar-read.js";

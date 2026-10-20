@@ -115,7 +115,7 @@ describe("atticus frameworks learn", () => {
     );
     const bad = capture();
     expect(await frameworksLearn(root, "x", join(root, "nowhere"), {}, bad.io)).toBe(2);
-    expect(bad.err[0]).toMatch(/isn't a folder or a \.jar/);
+    expect(bad.err[0]).toMatch(/isn't a folder, a \.jar or a \.tgz/);
   });
 });
 
@@ -160,6 +160,30 @@ describe("atticus frameworks discover", () => {
     expect(model.artifacts).toEqual(["tide.platform:tide-web-starter"]);
   });
 
+  it("finds the house npm package the SPA and BFF depend on, in a given folder, and learns it", async () => {
+    const root = await metarepo();
+    for (const r of ["tide-web", "tide-bff"])
+      await cp(join(MESSY, "repos", r), join(root, "workspace", r), { recursive: true });
+    const c = capture();
+    expect(
+      await frameworksDiscover(
+        root,
+        { groups: ["@tide"], jars: [join(MESSY, "npm")], learn: true },
+        c.io,
+      ),
+    ).toBe(0);
+    expect(c.out[0]).toBe("@tide/lantern: 4.1.0 in tide-bff, tide-web");
+    expect(c.out[1]).toMatch(/^ {2}Package: .*tide-lantern-4\.1\.0\.tgz$/);
+    expect(c.out).toContain(
+      "Wrote org-pack/frameworks/tide-lantern.yaml from tide-lantern-4.1.0.tgz: 2 calls, 2 routes, 2 constants (all from code); kept 2 services a person added.",
+    );
+    const none = capture();
+    await frameworksDiscover(root, { groups: ["@tide"] }, none.io);
+    expect(none.out[1]).toBe(
+      "  Package: not on this machine. Put tide-lantern-4.1.0.tgz (npm pack, or from your registry) in a folder and pass --jars <folder>; @tide/lantern isn't downloaded.",
+    );
+  });
+
   it("names a JAR that isn't on this machine instead of downloading it", async () => {
     const { root, home } = await estate(false);
     const c = capture();
@@ -169,6 +193,85 @@ describe("atticus frameworks discover", () => {
     );
     const none = capture();
     expect(await frameworksDiscover(root, { groups: [] }, none.io)).toBe(2);
+  });
+});
+
+describe("atticus frameworks learn, for a JS or TS framework (ADR 0055)", () => {
+  it(
+    "learns Lantern from its source, keeps the services a person added, and the scan verifies the BFF's routes",
+    async () => {
+      const root = await metarepo();
+      const c = capture();
+      expect(
+        await frameworksLearn(root, "tide-lantern", join(MESSY, "repos/tide-lantern"), {}, c.io),
+      ).toBe(0);
+      expect(c.out[0]).toBe(
+        "Wrote org-pack/frameworks/tide-lantern.yaml from tide-lantern: 2 calls, 2 routes, 2 constants (all from code); kept 2 services a person added.",
+      );
+      const model = FrameworkModel.parse(
+        parse(await readFile(join(root, "org-pack/frameworks/tide-lantern.yaml"), "utf8")),
+      );
+      expect(model.routes.map((r) => `${r.function} ${r.source.kind}`)).toEqual([
+        "defineRoute code",
+        "route code",
+      ]);
+      // The model's own tests are kept, and still pass.
+      expect(model.tests).toHaveLength(2);
+      const check = capture();
+      expect(await frameworksCheck(root, "tide-lantern", check.io)).toBe(0);
+
+      const scan = await scanEstate({
+        root,
+        repoDir: (id) => join(MESSY, "repos", id),
+        repoState: async () => ({ commit: "d".repeat(40), dirty: false }),
+        cache: null,
+        scannedAt: "2026-10-19T12:00:00Z",
+      });
+      expect(scan.problems).toEqual([]);
+      const eps = scan.records
+        .filter((r) => r.kind === "Endpoint")
+        .map(
+          (r) =>
+            r as unknown as {
+              component: string;
+              endpointType: string;
+              method: string;
+              pathOrTopic: string;
+            },
+        )
+        .filter((r) => r.component === "web-bff" && r.endpointType === "rest")
+        .map((r) => `${r.method} ${r.pathOrTopic}`)
+        .sort();
+      expect(eps).toEqual(["GET /statements/{id}", "POST /limits"]);
+      expect(
+        scan.records
+          .filter(
+            (r) =>
+              r.kind === "Endpoint" &&
+              (r as unknown as { component: string }).component === "web-bff" &&
+              (r as unknown as { endpointType: string }).endpointType === "rest",
+          )
+          .map((r) => r.confidence),
+      ).toEqual(["verified", "verified"]);
+    },
+    T,
+  );
+
+  it("learns it from the published package alone", async () => {
+    const root = await metarepo();
+    const c = capture();
+    expect(
+      await frameworksLearn(
+        root,
+        "tide-lantern",
+        join(MESSY, "npm/tide-lantern-4.1.0.tgz"),
+        { dryRun: true },
+        c.io,
+      ),
+    ).toBe(0);
+    expect(c.out[0]).toBe(
+      "Dry run: would write org-pack/frameworks/tide-lantern.yaml from tide-lantern-4.1.0.tgz: 2 calls, 2 routes, 2 constants (all from code); kept 2 services a person added.",
+    );
   });
 });
 
@@ -193,10 +296,7 @@ describe("atticus frameworks check", () => {
         "tide-lantern: no tests. Scans use it as written; add tests so a wrong entry can't go unnoticed.",
       ]);
 
-      await writeFile(
-        file,
-        yaml.replace('"endpoint POST /limits inferred"', '"endpoint PUT /limits"'),
-      );
+      await writeFile(file, yaml.replace('"endpoint POST /limits"', '"endpoint PUT /limits"'));
       const bad = capture();
       expect(await frameworksCheck(root, "tide-lantern", bad.io)).toBe(1);
       expect(bad.err).toEqual([

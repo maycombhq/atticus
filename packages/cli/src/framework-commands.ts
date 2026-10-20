@@ -13,6 +13,8 @@ import {
   houseDependencies,
   learnFramework,
   learnFrameworkFromJar,
+  learnJsFramework,
+  learnJsFrameworkFromTarball,
   runFrameworkTests,
 } from "@maycombhq/extractors";
 import {
@@ -44,10 +46,22 @@ function merge(
     ...learned.clients,
     ...existing.clients.filter((c) => !learned.clients.some((l) => clientKey(l) === clientKey(c))),
   ];
+  const callKey = (c: { function: string; receiver?: string }) =>
+    `${c.function}|${c.receiver ?? ""}`;
+  const calls = [
+    ...learned.calls,
+    ...existing.calls.filter((c) => !learned.calls.some((l) => callKey(l) === callKey(c))),
+  ];
+  const routes = [
+    ...learned.routes,
+    ...existing.routes.filter((c) => !learned.routes.some((l) => callKey(l) === callKey(c))),
+  ];
   const keptServices = Object.keys(existing.services).filter((k) => !(k in learned.services));
   const keptOther =
     existing.annotations.filter((a) => !learned.annotations.some((l) => l.name === a.name)).length +
     (clients.length - learned.clients.length) +
+    (calls.length - learned.calls.length) +
+    (routes.length - learned.routes.length) +
     Object.keys(existing.constants).filter((k) => !(k in learned.constants)).length;
   return {
     model: FrameworkModel.parse({
@@ -58,6 +72,8 @@ function merge(
         a.name < b.name ? -1 : 1,
       ),
       clients,
+      calls,
+      routes,
       services: { ...existing.services, ...learned.services },
       constants: { ...existing.constants, ...learned.constants },
       tests: existing.tests,
@@ -87,23 +103,40 @@ export async function frameworksLearn(
   const dir = resolve(from);
   const info = await stat(dir).catch(() => undefined);
   const isJar = !!info?.isFile() && /\.jar$/i.test(dir);
-  if (!info?.isDirectory() && !isJar) {
+  const isTgz = !!info?.isFile() && /\.(tgz|tar\.gz)$/i.test(dir);
+  if (!info?.isDirectory() && !isJar && !isTgz) {
     io.err(
-      `${from} isn't a folder or a .jar: give the starter's source or its JAR, e.g. --from workspace/tide-platform`,
+      `${from} isn't a folder, a .jar or a .tgz: give the framework's source, its JAR or its npm package, e.g. --from workspace/tide-platform`,
     );
     return 2;
   }
   const opts = { name, ...(o.packages?.length ? { packages: o.packages } : {}) };
   let learned: Awaited<ReturnType<typeof learnFramework>>;
   try {
+    const repo = () => fsRepo(basename(dir), dir, "0".repeat(40));
     learned = isJar
       ? learnFrameworkFromJar(await readFile(dir), { ...opts, jarName: basename(dir) })
-      : await learnFramework(fsRepo(basename(dir), dir, "0".repeat(40)), opts);
+      : isTgz
+        ? learnJsFrameworkFromTarball(await readFile(dir), { ...opts, tarballName: basename(dir) })
+        : (await isJsPackage(dir))
+          ? await learnJsFramework(repo(), opts)
+          : await learnFramework(repo(), opts);
   } catch (e) {
     io.err(`${from} couldn't be read: ${(e as Error).message}`);
     return 1;
   }
   return writeLearned(root, name, learned, basename(dir), isJar, !!o.dryRun, io);
+}
+
+/** A JS or TS package folder: a package.json at the top and no Maven or Gradle build. */
+async function isJsPackage(dir: string): Promise<boolean> {
+  const has = async (f: string) => !!(await stat(join(dir, f)).catch(() => undefined))?.isFile();
+  return (
+    (await has("package.json")) &&
+    !(await has("pom.xml")) &&
+    !(await has("build.gradle")) &&
+    !(await has("build.gradle.kts"))
+  );
 }
 
 /** Merge a learned model into org-pack/frameworks/<name>.yaml (or say what would be written). */
@@ -131,7 +164,11 @@ async function writeLearned(
   }
   const { model, keptServices, keptOther } = merge(existing, learned.model);
   const m = learned.model;
-  const what = `${plural(m.annotations.length, "annotation")}, ${plural(m.clients.length, "wrapper method")}, ${plural(Object.keys(m.constants).length, "constant")} (all from ${isJar ? "bytecode" : "code"})`;
+  const parts =
+    m.calls.length + m.routes.length > 0
+      ? [plural(m.calls.length, "call"), plural(m.routes.length, "route")]
+      : [plural(m.annotations.length, "annotation"), plural(m.clients.length, "wrapper method")];
+  const what = `${parts.join(", ")}, ${plural(Object.keys(m.constants).length, "constant")} (all from ${isJar ? "bytecode" : "code"})`;
   const keptParts = [
     ...(keptServices ? [plural(keptServices, "service")] : []),
     ...(keptOther ? [plural(keptOther, "other entry", "other entries")] : []),
@@ -145,11 +182,40 @@ async function writeLearned(
     io.out(`Wrote ${rel} from ${from}: ${what}${keptText}.`);
   }
   for (const n of learned.notes) io.out(`note: ${n}`);
-  if (m.annotations.length + m.clients.length === 0)
+  if (m.annotations.length + m.clients.length + m.calls.length + m.routes.length === 0)
     io.out(
-      "note: nothing in it reads as an annotation or a client the scanner knows; check --from is the starter's source.",
+      "note: nothing in it reads as an annotation, a client, a call or a route the scanner knows; check --from is the framework's source or package.",
     );
   return 0;
+}
+
+/** An npm dependency's package name: @scope/name, or name. */
+const npmName = (d: { group: string; artifact: string }) =>
+  d.group.startsWith("@") ? `${d.group}/${d.artifact}` : d.artifact;
+/** The base of the .tgz npm pack writes for a package: @tide/lantern → tide-lantern. */
+const tgzBase = (name: string) => name.replace(/^@/, "").replace("/", "-");
+/** A version range as a version: ^4.1.0 → 4.1.0. */
+const bare = (v: string) => v.replace(/^[\^~>=<v\s]+/, "");
+
+/**
+ * Where an npm package can be, offline: a .tgz in the given folders (as npm pack names it), or
+ * installed in a cloned repo's node_modules (a folder, with its typings).
+ */
+async function findPackage(
+  name: string,
+  version: string,
+  o: { dirs: string[]; clones: string[] },
+): Promise<string | undefined> {
+  const file = `${tgzBase(name)}-${bare(version)}.tgz`;
+  for (const dir of o.dirs) {
+    const hit = join(resolve(dir), file);
+    if ((await stat(hit).catch(() => undefined))?.isFile()) return hit;
+  }
+  for (const c of o.clones) {
+    const dir = join(c, "node_modules", ...name.split("/"));
+    if ((await stat(join(dir, "package.json")).catch(() => undefined))?.isFile()) return dir;
+  }
+  return undefined;
 }
 
 /** Where a JAR of group:artifact:version can be, offline: given folders, then Maven's and Gradle's caches. */
@@ -223,18 +289,26 @@ export async function frameworksDiscover(
   const repos = op.profiles.flatMap((p) => (p.repos?.repos ?? []).filter((r) => !r.archived));
   const used = new Map<
     string,
-    { group: string; artifact: string; versions: Map<string, Set<string>> }
+    { group: string; artifact: string; npm: boolean; versions: Map<string, Set<string>> }
   >();
   const missing: string[] = [];
+  const clones: string[] = [];
   for (const r of repos) {
     const dir = baseClonePath(root, r.id);
     if (!(await stat(dir).catch(() => undefined))?.isDirectory()) {
       missing.push(r.id);
       continue;
     }
+    clones.push(dir);
     for (const d of await houseDependencies(fsRepo(r.id, dir, "0".repeat(40)), o.groups)) {
-      const k = `${d.group}:${d.artifact}`;
-      const u = used.get(k) ?? { group: d.group, artifact: d.artifact, versions: new Map() };
+      const npm = d.ecosystem === "npm";
+      const k = npm ? npmName(d) : `${d.group}:${d.artifact}`;
+      const u = used.get(k) ?? {
+        group: d.group,
+        artifact: d.artifact,
+        npm,
+        versions: new Map(),
+      };
       const v = d.version ?? "(managed)";
       u.versions.set(v, (u.versions.get(v) ?? new Set()).add(r.id));
       used.set(k, u);
@@ -243,6 +317,7 @@ export async function frameworksDiscover(
   const home = o.home ?? homedir();
   const rows: {
     artifact: string;
+    npm: boolean;
     versions: { version: string; repos: string[] }[];
     jar?: string;
     version?: string;
@@ -252,10 +327,12 @@ export async function frameworksDiscover(
     let jar: string | undefined;
     let version: string | undefined;
     for (const v of versions) {
-      jar = await findJar(
-        { group: u.group, artifact: u.artifact, version: v },
-        { jars: o.jars ?? [], home },
-      );
+      jar = u.npm
+        ? await findPackage(k, v, { dirs: o.jars ?? [], clones })
+        : await findJar(
+            { group: u.group, artifact: u.artifact, version: v },
+            { jars: o.jars ?? [], home },
+          );
       if (jar) {
         version = v;
         break;
@@ -263,11 +340,22 @@ export async function frameworksDiscover(
     }
     rows.push({
       artifact: k,
+      npm: u.npm,
       versions: [...u.versions].map(([version, rs]) => ({ version, repos: [...rs].sort() })),
       ...(jar ? { jar, version } : {}),
     });
   }
-  if (o.json) io.out(JSON.stringify({ artifacts: rows, notCloned: missing }, null, 2));
+  if (o.json)
+    io.out(
+      JSON.stringify(
+        {
+          artifacts: rows.map(({ npm, ...r }) => ({ ...r, ...(npm ? { ecosystem: "npm" } : {}) })),
+          notCloned: missing,
+        },
+        null,
+        2,
+      ),
+    );
   else {
     if (rows.length === 0) io.out(`No repo here declares an artifact of ${o.groups.join(", ")}.`);
     for (const r of rows) {
@@ -276,6 +364,14 @@ export async function frameworksDiscover(
       );
       const [g, a] = r.artifact.split(":");
       const wanted = r.versions.find((v) => v.version !== "(managed)")?.version;
+      if (r.npm) {
+        io.out(
+          r.jar
+            ? `  Package: ${r.jar}`
+            : `  Package: not on this machine. Put ${tgzBase(r.artifact)}-${bare(wanted ?? "<version>")}.tgz (npm pack, or from your registry) in a folder and pass --jars <folder>; ${r.artifact} isn't downloaded.`,
+        );
+        continue;
+      }
       io.out(
         r.jar
           ? `  JAR: ${r.jar}`
@@ -288,15 +384,20 @@ export async function frameworksDiscover(
   if (!o.learn) return 0;
   let code = 0;
   for (const r of rows.filter((x) => x.jar)) {
-    const name = r.artifact.split(":")[1]!;
+    const name = r.npm ? tgzBase(r.artifact) : r.artifact.split(":")[1]!;
     try {
-      const learned = learnFrameworkFromJar(await readFile(r.jar!), {
-        name,
-        jarName: basename(r.jar!),
-      });
+      const isTgz = /\.t(ar\.)?gz$/i.test(r.jar!);
+      const learned = !r.npm
+        ? learnFrameworkFromJar(await readFile(r.jar!), { name, jarName: basename(r.jar!) })
+        : isTgz
+          ? learnJsFrameworkFromTarball(await readFile(r.jar!), {
+              name,
+              tarballName: basename(r.jar!),
+            })
+          : await learnJsFramework(fsRepo(name, r.jar!, "0".repeat(40)), { name });
       code = Math.max(
         code,
-        await writeLearned(root, name, learned, basename(r.jar!), true, false, io),
+        await writeLearned(root, name, learned, basename(r.jar!), !r.npm, false, io),
       );
     } catch (e) {
       io.err(`${r.jar} couldn't be read: ${(e as Error).message}`);

@@ -52,5 +52,5 @@ tests:
         defineRoute({ method: "POST", path: "/limits", handler: setLimit });
         router.route("GET", "/statements/:id", getStatement);
     expect:
-      - "endpoint POST /limits inferred"
-      - "endpoint GET /statements/{id} inferred"
+      - "endpoint POST /limits"
+      - "endpoint GET /statements/{id}"

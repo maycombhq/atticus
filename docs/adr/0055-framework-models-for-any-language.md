@@ -25,5 +25,6 @@ ADR 0054's framework model reads house frameworks built on Java annotations and 
 ## Consequences
 
 - One model describes a house framework whatever it is written in; every repo using it is read through it.
-- Learning these entries automatically from a framework's source or its published package is a later ticket; a person, or an assistant whose draft ships passing tests, can write them now.
+- `atticus frameworks learn` learns `calls`, `routes` and constants from a JavaScript or TypeScript framework's source, or from its published package (`.tgz`, read by a bounded tar reader in core; its typings, else its JavaScript). Exported functions, and the methods of exported client and router instances, are classified by parameter names, positional or properties of an object parameter (inline, destructured, or a named interface or type alias): a path and a method (or a verb as the name) make a call, with a handler a route; a topic with a publishing or subscribing name makes an event or queue. Entries are `code`, citing the file (and the tarball and its sha-256). `atticus frameworks discover --group @scope` finds house npm packages in the repos' package.json files and looks for them, offline, as .tgz files in given folders or installed in a clone's node_modules.
+- Learning these entries from C#, Python and Go frameworks is not done yet; a person, or an assistant whose draft ships passing tests, writes them.
 - Not yet: declarations in structured files for infra and pipeline repos (custom Terraform modules, Helm charts), which come next.

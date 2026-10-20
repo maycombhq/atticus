@@ -14,10 +14,7 @@ describe("a framework model is used only while its own tests pass (ADR 0055)", (
     await cp(join(MESSY, "metarepo/org-pack"), pack, { recursive: true });
     const file = join(pack, "frameworks/tide-lantern.yaml");
     const yaml = await readFile(file, "utf8");
-    await writeFile(
-      file,
-      yaml.replace('"endpoint POST /limits inferred"', '"endpoint PUT /limits inferred"'),
-    );
+    await writeFile(file, yaml.replace('"endpoint POST /limits"', '"endpoint PUT /limits"'));
     const scan = await scanEstate({
       root,
       orgPack: pack,
@@ -28,7 +25,7 @@ describe("a framework model is used only while its own tests pass (ADR 0055)", (
       scannedAt: "2026-10-19T12:00:00Z",
     });
     expect(scan.problems.map((p) => `${p.source}: ${p.message}`)).toEqual([
-      'framework tide-lantern: test "the BFF\'s routes": expected "endpoint PUT /limits inferred"; got: endpoint GET /statements/{id} inferred, endpoint POST /limits inferred; the model is not used',
+      'framework tide-lantern: test "the BFF\'s routes": expected "endpoint PUT /limits"; got: endpoint GET /statements/{id} inferred, endpoint POST /limits inferred; the model is not used',
     ]);
     expect(scan.records.filter((r) => r.kind === "Unresolved")).toEqual([]);
   }, 120_000);

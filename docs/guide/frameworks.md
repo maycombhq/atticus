@@ -4,12 +4,13 @@ Teams rarely call Spring, Express or `fetch` directly. They use a house layer: a
 
 Pick the way in that matches what you have. They combine: each keeps what the others added.
 
-| You have                                 | Do                                                                                                                                                     |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| The framework's source                   | `atticus frameworks learn <name> --from <its repo>`. Entries are read from code and make verified facts.                                               |
-| Only its JAR                             | `atticus frameworks learn <name> --from <starter.jar>`, or `atticus frameworks discover --group <your.group> --learn` to find the JARs your repos use. |
-| Documents, a wiki, or people who know it | Write the model by hand, or have an assistant draft it with the kit (below). Entries cite their source and make inferred facts.                        |
-| Nothing yet                              | `atticus frameworks survey --package <your prefixes>` shows which house modules the repos import and how they call them. Start with the most used.     |
+| You have                                 | Do                                                                                                                                                              |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The framework's source                   | `atticus frameworks learn <name> --from <its repo>`, Java or JavaScript/TypeScript. Entries are read from code and make verified facts.                         |
+| Only its JAR                             | `atticus frameworks learn <name> --from <starter.jar>`, or `atticus frameworks discover --group <your.group> --learn` to find the JARs your repos use.          |
+| Only its npm package (JS or TS)          | `atticus frameworks learn <name> --from <package.tgz>` reads its typings, or `atticus frameworks discover --group @your-scope --jars <folder of .tgz> --learn`. |
+| Documents, a wiki, or people who know it | Write the model by hand, or have an assistant draft it with the kit (below). Entries cite their source and make inferred facts.                                 |
+| Nothing yet                              | `atticus frameworks survey --package <your prefixes>` shows which house modules the repos import and how they call them. Start with the most used.              |
 
 ## Drafting a model with an assistant
 
