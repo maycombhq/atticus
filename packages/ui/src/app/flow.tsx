@@ -27,7 +27,20 @@ export interface FlowLayout {
   nodes: Map<string, Box>;
   groups: Map<string, Box>;
   edges: { id: string; from: string; to: string; label: string; async: boolean; d: string }[];
+  /** Edges from a box to itself (calls inside one system), counted on the box, not drawn. */
+  inside: Map<string, number>;
 }
+
+/** Labels for a sentence: the first few, then how many more. */
+export function edgeSummary(labels: string[], max = 5): string {
+  return labels.length <= max
+    ? labels.join(", ")
+    : `${labels.slice(0, max).join(", ")} and ${labels.length - max} more`;
+}
+
+/** A box's text: its label, and how many of its calls stay inside it. */
+export const boxText = (label: string, inside = 0) =>
+  inside ? `${label} · ${inside} inside` : label;
 
 const CHAR = 6.6; // JetBrains Mono at 11px
 const BOX_H = 22;
@@ -48,6 +61,8 @@ const n1 = (v: number) => (Math.round(v * 10) / 10).toString();
  * grid inside, and long columns wrap. No box overlaps another, so no label is drawn over one.
  */
 export function flowLayout(v: FlowViewData): FlowLayout {
+  const inside = new Map<string, number>();
+  for (const e of v.edges) if (e.from === e.to) inside.set(e.from, (inside.get(e.from) ?? 0) + 1);
   const unitOf = (id: string) => {
     const n = v.nodes.find((x) => x.id === id);
     return n?.group ? `group:${n.group}` : `node:${id}`;
@@ -84,7 +99,7 @@ export function flowLayout(v: FlowViewData): FlowLayout {
   for (const u of units) {
     if (u.startsWith("node:")) {
       const n = v.nodes.find((x) => `node:${x.id}` === u)!;
-      size.set(u, { w: width(n.label), h: BOX_H });
+      size.set(u, { w: width(boxText(n.label, inside.get(n.id))), h: BOX_H });
       continue;
     }
     const g = v.groups.find((x) => `group:${x.id}` === u)!;
@@ -149,7 +164,7 @@ export function flowLayout(v: FlowViewData): FlowLayout {
   // Edges: from the right of the caller to the left of what it reaches; a backward or
   // same-column edge bows out to the left.
   const edges = v.edges
-    .filter((e) => nodes.has(e.from) && nodes.has(e.to))
+    .filter((e) => e.from !== e.to && nodes.has(e.from) && nodes.has(e.to))
     .map((e) => {
       const a = nodes.get(e.from)!;
       const b = nodes.get(e.to)!;
@@ -174,6 +189,7 @@ export function flowLayout(v: FlowViewData): FlowLayout {
     nodes,
     groups,
     edges,
+    inside,
   };
 }
 
@@ -324,7 +340,7 @@ export function FlowCanvas({
                   fontSize={11}
                   fill={on ? "#E9F6FA" : "#BFEFF7"}
                 >
-                  {n.label}
+                  {boxText(n.label, l.inside.get(n.id))}
                 </text>
               </g>
             );
@@ -335,10 +351,12 @@ export function FlowCanvas({
         {hot
           ? `${label(hot)}: ${hotEdges.length} edge${hotEdges.length === 1 ? "" : "s"}${
               hotEdges.length
-                ? ` (${[...new Set(hotEdges.map((e) => e.label).filter(Boolean))].join(", ")})`
+                ? ` (${edgeSummary([...new Set(hotEdges.map((e) => e.label).filter(Boolean))])})`
                 : ""
-            }. Point at another box, or click it again to clear.`
-          : `${view.edges.length} edges. Point at a box to light its edges; dashed lines are asynchronous.`}
+            }${l.inside.get(hot) ? `, ${l.inside.get(hot)} calls inside it` : ""}. Point at another box, or click it again to clear.`
+          : view.type === "context" && view.nodes.length === 1
+            ? "Everything here is one system: open Container to see its components and how they connect."
+            : `${l.edges.length} edges. Point at a box to light its edges; dashed lines are asynchronous.`}
       </p>
     </div>
   );

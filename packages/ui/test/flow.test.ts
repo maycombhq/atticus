@@ -170,3 +170,28 @@ describe("graphView with many calls between two boxes", () => {
     expect(v.edges.map((e) => e.label)).toEqual(["3 × direct"]);
   });
 });
+
+describe("calls that stay inside one box", () => {
+  it("aren't drawn as a loop: the box counts them, and a summary stays short", async () => {
+    const { edgeSummary } = await import("../src/app/flow.js");
+    const l = flowLayout({
+      type: "context",
+      title: "Context view",
+      groups: [],
+      nodes: [{ id: "ledger", label: "ledger", kind: "system" }],
+      edges: Array.from({ length: 40 }, (_, i) => ({
+        id: `if-${i}`,
+        from: "ledger",
+        to: "ledger",
+        label: `GET /api/x${i}`,
+        async: false,
+      })),
+    });
+    expect(l.edges).toEqual([]);
+    expect(l.inside.get("ledger")).toBe(40);
+    expect(edgeSummary(["a", "b"])).toBe("a, b");
+    expect(edgeSummary(Array.from({ length: 40 }, (_, i) => `x${i}`))).toBe(
+      "x0, x1, x2, x3, x4 and 35 more",
+    );
+  });
+});
