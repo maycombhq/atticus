@@ -189,3 +189,46 @@ describe("checkDraft", () => {
     expect(checkDraft(files, records)).toEqual([]);
   });
 });
+
+describe("planning a drafted design in a repo with modules", () => {
+  it("links behaviour-level requirements to the call they need, and tasks name each module's part", async () => {
+    const { planStories } = await import("../src/index.js");
+    const root = await briefOnly();
+    // ledger-api and portal-bff built in one repo, as modules are.
+    for (const id of ["ledger-api", "portal-bff"]) {
+      const p = join(root, "catalog/generated/component", `${id}.yaml`);
+      await writeFile(p, (await readFile(p, "utf8")).replace(/^repo: .*$/m, "repo: forge-mono"));
+    }
+    const mock = new MockRuntime(() => GOOD, { now: () => new Date(NOW) });
+    expect((await draftChange(root, CHANGE, { runtime: mock, now: new Date(NOW) })).state).toBe(
+      "written",
+    );
+    const r = await planStories(root, CHANGE, { draft: true, now: new Date(NOW) });
+    const s1 = r.skeleton.stories.find((s) => s.requirement?.name === "Daily transfer limit")!;
+    // The requirement never names a path, but it is the transfer call's behaviour.
+    expect(s1.interfaces.map((i) => i.operation)).toContain("POST /transfers");
+    expect(s1.repos).toEqual(["forge-mono"]);
+    // The task says what each module in the repo does, not "update the screens".
+    const t = r.skeleton.tasks.find((x) => x.story === s1.id)!;
+    expect(t.title).toMatch(
+      /^Change POST \/transfers in ledger-api; update the call to POST \/transfers from portal-bff/,
+    );
+    expect(r.skeleton.tasks.map((x) => x.title).join("\n")).not.toContain("ux.md");
+  });
+
+  it("names a task by its requirement when two stories share the same work", async () => {
+    const { planStories } = await import("../src/index.js");
+    const root = await briefOnly();
+    const mock = new MockRuntime(() => GOOD, { now: () => new Date(NOW) });
+    await draftChange(root, CHANGE, { runtime: mock, now: new Date(NOW) });
+    const spec = join(changeDir(root), "specs/transfer-limits/spec.md");
+    await writeFile(
+      spec,
+      `${await readFile(spec, "utf8")}\n### Requirement: Transfer limit per account\nThe system SHALL keep each account's own limit.\n\n#### Scenario: Two accounts\n- **WHEN** two accounts have limits of 100 and 200\n- **THEN** each transfer is checked against its own account's limit\n`,
+    );
+    const r = await planStories(root, CHANGE, { draft: true, now: new Date(NOW) });
+    const titles = r.skeleton.tasks.map((t) => `${t.repo} ${t.title}`);
+    expect(new Set(titles).size).toBe(titles.length);
+    expect(titles.some((t) => t.includes("Transfer limit per account: "))).toBe(true);
+  });
+});

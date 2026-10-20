@@ -229,6 +229,29 @@ describe("the write side of the local API runs the CLI's own commands", () => {
     expect((await call(`/api/changes/${ID}/runs`)).body).toEqual([]);
     expect((await call("/api/runs/run-nope")).status).toBe(404);
   });
+
+  it("names a run's agent by its id, though the run records the whole agent", async () => {
+    const dir = join(root, ".runs", ID, "run-20261020090000-0001");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "run.json"),
+      JSON.stringify({
+        runId: "run-20261020090000-0001",
+        runtime: "hand-off",
+        state: "waiting",
+        attempt: 1,
+        startedAt: "2026-10-20T09:00:00Z",
+        errors: [],
+        request: {
+          change: ID,
+          outputPath: "story-prose.yaml",
+          agent: { schemaVersion: 1, id: "story-writer", role: "business-analyst" },
+        },
+      }),
+    );
+    const runs = (await call(`/api/changes/${ID}/runs`)).body as unknown as { agent: unknown }[];
+    expect(runs.map((r) => r.agent)).toEqual(["story-writer"]);
+  });
 });
 
 describe("the critic from the app (ADR 0046)", () => {
