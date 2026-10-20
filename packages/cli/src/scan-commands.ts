@@ -149,6 +149,11 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           ? `; ${unread} file${unread === 1 ? " uses" : "s use"} a client library with nothing read (atticus scan --warnings)`
           : ""),
     );
+    for (const c of scan.coverage)
+      for (const r of c.redraft)
+        io.out(
+          `Rule ${r.dialect} on ${c.repo} ${r.why === "tests-fail" ? "fails its own tests, so this scan didn't use it" : "read nothing there"}; have your assistant re-draft it: atticus onboard ${c.repo} --name ${r.dialect} (then onboard accept ${r.dialect} --replace)`,
+        );
     const toOnboard = scan.coverage.filter((c) => c.needsOnboarding);
     if (toOnboard.length)
       io.out(

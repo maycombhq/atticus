@@ -88,3 +88,43 @@ describe("a gateway with no dialect yet (ADR 0059)", () => {
     expect(s.coverage.filter((c) => c.needsOnboarding).map((c) => c.repo)).toEqual(["gw-kong"]);
   }, 120_000);
 });
+
+describe("a rule that needs re-drafting (ADR 0059)", () => {
+  it("is named when its tests fail, or when it reads nothing in a repo that names it", async () => {
+    const { cp, readFile, writeFile } = await import("node:fs/promises");
+    const root = await mkdtemp(join(tmpdir(), "atticus-gateways-"));
+    const pack = join(root, "org-pack");
+    await cp(join(GW, "metarepo/org-pack"), pack, { recursive: true });
+    // Kong's rule breaks (say, its config format changed); APIM's is listed on the Kong repo.
+    const kong = join(pack, "dialects/tide-kong.yaml");
+    await writeFile(
+      kong,
+      (await readFile(kong, "utf8")).replace("basepath: /orders-v1", "basepath: /orders-v9"),
+    );
+    const manifest = join(pack, "profiles/tide/repos.manifest.yaml");
+    await writeFile(
+      manifest,
+      (await readFile(manifest, "utf8")).replace(
+        "dialects: [tide-kong]",
+        "dialects: [tide-kong, tide-apim]",
+      ),
+    );
+    const s = await scanEstate({
+      root,
+      orgPack: pack,
+      repoDir: (id) => join(GW, "repos", id),
+      repoState: async () => ({ commit: "a".repeat(40), dirty: false }),
+      cache: null,
+      scannedAt: "2026-10-20T12:00:00Z",
+    });
+    expect(s.coverage.filter((c) => c.redraft.length).map((c) => [c.repo, c.redraft])).toEqual([
+      [
+        "gw-kong",
+        [
+          { dialect: "tide-kong", why: "tests-fail" },
+          { dialect: "tide-apim", why: "reads-nothing" },
+        ],
+      ],
+    ]);
+  }, 120_000);
+});

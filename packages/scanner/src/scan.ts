@@ -100,6 +100,11 @@ export interface RepoCoverage {
    * reader knows: a repo to onboard (atticus onboard, ADR 0059).
    */
   needsOnboarding: boolean;
+  /**
+   * Dialects the repo's manifest entry names that need re-drafting (ADR 0059): their tests fail,
+   * so the scan left them out, or they read nothing in this repo. `atticus onboard` re-drafts.
+   */
+  redraft: { dialect: string; why: "tests-fail" | "reads-nothing" }[];
 }
 
 /** Structured files a dialect could read; build and tool config is left out. */
@@ -238,6 +243,7 @@ async function usableDialects(
   op: OrgPack,
   orgPackDir: string,
   problems: ScanProblem[],
+  broken: Set<string> = new Set(),
 ): Promise<Dialect[]> {
   // Dialects shipped with Atticus are defaults; an org-pack dialect with the same name replaces one.
   const own = new Set(op.dialects.map((d) => d.name));
@@ -257,6 +263,7 @@ async function usableDialects(
     if (failures.length > 0) {
       for (const f of failures)
         problems.push({ source: `dialect ${d.name}`, message: `test "${f.test}": ${f.message}` });
+      broken.add(d.name);
       continue;
     }
     ok.push(d);
@@ -302,7 +309,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     source: `org-pack/${p.file}`,
     message: `${p.path ? `${p.path}: ` : ""}${p.message}`,
   }));
-  const dialects = await usableDialects(op, orgPackDir, problems);
+  const brokenDialects = new Set<string>();
+  const dialects = await usableDialects(op, orgPackDir, problems, brokenDialects);
   const frameworks = await usableFrameworks(op, problems);
   const byName = new Map(dialects.map((d) => [d.name, d]));
   const dialectExtractors = dialects.map((d) => ({ d, x: dialectExtractor(d, byName) }));
@@ -517,6 +525,13 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         ).size,
         unreadConfig,
         needsOnboarding: !readSomething && unreadConfig.length > 0,
+        redraft: r.dialects.flatMap((name): RepoCoverage["redraft"] => {
+          if (brokenDialects.has(name)) return [{ dialect: name, why: "tests-fail" }];
+          const run = scan.runs.find((x) => x.extractor === `dialect-${name}`);
+          return run && run.status !== "failed" && run.records === 0
+            ? [{ dialect: name, why: "reads-nothing" }]
+            : [];
+        }),
       };
     });
   return {

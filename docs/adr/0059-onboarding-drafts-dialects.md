@@ -22,6 +22,8 @@ The model is whatever `runtime.yaml` allows (`model` with the organisation's pro
 
 **The scan says which repos to onboard.** Coverage gains, per repo, the structured files no record cites, and `needsOnboarding` when nothing was read beyond the repo's component though it has such files. `atticus scan` names those repos and the command to run.
 
+**The scan says which rules to re-draft.** A dialect that a repo's manifest entry names is listed for re-drafting when its own tests fail (the scan leaves it out) or when it reads nothing in that repo; `atticus onboard <repo> --name <dialect>` drafts its replacement and `onboard accept --replace` takes it. Dialects that apply by repo type alone aren't listed: reading nothing where a framework isn't used is expected.
+
 **Scans stay deterministic.** The assistant writes rules; rules make records. No AI runs inside a scan (rule 4), every record keeps its evidence, and a rule an assistant wrote is used only after its checks pass and a person accepts it (rule 6).
 
 ## Consequences
