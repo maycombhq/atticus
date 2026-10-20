@@ -10,8 +10,8 @@ systems:
   - { id: analytics, name: Analytics, boundary: internal, owner: team-data, aliases: [Data Platform] }
   - { id: recommendations, name: Recommendations, boundary: product, owner: team-ml, aliases: [Recommender] }
   - { id: fraud, name: Fraud, boundary: internal }
-  - { id: tidewater-payments, name: Tidewater Payments, boundary: vendor, aliases: [Tidewater, Tidewater Payments API] }
-  - { id: lantern-mail, name: Lantern Mail, boundary: vendor, aliases: [Lantern] }
+  - { id: tidewater-payments, name: Tidewater Payments, boundary: vendor, aliases: [Tidewater, Tidewater Payments API], tags: [saas] }
+  - { id: lantern-mail, name: Lantern Mail, boundary: vendor, aliases: [Lantern], tags: [saas] }
 environments: [dev, staging, prod]
 legend: { new: [New, Planned], modify: [Modify, Changing], retire: [Retire, Sunset] }
 gates: [design, release]

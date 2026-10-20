@@ -96,6 +96,25 @@ function fromData(data: unknown): Classified | undefined {
     if (/^3(\.|$)/.test(String(data.openapi ?? ""))) return { classification: "openapi", ...meta };
     if (/^2(\.0)?$/.test(String(data.swagger ?? ""))) return { classification: "swagger", ...meta };
     if (data.asyncapi !== undefined) return { classification: "asyncapi", ...meta };
+    // A Jira REST search ({ issues: [{ key, fields }] }) or an Azure DevOps work-item batch
+    // ({ value: [{ id, fields: { "System.Title": ... } }] }): tickets, not a payload.
+    const list = (v: unknown) => (Array.isArray(v) && v.length > 0 && v.every(isObj) ? v : []);
+    if (
+      list(data.issues).every((i) => typeof i.key === "string" && isObj(i.fields)) &&
+      list(data.issues).length
+    )
+      return { classification: "ticket-export", data };
+    const items = list(data.value);
+    if (
+      items.length &&
+      items.every(
+        (i) =>
+          i.id !== undefined &&
+          isObj(i.fields) &&
+          Object.keys(i.fields).some((k) => k.startsWith("System.")),
+      )
+    )
+      return { classification: "ticket-export", data };
     return undefined;
   }
   if (Array.isArray(data) && data.length > 0 && data.every(isObj)) {
@@ -137,6 +156,17 @@ export function classify(fileName: string, bytes: Uint8Array): Classified {
   if (/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<(mxfile|mxGraphModel)\b/.test(head))
     return { classification: "diagram" };
   if (/^(<\?xml[^>]*>\s*)?<svg\b/.test(head)) return { classification: "image" };
+  // Mermaid: past optional front matter and %% comments, a diagram keyword.
+  const mermaid = head
+    .replace(/^---\r?\n[\s\S]*?\r?\n---\s*/, "")
+    .replace(/^(\s*%%[^\n]*\n)+/, "")
+    .trimStart();
+  if (
+    /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|C4(Context|Container|Component|Dynamic|Deployment)|architecture-beta|block-beta)\b/.test(
+      mermaid,
+    )
+  )
+    return { classification: "diagram" };
   if (/^<(!doctype html|html)\b/i.test(head)) return { classification: "document" };
 
   if (["json", "yaml", "yml"].includes(ext) || /^[[{]/.test(head)) {

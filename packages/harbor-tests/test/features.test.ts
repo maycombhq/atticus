@@ -38,27 +38,16 @@ const capabilities = (records: CatalogRecord[]) =>
   );
 
 describe("features detected in the expected Harbor catalog", () => {
-  it("groups the entry points of today's rules exactly as expected/features.yaml", () => {
-    const got = detectFeatures(harborRecords());
-    const found = new Set(got.flatMap((f) => f.entryPoints));
-    const want = expected.flatMap((f) => f.entryPoints);
-    expect([...found].sort()).toEqual([...want].sort());
-    expect(groups(got)).toEqual(expectedWithin(found, false));
-    for (const f of got) {
-      expect(f).toMatchObject({ namedBy: "detected", confidence: "inferred" });
-      expect(f.entryPoints.every((e) => f.records.includes(e))).toBe(true);
-    }
-  });
-
-  // Missing producer: features detection starting flows at ADR 0040 endpoint types (graphql
-  // operations called from the apps, a webhook a vendor calls); today it starts at rest, grpc
-  // and soap endpoints only.
-  it.skip("groups every entry point, the apps' GraphQL operations and the webhook included", () => {
+  it("groups every entry point, the apps' GraphQL operations and the webhook included", () => {
     const got = detectFeatures(harborRecords());
     const found = new Set(got.flatMap((f) => f.entryPoints));
     const want = expected.flatMap((f) => [...f.entryPoints, ...(f.adr0040 ?? [])]);
     expect([...found].sort()).toEqual([...want].sort());
     expect(groups(got)).toEqual(expectedWithin(found, true));
+    for (const f of got) {
+      expect(f).toMatchObject({ namedBy: "detected", confidence: "inferred" });
+      expect(f.entryPoints.every((e) => f.records.includes(e))).toBe(true);
+    }
     // The apps' calls are part of the features they start.
     const all = new Set(got.flatMap((f) => f.records));
     for (const app of ["web-app", "mobile-app"]) expect(all.has(app), app).toBe(true);

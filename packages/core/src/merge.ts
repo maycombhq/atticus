@@ -34,6 +34,8 @@ export interface MergeSystem {
   boundary: "product" | "internal" | "vendor";
   owner?: string;
   aliases: string[];
+  /** Copied to the System record (ADR 0040: saas marks a SaaS vendor). */
+  tags?: string[];
 }
 
 /** What merge needs from an integration pattern (C6) to infer it on a hop. */
@@ -489,6 +491,15 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     endpoints: [...byKey.values()].filter((r) => r.kind === "Endpoint"),
     systemOf,
     resolveComponent,
+    namesOf: (id) => {
+      const sysId = systemOf(id) ?? id;
+      const sys = input.systems.find((x) => x.id === sysId || x.id === id);
+      return new Set(
+        [id, ...(sys ? [sys.id, sys.name, ...sys.aliases] : [])]
+          .map(compact)
+          .filter((n) => n.length >= 3),
+      );
+    },
     calleeEvidence,
     addInterface,
     unresolved,
@@ -713,7 +724,7 @@ export function mergeCatalog(input: MergeInput): MergeResult {
       boundary: s.boundary,
       ...(s.owner ? { owner: s.owner } : {}),
       repos,
-      tags: [],
+      tags: [...(s.tags ?? [])],
       accessGroup: "everyone",
       evidence,
     });
@@ -782,6 +793,7 @@ const JOINED_KINDS = new Set([
   "graphql-call",
   "grpc-call",
   "webhook-callback",
+  "webhook-send",
 ]);
 
 /** Paths every service serves (health, metrics): a relative call to one names no particular callee. */
@@ -796,6 +808,8 @@ interface TypedCallContext {
   endpoints: Rec[];
   systemOf: (componentId: string) => string | undefined;
   resolveComponent: (name: string, ev: Evidence) => string | undefined;
+  /** A component's names and its system's (id, name, aliases), lower case, letters and digits only. */
+  namesOf: (componentId: string) => Set<string>;
   calleeEvidence: (e: Rec | undefined) => Evidence[];
   addInterface: (r: Rec) => void;
   unresolved: Rec[];
@@ -812,6 +826,9 @@ interface TypedCallContext {
  * - `webhook-callback "METHOD /path REGISTRAR"` (a URL or a name): the system behind it calls
  *   the owner back: an Interface from it to the owner, via webhook, at the owner's webhook
  *   endpoint for that path when there is one.
+ * - `webhook-send "METHOD name"` (a vendor spec's webhooks): the owner calls a subscriber back:
+ *   an Interface from it to the one component whose webhook endpoint's path names the owner
+ *   (`/webhooks/tidewater` for Tidewater Payments), via webhook.
  * Anything that doesn't resolve to exactly one component stays a loose end.
  */
 function resolveTypedCalls(c: TypedCallContext): void {
@@ -945,5 +962,35 @@ function resolveTypedCalls(c: TypedCallContext): void {
         e.component === owner && normalizePath(String(e.normalizedPath ?? e.pathOrTopic)) === norm,
     );
     link(l, from, owner, method.toUpperCase(), norm, ep, c.calleeEvidence(ep), "webhook", "async");
+  }
+
+  for (const l of c.loose.filter((x) => x.unresolvedKind === "webhook-send")) {
+    const [method = "POST"] = String(l.raw).split(" ");
+    const owner = String(l.owner ?? "");
+    const names = c.namesOf(owner);
+    const hits = hooks.filter(
+      (e) =>
+        e.component !== owner &&
+        String(e.normalizedPath ?? e.pathOrTopic)
+          .split(/[/._-]+/)
+          .some((seg) => seg.length >= 3 && names.has(seg.toLowerCase().replace(/[^a-z0-9]/g, ""))),
+    );
+    if (new Set(hits.map((e) => e.component)).size !== 1) {
+      c.unresolved.push(l);
+      continue;
+    }
+    const ep = hits[0]!;
+    const norm = normalizePath(String(ep.normalizedPath ?? ep.pathOrTopic));
+    link(
+      l,
+      owner,
+      String(ep.component),
+      method.toUpperCase(),
+      norm,
+      ep,
+      c.calleeEvidence(ep),
+      "webhook",
+      "sync",
+    );
   }
 }

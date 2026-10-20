@@ -57,6 +57,35 @@ export async function readOpenApiSpec(
   for (const e of out) count.set(e.id, (count.get(e.id) ?? 0) + 1);
   for (const e of out)
     if ((count.get(e.id) ?? 0) > 1) e.id = `${e.id}-${short(String(e.normalizedPath))}`;
+  // OpenAPI 3.1 webhooks: calls the vendor makes to a subscriber. The subscriber's URL isn't
+  // in the spec, so each is a loose end merge joins to the subscriber's webhook endpoint.
+  const lc = new LineCounter();
+  const doc = parseDocument(text, { lineCounter: lc });
+  const hooks = isMap(doc.contents) ? doc.get("webhooks") : undefined;
+  if (isMap(hooks))
+    for (const pair of hooks.items) {
+      const name = isScalar(pair.key) ? String(pair.key.value) : "";
+      if (!name || !isMap(pair.value)) continue;
+      const line =
+        pair.key && isScalar(pair.key) && pair.key.range
+          ? lc.linePos(pair.key.range[0]).line
+          : undefined;
+      for (const op of pair.value.items) {
+        const method = isScalar(op.key) ? String(op.key.value).toUpperCase() : "";
+        if (!/^(GET|POST|PUT|PATCH|DELETE)$/.test(method)) continue;
+        out.push({
+          schemaVersion: 1,
+          kind: "Unresolved",
+          id: `${component}.webhook-send.${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${method.toLowerCase()}`,
+          status: "current",
+          confidence: "inferred",
+          unresolvedKind: "webhook-send",
+          raw: `${method} ${name}`,
+          owner: component,
+          evidence: [{ source: "spec", path, ...(line ? { line } : {}), side: "caller" }],
+        });
+      }
+    }
   return out.map(valid);
 }
 

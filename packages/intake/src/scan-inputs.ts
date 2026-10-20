@@ -9,6 +9,7 @@ import {
   type OrgPack,
   orgPackDirOf,
 } from "@maycombhq/core";
+import { readMermaid } from "@maycombhq/ingestors";
 import { drawioIngestor, readDrawio, resolveNames, type ProfileSystem } from "@maycombhq/reconcile";
 import type { Ingestor, ScanContext } from "@maycombhq/sdk";
 import { classify, type Classification } from "./classify.js";
@@ -435,10 +436,11 @@ export async function scanInputs(o: ScanInputsOptions): Promise<ScanInputsResult
       for (const s of systemsInName(f.stem, systems)) linked.add(s);
     }
 
-    // ---- names on a draw.io diagram
+    // ---- names on a draw.io or Mermaid diagram
     if (cls === "diagram" && f.bytes[0] !== 0x50) {
       try {
-        const d = readDrawio(text(), legend);
+        const t = text();
+        const d = t.trimStart().startsWith("<") ? readDrawio(t, legend) : readMermaid(t, legend);
         for (const n of d.nodes) {
           const res = resolveName(n.label);
           if (res.id) linked.add(systemOf(res.id));

@@ -13,6 +13,9 @@ import {
   topicWords,
 } from "./words.js";
 
+/** Endpoint types a feature can start at. */
+const ENTRY_TYPES = new Set(["rest", "grpc", "soap", "graphql", "webhook", "websocket", "sse"]);
+
 /**
  * Features found in code (ADR 0031), without AI, in every scan.
  *
@@ -217,7 +220,9 @@ export class Tracer {
     const g = this.g;
     const out: EntryPoint[] = [];
     for (const e of g.endpoints.values()) {
-      if (!["rest", "grpc", "soap"].includes(e.endpointType) || g.isVendor(e.component)) continue;
+      // Request-response entry points, ADR 0040's included: GraphQL operations, webhooks a
+      // vendor calls, websockets and server-sent events.
+      if (!ENTRY_TYPES.has(e.endpointType) || g.isVendor(e.component)) continue;
       const own = g.systemOf(e.component);
       const callers = g.callers.get(e.id) ?? [];
       const outside = callers.some(

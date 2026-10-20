@@ -127,9 +127,7 @@ describe("intake of the Harbor inputs/", () => {
     expect([got.status, got.reader]).toEqual(["read", "mermaid@0.1.0"]);
   });
 
-  // Missing producer: intake classifying Mermaid text as a diagram and linking the systems its
-  // boxes name (it reads draw.io names only); no lane owns this yet.
-  it.skip("classifies the Mermaid diagram and links it to the systems it names", () => {
+  it("classifies the Mermaid diagram and links it to the systems it names", () => {
     const want = inputs.documents.find((d) => d.path.endsWith(".mmd"))!;
     const got = doc(want.path);
     expect([got.classification, got.systems]).toEqual([want.classification, want.systems]);
@@ -145,10 +143,7 @@ describe("intake of the Harbor inputs/", () => {
     ]);
   });
 
-  // Missing producer: intake recognising a Jira REST search export ({ issues: [{ key, fields }] })
-  // as a ticket export; today it is classified as an API payload sample and a Schema is read
-  // from it. No lane owns this yet.
-  it.skip("takes the Jira export as a ticket export, not a payload sample (h16)", () => {
+  it("takes the Jira export as a ticket export, not a payload sample (h16)", () => {
     const want = inputs.documents.find((d) => d.path.includes("jira"))!;
     const got = doc(want.path);
     expect([got.classification, got.status, got.systems]).toEqual([

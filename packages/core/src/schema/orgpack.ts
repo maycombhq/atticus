@@ -628,6 +628,8 @@ export const Profile = z
           owner: z.string().optional(),
           /** Other names people and diagrams use for this system. */
           aliases: z.array(z.string().min(1)).default([]),
+          /** Free labels copied to the System record; `saas` marks a SaaS vendor (ADR 0040). */
+          tags: z.array(z.string().min(1)).default([]),
         }),
       )
       .default([]),

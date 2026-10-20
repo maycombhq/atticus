@@ -92,18 +92,21 @@ describe("the Harbor wiki against the catalog", () => {
 describe("knowledge gaps on the expected Harbor catalog", () => {
   const gapSeeds = seeded.filter((d) => d.found_by === "knowledge-gap");
 
-  it("finds the seeded gaps h09, h10 and h12, and nothing else", async () => {
+  it("finds the seeded gaps h09, h10, h11 and h12, and nothing else", async () => {
     const gaps = knowledgeGaps({ records: harborRecords(), orgPack: await harborPack() });
     const want = [
       "h09-no-vendor-timeouts",
       "h10-catalog-consumer-unmonitored",
+      "h11-schedules-unmonitored",
       "h12-fraud-score-unknown-owner",
     ];
     expect(gaps.map((g) => g.records)).toEqual(
       want.flatMap((id) => {
         const d = gapSeeds.find((x) => x.id === id)!;
-        // One gap per interface for h09.
-        return id === "h09-no-vendor-timeouts" ? d.refs.map((r) => [r]) : [d.refs];
+        // One gap per interface for h09, one per workload for h11.
+        return id === "h09-no-vendor-timeouts" || id === "h11-schedules-unmonitored"
+          ? d.refs.map((r) => [r])
+          : [d.refs];
       }),
     );
     expect(gaps.map((g) => [g.check, g.system, g.owner])).toEqual([
@@ -111,6 +114,8 @@ describe("knowledge gaps on the expected Harbor catalog", () => {
       ["call-resilience-known", "payments", "team-payments"],
       ["call-resilience-known", "engagement", "team-growth"],
       ["unattended-workload-monitored", "catalog", "team-catalog"],
+      ["unattended-workload-monitored", "engagement", "team-growth"],
+      ["unattended-workload-monitored", "analytics", "team-data"],
       // Fraud has no owner in the profile: the platform owner (pack.yaml) gets the question.
       ["component-source-known", "fraud", "team-platform"],
     ]);
@@ -140,6 +145,16 @@ describe("knowledge gaps on the expected Harbor catalog", () => {
         "ObservabilityAsset (alert or dashboard) for catalog-svc",
       ],
       [
+        "q.unattended-workload-monitored.cart-reminder",
+        "Which alert or dashboard watches cart-reminder? It runs without a caller waiting (started by a schedule), so a failure goes unnoticed without one.",
+        "ObservabilityAsset (alert or dashboard) for cart-reminder",
+      ],
+      [
+        "q.unattended-workload-monitored.warehouse-pipeline",
+        "Which alert or dashboard watches warehouse-pipeline? It runs without a caller waiting (a data pipeline), so a failure goes unnoticed without one.",
+        "ObservabilityAsset (alert or dashboard) for warehouse-pipeline",
+      ],
+      [
         "q.component-source-known.fraud-score",
         "Who owns fraud-score, which repo holds its code, and is there an interface spec? It is known only from calls by orders-svc.",
         "Component repo, System owner and an interface spec for fraud-score",
@@ -148,10 +163,7 @@ describe("knowledge gaps on the expected Harbor catalog", () => {
     for (const g of gaps) expect(parseRecord(g.question).ok).toBe(true);
   });
 
-  // Missing producer: the unattended-workload-monitored check treating scheduled components
-  // (a settingKind schedule Setting, ADR 0040 types function and data-pipeline) as unattended;
-  // today it reads batch/job/cron/worker in Component.type only. No lane owns this yet.
-  it.skip("finds h11: the scheduled function and the pipeline have no alert", async () => {
+  it("finds h11: the scheduled function and the pipeline have no alert", async () => {
     const gaps = knowledgeGaps({ records: harborRecords(), orgPack: await harborPack() });
     const h11 = gapSeeds.find((d) => d.id === "h11-schedules-unmonitored")!;
     for (const ref of h11.refs)
@@ -201,11 +213,11 @@ describe("coverage of the expected Harbor catalog", () => {
       // Hand-counted from expected/scan.yaml. Areas: interfaces, data, runtime,
       // observability, access, quality, obligations (vendors: interfaces and obligations).
       // analytics: data (warehouse, its readers), runtime (the DAG schedule).
-      { system: "analytics", verified: 2, documentOnly: 0, unknown: 5, gaps: 0 },
+      { system: "analytics", verified: 2, documentOnly: 0, unknown: 5, gaps: 1 },
       // catalog: interfaces, data, runtime, quality (CI).
       { system: "catalog", verified: 4, documentOnly: 0, unknown: 3, gaps: 1 },
       // engagement: interfaces, runtime (function and schedule).
-      { system: "engagement", verified: 2, documentOnly: 0, unknown: 5, gaps: 1 },
+      { system: "engagement", verified: 2, documentOnly: 0, unknown: 5, gaps: 2 },
       // fraud: the one call to it.
       { system: "fraud", verified: 1, documentOnly: 0, unknown: 6, gaps: 1 },
       { system: "lantern-mail", verified: 1, documentOnly: 0, unknown: 1, gaps: 0 },

@@ -41,8 +41,8 @@ describe("scan of the Harbor fixture", () => {
 
   it("matches every record main can already produce, field for field", () => {
     const keys = new Set(expected.map(key).filter((k) => !pending.has(k)));
-    // 131 expected records, 3 of them waiting for a producer (pending.ts).
-    expect([expected.length, keys.size]).toEqual([131, 128]);
+    // 131 expected records, every one with a producer.
+    expect([expected.length, keys.size]).toEqual([131, 131]);
     const c = compareGroup(keys);
     expect(c.missing).toEqual([]);
     expect(c.fieldDiffs).toEqual([]);
@@ -83,20 +83,22 @@ describe("scan of the Harbor fixture", () => {
 // see what each producer still misses.
 const SKIPPED = new Set(process.env.HARBOR_PENDING === "run" ? [] : Object.keys(PENDING));
 
-describe("records waiting for a producer (ADR 0040 and gaps found by Harbor)", () => {
-  for (const [group, g] of Object.entries(PENDING)) {
-    const run = SKIPPED.has(group) ? it.skip : it;
-    // Missing producer: see PENDING[group].producer.
-    run(`${group}: ${g.producer}`, () => {
-      const c = compareGroup(new Set(g.records));
-      expect(c.missing).toEqual([]);
-      expect(c.fieldDiffs).toEqual([]);
-      expect(c.evidenceDiffs.filter(evidenceCompared)).toEqual([]);
-      for (const k of g.extraOnMain ?? [])
-        expect(
-          scanned().some((r) => key(r) === k),
-          k,
-        ).toBe(false);
-    });
-  }
-});
+// Defined only while a group is waiting: an empty suite is an error.
+if (Object.keys(PENDING).length > 0)
+  describe("records waiting for a producer (ADR 0040 and gaps found by Harbor)", () => {
+    for (const [group, g] of Object.entries(PENDING)) {
+      const run = SKIPPED.has(group) ? it.skip : it;
+      // Missing producer: see PENDING[group].producer.
+      run(`${group}: ${g.producer}`, () => {
+        const c = compareGroup(new Set(g.records));
+        expect(c.missing).toEqual([]);
+        expect(c.fieldDiffs).toEqual([]);
+        expect(c.evidenceDiffs.filter(evidenceCompared)).toEqual([]);
+        for (const k of g.extraOnMain ?? [])
+          expect(
+            scanned().some((r) => key(r) === k),
+            k,
+          ).toBe(false);
+      });
+    }
+  });

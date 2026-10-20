@@ -33,8 +33,21 @@ const HUB_RECORDS = [
   }),
 ];
 const HUB_SYSTEMS = [
-  { id: "hub", name: "Hub", boundary: "product" as const, owner: "team-hub", aliases: [] },
-  { id: "contoso-ledger", name: "Contoso Ledger", boundary: "vendor" as const, aliases: [] },
+  {
+    id: "hub",
+    name: "Hub",
+    boundary: "product" as const,
+    owner: "team-hub",
+    aliases: [],
+    tags: [],
+  },
+  {
+    id: "contoso-ledger",
+    name: "Contoso Ledger",
+    boundary: "vendor" as const,
+    aliases: [],
+    tags: [],
+  },
 ];
 
 async function hubPack(wikis: OrgPack["sources"]["wikis"]): Promise<OrgPack> {

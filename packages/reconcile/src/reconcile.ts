@@ -219,6 +219,14 @@ export function reconcile(input: ReconcileInput): ReconcileResult {
             if (!same(from, i.from) || !same(to, i.to)) return false;
             if (e.topic) return i.sync === "async" && i.normalizedPath === e.topic;
             if (e.path) {
+              // gRPC drawn as HTTP: POST /pkg.Service/Method is the gRPC method pkg.Service/Method.
+              const grpc = /^\/?([\w.]+\.[\w]+)\/(\w+)$/.exec(e.path);
+              if (
+                grpc &&
+                (!e.method || e.method === "POST") &&
+                i.normalizedPath === `${grpc[1]}/${grpc[2]}`
+              )
+                return true;
               if (e.method && i.method && e.method !== i.method.toUpperCase()) return false;
               const p = normPath(e.path);
               const base = i.route ? routes.get(i.route) : undefined;

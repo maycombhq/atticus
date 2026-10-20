@@ -176,6 +176,7 @@ describe("reconcile the Harbor diagrams with the catalog", () => {
       },
       { cell: "e3", interfaces: ["if-46861c9fa2695f99", "if-6394ddc280a46330"] },
       { cell: "e4", interfaces: ["if-2fade641225c4539", "if-f571ccbd0ee1281d"] },
+      { cell: "e5", interfaces: [GRPC_CALL] },
       { cell: "e6", interfaces: ["if-a24c46bb442ec4b3"] },
       { cell: "e7", interfaces: ["if-018d1416ec04a61a", "if-a4ccfcea11eeebf0"] },
       { cell: "e8", interfaces: ["if-471a26719fe84220"] },
@@ -186,7 +187,7 @@ describe("reconcile the Harbor diagrams with the catalog", () => {
     ]);
   });
 
-  it.skip("matches the drawn gRPC call (e5) to the gRPC interface (pending: reconcile reading gRPC edge labels)", async () => {
+  it("matches the drawn gRPC call (e5) to the gRPC interface", async () => {
     const r = await run(MERMAID);
     expect(r.matches).toContainEqual({ cell: "e5", interfaces: [GRPC_CALL] });
   });
@@ -250,9 +251,7 @@ describe("reconcile the Harbor diagrams with the scanned catalog (end to end)", 
     expect((await scannedRun(s.file)).items.filter(s.items)).toHaveLength(s.count);
   });
 
-  // Missing producers: webhook interfaces and vendor hosts (pending.ts), and reconcile reading
-  // the gRPC edge label; until then e5, e7, e8 and e12 read as diagram-only.
-  it.skip("reports nothing beyond the seeded discrepancies from the scanned catalog", async () => {
+  it("reports nothing beyond the seeded discrepancies from the scanned catalog", async () => {
     const r = await scannedRun(MERMAID);
     const others = r.items.filter(
       (i) => !Object.values(SEEDED).some((s) => s.file === MERMAID && s.items(i)),

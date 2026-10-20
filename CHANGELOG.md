@@ -8,7 +8,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - Calls to a vendor join the vendor's system: a host label that is a vendor system's id, name or alias from the profile, without spaces or dashes (`api.tidewater.example` → Tidewater Payments, `api.lanternmail.example` → Lantern Mail), when exactly one vendor matches. It is checked before a host's first label, after declared hosts. Harbor's three vendor interfaces, and the h01 and h09 findings from a scanned catalog, now pass.
 - golang-migrate files are read: `<version>_<name>.up.sql` gives the version, in numeric order, and the `.down.sql` files that undo them are skipped.
-- Harbor runs 8 skipped tests, down from 12.
+- A vendor's OpenAPI 3.1 `webhooks` are read: each is a `webhook-send` loose end, joined to the one webhook endpoint whose path names the vendor (`/webhooks/tidewater`), via webhook.
+- Profile systems take `tags`, copied to the System record (`saas` marks a SaaS vendor, ADR 0040).
+- Feature detection starts flows at GraphQL operations, webhooks, websockets and server-sent events too, not only REST, gRPC and SOAP.
+- Reconcile matches a diagram edge drawn as `POST /pkg.Service/Method` to the gRPC interface.
+- Intake reads Mermaid files as diagrams and links the systems their boxes name, and takes Jira REST search exports and Azure DevOps work-item batches as ticket exports, not payload samples.
+- The unattended-workload check covers data pipelines and anything started by a schedule.
+- Every Harbor test runs: none is skipped, and every expected record has a producer.
 
 ### One component per deployable module
 

@@ -162,13 +162,15 @@ const callResilience: KnowledgeCheck = {
 };
 
 /**
- * Only unattended workloads: batch jobs and event consumers run with nobody waiting for an
+ * Only unattended workloads: batch jobs, data pipelines, anything started by a schedule and
+ * event consumers run with nobody waiting for an
  * answer, so a failure goes unseen without an alert. A service people call shows its failures
  * to its callers; a wider observability check can be added as a plugin when a team wants it.
  */
 const unattendedMonitored: KnowledgeCheck = {
   id: "unattended-workload-monitored",
-  description: "A batch job or event consumer needs an alert or a dashboard.",
+  description:
+    "A batch job, data pipeline, scheduled workload or event consumer needs an alert or a dashboard.",
   needs: [
     {
       kind: "ObservabilityAsset",
@@ -182,6 +184,19 @@ const unattendedMonitored: KnowledgeCheck = {
       if (c.kind !== "Component" || !c.repo || c.status === "retired") continue;
       const why: string[] = [];
       if (/batch|job|cron|schedul|worker/i.test(c.type)) why.push("a batch job");
+      else if (/data-pipeline|pipeline/i.test(c.type)) why.push("a data pipeline");
+      // A function or service started by a schedule (ADR 0040 settingKind schedule).
+      if (
+        !why.length &&
+        ctx.records.some(
+          (r) =>
+            r.kind === "Setting" &&
+            r.component === c.id &&
+            r.settingKind === "schedule" &&
+            r.status !== "retired",
+        )
+      )
+        why.push("started by a schedule");
       if (
         ctx.records.some(
           (r) =>
