@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { fsRepo } from "@maycombhq/sdk";
+import { fsRepo, memoryRepo } from "@maycombhq/sdk";
 import { learnFramework, learnFrameworkFromJar } from "../src/index.js";
 
 const PLATFORM = join(
@@ -80,6 +80,55 @@ describe("learning a framework model from a starter's source (ADR 0054)", () => 
     expect(r.notes).toContain(
       "Services.AUDIT, Services.PAYMENTS look like service ids: their base URLs aren't in the code; add them under services: (from the registry's config or a person).",
     );
+  });
+});
+
+describe("learning a framework model reads syntax trees (ADR 0060)", () => {
+  it("ignores comments and strings, reads varargs and wrapped signatures, and inherits a pom's groupId", async () => {
+    const r = await learnFramework(
+      memoryRepo("kit", SHA, {
+        "pom.xml": `<project>
+  <parent><groupId>tide.kit</groupId><artifactId>kit-parent</artifactId></parent>
+  <artifactId>kit-starter</artifactId>
+  <build><plugins><plugin><groupId>org.example.plugins</groupId></plugin></plugins></build>
+</project>`,
+        "src/main/java/tide/kit/Call.java": `package tide.kit;
+import org.springframework.core.annotation.AliasFor;
+import org.springframework.web.bind.annotation.RequestMapping;
+@RequestMapping
+public @interface Call {
+  // @AliasFor(annotation = RequestMapping.class, attribute = "method") String verb();
+  @AliasFor(
+      annotation = RequestMapping.class,
+      attribute = "path")
+  String route() default "";
+}`,
+        "src/main/java/tide/kit/KitHttp.java": `package tide.kit;
+import org.springframework.web.client.RestTemplate;
+public class KitHttp {
+  public static final String NOTE = "public String post(String path, String verb) {";
+  // public Object put(String path, String method) {}
+  public Object send(
+      String verb,
+      String url,
+      Object... parts) {
+    return null;
+  }
+}`,
+      }),
+      { name: "tide-kit" },
+    );
+    expect(r.model.artifacts).toEqual(["tide.kit:kit-starter"]);
+    expect(r.model.annotations).toEqual([
+      expect.objectContaining({
+        name: "Call",
+        means: ["RequestMapping"],
+        attributes: { route: "path" },
+      }),
+    ]);
+    expect(r.model.clients.map((c) => `${c.type}.${c.method}`)).toEqual(["KitHttp.send"]);
+    expect(r.model.clients[0]).toMatchObject({ httpMethod: { arg: 0 }, path: { arg: 1 } });
+    expect(Object.keys(r.model.constants)).toEqual(["KitHttp.NOTE"]);
   });
 });
 

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { FrameworkModel, readTarGz, type FrameworkSource } from "@maycombhq/core";
 import type { RepoHandle } from "@maycombhq/sdk";
+import type Parser from "web-tree-sitter";
+import { parseSyntax, syntaxLanguageOf } from "./lang/syntax.js";
 
 /**
  * Learning a framework model (ADR 0055) from a JavaScript or TypeScript framework,
@@ -18,9 +20,10 @@ import type { RepoHandle } from "@maycombhq/sdk";
  * - a topic (topic, channel, event, subject, queue) with a publishing or subscribing name
  *   (publish, emit, send; subscribe, on, listen, consume): an event or queue.
  *
- * And exported string constants, as NAME and Object.KEY. Every entry's source is `code`, with
+ * And exported objects' string constants, as Object.KEY. Every entry's source is `code`, with
  * the file (and the tarball and its checksum). What neither can say, a service id's base URL,
- * is returned in `notes`.
+ * is returned in `notes`. Files are read from their syntax trees (ADR 0060), .d.ts typings
+ * with the TypeScript grammar.
  */
 
 type Part = { arg: number; key?: string } | { value: string };
@@ -44,101 +47,184 @@ const SKIP =
   /(^|\/)(node_modules|coverage|test|tests|__tests__|__mocks__|e2e|\.storybook)\/|\.(test|spec|stories)\.[cm]?[jt]sx?$/;
 const FILES = ["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"].map((e) => `**/*.${e}`);
 
-/**
- * The text with comments blanked (`code`) and, in `mask`, string contents blanked too, both
- * keeping every offset and line: structure is read from the mask, values from the code.
- */
-function blank(text: string): { code: string; mask: string } {
-  const code = text.split("");
-  const mask = text.split("");
-  for (let i = 0; i < text.length;) {
-    const c = text[i]!;
-    const n = text[i + 1];
-    if (c === "/" && n === "/") {
-      while (i < text.length && text[i] !== "\n") code[i] = mask[i++] = " ";
-    } else if (c === "/" && n === "*") {
-      const end = text.indexOf("*/", i + 2);
-      const stop = end < 0 ? text.length : end + 2;
-      for (; i < stop; i++) if (text[i] !== "\n") code[i] = mask[i] = " ";
-    } else if (c === '"' || c === "'" || c === "`") {
-      i++;
-      while (i < text.length && text[i] !== c) {
-        if (text[i] === "\\") mask[i++] = " ";
-        if (text[i] !== "\n") mask[i] = " ";
-        i++;
-      }
-      i++;
-    } else i++;
-  }
-  return { code: code.join(""), mask: mask.join("") };
-}
+type Node = Parser.SyntaxNode;
 
-/** The offset just past the bracket matching the one at `open`, in the mask. */
-function close(mask: string, open: number): number {
-  const o = mask[open]!;
-  const c = o === "(" ? ")" : o === "{" ? "}" : o === "<" ? ">" : "]";
-  let depth = 0;
-  for (let i = open; i < mask.length; i++) {
-    const ch = mask[i]!;
-    if (ch === o) depth++;
-    else if (ch === c && !(c === ">" && mask[i - 1] === "=")) {
-      depth--;
-      if (depth === 0) return i + 1;
-    }
-  }
-  return mask.length;
-}
+const kids = (n: Node | null | undefined): Node[] =>
+  (n?.namedChildren ?? []).filter((c) => c.type !== "comment");
 
-/** Split [from, to) of the mask at top-level separators, as offset ranges. */
-function splitTop(mask: string, from: number, to: number, seps: RegExp): [number, number][] {
-  const out: [number, number][] = [];
-  let depth = 0;
-  let start = from;
-  for (let i = from; i < to; i++) {
-    const ch = mask[i]!;
-    if ("({[<".includes(ch) && !(ch === "<" && /\s/.test(mask[i + 1] ?? ""))) depth++;
-    else if (")}]".includes(ch) || (ch === ">" && mask[i - 1] !== "=" && depth > 0)) depth--;
-    else if (depth === 0 && seps.test(ch)) {
-      out.push([start, i]);
-      start = i + 1;
-    }
-  }
-  out.push([start, to]);
-  return out.filter(([a, b]) => mask.slice(a, b).trim() !== "");
-}
+/** One parameter, as read from the tree: the type it names is resolved once every file is read. */
+type Param =
+  | { kind: "skip" }
+  | { kind: "keys"; keys: string[] }
+  | { kind: "name"; name: string; keys?: string[]; typeName?: string };
 
-/** The member names of an object type or literal body `{ ... }` starting at `open`. */
-function membersOf(mask: string, open: number): string[] {
-  const end = close(mask, open) - 1;
-  return splitTop(mask, open + 1, end, /[;,\n]/)
-    .map(
-      ([a, b]) =>
-        /^\s*(?:readonly\s+)?["']?([A-Za-z_$][\w$-]*)["']?\s*\??\s*[:(]/.exec(
-          mask.slice(a, b),
-        )?.[1],
-    )
-    .filter((n): n is string => !!n);
+interface Fn {
+  name: string;
+  params: Param[];
 }
 
 /** One parsed file: exported functions and instances, types, classes, constants. */
 interface Parsed {
   path: string;
-  code: string;
-  mask: string;
   shapes: Map<string, string[]>;
-  functions: { name: string; params: [number, number] }[];
-  classes: Map<string, { name: string; params: [number, number] }[]>;
-  objects: Map<string, { name: string; params: [number, number] }[]>;
+  functions: Fn[];
+  classes: Map<string, Fn[]>;
+  objects: Map<string, Fn[]>;
   instances: Map<string, string>;
   constants: Map<string, string>;
 }
 
-function parseFile(path: string, text: string): Parsed {
-  const { code, mask } = blank(text.replace(/\r\n/g, "\n"));
+/** A property's or member's name: an identifier, or a quoted string's contents. */
+function nameOf(n: Node | null | undefined): string | undefined {
+  if (!n) return undefined;
+  if (n.type === "string") return n.text.slice(1, -1);
+  if (/identifier$/.test(n.type)) return n.text;
+  return undefined;
+}
+
+/** A string literal's contents as written (no template substitutions), else undefined. */
+function stringValue(n: Node | null | undefined): string | undefined {
+  if (!n) return undefined;
+  if (n.type === "string") return n.text.slice(1, -1);
+  if (n.type === "template_string" && !kids(n).some((c) => c.type === "template_substitution"))
+    return n.text.slice(1, -1);
+  return undefined;
+}
+
+/** `x as const`, `x satisfies T`, `x!`: the expression inside. */
+function unwrap(n: Node | null | undefined): Node | null | undefined {
+  while (
+    n &&
+    (n.type === "as_expression" ||
+      n.type === "satisfies_expression" ||
+      n.type === "non_null_expression")
+  )
+    n = kids(n)[0];
+  return n;
+}
+
+/** The member names of an object type or interface body. */
+function membersOf(body: Node): string[] {
+  return kids(body)
+    .filter((m) => m.type === "property_signature" || m.type === "method_signature")
+    .map((m) => nameOf(m.childForFieldName("name")))
+    .filter((n): n is string => !!n);
+}
+
+/** The type a type annotation names, to look up as a shape: `Readonly<X>` and `Partial<X>` name X. */
+function typeNameOf(t: Node | undefined): string | undefined {
+  if (!t) return undefined;
+  if (t.type === "type_identifier") return t.text;
+  if (t.type === "generic_type") {
+    const name = t.childForFieldName("name")?.text;
+    const arg = kids(kids(t).find((c) => c.type === "type_arguments"))[0];
+    if ((name === "Readonly" || name === "Partial") && arg) return typeNameOf(arg) ?? name;
+    return name;
+  }
+  return undefined;
+}
+
+/** A parameter list as parameters: positional names, or the keys of a destructured object. */
+function paramsOf(list: Node | null | undefined): Param[] | undefined {
+  if (!list) return undefined;
+  // An arrow function's single bare parameter: `path => ...`.
+  if (list.type === "identifier") return [{ kind: "name", name: list.text }];
+  if (list.type !== "formal_parameters") return undefined;
+  return kids(list).map((p): Param => {
+    const typed = p.type === "required_parameter" || p.type === "optional_parameter";
+    let pattern: Node | null | undefined = typed ? p.childForFieldName("pattern") : p;
+    if (pattern?.type === "assignment_pattern") pattern = pattern.childForFieldName("left");
+    const type = typed ? kids(p.childForFieldName("type"))[0] : undefined;
+    if (!pattern || pattern.type === "rest_pattern") return { kind: "skip" };
+    if (pattern.type === "object_pattern") {
+      const keys = new Set<string>();
+      for (const k of kids(pattern)) {
+        const key =
+          k.type === "shorthand_property_identifier_pattern"
+            ? k.text
+            : k.type === "pair_pattern"
+              ? nameOf(k.childForFieldName("key"))
+              : k.type === "object_assignment_pattern"
+                ? k.childForFieldName("left")?.text
+                : undefined;
+        if (key) keys.add(key);
+      }
+      return { kind: "keys", keys: [...keys] };
+    }
+    if (pattern.type !== "identifier" && pattern.type !== "this") return { kind: "skip" };
+    if (type?.type === "object_type")
+      return { kind: "name", name: pattern.text, keys: membersOf(type) };
+    const typeName = typeNameOf(type);
+    return { kind: "name", name: pattern.text, ...(typeName ? { typeName } : {}) };
+  });
+}
+
+const FUNCTION_VALUES = new Set([
+  "arrow_function",
+  "function",
+  "function_expression",
+  "generator_function",
+]);
+
+/** A function-valued node's parameters: an arrow or function expression, or a function type. */
+function functionParams(v: Node | null | undefined): Param[] | undefined {
+  if (!v) return undefined;
+  if (FUNCTION_VALUES.has(v.type))
+    return paramsOf(v.childForFieldName("parameters") ?? v.childForFieldName("parameter"));
+  if (v.type === "function_type") return paramsOf(v.childForFieldName("parameters"));
+  return undefined;
+}
+
+/** The public methods of a class body or object literal (not private, protected, _ or #). */
+function methodsIn(body: Node): Fn[] {
+  const out: Fn[] = [];
+  for (const m of kids(body)) {
+    let name: string | undefined;
+    let params: Param[] | undefined;
+    if (
+      m.type === "method_definition" ||
+      m.type === "method_signature" ||
+      m.type === "abstract_method_signature"
+    ) {
+      name = nameOf(m.childForFieldName("name"));
+      params = paramsOf(m.childForFieldName("parameters"));
+    } else if (m.type === "pair") {
+      name = nameOf(m.childForFieldName("key"));
+      params = functionParams(m.childForFieldName("value"));
+    } else if (m.type === "public_field_definition" || m.type === "property_signature") {
+      name = nameOf(m.childForFieldName("name"));
+      params = functionParams(kids(m.childForFieldName("type"))[0]);
+    }
+    if (!name || !params) continue;
+    const access = kids(m).find((c) => c.type === "accessibility_modifier")?.text;
+    if (access === "private" || access === "protected" || name === "constructor") continue;
+    if (name.startsWith("_") || name.startsWith("#")) continue;
+    out.push({ name, params });
+  }
+  return out;
+}
+
+/** Constants an object literal (`{ BFF: "web-bff" }`) or object type (`{ readonly BFF: "web-bff" }`) holds. */
+function constantsIn(body: Node, owner: string, into: Map<string, string>) {
+  for (const m of kids(body)) {
+    let key: string | undefined;
+    let v: string | undefined;
+    if (m.type === "pair") {
+      key = nameOf(m.childForFieldName("key"));
+      v = stringValue(m.childForFieldName("value"));
+    } else if (m.type === "property_signature") {
+      key = nameOf(m.childForFieldName("name"));
+      const t = kids(m.childForFieldName("type"))[0];
+      if (t?.type === "literal_type") v = stringValue(kids(t)[0]);
+    }
+    if (key !== undefined && v !== undefined) into.set(`${owner}.${key}`, v);
+  }
+}
+
+/** A file read from its syntax tree (ADR 0060); comments and strings are never taken for code. */
+async function parseFile(path: string, text: string): Promise<Parsed> {
   const p: Parsed = {
     path,
-    code,
-    mask,
     shapes: new Map(),
     functions: [],
     classes: new Map(),
@@ -146,135 +232,100 @@ function parseFile(path: string, text: string): Parsed {
     instances: new Map(),
     constants: new Map(),
   };
-  /** After a name at `i`: skip generics, then the parameter list's range if a `(` follows. */
-  const paramsAt = (i: number): [number, number] | undefined => {
-    while (/\s/.test(mask[i] ?? "")) i++;
-    if (mask[i] === "<") i = close(mask, i);
-    while (/\s/.test(mask[i] ?? "")) i++;
-    return mask[i] === "(" ? [i + 1, close(mask, i) - 1] : undefined;
-  };
-  /** Methods at the top level of a class or object body starting at `open`. */
-  const methodsIn = (open: number) => {
-    const out: { name: string; params: [number, number] }[] = [];
-    const end = close(mask, open) - 1;
-    for (const [a, b] of splitTop(mask, open + 1, end, /[;,\n}]/)) {
-      const seg = mask.slice(a, b);
-      const m =
-        /^\s*((?:public|static|async|declare|override|abstract|readonly|get|set)\s+)*([A-Za-z_$][\w$]*)\s*(?=[<(])/.exec(
-          seg,
-        ) ?? /^\s*([A-Za-z_$][\w$]*)\s*:\s*(?:async\s*)?(?:function\s*)?(?=[<(])/.exec(seg);
-      if (!m) continue;
-      const name = m[2] ?? m[1]!;
-      if (/^(private|protected|constructor)$/.test(name) || /^\s*(private|protected)\b/.test(seg))
-        continue;
-      if (name.startsWith("_") || name.startsWith("#")) continue;
-      const params = paramsAt(a + m[0].length);
-      if (params) out.push({ name, params });
+  const lang = syntaxLanguageOf(path);
+  if (!lang) return p;
+  const tree = await parseSyntax(lang, text);
+  const exported = (d: Node) => {
+    if (d.type === "ambient_declaration") {
+      for (const c of kids(d)) exported(c);
+      return;
     }
-    return out;
-  };
-
-  for (const m of mask.matchAll(/\b(?:interface|type)\s+([A-Za-z_$][\w$]*)\s*(<)?/g)) {
-    let i = m.index + m[0].length - (m[2] ? 1 : 0);
-    if (mask[i] === "<") i = close(mask, i);
-    const brace = mask.indexOf("{", i);
-    const between = mask.slice(i, brace);
-    if (brace >= 0 && /^\s*(extends[^{]*|=\s*)?$/.test(between))
-      p.shapes.set(m[1]!, membersOf(mask, brace));
-  }
-  for (const m of mask.matchAll(
-    /\bexport\s+(?:default\s+)?(?:declare\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/g,
-  )) {
-    const params = paramsAt(m.index + m[0].length);
-    if (params) p.functions.push({ name: m[1]!, params });
-  }
-  for (const m of mask.matchAll(
-    /\bexport\s+(?:declare\s+)?(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::\s*([A-Za-z_$][\w$]*)\s*)?(=\s*)?/g,
-  )) {
-    const name = m[1]!;
-    let i = m.index + m[0].length;
-    if (m[2] && !m[3]) {
-      // export declare const lantern: LanternClient;  (or an inline type: see below)
-      p.instances.set(name, m[2]);
-      continue;
+    if (
+      d.type === "function_declaration" ||
+      d.type === "generator_function_declaration" ||
+      d.type === "function_signature"
+    ) {
+      const name = d.childForFieldName("name")?.text;
+      const params = paramsOf(d.childForFieldName("parameters"));
+      if (name && params) p.functions.push({ name, params });
+      return;
     }
-    if (!m[3]) {
-      // export declare const Services: { readonly BFF: "web-bff"; ... };
-      const colon = mask.indexOf(":", m.index + m[0].length - 1);
-      const brace = mask.indexOf("{", colon);
-      if (colon >= 0 && brace >= 0 && mask.slice(colon + 1, brace).trim() === "") {
-        const end = close(mask, brace) - 1;
-        for (const [a, b] of splitTop(mask, brace + 1, end, /[;,\n]/)) {
-          const v = /^\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*:\s*["'`]([^"'`]*)["'`]\s*$/.exec(
-            code.slice(a, b),
-          );
-          if (v) p.constants.set(`${name}.${v[1]!}`, v[2]!);
+    // const and let, not var.
+    if (d.type !== "lexical_declaration") return;
+    for (const v of kids(d).filter((c) => c.type === "variable_declarator")) {
+      const name = v.childForFieldName("name");
+      if (name?.type !== "identifier") continue;
+      const type = kids(v.childForFieldName("type"))[0];
+      const value = unwrap(v.childForFieldName("value"));
+      if (!value) {
+        // export declare const lantern: LanternClient;  export declare const Services: { ... };
+        if (type?.type === "object_type") constantsIn(type, name.text, p.constants);
+        else {
+          const t =
+            type?.type === "generic_type" ? type.childForFieldName("name")?.text : type?.text;
+          if (type && t && /^[A-Za-z_$][\w$]*$/.test(t)) p.instances.set(name.text, t);
         }
+        continue;
       }
-      continue;
-    }
-    const rest = code.slice(i);
-    const neu = /^new\s+([A-Za-z_$][\w$]*)/.exec(rest);
-    if (neu) {
-      p.instances.set(name, neu[1]!);
-      continue;
-    }
-    const str = /^["'`]([^"'`$]*)["'`]/.exec(rest);
-    if (str) {
-      p.constants.set(name, str[1]!);
-      continue;
-    }
-    const arrow = /^(?:async\s*)?(?:function\s*)?(?=[<(])/.exec(rest);
-    if (arrow) {
-      const params = paramsAt(i + arrow[0].length);
-      if (params) p.functions.push({ name, params });
-      continue;
-    }
-    while (/\s/.test(mask[i] ?? "")) i++;
-    if (mask[i] === "{") {
-      const end = close(mask, i) - 1;
-      for (const [a, b] of splitTop(mask, i + 1, end, /[,\n]/)) {
-        const v = /^\s*["']?([A-Za-z_$][\w$-]*)["']?\s*:\s*["'`]([^"'`$]*)["'`]\s*$/.exec(
-          code.slice(a, b),
-        );
-        if (v) p.constants.set(`${name}.${v[1]!}`, v[2]!);
+      if (value.type === "new_expression") {
+        const cls = value.childForFieldName("constructor");
+        if (cls?.type === "identifier") p.instances.set(name.text, cls.text);
+        continue;
       }
-      const methods = methodsIn(i);
-      if (methods.length) p.objects.set(name, methods);
+      // A lone string constant isn't kept: a model's constants are qualified (Object.KEY).
+      if (stringValue(value) !== undefined) continue;
+      const params = functionParams(value);
+      if (params) {
+        p.functions.push({ name: name.text, params });
+        continue;
+      }
+      if (value.type === "object") {
+        constantsIn(value, name.text, p.constants);
+        const methods = methodsIn(value);
+        if (methods.length) p.objects.set(name.text, methods);
+      }
     }
-  }
-  for (const m of mask.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)[^{;]*\{/g))
-    p.classes.set(m[1]!, methodsIn(m.index + m[0].length - 1));
+  };
+  const walk = (n: Node) => {
+    const t = n.type;
+    if (t === "export_statement") {
+      const d = n.childForFieldName("declaration");
+      if (d) exported(d);
+    }
+    if (t === "interface_declaration") {
+      const name = n.childForFieldName("name")?.text;
+      const body = n.childForFieldName("body");
+      if (name && body) p.shapes.set(name, membersOf(body));
+    }
+    if (t === "type_alias_declaration") {
+      const name = n.childForFieldName("name")?.text;
+      const value = n.childForFieldName("value");
+      if (name && value?.type === "object_type") p.shapes.set(name, membersOf(value));
+    }
+    if (t === "class_declaration" || t === "abstract_class_declaration" || t === "class") {
+      const name = n.childForFieldName("name")?.text;
+      const body = n.childForFieldName("body");
+      if (name && body) p.classes.set(name, methodsIn(body));
+    }
+    for (const c of kids(n)) walk(c);
+  };
+  walk(tree.rootNode);
+  tree.delete();
   return p;
 }
 
 /** Each parameter as slots: a name for a positional one, or one per property of an object. */
-function slotsOf(p: Parsed, shapes: Map<string, string[]>, range: [number, number]): Slot[] {
+function slotsOf(params: Param[], shapes: Map<string, string[]>): Slot[] {
   const out: Slot[] = [];
-  splitTop(p.mask, range[0], range[1], /,/).forEach(([a, b], arg) => {
-    const seg = p.mask.slice(a, b).trim();
-    if (seg.startsWith("...")) return;
-    if (seg.startsWith("{")) {
-      const open = a + p.mask.slice(a, b).indexOf("{");
-      const keys = new Set<string>();
-      for (const [x, y] of splitTop(p.mask, open + 1, close(p.mask, open) - 1, /,/)) {
-        const k = /^\s*([A-Za-z_$][\w$]*)/.exec(p.mask.slice(x, y))?.[1];
-        if (k) keys.add(k);
-      }
-      for (const k of keys) out.push({ name: k, part: { arg, key: k } });
+  params.forEach((prm, arg) => {
+    if (prm.kind === "skip") return;
+    if (prm.kind === "keys") {
+      for (const k of prm.keys) out.push({ name: k, part: { arg, key: k } });
       return;
     }
-    const m = /^([A-Za-z_$][\w$]*)\s*\??\s*(?::\s*([\s\S]*))?$/.exec(seg.replace(/=[\s\S]*$/, ""));
-    if (!m) return;
-    const type = (m[2] ?? "").trim();
-    let keys: string[] | undefined;
-    if (type.startsWith("{")) keys = membersOf(p.mask, a + p.mask.slice(a, b).indexOf("{"));
-    else {
-      const named = /^(?:Readonly<|Partial<)?([A-Za-z_$][\w$]*)/.exec(type)?.[1];
-      if (named && shapes.has(named)) keys = shapes.get(named);
-    }
+    const keys = prm.keys ?? (prm.typeName ? shapes.get(prm.typeName) : undefined);
     if (keys?.length) for (const k of keys) out.push({ name: k, part: { arg, key: k } });
-    else out.push({ name: m[1]!, part: { arg } });
+    else out.push({ name: prm.name, part: { arg } });
   });
   return out;
 }
@@ -327,11 +378,11 @@ function classify(
 }
 
 /** Learn from files already read: package.json names, then the code and typings. */
-function learnFromFiles(
+async function learnFromFiles(
   files: Map<string, string>,
   o: { name: string; packages?: string[] },
   ref: (path: string) => string,
-): { model: FrameworkModel; notes: string[] } {
+): Promise<{ model: FrameworkModel; notes: string[] }> {
   const packages = new Set<string>();
   for (const [path, text] of files)
     if (/(^|\/)package\.json$/.test(path) && !SKIP.test(path)) {
@@ -346,12 +397,10 @@ function learnFromFiles(
   const order = [...files.keys()]
     .filter((p) => !/package\.json$/.test(p) && !SKIP.test(p))
     .sort((a, b) => Number(a.endsWith(".d.ts")) - Number(b.endsWith(".d.ts")) || (a < b ? -1 : 1));
-  const parsed = order.map((p) => parseFile(p, files.get(p)!));
+  const parsed: Parsed[] = [];
+  for (const p of order) parsed.push(await parseFile(p, files.get(p)!));
   const shapes = new Map<string, string[]>();
-  const classes = new Map<
-    string,
-    { file: Parsed; methods: { name: string; params: [number, number] }[] }
-  >();
+  const classes = new Map<string, { file: Parsed; methods: Fn[] }>();
   for (const f of parsed) {
     for (const [k, v] of f.shapes) if (!shapes.has(k)) shapes.set(k, v);
     for (const [k, v] of f.classes) if (!classes.has(k)) classes.set(k, { file: f, methods: v });
@@ -371,15 +420,14 @@ function learnFromFiles(
   for (const f of parsed) {
     const src: FrameworkSource = { kind: "code", ref: ref(f.path) };
     for (const fn of f.functions)
-      add(classify(fn.name, slotsOf(f, shapes, fn.params), undefined, src));
+      add(classify(fn.name, slotsOf(fn.params, shapes), undefined, src));
     for (const [obj, methods] of f.objects)
-      for (const m of methods) add(classify(m.name, slotsOf(f, shapes, m.params), obj, src));
+      for (const m of methods) add(classify(m.name, slotsOf(m.params, shapes), obj, src));
     for (const [inst, cls] of f.instances) {
       const c = classes.get(cls);
       if (!c) continue;
       const csrc: FrameworkSource = { kind: "code", ref: ref(c.file.path) };
-      for (const m of c.methods)
-        add(classify(m.name, slotsOf(c.file, shapes, m.params), inst, csrc));
+      for (const m of c.methods) add(classify(m.name, slotsOf(m.params, shapes), inst, csrc));
     }
     for (const [k, v] of f.constants)
       if (!(k in constants)) constants[k] = { value: v, source: src };
@@ -427,10 +475,10 @@ export async function learnJsFramework(
 }
 
 /** From a published package (.tgz): its package.json and typings, else its JavaScript. */
-export function learnJsFrameworkFromTarball(
+export async function learnJsFrameworkFromTarball(
   bytes: Uint8Array,
   o: { name: string; packages?: string[]; tarballName: string },
-): { model: FrameworkModel; notes: string[] } {
+): Promise<{ model: FrameworkModel; notes: string[] }> {
   const sha = createHash("sha256").update(bytes).digest("hex");
   const tar = readTarGz(bytes);
   const files = new Map<string, string>();

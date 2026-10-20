@@ -89,7 +89,7 @@ describe("learning a JS or TS framework model (ADR 0055)", () => {
   it("reads the same from a published package's typings, naming the tarball and its checksum", async () => {
     const bytes = await readFile(join(MESSY, "npm/tide-lantern-4.1.0.tgz"));
     const sha = createHash("sha256").update(bytes).digest("hex");
-    const r = learnJsFrameworkFromTarball(bytes, {
+    const r = await learnJsFrameworkFromTarball(bytes, {
       name: "tide-lantern",
       tarballName: "tide-lantern-4.1.0.tgz",
     });
@@ -125,5 +125,30 @@ export function log(message: string): void {}`,
       'publish event-publish null {"arg":0}',
       'subscribe event-subscribe null {"arg":0}',
     ]);
+  });
+
+  it("reads the syntax tree: commented-out code and code in strings are not exports (ADR 0060)", async () => {
+    const r = await learnJsFramework(
+      memoryRepo("kit", SHA, {
+        "package.json": '{ "name": "@tide/kit" }',
+        "src/index.js": `// export function post(path, body) {}
+/* export function put(path, body) {} */
+export const help = "export function patch(path) {}";
+export const Help = { TEXT: "export function patch(path) {}" };
+export const api = {
+  get: (path) => fetch(path),
+  "send": function (topic, payload) {},
+  _hidden(path, method) {},
+};
+export const remove = path => fetch(path, { method: "DELETE" });`,
+      }),
+      { name: "tide-kit" },
+    );
+    expect(
+      [...r.model.calls, ...r.model.routes].map(
+        (e) => `${e.receiver ?? ""}.${e.function} ${"kind" in e ? e.kind : "route"}`,
+      ),
+    ).toEqual(["api.get http-call", "api.send event-publish"]);
+    expect(Object.keys(r.model.constants)).toEqual(["Help.TEXT"]);
   });
 });

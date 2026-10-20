@@ -7,7 +7,9 @@ import {
   type ClassAnnotation,
   type ElementValue,
 } from "./lang/classfile.js";
-import { parseJava } from "./lang/java.js";
+import { attr, parseJava } from "./lang/java.js";
+import { parseJavaMembers } from "./lang/java-tree.js";
+import { parseXml, selectText } from "./lang/xml.js";
 import { CLIENT_PACKAGES, READ_ANNOTATIONS } from "./spring.js";
 
 /**
@@ -24,6 +26,7 @@ import { CLIENT_PACKAGES, READ_ANNOTATIONS } from "./spring.js";
  *
  * Every entry's source is `code` (with the file) or `bytecode` (with the JAR entry and the
  * JAR's checksum). What neither can say (a service id's base URL) is returned in `notes`.
+ * Source is read from its syntax tree (ADR 0060) and the pom through the XML reader.
  */
 
 interface House {
@@ -155,34 +158,31 @@ export async function learnFramework(
   const c = collected();
   for await (const path of repo.listFiles(["**/*.java", "**/pom.xml"])) {
     if (/(^|\/)src\/test\//.test(path)) continue;
-    const text = (await repo.readText(path)).replace(/\r\n/g, "\n");
+    const text = await repo.readText(path);
     if (path.endsWith("pom.xml")) {
       if (path === "pom.xml") {
-        const own = text.replace(
-          /<parent>[\s\S]*?<\/parent>|<dependencies>[\s\S]*?<\/dependencies>/g,
-          "",
-        );
-        const g = /<groupId>\s*([\w.-]+)\s*<\/groupId>/.exec(own)?.[1];
-        const a = /<artifactId>\s*([\w.-]+)\s*<\/artifactId>/.exec(own)?.[1];
-        if (g && a) c.artifacts.push(`${g}:${a}`);
+        // The project's own coordinates; a groupId left out is the parent's (Maven inherits it).
+        const pom = parseXml(text);
+        const g = selectText(pom, "project/groupId") ?? selectText(pom, "project/parent/groupId");
+        const a = selectText(pom, "project/artifactId");
+        if (g?.text && a?.text) c.artifacts.push(`${g.text}:${a.text}`);
       }
       continue;
     }
     const file = await parseJava(text, path);
+    const members = await parseJavaMembers(text);
     if (file.packageName) c.packages.add(file.packageName);
     for (const d of file.decls.filter((x) => x.kind === "annotation-type")) {
       const aliases = new Map<string, { annotation?: string; attribute: string }>();
-      for (const m of bodyOf(text, `@interface ${d.name}`).matchAll(
-        /@AliasFor\s*\(([^)]*)\)\s*[\w.<>[\]]+\s+(\w+)\s*\(\s*\)/g,
-      )) {
-        const inner = m[1]!;
-        const annotation = /annotation\s*=\s*(\w+)\.class/.exec(inner)?.[1];
-        const attribute =
-          /attribute\s*=\s*"(\w+)"/.exec(inner)?.[1] ??
-          /^\s*"(\w+)"\s*$/.exec(inner)?.[1] ??
-          /value\s*=\s*"(\w+)"/.exec(inner)?.[1] ??
-          m[2]!;
-        aliases.set(m[2]!, { ...(annotation ? { annotation } : {}), attribute });
+      for (const m of members.annotationMembers.filter((x) => x.owner === d.name)) {
+        const al = m.annotations.find((a) => a.name === "AliasFor");
+        if (!al) continue;
+        const annotation = attr(al, "annotation")
+          ?.replace(/\.class$/, "")
+          .split(".")
+          .pop();
+        const attribute = attr(al, "attribute") || attr(al) || m.name;
+        aliases.set(m.name, { ...(annotation ? { annotation } : {}), attribute });
       }
       c.house.set(d.name, {
         source: src(path),
@@ -192,20 +192,16 @@ export async function learnFramework(
         aliases,
       });
     }
-    const owner = file.decls.find((x) => x.kind === "class" && !x.parent)?.name;
-    if (!owner) continue;
-    for (const m of text.matchAll(/static\s+final\s+String\s+(\w+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*;/g))
-      addConstant(c, owner, m[1]!, m[2]!, src(path));
+    for (const k of file.constants) addConstant(c, k.owner, k.name, k.value, src(path));
     if (!CLIENT_PACKAGES.some((p) => file.imports.some((i) => i.startsWith(p)))) continue;
-    for (const m of text.matchAll(
-      /public\s+(?:static\s+)?(?:<[^>]+>\s+)?[\w.<>[\]?,\s]+?\s+(\w+)\s*\(([^)]*)\)\s*\{/g,
-    )) {
-      if (m[1] === owner) continue;
-      const names = m[2]!
-        .split(",")
-        .map((x) => x.trim().split(/\s+/).pop() ?? "")
-        .filter(Boolean);
-      const cl = clientOf(owner, m[1]!, names, src(path));
+    for (const m of members.methods) {
+      if (m.isConstructor || !m.hasBody || !m.modifiers.includes("public")) continue;
+      const cl = clientOf(
+        m.owner,
+        m.name,
+        m.params.map((p) => p.name),
+        src(path),
+      );
       if (cl) c.clients.push(cl);
     }
   }
@@ -286,18 +282,6 @@ export function learnFrameworkFromJar(
     }
   }
   return assemble(c, o);
-}
-
-/** The text between the "{" after `head` and its matching "}". */
-function bodyOf(text: string, head: string): string {
-  const start = text.indexOf("{", text.indexOf(head));
-  if (start < 0) return "";
-  let depth = 0;
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === "{") depth++;
-    else if (text[i] === "}" && --depth === 0) return text.slice(start + 1, i);
-  }
-  return text.slice(start + 1);
 }
 
 /** The longest dotted prefix every package name shares: tide.platform.web + tide.platform.http → tide.platform. */

@@ -117,7 +117,10 @@ export async function frameworksLearn(
     learned = isJar
       ? learnFrameworkFromJar(await readFile(dir), { ...opts, jarName: basename(dir) })
       : isTgz
-        ? learnJsFrameworkFromTarball(await readFile(dir), { ...opts, tarballName: basename(dir) })
+        ? await learnJsFrameworkFromTarball(await readFile(dir), {
+            ...opts,
+            tarballName: basename(dir),
+          })
         : (await isJsPackage(dir))
           ? await learnJsFramework(repo(), opts)
           : await learnFramework(repo(), opts);
@@ -390,7 +393,7 @@ export async function frameworksDiscover(
       const learned = !r.npm
         ? learnFrameworkFromJar(await readFile(r.jar!), { name, jarName: basename(r.jar!) })
         : isTgz
-          ? learnJsFrameworkFromTarball(await readFile(r.jar!), {
+          ? await learnJsFrameworkFromTarball(await readFile(r.jar!), {
               name,
               tarballName: basename(r.jar!),
             })

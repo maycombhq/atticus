@@ -52,6 +52,40 @@ describe("house dependencies: which house artifacts a repo builds on (ADR 0054)"
     ]);
   });
 
+  it("reads poms and Kotlin DSL builds from their trees: comments aren't dependencies (ADR 0060)", async () => {
+    const repo = memoryRepo("cards", SHA, {
+      "pom.xml": `<project>
+  <properties>
+    <!-- <tide.version>9.9.9</tide.version> -->
+    <tide.version>3.2.0</tide.version>
+  </properties>
+  <!-- <dependency><groupId>tide.platform</groupId><artifactId>old-starter</artifactId></dependency> -->
+  <dependencies>
+    <dependency>
+      <groupId>tide.platform</groupId>
+      <artifactId>tide-web-starter</artifactId>
+      <version>\${tide.version}</version>
+    </dependency>
+  </dependencies>
+</project>`,
+      "app/build.gradle.kts": `val v = "1.0"
+dependencies {
+  // implementation("tide.platform:old-starter:1.0")
+  implementation(group = "tide.platform", name = "tide-jdbc", version = "1.4.1")
+  implementation("tide.platform:tide-kafka:$v")
+}`,
+    });
+    expect(
+      (await houseDependencies(repo, ["tide.platform"])).map(
+        (d) => `${d.artifact} ${d.version ?? "-"} ${d.path}`,
+      ),
+    ).toEqual([
+      "tide-jdbc 1.4.1 app/build.gradle.kts",
+      "tide-kafka - app/build.gradle.kts",
+      "tide-web-starter 3.2.0 pom.xml",
+    ]);
+  });
+
   it("reads the house npm packages package.json files depend on, by scope or name", async () => {
     const repo = memoryRepo("web", "0".repeat(40), {
       "package.json": JSON.stringify({

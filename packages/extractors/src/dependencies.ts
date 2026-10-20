@@ -1,4 +1,7 @@
 import type { RepoHandle } from "@maycombhq/sdk";
+import type Parser from "web-tree-sitter";
+import { parseSyntax } from "./lang/syntax.js";
+import { parseXml, select, selectText } from "./lang/xml.js";
 
 /** One house artifact a repo declares, where it says so. */
 export interface HouseDependency {
@@ -16,7 +19,8 @@ export interface HouseDependency {
  * module, with `${property}` versions filled from the same pom) and Gradle builds declare,
  * whose group starts with one of `groups`, and the npm packages its package.json files depend
  * on whose scope or name is one of them (`@tide`, `@tide/lantern`; ADR 0055). Files only;
- * sorted by group, artifact, version.
+ * sorted by group, artifact, version. Poms go through the XML reader and Kotlin DSL builds
+ * through the Kotlin syntax tree (ADR 0060).
  */
 export async function houseDependencies(
   repo: RepoHandle,
@@ -55,20 +59,25 @@ export async function houseDependencies(
         }
       }
     } else if (path.endsWith("pom.xml")) {
+      const pom = parseXml(text);
       const props = new Map<string, string>();
-      for (const block of text.match(/<properties>[\s\S]*?<\/properties>/g) ?? [])
-        for (const m of block.matchAll(/<([\w.-]+)>\s*([^<]*?)\s*<\/\1>/g)) props.set(m[1]!, m[2]!);
+      for (const block of select(pom, "project/properties"))
+        for (const p of block.children) props.set(p.name, p.text.trim());
       const fill = (v: string) =>
         v.replace(/\$\{([\w.-]+)\}/g, (s, k: string) => props.get(k) ?? s);
-      for (const m of text.matchAll(/<dependency>([\s\S]*?)<\/dependency>/g)) {
-        const tag = (t: string) => new RegExp(`<${t}>\\s*([^<]+?)\\s*</${t}>`).exec(m[1]!)?.[1];
-        const group = tag("groupId");
-        const artifact = tag("artifactId");
+      // Every <dependency>: the project's, its modules' management, and plugins'.
+      for (const d of select(pom, "//dependency")) {
+        const group = selectText(d, "groupId")?.text;
+        const artifact = selectText(d, "artifactId")?.text;
         if (!group || !artifact || !ours(group)) continue;
-        const version = tag("version");
+        const version = selectText(d, "version")?.text;
         out.push({ group, artifact, ...(version ? { version: fill(version) } : {}), path });
       }
+    } else if (path.endsWith(".kts")) {
+      for (const d of await kotlinDependencies(text)) if (ours(d.group)) out.push({ ...d, path });
     } else {
+      // Groovy build.gradle: no Groovy grammar ships yet, so quoted "group:artifact:version"
+      // coordinates are read from the text (comments included).
       for (const m of text.matchAll(/["']([\w.-]+):([\w.-]+)(?::([\w.+-]+))?["']/g)) {
         if (!ours(m[1]!)) continue;
         out.push({ group: m[1]!, artifact: m[2]!, ...(m[3] ? { version: m[3] } : {}), path });
@@ -77,4 +86,57 @@ export async function houseDependencies(
   }
   const key = (d: HouseDependency) => `${d.group}\u0000${d.artifact}\u0000${d.version ?? ""}`;
   return out.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+}
+
+const COORDINATE = /^([\w.-]+):([\w.-]+)(?::([\w.+-]+))?$/;
+
+/**
+ * The coordinates a Kotlin DSL build declares, from its syntax tree: each call argument that is
+ * "group:artifact[:version]", or group =, name =, version = named arguments. A version made
+ * with a template ("…:$v") isn't known here: the coordinate is kept without it.
+ */
+async function kotlinDependencies(
+  text: string,
+): Promise<{ group: string; artifact: string; version?: string }[]> {
+  const tree = await parseSyntax("kotlin", text);
+  const out: { group: string; artifact: string; version?: string }[] = [];
+  /** A string literal's parts: its text, and whether a template is in it. */
+  const str = (n: Parser.SyntaxNode | undefined) => {
+    if (n?.type !== "string_literal") return undefined;
+    const parts = n.namedChildren;
+    const literal = parts.filter((p) => p.type === "string_content").map((p) => p.text);
+    return { text: literal.join(""), templated: parts.some((p) => p.type !== "string_content") };
+  };
+  const walk = (n: Parser.SyntaxNode) => {
+    if (n.type === "value_arguments") {
+      const named = new Map<string, string>();
+      for (const a of n.namedChildren.filter((c) => c.type === "value_argument")) {
+        const kids = a.namedChildren;
+        const v = str(kids.at(-1));
+        if (!v) continue;
+        if (kids.length > 1 && kids[0]!.type === "simple_identifier") {
+          if (!v.templated) named.set(kids[0]!.text, v.text);
+          continue;
+        }
+        const m = COORDINATE.exec(v.text);
+        if (m && !v.templated)
+          out.push({ group: m[1]!, artifact: m[2]!, ...(m[3] ? { version: m[3] } : {}) });
+        else if (v.templated) {
+          // "tide.platform:tide-web-starter:$version": the coordinate without its version.
+          const g = /^([\w.-]+):([\w.-]+):$/.exec(v.text);
+          if (g) out.push({ group: g[1]!, artifact: g[2]! });
+        }
+      }
+      const group = named.get("group");
+      const artifact = named.get("name");
+      if (group && artifact) {
+        const version = named.get("version");
+        out.push({ group, artifact, ...(version ? { version } : {}) });
+      }
+    }
+    for (const c of n.namedChildren) walk(c);
+  };
+  walk(tree.rootNode);
+  tree.delete();
+  return out;
 }

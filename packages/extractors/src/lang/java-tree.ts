@@ -462,3 +462,95 @@ export async function parseJavaTree(
   calls.sort((a, b) => at.get(a)! - at.get(b)!);
   return { ...(packageName ? { packageName } : {}), imports, decls, calls, constants, variables };
 }
+
+// ---------------------------------------------------------------- members
+
+/** A method or constructor with its modifiers and parameters, as declared. */
+export interface JavaMethod {
+  /** The type that declares it. */
+  owner: string;
+  name: string;
+  isConstructor: boolean;
+  /** Keywords such as public, static, abstract (annotations left out). */
+  modifiers: string[];
+  /** Parameters in order: their names and the simple name of their type (varargs too). */
+  params: { name: string; type: string }[];
+  /** False for an abstract or interface method without a body. */
+  hasBody: boolean;
+  annotations: Annotation[];
+  line: number;
+}
+
+/** An annotation type's member (`String path() default "";`), with its annotations (@AliasFor). */
+export interface JavaAnnotationMember {
+  owner: string;
+  name: string;
+  type: string;
+  annotations: Annotation[];
+  line: number;
+}
+
+/**
+ * The methods and annotation-type members a Java file declares, from its syntax tree: what the
+ * framework learner reads (a wrapper client's parameter names, an annotation's @AliasFor
+ * members). Separate from parseJavaTree so what its callers get is unchanged.
+ */
+export async function parseJavaMembers(
+  src: string,
+): Promise<{ methods: JavaMethod[]; annotationMembers: JavaAnnotationMember[] }> {
+  const tree = await parseSyntax("java", src);
+  const methods: JavaMethod[] = [];
+  const annotationMembers: JavaAnnotationMember[] = [];
+  const walk = (n: Node, owner: string | undefined): void => {
+    if (JAVA_TYPES[n.type]) {
+      const name = n.childForFieldName("name")?.text;
+      for (const c of named(n.childForFieldName("body"))) walk(c, name ?? owner);
+      return;
+    }
+    if (owner && (n.type === "method_declaration" || n.type === "constructor_declaration")) {
+      const nameNode = n.childForFieldName("name");
+      const mods = named(n).find((c) => c.type === "modifiers");
+      const params: JavaMethod["params"] = [];
+      for (const p of named(n.childForFieldName("parameters"))) {
+        if (p.type !== "formal_parameter" && p.type !== "spread_parameter") continue;
+        const pn =
+          p.childForFieldName("name") ??
+          named(p)
+            .find((c) => c.type === "variable_declarator")
+            ?.childForFieldName("name") ??
+          named(p).at(-1);
+        const ty = p.childForFieldName("type") ?? named(p).find((c) => /type/.test(c.type));
+        if (pn) params.push({ name: pn.text, type: typeNames(ty)[0] ?? ty?.text ?? "" });
+      }
+      methods.push({
+        owner,
+        name: nameNode?.text ?? owner,
+        isConstructor: n.type === "constructor_declaration",
+        modifiers: (mods?.children ?? [])
+          .filter((c) => !/annotation|comment/.test(c.type))
+          .map((c) => c.text),
+        params,
+        hasBody: !!n.childForFieldName("body"),
+        annotations: annotationsOf(n, false),
+        line: line(nameNode ?? n),
+      });
+      return;
+    }
+    if (owner && n.type === "annotation_type_element_declaration") {
+      const nameNode = n.childForFieldName("name");
+      if (nameNode)
+        annotationMembers.push({
+          owner,
+          name: nameNode.text,
+          type: n.childForFieldName("type")?.text ?? "",
+          annotations: annotationsOf(n, false),
+          line: line(nameNode),
+        });
+      return;
+    }
+    for (const c of named(n)) walk(c, owner);
+  };
+  walk(tree.rootNode, undefined);
+  tree.delete();
+  return { methods, annotationMembers };
+}
