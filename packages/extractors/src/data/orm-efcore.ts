@@ -1,12 +1,28 @@
 import type { RepoHandle } from "@maycombhq/sdk";
-import { isTestOrBuildPath, lineAt } from "./common.js";
+import {
+  callOf,
+  callsIn,
+  compact,
+  compactName,
+  descendants,
+  kids,
+  lineOf,
+  namePath,
+  same,
+  stringValue,
+  withTree,
+  type CodeCall,
+  type Node,
+} from "../lang/code-tree.js";
+import { isTestOrBuildPath } from "./common.js";
 import type { OrmColumn, OrmModel, OrmTable, Where } from "./orm-model.js";
 
 /**
- * Entity Framework Core: entities are the DbSet<T> types of a DbContext (and types configured
- * with modelBuilder.Entity<T>()). Table names follow EF's precedence: fluent ToTable("x"), then
- * [Table("x")], then the DbSet property name, then the class name. Columns are the scalar
- * properties ({ get; ... }) of the class and its non-entity base classes.
+ * Entity Framework Core, read from C# syntax trees (ADR 0060): entities are the DbSet<T> types
+ * of a DbContext (and types configured with modelBuilder.Entity<T>()). Table names follow EF's
+ * precedence: fluent ToTable("x"), then [Table("x")], then the DbSet property name, then the
+ * class name. Columns are the scalar properties ({ get; ... }) of the class and its non-entity
+ * base classes.
  *
  * Keys: [Key], else the Id / <Class>Id convention. Foreign keys: [ForeignKey], else the
  * <navigation><principal key> / <principal class><key> / <navigation>Id convention. Indexes:
@@ -17,9 +33,19 @@ import type { OrmColumn, OrmModel, OrmTable, Where } from "./orm-model.js";
  * model snapshots.
  */
 
+/** An attribute argument: its text, and its value when it is a string or nameof(X). */
+interface CsArg {
+  text: string;
+  str?: string;
+  nameof?: string;
+}
+
 interface CsAttr {
   name: string;
-  args: string;
+  /** Positional arguments. */
+  args: CsArg[];
+  /** Named arguments: `IsUnique = true`, `Name = "x"`. */
+  named: Map<string, CsArg>;
   line: number;
 }
 
@@ -74,115 +100,116 @@ const SCALARS = new Set([
   "Char",
 ]);
 const REFERENCE_TYPES = new Set(["string", "String", "byte[]"]);
+/** Modifiers a mapped property may carry (a static or abstract property is not a column). */
+const PROP_MODIFIERS = new Set([
+  "public",
+  "internal",
+  "protected",
+  "virtual",
+  "required",
+  "override",
+  "new",
+  "sealed",
+]);
 
-/** Attributes in "[A, B(x)][C]" with their argument text. */
-function readAttrs(text: string, line: number): CsAttr[] {
+/** The attributes of a declaration: `[A, B(x)] [C]`. */
+function attrsOf(decl: Node): CsAttr[] {
   const out: CsAttr[] = [];
-  for (const group of text.matchAll(/\[([^\]]*(?:\([^)]*\)[^\]]*)*)\]/g)) {
-    let depth = 0;
-    let cur = "";
-    const parts: string[] = [];
-    for (const ch of group[1]!) {
-      if (ch === "(") depth++;
-      if (ch === ")") depth--;
-      if (ch === "," && depth === 0) {
-        parts.push(cur);
-        cur = "";
-      } else cur += ch;
+  for (const list of kids(decl).filter((c) => c.type === "attribute_list"))
+    for (const a of kids(list).filter((c) => c.type === "attribute")) {
+      const nameNode = a.childForFieldName("name");
+      if (!nameNode) continue;
+      const args: CsArg[] = [];
+      const named = new Map<string, CsArg>();
+      for (const arg of kids(kids(a).find((c) => c.type === "attribute_argument_list"))) {
+        const key = kids(arg).find((c) => c.type === "name_equals" || c.type === "name_colon");
+        const value = kids(arg)
+          .filter((c) => !same(c, key))
+          .at(-1);
+        if (!value) continue;
+        const str = stringValue(value);
+        const nameof = nameofArg(value);
+        const v: CsArg = {
+          text: value.text,
+          ...(str !== undefined ? { str } : {}),
+          ...(nameof ? { nameof } : {}),
+        };
+        if (key) named.set(kids(key)[0]?.text ?? key.text.replace(/\W/g, ""), v);
+        else args.push(v);
+      }
+      out.push({
+        name: compactName(nameNode)
+          .split(".")
+          .pop()!
+          .replace(/Attribute$/, ""),
+        args,
+        named,
+        line: lineOf(a),
+      });
     }
-    parts.push(cur);
-    for (const p of parts) {
-      const m = /^\s*([\w.]+)\s*(?:\(([\s\S]*)\))?\s*$/.exec(p);
-      if (m)
-        out.push({
-          name: m[1]!
-            .split(".")
-            .pop()!
-            .replace(/Attribute$/, ""),
-          args: m[2] ?? "",
-          line,
-        });
-    }
-  }
   return out;
 }
 
-/** Strip string literals' contents and comments so braces can be counted. */
-const code = (line: string) =>
-  line
-    .replace(/@?"(?:[^"\\]|\\.)*"/g, '""')
-    .replace(/'(?:[^'\\]|\\.)'/g, "''")
-    .replace(/\/\/.*$/, "");
+const modifiersOf = (decl: Node) =>
+  kids(decl)
+    .filter((c) => c.type === "modifier")
+    .map((c) => c.text);
 
-function readCsClasses(text: string, path: string): { classes: CsClass[]; enums: string[] } {
-  const lines = text.split(/\r?\n/);
+/** The simple name a base-list entry names: `DbContext`, `IEntityTypeConfiguration` (generics left out). */
+const baseName = (b: Node) => namePath(b)?.at(-1) ?? namePath(kids(b)[0])?.at(-1);
+
+/** The generic type arguments of a base-list entry: `IEntityTypeConfiguration<Order>` → ["Order"]. */
+function baseTypeArgs(b: Node): string[] {
+  const g = b.type === "generic_name" ? b : kids(b).find((c) => c.type === "generic_name");
+  return kids(kids(g).find((c) => c.type === "type_argument_list")).map((t) =>
+    compactName(t).split(".").pop()!,
+  );
+}
+
+const basesOf = (cls: Node) => kids(cls.childForFieldName("bases") ?? undefined);
+
+function readCsClasses(root: Node, path: string): { classes: CsClass[]; enums: string[] } {
   const classes: CsClass[] = [];
   const enums: string[] = [];
-  let pending: CsAttr[] = [];
-  let depth = 0;
-  const stack: { cls: CsClass; depth: number }[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i]!;
-    const line = code(raw);
-    const trimmed = line.trim();
-    const top = stack.at(-1);
-    if (/^\[/.test(trimmed) && /\]\s*$/.test(trimmed)) {
-      pending.push(...readAttrs(raw.trim(), i + 1));
+  for (const n of descendants(root)) {
+    if (n.type === "enum_declaration") {
+      const name = n.childForFieldName("name");
+      if (name) enums.push(name.text);
       continue;
     }
-    const en = /\benum\s+(\w+)/.exec(trimmed);
-    if (en) enums.push(en[1]!);
-    const cm =
-      /\b(?:class|record)\s+(\w+)(?:<[^>]*>)?(?:\s*\([^)]*\))?(?:\s*:\s*([\w.<>, ]+))?/.exec(
-        trimmed,
-      );
-    if (cm && !/^\s*\/\//.test(raw)) {
-      const base = cm[2]?.split(",")[0]?.trim().replace(/<.*$/, "");
-      const cls: CsClass = {
-        name: cm[1]!,
-        ...(base ? { base } : {}),
-        line: i + 1,
-        attrs: pending,
-        props: [],
-        path,
-      };
-      classes.push(cls);
-      stack.push({ cls, depth: depth + 1 });
-      pending = [];
-    } else if (top && depth === top.depth) {
-      const pm =
-        /^(?:(?:public|internal|protected|virtual|required|override|new|sealed)\s+)*([\w.]+(?:<[^>]*>)?(?:\[\])?)(\?)?\s+(\w+)\s*\{\s*(?:get|init|set)\b/.exec(
-          trimmed,
-        );
-      if (pm && /\bpublic\b/.test(trimmed))
-        top.cls.props.push({
-          name: pm[3]!,
-          type: pm[1]!,
-          nullable: pm[2] === "?",
-          line: i + 1,
-          attrs: pending,
-        });
-      if (trimmed !== "") pending = [];
-    } else if (trimmed !== "" && !trimmed.startsWith("//")) pending = [];
-    for (const ch of line) {
-      if (ch === "{") depth++;
-      if (ch === "}") {
-        if (stack.length > 0 && stack.at(-1)!.depth === depth) stack.pop();
-        depth--;
-      }
+    if (n.type !== "class_declaration" && n.type !== "record_declaration") continue;
+    const nameNode = n.childForFieldName("name");
+    if (!nameNode) continue;
+    const first = basesOf(n)[0];
+    const base = first ? compactName(first).replace(/\(.*$/, "") : undefined;
+    const cls: CsClass = {
+      name: nameNode.text,
+      ...(base ? { base } : {}),
+      line: lineOf(nameNode),
+      attrs: attrsOf(n),
+      props: [],
+      path,
+    };
+    classes.push(cls);
+    for (const m of kids(n.childForFieldName("body") ?? undefined)) {
+      if (m.type !== "property_declaration" || !m.childForFieldName("accessors")) continue;
+      const mods = modifiersOf(m);
+      if (!mods.includes("public") || mods.some((x) => !PROP_MODIFIERS.has(x))) continue;
+      const typeNode = m.childForFieldName("type");
+      const nameOf = m.childForFieldName("name");
+      if (!typeNode || !nameOf) continue;
+      const nullable = typeNode.type === "nullable_type";
+      const inner = nullable ? (kids(typeNode)[0] ?? typeNode) : typeNode;
+      cls.props.push({
+        name: nameOf.text,
+        type: compact(inner),
+        nullable,
+        line: lineOf(nameOf),
+        attrs: attrsOf(m),
+      });
     }
   }
   return { classes, enums };
-}
-
-/** The text of the balanced parentheses starting at text[open] ("("). */
-function balanced(text: string, open: number): { inner: string; end: number } {
-  let depth = 0;
-  for (let i = open; i < text.length; i++) {
-    if (text[i] === "(") depth++;
-    if (text[i] === ")" && --depth === 0) return { inner: text.slice(open + 1, i), end: i + 1 };
-  }
-  return { inner: text.slice(open + 1), end: text.length };
 }
 
 const ENGINES: Record<string, string> = {
@@ -195,9 +222,43 @@ const ENGINES: Record<string, string> = {
   Cosmos: "cosmosdb",
 };
 
-const firstString = (args: string) => /"([^"]*)"/.exec(args)?.[1];
-const named = (args: string, key: string) =>
-  new RegExp(`\\b${key}\\s*=\\s*"([^"]*)"`).exec(args)?.[1];
+/** `nameof(Order.Reference)` → "Reference". */
+function nameofArg(n: Node | undefined): string | undefined {
+  const c = n ? callOf(n) : undefined;
+  return c && c.name === "nameof" && !c.receiver ? namePath(c.args[0])?.at(-1) : undefined;
+}
+
+/** The first positional argument when it is a string: [Table("orders")], [Column("total", ...)]. */
+const firstString = (a: CsAttr) => a.args[0]?.str;
+const named = (a: CsAttr, key: string) => a.named.get(key)?.str;
+/** What a [ForeignKey] names: nameof(X) or "X". */
+const fkTarget = (a: CsAttr) => a.args[0]?.nameof ?? firstString(a);
+
+/** The table a ToTable("x") call in `n` names, the first one in source order. */
+function toTableIn(n: Node | undefined): string | undefined {
+  if (!n) return undefined;
+  for (const c of callsIn(n))
+    if (c.name === "ToTable" && stringValue(c.args[0])) return stringValue(c.args[0]);
+  return undefined;
+}
+
+/** A ToTable("x") later in the call chain: modelBuilder.Entity<X>().HasKey(...).ToTable("x"). */
+function toTableInChain(call: CodeCall): string | undefined {
+  let p: Node = call.node;
+  for (;;) {
+    const access = p.parent;
+    const next = access?.parent;
+    if (
+      access?.type !== "member_access_expression" ||
+      !same(access.childForFieldName("expression"), p) ||
+      next?.type !== "invocation_expression"
+    )
+      return undefined;
+    const c = callOf(next);
+    if (c?.name === "ToTable" && stringValue(c.args[0])) return stringValue(c.args[0]);
+    p = next;
+  }
+}
 
 export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
   const texts = new Map<string, string>();
@@ -211,35 +272,61 @@ export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
   let storeType: string | undefined;
   let storeAt: Where | undefined;
   for (const [path, text] of texts) {
-    if (!/DbContext|IEntityTypeConfiguration/.test(text)) continue;
-    const ctxClass = /\bclass\s+\w+[^{]*:\s*(?:[\w.]*\.)?(?:Identity)?DbContext\b/.exec(text);
-    if (ctxClass) storeAt ??= { path, line: lineAt(text, ctxClass.index) };
-    for (const m of text.matchAll(/\bDbSet<(\w+)>\s+(\w+)/g))
-      if (!sets.has(m[1]!)) sets.set(m[1]!, m[2]!);
-    for (const m of text.matchAll(/\bEntity<(\w+)>\s*\(/g)) {
-      configured.add(m[1]!);
-      const { inner, end } = balanced(text, m.index + m[0].length - 1);
-      const chain = text.slice(
-        end,
-        text.indexOf(";", end) === -1 ? undefined : text.indexOf(";", end),
-      );
-      const t =
-        /\.ToTable\(\s*"([^"]+)"/.exec(inner) ??
-        /^\s*(?:\.\w+\([^;]*?\)\s*)*?\.ToTable\(\s*"([^"]+)"/.exec(chain);
-      if (t && !fluent.has(m[1]!)) fluent.set(m[1]!, t[1]!);
-    }
-    for (const m of text.matchAll(/\bIEntityTypeConfiguration<(\w+)>/g)) {
-      configured.add(m[1]!);
-      const open = text.indexOf("{", m.index);
-      const body = open === -1 ? "" : text.slice(open, text.indexOf("\n}", open) + 2 || undefined);
-      const t = /\.ToTable\(\s*"([^"]+)"/.exec(body);
-      if (t && !fluent.has(m[1]!)) fluent.set(m[1]!, t[1]!);
-    }
+    // Only files that name EF's types can declare a context or a configuration.
+    if (!text.includes("DbContext") && !text.includes("IEntityTypeConfiguration")) continue;
+    await withTree("c_sharp", text, (root) => {
+      const fluentTable = (entity: string, table: string | undefined) => {
+        if (table && !fluent.has(entity)) fluent.set(entity, table);
+      };
+      for (const n of descendants(root)) {
+        if (n.type === "class_declaration") {
+          const bases = basesOf(n);
+          const first = bases[0];
+          const nameNode = n.childForFieldName("name");
+          if (first && nameNode && /^(Identity)?DbContext$/.test(baseName(first) ?? ""))
+            storeAt ??= { path, line: lineOf(nameNode) };
+          for (const b of bases)
+            if (baseName(b) === "IEntityTypeConfiguration")
+              for (const entity of baseTypeArgs(b)) {
+                configured.add(entity);
+                fluentTable(entity, toTableIn(n.childForFieldName("body") ?? undefined));
+              }
+        } else if (n.type === "property_declaration" || n.type === "variable_declaration") {
+          const type = n.childForFieldName("type");
+          const name =
+            n.type === "property_declaration"
+              ? n.childForFieldName("name")
+              : kids(n)
+                  .find((c) => c.type === "variable_declarator")
+                  ?.childForFieldName("name");
+          if (type?.type === "generic_name" && baseName(type) === "DbSet" && name) {
+            const entity = baseTypeArgs(type)[0];
+            if (entity && !sets.has(entity)) sets.set(entity, name.text);
+          }
+        } else if (n.type === "invocation_expression") {
+          const c = callOf(n);
+          if (c?.name !== "Entity" || c.typeArgs.length !== 1) continue;
+          const entity = c.typeArgs[0]!.split(".").pop()!;
+          configured.add(entity);
+          // b => b.ToTable("x") in the call, else .ToTable("x") later in its chain.
+          let inArgs: string | undefined;
+          for (const a of c.args) inArgs ??= toTableIn(a);
+          fluentTable(entity, inArgs ?? toTableInChain(c));
+        }
+      }
+    });
   }
   for (const text of texts.values()) {
-    const u = /\.Use(Npgsql|SqlServer|MySql|MySQL|Sqlite|Oracle|Cosmos)\s*\(/.exec(text);
-    if (u) {
-      storeType = ENGINES[u[1]!];
+    if (!/\.Use(Npgsql|SqlServer|MySql|MySQL|Sqlite|Oracle|Cosmos)\b/.test(text)) continue;
+    const engine = await withTree("c_sharp", text, (root) => {
+      for (const c of callsIn(root)) {
+        const m = /^Use(Npgsql|SqlServer|MySql|MySQL|Sqlite|Oracle|Cosmos)$/.exec(c.name);
+        if (m && c.receiver) return ENGINES[m[1]!];
+      }
+      return undefined;
+    });
+    if (engine) {
+      storeType = engine;
       break;
     }
   }
@@ -250,7 +337,7 @@ export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
   const enums = new Set<string>();
   for (const [path, text] of texts) {
     if (![...wanted].some((w) => text.includes(w))) continue;
-    const r = readCsClasses(text, path);
+    const r = await withTree("c_sharp", text, (root) => readCsClasses(root, path));
     for (const c of r.classes) if (!classes.has(c.name)) classes.set(c.name, c);
     for (const e of r.enums) enums.add(e);
   }
@@ -287,10 +374,7 @@ export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
   for (const c of sorted) {
     const tableAttr = has(c, "Table");
     const name =
-      fluent.get(c.name) ??
-      (tableAttr && firstString(tableAttr.args)) ??
-      sets.get(c.name) ??
-      c.name;
+      fluent.get(c.name) ?? (tableAttr && firstString(tableAttr)) ?? sets.get(c.name) ?? c.name;
     const table: OrmTable = {
       name,
       tableKind: "table",
@@ -320,8 +404,8 @@ export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
           ? false
           : undefined;
       const col: OrmColumn = {
-        name: (colAttr && firstString(colAttr.args.replace(/\b\w+\s*=\s*"[^"]*"/g, ""))) ?? p.name,
-        type: (colAttr && named(colAttr.args, "TypeName")) ?? p.type,
+        name: (colAttr && firstString(colAttr)) ?? p.name,
+        type: (colAttr && named(colAttr, "TypeName")) ?? p.type,
         ...(nullable !== undefined ? { nullable } : {}),
         path: pathOf(p, c),
         line: p.line,
@@ -338,18 +422,14 @@ export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
       };
     }
     for (const ix of c.attrs.filter((a) => a.name === "Index")) {
-      const propNames = [
-        ...[...ix.args.matchAll(/nameof\(\s*(?:\w+\.)?(\w+)\s*\)/g)].map((m) => m[1]!),
-        ...[...ix.args.replace(/\b\w+\s*=\s*"[^"]*"/g, "").matchAll(/"([^"]+)"/g)].map(
-          (m) => m[1]!,
-        ),
-      ];
+      // [Index(nameof(A), "B", IsUnique = true, Name = "x")]
+      const propNames = ix.args.flatMap((x) => x.nameof ?? x.str ?? []);
       const cols = propNames.map((p) => byProp.get(p)?.name ?? p);
       if (cols.length === 0) continue;
       table.indexes.push({
-        name: named(ix.args, "Name") ?? `IX_${name}_${cols.join("_")}`,
+        name: named(ix, "Name") ?? `IX_${name}_${cols.join("_")}`,
         columns: cols,
-        unique: /\bIsUnique\s*=\s*true\b/.test(ix.args),
+        unique: ix.named.get("IsUnique")?.text === "true",
         path: c.path,
         line: ix.line,
       });
@@ -365,12 +445,10 @@ export async function readEfCore(repo: RepoHandle): Promise<OrmModel> {
       const pk = target.keyProps[0]!;
       const fkAttr = has(nav, "ForeignKey");
       const declared = fkAttr
-        ? (/nameof\(\s*(?:\w+\.)?(\w+)\s*\)/.exec(fkAttr.args)?.[1] ?? firstString(fkAttr.args))
+        ? fkTarget(fkAttr)
         : e.all.find((p) => {
             const a = has(p, "ForeignKey");
-            return (
-              a && (firstString(a.args) ?? /nameof\(\s*(\w+)\s*\)/.exec(a.args)?.[1]) === nav.name
-            );
+            return a && fkTarget(a) === nav.name;
           })?.name;
       const fkProp = [declared, `${nav.name}${pk}`, `${nav.type}${pk}`, `${nav.name}Id`]
         .filter((x): x is string => x !== undefined)

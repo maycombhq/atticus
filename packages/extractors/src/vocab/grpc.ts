@@ -1,5 +1,18 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor } from "@maycombhq/sdk";
+import {
+  assignedName,
+  callOf,
+  callsIn,
+  descendants,
+  lineOf,
+  namePath,
+  stringValue,
+  withTree,
+  type CodeCall,
+  type Node,
+} from "../lang/code-tree.js";
+import { syntaxLanguageOf } from "../lang/syntax.js";
 import { endpoint, lineAt, loose, own, read, sources, stripComments } from "./common.js";
 
 /**
@@ -67,37 +80,81 @@ export function parseProto(text: string, path: string): Rpc[] {
   return out;
 }
 
-const SERVER_MARKERS: RegExp[] = [
-  /\b(\w+)Grpc\.\1ImplBase\b/g,
-  /\bRegister(\w+)Server\s*\(/g,
-  /\bUnimplemented(\w+)Server\b/g,
-  /\baddService\s*\(\s*[\w.]*?(\w+)\.service\b/g,
-  /\badd_(\w+)Servicer_to_server\s*\(/g,
-  /\b(\w+)\.\1Base\b/g,
-];
+/** The last two names of a dotted name: `io.x.LedgerGrpc.LedgerImplBase` → [LedgerGrpc, LedgerImplBase]. */
+const lastTwo = (p: string[] | undefined) => (p && p.length >= 2 ? p.slice(-2) : undefined);
 
-/** Generated client constructors by language: the service name is the first group. */
-const CLIENTS: { files: RegExp; re: RegExp }[] = [
-  { files: /\.(java|kt)$/, re: /\b(\w+)Grpc\s*\.\s*new(?:Blocking|Future)?Stub\s*\(/g },
-  { files: /\.go$/, re: /\b\w*pb\.New(\w+)Client\s*\(/g },
-  { files: /\.py$/, re: /\b\w*pb2_grpc\.(\w+)Stub\s*\(/g },
-  { files: /\.cs$/, re: /\bnew\s+(\w+)\.\1Client\s*\(/g },
-];
 /**
- * @grpc/grpc-js: `new proto.harbor.ledger.v1.LedgerService("host:port", creds)`. The address is
- * often a variable or an environment value, so a gRPC credentials argument counts as well.
+ * The services a file serves, in the order of the markers: Java `XGrpc.XImplBase`, Go
+ * `RegisterXServer(...)` and an `UnimplementedXServer`, Node `addService(X.service, ...)`, Python
+ * `add_XServicer_to_server(...)` and C# `X.XBase`.
  */
-const NODE_CLIENT = /\bnew\s+(\w+(?:\.\w+)*)\.(\w+)\s*\(/g;
-const NODE_CREDENTIALS = /\bcredentials\s*\.\s*create\w*\s*\(|\bChannelCredentials\b/;
-
-/** The text between the parenthesis at `open` and its closing one (or a bounded stretch). */
-function argsOf(text: string, open: number): string {
-  let depth = 0;
-  for (let i = open; i < text.length && i < open + 400; i++) {
-    if (text[i] === "(") depth++;
-    else if (text[i] === ")" && --depth === 0) return text.slice(open + 1, i);
+function servedIn(root: Node, calls: CodeCall[]): { service: string; line: number }[][] {
+  const implBase: { service: string; line: number }[] = [];
+  const csBase: { service: string; line: number }[] = [];
+  const unimplemented: { service: string; line: number }[] = [];
+  for (const n of descendants(root)) {
+    const two = /identifier$|type$|access|expression$|qualified_name/.test(n.type)
+      ? lastTwo(namePath(n))
+      : undefined;
+    if (two) {
+      const grpc = /^(\w+)Grpc$/.exec(two[0]!)?.[1];
+      if (grpc && two[1] === `${grpc}ImplBase`) implBase.push({ service: grpc, line: lineOf(n) });
+      if (two[1] === `${two[0]}Base`) csBase.push({ service: two[0]!, line: lineOf(n) });
+    }
+    const u = /identifier$/.test(n.type) ? /^Unimplemented(\w+)Server$/.exec(n.text) : null;
+    if (u) unimplemented.push({ service: u[1]!, line: lineOf(n) });
   }
-  return text.slice(open + 1, open + 400);
+  const by = (re: RegExp) =>
+    calls.flatMap((c) => {
+      const m = re.exec(c.name);
+      return m ? [{ service: m[1]!, line: c.line }] : [];
+    });
+  const addService = calls.flatMap((c) => {
+    const p = namePath(c.args[0]);
+    return c.name === "addService" && p && p.length >= 2 && p.at(-1) === "service"
+      ? [{ service: p.at(-2)!, line: c.line }]
+      : [];
+  });
+  return [
+    implBase,
+    by(/^Register(\w+)Server$/),
+    unimplemented,
+    addService,
+    by(/^add_(\w+)Servicer_to_server$/),
+    csBase,
+  ];
+}
+
+/** Does a Node constructor call pass gRPC credentials (`credentials.createInsecure()`, ChannelCredentials)? */
+const passesCredentials = (c: CodeCall) =>
+  c.args.some((a) =>
+    [...descendants(a)].some((n) => {
+      const cc = callOf(n);
+      if (cc && cc.path?.at(-2) === "credentials" && cc.name.startsWith("create")) return true;
+      return /identifier$/.test(n.type) && n.text === "ChannelCredentials";
+    }),
+  );
+
+/** Generated client constructors: the service a call builds a client for, by language. */
+function clientService(c: CodeCall, path: string): string | undefined {
+  const recv = namePath(c.receiver)?.at(-1);
+  if (/\.(java|kt)$/.test(path))
+    return recv && /^new(Blocking|Future)?Stub$/.test(c.name)
+      ? /^(\w+)Grpc$/.exec(recv)?.[1]
+      : undefined;
+  if (path.endsWith(".go"))
+    return recv && /pb$/.test(recv) && c.receiver?.childCount === 0
+      ? /^New(\w+)Client$/.exec(c.name)?.[1]
+      : undefined;
+  if (path.endsWith(".py"))
+    return recv && /pb2_grpc$/.test(recv) && c.receiver?.childCount === 0
+      ? /^(\w+)Stub$/.exec(c.name)?.[1]
+      : undefined;
+  if (path.endsWith(".cs")) {
+    const two = c.isNew && c.path?.length === 2 ? c.path : undefined;
+    return two && two[1] === `${two[0]}Client` ? two[0] : undefined;
+  }
+  return undefined;
 }
 
 /** Generated stub methods that are not RPCs. */
@@ -110,28 +167,29 @@ const NOT_RPC = new Set([
 ]);
 
 /**
- * The RPCs a client calls on the stub it built at `at`: the variable the constructor is assigned
- * to (`const c = ...`, `c := ...`, `this.stub = ...`), then `c.Method(` anywhere in the file.
+ * The RPCs a client calls on the stub `stub` builds: the name the constructor is assigned to
+ * (`const c = ...`, `c := ...`, `this.stub = ...`), then `c.Method(...)` anywhere in the file.
  * Method names match the proto's RPCs ignoring the case of their first letter (Java and Node
  * stubs lowercase it). Empty when the stub isn't assigned to a name or no declared RPC is called.
  */
 function methodCalls(
-  clean: string,
-  at: number,
+  stub: CodeCall,
+  calls: CodeCall[],
   declared: string[],
 ): { method: string; line: number }[] {
-  const start = Math.max(clean.lastIndexOf("\n", at), clean.lastIndexOf(";", at)) + 1;
-  const name = /([A-Za-z_$][\w$]*)\s*(?::=|=)\s*(?:await\s+)?$/.exec(clean.slice(start, at))?.[1];
+  const name = assignedName(stub.node);
   if (!name || declared.length === 0) return [];
   const out: { method: string; line: number }[] = [];
-  const re = new RegExp(
-    `(?<![\\w$])(?:(?:this|self)\\s*\\.\\s*)?${name}\\s*\\.\\s*([A-Za-z_]\\w*)\\s*\\(`,
-    "g",
-  );
-  for (const m of clean.matchAll(re)) {
-    if (NOT_RPC.has(m[1]!)) continue;
-    const rpc = declared.find((d) => lowerFirst(d) === lowerFirst(m[1]!));
-    if (rpc) out.push({ method: rpc, line: lineAt(clean, m.index) });
+  for (const c of calls) {
+    const on = namePath(c.receiver);
+    const named =
+      on &&
+      (on.length === 1
+        ? on[0] === name
+        : on.length === 2 && /^(this|self)$/.test(on[0]!) && on[1] === name);
+    if (!named || NOT_RPC.has(c.name)) continue;
+    const rpc = declared.find((d) => lowerFirst(d) === lowerFirst(c.name));
+    if (rpc) out.push({ method: rpc, line: lineOf(c.receiver!) });
   }
   return out;
 }
@@ -167,35 +225,41 @@ export const grpcExtractor = defineExtractor({
         !/grpc|Grpc|Servicer|Unimplemented\w+Server|Server\(|Client\(|Stub\(/.test(text)
       )
         continue;
-      const clean = stripComments(text, path.endsWith(".py") ? "hash" : "c");
-      for (const re of SERVER_MARKERS)
-        for (const m of clean.matchAll(re))
-          if (!served.has(m[1]!)) served.set(m[1]!, { path, line: lineAt(clean, m.index) });
-      const isNode = /\.(ts|js|mjs)$/.test(path);
-      if (isNode && /@grpc\/grpc-js/.test(clean)) {
-        for (const m of clean.matchAll(NODE_CLIENT)) {
-          const args = argsOf(clean, m.index + m[0].length - 1);
-          if (!/^\s*["'`]/.test(args) && !NODE_CREDENTIALS.test(args)) continue;
-          const pkg = m[1]!.split(".").slice(1).join(".");
-          const service = pkg ? `${pkg}.${m[2]!}` : m[2]!;
-          calls.push({
-            service,
-            path,
-            line: lineAt(clean, m.index),
-            methods: methodCalls(clean, m.index, rpcsOf(service)),
-          });
+      const lang = syntaxLanguageOf(path);
+      if (!lang) continue;
+      await withTree(lang, text, (root) => {
+        const all = callsIn(root);
+        for (const list of servedIn(root, all))
+          for (const s of list)
+            if (!served.has(s.service)) served.set(s.service, { path, line: s.line });
+        const isNode = /\.(ts|js|mjs)$/.test(path);
+        const grpcJs = [...descendants(root)].some((n) => stringValue(n) === "@grpc/grpc-js");
+        if (isNode && grpcJs)
+          for (const c of all) {
+            if (!c.isNew || !c.path || c.path.length < 2) continue;
+            const first = c.args[0];
+            if (!(first && stringValue(first, true) !== undefined) && !passesCredentials(c))
+              continue;
+            const pkg = c.path.slice(1, -1).join(".");
+            const service = pkg ? `${pkg}.${c.name}` : c.name;
+            calls.push({
+              service,
+              path,
+              line: lineOf(c.node),
+              methods: methodCalls(c, all, rpcsOf(service)),
+            });
+          }
+        for (const c of all) {
+          const service = clientService(c, path);
+          if (service)
+            calls.push({
+              service,
+              path,
+              line: lineOf(c.node),
+              methods: methodCalls(c, all, rpcsOf(service)),
+            });
         }
-      }
-      for (const c of CLIENTS) {
-        if (!c.files.test(path)) continue;
-        for (const m of clean.matchAll(c.re))
-          calls.push({
-            service: m[1]!,
-            path,
-            line: lineAt(clean, m.index),
-            methods: methodCalls(clean, m.index, rpcsOf(m[1]!)),
-          });
-      }
+      });
     }
     const short = (s: string) => s.split(".").pop()!;
     const called = new Set(calls.map((c) => short(c.service)));

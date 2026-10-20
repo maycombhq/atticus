@@ -1,23 +1,25 @@
 import { normalizePath, type CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
+import {
+  callOf,
+  callsIn,
+  descendants,
+  kids,
+  lineOf,
+  namePath,
+  objectProperty,
+  same,
+  stringValue,
+  withTree,
+  type Node,
+} from "../lang/code-tree.js";
+import { syntaxLanguageOf } from "../lang/syntax.js";
 import { topicName } from "../platform/gcp.js";
 import { attrOf, child } from "../platform/hcl.js";
 import { loadManifests, readYamlDocs, type YamlDoc } from "../platform/manifests.js";
 import { loadTerraform, tfString } from "../platform/terraform.js";
 import { arr, at, componentFor, deployment, envOf, isObj, str } from "../platform/util.js";
-import {
-  component,
-  endpoint,
-  ev,
-  lineAt,
-  loose,
-  own,
-  read,
-  setting,
-  slug,
-  sources,
-  stripComments,
-} from "./common.js";
+import { component, endpoint, ev, loose, own, read, setting, slug, sources } from "./common.js";
 
 /**
  * Serverless functions (ADR 0040): Components of type `function`, a `function` Endpoint per
@@ -127,7 +129,7 @@ export const serverlessExtractor = defineExtractor({
     for (const path of await sources(repo, CS)) {
       const text = await read(repo, ctx, path);
       if (text !== undefined && /\[Function\s*\(/.test(text))
-        azureIsolated(stripComments(text, "c"), path, fns, triggers);
+        await withTree("c_sharp", text, (root) => azureIsolated(root, path, fns, triggers));
     }
 
     // The repo's function app.
@@ -247,17 +249,29 @@ async function* handlerEvents(
   for (const mod of modules) {
     for (const path of files.filter((p) => p.replace(/\.\w+$/, "") === mod.replace(/^\.\//, ""))) {
       const text = await read(repo, ctx, path);
-      if (text === undefined || !/kafka/i.test(text)) continue;
-      const clean = stripComments(text, path.endsWith(".py") ? "hash" : "c");
-      const re = path.endsWith(".py")
-        ? /\.(?:send|produce)\s*\(\s*(?:topic\s*=\s*)?["']([^"'\s]+)["']/g
-        : /\.send\s*\(\s*\{[^}]*?\btopic\s*:\s*["'`]([^"'`\s]+)["'`]/g;
-      for (const m of clean.matchAll(re)) {
-        const line = lineAt(clean, m.index + m[0].lastIndexOf(m[1]!));
-        const key = `${m[1]}|${path}|${line}`;
+      const lang = syntaxLanguageOf(path);
+      if (text === undefined || !lang || !/kafka/i.test(text)) continue;
+      const python = lang === "python";
+      const topics = await withTree(lang, text, (root) =>
+        callsIn(root).flatMap((c) => {
+          if (!c.receiver) return [];
+          // Python producer.send("x", ...) / .produce(topic="x"); kafkajs producer.send({ topic: "x" }).
+          const node = python
+            ? c.name === "send" || c.name === "produce"
+              ? (c.args[0] ?? c.kwargs.get("topic"))
+              : undefined
+            : c.name === "send"
+              ? objectProperty(c.args[0], "topic")
+              : undefined;
+          const topic = stringValue(node, !python);
+          return node && topic && /^\S+$/.test(topic) ? [{ topic, line: lineOf(node) }] : [];
+        }),
+      );
+      for (const { topic, line } of topics) {
+        const key = `${topic}|${path}|${line}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        yield loose(repo, comp, "event-publish", m[1]!, path, line);
+        yield loose(repo, comp, "event-publish", topic, path, line);
       }
     }
   }
@@ -485,24 +499,56 @@ function azureFunctionJson(doc: YamlDoc, path: string, fns: Fn[], triggers: Trig
   });
 }
 
-function azureIsolated(text: string, path: string, fns: Fn[], triggers: Trigger[]) {
-  const marks = [
-    ...text.matchAll(/\[Function\s*\(\s*(?:nameof\s*\(\s*(\w+)\s*\)|"([^"]+)")\s*\)\s*\]/g),
-  ];
-  marks.forEach((m, i) => {
-    const name = m[1] ?? m[2]!;
-    const line = lineAt(text, m.index);
-    fns.push({ name, platform: "azure-functions", env: "default", path, line });
-    const body = text.slice(m.index, marks[i + 1]?.index ?? text.length);
-    const at0 = m.index;
-    const lineOf = (j: number) => lineAt(text, at0 + j);
-    const http = /\[HttpTrigger\s*\(([^\]]*)\)\s*\]/.exec(body);
+/** Attributes of a C# declaration: name (without the Attribute suffix), arguments and line. */
+function csAttributes(
+  decl: Node,
+): { name: string; args: Node[]; named: Map<string, Node>; line: number }[] {
+  const out: { name: string; args: Node[]; named: Map<string, Node>; line: number }[] = [];
+  for (const list of kids(decl).filter((c) => c.type === "attribute_list"))
+    for (const a of kids(list).filter((c) => c.type === "attribute")) {
+      const name = namePath(a.childForFieldName("name"))
+        ?.at(-1)
+        ?.replace(/Attribute$/, "");
+      if (!name) continue;
+      const args: Node[] = [];
+      const named = new Map<string, Node>();
+      for (const arg of kids(kids(a).find((c) => c.type === "attribute_argument_list"))) {
+        const key = kids(arg).find((c) => c.type === "name_equals" || c.type === "name_colon");
+        const value = kids(arg)
+          .filter((c) => !same(c, key))
+          .at(-1);
+        if (!value) continue;
+        if (key) named.set(kids(key)[0]?.text ?? "", value);
+        else args.push(value);
+      }
+      out.push({ name, args, named, line: lineOf(list) });
+    }
+  return out;
+}
+
+/** Isolated-worker functions: methods with [Function("name")] and a trigger on a parameter. */
+function azureIsolated(root: Node, path: string, fns: Fn[], triggers: Trigger[]) {
+  for (const m of descendants(root)) {
+    if (m.type !== "method_declaration") continue;
+    const mark = csAttributes(m).find((a) => a.name === "Function");
+    if (!mark) continue;
+    const first = mark.args[0];
+    const nameofArg = first ? callOf(first) : undefined;
+    const name =
+      stringValue(first) ??
+      (nameofArg?.name === "nameof" ? namePath(nameofArg.args[0])?.at(-1) : undefined);
+    if (!name) continue;
+    fns.push({ name, platform: "azure-functions", env: "default", path, line: mark.line });
+    const params = kids(m.childForFieldName("parameters")).filter((p) => p.type === "parameter");
+    const attrs = params.flatMap(csAttributes);
+    const firstOf = (...names: string[]) => attrs.find((a) => names.includes(a.name));
+    const strs = (a: { args: Node[] }) => a.args.map((x) => stringValue(x));
+    const http = firstOf("HttpTrigger");
     if (http) {
-      const args = http[1]!;
-      const route = /Route\s*=\s*"([^"]+)"/.exec(args)?.[1] ?? name;
-      const methods = [...args.replace(/Route\s*=\s*"[^"]*"/, "").matchAll(/"(\w+)"/g)].map((x) =>
-        x[1]!.toUpperCase(),
-      );
+      const route = stringValue(http.named.get("Route")) ?? name;
+      const methods = strs(http)
+        .filter((s): s is string => !!s && /^\w+$/.test(s))
+        .map((s) => s.toUpperCase());
       for (const meth of methods.length ? methods : ["ANY"])
         triggers.push({
           fn: name,
@@ -510,31 +556,28 @@ function azureIsolated(text: string, path: string, fns: Fn[], triggers: Trigger[
           value: AZ_ROUTE(route),
           method: meth,
           path,
-          line: lineOf(http.index),
+          line: http.line,
         });
     }
-    const timer = /\[TimerTrigger\s*\(\s*"([^"]+)"/.exec(body);
-    if (timer)
+    const timer = firstOf("TimerTrigger");
+    const schedule = timer && strs(timer)[0];
+    if (timer && schedule)
+      triggers.push({ fn: name, kind: "schedule", value: schedule, path, line: timer.line });
+    const queue = firstOf("QueueTrigger", "ServiceBusTrigger");
+    const q = queue && strs(queue);
+    if (queue && q?.[0])
       triggers.push({
         fn: name,
-        kind: "schedule",
-        value: timer[1]!,
+        kind: queue.name === "ServiceBusTrigger" && q[1] ? "topic" : "queue",
+        value: q[0],
         path,
-        line: lineOf(timer.index),
+        line: queue.line,
       });
-    const queue = /\[(Queue|ServiceBus)Trigger\s*\(\s*"([^"]+)"(\s*,\s*"([^"]+)")?/.exec(body);
-    if (queue)
-      triggers.push({
-        fn: name,
-        kind: queue[1] === "ServiceBus" && queue[4] ? "topic" : "queue",
-        value: queue[2]!,
-        path,
-        line: lineOf(queue.index),
-      });
-    const blob = /\[BlobTrigger\s*\(\s*"([^"/]+)/.exec(body);
-    if (blob)
-      triggers.push({ fn: name, kind: "storage", value: blob[1]!, path, line: lineOf(blob.index) });
-  });
+    const blob = firstOf("BlobTrigger");
+    const container = blob && strs(blob)[0]?.split("/")[0];
+    if (blob && container)
+      triggers.push({ fn: name, kind: "storage", value: container, path, line: blob.line });
+  }
 }
 
 // ------------------------------------------------------------------ infrastructure repos

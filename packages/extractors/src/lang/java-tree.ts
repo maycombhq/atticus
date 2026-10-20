@@ -202,6 +202,99 @@ function typeNames(n: Node | null | undefined): string[] {
   return named(n).flatMap((c) => (c.type === "type_arguments" ? [] : typeNames(c)));
 }
 
+// ---------------------------------------------------------------- classes and every field
+
+/** An annotation with the annotations written inside its arguments: `@Table(indexes = @Index(...))`. */
+export interface AnnotationTree extends Annotation {
+  nested: AnnotationTree[];
+}
+
+export interface JavaField {
+  name: string;
+  /** The declared type as written, without spaces: "List<Entry>", "byte[]", "long". */
+  type: string;
+  line: number;
+  annotations: AnnotationTree[];
+  /** Modifier keywords: "private", "static", "transient", ... */
+  modifiers: string[];
+}
+
+export interface JavaClass {
+  name: string;
+  line: number;
+  /** The simple name after `extends`. */
+  superclass?: string;
+  annotations: AnnotationTree[];
+  /** Every field the class body declares, annotated or not. */
+  fields: JavaField[];
+}
+
+function annotationTree(n: Node): AnnotationTree {
+  const nested: AnnotationTree[] = [];
+  const find = (x: Node | null) => {
+    for (const c of named(x))
+      if (c.type === "annotation" || c.type === "marker_annotation") nested.push(annotationTree(c));
+      else find(c);
+  };
+  find(n.childForFieldName("arguments"));
+  return { ...javaAnnotation(n), nested };
+}
+
+function annotationTreesOf(n: Node): AnnotationTree[] {
+  return named(named(n).find((c) => c.type === "modifiers"))
+    .filter((c) => c.type === "annotation" || c.type === "marker_annotation")
+    .map(annotationTree);
+}
+
+/**
+ * The classes of a Java file (nested ones too) with their annotations, superclass and every
+ * field: what an ORM mapping reads, where a JPA entity maps fields that carry no annotation.
+ */
+export async function parseJavaClasses(src: string): Promise<JavaClass[]> {
+  const tree = await parseSyntax("java", src);
+  const out: JavaClass[] = [];
+  const walk = (n: Node): void => {
+    if (n.type === "class_declaration") {
+      const nameNode = n.childForFieldName("name");
+      if (!nameNode) return;
+      const superclass = typeNames(n.childForFieldName("superclass"))[0];
+      const cls: JavaClass = {
+        name: nameNode.text,
+        line: line(nameNode),
+        ...(superclass ? { superclass } : {}),
+        annotations: annotationTreesOf(n),
+        fields: [],
+      };
+      out.push(cls);
+      for (const m of named(n.childForFieldName("body"))) {
+        if (m.type !== "field_declaration") continue;
+        const ty = m.childForFieldName("type");
+        const annotations = annotationTreesOf(m);
+        const modifiers =
+          named(m)
+            .find((c) => c.type === "modifiers")
+            ?.children.filter((c) => !/annotation|comment/.test(c.type))
+            .map((c) => c.text) ?? [];
+        for (const d of named(m).filter((c) => c.type === "variable_declarator")) {
+          const nm = d.childForFieldName("name");
+          if (nm && ty)
+            cls.fields.push({
+              name: nm.text,
+              type: compact(ty),
+              line: line(nm),
+              annotations,
+              modifiers,
+            });
+        }
+      }
+    }
+    for (const c of named(n)) walk(c);
+  };
+  walk(tree.rootNode);
+  tree.delete();
+  return out;
+}
+
 /** Parse a Java (or, with lang "kotlin", Kotlin) source file. */
 export async function parseJavaTree(
   src: string,

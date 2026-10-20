@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { Dialect } from "@maycombhq/core";
 import { memoryRepo, scanRepo } from "@maycombhq/sdk";
 import { dialectExtractor, querySyntax, runDialectTests, syntaxOutline } from "../src/index.js";
+import { callsIn, descendants, stringValue, withTree } from "../src/lang/code-tree.js";
+import type { SyntaxLanguage } from "../src/lang/syntax.js";
 
 const SHA = "0".repeat(40);
 
@@ -147,5 +149,77 @@ describe("syntax trees (ADR 0060)", () => {
     });
     const f = await runDialectTests(d, ".");
     expect(f[0]!.message).toMatch(/^failed: the java query doesn't compile/);
+  });
+});
+
+describe("the call layer over syntax trees", () => {
+  const read = (lang: SyntaxLanguage, src: string) =>
+    withTree(lang, src, (root) =>
+      callsIn(root).map((c) => ({
+        callee: c.path?.join(".") ?? `?.${c.name}`,
+        isNew: c.isNew,
+        typeArgs: c.typeArgs,
+        args: c.args.map((a) => stringValue(a) ?? a.text),
+        kwargs: Object.fromEntries([...c.kwargs].map(([k, v]) => [k, stringValue(v) ?? v.text])),
+        line: c.line,
+      })),
+    );
+
+  it("reads calls the same way in every language, never from comments or strings", async () => {
+    expect(
+      await read(
+        "python",
+        '# Column("x")\nid = sa.Column("id", Integer, primary_key=True)\ns = "f(1)"\n',
+      ),
+    ).toEqual([
+      {
+        callee: "sa.Column",
+        isNew: false,
+        typeArgs: [],
+        args: ["id", "Integer"],
+        kwargs: { primary_key: "True" },
+        line: 2,
+      },
+    ]);
+    const cs = await read(
+      "c_sharp",
+      'class A { void M() { b.Entity<Order>(\n  x => x.ToTable("orders")); } }',
+    );
+    expect(cs.map((c) => [c.callee, c.typeArgs, c.args, c.line])).toEqual([
+      ["b.Entity", ["Order"], ['x => x.ToTable("orders")'], 1],
+      ["x.ToTable", [], ["orders"], 2],
+    ]);
+    const ts = await read(
+      "typescript",
+      'const c = new pb.v1.Ledger(`ledger:1`, creds);\n// c.old("x")\nc.getBalance({ id: "1" });\n',
+    );
+    expect(ts.map((c) => [c.callee, c.isNew, c.args[0], c.line])).toEqual([
+      ["pb.v1.Ledger", true, "ledger:1", 1],
+      ["c.getBalance", false, '{ id: "1" }', 3],
+    ]);
+    const kt = await read("kotlin", 'fun f() = Retrofit.Builder().baseUrl("https://x/").build()');
+    expect(kt.map((c) => [c.callee, c.args])).toEqual([
+      ["?.build", []],
+      ["?.baseUrl", ["https://x/"]],
+      ["Retrofit.Builder", []],
+    ]);
+    const go = await read("go", "package main\nfunc main() { c := ratespb.NewRatesClient(conn) }");
+    expect(go.map((c) => c.callee)).toEqual(["ratespb.NewRatesClient"]);
+  });
+
+  it("gives a string literal's value, interpolated ones only when asked", async () => {
+    const values = (lang: SyntaxLanguage, src: string, templates = false) =>
+      withTree(lang, src, (root) =>
+        [...descendants(root)]
+          .map((n) => stringValue(n, templates))
+          .filter((v): v is string => v !== undefined && v !== ""),
+      );
+    expect(await values("python", 'a = "x" \'y\'\nb = f"{z}"\n')).toEqual(["xy", "x", "y"]);
+    expect(await values("python", 'b = f"a{z}"\n', true)).toEqual(["a{z}"]);
+    expect(await values("javascript", "a(`p/${id}`, 'q')")).toEqual(["q"]);
+    expect(await values("c_sharp", 'class A { string a = @"c:\\x"; string b = $"{y}"; }')).toEqual([
+      "c:\\x",
+    ]);
+    expect(await values("go", "package a\nvar a = `raw`")).toEqual(["raw"]);
   });
 });

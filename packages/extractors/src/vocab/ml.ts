@@ -1,5 +1,13 @@
 import { normalizePath, type CatalogRecord } from "@maycombhq/core";
 import { defineExtractor } from "@maycombhq/sdk";
+import {
+  callsIn,
+  descendants,
+  lineOf,
+  stringValue,
+  withTree,
+  type CodeCall,
+} from "../lang/code-tree.js";
 import { attrOf } from "../platform/hcl.js";
 import { loadManifests, readYamlDocs } from "../platform/manifests.js";
 import { loadTerraform, tfString } from "../platform/terraform.js";
@@ -13,18 +21,7 @@ import {
   resourcesOf,
   str,
 } from "../platform/util.js";
-import {
-  component,
-  endpoint,
-  ev,
-  lineAt,
-  loose,
-  own,
-  read,
-  slug,
-  sources,
-  stripComments,
-} from "./common.js";
+import { component, endpoint, ev, lineAt, loose, own, read, slug, sources } from "./common.js";
 
 /**
  * Machine-learning models and feature stores (ADR 0040).
@@ -237,31 +234,57 @@ export const mlExtractor = defineExtractor({
     for (const path of await sources(repo, PY)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !/\bfeast\b/.test(text)) continue;
-      const clean = stripComments(text, "hash");
+      const found = await withTree("python", text, (root) => {
+        const views: { name: string; line: number }[] = [];
+        const sourcesRead: { table: string; line: number }[] = [];
+        const reads: { view: string; line: number }[] = [];
+        const kw = (c: CodeCall, k: string) => {
+          const v = c.kwargs.get(k);
+          const s = stringValue(v);
+          return v && s !== undefined ? { value: s, line: lineOf(v.parent ?? v) } : undefined;
+        };
+        for (const c of callsIn(root)) {
+          const name = c.name === "FeatureView" ? kw(c, "name") : undefined;
+          if (name && /^[\w-]+$/.test(name.value))
+            views.push({ name: name.value, line: name.line });
+          const table = c.name === "RedshiftSource" ? kw(c, "table") : undefined;
+          if (table && /^[\w.]+$/.test(table.value))
+            sourcesRead.push({ table: table.value, line: table.line });
+          if (/^get_(online|historical)_features$/.test(c.name)) {
+            const named = new Set<string>();
+            for (const a of [...c.args, ...c.kwargs.values()])
+              for (const n of descendants(a)) {
+                const v = stringValue(n);
+                const m = v !== undefined ? /^([\w-]+):[\w-]+$/.exec(v) : null;
+                if (m) named.add(m[1]!);
+              }
+            for (const view of named) reads.push({ view, line: c.line });
+          }
+        }
+        return { views, sourcesRead, reads };
+      });
+      // The name argument defines the view, whatever line `FeatureView(` is on.
       if (store)
-        for (const m of clean.matchAll(/\bFeatureView\s*\(\s*name\s*=\s*["']([\w-]+)["']/g))
+        for (const v of found.views)
           rest.push({
             schemaVersion: 2,
             kind: "Table",
-            id: `${store}.${slug(m[1]!)}`,
+            id: `${store}.${slug(v.name)}`,
             status: "current",
             confidence: "verified",
             dataStore: store,
-            name: m[1]!,
+            name: v.name,
             tableKind: "table",
             ownerComponent: self,
             readers: [],
             writers: [self],
-            // The name argument defines the view, whatever line `FeatureView(` is on.
-            evidence: [ev(repo, "code", path, lineAt(clean, m.index + m[0].lastIndexOf("name")))],
+            evidence: [ev(repo, "code", path, v.line)],
           } as unknown as CatalogRecord);
       // A Redshift source reads a table of the offline warehouse: the repo's component is a
       // reader of that table (merge joins this to the table the pipeline writes).
       if (offline)
-        for (const m of clean.matchAll(/\bRedshiftSource\s*\(([^)]*)\)/g)) {
-          const t = /\btable\s*=\s*["']([\w.]+)["']/.exec(m[1]!);
-          if (!t) continue;
-          const name = t[1]!.split(".").pop()!;
+        for (const s of found.sourcesRead) {
+          const name = s.table.split(".").pop()!;
           rest.push({
             schemaVersion: 2,
             kind: "Table",
@@ -273,26 +296,11 @@ export const mlExtractor = defineExtractor({
             tableKind: "table",
             readers: [self],
             writers: [],
-            evidence: [
-              ev(
-                repo,
-                "code",
-                path,
-                lineAt(clean, m.index + m[0].indexOf("(") + 1 + t.index),
-                "caller",
-              ),
-            ],
+            evidence: [ev(repo, "code", path, s.line, "caller")],
           } as unknown as CatalogRecord);
         }
-      for (const m of clean.matchAll(/\bget_(?:online|historical)_features\s*\(/g)) {
-        const args = clean.slice(
-          m.index,
-          clean.indexOf(")", m.index + m[0].length) + 1 || undefined,
-        );
-        const views = new Set([...args.matchAll(/["']([\w-]+):[\w-]+["']/g)].map((x) => x[1]!));
-        for (const v of views)
-          rest.push(loose(repo, self, "db-access", `read ${v}`, path, lineAt(clean, m.index)));
-      }
+      for (const r of found.reads)
+        rest.push(loose(repo, self, "db-access", `read ${r.view}`, path, r.line));
     }
 
     yield* components.values();
