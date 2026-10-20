@@ -101,6 +101,29 @@ export const FrameworkRoute = z.strictObject({
   path: AnyCallPart,
 });
 
+/**
+ * What an organisation's pipeline template or shared-library step does (ADR 0062), so the
+ * pipelines that use it say so: a Harness templateRef, an Azure template in another repo
+ * (deploy.yml@templates), a GitHub reusable workflow or action, a GitLab include (`uses`), or
+ * a Jenkins shared-library step (`step`), whose named argument `environmentFrom` names the
+ * environment.
+ */
+export const FrameworkPipeline = z
+  .strictObject({
+    uses: z.string().min(1).optional(),
+    step: z
+      .string()
+      .regex(/^[A-Za-z_]\w*$/)
+      .optional(),
+    environmentFrom: z.string().min(1).optional(),
+    stages: z.array(z.string().min(1)).default([]),
+    environments: z.array(z.string().min(1)).default([]),
+    deployTargets: z.array(z.string().min(1)).default([]),
+    testSteps: z.array(z.string().min(1)).default([]),
+    source: FrameworkSource,
+  })
+  .refine((e) => !!e.uses !== !!e.step, "a pipeline entry names exactly one of uses or step");
+
 export const FrameworkValue = z.strictObject({
   value: z.string(),
   source: FrameworkSource,
@@ -154,6 +177,8 @@ export const FrameworkModel = z.strictObject({
     .default({}),
   /** A constant and its value: { Topics.CARD_ISSUED: cards.issued }. */
   constants: z.record(QualifiedName, FrameworkValue).default({}),
+  /** Pipeline templates and shared-library steps (ADR 0062). */
+  pipeline: z.array(FrameworkPipeline).default([]),
   tests: z.array(FrameworkTest).default([]),
 });
 export type FrameworkModel = z.infer<typeof FrameworkModel>;

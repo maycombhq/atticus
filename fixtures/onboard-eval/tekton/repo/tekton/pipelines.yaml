@@ -1,0 +1,12 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata: { name: ledger-ci }
+spec:
+  tasks:
+    - { name: fetch, taskRef: { name: git-clone } }
+    - { name: integration-test, taskRef: { name: gradle }, runAfter: [fetch] }
+    - { name: rollout, taskRef: { name: kubernetes-actions }, runAfter: [integration-test] }
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata: { name: not-a-pipeline }

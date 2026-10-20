@@ -38,5 +38,17 @@ The assistant is whatever `runtime.yaml` allows. With `hand-off`, your own assis
 - `calls` (JavaScript and TypeScript, C#, Python, Go): a function that makes an HTTP call or publishes or reads an event or queue.
 - `routes` (same languages): a function that registers a route the code serves.
 - `services` and `constants`: what service ids and the framework's constants stand for.
+- `pipeline` (ADR 0062): what a platform team's pipeline template or Jenkins shared-library step does. Name a template with `uses` (a Harness `templateRef`, `deploy.yml@templates`, a GitHub action or reusable workflow) or a library step with `step` (with `environmentFrom` for the argument that names the environment), and list what it adds: `stages`, `environments`, `deployTargets`, `testSteps`. A pipeline that uses it gains these, and its `details.modelled` names the entry and its source.
+
+```yaml
+pipeline:
+  - uses: org.tide_release
+    stages: [Release notes, Change record]
+    source: { kind: person, ref: "@tide-platform" }
+  - step: deployToProd
+    environmentFrom: env
+    deployTargets: [helm]
+    source: { kind: code, ref: tide-pipelines/vars/deployToProd.groovy }
+```
 
 Every entry records where its meaning came from (`code`, `bytecode`, `document` or `person`); only code and bytecode make verified facts.

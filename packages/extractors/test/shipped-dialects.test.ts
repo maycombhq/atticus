@@ -45,9 +45,12 @@ describe("listShippedDialects", () => {
   it("lists the shipped dialect files as absolute paths, in name order", () => {
     const paths = listShippedDialects();
     expect(paths.map((p) => basename(p))).toEqual([
+      "argocd.yaml",
+      "harness.yaml",
       "jaxrs.yaml",
       "micronaut.yaml",
       "quarkus-reactive-messaging.yaml",
+      "tekton.yaml",
     ]);
     for (const p of paths) {
       expect(isAbsolute(p)).toBe(true);
@@ -58,9 +61,12 @@ describe("listShippedDialects", () => {
   it("loads them as valid C2 dialects whose own tests pass", async () => {
     const dialects = await loadShippedDialects();
     expect(dialects.map((d) => `${d.name}@${d.version}`)).toEqual([
+      "argocd@1.0.0",
+      "harness@1.0.0",
       "jaxrs@1.0.0",
       "micronaut@1.0.0",
       "quarkus-reactive-messaging@1.0.0",
+      "tekton@1.0.0",
     ]);
     for (const [i, d] of dialects.entries())
       expect(await runDialectTests(d, dirname(listShippedDialects()[i]!)), d.name).toEqual([]);

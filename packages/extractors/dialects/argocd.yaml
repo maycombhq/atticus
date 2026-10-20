@@ -1,0 +1,45 @@
+# Argo CD Applications (ADR 0062). Shipped with Atticus (C2). An argoproj.io Application is a
+# Deployment through GitOps: the component is the Application's name and the environment the
+# folder it sits in (apps/<env>/cards.yaml). Naming varies from estate to estate; an
+# organisation's own dialect (extends: [argocd]) overrides the rule. ApplicationSets
+# (generators) aren't expanded yet.
+schemaVersion: 1
+name: argocd
+version: 1.0.0
+description: Argo CD Applications as GitOps Deployments of a component to an environment.
+appliesTo:
+  repoTypes: ["*"]
+  marker: "**/*.y*ml"
+rules:
+  - id: application
+    description: An Argo CD Application deploys its source to its destination.
+    match: { jsonPath: "$", files: ["**/*.yaml", "**/*.yml"], contains: argoproj.io }
+    where:
+      - { value: "${attr.apiVersion}", matches: "^argoproj\\.io/" }
+      - { value: "${attr.kind}", matches: "^Application$" }
+    emit:
+      kind: Deployment
+      id: "${attr.metadata.name | slug}.${file.path | parent | basename | slug}"
+      fields:
+        component: "${attr.metadata.name | slug}"
+        env: "${file.path | parent | basename}"
+        platform: argocd
+      evidence: { source: infrastructure, side: definition }
+    confidence: verified
+tests:
+  - name: an Application per environment folder
+    files:
+      apps/prod/cards.yaml: |
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata: { name: cards, namespace: argocd }
+        spec:
+          source: { repoURL: "https://git.example.com/tide/cards-deploy.git", path: chart, targetRevision: main }
+          destination: { server: "https://kubernetes.default.svc", namespace: cards-prod }
+          syncPolicy: { automated: { prune: true } }
+      apps/prod/not-argo.yaml: |
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata: { name: x }
+    expect:
+      - { kind: Deployment, id: cards.prod, component: cards, env: prod, platform: argocd }

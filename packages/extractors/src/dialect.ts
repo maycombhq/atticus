@@ -1,6 +1,13 @@
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
-import { isMap, isScalar, isSeq, LineCounter, parseDocument, type Node } from "yaml";
+import {
+  isMap,
+  isScalar,
+  isSeq,
+  LineCounter,
+  parseAllDocuments,
+  type Node,
+} from "yaml";
 import {
   interfaceId,
   matchType,
@@ -246,6 +253,12 @@ async function places(
     return javaCache.get(p)!;
   };
   for await (const path of repo.listFiles(m.files)) {
+    // contains (ADR 0062): a file without the text isn't parsed.
+    if (m.contains !== undefined) {
+      const text = await repo.readText(path);
+      const want = Array.isArray(m.contains) ? m.contains : [m.contains];
+      if (!want.some((w) => text.includes(w))) continue;
+    }
     if (type === "annotation" && "annotation" in m) {
       const want = simple(m.annotation);
       for (const d of (await java(path)).decls) {
@@ -354,8 +367,12 @@ async function places(
       }
     } else if (type === "jsonPath" && "jsonPath" in m) {
       const lc = new LineCounter();
-      const doc = parseDocument(await repo.readText(path), { lineCounter: lc });
-      for (const hit of jsonPath(doc.contents, m.jsonPath, lc)) {
+      // Every YAML document in the file (Kubernetes-style files hold several, split by ---).
+      const docs = parseAllDocuments(await repo.readText(path), { lineCounter: lc });
+      const hits = (Array.isArray(docs) ? docs : [docs]).flatMap((doc) =>
+        jsonPath(doc.contents, m.jsonPath, lc),
+      );
+      for (const hit of hits) {
         const attrs = plainFields(hit.value);
         const value = hit.value;
         out.push({
@@ -532,6 +549,7 @@ export function dialectExtractor(
         dialect.appliesTo.repoTypes.length > 0 &&
         ctx.repoType &&
         !dialect.appliesTo.repoTypes.includes(ctx.repoType) &&
+        !dialect.appliesTo.repoTypes.includes("*") &&
         !ctx.dialects.includes(dialect.name)
       )
         return;
@@ -674,9 +692,17 @@ export function dialectExtractor(
                     continue;
                   }
                   for (const node of relativePath(place.value, x.each)) {
-                    const r = renderTemplate(x.value, (src) =>
-                      src.type === "item" ? itemValue(node, src.name) : base(src),
-                    );
+                    const at = (src: TemplateSource) =>
+                      src.type === "item" ? itemValue(node, src.name) : base(src);
+                    // where on the item (ADR 0062): every condition must hold for this node.
+                    if (
+                      !(x.where ?? []).every((w) => {
+                        const v = renderTemplate(w.value, at);
+                        return v !== undefined && new RegExp(w.matches).test(v);
+                      })
+                    )
+                      continue;
+                    const r = renderTemplate(x.value, at);
                     if (r !== undefined && r !== "" && !out.includes(r)) out.push(r);
                   }
                 }

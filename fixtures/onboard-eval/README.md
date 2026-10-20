@@ -16,3 +16,6 @@ references, which checks the harness, not a model.
 | `house-gateway` | A house gateway's own route files                                |
 | `house-http`    | A house HTTP client in Java, Kotlin and TypeScript               |
 | `tf-topics`     | Kafka topics from a house Terraform module                       |
+| `harness`       | Harness pipelines with parallel stages and an org template       |
+| `tekton`        | Tekton Pipelines                                                 |
+| `argocd`        | Argo CD Applications per environment folder                      |

@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Pipelines from any CI/CD tool, and what org templates do
+
+- Shipped dialects for Harness pipelines, Tekton Pipelines and Argo CD Applications (ADR 0062): a Harness or Tekton pipeline is a pipeline QualityAsset with stages, environments, deploy targets, test steps and templates, like the built-in readers write; an Argo CD Application is a GitOps Deployment.
+- Framework models can have `pipeline` entries: what a template (`uses: org.tide_release`, `deploy.yml@templates`, a GitHub action) or a Jenkins shared-library step (`step: deployToProd`, `environmentFrom: env`) adds. Every pipeline that uses one gains it after the scan, and `details.modelled` says which model said so and where that came from.
+- Dialects: `appliesTo.repoTypes: ["*"]` (any repo, gated by the marker); a `map('a=b')` filter; `where` on collected list items; `jsonPath` reads every document of a multi-document YAML file; `contains` on any match skips files without the given text before parsing them.
+- Three onboarding eval cases (Harness, Tekton, Argo CD); `atticus onboard eval` runs 10.
+
 ### Dialect fields: nested objects, collected lists, the component
 
 - A dialect field may be an object, nested up to three levels, and a list item may collect one value per node under the match: `{ each: "@.stages[*].stage", value: "${item.name}" }` (ADR 0061). `${repo.component}` is the component the matched file belongs to. A pipeline from any CI/CD tool can now be described as rules the way the built-in readers describe one.

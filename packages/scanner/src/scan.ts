@@ -29,6 +29,7 @@ import {
   loadShippedDialects,
   runDialectTests,
   runFrameworkTests,
+  applyPipelineModels,
   SHIPPED_DIALECTS_DIR,
 } from "@maycombhq/extractors";
 import { listIngestors } from "@maycombhq/ingestors";
@@ -344,7 +345,13 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       ...BUILT_IN_EXTRACTORS,
       ...(o.extractors ?? []),
       ...dialectExtractors
-        .filter(({ d }) => r.dialects.includes(d.name) || d.appliesTo.repoTypes.includes(r.type))
+        .filter(
+          ({ d }) =>
+            r.dialects.includes(d.name) ||
+            d.appliesTo.repoTypes.includes(r.type) ||
+            // "*": any repo where the marker matches (ADR 0062).
+            d.appliesTo.repoTypes.includes("*"),
+        )
         .map(({ x }) => x),
     ];
     // .atticus/ is Atticus's own folder (an adopted repo scans itself): never read as code.
@@ -417,7 +424,11 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
       ? `org-pack/profiles/${op.profiles[0].platform}/profile.yaml`
       : undefined,
   });
-  const codeRecords = results.flatMap((s) => s.records);
+  // What the org's pipeline templates and library steps do, on the pipelines using them (ADR 0062).
+  const codeRecords = applyPipelineModels(
+    results.flatMap((s) => s.records),
+    frameworks,
+  );
   let merged = mergeCatalog(mergeInput(codeRecords));
   const curatedDir =
     o.curatedDir ?? join(o.root, ...op.sources.layout.catalog.split("/"), "curated");

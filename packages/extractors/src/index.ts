@@ -47,6 +47,7 @@ export * from "./learn-js-framework.js";
 export * from "./modules.js";
 export * from "./dependencies.js";
 export * from "./framework-tests.js";
+export * from "./pipeline-models.js";
 export { houseExtractor };
 
 /** Every built-in extractor, in a stable order. Dialect engines are added by the scanner. */

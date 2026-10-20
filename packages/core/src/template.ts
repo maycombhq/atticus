@@ -32,6 +32,7 @@ export const TEMPLATE_FILTERS = [
   "default",
   "parent",
   "basename",
+  "map",
 ] as const;
 export type TemplateFilter = (typeof TEMPLATE_FILTERS)[number];
 
@@ -160,9 +161,14 @@ function parseExpr(body: string, template: string): TemplateExpr {
       throw new TemplateError(`unknown filter "${p.trim()}"`, template);
     }
     const name = m[1] as TemplateFilter;
-    if (name === "default" && m[2] === undefined)
-      throw new TemplateError("default needs a value: default('x')", template);
-    if (name !== "default" && m[2] !== undefined)
+    if ((name === "default" || name === "map") && m[2] === undefined)
+      throw new TemplateError(
+        name === "map"
+          ? "map needs pairs: map('K8sRollingDeploy=kubernetes,HelmDeploy=helm')"
+          : "default needs a value: default('x')",
+        template,
+      );
+    if (name !== "default" && name !== "map" && m[2] !== undefined)
       throw new TemplateError(`${name} takes no argument`, template);
     return m[2] === undefined ? { name } : { name, arg: m[2] };
   });
@@ -210,7 +216,19 @@ const FILTERS: Record<TemplateFilter, (v: string, arg?: string) => string> = {
   default: (v, arg) => (v === "" ? (arg ?? "") : v),
   parent: (v) => (v.includes("/") ? v.slice(0, v.replace(/\/+$/, "").lastIndexOf("/")) : ""),
   basename: (v) => v.replace(/\/+$/, "").split("/").pop() ?? "",
+  map: (v, arg) => mapPairs(arg).get(v) ?? "",
 };
+
+/** map('a=b,c=d') as a table: the words a tool uses to the ones Atticus uses (ADR 0062). */
+function mapPairs(arg = ""): Map<string, string> {
+  return new Map(
+    arg
+      .split(",")
+      .map((pair) => pair.split("="))
+      .filter((kv) => kv.length === 2 && kv[0]!.trim() !== "")
+      .map(([k, v]) => [k!.trim(), v!.trim()]),
+  );
+}
 
 /** One expression's value with its filters applied, or undefined when unknown with no default. */
 export function renderExpr(
@@ -221,6 +239,8 @@ export function renderExpr(
   let value = resolved ?? "";
   let known = resolved !== undefined;
   for (const f of expr.filters) {
+    // map: a value with no entry is unknown, so it can fall through to a default.
+    if (f.name === "map" && known && !mapPairs(f.arg).has(value)) known = false;
     value = FILTERS[f.name](value, f.arg);
     if (f.name === "default") known = true;
   }

@@ -1,0 +1,6 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: limits, namespace: argocd }
+spec:
+  source: { repoURL: "https://git.example.com/tide/limits-deploy.git", path: chart, targetRevision: main }
+  destination: { server: "https://kubernetes.default.svc", namespace: limits-uat }

@@ -1,9 +1,10 @@
-import type { CatalogRecord } from "@maycombhq/core";
+import type { CatalogRecord, FrameworkModel } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
 import { componentOf, type Ev } from "../facts.js";
 import { MALFORMED_YAML, readYamlDocs, type PathSeg, type YamlDoc } from "./manifests.js";
 import { arr, at, dirOf, ev, isEnvWord, isObj, readOrWarn, slug, str, type Obj } from "./util.js";
 import { groovyCalls } from "../lang/groovy.js";
+import { addEntry, templateMatches } from "../pipeline-models.js";
 
 /**
  * CI/CD pipelines: Azure Pipelines (with local templates expanded), GitHub Actions
@@ -47,6 +48,10 @@ class Facts {
   testSteps: string[] = [];
   templates: string[] = [];
   files: string[] = [];
+  /** Model entries a pipeline's library steps matched (ADR 0062), as details.modelled. */
+  modelled: string[] = [];
+  /** Actions a GitHub step uses: kept as templates when a pipeline model names them (ADR 0062). */
+  actions: string[] = [];
   tests: Report[] = [];
   coverage: Report[] = [];
 
@@ -122,8 +127,13 @@ export const pipelinesExtractor = defineExtractor({
   claims: [...AZURE, ...GITHUB, ...GITLAB, ...JENKINS],
   async *scan(repo, ctx) {
     const component = componentOf(repo, ctx);
-    const emit = (tool: string, path: string, name: string, f: Facts) =>
-      records(repo, component, tool, path, name, f);
+    const models = ctx.frameworks ?? [];
+    const uses = models.flatMap((m) => m.pipeline.flatMap((e) => (e.uses ? [e.uses] : [])));
+    const emit = (tool: string, path: string, name: string, f: Facts) => {
+      // An action a pipeline model names is a template of the pipeline, like a reusable workflow.
+      for (const a of f.actions) if (uses.some((u) => templateMatches(a, u))) f.add(f.templates, a);
+      return records(repo, component, tool, path, name, f);
+    };
 
     // ---- Azure Pipelines: a file another one uses as a template isn't a pipeline itself.
     const azure: { path: string; doc: YamlDoc }[] = [];
@@ -164,7 +174,7 @@ export const pipelinesExtractor = defineExtractor({
     for await (const path of repo.listFiles(JENKINS)) {
       const text = await readOrWarn(repo, ctx, path);
       if (text === undefined) continue;
-      const f = await jenkinsPipeline(path, text);
+      const f = await jenkinsPipeline(path, text, models);
       if (f) yield* emit("jenkins", path, path.split("/").pop() ?? path, f);
     }
   },
@@ -219,6 +229,7 @@ function* records(
       deployTargets: f.deployTargets,
       testSteps: f.testSteps,
       ...(f.templates.length > 0 ? { templates: f.templates } : {}),
+      ...(f.modelled.length > 0 ? { modelled: f.modelled } : {}),
     },
     [path, ...f.files.filter((x) => x !== path)].map((p) => ev(repo, "pipeline", p)),
   );
@@ -478,6 +489,7 @@ function githubWorkflow(path: string, doc: YamlDoc): Facts {
       if (!isObj(step)) return;
       const run = str(step.run);
       const action = str(step.uses);
+      if (action) f.add(f.actions, action);
       const w = isObj(step.with) ? step.with : {};
       // An action's inputs are left out: "reporter: jest-junit" doesn't make a step a test run.
       const text = [action ?? "", run ?? ""].join(" ");
@@ -638,11 +650,29 @@ async function gitlabPipeline(
  * triggers, shell steps, test results and coverage reports are calls, and their arguments are
  * read as the tree has them. Comments are never read.
  */
-async function jenkinsPipeline(path: string, raw: string): Promise<Facts | undefined> {
+async function jenkinsPipeline(
+  path: string,
+  raw: string,
+  models: readonly FrameworkModel[] = [],
+): Promise<Facts | undefined> {
   const calls = await groovyCalls(raw);
-  if (!calls.some((c) => c.name === "stage" || c.name === "pipeline")) return undefined;
+  // A shared-library step a pipeline model names (ADR 0062): deployToProd(app: 'cards').
+  const steps = models.flatMap((m) =>
+    m.pipeline.flatMap((e) => (e.step ? [{ m, e, step: e.step }] : [])),
+  );
+  const modelledStep = (name: string) => steps.filter((x) => x.step === name);
+  if (
+    !calls.some((c) => c.name === "stage" || c.name === "pipeline" || modelledStep(c.name).length)
+  )
+    return undefined;
   const f = new Facts();
+  const details: Record<string, unknown> = {};
   for (const c of calls) {
+    for (const { m, e } of modelledStep(c.name)) {
+      const env = e.environmentFrom ? c.named[e.environmentFrom] : undefined;
+      addEntry(details, e, m.name, env);
+      f.add(f.templates, `step:${c.name}`);
+    }
     const first = c.args[0];
     switch (c.name) {
       case "stage":
@@ -709,6 +739,9 @@ async function jenkinsPipeline(path: string, raw: string): Promise<Facts | undef
       }
     }
   }
+  for (const k of ["stages", "environments", "deployTargets", "testSteps"] as const)
+    for (const v of (details[k] as string[] | undefined) ?? []) f.add(f[k], v);
+  f.modelled = (details.modelled as string[] | undefined) ?? [];
   f.add(f.files, path);
   return f;
 }

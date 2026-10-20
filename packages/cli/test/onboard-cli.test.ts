@@ -131,7 +131,7 @@ describe("atticus onboard eval (ADR 0059)", () => {
     expect(await onboardEval(root, EVAL, {}, { runtime: runtime(false), now: NOW }, good.io)).toBe(
       0,
     );
-    expect(good.out.at(-1)).toBe("7 of 7 cases read exactly what the reference reads.");
+    expect(good.out.at(-1)).toBe("10 of 10 cases read exactly what the reference reads.");
     const bad = capture();
     expect(
       await onboardEval(root, EVAL, { attempts: 1 }, { runtime: runtime(true), now: NOW }, bad.io),

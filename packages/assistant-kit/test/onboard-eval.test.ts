@@ -14,10 +14,13 @@ describe("the onboarding evaluation (ADR 0059)", () => {
     expect(cases.map((c) => c.name)).toEqual([
       "apigee",
       "apim",
+      "argocd",
       "aws-apigw",
+      "harness",
       "house-gateway",
       "house-http",
       "kong",
+      "tekton",
       "tf-topics",
     ]);
     const refOf = new Map(cases.map((c) => [`eval-${c.name}`, readFileSync(c.reference, "utf8")]));
@@ -32,7 +35,9 @@ describe("the onboarding evaluation (ADR 0059)", () => {
     expect(results.map((r) => [r.case, r.status, r.precision, r.recall, r.expected > 0])).toEqual(
       cases.map((c) => [c.name, "drafted", 1, 1, true]),
     );
-    expect(formatEval(results).at(-1)).toBe("7 of 7 cases read exactly what the reference reads.");
+    expect(formatEval(results).at(-1)).toBe(
+      "10 of 10 cases read exactly what the reference reads.",
+    );
   }, 300_000);
 
   it("marks down a draft that reads less than the reference", async () => {

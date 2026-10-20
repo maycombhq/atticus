@@ -1,0 +1,38 @@
+pipeline:
+  name: Payments release
+  identifier: payments_release
+  projectIdentifier: payments
+  orgIdentifier: tide
+  stages:
+    - stage:
+        name: Build and test
+        identifier: build
+        type: CI
+        spec:
+          execution:
+            steps:
+              - step: { type: Run, name: Unit tests, identifier: unit, spec: { command: ./gradlew test } }
+              - step: { type: Run, name: Image, identifier: image, spec: { command: docker build . } }
+    - parallel:
+        - stage:
+            name: Deploy uat
+            identifier: deploy_uat
+            type: Deployment
+            spec:
+              environment: { environmentRef: uat }
+              execution:
+                steps:
+                  - step: { type: HelmDeploy, name: Helm, identifier: helm }
+        - stage:
+            name: Deploy prod
+            identifier: deploy_prod
+            type: Deployment
+            spec:
+              environment: { environmentRef: prod }
+              execution:
+                steps:
+                  - step: { type: K8sCanaryDeploy, name: Canary, identifier: canary }
+    - stage:
+        name: Compliance
+        identifier: compliance
+        template: { templateRef: account.tide_compliance, versionLabel: v4 }

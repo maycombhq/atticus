@@ -1,0 +1,71 @@
+# Tekton pipelines (ADR 0062). Shipped with Atticus (C2). A tekton.dev Pipeline is a pipeline
+# QualityAsset: its tasks are its stages, tasks from the Tekton catalog that deploy say where
+# (helm, kubernetes, openshift, terraform, argocd), tasks whose name or task says test are its
+# test steps, and the tasks it references are its templates. Several documents in one file are
+# read. PipelineRuns and Triggers aren't joined to their Pipeline yet.
+schemaVersion: 1
+name: tekton
+version: 1.0.0
+description: Tekton Pipelines as pipeline QualityAssets, with tasks, deploy targets, test steps and referenced tasks.
+appliesTo:
+  repoTypes: ["*"]
+  marker: "**/*.y*ml"
+rules:
+  - id: pipeline
+    description: A tekton.dev Pipeline is a pipeline, its tasks the stages.
+    match: { jsonPath: "$", files: ["**/*.yaml", "**/*.yml"], contains: tekton.dev }
+    where:
+      - { value: "${attr.apiVersion}", matches: "^tekton\\.dev/" }
+      - { value: "${attr.kind}", matches: "^Pipeline$" }
+    emit:
+      kind: QualityAsset
+      id: "${repo.component}.pipeline.${attr.metadata.name | slug}"
+      fields:
+        component: "${repo.component}"
+        assetKind: pipeline
+        details:
+          tool: tekton
+          name: "${attr.metadata.name}"
+          stages:
+            - { each: "@.spec.tasks[*]", value: "${item.name}" }
+            - { each: "@.spec.finally[*]", value: "${item.name}" }
+          deployTargets:
+            - each: "@.spec.tasks[*]"
+              value: "${item.taskRef.name | map('helm-upgrade-from-source=helm,helm-upgrade-from-repo=helm,kubernetes-actions=kubernetes,kubectl-deploy-pod=kubernetes,openshift-client=openshift,terraform-cli=terraform,argocd-task-sync-and-wait=argocd')}"
+          testSteps:
+            - each: "@.spec.tasks[*]"
+              value: "${item.name}"
+              where:
+                [{ value: "${item.name} ${item.taskRef.name | default('')}", matches: "\\btest" }]
+          templates:
+            - { each: "@.spec.tasks[*]", value: "${item.taskRef.name}" }
+      evidence: { source: pipeline, side: definition }
+    confidence: verified
+tests:
+  - name: a pipeline with build, test and deploy tasks, beside another document
+    files:
+      tekton/pipeline.yaml: |
+        apiVersion: v1
+        kind: ConfigMap
+        metadata: { name: not-a-pipeline }
+        ---
+        apiVersion: tekton.dev/v1
+        kind: Pipeline
+        metadata: { name: cards-ci }
+        spec:
+          tasks:
+            - { name: build, taskRef: { name: maven } }
+            - { name: unit-test, taskRef: { name: maven }, runAfter: [build] }
+            - { name: deploy, taskRef: { name: helm-upgrade-from-source }, runAfter: [unit-test] }
+          finally:
+            - { name: notify, taskRef: { name: send-to-webhook-slack } }
+    expect:
+      - kind: QualityAsset
+        id: dialect-test.pipeline.cards-ci
+        details:
+          tool: tekton
+          name: cards-ci
+          stages: [build, unit-test, deploy, notify]
+          deployTargets: [helm]
+          testSteps: [unit-test]
+          templates: [maven, helm-upgrade-from-source]

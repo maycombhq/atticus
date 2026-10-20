@@ -1,0 +1,101 @@
+# Harness CD and CI pipelines (ADR 0062). Shipped with Atticus (C2). A pipeline in .harness/
+# is a pipeline QualityAsset, described the way the built-in pipeline readers describe one:
+# its stages, the environments its deploy stages target, the deploy steps (as Atticus's words:
+# kubernetes, helm, terraform...), the steps that run tests, and the org templates it uses
+# (a pipeline model, ADR 0062, says what a template does). Runtime inputs (<+input>) aren't
+# values. Triggers live in their own files and aren't joined to their pipeline yet.
+schemaVersion: 1
+name: harness
+version: 1.0.0
+description: Harness pipelines as pipeline QualityAssets, with stages, environments, deploy targets, test steps and templates.
+appliesTo:
+  repoTypes: ["*"]
+  marker: "**/.harness/**/*.y*ml"
+rules:
+  - id: pipeline
+    description: A Harness pipeline file is a pipeline, with what its stages and steps say.
+    match:
+      jsonPath: "$.pipeline"
+      files: ["**/.harness/**/*.yaml", "**/.harness/**/*.yml"]
+      contains: "pipeline:"
+    emit:
+      kind: QualityAsset
+      id: "${repo.component}.pipeline.${attr.identifier | slug}"
+      fields:
+        component: "${repo.component}"
+        assetKind: pipeline
+        details:
+          tool: harness
+          name: "${attr.name}"
+          stages:
+            - { each: "@.stages[*].stage", value: "${item.name}" }
+            - { each: "@.stages[*].parallel[*].stage", value: "${item.name}" }
+          environments:
+            - each: "@..environment"
+              value: "${item.environmentRef | lower}"
+              where: [{ value: "${item.environmentRef}", matches: "^[^<]" }]
+          deployTargets:
+            - each: "@..step"
+              value: "${item.type | map('K8sRollingDeploy=kubernetes,K8sCanaryDeploy=kubernetes,K8sBlueGreenDeploy=kubernetes,K8sApply=kubernetes,HelmDeploy=helm,NativeHelmDeploy=helm,TerraformApply=terraform,TerraformCloudRun=terraform,ServerlessAwsLambdaDeploy=aws-lambda,AwsLambdaDeploy=aws-lambda,ECSRollingDeploy=aws-ecs,AzureWebAppSlotDeployment=azure-web-app,AzureFunctionDeploy=azure-functions,GoogleCloudRunDeploy=cloud-run,TanzuCommand=tanzu')}"
+          testSteps:
+            - each: "@..step"
+              value: "${item.name}"
+              where: [{ value: "${item.type}", matches: "^RunTests$" }]
+            - each: "@..step"
+              value: "${item.spec.command}"
+              where:
+                - { value: "${item.type}", matches: "^Run$" }
+                - {
+                    value: "${item.spec.command}",
+                    matches: "\\b(test|tests|verify|pytest|jest|vitest)\\b",
+                  }
+          templates:
+            - { each: "@..template", value: "${item.templateRef}" }
+      evidence: { source: pipeline, side: definition }
+    confidence: verified
+tests:
+  - name: a CI stage with tests, a deploy stage to prod, and a stage from an org template
+    files:
+      .harness/pipelines/cards_deploy.yaml: |
+        pipeline:
+          name: Cards build and deploy
+          identifier: cards_deploy
+          stages:
+            - stage:
+                name: Build
+                type: CI
+                spec:
+                  execution:
+                    steps:
+                      - step: { type: Run, name: Unit tests, spec: { command: mvn -B verify } }
+                      - step: { type: Run, name: Package, spec: { command: mvn -B package -DskipTests } }
+                      - step: { type: RunTests, name: Contract tests }
+            - stage:
+                name: Deploy prod
+                type: Deployment
+                spec:
+                  environment: { environmentRef: Prod }
+                  execution:
+                    steps:
+                      - step: { type: K8sRollingDeploy, name: Rollout }
+                      - step: { type: ShellScript, name: Notify }
+            - stage:
+                name: Deploy uat
+                type: Deployment
+                spec:
+                  environment: { environmentRef: <+input> }
+            - stage:
+                name: Release notes
+                template: { templateRef: org.tide_release, versionLabel: v2 }
+    expect:
+      - kind: QualityAsset
+        id: dialect-test.pipeline.cards_deploy
+        assetKind: pipeline
+        details:
+          tool: harness
+          name: Cards build and deploy
+          stages: [Build, Deploy prod, Deploy uat, Release notes]
+          environments: [prod]
+          deployTargets: [kubernetes]
+          testSteps: [Contract tests, mvn -B verify]
+          templates: [org.tide_release]

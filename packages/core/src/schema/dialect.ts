@@ -49,41 +49,51 @@ export const SyntaxLanguage = z.enum([
 ]);
 
 /** Exactly one way to match, each with the files it looks in. */
+/**
+ * Where a match looks: `files` globs, and optionally text a file must contain to be read at all
+ * (`contains: tekton.dev`), a cheap gate before parsing (ADR 0062). It decides which files are
+ * parsed, never what is read from them.
+ */
+const Files = {
+  files: Globs,
+  contains: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]).optional(),
+};
+
 export const DialectMatch = z.union([
   z.strictObject({
     annotation: JavaName,
     /** What the annotation sits on. */
     target: z.enum(["class", "method", "field", "parameter", "any"]).default("any"),
-    files: Globs,
+    ...Files,
   }),
-  z.strictObject({ baseClass: JavaName, files: Globs }),
+  z.strictObject({ baseClass: JavaName, ...Files }),
   z.strictObject({
     /** Method name, optionally with the receiver: "send" or "kafkaTemplate.send". */
     methodCall: z.string().regex(/^([A-Za-z_$][A-Za-z0-9_$]*\.)?[A-Za-z_$][A-Za-z0-9_$]*$/),
     /** Only when the receiver's declared type matches. */
     receiverType: JavaName.optional(),
-    files: Globs,
+    ...Files,
   }),
   z.strictObject({
     /** Dotted key; "*" matches one segment: "spring.kafka.*.topic". */
     configKey: z.string().regex(/^[A-Za-z0-9_\-*]+(\.[A-Za-z0-9_\-*[\]]+)*$/),
-    files: Globs,
+    ...Files,
   }),
-  z.strictObject({ xpath: z.string().min(1), files: Globs }),
-  z.strictObject({ jsonPath: z.string().regex(/^\$/, "JSONPath starts with $"), files: Globs }),
+  z.strictObject({ xpath: z.string().min(1), ...Files }),
+  z.strictObject({ jsonPath: z.string().regex(/^\$/, "JSONPath starts with $"), ...Files }),
   z.strictObject({
     /** A tree-sitter query over the file's syntax tree (ADR 0060); its captures are ${capture.x}. */
     syntax: z.string().min(1),
     /** The grammar; by default the file's extension says. */
     language: SyntaxLanguage.optional(),
-    files: Globs,
+    ...Files,
   }),
   z.strictObject({
     /** A Terraform (HCL) block type, optionally with its first label: "module", "resource.aws_sqs_queue" (ADR 0056). */
     hclBlock: z
       .string()
       .regex(/^[A-Za-z_][\w-]*(\.[A-Za-z_][\w-]*)?$/, "a block type, or type.label"),
-    files: Globs,
+    ...Files,
   }),
   z.strictObject({
     /** A regular expression over file text, for anything else; groups are ${match.N}. */
@@ -98,7 +108,7 @@ export const DialectMatch = z.union([
           return false;
         }
       }, "not a valid regular expression"),
-    files: Globs,
+    ...Files,
   }),
 ]);
 export type DialectMatch = z.infer<typeof DialectMatch>;
@@ -135,6 +145,8 @@ export function matchType(
 export const DialectEach = z.strictObject({
   each: z.string().regex(/^@/, "a path relative to the match starts with @"),
   value: Template,
+  /** Conditions on each node (with ${item...}): only nodes where all hold give a value (ADR 0062). */
+  where: z.lazy(() => z.array(DialectWhere)).optional(),
 });
 export type DialectEach = z.infer<typeof DialectEach>;
 
@@ -160,7 +172,10 @@ const FieldValue = z.union([
 export function fieldTemplates(v: DialectFieldValue): string[] {
   if (typeof v === "string") return [v];
   if (typeof v === "number" || typeof v === "boolean") return [];
-  if (Array.isArray(v)) return v.flatMap((x) => (typeof x === "string" ? [x] : [x.value]));
+  if (Array.isArray(v))
+    return v.flatMap((x) =>
+      typeof x === "string" ? [x] : [x.value, ...(x.where ?? []).map((w) => w.value)],
+    );
   return Object.values(v).flatMap(fieldTemplates);
 }
 
@@ -250,7 +265,7 @@ export const Dialect = z
     extends: z.array(RecordId).default([]),
     appliesTo: z.strictObject({
       /** Repo types from repos.manifest.yaml; empty means any repo that lists this dialect. */
-      repoTypes: z.array(RecordId).default([]),
+      repoTypes: z.array(z.union([RecordId, z.literal("*")])).default([]),
       /** A file that must exist for the dialect to apply, e.g. "forge.yaml". */
       marker: Glob.optional(),
     }),

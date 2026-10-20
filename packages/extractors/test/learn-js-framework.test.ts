@@ -64,6 +64,7 @@ const lanternModel = (
     "Services.BFF": { value: "web-bff", source: { kind: "code", ref: ref(files.request) } },
     "Services.CARDS": { value: "cards", source: { kind: "code", ref: ref(files.request) } },
   },
+  pipeline: [],
   tests: [],
 });
 

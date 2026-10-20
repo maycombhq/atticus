@@ -1,0 +1,3 @@
+name: harness
+repo: repo
+reference: ../../../packages/extractors/dialects/harness.yaml
