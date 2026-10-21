@@ -242,11 +242,14 @@ export function stripJsonComments(text: string): string {
 const configKey = (k: string) => k.replace(/__/g, ":").replace(/:/g, ".").toLowerCase();
 const isConfig = (recv: string) => /(^|\.)_?config(uration)?$/i.test(recv);
 
-/** Route template tokens: [controller] and [action], lower-cased so callers' paths match. */
+/**
+ * Route template tokens: [controller] and [action], lower-cased so callers' paths match. An
+ * action's Async suffix is dropped, as ASP.NET Core does by default (GetUserAsync → getuser).
+ */
 const tokens = (tpl: string, controller: string, action: string) =>
   tpl
     .replace(/\[controller\]/gi, controller.toLowerCase())
-    .replace(/\[action\]/gi, action.toLowerCase());
+    .replace(/\[action\]/gi, action.replace(/(?<=.)Async$/, "").toLowerCase());
 
 const combine = (prefix: string, tpl: string) =>
   /^~?\//.test(tpl) ? joinPath(tpl.replace(/^~/, "")) : joinPath(prefix, tpl);
@@ -260,7 +263,7 @@ const combine = (prefix: string, tpl: string) =>
  */
 export const dotnetExtractor = defineExtractor({
   id: "dotnet",
-  version: "0.1.0",
+  version: "0.1.1",
   claims: ["**/*.cs", "**/*.csproj", "**/*.sln", "**/appsettings*.json"],
   async *scan(repo, ctx) {
     const em = new Emitter(repo, ctx);

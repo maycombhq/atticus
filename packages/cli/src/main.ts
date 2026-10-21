@@ -38,6 +38,7 @@ import {
   taskRun,
 } from "./run-commands.js";
 import { featureSuggestNames } from "./feature-commands.js";
+import { domainProfileCommand } from "./domain-commands.js";
 import { isTaskRun } from "@maycombhq/taskrun";
 import { AiOffError, runtimeForCli, RuntimeConfigError, type AiRuntime } from "@maycombhq/ai";
 import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
@@ -218,6 +219,7 @@ Usage:
   atticus frameworks survey [--package <prefix>[,...]]   How the repos use house frameworks, any language [--json]
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
   atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
+  atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, approvals and test kinds
@@ -1623,6 +1625,8 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
   if (group === "patterns" && command === "scan")
     return patternsScan(root, io, { json: values.json === true });
   if (group === "coverage") return coverageCommand(root, io, { json: values.json === true });
+  if (group === "domain" && command === "profile")
+    return domainProfileCommand(root, arg, str(values.out) ? { out: str(values.out)! } : {}, io);
   if (group === "questions") return questionsCommand(root, io, { json: values.json === true });
   if (group === "reconcile")
     return reconcileCommand(root, positionals.slice(1), { json: values.json === true }, io);

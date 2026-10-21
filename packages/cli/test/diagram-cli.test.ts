@@ -260,3 +260,28 @@ describe("atticus stub serve (everything before listen)", () => {
     expect(got.handler).toBeUndefined();
   });
 });
+
+describe("atticus domain profile", () => {
+  it("prints a system's profile from the catalog, writes it with --out, and uses the org pack's template", async () => {
+    const { domainProfileCommand } = await import("../src/domain-commands.js");
+    const root = await forgeRoot();
+    const c = capture();
+    expect(await domainProfileCommand(root, "ledger", {}, c.io)).toBe(0);
+    expect(c.out[0]).toBe("# Ledger");
+    expect(c.out.join("\n")).toContain("| POST /transfers | API | ledger-api |");
+    const w = capture();
+    expect(await domainProfileCommand(root, "ledger", { out: "domains/ledger.md" }, w.io)).toBe(0);
+    expect(await readFile(join(root, "domains/ledger.md"), "utf8")).toMatch(/^# Ledger\n/);
+    await mkdir(join(root, "org-pack/templates"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack/templates/domain-profile.md"),
+      "# {{name}} (ours)\n\n{{systems}}\n",
+    );
+    const t = capture();
+    expect(await domainProfileCommand(root, "ledger", {}, t.io)).toBe(0);
+    expect(t.out[0]).toBe("# Ledger (ours)");
+    const bad = capture();
+    expect(await domainProfileCommand(root, "nope", {}, bad.io)).toBe(1);
+    expect(bad.err.join("\n")).toContain('No system "nope"');
+  });
+});
