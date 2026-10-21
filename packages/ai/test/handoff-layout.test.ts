@@ -118,4 +118,42 @@ describe("hand-off runtime on an adopted repo", () => {
     expect(existsSync(seen[0]!)).toBe(true);
     expect(existsSync(join(root, ".runs"))).toBe(false);
   });
+
+  it("takes the output from the file the prompt names, not Claude Code's closing summary", async () => {
+    // The prompt says "Write the result to <file>"; Claude Code does, then answers with a
+    // summary of what it wrote. The file is the output (found on the first live run).
+    const root = await adoptedRoot();
+    const summary = "I wrote the draft to the file and changed no other files.";
+    for (const outputIn of ["run", "change"] as const) {
+      const rt = new HeadlessClaudeCodeRuntime({
+        root,
+        now: () => now,
+        runner: async (i) => {
+          const where = /Write the result to (\S+)\. Change no other files\./.exec(i.prompt)![1]!;
+          await mkdir(join(root, where, ".."), { recursive: true });
+          await writeFile(join(root, where), `# Stories (${outputIn})\n`);
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({ type: "result", result: summary, is_error: false }),
+            stderr: "",
+          };
+        },
+      });
+      const p = await rt.prepare({ ...request(), outputIn });
+      const run = await rt.run(p.runId);
+      expect(run.output).toBe(`# Stories (${outputIn})\n`);
+    }
+    // No file written: the answer itself is the output, as before.
+    const plain = new HeadlessClaudeCodeRuntime({
+      root,
+      now: () => now,
+      runner: async () => ({
+        exitCode: 0,
+        stdout: JSON.stringify({ type: "result", result: "inline answer", is_error: false }),
+        stderr: "",
+      }),
+    });
+    const q = await plain.prepare({ ...request(), outputPath: "notes.md" });
+    expect((await plain.run(q.runId)).output).toBe("inline answer");
+  });
 });

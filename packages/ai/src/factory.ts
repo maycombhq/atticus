@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  changesDirOf,
   changesRelOf,
   loadOrgPack,
   runsDirOf,
@@ -197,6 +198,13 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     );
     if (!(await stat(inv.cwd).catch(() => undefined)))
       throw new RuntimeError(`the worktree ${inv.cwd} doesn't exist`);
+    // The prompt asks for the result in a file; Claude Code writes it there and answers with a
+    // summary. The file is the output when this run wrote it (created or changed it).
+    const outputFile =
+      request.outputIn === "run"
+        ? join(dir, request.outputPath)
+        : join(changesDirOf(this.h.root), request.change, request.outputPath);
+    const before = (await stat(outputFile).catch(() => undefined))?.mtimeMs;
     const res = await this.runner({
       cwd: inv.cwd,
       prompt,
@@ -226,8 +234,11 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     const text = typeof parsed.result === "string" ? parsed.result : "";
     if (res.exitCode !== 0 || parsed.is_error === true)
       throw new RuntimeError(`Claude Code reported a failure: ${text || res.stderr.trim()}`);
+    const after = (await stat(outputFile).catch(() => undefined))?.mtimeMs;
+    const written =
+      after !== undefined && after !== before ? await readFile(outputFile, "utf8") : undefined;
     return {
-      output: text,
+      output: written ?? text,
       usage: {
         inputTokens: parsed.usage?.input_tokens ?? request.pack.manifest.totalTokens,
         outputTokens: parsed.usage?.output_tokens ?? estimateTokens(text),
