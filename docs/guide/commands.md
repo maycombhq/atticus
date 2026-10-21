@@ -149,6 +149,8 @@ Usage:
   atticus explain <id|command>         Explain a record, finding, change or command in plain words
   atticus eval run [--agent a]... [--mode mock|replay|live] [--runs n]  Evaluate AI agents
   atticus eval report                  The latest eval results and AI quality
+  atticus bench fetch [--repo id] [--batch n] [--cache dir]  Clone the bench's public repos at their pinned commits
+  atticus bench run [--repo id] [--batch n] [--json]  Scan each bench repo and score it against its reference
   atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts
   atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>
                                        Check a catalog, org pack, dialect, plugin or executor against the spec

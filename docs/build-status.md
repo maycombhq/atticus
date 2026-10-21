@@ -99,6 +99,12 @@ Every open item, in the order to take them. Check work by running the real flow 
 - [x] **A6. First live model call** through the AI runtime (revamp Phase 0). Done 2026-10-21: `change draft` on the author's own repo with headless Claude Code. It found a bug no test could: the runtime took Claude's closing summary as the output instead of the file it wrote; fixed (193827f), and the rerun drafted the change on the first attempt in 47 s. The draft also showed a catalog misread to fix in Phase 2a: the repo itself is typed mobile-app.
 - [x] **A7. The bank's answers** recorded in `docs/plan/bank-questions.md` (Copilot in IntelliJ IDEA and VS Code only, no model API, npm likely); the open ones listed for the product owner. Nothing is sent to anyone.
 - [ ] **A8. CI on the hosted runners** checked for the pushed commits (needs GitHub access in the session, or a look at the Actions tab).
+- [x] **P1.1 The bench and its scorer** (revamp Phase 1): `bench/` with pinned repos and references written by reading the code; `atticus bench fetch` and `atticus bench run`. Batch 1 (6 repos) baseline for today's readers: precision 60%, recall 31% (`bench/README.md`, with the gaps by cause).
+- [ ] **P1.2 Bench batch 2:** the other 16 approved repos and their references.
+- [ ] **P1.3 Reference flows** for the connected estates (petclinic UI to API to database; microservices-demo; eShop).
+- [ ] **P1.4 Knowledge bench:** an invented Forge wiki corpus with reference extractions.
+- [ ] **P1.5 Design bench:** an invented Figma export for one UI repo.
+- [ ] **P1.6 Diagram spike:** React Flow and ELK.js on NadiEngine and the reference flows; layout score limits.
 
 ### I. The AI reads the code; a thin deterministic layer verifies (direction change, decided by the product owner)
 

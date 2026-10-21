@@ -41,152 +41,780 @@ notes: >-
   (aspire deploy / azd); there is no azure.yaml, bicep or Dockerfile. build/acr-build/queue-all.ps1 points
   at paths from the older eShopOnContainers layout that don't exist here, so it isn't counted.
 serves:
-  - { type: rest, method: GET, path: /api/catalog/items, at: "src/Catalog.API/Apis/CatalogApi.cs:22" }
-  - { type: rest, method: GET, path: /api/catalog/items, at: "src/Catalog.API/Apis/CatalogApi.cs:27" }
-  - { type: rest, method: GET, path: /api/catalog/items/by, at: "src/Catalog.API/Apis/CatalogApi.cs:32" }
-  - { type: rest, method: GET, path: "/api/catalog/items/{id}", at: "src/Catalog.API/Apis/CatalogApi.cs:37" }
-  - { type: rest, method: GET, path: "/api/catalog/items/by/{name}", at: "src/Catalog.API/Apis/CatalogApi.cs:42" }
-  - { type: rest, method: GET, path: "/api/catalog/items/{id}/pic", at: "src/Catalog.API/Apis/CatalogApi.cs:47" }
-  - { type: rest, method: GET, path: /api/catalog/items/facets, at: "src/Catalog.API/Apis/CatalogApi.cs:53" }
-  - { type: rest, method: GET, path: "/api/catalog/items/withsemanticrelevance/{text}", at: "src/Catalog.API/Apis/CatalogApi.cs:60" }
-  - { type: rest, method: GET, path: /api/catalog/items/withsemanticrelevance, at: "src/Catalog.API/Apis/CatalogApi.cs:67" }
-  - { type: rest, method: GET, path: "/api/catalog/items/type/{typeId}/brand/{brandId}", at: "src/Catalog.API/Apis/CatalogApi.cs:74" }
-  - { type: rest, method: GET, path: "/api/catalog/items/type/all/brand/{brandId}", at: "src/Catalog.API/Apis/CatalogApi.cs:79" }
-  - { type: rest, method: GET, path: /api/catalog/catalogtypes, at: "src/Catalog.API/Apis/CatalogApi.cs:84" }
-  - { type: rest, method: GET, path: /api/catalog/catalogbrands, at: "src/Catalog.API/Apis/CatalogApi.cs:91" }
-  - { type: rest, method: PUT, path: /api/catalog/items, at: "src/Catalog.API/Apis/CatalogApi.cs:100" }
-  - { type: rest, method: PUT, path: "/api/catalog/items/{id}", at: "src/Catalog.API/Apis/CatalogApi.cs:105" }
-  - { type: rest, method: POST, path: /api/catalog/items, at: "src/Catalog.API/Apis/CatalogApi.cs:110" }
-  - { type: rest, method: DELETE, path: "/api/catalog/items/{id}", at: "src/Catalog.API/Apis/CatalogApi.cs:114" }
-  - { type: rest, method: PUT, path: /api/orders/cancel, at: "src/Ordering.API/Apis/OrdersApi.cs:11" }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:22",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:27",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items/by,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:32",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/{id}",
+      at: "src/Catalog.API/Apis/CatalogApi.cs:37",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/by/{name}",
+      at: "src/Catalog.API/Apis/CatalogApi.cs:42",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/{id}/pic",
+      at: "src/Catalog.API/Apis/CatalogApi.cs:47",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items/facets,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:53",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/withsemanticrelevance/{text}",
+      at: "src/Catalog.API/Apis/CatalogApi.cs:60",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items/withsemanticrelevance,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:67",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/type/{typeId}/brand/{brandId}",
+      at: "src/Catalog.API/Apis/CatalogApi.cs:74",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/type/all/brand/{brandId}",
+      at: "src/Catalog.API/Apis/CatalogApi.cs:79",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/catalogtypes,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:84",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/catalogbrands,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:91",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: /api/catalog/items,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:100",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/catalog/items/{id}",
+      at: "src/Catalog.API/Apis/CatalogApi.cs:105",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/catalog/items,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:110",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/catalog/items/{id}",
+      at: "src/Catalog.API/Apis/CatalogApi.cs:114",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: /api/orders/cancel,
+      at: "src/Ordering.API/Apis/OrdersApi.cs:11",
+    }
   - { type: rest, method: PUT, path: /api/orders/ship, at: "src/Ordering.API/Apis/OrdersApi.cs:12" }
-  - { type: rest, method: GET, path: "/api/orders/{orderId}", at: "src/Ordering.API/Apis/OrdersApi.cs:13" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/orders/{orderId}",
+      at: "src/Ordering.API/Apis/OrdersApi.cs:13",
+    }
   - { type: rest, method: GET, path: /api/orders, at: "src/Ordering.API/Apis/OrdersApi.cs:14" }
-  - { type: rest, method: GET, path: /api/orders/cardtypes, at: "src/Ordering.API/Apis/OrdersApi.cs:15" }
-  - { type: rest, method: POST, path: /api/orders/draft, at: "src/Ordering.API/Apis/OrdersApi.cs:16" }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/orders/cardtypes,
+      at: "src/Ordering.API/Apis/OrdersApi.cs:15",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/orders/draft,
+      at: "src/Ordering.API/Apis/OrdersApi.cs:16",
+    }
   - { type: rest, method: POST, path: /api/orders, at: "src/Ordering.API/Apis/OrdersApi.cs:17" }
   - { type: rest, method: GET, path: /api/webhooks, at: "src/Webhooks.API/Apis/WebHooksApi.cs:13" }
-  - { type: rest, method: GET, path: "/api/webhooks/{id}", at: "src/Webhooks.API/Apis/WebHooksApi.cs:20" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/webhooks/{id}",
+      at: "src/Webhooks.API/Apis/WebHooksApi.cs:20",
+    }
   - { type: rest, method: POST, path: /api/webhooks, at: "src/Webhooks.API/Apis/WebHooksApi.cs:35" }
-  - { type: rest, method: DELETE, path: "/api/webhooks/{id}", at: "src/Webhooks.API/Apis/WebHooksApi.cs:66" }
-  - { type: rest, method: GET, path: /Account/Login, at: "src/Identity.API/Quickstart/Account/AccountController.cs:39" }
-  - { type: rest, method: POST, path: /Account/Login, at: "src/Identity.API/Quickstart/Account/AccountController.cs:59" }
-  - { type: rest, method: GET, path: /Account/Logout, at: "src/Identity.API/Quickstart/Account/AccountController.cs:146" }
-  - { type: rest, method: POST, path: /Account/Logout, at: "src/Identity.API/Quickstart/Account/AccountController.cs:165" }
-  - { type: rest, method: GET, path: /Account/AccessDenied, at: "src/Identity.API/Quickstart/Account/AccountController.cs:196" }
-  - { type: rest, method: GET, path: /External/Challenge, at: "src/Identity.API/Quickstart/Account/ExternalController.cs:33" }
-  - { type: rest, method: GET, path: /External/Callback, at: "src/Identity.API/Quickstart/Account/ExternalController.cs:63" }
-  - { type: rest, method: GET, path: /Consent, at: "src/Identity.API/Quickstart/Consent/ConsentController.cs:32" }
-  - { type: rest, method: POST, path: /Consent, at: "src/Identity.API/Quickstart/Consent/ConsentController.cs:47" }
-  - { type: rest, method: GET, path: /Device, at: "src/Identity.API/Quickstart/Device/DeviceController.cs:27" }
-  - { type: rest, method: POST, path: /Device/UserCodeCapture, at: "src/Identity.API/Quickstart/Device/DeviceController.cs:41" }
-  - { type: rest, method: POST, path: /Device/Callback, at: "src/Identity.API/Quickstart/Device/DeviceController.cs:51" }
-  - { type: rest, method: GET, path: /Diagnostics, at: "src/Identity.API/Quickstart/Diagnostics/DiagnosticsController.cs:11" }
-  - { type: rest, method: GET, path: /Grants, at: "src/Identity.API/Quickstart/Grants/GrantsController.cs:32" }
-  - { type: rest, method: POST, path: /Grants/Revoke, at: "src/Identity.API/Quickstart/Grants/GrantsController.cs:41" }
-  - { type: rest, method: GET, path: /, at: "src/Identity.API/Quickstart/Home/HomeController.cs:24" }
-  - { type: rest, method: GET, path: /Home/Error, at: "src/Identity.API/Quickstart/Home/HomeController.cs:39" }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/webhooks/{id}",
+      at: "src/Webhooks.API/Apis/WebHooksApi.cs:66",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Account/Login,
+      at: "src/Identity.API/Quickstart/Account/AccountController.cs:39",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Account/Login,
+      at: "src/Identity.API/Quickstart/Account/AccountController.cs:59",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Account/Logout,
+      at: "src/Identity.API/Quickstart/Account/AccountController.cs:146",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Account/Logout,
+      at: "src/Identity.API/Quickstart/Account/AccountController.cs:165",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Account/AccessDenied,
+      at: "src/Identity.API/Quickstart/Account/AccountController.cs:196",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /External/Challenge,
+      at: "src/Identity.API/Quickstart/Account/ExternalController.cs:33",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /External/Callback,
+      at: "src/Identity.API/Quickstart/Account/ExternalController.cs:63",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Consent,
+      at: "src/Identity.API/Quickstart/Consent/ConsentController.cs:32",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Consent,
+      at: "src/Identity.API/Quickstart/Consent/ConsentController.cs:47",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Device,
+      at: "src/Identity.API/Quickstart/Device/DeviceController.cs:27",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Device/UserCodeCapture,
+      at: "src/Identity.API/Quickstart/Device/DeviceController.cs:41",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Device/Callback,
+      at: "src/Identity.API/Quickstart/Device/DeviceController.cs:51",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Diagnostics,
+      at: "src/Identity.API/Quickstart/Diagnostics/DiagnosticsController.cs:11",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Grants,
+      at: "src/Identity.API/Quickstart/Grants/GrantsController.cs:32",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Grants/Revoke,
+      at: "src/Identity.API/Quickstart/Grants/GrantsController.cs:41",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /,
+      at: "src/Identity.API/Quickstart/Home/HomeController.cs:24",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Home/Error,
+      at: "src/Identity.API/Quickstart/Home/HomeController.cs:39",
+    }
   - { type: rest, method: GET, path: "/product-images/{id}", at: "src/WebApp/Program.cs:32" }
   - { type: rest, method: GET, path: /, at: "src/WebApp/Components/Pages/Catalog/Catalog.razor:1" }
-  - { type: rest, method: GET, path: /cart, at: "src/WebApp/Components/Pages/Cart/CartPage.razor:1" }
-  - { type: rest, method: GET, path: /checkout, at: "src/WebApp/Components/Pages/Checkout/Checkout.razor:1" }
-  - { type: rest, method: GET, path: "/item/{itemId}", at: "src/WebApp/Components/Pages/Item/ItemPage.razor:1" }
-  - { type: rest, method: GET, path: /user/login, at: "src/WebApp/Components/Pages/User/LogIn.razor:1" }
-  - { type: rest, method: GET, path: /user/logout, at: "src/WebApp/Components/Pages/User/LogOut.razor:1" }
-  - { type: rest, method: GET, path: /user/orders, at: "src/WebApp/Components/Pages/User/Orders.razor:1" }
-  - { type: rest, method: POST, path: /logout, at: "src/WebhookClient/Endpoints/AuthenticationEndpoints.cs:12" }
-  - { type: rest, method: OPTIONS, path: /check, at: "src/WebhookClient/Endpoints/WebhookEndpoints.cs:16" }
-  - { type: rest, method: POST, path: /webhook-received, at: "src/WebhookClient/Endpoints/WebhookEndpoints.cs:31" }
+  - {
+      type: rest,
+      method: GET,
+      path: /cart,
+      at: "src/WebApp/Components/Pages/Cart/CartPage.razor:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /checkout,
+      at: "src/WebApp/Components/Pages/Checkout/Checkout.razor:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/item/{itemId}",
+      at: "src/WebApp/Components/Pages/Item/ItemPage.razor:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /user/login,
+      at: "src/WebApp/Components/Pages/User/LogIn.razor:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /user/logout,
+      at: "src/WebApp/Components/Pages/User/LogOut.razor:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /user/orders,
+      at: "src/WebApp/Components/Pages/User/Orders.razor:1",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /logout,
+      at: "src/WebhookClient/Endpoints/AuthenticationEndpoints.cs:12",
+    }
+  - {
+      type: rest,
+      method: OPTIONS,
+      path: /check,
+      at: "src/WebhookClient/Endpoints/WebhookEndpoints.cs:16",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /webhook-received,
+      at: "src/WebhookClient/Endpoints/WebhookEndpoints.cs:31",
+    }
   - { type: rest, method: GET, path: /, at: "src/WebhookClient/Components/Pages/Home/Home.razor:1" }
-  - { type: rest, method: GET, path: /add-webhook, at: "src/WebhookClient/Components/Pages/AddWebhook.razor:1" }
-  - { type: rest, method: GET, path: /login, at: "src/WebhookClient/Components/Pages/LogIn.razor:1" }
-  - { type: rest, method: GET, path: /Error, at: "src/WebhookClient/Components/Pages/Error.razor:1" }
+  - {
+      type: rest,
+      method: GET,
+      path: /add-webhook,
+      at: "src/WebhookClient/Components/Pages/AddWebhook.razor:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /login,
+      at: "src/WebhookClient/Components/Pages/LogIn.razor:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Error,
+      at: "src/WebhookClient/Components/Pages/Error.razor:1",
+    }
   - { type: grpc, path: "BasketApi.Basket/GetBasket", at: "src/Basket.API/Proto/basket.proto:8" }
   - { type: grpc, path: "BasketApi.Basket/UpdateBasket", at: "src/Basket.API/Proto/basket.proto:9" }
-  - { type: grpc, path: "BasketApi.Basket/DeleteBasket", at: "src/Basket.API/Proto/basket.proto:10" }
-  - { type: event-topic, path: OrderStartedIntegrationEvent, at: "src/Basket.API/Extensions/Extensions.cs:19" }
-  - { type: event-topic, path: OrderStatusChangedToAwaitingValidationIntegrationEvent, at: "src/Catalog.API/Extensions/Extensions.cs:32" }
-  - { type: event-topic, path: OrderStatusChangedToPaidIntegrationEvent, at: "src/Catalog.API/Extensions/Extensions.cs:33" }
-  - { type: event-topic, path: GracePeriodConfirmedIntegrationEvent, at: "src/Ordering.API/Extensions/Extensions.cs:55" }
-  - { type: event-topic, path: OrderStockConfirmedIntegrationEvent, at: "src/Ordering.API/Extensions/Extensions.cs:56" }
-  - { type: event-topic, path: OrderStockRejectedIntegrationEvent, at: "src/Ordering.API/Extensions/Extensions.cs:57" }
-  - { type: event-topic, path: OrderPaymentFailedIntegrationEvent, at: "src/Ordering.API/Extensions/Extensions.cs:58" }
-  - { type: event-topic, path: OrderPaymentSucceededIntegrationEvent, at: "src/Ordering.API/Extensions/Extensions.cs:59" }
-  - { type: event-topic, path: OrderStatusChangedToStockConfirmedIntegrationEvent, at: "src/PaymentProcessor/Program.cs:6" }
-  - { type: event-topic, path: OrderStatusChangedToAwaitingValidationIntegrationEvent, at: "src/WebApp/Extensions/Extensions.cs:45" }
-  - { type: event-topic, path: OrderStatusChangedToPaidIntegrationEvent, at: "src/WebApp/Extensions/Extensions.cs:46" }
-  - { type: event-topic, path: OrderStatusChangedToStockConfirmedIntegrationEvent, at: "src/WebApp/Extensions/Extensions.cs:47" }
-  - { type: event-topic, path: OrderStatusChangedToShippedIntegrationEvent, at: "src/WebApp/Extensions/Extensions.cs:48" }
-  - { type: event-topic, path: OrderStatusChangedToCancelledIntegrationEvent, at: "src/WebApp/Extensions/Extensions.cs:49" }
-  - { type: event-topic, path: OrderStatusChangedToSubmittedIntegrationEvent, at: "src/WebApp/Extensions/Extensions.cs:50" }
-  - { type: event-topic, path: ProductPriceChangedIntegrationEvent, at: "src/Webhooks.API/Extensions/Extensions.cs:21" }
-  - { type: event-topic, path: OrderStatusChangedToShippedIntegrationEvent, at: "src/Webhooks.API/Extensions/Extensions.cs:22" }
-  - { type: event-topic, path: OrderStatusChangedToPaidIntegrationEvent, at: "src/Webhooks.API/Extensions/Extensions.cs:23" }
+  - {
+      type: grpc,
+      path: "BasketApi.Basket/DeleteBasket",
+      at: "src/Basket.API/Proto/basket.proto:10",
+    }
+  - {
+      type: event-topic,
+      path: OrderStartedIntegrationEvent,
+      at: "src/Basket.API/Extensions/Extensions.cs:19",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToAwaitingValidationIntegrationEvent,
+      at: "src/Catalog.API/Extensions/Extensions.cs:32",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToPaidIntegrationEvent,
+      at: "src/Catalog.API/Extensions/Extensions.cs:33",
+    }
+  - {
+      type: event-topic,
+      path: GracePeriodConfirmedIntegrationEvent,
+      at: "src/Ordering.API/Extensions/Extensions.cs:55",
+    }
+  - {
+      type: event-topic,
+      path: OrderStockConfirmedIntegrationEvent,
+      at: "src/Ordering.API/Extensions/Extensions.cs:56",
+    }
+  - {
+      type: event-topic,
+      path: OrderStockRejectedIntegrationEvent,
+      at: "src/Ordering.API/Extensions/Extensions.cs:57",
+    }
+  - {
+      type: event-topic,
+      path: OrderPaymentFailedIntegrationEvent,
+      at: "src/Ordering.API/Extensions/Extensions.cs:58",
+    }
+  - {
+      type: event-topic,
+      path: OrderPaymentSucceededIntegrationEvent,
+      at: "src/Ordering.API/Extensions/Extensions.cs:59",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToStockConfirmedIntegrationEvent,
+      at: "src/PaymentProcessor/Program.cs:6",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToAwaitingValidationIntegrationEvent,
+      at: "src/WebApp/Extensions/Extensions.cs:45",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToPaidIntegrationEvent,
+      at: "src/WebApp/Extensions/Extensions.cs:46",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToStockConfirmedIntegrationEvent,
+      at: "src/WebApp/Extensions/Extensions.cs:47",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToShippedIntegrationEvent,
+      at: "src/WebApp/Extensions/Extensions.cs:48",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToCancelledIntegrationEvent,
+      at: "src/WebApp/Extensions/Extensions.cs:49",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToSubmittedIntegrationEvent,
+      at: "src/WebApp/Extensions/Extensions.cs:50",
+    }
+  - {
+      type: event-topic,
+      path: ProductPriceChangedIntegrationEvent,
+      at: "src/Webhooks.API/Extensions/Extensions.cs:21",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToShippedIntegrationEvent,
+      at: "src/Webhooks.API/Extensions/Extensions.cs:22",
+    }
+  - {
+      type: event-topic,
+      path: OrderStatusChangedToPaidIntegrationEvent,
+      at: "src/Webhooks.API/Extensions/Extensions.cs:23",
+    }
 calls:
-  - { type: grpc, path: "BasketApi.Basket/GetBasket", to: basket-api, at: "src/WebApp/Services/BasketService.cs:11" }
-  - { type: grpc, path: "BasketApi.Basket/DeleteBasket", to: basket-api, at: "src/WebApp/Services/BasketService.cs:17" }
-  - { type: grpc, path: "BasketApi.Basket/UpdateBasket", to: basket-api, at: "src/WebApp/Services/BasketService.cs:34" }
-  - { type: rest, method: GET, path: "/api/catalog/items/{id}", to: catalog-api, at: "src/WebAppComponents/Services/CatalogService.cs:14" }
-  - { type: rest, method: GET, path: /api/catalog/items, to: catalog-api, at: "src/WebAppComponents/Services/CatalogService.cs:20" }
-  - { type: rest, method: GET, path: /api/catalog/items/by, to: catalog-api, at: "src/WebAppComponents/Services/CatalogService.cs:27" }
-  - { type: rest, method: GET, path: /api/catalog/items/withsemanticrelevance, to: catalog-api, at: "src/WebAppComponents/Services/CatalogService.cs:34" }
-  - { type: rest, method: GET, path: /api/catalog/catalogbrands, to: catalog-api, at: "src/WebAppComponents/Services/CatalogService.cs:41" }
-  - { type: rest, method: GET, path: /api/catalog/catalogtypes, to: catalog-api, at: "src/WebAppComponents/Services/CatalogService.cs:48" }
-  - { type: rest, method: GET, path: /api/catalog/items/facets, to: catalog-api, at: "src/WebAppComponents/Services/CatalogService.cs:65" }
-  - { type: rest, method: GET, path: /api/orders, to: ordering-api, at: "src/WebApp/Services/OrderingService.cs:9" }
-  - { type: rest, method: POST, path: /api/orders, to: ordering-api, at: "src/WebApp/Services/OrderingService.cs:17" }
-  - { type: rest, method: GET, path: "/api/catalog/items/{id}/pic", to: catalog-api, at: "src/WebApp/Program.cs:32" }
-  - { type: rest, method: POST, path: /api/webhooks, to: webhooks-api, at: "src/WebhookClient/Services/WebHooksClient.cs:7" }
-  - { type: rest, method: GET, path: /api/webhooks, to: webhooks-api, at: "src/WebhookClient/Services/WebHooksClient.cs:12" }
-  - { type: rest, method: GET, path: "/api/catalog/items/{id}", to: mobile-bff, at: "src/HybridApp/Services/CatalogService.cs:16" }
-  - { type: rest, method: GET, path: /api/catalog/items, to: mobile-bff, at: "src/HybridApp/Services/CatalogService.cs:22" }
-  - { type: rest, method: GET, path: /api/catalog/items/by, to: mobile-bff, at: "src/HybridApp/Services/CatalogService.cs:29" }
-  - { type: rest, method: GET, path: /api/catalog/items/withsemanticrelevance, to: mobile-bff, at: "src/HybridApp/Services/CatalogService.cs:36" }
-  - { type: rest, method: GET, path: /api/catalog/catalogbrands, to: mobile-bff, at: "src/HybridApp/Services/CatalogService.cs:43" }
-  - { type: rest, method: GET, path: /api/catalog/catalogtypes, to: mobile-bff, at: "src/HybridApp/Services/CatalogService.cs:50" }
-  - { type: rest, method: GET, path: /api/catalog/items, to: mobile-bff, at: "src/ClientApp/Services/Catalog/CatalogService.cs:31" }
-  - { type: rest, method: GET, path: /api/catalog/items, to: mobile-bff, at: "src/ClientApp/Services/Catalog/CatalogService.cs:40" }
-  - { type: rest, method: GET, path: "/api/catalog/items/{id}", to: mobile-bff, at: "src/ClientApp/Services/Catalog/CatalogService.cs:56" }
-  - { type: rest, method: GET, path: /api/catalog/catalogbrands, to: mobile-bff, at: "src/ClientApp/Services/Catalog/CatalogService.cs:71" }
-  - { type: rest, method: GET, path: /api/catalog/catalogtypes, to: mobile-bff, at: "src/ClientApp/Services/Catalog/CatalogService.cs:80" }
-  - { type: rest, method: POST, path: /api/orders, to: mobile-bff, at: "src/ClientApp/Services/Order/OrderService.cs:39" }
-  - { type: rest, method: GET, path: /api/orders, to: mobile-bff, at: "src/ClientApp/Services/Order/OrderService.cs:54" }
-  - { type: rest, method: GET, path: "/api/orders/{orderId}", to: mobile-bff, at: "src/ClientApp/Services/Order/OrderService.cs:73" }
-  - { type: rest, method: PUT, path: /api/orders/cancel, to: mobile-bff, at: "src/ClientApp/Services/Order/OrderService.cs:100" }
-  - { type: grpc, path: "BasketApi.Basket/GetBasket", to: basket-api, at: "src/ClientApp/Services/Basket/BasketService.cs:46" }
-  - { type: grpc, path: "BasketApi.Basket/UpdateBasket", to: basket-api, at: "src/ClientApp/Services/Basket/BasketService.cs:84" }
-  - { type: grpc, path: "BasketApi.Basket/DeleteBasket", to: basket-api, at: "src/ClientApp/Services/Basket/BasketService.cs:108" }
-  - { type: event, path: ProductPriceChangedIntegrationEvent, at: "src/Catalog.API/Apis/CatalogApi.cs:399" }
-  - { type: event, path: OrderStockRejectedIntegrationEvent, at: "src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:28" }
-  - { type: event, path: OrderStockConfirmedIntegrationEvent, at: "src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:29" }
-  - { type: event, path: OrderStartedIntegrationEvent, at: "src/Ordering.API/Application/Commands/CreateOrderCommandHandler.cs:32" }
-  - { type: event, path: OrderStatusChangedToCancelledIntegrationEvent, at: "src/Ordering.API/Application/DomainEventHandlers/OrderCancelledDomainEventHandler.cs:30" }
-  - { type: event, path: OrderStatusChangedToShippedIntegrationEvent, at: "src/Ordering.API/Application/DomainEventHandlers/OrderShippedDomainEventHandler.cs:30" }
-  - { type: event, path: OrderStatusChangedToAwaitingValidationIntegrationEvent, at: "src/Ordering.API/Application/DomainEventHandlers/OrderStatusChangedToAwaitingValidationDomainEventHandler.cs:33" }
-  - { type: event, path: OrderStatusChangedToPaidIntegrationEvent, at: "src/Ordering.API/Application/DomainEventHandlers/OrderStatusChangedToPaidDomainEventHandler.cs:32" }
-  - { type: event, path: OrderStatusChangedToStockConfirmedIntegrationEvent, at: "src/Ordering.API/Application/DomainEventHandlers/OrderStatusChangedToStockConfirmedDomainEventHandler.cs:30" }
-  - { type: event, path: OrderStatusChangedToSubmittedIntegrationEvent, at: "src/Ordering.API/Application/DomainEventHandlers/ValidateOrAddBuyerAggregateWhenOrderStartedDomainEventHandler.cs:50" }
-  - { type: event, path: GracePeriodConfirmedIntegrationEvent, at: "src/OrderProcessor/Services/GracePeriodManagerService.cs:56" }
-  - { type: event, path: OrderPaymentSucceededIntegrationEvent, at: "src/PaymentProcessor/IntegrationEvents/EventHandling/OrderStatusChangedToStockConfirmedIntegrationEventHandler.cs:23" }
-  - { type: event, path: OrderPaymentFailedIntegrationEvent, at: "src/PaymentProcessor/IntegrationEvents/EventHandling/OrderStatusChangedToStockConfirmedIntegrationEventHandler.cs:27" }
+  - {
+      type: grpc,
+      path: "BasketApi.Basket/GetBasket",
+      to: basket-api,
+      at: "src/WebApp/Services/BasketService.cs:11",
+    }
+  - {
+      type: grpc,
+      path: "BasketApi.Basket/DeleteBasket",
+      to: basket-api,
+      at: "src/WebApp/Services/BasketService.cs:17",
+    }
+  - {
+      type: grpc,
+      path: "BasketApi.Basket/UpdateBasket",
+      to: basket-api,
+      at: "src/WebApp/Services/BasketService.cs:34",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/{id}",
+      to: catalog-api,
+      at: "src/WebAppComponents/Services/CatalogService.cs:14",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items,
+      to: catalog-api,
+      at: "src/WebAppComponents/Services/CatalogService.cs:20",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items/by,
+      to: catalog-api,
+      at: "src/WebAppComponents/Services/CatalogService.cs:27",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items/withsemanticrelevance,
+      to: catalog-api,
+      at: "src/WebAppComponents/Services/CatalogService.cs:34",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/catalogbrands,
+      to: catalog-api,
+      at: "src/WebAppComponents/Services/CatalogService.cs:41",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/catalogtypes,
+      to: catalog-api,
+      at: "src/WebAppComponents/Services/CatalogService.cs:48",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items/facets,
+      to: catalog-api,
+      at: "src/WebAppComponents/Services/CatalogService.cs:65",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/orders,
+      to: ordering-api,
+      at: "src/WebApp/Services/OrderingService.cs:9",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/orders,
+      to: ordering-api,
+      at: "src/WebApp/Services/OrderingService.cs:17",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/{id}/pic",
+      to: catalog-api,
+      at: "src/WebApp/Program.cs:32",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/webhooks,
+      to: webhooks-api,
+      at: "src/WebhookClient/Services/WebHooksClient.cs:7",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/webhooks,
+      to: webhooks-api,
+      at: "src/WebhookClient/Services/WebHooksClient.cs:12",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/{id}",
+      to: mobile-bff,
+      at: "src/HybridApp/Services/CatalogService.cs:16",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items,
+      to: mobile-bff,
+      at: "src/HybridApp/Services/CatalogService.cs:22",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items/by,
+      to: mobile-bff,
+      at: "src/HybridApp/Services/CatalogService.cs:29",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items/withsemanticrelevance,
+      to: mobile-bff,
+      at: "src/HybridApp/Services/CatalogService.cs:36",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/catalogbrands,
+      to: mobile-bff,
+      at: "src/HybridApp/Services/CatalogService.cs:43",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/catalogtypes,
+      to: mobile-bff,
+      at: "src/HybridApp/Services/CatalogService.cs:50",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items,
+      to: mobile-bff,
+      at: "src/ClientApp/Services/Catalog/CatalogService.cs:31",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/items,
+      to: mobile-bff,
+      at: "src/ClientApp/Services/Catalog/CatalogService.cs:40",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog/items/{id}",
+      to: mobile-bff,
+      at: "src/ClientApp/Services/Catalog/CatalogService.cs:56",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/catalogbrands,
+      to: mobile-bff,
+      at: "src/ClientApp/Services/Catalog/CatalogService.cs:71",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog/catalogtypes,
+      to: mobile-bff,
+      at: "src/ClientApp/Services/Catalog/CatalogService.cs:80",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/orders,
+      to: mobile-bff,
+      at: "src/ClientApp/Services/Order/OrderService.cs:39",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/orders,
+      to: mobile-bff,
+      at: "src/ClientApp/Services/Order/OrderService.cs:54",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/orders/{orderId}",
+      to: mobile-bff,
+      at: "src/ClientApp/Services/Order/OrderService.cs:73",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: /api/orders/cancel,
+      to: mobile-bff,
+      at: "src/ClientApp/Services/Order/OrderService.cs:100",
+    }
+  - {
+      type: grpc,
+      path: "BasketApi.Basket/GetBasket",
+      to: basket-api,
+      at: "src/ClientApp/Services/Basket/BasketService.cs:46",
+    }
+  - {
+      type: grpc,
+      path: "BasketApi.Basket/UpdateBasket",
+      to: basket-api,
+      at: "src/ClientApp/Services/Basket/BasketService.cs:84",
+    }
+  - {
+      type: grpc,
+      path: "BasketApi.Basket/DeleteBasket",
+      to: basket-api,
+      at: "src/ClientApp/Services/Basket/BasketService.cs:108",
+    }
+  - {
+      type: event,
+      path: ProductPriceChangedIntegrationEvent,
+      at: "src/Catalog.API/Apis/CatalogApi.cs:399",
+    }
+  - {
+      type: event,
+      path: OrderStockRejectedIntegrationEvent,
+      at: "src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:28",
+    }
+  - {
+      type: event,
+      path: OrderStockConfirmedIntegrationEvent,
+      at: "src/Catalog.API/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:29",
+    }
+  - {
+      type: event,
+      path: OrderStartedIntegrationEvent,
+      at: "src/Ordering.API/Application/Commands/CreateOrderCommandHandler.cs:32",
+    }
+  - {
+      type: event,
+      path: OrderStatusChangedToCancelledIntegrationEvent,
+      at: "src/Ordering.API/Application/DomainEventHandlers/OrderCancelledDomainEventHandler.cs:30",
+    }
+  - {
+      type: event,
+      path: OrderStatusChangedToShippedIntegrationEvent,
+      at: "src/Ordering.API/Application/DomainEventHandlers/OrderShippedDomainEventHandler.cs:30",
+    }
+  - {
+      type: event,
+      path: OrderStatusChangedToAwaitingValidationIntegrationEvent,
+      at: "src/Ordering.API/Application/DomainEventHandlers/OrderStatusChangedToAwaitingValidationDomainEventHandler.cs:33",
+    }
+  - {
+      type: event,
+      path: OrderStatusChangedToPaidIntegrationEvent,
+      at: "src/Ordering.API/Application/DomainEventHandlers/OrderStatusChangedToPaidDomainEventHandler.cs:32",
+    }
+  - {
+      type: event,
+      path: OrderStatusChangedToStockConfirmedIntegrationEvent,
+      at: "src/Ordering.API/Application/DomainEventHandlers/OrderStatusChangedToStockConfirmedDomainEventHandler.cs:30",
+    }
+  - {
+      type: event,
+      path: OrderStatusChangedToSubmittedIntegrationEvent,
+      at: "src/Ordering.API/Application/DomainEventHandlers/ValidateOrAddBuyerAggregateWhenOrderStartedDomainEventHandler.cs:50",
+    }
+  - {
+      type: event,
+      path: GracePeriodConfirmedIntegrationEvent,
+      at: "src/OrderProcessor/Services/GracePeriodManagerService.cs:56",
+    }
+  - {
+      type: event,
+      path: OrderPaymentSucceededIntegrationEvent,
+      at: "src/PaymentProcessor/IntegrationEvents/EventHandling/OrderStatusChangedToStockConfirmedIntegrationEventHandler.cs:23",
+    }
+  - {
+      type: event,
+      path: OrderPaymentFailedIntegrationEvent,
+      at: "src/PaymentProcessor/IntegrationEvents/EventHandling/OrderStatusChangedToStockConfirmedIntegrationEventHandler.cs:27",
+    }
 stores:
-  - { table: Catalog, at: "src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs:8" }
-  - { table: CatalogBrand, at: "src/Catalog.API/Infrastructure/EntityConfigurations/CatalogBrandEntityTypeConfiguration.cs:8" }
-  - { table: CatalogType, at: "src/Catalog.API/Infrastructure/EntityConfigurations/CatalogTypeEntityTypeConfiguration.cs:8" }
+  - {
+      table: Catalog,
+      at: "src/Catalog.API/Infrastructure/EntityConfigurations/CatalogItemEntityTypeConfiguration.cs:8",
+    }
+  - {
+      table: CatalogBrand,
+      at: "src/Catalog.API/Infrastructure/EntityConfigurations/CatalogBrandEntityTypeConfiguration.cs:8",
+    }
+  - {
+      table: CatalogType,
+      at: "src/Catalog.API/Infrastructure/EntityConfigurations/CatalogTypeEntityTypeConfiguration.cs:8",
+    }
   - { table: IntegrationEventLog, at: "src/IntegrationEventLogEF/IntegrationLogExtensions.cs:9" }
-  - { table: buyers, at: "src/Ordering.Infrastructure/EntityConfigurations/BuyerEntityTypeConfiguration.cs:8" }
-  - { table: cardtypes, at: "src/Ordering.Infrastructure/EntityConfigurations/CardTypeEntityTypeConfiguration.cs:8" }
-  - { table: requests, at: "src/Ordering.Infrastructure/EntityConfigurations/ClientRequestEntityTypeConfiguration.cs:8" }
-  - { table: orders, at: "src/Ordering.Infrastructure/EntityConfigurations/OrderEntityTypeConfiguration.cs:7" }
-  - { table: orderItems, at: "src/Ordering.Infrastructure/EntityConfigurations/OrderItemEntityTypeConfiguration.cs:8" }
-  - { table: paymentmethods, at: "src/Ordering.Infrastructure/EntityConfigurations/PaymentMethodEntityTypeConfiguration.cs:8" }
+  - {
+      table: buyers,
+      at: "src/Ordering.Infrastructure/EntityConfigurations/BuyerEntityTypeConfiguration.cs:8",
+    }
+  - {
+      table: cardtypes,
+      at: "src/Ordering.Infrastructure/EntityConfigurations/CardTypeEntityTypeConfiguration.cs:8",
+    }
+  - {
+      table: requests,
+      at: "src/Ordering.Infrastructure/EntityConfigurations/ClientRequestEntityTypeConfiguration.cs:8",
+    }
+  - {
+      table: orders,
+      at: "src/Ordering.Infrastructure/EntityConfigurations/OrderEntityTypeConfiguration.cs:7",
+    }
+  - {
+      table: orderItems,
+      at: "src/Ordering.Infrastructure/EntityConfigurations/OrderItemEntityTypeConfiguration.cs:8",
+    }
+  - {
+      table: paymentmethods,
+      at: "src/Ordering.Infrastructure/EntityConfigurations/PaymentMethodEntityTypeConfiguration.cs:8",
+    }
   - { table: Subscriptions, at: "src/Webhooks.API/Infrastructure/WebhooksContext.cs:10" }
-  - { table: AspNetRoles, at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:16" }
-  - { table: AspNetUsers, at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:30" }
-  - { table: AspNetRoleClaims, at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:67" }
-  - { table: AspNetUserClaims, at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:88" }
-  - { table: AspNetUserLogins, at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:109" }
-  - { table: AspNetUserRoles, at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:129" }
-  - { table: AspNetUserTokens, at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:153" }
+  - {
+      table: AspNetRoles,
+      at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:16",
+    }
+  - {
+      table: AspNetUsers,
+      at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:30",
+    }
+  - {
+      table: AspNetRoleClaims,
+      at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:67",
+    }
+  - {
+      table: AspNetUserClaims,
+      at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:88",
+    }
+  - {
+      table: AspNetUserLogins,
+      at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:109",
+    }
+  - {
+      table: AspNetUserRoles,
+      at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:129",
+    }
+  - {
+      table: AspNetUserTokens,
+      at: "src/Identity.API/Data/Migrations/20230925223402_InitialMigration.cs:153",
+    }
 deploys:
   - { platform: azure-container-apps, at: "src/eShop.AppHost/AppHost.cs:7" }

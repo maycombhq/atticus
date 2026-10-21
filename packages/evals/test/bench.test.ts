@@ -193,6 +193,42 @@ calls:
     expect(scoreRepo(ref, records).total).toMatchObject({ found: 4, missed: 1, wrong: 0 });
   });
 
+  it("keeps optional route parameters, ignores letter case, and lets ANY match any method", () => {
+    // An optional, typed parameter isn't a query string.
+    expect(normalizePath("/api/items/type/{typeId?}/brand/{brandId:int?}")).toBe(
+      "/api/items/type/{}/brand/{}",
+    );
+    const records = [
+      rec({
+        kind: "Endpoint",
+        id: "x.brands",
+        component: "x",
+        endpointType: "rest",
+        method: "DELETE",
+        pathOrTopic: "/api/Brands/{id}",
+      }),
+      rec({
+        kind: "Endpoint",
+        id: "x.any",
+        component: "x",
+        endpointType: "rest",
+        method: "ANY",
+        pathOrTopic: "/cart",
+      }),
+    ];
+    const ref = parseReference(`
+repo: invented
+commit: 0123456789abcdef0123456789abcdef01234567
+covers: [serves]
+serves:
+  - { type: rest, method: DELETE, path: "/api/brands/{id}", at: "a.cs:1" }
+  - { type: rest, method: GET, path: /cart, at: "main.go:9" }
+  - { type: rest, path: /cart, at: "main.go:9" }
+`);
+    // A route with no method in the reference, or ANY in the scan, matches the same path.
+    expect(scoreRepo(ref, records).kinds.serves).toMatchObject({ found: 3, missed: [], wrong: [] });
+  });
+
   it("scores only the kinds a reference says it covers", () => {
     const partial = parseReference(`
 repo: invented-owners

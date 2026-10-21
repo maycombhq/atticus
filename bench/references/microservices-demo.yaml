@@ -3,6 +3,7 @@ repo: microservices-demo
 commit: 38e7348eb289eb5b87c0c6e8cb19ced0449dc389
 covers: [serves, calls, stores, deploys]
 notes: >-
+  Deploys: one platform, kubernetes; the Helm chart, Kustomize overlays and Terraform (which makes the GKE cluster) all deploy to it, so they are tooling, not separate platforms.
   Services covered: adservice (Java), cartservice (C#), checkoutservice, frontend, productcatalogservice,
   shippingservice (Go), currencyservice, paymentservice (Node.js), emailservice, recommendationservice,
   shoppingassistantservice (Python, Flask). gRPC serves cite the implementing method in each service,
@@ -278,6 +279,3 @@ stores:
     }
 deploys:
   - { platform: kubernetes, at: "kubernetes-manifests/cartservice.yaml:16" }
-  - { platform: helm, at: "helm-chart/Chart.yaml:16" }
-  - { platform: kustomize, at: "kustomize/kustomization.yaml:16" }
-  - { platform: terraform, at: "terraform/main.tf:40" }

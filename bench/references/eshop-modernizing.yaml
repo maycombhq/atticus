@@ -3,6 +3,7 @@ repo: eshop-modernizing
 commit: 63bc9ec4414d7e281dc9f9d7bdcf70030950457d
 covers: [serves, calls, stores, deploys]
 notes: >-
+  Deploys are where the apps run: Kubernetes, Service Fabric, Azure Container Instances (from the ARM template) and Docker hosts (the root docker-compose runs the apps as Windows containers).
   Covered seven app folders, each counted once as its own deployable: eShopLegacyMVCSolution/src/eShopLegacyMVC (ASP.NET MVC 5 + Web API 2),
   eShopLegacyMVCSolution/eShopPorted (ASP.NET Core 2.2 port, in the same solution), eShopLegacyWebFormsSolution/src/eShopLegacyWebForms,
   eShopModernizedMVCSolution/src/eShopModernizedMVC, eShopModernizedWebFormsSolution/src/eShopModernizedWebForms, and the WCF service plus
@@ -511,61 +512,73 @@ serves:
     }
 calls:
   - {
+      type: soap,
       path: "ICatalogService/CreateAvailableStock",
       to: eShopWCFService,
       at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:42",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetAvailableStock",
       to: eShopWCFService,
       at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:52",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetDiscount",
       to: eShopWCFService,
       at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:63",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetCatalogItems",
       to: eShopWCFService,
       at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:78",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetCatalogBrands",
       to: eShopWCFService,
       at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:101",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetCatalogTypes",
       to: eShopWCFService,
       at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:127",
     }
   - {
+      type: soap,
       path: "ICatalogService/CreateAvailableStock",
       to: eShopWCFService,
       at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:42",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetAvailableStock",
       to: eShopWCFService,
       at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:52",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetDiscount",
       to: eShopWCFService,
       at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:63",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetCatalogItems",
       to: eShopWCFService,
       at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:78",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetCatalogBrands",
       to: eShopWCFService,
       at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:101",
     }
   - {
+      type: soap,
       path: "ICatalogService/GetCatalogTypes",
       to: eShopWCFService,
       at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:127",
@@ -656,5 +669,5 @@ deploys:
       platform: service-fabric,
       at: "ServiceFabric/eShopModernizedMVC-ServiceFabricApp/ApplicationPackageRoot/ApplicationManifest.xml:2",
     }
-  - { platform: azure-arm, at: "ACI/aci.json:25" }
-  - { platform: docker-compose, at: "docker-compose.yml:3" }
+  - { platform: azure-container-instances, at: "ACI/aci.json:25" }
+  - { platform: docker, at: "docker-compose.yml:3" }

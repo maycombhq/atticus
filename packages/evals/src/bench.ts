@@ -71,7 +71,8 @@ export function parseReference(text: string): BenchReference {
  * name (no slash) is kept as it is.
  */
 export function normalizePath(p: string): string {
-  let s = p.trim().split("?")[0]!.split("#")[0]!;
+  // A query starts at a `?` outside braces: `{id?}` is an optional parameter.
+  let s = p.trim().replace(/[?#](?![^{]*\}).*$/, "");
   if (!s.includes("/")) return s;
   s = s.replace(/^[a-z]+:\/\/[^/]+/i, "");
   // A base before the path: {API}/x, ${BASE}/x, BASE_URL + "/x" already joined.
@@ -93,10 +94,26 @@ const table = (name: string) =>
 
 /** HTTP-style entry points have a method and a path; the rest are named, kept as written. */
 const HTTP = new Set(["rest", "webhook", "websocket", "sse"]);
+/** HTTP paths compare without letter case (ASP.NET routes ignore it; few apps rely on it). */
+const httpPath = (path: string) => normalizePath(path).toLowerCase();
 const serveFact = (type: string, m: string | undefined, path: string) =>
-  HTTP.has(type) ? `${type} ${method(m)}${normalizePath(path)}` : `${type} ${path.trim()}`;
+  HTTP.has(type) ? `${type} ${method(m)}${httpPath(path)}` : `${type} ${path.trim()}`;
 const callFact = (type: string, m: string | undefined, path: string) =>
-  type === "rest" ? `${method(m)}${normalizePath(path)}` : `${type} ${path.trim()}`;
+  type === "rest" ? `${method(m)}${httpPath(path)}` : `${type} ${path.trim()}`;
+
+/**
+ * Two facts match when they are equal, or when they differ only in the HTTP method and one
+ * of them has none or ANY (a route that answers every method).
+ */
+const ANY_METHOD = /^((?:[a-z-]+ )?)(?:([A-Z]+) )?(\/.*)$/;
+function sameFact(a: string, b: string): boolean {
+  if (a === b) return true;
+  const x = ANY_METHOD.exec(a);
+  const y = ANY_METHOD.exec(b);
+  if (!x || !y || x[1] !== y[1] || x[3] !== y[3]) return false;
+  const wild = (m: string | undefined) => m === undefined || m === "ANY";
+  return wild(x[2]) || wild(y[2]);
+}
 /** A gRPC call as the scanner records it: package.Service/Method, no leading slash. */
 const GRPC_PATH = /^[A-Za-z_][\w.]*\/[A-Za-z_]\w*$/;
 const EVENT_VIA = new Set(["event-bus", "pubsub", "mq"]);
@@ -172,9 +189,11 @@ export function scoreRepo(ref: BenchReference, records: CatalogRecord[]): RepoSc
     if (!ref.covers.includes(k)) continue;
     const w = new Set(want[k]);
     const g = new Set(got[k]);
-    const f = [...w].filter((x) => g.has(x)).length;
-    const m = [...w].filter((x) => !g.has(x)).sort();
-    const x = [...g].filter((y) => !w.has(y)).sort();
+    const hit = (x: string, among: Set<string>) =>
+      among.has(x) || [...among].some((y) => sameFact(x, y));
+    const f = [...w].filter((x) => hit(x, g)).length;
+    const m = [...w].filter((x) => !hit(x, g)).sort();
+    const x = [...g].filter((y) => !hit(y, w)).sort();
     kinds[k] = {
       found: f,
       missed: m,
