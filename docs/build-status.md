@@ -97,6 +97,19 @@ Every open item, in the order to take them. Check work by running the real flow 
 - [ ] **A4. Full `pnpm test`** on the 7 GB machine once A1–A3 are fixed; confirm the worker crashes and 5 s timeouts are gone. Regenerate the spec, API and command docs.
 - [ ] **A5. Push** the local commits to main.
 
+### I. The AI reads the code; a thin deterministic layer verifies (direction change, decided by the product owner)
+
+Why: on the first real repo almost every reader needed a fix, each found only by contact with real code, and fixed by an Atticus developer. No one will be there to do that at another organisation, and an org can't wait for a release. Hand-written readers can't keep up with every organisation's code, so discovery moves to the AI. Deterministic code stays only where a bank needs it: checking each claim's citation, reproducibility per commit, and the checks on outputs. This supersedes the reader-by-reader approach of groups C and D where they overlap.
+
+- [ ] **I1. Decide and record it.** CLAUDE.md rule 4 ("Deterministic scans: no AI calls inside a scan") changes to "the AI reads; every fact cites code that a check confirms; the same commit gives the same catalog". ADR 0074. Needs the product owner's explicit go before any code changes; then update the assistant memory note that says scans stay deterministic.
+- [ ] **I2. A public-repo bench first.** 20–30 open-source repos across stacks (Spring, ASP.NET Core, legacy .NET/WCF, Node, React, Python, Terraform, pipelines), each with a hand-checked reference of what it serves, calls, stores and deploys; score found, missed and wrong. Both the current readers and the AI scan run on it, so the switch is decided by numbers, and every later change is measured on it. No client code.
+- [ ] **I3. AI scan prototype on NadiEngine.** The AI reads the repo (the way a call-chain mapper skill does) and states every endpoint, call, data access, field and deployment with its file and line; a deterministic check confirms each citation (that line declares that route, that SQL writes that table); compare with today's catalog and show, for each difference, who was right.
+- [ ] **I4. Make it the default.** The AI scan finds; the built-in readers become an optional fast path and a cross-check (agreement confirms; a disagreement is a finding: a reader misreading, or something the readers miss).
+- [ ] **I5. Reproducible and cheap to rescan.** Verified facts stored per commit; a rescan re-reads and re-verifies only changed files, so the same commit gives the same catalog and the model isn't called for unchanged code.
+- [ ] **I6. Corrections stay at the organisation.** A person's correction, or a rule scan review proposes, applies there at once; built-in readers become overridable by rules (today an org can't correct a reader's misread).
+- [ ] **I7. Coverage, measured.** A citation check proves a line says what's claimed, not that nothing was missed: measure coverage on the bench and per repo (files read, gaps left).
+- [ ] **I8. Costs and approval.** A bank-approved model (ADR 0065 providers); model time on an estate's first scan; budgets and a per-repo cost estimate before a scan starts.
+
 ### B. The core loop: scan → change → stories (what the product is for)
 
 - [ ] **B1. Cut the app down to the core flow.** Open on three things: the map, knowledge gaps, and new change → draft → stories. Hide the other screens behind All screens (or remove them); same short path on the command line.
