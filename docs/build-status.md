@@ -82,24 +82,72 @@ Where the build is, so any session (cloud or local, Claude Code or Copilot) can 
 2. **For a person (M3):** grade the namers' and drafters' output in `docs/evidence/m3-live/for-a-person.md`, and do the real assistant smoke runs listed in `docs/m3-exit.md` (Claude Code, VS Code Copilot, IntelliJ Copilot).
 3. **For a person (M4):** time the onboarding bars with someone new on a sandbox, accept a drafted org pack, and a screen-reader pass (`docs/m4-exit.md`, "For a person").
 4. **For a person (M5):** run the full CI matrix (Windows, Node 24 and the offline bundle on both systems), install the bundle on the target laptop and run `atticus doctor`, hand the threat model, SBOM and licences to the security review, then decide 1.0 (`docs/m5-exit.md`).
-5. **Review ADRs 0053–0065** (Tom George).
+5. **Review ADRs 0053–0072** (Tom George).
 6. **For a person (ADR 0065):** call each model provider once against a real endpoint (Anthropic, Azure OpenAI or the internal gateway, Bedrock) from a laptop behind the corporate proxy, and record the result.
 
-## In progress (bank readiness)
+## To do (consolidated 2026-10-20)
 
-- Done: the model-provider plugin, `packages/model-providers` (ADR 0065): Anthropic, OpenAI-compatible endpoints (Azure OpenAI, internal gateways, vLLM) and AWS Bedrock, through a corporate proxy and custom CA. Not built: streaming, Vertex AI, AWS profiles and SSO, Azure managed identity; not yet called against a real endpoint.
-- Done: the onboarding loop for framework models (`atticus onboard framework`, ADR 0066): learner first, the assistant drafts the rest, deterministic checks, proposals and `onboard accept framework`; the scan names house frameworks with no model and models to re-draft; one framework case in the onboarding eval. Not built: a learner for pipeline templates and Jenkins libraries (the assistant drafts them), and tests for `services` and `pipeline` entries inside a model.
-- Done: a shared parse cache (ADR 0067): each file read and parsed once per repo scan, shared by every reader, frozen and bounded; on the M1 exit estate parses per file went from 2.9 to 1.0 and reads per file from 9.1 to 1.0.
+Every open item, in the order to take them. Check work by running the real flow on a real repo (scan → map → `change new` → `change draft` → `plan stories --draft` → `scan review`), not only the tests. Tick an item off here in the commit that does it.
 
-## Later (skipped for now, not forgotten)
+### A. Fix before pushing (main has unpushed local commits)
 
-- **Phase 4, install and security:** the dialect `plugin:` loader and its trust model; Intune/SCCM packaging and signing; dependency scanning; session-token and port hardening.
-- **Phase 5, bank workflow:** the manual ADO path as a first-class flow; ADO over MCP or REST switched on by config; parallel work in the same repos; paging in the screens; the critic saying "could not evaluate".
-- **Phase 6, pilot:** needs the bank's phase 0 (access and installs).
-- `docs/coverage.md`: what is read and done, partly, or not at all, per area, updated with every change.
-- A full `pnpm test` run after the in-progress work lands, and the spec, API and command docs regenerated.
-- Reading not built: Harness triggers, Tekton PipelineRuns and Triggers, Argo CD ApplicationSets, helmfile; Spinnaker, TeamCity, Bamboo, Octopus and CircleCI (onboarding can draft them); EKS, AKS and GKE clusters (C1 has no kind); from Terraform, Lambda triggers, API Gateway integrations, EventBridge rules, module outputs, `count` and `for_each`; manifest readers other than openshift and ingress reading built Helm and Kustomize objects; Kustomize remote bases.
-- Test stability: the native memory cause of the worker crashes (exit 0x80000003) is found and fixed (ADR 0067): V8 tiering the tree-sitter grammars up to optimised code took up to 2.2 GB of transient memory per process, and a worker died where the machine didn't have it. Grammars now run as baseline code; the `packages/cli/test/frameworks-cli.test.ts` worker peaks at 184 MB instead of 2.6 GB, and it passes beside other files. Still to confirm: a full parallel `pnpm test` on the 7 GB machine, and whether the 5 s timeouts under load go too.
+- [ ] **A1. CLI test hang under full load.** `packages/cli/test/learn-cli.test.ts` "defences scan" hung for 89 minutes in a full parallel `pnpm test`; two sandbox tests in the same file exited 1. It passes alone. Reproduce under load and fix the cause.
+- [ ] **A2. Performance budgets (m5-exit).** Under full load `/api/setup` took 6.06 s (budget 6 s) and CLI start 3.1 s (budget 2 s). Measure on a quiet machine; check whether the tree-sitter baseline-only flag (ADR 0067) costs start time.
+- [ ] **A3. A pipeline record changes on every rescan.** `QualityAsset/<repo>.pipeline.ci` reports `(details)` changed on each scan with identical files (seen on a real repo). Find the unstable field (likely from the pipeline-model pass, ADR 0062) and make it deterministic.
+- [ ] **A4. Full `pnpm test`** on the 7 GB machine once A1–A3 are fixed; confirm the worker crashes and 5 s timeouts are gone. Regenerate the spec, API and command docs.
+- [ ] **A5. Push** the local commits to main.
+
+### B. The core loop: scan → change → stories (what the product is for)
+
+- [ ] **B1. Cut the app down to the core flow.** Open on three things: the map, knowledge gaps, and new change → draft → stories. Hide the other screens behind All screens (or remove them); same short path on the command line.
+- [ ] **B2. Walk the knowledge side end to end** on a real repo: intake a real document or diagram, and judge what "knowledge vs code" gives. Expect holes like the change flow had.
+- [ ] **B3. Feature grouping.** 134 of 150 features found on the real repo are one endpoint each (RPC-style API). Run and improve `atticus feature suggest-names` and merging so related endpoints group (all `/api/narrate/*`, `/api/factsheet/*`).
+- [ ] **B4. Planner.** Stories that do the same work get the same task (now told apart by requirement name): merge them into one task. Every story asks only for the change type's default tests.
+- [ ] **B5. `change draft`.** The map is chosen by words, not meaning: a brief worded unlike the code finds less. The drafter doesn't write or check `data.md` or `design.md`.
+
+### C. Scan review follow-ups (ADR 0072)
+
+- [ ] **C1. Remember verdicts.** Ignored gaps are listed again on the next review; record verdicts as decisions a person accepted.
+- [ ] **C2. A `vendor` verdict becomes a vendor record** (today: `atticus alias` by hand).
+- [ ] **C3. Reader fixes the first review found:** a helper that builds its path with a local function (`studyBase(token)` returning a template); a query string held in a variable (`/api/life-events${q}`); a literal matched to a path parameter (`POST /api/dashas/vimshottari` ↔ `POST /api/dashas/{system}`).
+- [ ] **C4. Side-by-side cross-check:** the assistant reads a repo whole (as a call-chain mapper skill does) and Atticus compares its list with the catalog; each difference becomes a review gap.
+- [ ] **C5. Point to `scan review` from every scan** that leaves gaps, as it does for onboarding.
+
+### D. Readers a bank estate needs (from another team's backend and frontend heuristics)
+
+- [ ] **D1. WCF and legacy .NET:** `.svc` and `.asmx`, `[ServiceContract]`/`[OperationContract]`, `[WebService]`/`[WebMethod]`, Web.config `system.serviceModel` endpoints, WSDL-generated client proxies.
+- [ ] **D2. Typed configuration:** `IOptions<T>` classes mapped to their appsettings keys.
+- [ ] **D3. Auth:** `[Authorize]` and auth middleware; a non-public endpoint without it is a finding.
+- [ ] **D4. Request and response types per endpoint** (DTOs, `Task<T>`, `Promise<T>`, `@RequestBody`). Then: each component's current contract exported as OpenAPI (TypeSpec as an org-pack option if the bank adopts it), and a breaking-change check in the critic against the current contract and the callers the catalog knows.
+- [ ] **D5. ASP.NET MVC and WebForms:** Razor forms (`Html.BeginForm`), jQuery AJAX, `data-*` bindings.
+- [ ] **D6. Endpoint constants with a module prefix** (`<service>/1.0`) used as the cross-repo routing key: verify Atticus joins them; build it if not.
+- [ ] **D7. Inside a component:** the controller → service → proxy chain (which action reaches which outgoing call).
+- [ ] **D8. Module links:** Gradle `project(":x")` dependencies; `uses` in impact analysis; uses across repos (a library published from one repo).
+- [ ] **D9. Domain profile:** classification from column names or annotations; contracts from specs linked to endpoints.
+- [ ] **D10. Not read yet (carried over):** Harness triggers, Tekton PipelineRuns and Triggers, Argo CD ApplicationSets, helmfile; Spinnaker, TeamCity, Bamboo, Octopus, CircleCI (onboarding can draft them); EKS, AKS and GKE clusters (C1 has no kind); from Terraform, Lambda triggers, API Gateway integrations, EventBridge rules, module outputs, `count` and `for_each`; manifest readers other than openshift and ingress on built Helm and Kustomize objects; Kustomize remote bases.
+
+### E. Working with an existing AI meta repo
+
+- [ ] **E1. Sample meta repo** with another team's layout (agents, skills, Spec Kit, `repos/`, `domains/`), invented content only; `atticus adopt` it and wire its skills to Atticus: a call-chain skill asks `atticus impact`/`query`, the PO agent uses `change draft`, the naysayer `atticus critic`, `domains/` from `atticus domain profile` with the team's own template.
+
+### F. App and diagrams
+
+- [ ] **F1. One-system context view as text:** the Mermaid and draw.io output still lists calls inside the system as `system --> system`; changing it means reconcile must treat calls inside one drawn box as inside it.
+- [ ] **F2. Very large graphs:** the layered canvas wraps columns at 16; check readability at bank scale (hundreds of components).
+
+### G. For a person, and later phases
+
+- [ ] **G1. Review ADRs 0053–0072.**
+- [ ] **G2. Call each model provider** once against a real endpoint behind the corporate proxy (ADR 0065). Not built there: streaming, Vertex AI, AWS profiles and SSO, Azure managed identity, a provider plugin loaded from config.
+- [ ] **G3. Playwright journeys** on a machine with the browser (not run on this laptop).
+- [ ] **G4. `docs/coverage.md`:** what is read and done, partly, or not at all, per area, kept current.
+- [ ] **G5. Phase 4, install and security:** the dialect `plugin:` loader and its trust model; Intune/SCCM packaging and signing; dependency scanning; session-token and port hardening.
+- [ ] **G6. Phase 5, bank workflow:** the manual ADO path as a first-class flow; ADO over MCP or REST by config; parallel work in the same repos; paging in the screens; the critic saying "could not evaluate".
+- [ ] **G7. Phase 6, pilot:** needs the bank's phase 0 (access and installs).
+
+### Done this round (for the record)
+
+Model providers (ADR 0065); onboarding for framework models (0066); the shared parse cache and the worker-crash fix (0067); diagrams draw the chosen view, `Component.uses`, JPQL and upsert fixes (0068); the reader follows a repo's own HTTP helpers, modules take their own type (0069); `change draft` and `plan stories --draft` (0070); `domain profile` and the ASP.NET Core Async fix (0071); `scan review` and three SQL reader fixes it found (0072); discover reads a clone's subfolders as modules; every graph on the layered canvas; the Changes screen fix for AI runs.
 
 ## How to work
 
