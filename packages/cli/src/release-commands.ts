@@ -256,7 +256,7 @@ export async function outcomeList(
   }
 }
 
-/** atticus outcome record <change> <measure> --value <v> --by <you> [--note text] */
+/** atticus outcome record <change> <measure> --value <v> [--by <you>] [--note text] */
 export async function outcomeRecord(
   root: string,
   id: string | undefined,

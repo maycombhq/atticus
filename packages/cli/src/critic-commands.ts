@@ -365,7 +365,7 @@ export async function findings(
   return 0;
 }
 
-/** atticus finding <change> <id> <action> --by <you> [--gate g] [--reason r] [--asked-of x] [--edit patch-file] */
+/** atticus finding <change> <id> <action> [--by <you>] [--gate g] [--reason r] [--asked-of x] [--edit patch-file] */
 export async function findingAction(
   root: string,
   changeId: string | undefined,

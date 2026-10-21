@@ -94,4 +94,4 @@ proposedChanges:
     title: "Northwind Pay v3 migration: Ledger"
     type: feature
     system: ledger
-    command: 'atticus change new "Northwind Pay v3 migration: Ledger" --type feature --id northwind-pay-v3-migration-ledger --system ledger --by pat'
+    command: 'atticus change new "Northwind Pay v3 migration: Ledger" --type feature --id northwind-pay-v3-migration-ledger --system ledger'

@@ -30,7 +30,7 @@ function fail(io: Output, e: unknown): number {
   throw e;
 }
 
-/** atticus initiative new "<title>" --journey <journey> --by <you> [--id id] [--release YYYY-MM-DD] [--epic id] */
+/** atticus initiative new "<title>" --journey <journey> [--by <you>] [--id id] [--release YYYY-MM-DD] [--epic id] */
 export async function initiativeNew(
   root: string,
   o: {
@@ -65,7 +65,7 @@ export async function initiativeNew(
     }
     io.out(`Started ${r.initiative.id} (${r.initiative.journey}). Wrote ${r.written}.`);
     io.out(
-      `Plan it: atticus initiative plan ${r.initiative.id} --target <system>${o.release ? "" : " --release YYYY-MM-DD"} --by ${o.by}`,
+      `Plan it: atticus initiative plan ${r.initiative.id} --target <system>${o.release ? "" : " --release YYYY-MM-DD"}`,
     );
     return 0;
   } catch (e) {
@@ -73,7 +73,7 @@ export async function initiativeNew(
   }
 }
 
-/** atticus initiative plan <id> --target <system> [--release YYYY-MM-DD] [--system s]... --by <you> [--dry-run] [--json] */
+/** atticus initiative plan <id> --target <system> [--release YYYY-MM-DD] [--system s]... [--by <you>] [--dry-run] [--json] */
 export async function initiativePlan(
   root: string,
   id: string | undefined,
@@ -182,7 +182,7 @@ export async function initiativeStatus(
 }
 
 /**
- * atticus initiative request <id> <party> --by <you> [--system s]...: send a team or vendor a
+ * atticus initiative request <id> <party> [--by <you>] [--system s]...: send a team or vendor a
  * one-page system card; the reply goes into intake and is tracked as a commitment, and the
  * message is a manual step (atticus todo) a person sends.
  */
@@ -210,9 +210,7 @@ export async function requestFromTeam(
     }
     io.out(`Wrote the system card ${r.cardPath}.`);
     io.out(`Tracked as ${r.commitment.id}: reply needed by ${r.commitment.neededBy}.`);
-    io.out(
-      `Send it: atticus todo show ${r.step.id} (then atticus todo done ${r.step.id} --by ${o.by}).`,
-    );
+    io.out(`Send it: atticus todo show ${r.step.id} (then atticus todo done ${r.step.id}).`);
     io.out("When the reply comes, add it with atticus intake add <file>.");
     return 0;
   } catch (e) {
@@ -220,7 +218,7 @@ export async function requestFromTeam(
   }
 }
 
-/** atticus initiative commit <commitment> <open|at-risk|done|slipped> --by <you>: record a commitment's status. */
+/** atticus initiative commit <commitment> <open|at-risk|done|slipped> [--by <you>]: record a commitment's status. */
 export async function initiativeCommitment(
   root: string,
   id: string | undefined,

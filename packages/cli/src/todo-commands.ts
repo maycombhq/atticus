@@ -162,7 +162,7 @@ function results(
   return out;
 }
 
-/** atticus todo done <step> --by <you> [--result name=value]… [--skip --note <why>] */
+/** atticus todo done <step> [--by <you>] [--result name=value]… [--skip --note <why>] */
 export async function todoDone(
   root: string,
   stepRef: string | undefined,

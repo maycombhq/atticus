@@ -76,7 +76,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "alias",
-    usage: 'atticus alias "<name>" <id> [--by you] [--reason text]',
+    usage: 'atticus alias "<name>" <id> [--reason text]',
     what: "Records that a name used on diagrams or in documents means a catalog id, so they line up from now on.",
     who: ["architect"],
     changes: "a curated decision in catalog/curated",
@@ -141,7 +141,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "triage decide",
-    usage: "atticus triage decide <item> <n> [--by you] [--reason text]",
+    usage: "atticus triage decide <item> <n> [--reason text]",
     what: "Chooses an option for a triage item and records it as a curated decision.",
     who: ["architect"],
     changes: "a curated decision in catalog/curated",
@@ -305,7 +305,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "feature name",
-    usage: 'atticus feature name <id> "<name>" [--by you]',
+    usage: 'atticus feature name <id> "<name>"',
     what: "Confirms or corrects a feature's name in the words its users use.",
     who: ["product-owner", "designer"],
     changes: "a curated decision in catalog/curated",
@@ -562,7 +562,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "glossary define",
-    usage: 'atticus glossary define <term> "<definition>" --by <you>',
+    usage: 'atticus glossary define <term> "<definition>"',
     what: "Defines a business term.",
     who: ["business-analyst", "product-owner"],
     changes: "a curated decision",
@@ -611,14 +611,14 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "initiative new",
-    usage: 'atticus initiative new "<title>" --journey <journey> --by <you>',
+    usage: 'atticus initiative new "<title>" --journey <journey>',
     what: "Starts an initiative: changes across teams and vendors toward one outcome, on a guided journey.",
     who: ["product-owner", "team-lead", "delivery-lead"],
     changes: "an Initiative record in catalog/curated",
   },
   {
     name: "initiative plan",
-    usage: "atticus initiative plan <id> --target <system> [--release YYYY-MM-DD] --by <you>",
+    usage: "atticus initiative plan <id> --target <system> [--release YYYY-MM-DD]",
     what: "Plans the journey back from the target release: the changes each system needs and the commitments of other teams and vendors, with dates from their lead times.",
     who: ["team-lead", "delivery-lead"],
     changes: "the plan and Commitment records",
@@ -632,7 +632,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "initiative request",
-    usage: "atticus initiative request <id> <party> --by <you>",
+    usage: "atticus initiative request <id> <party>",
     what: "Sends a team or vendor a one-page system card to correct and answer; the reply goes into intake and is tracked as a commitment.",
     who: ["team-lead", "architect"],
     changes: "the card, a Commitment and a manual step to send it",

@@ -366,7 +366,7 @@ export async function planJourney(
       title,
       type: step.changeType,
       ...(i.system ? { system: i.system } : {}),
-      command: `atticus change new "${title}" --type ${step.changeType} --id ${i.change}${i.system ? ` --system ${i.system}` : ""} --by ${plan.by}`,
+      command: `atticus change new "${title}" --type ${step.changeType} --id ${i.change}${i.system ? ` --system ${i.system}` : ""}`,
     });
   }
 

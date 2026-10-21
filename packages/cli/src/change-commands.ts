@@ -101,7 +101,7 @@ export function parseOwners(values: string[]): Record<string, string[]> | string
   return out;
 }
 
-/** atticus change new "<title>" --type <type> [--template t] [--id x] [--owner role=a,b] [--system s] --by <you> */
+/** atticus change new "<title>" --type <type> [--template t] [--id x] [--owner role=a,b] [--system s] [--by <you>] */
 export async function changeNew(
   root: string,
   o: {
@@ -117,7 +117,9 @@ export async function changeNew(
   deps: ChangeDeps = {},
 ): Promise<number> {
   if (!o.title || !o.type || !o.by) {
-    io.err('Usage: atticus change new "<title>" --type <change type> [--by <you>] [--template <id>]');
+    io.err(
+      'Usage: atticus change new "<title>" --type <change type> [--by <you>] [--template <id>]',
+    );
     return 2;
   }
   const owners = parseOwners(o.owners ?? []);
@@ -402,7 +404,7 @@ export async function changeReturn(
   }
 }
 
-/** atticus change archive <id> --by <you>: archive a released change. */
+/** atticus change archive <id> [--by <you>]: archive a released change. */
 /**
  * After archive, the released code is the truth: the change's repos are brought up to date
  * where their base clones are here (in-place repos are already current) and the estate is
@@ -474,7 +476,7 @@ export async function changeArchive(
   deps: ChangeDeps = {},
 ): Promise<number> {
   if (!o.by) {
-    io.err("Say who is archiving: --by <you>.");
+    io.err("Say who is archiving: set your Git user (git config user.name), or pass --by <you>.");
     return 2;
   }
   try {

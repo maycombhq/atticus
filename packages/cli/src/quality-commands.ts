@@ -480,7 +480,7 @@ async function decide(
   }
 }
 
-/** atticus glossary define <term> <definition> --by <handle> [--owner <team>] */
+/** atticus glossary define <term> <definition> [--by <handle>] [--owner <team>] */
 export async function glossaryDefine(
   root: string,
   term: string | undefined,
@@ -509,7 +509,7 @@ export async function glossaryDefine(
   );
 }
 
-/** atticus glossary link <term> <record-id | schema#field | feature> --by <handle> */
+/** atticus glossary link <term> <record-id | schema#field | feature> [--by <handle>] */
 export async function glossaryLink(
   root: string,
   term: string | undefined,
@@ -538,7 +538,7 @@ export async function glossaryLink(
   );
 }
 
-/** atticus glossary alias <term> <other name>... --by <handle> */
+/** atticus glossary alias <term> <other name>... [--by <handle>] */
 export async function glossaryAlias(
   root: string,
   term: string | undefined,
