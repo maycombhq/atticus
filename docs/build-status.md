@@ -97,7 +97,7 @@ Every open item, in the order to take them. Check work by running the real flow 
 - [x] **A4. Full `pnpm test`** on the 7 GB machine once A1–A3 are fixed; confirm the worker crashes and 5 s timeouts are gone. Regenerate the spec, API and command docs. Done 2026-10-21: typecheck 84 of 84; tests 83 of 84 packages, one package at a time (`pnpm exec turbo run test --concurrency=1`). The machine was out of disk (0.1 GB), which also caused the memory crashes. Docs regenerated (no changes). Not run here: the Playwright journeys (no browser installed on this laptop).
 - [x] **A5. Push** the local commits to main. Done 2026-10-21 (41 commits).
 - [x] **A6. First live model call** through the AI runtime (revamp Phase 0). Done 2026-10-21: `change draft` on the author's own repo with headless Claude Code. It found a bug no test could: the runtime took Claude's closing summary as the output instead of the file it wrote; fixed (193827f), and the rerun drafted the change on the first attempt in 47 s. The draft also showed a catalog misread to fix in Phase 2a: the repo itself is typed mobile-app.
-- [x] **A7. Questions for the bank** written: `docs/plan/bank-questions.md`, to send.
+- [x] **A7. The bank's answers** recorded in `docs/plan/bank-questions.md` (Copilot in IntelliJ IDEA and VS Code only, no model API, npm likely); the open ones listed for the product owner. Nothing is sent to anyone.
 - [ ] **A8. CI on the hosted runners** checked for the pushed commits (needs GitHub access in the session, or a look at the Actions tab).
 
 ### I. The AI reads the code; a thin deterministic layer verifies (direction change, decided by the product owner)

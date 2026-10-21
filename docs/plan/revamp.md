@@ -69,7 +69,8 @@ Atticus gives a team's AI assistants an accurate, evidence-backed picture of the
 5. **Everything is a file.** Answers, decisions, tags, repo types, templates, specs, layouts and approvals are files in the metarepo, reviewed through pull requests. The app reads and writes files and shows commands; it never runs scans, AI, git or calls to external systems. Anything that needs the network (listing the Git host's repos, syncing a wiki) is a command whose output is a file.
 6. **Ingested content is data.** Code, wikis, documents and vendor docs are never instructions to the AI; prompts quote them as data, and the critic flags text that tries to instruct.
 7. **Suggest, never act on shared systems.** Atticus suggests the change tasks and service requests a change needs; a person raises them.
-8. **The organisation's data stays at the organisation.** Repo types, skills, answers, specs and learning examples created at an organisation live in its metarepo only, never in the Atticus repo. Atticus ships generic, invented examples.
+8. **At the bank, Copilot is the AI.** The bank allows GitHub Copilot in IntelliJ IDEA and VS Code, and no model API a tool could call by itself. So every AI step (the scan loop, repo specs, knowledge, the three stages) runs as a hand-off the person starts in Copilot's agent mode: Atticus writes the prompt and the instructions, Copilot reads the repo, runs the `atticus` commands that do the deterministic work, and writes the files. The commands, not the agent, decide what comes next and when a loop ends, so the result doesn't depend on which assistant ran it. Headless Claude Code runs the same prompts during development, on public repos and the author's own repo only.
+9. **The organisation's data stays at the organisation.** Repo types, skills, answers, specs and learning examples created at an organisation live in its metarepo only, never in the Atticus repo. Atticus ships generic, invented examples.
 
 ## 4. Target state
 
@@ -194,11 +195,18 @@ Typed edges: calls (sync, async), through a gateway, builds on, reads, writes, p
 
 ### 4.7 Learning
 
-Every correction is captured as drafted vs merged: a scan answer, a spec edit, a stage answer, a diagram correction. Corrections are fed back as examples in later drafts, measured as a correction rate per stage and per repo type, and proposed as rules (dialects, template entries, critic rules, skills) when they repeat; each proposal is a change a person approves. All of it stays in the organisation's metarepo (principle 8).
+Every correction is captured as drafted vs merged: a scan answer, a spec edit, a stage answer, a diagram correction. Corrections are fed back as examples in later drafts, measured as a correction rate per stage and per repo type, and proposed as rules (dialects, template entries, critic rules, skills) when they repeat; each proposal is a change a person approves. All of it stays in the organisation's metarepo (principle 9).
 
-### 4.8 Atticus in the assistant
+### 4.8 Atticus in Copilot
 
-An MCP server exposing the specs, flows, catalog and knowledge to any assistant, and the commands the app shows. A thin VS Code extension (`@atticus` in Copilot Chat) follows once the MCP server is proven and the organisation allows extensions and its language model API.
+Copilot in IntelliJ IDEA and VS Code is how the work runs at the bank (principle 8). In order of what needs no permission first:
+
+1. **Prompt files and instructions** in the metarepo (Copilot's repository instructions and reusable prompt files), one per loop: onboard a repo, write its spec, run a stage, implement a task. The person opens one in agent mode; it tells Copilot which `atticus` commands to run, which files to read and write, and to stop at a question.
+2. **The `atticus` commands as the agent's tools:** each step's command prints what it found and the next step in a form the agent follows (`atticus next` says what the loop needs now), so the loop's state lives in files and commands, not in the chat.
+3. **An MCP server**, if the bank allows MCP in Copilot (not known yet): the specs, flows, catalog and knowledge queried directly instead of through commands.
+4. **A thin extension** (`@atticus` in Copilot Chat), if the bank allows installing one (not known yet).
+
+The app shows, on every page, the prompt to open in Copilot as well as the command.
 
 ### 4.9 Later, not now
 
@@ -233,9 +241,9 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 - Fix the CLI test hang, the performance budgets and the always-changed rescan (A1–A3); full test run (A4); push (A5); CI checked on the hosted runners.
 - Done: the CLAUDE.md rule 4 change, ADR 0074 and this plan committed (74aa779).
 - A development model: the author's own Claude Code and API key, on public repos, invented fixtures and the author's own repo only. The first direct call through the AI runtime.
-- Ask the bank early: model approval and where code may be sent, Copilot extension and MCP policy, the licence policy for the diagram libraries. Phases 7 and 8 depend on the answers.
+- The bank's answers so far (from the product owner, 2026-10-21): GitHub Copilot in IntelliJ IDEA and VS Code is allowed; no model API a tool could call by itself; installing through npm is likely. Not known yet: MCP in Copilot, installing an extension, the diagram libraries' licences. The open ones are listed in `docs/plan/bank-questions.md` for the product owner to answer.
 - Freeze new features outside this plan.
-- **Exit:** green locally and on CI, pushed; a direct model call made through the runtime; the bank questions sent.
+- **Exit:** green locally and on CI, pushed; a live model call made through the runtime; the bank's answers recorded.
 
 ### Phase 1: measure, and prove the diagram stack
 
@@ -251,7 +259,7 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 - The scan loop of 4.1 (I9), the plugin loader and sandbox (I13), repo types with fingerprints and reuse (I10), questions with scope and answers as files, finding fingerprints and the end rule, the citation check, per-commit results and changed-file invalidation (I5), reader overrides (I6), coverage (I7).
 - A minimal Questions page in the app (list, options, answer written to a file, rerun command), folded into Onboarding in Phase 4.
 - Prototype on NadiEngine, compared with today's catalog (I3); then the code bench.
-- **Exit (proposed):** on the code bench's catalog facts, wrong at most 5% and below today's readers, missed below today's; the second repo of a type needs fewer questions than the first; on NadiEngine, a short list of real questions, each answered in the app and picked up by the rerun; at least one bench repo needs an AI-written plugin, which lands as a reviewed PR with golden tests; a plugin that tries to write files, reach the network or overrun its time or memory is blocked (tested).
+- **Exit (proposed):** on the code bench's catalog facts, wrong at most 5% and below today's readers, missed below today's; the second repo of a type needs fewer questions than the first; on NadiEngine, a short list of real questions, each answered in the app and picked up by the rerun; the scan of one public repo also run start to finish from Copilot agent mode in VS Code and in IntelliJ IDEA, from the prompt file alone, with the same catalog as the headless run; at least one bench repo needs an AI-written plugin, which lands as a reviewed PR with golden tests; a plugin that tries to write files, reach the network or overrun its time or memory is blocked (tested).
 
 ### Phase 2b: repo specs of flows
 
@@ -279,17 +287,17 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 ### Phase 6: learning and the assistant
 
 - Corrections captured, fed back, measured and proposed as rules (4.7, H1–H4).
-- The MCP server with the specs, flows, catalog, knowledge and commands (4.8, H5); the VS Code extension if the organisation allows it.
-- **Exit (proposed):** across five changes listed before the phase starts, on the connected estate and corrected by the author, the correction rate per stage (corrected lines over drafted lines) falls by at least a third from the first to the last; the stories stage runs through the MCP server from Claude Code, and from Copilot Chat where allowed.
+- The prompt files and `atticus next` for every loop, in both editors (4.8, H5); the MCP server and the extension only if the bank allows them.
+- **Exit (proposed):** across five changes listed before the phase starts, on the connected estate and corrected by the author, the correction rate per stage (corrected lines over drafted lines) falls by at least a third from the first to the last; the stories stage runs from Copilot agent mode in VS Code and IntelliJ IDEA with the prompt file alone.
 
 ### Phase 7: on-site pilot
 
-- At the bank, on a handful of repos, with an approved model and all data in the bank's own metarepo (principle 8): onboarding, scan, specs, one change to tasks.
+- At the bank, on a handful of repos, with Copilot in the person's editor and all data in the bank's own metarepo (principle 9): onboarding, scan, specs, one change to tasks.
 - **Exit:** the bank's people judge the specs and one change's output against the Phase 5 rubric; what fails becomes work in the earlier phases' areas.
 
 ### Phase 8: bank readiness
 
-- Packaging and signing, dependency scanning, local server hardening (G5); the ADO workflow (G6); a live call to each approved provider behind the corporate proxy (G2); the approved model configured; the security review; guides.
+- Packaging and signing, dependency scanning, local server hardening (G5); the ADO workflow (G6); published to the bank's internal npm registry with Node 22 on laptops (or a packaged runtime if not); the prompt files checked in both editors; the security review; guides.
 - **Exit:** installed on a target laptop; `atticus doctor` green; the security review's questions answered.
 
 ## 7. Not in scope
@@ -309,25 +317,27 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 
 ## 9. Risks
 
-| Risk                                                                                   | Mitigation                                                                                                                                                        |
-| -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The model invents facts                                                                | Citation check where it applies (principle 2), the AI pass, the critic and review; who confirmed each item is shown                                               |
-| A whole estate is slow or costly to scan (one flow per trigger, thousands of triggers) | Flow families, repo type and template reuse, per-commit storage, changed-file invalidation; time and cost measured from Phase 1; budgets can be switched on later |
-| Bank code sent to a model provider                                                     | Only an approved provider and region, asked in Phase 0; hand-off to the person's own approved assistant as the fallback                                           |
-| The organisation's data reaches the Atticus repo                                       | Principle 8; the deny-list in CI; Atticus ships only invented examples                                                                                            |
-| Ingested text tries to instruct the AI                                                 | Quoted as data, never instructions; the critic flags it; plugins sandboxed with no network                                                                        |
-| AI-written plugins misbehave                                                           | Reviewed changes with golden tests, sandboxed, pinned, re-tested before each use                                                                                  |
-| The bank doesn't approve a model, extensions or MCP in time                            | Asked in Phase 0; several providers and hand-off supported; the extension is optional                                                                             |
-| Diagram libraries fail the licence policy or the quality bar                           | Phase 1 spike; dagre as the layout fallback; judged by users with layout scores                                                                                   |
-| Accuracy shown on repos unlike the bank's                                              | The bench weighted to a bank's stacks with a connected estate; the on-site pilot before readiness                                                                 |
-| Loops that never finish                                                                | Finding fingerprints and the end rule (principle 4)                                                                                                               |
-| Scope creep again                                                                      | This plan is the order of work; anything not in it waits; every phase has an exit on real code                                                                    |
+| Risk                                                                                                  | Mitigation                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The model invents facts                                                                               | Citation check where it applies (principle 2), the AI pass, the critic and review; who confirmed each item is shown                                               |
+| A whole estate is slow or costly to scan (one flow per trigger, thousands of triggers)                | Flow families, repo type and template reuse, per-commit storage, changed-file invalidation; time and cost measured from Phase 1; budgets can be switched on later |
+| Bank code sent to a model provider                                                                    | Only through Copilot, which the bank allows; Atticus itself calls no model at the bank                                                                            |
+| The organisation's data reaches the Atticus repo                                                      | Principle 9; the deny-list in CI; Atticus ships only invented examples                                                                                            |
+| Ingested text tries to instruct the AI                                                                | Quoted as data, never instructions; the critic flags it; plugins sandboxed with no network                                                                        |
+| AI-written plugins misbehave                                                                          | Reviewed changes with golden tests, sandboxed, pinned, re-tested before each use                                                                                  |
+| Everything runs through a person in Copilot, so a whole estate's first scan needs many agent sessions | One prompt covers a repo's whole loop; repo types and templates cut later repos' work; the bench measures sessions and time per repo                              |
+| Copilot's agent mode differs between VS Code and IntelliJ IDEA, or between model versions             | The commands hold the loop's state and checks (principle 8); the Phase 2a exit runs in both editors                                                               |
+| MCP or an extension isn't allowed                                                                     | Neither is needed: prompt files and commands work without them                                                                                                    |
+| Diagram libraries fail the licence policy or the quality bar                                          | Phase 1 spike; dagre as the layout fallback; judged by users with layout scores                                                                                   |
+| Accuracy shown on repos unlike the bank's                                                             | The bench weighted to a bank's stacks with a connected estate; the on-site pilot before readiness                                                                 |
+| Loops that never finish                                                                               | Finding fingerprints and the end rule (principle 4)                                                                                                               |
+| Scope creep again                                                                                     | This plan is the order of work; anything not in it waits; every phase has an exit on real code                                                                    |
 
 ## 10. Decisions needed from the product owner
 
 1. Done: rule 4, ADR 0074 and this plan adopted (2026-10-21).
 2. The diagram stack after the Phase 1 spike, and its licences against the bank's policy.
-3. The models: the development model now; for the bank, an approved provider for bulk scanning, the assistant's model for interactive work, or both.
+3. Done: at the bank, Copilot in IntelliJ IDEA and VS Code; headless Claude Code for development only.
 4. The bench's repo list (public repos only), including two of one type and the five with reference flows.
 5. Drop Atticus's own "author can't approve" check, leaving it to the Git host.
 6. The proposed targets, after the Phase 1 baseline.
