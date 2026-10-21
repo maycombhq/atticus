@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Every step as a slash command in Copilot Chat, and `atticus next`
+
+- `atticus assistant-files` writes eight more slash commands (ADR 0086), for Copilot (`.github/prompts/`) and Claude Code (`.claude/commands/`): `/atticus-survey`, `/atticus-verify`, `/atticus-spec`, `/atticus-answer`, `/atticus-knowledge`, `/atticus-feature`, `/atticus-stories` and `/atticus-next`. Copilot's own model does the AI work; the command has it run `atticus` for everything else. `/atticus-spec` loops until the spec check passes. Every command stops at a question for a person.
+- `--handoff` on `scan survey`, `scan verify`, `spec draft`, `knowledge scan`, `change draft` and `plan stories` prints only the prompt file, the result file and the two commands that finish the step.
+- `atticus handoff done` now finishes scan survey, scan verify, spec draft, knowledge scan and onboard runs. Before, it checked their answers as change files and failed them.
+- `atticus next [--all] [--json]`: the next step, its command, its slash command and why, worked out from the metarepo's files.
+- The app's Run next shows the new slash commands where they apply.
+
 ### Repo specs made of flows
 
 - A new C1 kind, `Flow` (ADR 0079), with its own schema version 1: a trigger, ordered steps (entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry) with the data at each step by field, the table and columns a step reads or writes, where a call-out goes, error paths, a family of near-identical triggers, and a citation and `confirmedBy` (check, AI pass or person) on every step. Flows live in the metarepo at `specs/<repo>/<id>.yaml` with a header in `specs/<repo>/spec.yaml`.

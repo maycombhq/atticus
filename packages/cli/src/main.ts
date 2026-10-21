@@ -531,6 +531,8 @@ Usage:
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it
+  atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
+  atticus <step> --handoff             On scan survey, scan verify, spec draft, knowledge scan, change draft and plan stories: print only the prompt, the result file and the commands that finish it
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
   atticus workspace open <change>      Create the change's worktrees, repos.yaml and editor workspaces
@@ -762,6 +764,17 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     return catalogDiff(resolve(arg), resolve(b), values.json === true, io);
   }
   const root = resolve(typeof values.root === "string" ? values.root : process.cwd());
+  // ADR 0086: atticus next, and --handoff on the AI steps (the prompt, result file and finish).
+  if (group === "next" || values.handoff === true) {
+    const h = await import("./handoff-flag.js");
+    if (group === "next")
+      return (await import("./next-commands.js")).nextCommand(
+        root,
+        { json: values.json === true, all: values.all === true },
+        io,
+      );
+    if (h.isHandoffStep(group, command)) return h.handoffStep(root, argv, io, dispatch);
+  }
   // Who is acting (ADR 0073): --by when given, else the metarepo's Git user, read once for the
   // commands that record a person. A fallback to the OS user is said once, on stderr, when used.
   const given = typeof values.by === "string" && values.by.trim() ? values.by : undefined;

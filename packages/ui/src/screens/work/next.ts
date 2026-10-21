@@ -4,7 +4,9 @@ import { COPY } from "../../copy.js";
 /**
  * What to run next, worked out from files the API returns (plan 4.5, principle 8). The app
  * never runs a step: each page shows the command, and the slash command for Copilot Chat
- * where `atticus assistant-files` writes one. Pure functions, so tests can check every case.
+ * where `atticus assistant-files` writes one (ADR 0086: /atticus-survey, -answer, -feature,
+ * -stories and the others). `atticus next` works out the same from the files on the command
+ * line. Pure functions, so tests can check every case.
  */
 
 const W = COPY.work;
@@ -112,6 +114,7 @@ export function changeStep(c: ChangeRow, tasks?: TaskRow[]): Step {
       return {
         command: `atticus change draft ${c.id}`,
         why: W.why.feature,
+        slash: metarepo(`/atticus-feature ${c.id}`),
         after: [critic(c.id), handoff(c.id)],
       };
     case "architecture":
@@ -124,7 +127,7 @@ export function changeStep(c: ChangeRow, tasks?: TaskRow[]): Step {
       return {
         command: `atticus plan stories ${c.id}`,
         why: W.why.stories,
-        slash: metarepo(`/atticus-plan ${c.id}`),
+        slash: metarepo(`/atticus-stories ${c.id}`),
         after: [critic(c.id), handoff(c.id)],
       };
     case "tasks": {
@@ -192,13 +195,18 @@ export function onboardingStep(v: OnboardingData, openQuestions: number): Step {
     return { command: "atticus workspace sync", why: W.why.sync(notCloned.length) };
   const unsurveyed = repos.find((r) => !r.scanSettings.present);
   if (unsurveyed)
-    return { command: `atticus scan survey ${unsurveyed.id}`, why: W.why.survey(unsurveyed.id) };
+    return {
+      command: `atticus scan survey ${unsurveyed.id}`,
+      why: W.why.survey(unsurveyed.id),
+      slash: metarepo(`/atticus-survey ${unsurveyed.id}`),
+    };
   if (v.catalog.records === 0 || repos.some((r) => r.lastScan === null))
     return { command: "atticus scan", why: W.why.scan };
   if (openQuestions > 0)
     return {
       command: "atticus questions list --state open",
       why: W.why.answer(openQuestions),
+      slash: metarepo("/atticus-answer"),
       link: { href: "#/questions", label: W.stepAnswerLink },
     };
   const first = repos[0]!;

@@ -1,0 +1,395 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { parse } from "yaml";
+import {
+  changesDirOf,
+  listQuestions,
+  proposalsDirOf,
+  readRepoSpec,
+  readSpecFindings,
+  ScanVerifyProposal,
+} from "@maycombhq/core";
+import { changeStore } from "@maycombhq/changes";
+import { readKnowledge, snapshotDates } from "@maycombhq/knowledge";
+import { readChangeFiles } from "@maycombhq/naysayer";
+import { readChangeTasks } from "@maycombhq/speckit";
+import type { Output } from "./commands.js";
+import { onboardingView } from "./ui-api-onboarding.js";
+
+/**
+ * atticus next [--all] [--json] (ADR 0086, plan principle 8): the next step to take, worked out
+ * from the metarepo's files only (the manifests, the clones, scan settings, the catalog, the
+ * verify proposals, questions/, specs/, the knowledge snapshots and items, the changes). It
+ * runs nothing and calls nothing. Each step has its command and, where `atticus
+ * assistant-files` writes one, the slash command to type in Copilot Chat.
+ */
+
+export interface NextStep {
+  /** A stable name for the kind of step: survey, scan, verify, answer, spec, ... */
+  step: string;
+  command: string;
+  /** The slash command for Copilot Chat, when one does this step. */
+  slash?: string;
+  /** Where the slash command is typed: the metarepo, or a code repo by id. */
+  where?: string;
+  why: string;
+  /** A step only a person can take (accepting a proposal, approving a design). */
+  person?: boolean;
+  repo?: string;
+  change?: string;
+  source?: string;
+}
+
+export interface RepoState {
+  id: string;
+  cloned: boolean;
+  settings: boolean;
+  scanned: boolean;
+  /** none: never verified; accept: settings entries waiting for a person; done. */
+  verify: "none" | "accept" | "done";
+  flows: number;
+  /** The spec check read the latest draft. */
+  checked: boolean;
+  /** Findings of the last check that haven't become a question. */
+  findings: number;
+}
+
+export interface NextState {
+  repos: RepoState[];
+  catalogRecords: number;
+  openQuestions: string[];
+  sources: { id: string; snapshot: boolean; scanned: boolean }[];
+  changes: { id: string; state: string; tasks: { id: string; repo: string; done: boolean }[] }[];
+  problems: { file: string; message: string }[];
+}
+
+const METAREPO = "metarepo";
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+async function verifyState(root: string, repo: string): Promise<RepoState["verify"]> {
+  const text = await readFile(join(proposalsDirOf(root), "scan", `${repo}.yaml`), "utf8").catch(
+    () => undefined,
+  );
+  if (text === undefined) return "none";
+  const p = ScanVerifyProposal.safeParse(parse(text));
+  if (!p.success) return "none";
+  const s = p.data.settings;
+  const entries = s.exclude.length + s.prefixes.length + s.clients.length;
+  if (entries > 0 && (!p.data.accepted || p.data.accepted.at < p.data.at)) return "accept";
+  return "done";
+}
+
+/** Read everything the steps depend on. Files that don't read are problems, never a crash. */
+export async function readNextState(root: string): Promise<NextState> {
+  const view = await onboardingView(root);
+  const problems = [...view.problems];
+  const repos: RepoState[] = [];
+  for (const r of view.repos) {
+    const spec = await readRepoSpec(root, r.id);
+    problems.push(...spec.problems);
+    const findings = await readSpecFindings(root, r.id);
+    repos.push({
+      id: r.id,
+      cloned: r.cloned,
+      settings: r.scanSettings.present,
+      scanned: r.lastScan !== null,
+      verify: await verifyState(root, r.id),
+      flows: spec.flows.length,
+      checked: !!findings && findings.draftedAt === spec.header?.drafted?.at,
+      findings: findings?.findings.filter((f) => !f.question).length ?? 0,
+    });
+  }
+  const open = await listQuestions(root, { state: "open" });
+  problems.push(...open.problems);
+  const knowledge = await readKnowledge(root);
+  const sources: NextState["sources"] = [];
+  for (const w of view.sources.wikis) {
+    const newest = (await snapshotDates(root, w.id))[0];
+    sources.push({
+      id: w.id,
+      snapshot: !!newest,
+      scanned:
+        !!newest &&
+        !!knowledge.report?.snapshots.some((s) => s.source === w.id && s.date === newest),
+    });
+  }
+  const changes: NextState["changes"] = [];
+  try {
+    for (const c of await changeStore(root).list()) {
+      const files = await readChangeFiles(join(changesDirOf(root), c.id)).catch(() => undefined);
+      changes.push({
+        id: c.id,
+        state: c.state,
+        tasks: files
+          ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
+          : [],
+      });
+    }
+  } catch (e) {
+    problems.push({ file: "openspec/changes", message: (e as Error).message.split("\n")[0]! });
+  }
+  return {
+    repos,
+    catalogRecords: view.catalog.records,
+    openQuestions: open.questions.map((q) => q.id),
+    sources,
+    changes,
+    problems,
+  };
+}
+
+/** The stage a change's state puts it at (plan 4.4), as the app's Work pages read it. */
+function stageOf(
+  state: string,
+): "feature" | "architecture" | "stories" | "tasks" | "release" | "done" {
+  switch (state) {
+    case "draft":
+    case "define":
+    case "returned":
+      return "feature";
+    case "design":
+      return "architecture";
+    case "plan":
+      return "stories";
+    case "build":
+    case "qa":
+      return "tasks";
+    case "released":
+    case "archived":
+      return "done";
+    default:
+      return "release";
+  }
+}
+
+function changeSteps(c: NextState["changes"][number]): NextStep[] {
+  const id = c.id;
+  switch (stageOf(c.state)) {
+    case "feature":
+      return [
+        {
+          step: "feature",
+          command: `atticus change draft ${id}`,
+          slash: `/atticus-feature ${id}`,
+          where: METAREPO,
+          why: `${id} is at the feature stage: your assistant drafts its proposal, spec and interfaces from the brief, and Atticus checks the draft.`,
+          change: id,
+        },
+      ];
+    case "architecture":
+      return [
+        {
+          step: "architecture",
+          command: `atticus change status ${id}`,
+          where: METAREPO,
+          why: `${id} is at the architecture stage. The design is written and reviewed by a person; the status says what still blocks it.`,
+          person: true,
+          change: id,
+        },
+      ];
+    case "stories":
+      return [
+        {
+          step: "stories",
+          command: `atticus plan stories ${id}`,
+          slash: `/atticus-stories ${id}`,
+          where: METAREPO,
+          why: `${id} has an approved design: write its stories and tasks.`,
+          change: id,
+        },
+      ];
+    case "tasks": {
+      const t = c.tasks.find((x) => !x.done);
+      if (!t)
+        return [
+          {
+            step: "tasks",
+            command: `atticus change status ${id}`,
+            where: METAREPO,
+            why: `Every task of ${id} is ticked; the status says what is left before release.`,
+            change: id,
+          },
+        ];
+      return [
+        {
+          step: "task",
+          command: `atticus task run ${id} ${t.id}`,
+          slash: `/atticus-task ${t.id}`,
+          where: t.repo,
+          why: `Task ${t.id} of ${id} in ${t.repo} is the first one not done. For the slash command, first run atticus assistant-files --repo ${t.repo} --change ${id}.`,
+          repo: t.repo,
+          change: id,
+        },
+      ];
+    }
+    case "release":
+      return [
+        {
+          step: "release",
+          command: `atticus change status ${id}`,
+          slash: `/atticus-release ${id}`,
+          where: METAREPO,
+          why: `${id} is on its way to release: check what still blocks it.`,
+          change: id,
+        },
+      ];
+    default:
+      return [];
+  }
+}
+
+/** Every step still to take, in the order to take them. Pure: tests check each case. */
+export function nextSteps(s: NextState): NextStep[] {
+  const out: NextStep[] = [];
+  if (s.repos.length === 0) {
+    out.push({
+      step: "discover",
+      command: "atticus repos discover <folder>",
+      why: "No repo is listed yet. Propose the manifest from a folder of clones or your Git host's organisation (--org).",
+    });
+    return out;
+  }
+  const notCloned = s.repos.filter((r) => !r.cloned);
+  if (notCloned.length)
+    out.push({
+      step: "sync",
+      command: "atticus workspace sync",
+      why: `${plural(notCloned.length, "repo")} ${notCloned.length === 1 ? "isn't" : "aren't"} cloned yet: ${notCloned.map((r) => r.id).join(", ")}.`,
+    });
+  const cloned = s.repos.filter((r) => r.cloned);
+  for (const r of cloned.filter((x) => !x.settings))
+    out.push({
+      step: "survey",
+      command: `atticus scan survey ${r.id}`,
+      slash: `/atticus-survey ${r.id}`,
+      where: METAREPO,
+      why: `${r.id} has no scan settings yet: your assistant reads it and drafts them, and Atticus checks each entry against the code.`,
+      repo: r.id,
+    });
+  const unscanned = cloned.filter((r) => !r.scanned);
+  if (unscanned.length || (cloned.length && s.catalogRecords === 0))
+    out.push({
+      step: "scan",
+      command: "atticus scan",
+      why: unscanned.length
+        ? `${unscanned.map((r) => r.id).join(", ")} ${unscanned.length === 1 ? "hasn't" : "haven't"} been scanned yet.`
+        : "The catalog is empty: scan the repos into it.",
+    });
+  const scanned = cloned.filter((r) => r.scanned);
+  for (const r of scanned)
+    if (r.verify === "none")
+      out.push({
+        step: "verify",
+        command: `atticus scan verify ${r.id}`,
+        slash: `/atticus-verify ${r.id}`,
+        where: METAREPO,
+        why: `The last scan of ${r.id} hasn't been verified: your assistant compares the code with what the scan recorded.`,
+        repo: r.id,
+      });
+    else if (r.verify === "accept")
+      out.push({
+        step: "accept",
+        command: `atticus scan verify ${r.id} --accept`,
+        why: `The verify of ${r.id} proposes scan settings entries. A person reads the proposal and accepts it.`,
+        person: true,
+        repo: r.id,
+      });
+  if (s.openQuestions.length)
+    out.push({
+      step: "answer",
+      command: "atticus questions list --state open",
+      slash: "/atticus-answer",
+      where: METAREPO,
+      why: `${plural(s.openQuestions.length, "question")} ${s.openQuestions.length === 1 ? "is" : "are"} waiting for a person: ${s.openQuestions.join(", ")}. The steps that asked go on once they are answered.`,
+      person: true,
+    });
+  for (const r of scanned) {
+    const slash = { slash: `/atticus-spec ${r.id}`, where: METAREPO, repo: r.id };
+    if (r.flows === 0)
+      out.push({
+        step: "spec",
+        command: `atticus spec draft ${r.id}`,
+        ...slash,
+        why: `${r.id} has no spec yet: your assistant writes its flows, one per trigger, each step cited.`,
+      });
+    else if (!r.checked)
+      out.push({
+        step: "spec-check",
+        command: `atticus spec check ${r.id}`,
+        ...slash,
+        why: `The spec of ${r.id} hasn't been checked since its last draft.`,
+      });
+    else if (r.findings > 0)
+      out.push({
+        step: "spec",
+        command: `atticus spec draft ${r.id}`,
+        ...slash,
+        why: `The last spec check of ${r.id} found ${plural(r.findings, "problem")}: draft the flagged flows again, then check.`,
+      });
+  }
+  for (const k of s.sources)
+    if (!k.snapshot)
+      out.push({
+        step: "sync-source",
+        command: `atticus sources sync --source ${k.id}`,
+        slash: `/atticus-knowledge ${k.id}`,
+        where: METAREPO,
+        why: `The knowledge source ${k.id} has no snapshot yet: copy its pages, then read them into knowledge items.`,
+        source: k.id,
+      });
+    else if (!k.scanned)
+      out.push({
+        step: "knowledge",
+        command: `atticus knowledge scan --source ${k.id}`,
+        slash: `/atticus-knowledge ${k.id}`,
+        where: METAREPO,
+        why: `The newest snapshot of ${k.id} hasn't been read into knowledge items yet.`,
+        source: k.id,
+      });
+  const inFlight = s.changes.filter((c) => stageOf(c.state) !== "done");
+  for (const c of inFlight) out.push(...changeSteps(c));
+  if (!inFlight.length)
+    out.push({
+      step: "new-change",
+      command: 'atticus change new "<title>" --type <type>',
+      why: out.length
+        ? "Then start a change: no change is in flight."
+        : "Everything is onboarded, checked and answered, and no change is in flight. Start one.",
+    });
+  return out;
+}
+
+export async function nextCommand(
+  root: string,
+  o: { json?: boolean; all?: boolean },
+  io: Output,
+): Promise<number> {
+  const state = await readNextState(root);
+  const steps = nextSteps(state);
+  if (o.json) {
+    io.out(JSON.stringify({ next: steps[0], steps, problems: state.problems }, null, 2));
+    return 0;
+  }
+  for (const p of state.problems) io.err(`Couldn't read ${p.file}: ${p.message}`);
+  const slashLine = (x: NextStep) =>
+    x.slash
+      ? `In Copilot Chat${x.where && x.where !== METAREPO ? ` in ${x.where}` : ""}: ${x.slash}`
+      : undefined;
+  if (!o.all) {
+    const n = steps[0]!;
+    io.out(`Next: ${n.command}`);
+    const sl = slashLine(n);
+    if (sl) io.out(sl);
+    io.out(`Why: ${n.why}`);
+    if (steps.length > 1)
+      io.out(`${plural(steps.length - 1, "more step")} after this one: atticus next --all`);
+    return 0;
+  }
+  steps.forEach((x, i) => {
+    io.out(`${i + 1}. ${x.command}`);
+    const sl = slashLine(x);
+    if (sl) io.out(`   ${sl}`);
+    io.out(`   ${x.why}`);
+  });
+  return 0;
+}

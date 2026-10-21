@@ -1,5 +1,6 @@
 export * from "./header.js";
 export * from "./commands.js";
+export * from "./steps.js";
 export * from "./specify.js";
 export * from "./render.js";
 export * from "./write.js";
