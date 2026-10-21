@@ -69,6 +69,149 @@ export const GraphEdge = z.object({
 });
 export const Graph = z.object({ nodes: z.array(GraphNode), edges: z.array(GraphEdge) });
 
+// ------------------------------------------------------------------ hierarchical graph (ADR 0081)
+
+/** The lenses on the one model (plan 4.6). The flow lens arrives with the behaviour hierarchy. */
+export const GRAPH_LENSES = [
+  "architecture",
+  "repo",
+  "data",
+  "integration",
+  "infrastructure",
+] as const;
+export const GraphLens = z.enum(GRAPH_LENSES);
+
+/** Structure levels: estate → system → repo → component → element. */
+export const HIER_KINDS = [
+  "estate",
+  "system",
+  "repo",
+  "component",
+  "endpoint",
+  "topic",
+  "client",
+  "store",
+  "table",
+  "deployment",
+  "environment",
+  "unknown",
+] as const;
+export const HierKind = z.enum(HIER_KINDS);
+
+/** current only for now; new, changed and retired come with feature views. */
+export const HierState = z.enum(["current", "new", "changed", "retired"]);
+
+/** A hierarchy node id: `estate`, or `<kind>:<record id>` (e.g. system:ledger). */
+export const HierId = z.string().regex(/^(estate|[a-z]+:[a-z0-9][a-z0-9._-]*)$/);
+
+/** Evidence as the inspector shows it: the file and line (`at`, path:line). */
+export const HierEvidence = z.object({
+  source: z.string(),
+  repo: z.string().optional(),
+  at: z.string(),
+});
+
+export const HierNode = z.object({
+  id: HierId,
+  kind: HierKind,
+  label: z.string(),
+  parent: HierId.optional(),
+  /** Children this node has in the lens; 0 means it can't be opened. */
+  childCount: z.number().int().nonnegative(),
+  state: HierState,
+  /** What the catalog is missing here, e.g. inferred, no-repo, no-component, not-in-catalog. */
+  gaps: z.array(z.string()),
+  evidence: z.array(HierEvidence),
+  properties: z.record(
+    z.string(),
+    z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]),
+  ),
+  /** The catalog record behind the node, when there is one. */
+  record: z.object({ kind: z.string(), id: RecordId }).optional(),
+  /** The command for this node's next step; the app shows it, never runs it. */
+  next: z.object({ command: z.string(), why: z.string() }).optional(),
+});
+
+export const HIER_EDGE_TYPES = [
+  "calls",
+  "publishes",
+  "subscribes",
+  "uses",
+  "reads",
+  "writes",
+  "references",
+  "deployed-to",
+] as const;
+
+/** Parallel edges between the same two nodes of the same type are one edge with a count. */
+export const HierEdge = z.object({
+  id: z.string(),
+  from: HierId,
+  to: HierId,
+  type: z.enum(HIER_EDGE_TYPES),
+  sync: z.enum(["sync", "async", "mixed"]).optional(),
+  /** How calls travel (gateway, direct, event-bus...); "mixed" when merged calls differ. */
+  via: z.string().optional(),
+  count: z.number().int().positive(),
+  state: HierState,
+  gaps: z.array(z.string()),
+  /** Up to five pieces of evidence across the merged edges. */
+  evidence: z.array(HierEvidence),
+});
+
+const Suggest = z.object({ mode: z.enum(["focus", "group"]), id: HierId.optional() });
+
+/** GET /api/graph/node/{id}: a node, its children (lazy), and its edges inside and out. */
+export const GraphNodeView = z.object({
+  lens: GraphLens,
+  node: HierNode,
+  /** Ancestors from the estate down to the node's parent: the breadcrumbs. */
+  path: z.array(HierNode),
+  children: z.array(HierNode),
+  /** Nodes outside this one that its children's edges reach, each lifted to the nearest level. */
+  outside: z.array(HierNode),
+  edges: z.array(HierEdge),
+  /** True when "uses" edges are the transitive reduction (the default; ?all=1 draws all). */
+  reduced: z.boolean(),
+  /** Edges the reduction left out. */
+  hiddenEdges: z.number().int().nonnegative(),
+  /** The view is better drawn another way: in focus on a table, or grouped (over 60 nodes). */
+  suggest: Suggest.optional(),
+});
+
+/** GET /api/graph/focus/{id}: a node and its direct neighbours, with the edges between them. */
+export const GraphFocusView = z.object({
+  lens: GraphLens,
+  node: HierNode,
+  path: z.array(HierNode),
+  neighbours: z.array(HierNode),
+  edges: z.array(HierEdge),
+});
+
+export const LayoutPosition = z.object({ x: z.number().finite(), y: z.number().finite() });
+
+/** PUT /api/graph/layout/{viewKey}: keep this arrangement. */
+export const PutLayoutRequest = z.strictObject({
+  lens: GraphLens,
+  node: HierId,
+  positions: z.record(HierId, LayoutPosition),
+});
+
+export const ViewLayoutResult = z.object({
+  view: z.string(),
+  saved: z.boolean(),
+  path: z.string(),
+  positions: z.record(z.string(), LayoutPosition),
+});
+
+export type GraphLensT = z.infer<typeof GraphLens>;
+export type HierKindT = z.infer<typeof HierKind>;
+export type HierNodeT = z.infer<typeof HierNode>;
+export type HierEdgeT = z.infer<typeof HierEdge>;
+export type HierEvidenceT = z.infer<typeof HierEvidence>;
+export type GraphNodeViewT = z.infer<typeof GraphNodeView>;
+export type GraphFocusViewT = z.infer<typeof GraphFocusView>;
+
 export const Impact = z.object({
   root: RecordId,
   affected: z.array(
@@ -716,6 +859,61 @@ const OPS: Record<string, Record<string, Op>> = {
         description: "OK",
       },
       errors: [400, 422],
+    },
+  },
+  "/api/graph/node/{id}": {
+    get: {
+      id: "getGraphNode",
+      summary:
+        "A node of the estate hierarchy with its children (one level, lazy) and its edges to siblings and outside; the root is estate (ADR 0081)",
+      tag: "views",
+      params: [
+        p("id", { description: "estate, or <kind>:<record id>, e.g. system:ledger" }),
+        q(
+          "lens",
+          { type: "string", enum: [...GRAPH_LENSES] },
+          "Which part of the model to show (default architecture)",
+        ),
+        q("depth", { type: "integer", minimum: 1, maximum: 3 }, "Levels of children (default 1)"),
+        q(
+          "all",
+          { type: "string", enum: ["1"] },
+          "Every 'uses' edge, not the transitive reduction",
+        ),
+      ],
+      ok: { status: 200, schema: "GraphNodeView", description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/graph/focus/{id}": {
+    get: {
+      id: "getGraphFocus",
+      summary: "A node and its direct neighbours, with the edges between them (ADR 0081)",
+      tag: "views",
+      params: [p("id"), q("lens", { type: "string", enum: [...GRAPH_LENSES] }, "Default data")],
+      ok: { status: 200, schema: "GraphFocusView", description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/graph/layout/{viewKey}": {
+    get: {
+      id: "getViewLayout",
+      summary:
+        "A view's kept arrangement (diagrams/layouts/<view-key>.yaml); saved is false when there is none",
+      tag: "views",
+      params: [p("viewKey", { description: "<lens>.<node>, e.g. architecture.system-ledger" })],
+      ok: { status: 200, schema: "ViewLayoutResult", description: "OK" },
+      errors: [400, 422],
+    },
+    put: {
+      id: "putViewLayout",
+      summary:
+        "Keep this arrangement: writes diagrams/layouts/<view-key>.yaml in the metarepo, as the signed-in person",
+      tag: "views",
+      params: [p("viewKey")],
+      body: PutLayoutRequest,
+      ok: { status: 200, schema: "ViewLayoutResult", description: "Kept" },
+      errors: [400],
     },
   },
   "/api/ask": {
@@ -1414,6 +1612,11 @@ export function openApiDocument(): Record<string, unknown> {
     RecordPage,
     KindCount,
     Graph,
+    HierNode,
+    HierEdge,
+    GraphNodeView,
+    GraphFocusView,
+    ViewLayoutResult,
     Impact,
     Coverage,
     Job,

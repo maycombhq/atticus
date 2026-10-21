@@ -17,6 +17,7 @@ const SCREENS = [
   "ux?change=add-transfer-limit",
   "arch-review?change=add-transfer-limit",
   "diagrams",
+  "architecture",
   "reconcile",
   "contracts",
   "mappings?change=add-transfer-limit",

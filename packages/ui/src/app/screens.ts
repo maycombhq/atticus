@@ -1,6 +1,6 @@
 import { COPY } from "../copy.js";
 
-/** The 27 screens of the design canvas and the Questions page (ADR 0078), in the menu groups. */
+/** The 27 screens of the design canvas the Questions page (ADR 0078) and the Architecture workspace (ADR 0081), in the menu groups. */
 
 export interface ScreenDef {
   id: string;
@@ -22,6 +22,7 @@ export const SCREENS: ScreenDef[] = [
   { id: "ux", label: "Prototypes and UX", group: "Define" },
   { id: "arch-review", label: "Architecture review", group: "Design" },
   { id: "diagrams", label: "Diagrams", group: "Design" },
+  { id: "architecture", label: "Architecture", group: "Design" },
   { id: "reconcile", label: "Reconcile", group: "Design" },
   { id: "contracts", label: "Contracts", group: "Design" },
   { id: "mappings", label: "API mappings", group: "Design" },

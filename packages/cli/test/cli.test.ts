@@ -75,6 +75,7 @@ describe("atticus CLI", () => {
       "ChangeLifecycle.json",
       "ChangeOutcomes.json",
       "ChangeRepos.json",
+      "DiagramLayout.json",
       "MetarepoStamp.json",
       "RepoManifest.json",
     ]);

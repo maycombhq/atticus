@@ -9,6 +9,7 @@ import { uiMeRoutes } from "./ui-api-me.js";
 import { uiKnowRoutes } from "./ui-api-know.js";
 import { uiQuestionRoutes } from "./ui-api-questions.js";
 import { uiAcrossRoutes } from "./ui-api-across.js";
+import { uiGraphRoutes } from "./ui-api-graph.js";
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export function startUi(
@@ -33,8 +34,11 @@ export function startUi(
     })(),
     extend: (r, ctx) =>
       uiQuestionRoutes(
-        uiAcrossRoutes(
-          uiMeRoutes(uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx), ctx),
+        uiGraphRoutes(
+          uiAcrossRoutes(
+            uiMeRoutes(uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx), ctx),
+            ctx,
+          ),
           ctx,
         ),
         ctx,
