@@ -1,5 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,7 +106,7 @@ describe("atticus change", () => {
       "State: define",
       'Next: Finish the define work, then raise "Send to architecture".',
       "Risk: low (3): change type feature +2; 2 systems touched (ledger, portal) +1",
-      "Approvals needed: product-owner (change type feature)",
+      "Hand-off: no PR yet; atticus change handoff add-transfer-limit --approve opens it, and merging it approves the define gate.",
       "Tests: unit, contract",
       "Privacy: no personal data touched.",
       "Blocked by:",
@@ -117,9 +118,22 @@ describe("atticus change", () => {
 
     c = capture();
     expect(await changeHandoff(root, "add-transfer-limit", {}, c.io, deps)).toBe(2);
+    // Without --approve nothing goes to the Git host: it says what isn't ready.
     c = capture();
     expect(
       await changeHandoff(root, "add-transfer-limit", { by: "pat", repo: REPO }, c.io, deps),
+    ).toBe(1);
+    expect(c.err[0]).toBe("add-transfer-limit isn't ready to hand off define:");
+    expect(gh.journal).toHaveLength(0);
+    c = capture();
+    expect(
+      await changeHandoff(
+        root,
+        "add-transfer-limit",
+        { by: "pat", approve: true, repo: REPO },
+        c.io,
+        deps,
+      ),
     ).toBe(1);
     expect(c.err[0]).toBe('add-transfer-limit isn\'t ready for "Send to architecture".');
     expect(c.err).toHaveLength(4);
@@ -130,17 +144,41 @@ describe("atticus change", () => {
     // runtime.yaml's mock Git host knows no repos, so without an injected host the PR can't open.
     c = capture();
     expect(
-      await changeHandoff(root, "add-transfer-limit", { by: "pat", repo: REPO }, c.io, {}),
+      await changeHandoff(
+        root,
+        "add-transfer-limit",
+        { by: "pat", approve: true, repo: REPO },
+        c.io,
+        {},
+      ),
     ).toBe(1);
     expect(c.err[0]).toBe("git-host: repo forge/forge-metarepo not found");
 
+    // Ready: the dry run says which PR it would open and sends nothing (rule 6).
     c = capture();
     expect(
       await changeHandoff(root, "add-transfer-limit", { by: "pat", repo: REPO }, c.io, deps),
     ).toBe(0);
     expect(c.out).toEqual([
+      "Would open the define hand-off PR handoff/add-transfer-limit/define with the phase's files, as pat.",
+      "Nothing was sent. To do it: atticus change handoff add-transfer-limit --approve. Merging the PR approves the gate.",
+    ]);
+    expect(gh.journal.filter((j) => j.method === "createPullRequest")).toHaveLength(0);
+
+    c = capture();
+    expect(
+      await changeHandoff(
+        root,
+        "add-transfer-limit",
+        { by: "pat", approve: true, repo: REPO },
+        c.io,
+        deps,
+      ),
+    ).toBe(0);
+    expect(c.out).toEqual([
       "Hand-off PR #1 (handoff/add-transfer-limit/define) is open: https://git.example.com/forge/forge-metarepo/pull/1",
       "Reviewers: @forge/platform",
+      "Merging it approves the gate; the Git host's own rules decide who may approve it.",
     ]);
     expect(gh.journal.find((j) => j.method === "createPullRequest")!.approval).toEqual({
       by: "pat",
@@ -149,21 +187,44 @@ describe("atticus change", () => {
       ref: "handoff/add-transfer-limit/define",
     });
 
+    // change status names the PR to merge, not a role to ask.
+    c = capture();
+    expect(await changeStatus(root, "add-transfer-limit", {}, c.io)).toBe(0);
+    expect(c.out).toContain(
+      "Hand-off: merge PR #1 to approve the define gate (https://git.example.com/forge/forge-metarepo/pull/1).",
+    );
+    expect(c.out.join("\n")).not.toMatch(/Approvals needed|product-owner/);
+
     c = capture();
     expect(await changeSync(root, "add-transfer-limit", { repo: REPO }, c.io, deps)).toBe(1);
     expect(c.err).toEqual([
       "PR #1 can't merge yet:",
-      "  - Needs approval from product-owner (change type feature).",
+      "  - PR #1 isn't approved yet: ask a reviewer on the Git host (https://git.example.com/forge/forge-metarepo/pull/1).",
     ]);
-    gh.review(REPO, 1, "pat", "approved");
+    gh.review(REPO, 1, "ari", "approved");
+    // Approved, but merging is a write to the Git host: it waits for --approve.
     c = capture();
     expect(await changeSync(root, "add-transfer-limit", { repo: REPO }, c.io, deps)).toBe(1);
-    expect(c.out).toEqual(["Approvals are in on PR #1. Run again with --by <you> to merge it."]);
+    expect(c.out).toEqual([
+      "PR #1 is approved and the Git host's rules are met. Merge it on the Git host, or run atticus change sync add-transfer-limit --approve to merge it as you.",
+    ]);
     c = capture();
     expect(
       await changeSync(root, "add-transfer-limit", { repo: REPO, by: "pat" }, c.io, deps),
+    ).toBe(1);
+    expect(gh.journal.filter((j) => j.method === "merge")).toHaveLength(0);
+    c = capture();
+    expect(
+      await changeSync(
+        root,
+        "add-transfer-limit",
+        { repo: REPO, by: "pat", approve: true },
+        c.io,
+        deps,
+      ),
     ).toBe(0);
     expect(c.out).toEqual(["PR #1 merged. add-transfer-limit is now design."]);
+    expect(gh.journal.find((j) => j.method === "merge")!.approval?.by).toBe("pat");
 
     c = capture();
     await changeNew(
@@ -197,29 +258,47 @@ describe("atticus change", () => {
     );
     c = capture();
     expect(
-      await changeHandoff(root, "add-transfer-limit", { by: "ari", repo: REPO }, c.io, deps),
+      await changeHandoff(
+        root,
+        "add-transfer-limit",
+        { by: "ari", approve: true, repo: REPO },
+        c.io,
+        deps,
+      ),
     ).toBe(0);
     c = capture();
     expect(await changeStatus(root, "add-transfer-limit", { json: true }, c.io)).toBe(0);
-    const status = JSON.parse(c.out.join("\n")) as {
-      state: string;
-      required: string[];
-      risk: { level: string };
-    };
+    const status = JSON.parse(c.out.join("\n")) as Record<string, unknown>;
     expect(status).toMatchObject({
       state: "design",
-      required: ["architect (change type feature, gate design)"],
       risk: { level: "medium" },
+      handoff: { phase: "design", pr: { number: 2 } },
     });
+    expect(status).not.toHaveProperty("required");
 
     c = capture();
     expect(await changeReturn(root, "add-transfer-limit", { by: "ari" }, c.io, deps)).toBe(2);
+    // Closing the PR is a write to the Git host: without --approve it only says what it would do.
     c = capture();
     expect(
       await changeReturn(
         root,
         "add-transfer-limit",
         { by: "ari", reason: "Scope unclear", repo: REPO },
+        c.io,
+        deps,
+      ),
+    ).toBe(0);
+    expect(c.out[0]).toBe(
+      "Would comment on PR #2 (https://git.example.com/forge/forge-metarepo/pull/2) and close it, and return add-transfer-limit to the product owner, as ari.",
+    );
+    expect(gh.journal.filter((j) => j.method === "closePullRequest")).toHaveLength(0);
+    c = capture();
+    expect(
+      await changeReturn(
+        root,
+        "add-transfer-limit",
+        { by: "ari", approve: true, reason: "Scope unclear", repo: REPO },
         c.io,
         deps,
       ),
@@ -255,5 +334,44 @@ describe("change commands through main", () => {
     expect(err.join("\n")).toMatch(/needs a change id/);
     expect(await main(["change", "new", "--root", "/nonexistent-atticus-root"], io)).toBe(2);
     expect(err.join("\n")).toMatch(/Usage: atticus change new/);
+  });
+
+  it("records the metarepo's Git user when --by isn't given, and --by still overrides it", async () => {
+    const { main } = await import("../src/main.js");
+    const root = await forgeRoot();
+    execFileSync("git", ["init", "-q", root]);
+    execFileSync("git", ["-C", root, "config", "user.name", "Pat Doe"]);
+    execFileSync("git", ["-C", root, "config", "user.email", "pat.doe@forge.example"]);
+    const io = { out: () => undefined, err: () => undefined };
+    expect(
+      await main(
+        ["change", "new", "Add transfer limit", "--type", "feature", "--root", root],
+        io,
+      ),
+    ).toBe(0);
+    const made = parse(
+      await readFile(join(root, "openspec/changes/add-transfer-limit/change.yaml"), "utf8"),
+    ) as { createdBy: string };
+    expect(made.createdBy).toBe("pat.doe");
+    expect(
+      await main(
+        [
+          "change",
+          "new",
+          "Show transfer history",
+          "--type",
+          "feature",
+          "--by",
+          "ari",
+          "--root",
+          root,
+        ],
+        io,
+      ),
+    ).toBe(0);
+    const other = parse(
+      await readFile(join(root, "openspec/changes/show-transfer-history/change.yaml"), "utf8"),
+    ) as { createdBy: string };
+    expect(other.createdBy).toBe("ari");
   });
 });

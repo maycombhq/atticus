@@ -269,11 +269,11 @@ describe("security review draft", () => {
         existing: 1,
       },
     ]);
-    expect(s.signOff).toMatchObject({ role: "architect", people: ["ari", "avery"] });
     expect(s.signOff.gates[0]).toMatchObject({ gate: "design", handoff: { state: "merged" } });
+    expect(s.signOff.how).toMatch(/merging a PR is its sign-off/);
   });
 
-  it("signs off with the security reviewer when the org enables the role", async () => {
+  it("asks for no role: roles.yaml is ignored for the sign-off (ADR 0073)", async () => {
     const root = await forgeRoot();
     const roles = join(root, "org-pack/roles.yaml");
     await writeFile(
@@ -284,11 +284,9 @@ describe("security review draft", () => {
       ),
     );
     const s = await securityReview(await loadRelease(root, ID, { now: NOW }));
-    expect(s.signOff.role).toBe("security-reviewer");
-    expect(s.signOff.how).toMatch(/^No gate in gates\.yaml lists security-reviewer/);
-    expect(s.gaps).toContain(
-      "No security-reviewer is named on add-transfer-limit (change.yaml owners).",
-    );
+    expect(s.signOff).not.toHaveProperty("role");
+    expect(s.gaps.join("\n")).not.toContain("security-reviewer");
+    expect(s.markdown).not.toContain("security-reviewer");
   });
 });
 

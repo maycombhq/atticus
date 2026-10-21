@@ -253,7 +253,7 @@ export async function triageList(root: string, io: Output, o: { json?: boolean }
     if (i.next) io.out(`  → ${i.next}`);
   }
   io.out("");
-  io.out("Decide one with: atticus triage decide <item> <option> --by <you>");
+  io.out("Decide one with: atticus triage decide <item> <option>");
   return 1;
 }
 

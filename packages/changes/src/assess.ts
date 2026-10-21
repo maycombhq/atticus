@@ -1,11 +1,5 @@
 import type { ChangeHandoff, ChangeLifecycle, ChangeType, LifecycleState } from "@maycombhq/core";
-import {
-  evaluateApprovals,
-  privacyImpact,
-  requiredApprovals,
-  type PrivacyImpact,
-  type Requirement,
-} from "./approvals.js";
+import { prApprovers, privacyImpact, type PrivacyImpact } from "./approvals.js";
 import { changeTypeOf, loadChangeContext, type ChangeContext } from "./context.js";
 import type { Reason } from "./errors.js";
 import { changeFootprint, type Footprint } from "./footprint.js";
@@ -39,13 +33,11 @@ export interface Assessment {
   risk: Risk;
   tests: TestPlan;
   privacy: PrivacyImpact;
-  /** Approvals the current phase's hand-off needs. */
-  required: Requirement[];
-  /** The open hand-off PR, if any. */
+  /** The open hand-off PR, if any. Merging it approves the phase's gate (ADR 0073). */
   handoff?: ChangeHandoff;
-  /** What stops a hand-off from being raised: artifacts, findings, the privacy role. */
+  /** What stops a hand-off from being raised: artifacts, findings, critic rounds. */
   blockers: Reason[];
-  /** What stops the change from advancing: blockers, then the hand-off and its approvals. */
+  /** What stops the change from advancing: blockers, then the hand-off PR until it merges. */
   reasons: Reason[];
 }
 
@@ -63,10 +55,10 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
   const phase = change.state === "returned" ? type.phases[0]! : statePhase(change.state);
   if (!phase) {
     if (change.state === "released")
-      return { ...base, next: "archived", required: [], blockers: [], reasons: [] };
+      return { ...base, next: "archived", blockers: [], reasons: [] };
     if (change.state === "post-release-review") {
       const blockers = await checkFindings(ctx.root, change, ["post-release-review"]);
-      return { ...base, next: "archived", required: [], blockers, reasons: blockers };
+      return { ...base, next: "archived", blockers, reasons: blockers };
     }
     const reasons: Reason[] = [
       {
@@ -77,10 +69,9 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
             : `${change.id} is a draft; create it with atticus change new.`,
       },
     ];
-    return { ...base, required: [], blockers: reasons, reasons };
+    return { ...base, blockers: reasons, reasons };
   }
 
-  const required = requiredApprovals(ctx, type, phase, privacy, risk);
   const blockers: Reason[] = [
     ...(await checkArtifacts(ctx.root, change, requiredArtifacts(ctx, type, phase, footprint))),
     ...(await checkFindings(ctx.root, change, phaseFindingGates(ctx, phase))),
@@ -90,17 +81,6 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
       phaseGates(ctx, phase).filter((g) => mandatoryGates(ctx).includes(g)),
     )),
   ];
-  if (privacy.touched && privacy.phase === phase && !privacy.roleDefined) {
-    blockers.push({
-      code: "privacy-role-missing",
-      role: privacy.role,
-      message: `This change touches personal data (${privacy.records
-        .map((r) => (r.field ? `${r.id}.${r.field}` : r.id))
-        .join(
-          ", ",
-        )}), so the ${privacy.role} role must approve it, but roles.yaml doesn't define that role.`,
-    });
-  }
   const next = change.state === "returned" ? phaseState(phase) : nextState(type, phase);
   const live = change.state === "returned" ? undefined : liveHandoff(change);
   const reasons = [...blockers];
@@ -115,19 +95,19 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
       message: `Changes were requested on PR #${live.pr.number}; update the artifacts and hand off again.`,
     });
   } else {
-    reasons.push(
-      ...evaluateApprovals({
-        ctx,
-        change,
-        type,
-        phase,
-        requirements: required,
-        approvers: live.approvals.map((a) => a.by),
-        raiser: live.by,
-      }).reasons,
+    // The gate is approved when the PR merges; until then the PR is what the change waits on.
+    const approved = prApprovers(
+      live,
+      live.approvals.map((a) => a.by),
     );
+    reasons.push({
+      code: "pr-not-merged",
+      message: approved.length
+        ? `PR #${live.pr.number} is approved (${approved.join(", ")}) but not merged yet: ${live.pr.url}`
+        : `Waiting for PR #${live.pr.number} to be approved and merged on the Git host: ${live.pr.url}`,
+    });
   }
-  return { ...base, phase, next, required, ...(live ? { handoff: live } : {}), blockers, reasons };
+  return { ...base, phase, next, ...(live ? { handoff: live } : {}), blockers, reasons };
 }
 
 export interface Readiness {
@@ -141,7 +121,7 @@ export interface Readiness {
 /**
  * Whether a change can move to its next state now: required artifacts exist and are filled
  * in, no open blocking finding or knowledge gap sits on the phase's gate (newest round),
- * and the hand-off PR has the approvals it needs (as last synced from the Git host).
+ * and the hand-off PR has merged (as last synced from the Git host).
  */
 export async function canAdvance(
   change: ChangeLifecycle | string,
@@ -195,7 +175,5 @@ function nextStep(a: Assessment): string {
       : `Ready to raise "${name}".`;
   if (a.handoff.state === "changes-requested")
     return `Update the artifacts and hand off again on PR #${a.handoff.pr.number}.`;
-  return a.reasons.length
-    ? `Waiting for approvals on PR #${a.handoff.pr.number}; sync to check again.`
-    : `Approvals are in on PR #${a.handoff.pr.number}; sync to merge it.`;
+  return `Merge PR #${a.handoff.pr.number} once it is approved (${a.handoff.pr.url}); syncing then moves the change on.`;
 }

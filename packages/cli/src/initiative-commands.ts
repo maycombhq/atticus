@@ -46,7 +46,7 @@ export async function initiativeNew(
 ): Promise<number> {
   if (!o.title || !o.journey || !o.by) {
     io.err(
-      `Usage: atticus initiative new "<title>" --journey <${JOURNEYS.join("|")}> --by <you> [--release YYYY-MM-DD]`,
+      `Usage: atticus initiative new "<title>" --journey <${JOURNEYS.join("|")}> [--by <you>] [--release YYYY-MM-DD]`,
     );
     return 2;
   }
@@ -90,7 +90,7 @@ export async function initiativePlan(
 ): Promise<number> {
   if (!id || !o.by) {
     io.err(
-      "Usage: atticus initiative plan <id> --target <system> [--release YYYY-MM-DD] --by <you> [--dry-run]",
+      "Usage: atticus initiative plan <id> --target <system> [--release YYYY-MM-DD] [--by <you>] [--dry-run]",
     );
     return 2;
   }
@@ -195,7 +195,7 @@ export async function requestFromTeam(
   deps: InitiativeDeps = {},
 ): Promise<number> {
   if (!initiativeId || !partyId || !o.by) {
-    io.err("Usage: atticus initiative request <id> <party> --by <you> [--system s]...");
+    io.err("Usage: atticus initiative request <id> <party> [--by <you>] [--system s]...");
     return 2;
   }
   try {
@@ -230,7 +230,7 @@ export async function initiativeCommitment(
 ): Promise<number> {
   const states = ["open", "at-risk", "done", "slipped"];
   if (!id || !status || !o.by || !states.includes(status)) {
-    io.err(`Usage: atticus initiative commit <commitment> <${states.join("|")}> --by <you>`);
+    io.err(`Usage: atticus initiative commit <commitment> <${states.join("|")}> [--by <you>]`);
     return 2;
   }
   try {

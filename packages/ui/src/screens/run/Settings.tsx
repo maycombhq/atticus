@@ -39,8 +39,6 @@ interface Settings {
   gates: {
     id: string;
     phase: string;
-    approvers: string[];
-    minApprovals: number;
     checklists: string[];
     checks: string[];
     maxAuthorRounds: number;
@@ -416,14 +414,14 @@ export function Settings() {
               <div className="stack">
                 <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
                   The critic runs at every gate; the org pack can add checks, never remove lenses.
-                  Constitution rules can't be waived.
+                  Constitution rules can't be waived. A gate is approved when its hand-off PR
+                  merges; your Git host decides who may approve.
                 </p>
                 <table className="run-table">
                   <thead>
                     <tr>
                       <th>Gate</th>
                       <th>Phase</th>
-                      <th>Approvers</th>
                       <th>Checklists</th>
                       <th>Checks</th>
                       <th>Author rounds</th>
@@ -434,9 +432,6 @@ export function Settings() {
                       <tr key={g.id}>
                         <td className="mono">{g.id}</td>
                         <td>{g.phase}</td>
-                        <td>
-                          {g.minApprovals} of {g.approvers.join(", ")}
-                        </td>
                         <td>{g.checklists.join(", ") || "-"}</td>
                         <td>{g.checks.join(", ") || "-"}</td>
                         <td>{g.maxAuthorRounds}</td>

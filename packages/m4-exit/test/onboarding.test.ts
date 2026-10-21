@@ -1,7 +1,5 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { inboxFor } from "../../ui/src/app/roles.js";
+import { inboxOf } from "../../ui/src/app/inbox.js";
 import { app, atticus, Clock, json, sandbox } from "./helpers.js";
 
 /**
@@ -66,26 +64,21 @@ describe("the onboarding bars", () => {
     expect(clock.total).toBeLessThan(HOUR / 12);
   });
 
-  it("a new team member starts in their view from their group and clears their first item", async () => {
+  it("a new team member opens the app as themselves and clears their first item", async () => {
     const { root } = await sandbox();
     expect((await atticus(root, "scan")).code).toBe(0);
-    // Their directory groups, as their machine knows them; Forge Architects maps to architect.
-    await mkdir(join(root, ".atticus"), { recursive: true });
-    await writeFile(join(root, ".atticus/me.yaml"), "groups: [Forge Architects]\n");
 
     const clock = new Clock();
     const ui = await app(root, "ari");
     try {
-      const me = await ui.call<{ view: string; source: string; approvals: { action: string }[] }>(
-        "GET",
-        "/api/me",
-      );
-      expect(me.body).toMatchObject({ view: "architect", source: "group" });
-      // Ownership, not the view, grants approvals: the group may waive findings.
-      expect(me.body.approvals.map((a) => a.action)).toEqual(["waiver"]);
-      clock.lap("open the app: the view comes from the group");
+      // ADR 0073: the person is their Git user; there is no view to pick and nothing to approve here.
+      const me = await ui.call<Record<string, unknown>>("GET", "/api/me");
+      expect(me.body).toMatchObject({ user: "ari" });
+      expect(me.body).not.toHaveProperty("view");
+      expect(me.body).not.toHaveProperty("approvals");
+      clock.lap("open the app");
 
-      const [changes, findings, triage, questions, todo, approvals] = await Promise.all([
+      const [changes, findings, triage, questions, todo] = await Promise.all([
         ui.call<{ id: string; title: string; type: string; state: string }[]>(
           "GET",
           "/api/changes",
@@ -109,30 +102,19 @@ describe("the onboarding bars", () => {
           "/api/view/questions",
         ),
         ui.call<{ steps: { id: string; title: string; system: string }[] }>("GET", "/api/todo"),
-        ui.call<
-          {
-            change: string;
-            title: string;
-            phase: string;
-            pr: string;
-            kind: "review" | "revise";
-            because: string;
-          }[]
-        >("GET", "/api/me/approvals"),
       ]);
-      const inbox = inboxFor(me.body.view, {
+      const inbox = inboxOf({
         changes: changes.body,
         findings: findings.body,
         triage: triage.body.data.items,
         questions: questions.body.data?.questions ?? [],
         steps: todo.body.steps,
-        approvals: approvals.body,
       });
       expect(inbox.length).toBeGreaterThan(0);
-      const first = inbox[0]!;
-      clock.lap("Home lists what waits on them");
+      clock.lap("Home lists what needs a person");
 
-      // On the sandbox an architect's first item is a diagram name to confirm.
+      // On the sandbox one of those items is a diagram name to confirm.
+      const first = inbox.find((i) => i.kind === "triage")!;
       expect(first).toMatchObject({ kind: "triage", href: "#/intake" });
       const item = triage.body.data.items.find((t) => t.summary === first.title)!;
       const decided = await ui.call("POST", `/api/triage/${encodeURIComponent(item.id)}/decide`, {

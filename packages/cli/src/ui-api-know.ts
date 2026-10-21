@@ -3,7 +3,7 @@ import { initiativeStatus, readView } from "@maycombhq/initiatives";
 import { systemGuide } from "@maycombhq/site";
 import { catalogRecords, openChanges } from "./site-commands.js";
 import { baselineCommand, setupSteps } from "./baseline-commands.js";
-import { meView } from "./ui-api-me.js";
+
 import { doctorChecks, type DoctorCheck } from "./doctor.js";
 import {
   badRequest,
@@ -155,20 +155,8 @@ export function uiKnowRoutes(r: Router, ctx: ServerContext): Router {
     .add("POST", "/api/baseline", async ({ body }) => {
       const b = Api.BaselineRequest.safeParse(body ?? {});
       if (!b.success) throw badRequest("Some fields aren't right.");
-      // Accepting the catalog is a catalog decision: when roles.yaml names who may make those
-      // (approvals.catalog-assert), only they may; ownership decides, never the view.
-      const op = await import("@maycombhq/core").then((m) =>
-        m.loadOrgPack(m.orgPackDirOf(ctx.root)),
-      );
-      if (op.roles.approvals["catalog-assert"]) {
-        const me = await meView(ctx.root, ctx.user);
-        if (!me.approvals.some((a) => a.action === "catalog-assert"))
-          throw new HttpError(
-            403,
-            "You can't accept the catalog",
-            "roles.yaml says who may make catalog decisions (approvals.catalog-assert); ask one of them.",
-          );
-      }
+      // Accepting the catalog writes catalog/baseline.yaml with the person's name; it reaches
+      // main through a pull request like any other metarepo file (ADR 0073). No role is checked.
       const out: string[] = [];
       const err: string[] = [];
       const code = await baselineCommand(

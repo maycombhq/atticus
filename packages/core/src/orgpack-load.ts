@@ -40,6 +40,7 @@ export interface OrgPackProblem {
 
 export interface OrgPack {
   pack?: PackManifest;
+  /** Deprecated (ADR 0073): loaded and validated when present, read by nothing. */
   roles: Roles;
   changeTypes: z.infer<typeof ChangeTypes>;
   gates: z.infer<typeof Gates>;
@@ -133,7 +134,11 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   const pack = (await exists(join(dir, "pack.yaml")))
     ? await load(join(dir, "pack.yaml"), PackManifest)
     : undefined;
-  const roles = await single("roles.yaml", Roles, DEFAULT_ROLES);
+  // roles.yaml is deprecated (ADR 0073): a pack that has it still loads and validates, nothing
+  // reads it, and a pack without it isn't missing anything, so it is never "defaulted".
+  const roles = (await exists(join(dir, "roles.yaml")))
+    ? ((await load(join(dir, "roles.yaml"), Roles)) ?? DEFAULT_ROLES)
+    : DEFAULT_ROLES;
   const changeTypes = await single("change-types.yaml", ChangeTypes, DEFAULT_CHANGE_TYPES);
   const gates = await single("gates.yaml", Gates, DEFAULT_GATES);
   const runtime = await single("runtime.yaml", Runtime, DEFAULT_RUNTIME);

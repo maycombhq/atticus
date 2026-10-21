@@ -163,7 +163,7 @@ describe("atticus triage", () => {
     expect(text).toMatch(/ {2}at inputs\/diagrams\/forge-context\.drawio:9 \(cell ledger\)/);
     expect(text).toMatch(/ {2}1\. "Ledger Platform" is ledger-api\n {2}2\. Dismiss/);
     expect(text).toMatch(/ {2}→ Did you mean S\.GW\.SOR\?/);
-    expect(c.out.at(-1)).toBe("Decide one with: atticus triage decide <item> <option> --by <you>");
+    expect(c.out.at(-1)).toBe("Decide one with: atticus triage decide <item> <option>");
 
     const j = capture();
     await triageList(root, j.io, { json: true });

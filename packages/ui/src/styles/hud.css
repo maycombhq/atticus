@@ -123,24 +123,7 @@ a:hover {
   color: var(--muted);
   padding: 12px 12px 4px;
 }
-.nav details.all-screens > summary {
-  cursor: pointer;
-  list-style: none;
-}
-.nav details.all-screens > summary::-webkit-details-marker {
-  display: none;
-}
-.nav details.all-screens > summary::before {
-  content: "▸ ";
-}
-.nav details.all-screens[open] > summary::before {
-  content: "▾ ";
-}
-.nav .group.sub {
-  padding: 8px 12px 2px;
-  font-size: 9px;
-  opacity: 0.75;
-}
+
 .nav .ask {
   margin-top: 12px;
   border: 1px solid var(--accent);

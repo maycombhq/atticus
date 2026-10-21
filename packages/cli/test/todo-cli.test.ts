@@ -101,7 +101,7 @@ describe("atticus todo", () => {
         'request-firewall-rule                    add-transfer-limit  open   Raise a "Network firewall rule" request in the service desk',
         "open-pr-handoff-add-transfer-limit-plan  add-transfer-limit  open   Open a pull request from handoff/add-transfer-limit/plan into main",
         "report-pr-1                              add-transfer-limit  open   Record the reviews and checks on PR 1 (Plan ready) (after open-pr-handoff-add-transfer-limit-plan)",
-        "Show a step with atticus todo show <step>; record it with atticus todo done <step> --result name=value --by <you>.",
+        "Show a step with atticus todo show <step>; record it with atticus todo done <step> --result name=value.",
       ].map((l) => l.replace(/ +$/, "")),
     );
     const csv = io();

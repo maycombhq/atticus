@@ -77,9 +77,6 @@ export interface SecurityReview {
     path: string;
   }[];
   signOff: {
-    role: string;
-    why: string;
-    people: string[];
     gates: {
       gate: string;
       phase: string;
@@ -397,11 +394,10 @@ export async function securityReview(ctx: ReleaseContext): Promise<SecurityRevie
       path: f.path,
     }));
 
-  // who signs off: the security reviewer if the org uses that role, else the architect
-  const enabled = ctx.orgPack.roles.enabledOptional.includes("security-reviewer");
-  const role = enabled ? "security-reviewer" : "architect";
+  // Who signs off (ADR 0073): whoever approves the design and release hand-off PRs on the Git
+  // host. There is no role and no separate security approval.
   const gates = ctx.orgPack.gates.gates
-    .filter((g) => g.approvers.includes(role))
+    .filter((g) => g.phase === "design" || g.phase === "release")
     .map((g) => {
       const h = ctx.change.handoffs.filter((x) => x.phase === g.phase).at(-1);
       return {
@@ -412,26 +408,17 @@ export async function securityReview(ctx: ReleaseContext): Promise<SecurityRevie
               handoff: {
                 state: h.state,
                 pr: h.pr.url,
-                approvals: h.approvals.map(
-                  (a) => `${a.by} (${a.roles.join(", ")}) ${a.at.slice(0, 10)}`,
-                ),
+                approvals: h.approvals.map((a) => `${a.by} ${a.at.slice(0, 10)}`),
               },
             }
           : {}),
       };
     });
-  const people = ctx.change.owners[role] ?? [];
-  if (!people.length) gaps.push(`No ${role} is named on ${ctx.change.id} (change.yaml owners).`);
   const signOff = {
-    role,
-    why: enabled
-      ? "roles.yaml enables the security-reviewer role."
-      : "roles.yaml doesn't enable the security-reviewer role, so the architect signs off.",
-    people,
     gates,
     how: gates.length
-      ? `${/^[aeiou]/.test(role) ? "An" : "A"} ${role} approves the ${gates.map((g) => g.phase).join(" or ")} hand-off PR on the Git host; atticus change sync reads the approval. There is no separate security approval.`
-      : `No gate in gates.yaml lists ${role} as an approver, so there is no hand-off PR for this sign-off yet; add ${role} to a gate's approvers.`,
+      ? `Reviewers approve the ${gates.map((g) => g.phase).join(" and ")} hand-off PRs on the Git host with this draft in hand; merging a PR is its sign-off, and atticus change sync records it. The Git host's rules (branch protection, CODEOWNERS) decide who may approve. There is no separate security approval.`
+      : "gates.yaml has no design or release gate, so no hand-off PR carries this review yet.",
   };
 
   const review: Omit<SecurityReview, "markdown"> = {
@@ -458,7 +445,7 @@ function securityMarkdown(r: Omit<SecurityReview, "markdown">, reviewed: boolean
   const md: string[] = [
     `# Security review draft: ${r.title}`,
     "",
-    `Change \`${r.change}\`, generated ${r.today} from the catalog and the change folder. A draft for the ${r.signOff.role}: every line says where it came from, and anything Atticus couldn't find is listed as a gap.`,
+    `Change \`${r.change}\`, generated ${r.today} from the catalog and the change folder. A draft for the reviewers of the hand-off PRs: every line says where it came from, and anything Atticus couldn't find is listed as a gap.`,
     "",
     "## New or changed interfaces",
     "",
@@ -535,9 +522,6 @@ function securityMarkdown(r: Omit<SecurityReview, "markdown">, reviewed: boolean
         : "_No critic round has run yet, so there are no findings to show._",
     );
   md.push("", "## Sign-off", "");
-  md.push(
-    `- Who: ${r.signOff.role}${r.signOff.people.length ? ` (${r.signOff.people.join(", ")})` : " (no one named on the change yet)"}. ${r.signOff.why}`,
-  );
   md.push(`- How: ${r.signOff.how}`);
   for (const g of r.signOff.gates)
     md.push(

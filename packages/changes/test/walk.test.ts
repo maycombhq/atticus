@@ -91,7 +91,16 @@ describe("a Forge feature from Define to Release against the mock Git host", () 
     expect(waiting.merged).toBe(false);
     expect(codes(waiting)).toEqual(["approval-missing"]);
 
+    // pat raised it, so pat's own approval doesn't count: a PR asks someone else to review.
     gh.review(REPO, 1, "pat", "approved");
+    const own = await syncHandoff(root, ID, {
+      ...base,
+      approval: approval("pat", "2026-10-19T10:45:00Z"),
+      now: "2026-10-19T10:45:00Z",
+    });
+    expect(own.merged).toBe(false);
+    expect(own.reasons).toEqual([expect.objectContaining({ code: "self-approval", person: "pat" })]);
+    gh.review(REPO, 1, "ari", "approved");
     const s1 = await syncHandoff(root, ID, {
       ...base,
       approval: approval("pat", "2026-10-19T11:00:00Z"),
@@ -139,9 +148,13 @@ describe("a Forge feature from Define to Release against the mock Git host", () 
       now: "2026-10-19T12:30:00Z",
     });
     const pending = await canAdvance(ID, root);
-    expect(codes(pending)).toEqual(["approval-missing"]);
+    expect(codes(pending)).toEqual(["pr-not-merged"]);
+    // change status names the PR to merge, not a role to ask.
+    expect((await changeReport(root, ID)).nextStep).toBe(
+      "Merge PR #2 once it is approved (https://git.example.com/forge/forge-metarepo/pull/2); syncing then moves the change on.",
+    );
 
-    // The design's author can't approve it.
+    // The person who raised the design hand-off can't approve it.
     gh.review(REPO, 2, "ari", "approved");
     const self = await syncHandoff(root, ID, {
       ...base,
@@ -212,7 +225,7 @@ describe("a Forge feature from Define to Release against the mock Git host", () 
       approval: approval("quinn", "2026-10-20T12:00:00Z"),
       now: "2026-10-20T12:00:00Z",
     });
-    gh.review(REPO, 5, "quinn", "approved");
+    gh.review(REPO, 5, "tia", "approved");
     expect(
       await syncHandoff(root, ID, {
         ...base,
@@ -221,7 +234,7 @@ describe("a Forge feature from Define to Release against the mock Git host", () 
       }),
     ).toMatchObject({ merged: true, state: "release-ready" });
 
-    // ---- Release: delivery lead and SRE (the Forge release gate needs two approvals)
+    // ---- Release: go / no-go is the release hand-off PR (ADR 0073).
     // The Forge profile makes the release gate mandatory: the critic has reviewed it.
     await passedRound(root, ID, "release");
     await handoff(root, ID, {
@@ -255,7 +268,7 @@ describe("a Forge feature from Define to Release against the mock Git host", () 
 });
 
 describe("an emergency fix: build, release, then post-release review", () => {
-  it("skips Define and Design, refuses self-approval at release, and ends in archived", async () => {
+  it("skips Define and Design, refuses the raiser's own approval, and ends in archived", async () => {
     const root = await forgeMetarepo();
     const id = "fix-northwind-timeout";
     const dir = join(root, "openspec/changes", id);
@@ -315,26 +328,22 @@ describe("an emergency fix: build, release, then post-release review", () => {
       approval: approval("dee", "2026-10-21T03:00:00Z"),
       now: "2026-10-21T03:00:00Z",
     });
-    const required = (await changeReport(root, id)).required.map((r) => r.label);
-    expect(required).toEqual([
-      "delivery-lead (change type emergency-fix)",
-      "2 of delivery-lead, sre (gate release)",
-      "architect (high risk)",
-    ]);
+    // No roles are asked for: the release hand-off PR is go / no-go, and the Git host decides who may approve it.
+    expect(Object.keys(await changeReport(root, id))).not.toContain("required");
 
-    // dev wrote the fix and holds delivery-lead, but nobody approves their own change at release.
-    gh.review(REPO, 2, "dev", "approved");
+    // dee raised the release hand-off, so dee's own approval doesn't count.
+    gh.review(REPO, 2, "dee", "approved");
     const self = await syncHandoff(root, id, {
       ...base,
-      approval: approval("dev", "2026-10-21T03:10:00Z"),
+      approval: approval("dee", "2026-10-21T03:10:00Z"),
       now: "2026-10-21T03:10:00Z",
     });
     expect(self.merged).toBe(false);
     expect(self.reasons).toEqual(
-      expect.arrayContaining([expect.objectContaining({ code: "self-approval", person: "dev" })]),
+      expect.arrayContaining([expect.objectContaining({ code: "self-approval", person: "dee" })]),
     );
 
-    for (const who of ["dana", "sam", "ari"]) gh.review(REPO, 2, who, "approved");
+    for (const who of ["dana", "sam"]) gh.review(REPO, 2, who, "approved");
     expect(
       await syncHandoff(root, id, {
         ...base,

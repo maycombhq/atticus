@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -53,7 +54,6 @@ describe("atticus setup: the checklist until the catalog is accepted", () => {
       "repos",
       "clones",
       "scan",
-      "roles",
       "knowledge",
       "baseline",
     ]);
@@ -62,7 +62,10 @@ describe("atticus setup: the checklist until the catalog is accepted", () => {
     expect(byId.get("repos")!.done).toBe(true);
     expect(byId.get("scan")!.done).toBe(false);
     expect(byId.get("scan")!.fix).toMatch(/atticus scan/);
-    expect(byId.get("baseline")!.fix).toMatch(/atticus baseline --by/);
+    expect(byId.get("baseline")!.fix).toMatch(/atticus baseline/);
+    expect(byId.get("baseline")!.fix).toMatch(/pull request/);
+    // ADR 0073: no step maps groups to roles any more.
+    expect(steps.some((s) => /role/i.test(`${s.id} ${s.fix ?? ""}`))).toBe(false);
   });
 });
 
@@ -73,9 +76,23 @@ describe("atticus baseline", () => {
     expect(r.err).toMatch(/scan first/i);
   });
 
+  it("records the metarepo's Git user when --by isn't given (ADR 0073)", async () => {
+    const root = await metarepo(true);
+    execFileSync("git", ["init", "-q", root]);
+    execFileSync("git", ["-C", root, "config", "user.name", "Priya Nair"]);
+    execFileSync("git", ["-C", root, "config", "user.email", "priya.nair@forge.example"]);
+    const r = await run(root, "baseline");
+    expect(r.code).toBe(0);
+    expect(r.out).toMatch(/Accepted the catalog as the baseline as priya\.nair/);
+    expect(r.out).toMatch(/open a pull request/);
+    const b = CatalogBaseline.parse(
+      parse(await readFile(join(root, "catalog/baseline.yaml"), "utf8")),
+    );
+    expect(b.acceptedBy).toBe("priya.nair");
+  });
+
   it("records who accepted the catalog and what it held, and the checklist is done", async () => {
     const root = await metarepo(true);
-    expect((await run(root, "baseline")).code).toBe(2);
     const r = await run(
       root,
       "baseline",
@@ -86,7 +103,7 @@ describe("atticus baseline", () => {
     );
     expect(r.code).toBe(0);
     expect(r.out).toMatch(
-      /Accepted the catalog as the baseline: 46 records in 14 kinds, 5 systems/,
+      /Accepted the catalog as the baseline as priya: 46 records in 14 kinds, 5 systems/,
     );
     const b = CatalogBaseline.parse(
       parse(await readFile(join(root, "catalog/baseline.yaml"), "utf8")),

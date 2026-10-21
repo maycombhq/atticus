@@ -1,9 +1,10 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { userInfo } from "node:os";
+
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
 import { DEFAULT_PORT } from "@maycombhq/core";
+import { gitUser, type GitUser } from "@maycombhq/workspace";
 import { HttpError, notFound, conflict, problem, Router } from "./http.js";
 import { JobManager } from "./jobs.js";
 import { apiRoutes, type Context } from "./routes.js";
@@ -40,7 +41,10 @@ export interface ServerOptions {
   port?: number;
   /** Only the loopback address is allowed (ADR 0015). */
   host?: string;
-  /** Who is signed in (health); default the OS user. */
+  /**
+   * Who is using the app: a handle recorded as `by`. Default the metarepo's Git user
+   * (ADR 0073), else the OS user with a warning.
+   */
   user?: string;
   /** The Atticus version reported by health. */
   version?: string;
@@ -78,13 +82,6 @@ export interface RunningServer {
 
 const MAX_BODY = 4 * 1024 * 1024;
 
-function osUser(): string {
-  try {
-    return userInfo().username || "unknown";
-  } catch {
-    return "unknown";
-  }
-}
 
 function sameToken(a: string, b: string): boolean {
   const x = Buffer.from(a);
@@ -143,9 +140,11 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
   const token = randomBytes(32).toString("base64url");
   const events = new EventHub();
   const jobs = new JobManager((e) => events.publish(e));
+  const person: GitUser = o.user ? { handle: o.user, source: "given" } : await gitUser(o.root);
   const ctx: ServerContext = {
     root: o.root,
-    user: o.user ?? process.env.USER ?? process.env.USERNAME ?? osUser(),
+    user: person.handle,
+    person,
     version: o.version ?? "0.0.0",
     events,
     jobs,

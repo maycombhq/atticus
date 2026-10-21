@@ -39,7 +39,6 @@ interface Governance {
     }[];
     suggestions: { rule: string; message: string; file?: string }[];
   };
-  separation: { change: string; code: string; message: string }[];
 }
 interface Search {
   rows: { kind: string; id: string; name: string; system: string | null }[];
@@ -116,15 +115,15 @@ export function Governance() {
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
           {g.state !== "ready"
             ? "Governance"
-            : g.data.conformance.passed && g.data.separation.length === 0
-              ? "The org pack conforms and no one approves their own work."
+            : g.data.conformance.passed
+              ? "The org pack conforms."
               : "Some rules need a decision."}
         </p>
         <span className="hud">From the files and the last scan</span>
       </div>
 
       <div className="bento">
-        <Panel title="Conformance" meta="org pack checks" span="span 4">
+        <Panel title="Conformance" meta="org pack checks" span="span 6">
           <View of={g}>
             {(d) => {
               const { pass, fail, warn } = d.conformance.summary;
@@ -166,7 +165,7 @@ export function Governance() {
           </View>
         </Panel>
 
-        <Panel title="Rules and waivers" span="span 4">
+        <Panel title="Rules and waivers" span="span 6">
           <View of={g}>
             {(d) => (
               <div className="stack" style={{ gap: 0 }}>
@@ -215,32 +214,6 @@ export function Governance() {
           </View>
         </Panel>
 
-        <Panel title="Separation of duties" span="span 4">
-          <View
-            of={g}
-            empty={(d) => d.separation.length === 0}
-            emptyText="No change is waiting on someone approving their own work."
-          >
-            {(d) => (
-              <div className="stack">
-                {d.separation.map((s) => (
-                  <div key={`${s.change}${s.message}`} className="stack" style={{ gap: 4 }}>
-                    <span className="row" style={{ gap: 6 }}>
-                      <span className="chip blocking">BLOCKED</span>
-                      <a href={`#/changes/${s.change}`} className="mono" style={{ fontSize: 12 }}>
-                        {s.change}
-                      </a>
-                    </span>
-                    <span style={{ fontSize: 12.5 }}>{s.message}</span>
-                  </div>
-                ))}
-                <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  An approver can't have written the artifact.
-                </p>
-              </div>
-            )}
-          </View>
-        </Panel>
 
         <Panel title="How often rules are overridden" span="span 7">
           <View

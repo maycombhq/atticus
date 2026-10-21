@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -21,58 +22,51 @@ const call = async (method: string, path: string, body?: unknown) => {
   return { status: r.status, body: (await r.json()) as Record<string, unknown> };
 };
 
+/**
+ * ADR 0073: the person is the metarepo's Git user. The temporary metarepo has its own
+ * user.name and user.email, so the machine's own Git user doesn't matter. No network.
+ */
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "atticus-ui-me-"));
   await cp(join(FIXTURES, "forge/metarepo"), root, { recursive: true });
-  await mkdir(join(root, ".github"), { recursive: true });
+  execFileSync("git", ["init", "-q", root]);
+  execFileSync("git", ["-C", root, "config", "user.name", "Priya Nair"]);
+  execFileSync("git", ["-C", root, "config", "user.email", "priya.nair@forge.example"]);
+  // Left from ADR 0044: a view and groups, which nothing reads any more.
+  await mkdir(join(root, ".atticus"), { recursive: true });
   await writeFile(
-    join(root, ".github/CODEOWNERS"),
-    "catalog/ @forge/platform\nopenspec/changes/*/design.md @priya @forge/architects\n",
+    join(root, ".atticus/me.yaml"),
+    "groups: [Forge Architects]\nview: architect\nnotify: { digest: weekly }\n",
   );
-  srv = await startServer({ root, port: 0, user: "priya", extend: (r, ctx) => uiMeRoutes(r, ctx) });
+  srv = await startServer({ root, port: 0, extend: (r, ctx) => uiMeRoutes(r, ctx) });
 });
 afterAll(() => srv?.close());
 
-describe("who is signed in, their view and what they can approve", () => {
-  it("asks for a view when nothing maps the person to a role", async () => {
+describe("who is using the app (ADR 0073)", () => {
+  it("is the metarepo's Git user, with no view, roles or approvals", async () => {
     const me = await call("GET", "/api/me");
     expect(me.status).toBe(200);
-    expect(me.body).toMatchObject({ user: "priya", view: null, source: "pick", groups: [] });
-    const roles = me.body.roles as { id: string; core: boolean }[];
-    expect(roles.map((r) => r.id)).toContain("architect");
-    // Optional roles appear only when the org pack enables them.
-    expect(roles.map((r) => r.id)).toContain("sre");
-    expect(roles.map((r) => r.id)).not.toContain("security-reviewer");
-  });
-
-  it("defaults the view from a group the org pack maps, and names where it came from", async () => {
-    await mkdir(join(root, ".atticus"), { recursive: true });
-    await writeFile(join(root, ".atticus/me.yaml"), "groups: [Forge Architects]\n");
-    const me = await call("GET", "/api/me");
-    expect(me.body).toMatchObject({
-      view: "architect",
-      source: "group",
-      sourceGroup: "Forge Architects",
+    expect(me.body).toEqual({
+      user: "priya.nair",
+      name: "Priya Nair",
+      email: "priya.nair@forge.example",
+      source: "git",
+      ai: "on",
+      notify: { digest: "weekly" },
     });
-    // Approvals come from ownership: the group grants waivers; the view grants nothing.
-    const approvals = me.body.approvals as { action: string; because: string }[];
-    expect(approvals.map((a) => a.action)).toEqual(["waiver"]);
-    expect(approvals[0]!.because).toMatch(/Forge Architects/);
-    expect(me.body.owns).toEqual(["openspec/changes/*/design.md"]);
   });
 
-  it("remembers a chosen view per person, keeps their groups, and refuses an unknown role", async () => {
-    const put = await call("PUT", "/api/me", { view: "qa" });
+  it("has no call to choose a view or to list approvals any more", async () => {
+    expect((await call("PUT", "/api/me", { view: "qa" })).status).toBe(405);
+    expect((await call("GET", "/api/me/approvals")).status).toBe(404);
+  });
+
+  it("keeps the digest settings, and drops the old view and groups when it saves", async () => {
+    const put = await call("PUT", "/api/me/notify", { digest: "daily" });
     expect(put.status).toBe(200);
-    expect(put.body).toMatchObject({ view: "qa", source: "chosen" });
-    const saved = parse(await readFile(join(root, ".atticus/me.yaml"), "utf8")) as Record<
-      string,
-      unknown
-    >;
-    expect(saved).toEqual({ groups: ["Forge Architects"], view: "qa" });
-    // Choosing the QA view doesn't take away the approvals the group gives.
-    expect((put.body.approvals as unknown[]).length).toBe(1);
-    expect((await call("PUT", "/api/me", { view: "emperor" })).status).toBe(400);
-    expect((await call("PUT", "/api/me", { view: "security-reviewer" })).status).toBe(400);
+    expect(put.body).toMatchObject({ user: "priya.nair", notify: { digest: "daily" } });
+    expect(parse(await readFile(join(root, ".atticus/me.yaml"), "utf8"))).toEqual({
+      notify: { digest: "daily" },
+    });
   });
 });

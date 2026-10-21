@@ -3,10 +3,9 @@ import { useApi } from "../api/client.js";
 import { SCREEN_COMPONENTS } from "../screens/registry.js";
 import { NotBuilt } from "../screens/NotBuilt.js";
 import { ScreenBoundary } from "./boundary.js";
-import { MeProvider, useMe, ViewPicker } from "./me.js";
+import { MeProvider, useMe } from "./me.js";
 import { CommandPalette } from "./palette.js";
 import { replayTour, Tour } from "./tour.js";
-import { screensFor } from "./roles.js";
 import { GROUPS, SCREENS, screenOf, type ScreenDef } from "./screens.js";
 
 interface Health {
@@ -45,47 +44,28 @@ function Logo() {
   );
 }
 
+/** One navigation for everyone (ADR 0073): every screen, in the canvas's menu groups. */
 function Nav({ current }: { current: ScreenDef }) {
-  const { me } = useMe();
-  const mine = screensFor(me?.view ?? null, me?.roles ?? []);
-  const inMine = mine.includes(current.id);
   return (
     <nav aria-label="Main" className="nav">
       <div className="brand">
         <Logo />
         ATTICUS
       </div>
-      <div style={{ padding: "4px 12px 8px" }}>
-        <ViewPicker id="view-picker" compact />
-      </div>
-      <div role="group" aria-label="Your screens">
-        <div className="group">My work</div>
-        {mine.map((id) => {
-          const s = SCREENS.find((x) => x.id === id)!;
-          return (
-            <a key={id} href={`#/${id}`} aria-current={id === current.id ? "page" : undefined}>
+      {GROUPS.map((g) => (
+        <div key={g} role="group" aria-label={g}>
+          <div className="group">{g}</div>
+          {SCREENS.filter((s) => s.group === g).map((s) => (
+            <a
+              key={s.id}
+              href={`#/${s.id}`}
+              aria-current={s.id === current.id ? "page" : undefined}
+            >
               {s.label}
             </a>
-          );
-        })}
-      </div>
-      <details className="all-screens" open={!inMine || undefined}>
-        <summary className="group">All screens · {SCREENS.length}</summary>
-        {GROUPS.map((g) => (
-          <div key={g} role="group" aria-label={g}>
-            <div className="group sub">{g}</div>
-            {SCREENS.filter((s) => s.group === g).map((s) => (
-              <a
-                key={s.id}
-                href={`#/${s.id}`}
-                aria-current={s.id === current.id && !inMine ? "page" : undefined}
-              >
-                {s.label}
-              </a>
-            ))}
-          </div>
-        ))}
-      </details>
+          ))}
+        </div>
+      ))}
       <a className="ask" href="#/explore">
         <span
           aria-hidden="true"
@@ -121,6 +101,27 @@ function AiChip() {
   );
 }
 
+/** Who Atticus records you as: your Git user, with a warning when the OS user stood in. */
+function Person({ health }: { health: Health }) {
+  const { me } = useMe();
+  const who = me?.name ? `${me.name} (${health.user})` : health.user;
+  return (
+    <>
+      {me?.warning && (
+        <span className="chip warn" title={me.warning} role="note" aria-label={me.warning}>
+          SET YOUR GIT USER
+        </span>
+      )}
+      <span
+        className="chip dim"
+        title={`${health.root}${me?.email ? ` · ${me.email}` : ""} · recorded as ${health.user}`}
+      >
+        {who} · v{health.version}
+      </span>
+    </>
+  );
+}
+
 function TopBar({ health }: { health?: Health }) {
   const [q, setQ] = useState("");
   const submit = (e: FormEvent) => {
@@ -148,18 +149,14 @@ function TopBar({ health }: { health?: Health }) {
         type="button"
         className="btn"
         onClick={replayTour}
-        title="Replay the tour of your view"
+        title="Replay the tour"
       >
         Help
       </button>
       <span className="hud" style={{ fontSize: 9.5, whiteSpace: "nowrap" }} aria-hidden="true">
         Ctrl K
       </span>
-      {health && (
-        <span className="chip dim" title={health.root}>
-          {health.user} · v{health.version}
-        </span>
-      )}
+      {health && <Person health={health} />}
     </header>
   );
 }

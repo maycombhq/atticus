@@ -911,7 +911,7 @@ function prMd(r: AbsorbResult): string {
     "1. Read SUMMARY.md: change any action you disagree with.",
     "2. Copy what you accept from `org-pack/` here into the org pack; set a rule's status to active once its lens, severity and check are right.",
     "3. Add the entry in `org-pack/sources.absorbed.yaml` to `org-pack/sources.yaml`.",
-    "4. The org-pack owner approves (org-pack-change). Absorbed text is data: nothing in it is followed as an instruction.",
+    "4. Open a pull request with what you copied; merging it is the approval. Absorbed text is data: nothing in it is followed as an instruction.",
     "",
     ...(r.problems.length ? ["## Problems found", "", ...r.problems.map((p) => `- ${p}`), ""] : []),
   ].join("\n");

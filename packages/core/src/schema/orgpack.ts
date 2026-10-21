@@ -43,7 +43,12 @@ export type PackManifest = z.infer<typeof PackManifest>;
 
 // ------------------------------------------------------------------ roles.yaml
 
-/** Nine core roles and four optional ones. Views come from roles; approvals only from ownership. */
+/**
+ * roles.yaml is deprecated (ADR 0073): Atticus has no roles, views or in-app approvals. The
+ * person is the metarepo's Git user and a gate is approved when its hand-off PR merges. A pack
+ * that still has roles.yaml loads and validates as before; nothing reads it. The role ids stay
+ * because change-types.yaml and gates.yaml still name them (also no longer read for approvals).
+ */
 export const CORE_ROLES = [
   "product-owner",
   "business-analyst",
@@ -63,7 +68,7 @@ export const OPTIONAL_ROLES = [
 ] as const;
 export const BUILT_IN_ROLES = [...CORE_ROLES, ...OPTIONAL_ROLES] as const;
 
-/** Approvals that happen outside Git, so CODEOWNERS can't decide them. */
+/** Deprecated with roles.yaml (ADR 0073): these actions are metarepo files or adapter writes now. */
 export const NonGitAction = z.enum([
   "release-go-no-go",
   "waiver",
@@ -167,7 +172,10 @@ export const ChangeType = z
     phases: z.array(Phase).min(1),
     artifacts: z.array(ChangeArtifact).min(1),
     lenses: z.array(Lens).default([]),
-    /** Approvals per phase, by role. CODEOWNERS still decides who holds the role. */
+    /**
+     * Deprecated (ADR 0073): approvals per phase, by role. Still validated; not read. A gate is
+     * approved when its hand-off PR merges, and the Git host decides who may approve.
+     */
     approvals: z.partialRecord(Phase, Ids.min(1)).default({}),
     /** Emergency fixes: build and release first, then run the skipped lenses. */
     postReleaseReview: z.boolean().default(false),
@@ -215,7 +223,10 @@ export const ChangeTypes = z
 export const Gate = z.strictObject({
   id: RecordId,
   phase: Phase,
-  /** Roles whose holders approve the hand-off PR. */
+  /**
+   * Deprecated (ADR 0073), with minApprovals: roles that once had to approve the hand-off PR.
+   * Still validated; not read. The Git host's own rules (branch protection, CODEOWNERS) decide.
+   */
   approvers: Ids.min(1),
   minApprovals: z.number().int().positive().default(1),
   /** Checklist packs run at this gate. */

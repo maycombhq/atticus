@@ -2,17 +2,13 @@
 
 Change add-transfer-limit (Add transfer limit), type feature, moves from define to design when this pull request merges.
 
-Approving this pull request approves the hand-off. Atticus merges it once the required approvals are in.
+Merging this pull request approves the hand-off. The Git host's own rules (branch protection, CODEOWNERS) decide who may approve it.
 
 ### Files
 
 - openspec/changes/add-transfer-limit/brief.md
 - openspec/changes/add-transfer-limit/proposal.md
 - openspec/changes/add-transfer-limit/specs/transfer-limits/spec.md
-
-### Required approvals
-
-- product-owner (change type feature)
 
 ### Reviewers
 

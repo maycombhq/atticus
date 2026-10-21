@@ -489,7 +489,7 @@ export async function glossaryDefine(
   io: Output,
 ): Promise<number> {
   if (!term || !definition || !o.by) {
-    io.err('Usage: atticus glossary define <term> "<definition>" --by <handle> [--owner <team>]');
+    io.err('Usage: atticus glossary define <term> "<definition>" [--by <handle>] [--owner <team>]');
     return 2;
   }
   return decide(
@@ -518,7 +518,7 @@ export async function glossaryLink(
   io: Output,
 ): Promise<number> {
   if (!term || !recordId || !o.by) {
-    io.err("Usage: atticus glossary link <term> <record-id | schema#field> --by <handle>");
+    io.err("Usage: atticus glossary link <term> <record-id | schema#field> [--by <handle>]");
     return 2;
   }
   return decide(
@@ -547,7 +547,7 @@ export async function glossaryAlias(
   io: Output,
 ): Promise<number> {
   if (!term || !names.length || !o.by) {
-    io.err('Usage: atticus glossary alias <term> "<other name>"... --by <handle>');
+    io.err('Usage: atticus glossary alias <term> "<other name>"... [--by <handle>]');
     return 2;
   }
   return decide(

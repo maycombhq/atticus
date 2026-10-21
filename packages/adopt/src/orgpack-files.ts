@@ -3,7 +3,6 @@ import { stringify } from "yaml";
 import {
   DEFAULT_CHANGE_TYPES,
   DEFAULT_GATES,
-  DEFAULT_ROLES,
   DEFAULT_RUNTIME,
   DEFAULT_TEST_STRATEGY,
   type Sources,
@@ -29,7 +28,7 @@ export interface StartingPack {
   platform: string;
   owner: string;
   sources: z.input<typeof Sources>;
-  /** Write the default roles, change types, gates, runtime and test strategy as files. */
+  /** Write the default change types, gates, runtime and test strategy as files (roles.yaml is deprecated, ADR 0073). */
   defaults: boolean;
   platformName?: string;
 }
@@ -82,7 +81,6 @@ export async function writeStartingPack(dir: string, p: StartingPack): Promise<s
   ];
   if (p.defaults)
     files.push(
-      ["roles.yaml", yaml(DEFAULT_ROLES, DEFAULT_HEADER)],
       ["change-types.yaml", yaml(DEFAULT_CHANGE_TYPES, DEFAULT_HEADER)],
       ["gates.yaml", yaml(DEFAULT_GATES, DEFAULT_HEADER)],
       ["runtime.yaml", yaml(DEFAULT_RUNTIME, DEFAULT_HEADER)],

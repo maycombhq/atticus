@@ -49,7 +49,7 @@ const README = (name: string, platform: string) => `# ${name}
 
 The Atticus metarepo for the ${platform} platform.
 
-- \`org-pack/\`: how this organisation works (roles, change types, gates, patterns, checklists, skills). Changed only through pull requests.
+- \`org-pack/\`: how this organisation works (change types, gates, patterns, checklists, skills). Changed only through pull requests.
 - \`catalog/generated/\`: the catalog Atticus writes on every scan, one YAML record per file. \`catalog/curated/\` holds people's decisions.
 - \`openspec/\`: changes (\`openspec/changes/<id>/\`) and the living specs.
 - \`workspace/\`, \`.index/\`, \`.runs/\`: local state, never committed.

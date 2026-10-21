@@ -19,8 +19,6 @@ handoffs:
     approvals:
       - at: 2026-10-21T02:45:00Z
         by: dee
-        roles:
-          - developer
     artifacts:
       - path: brief.md
         sha256: fad73f54a1459ea8f4a81507ecd96aaff0ea1cbb16932c5115651a3e00ab7237
@@ -35,7 +33,6 @@ handoffs:
       number: 1
       url: https://git.example.com/forge/forge-metarepo/pull/1
     reviewers:
-      - dee
       - forge/platform
       - pat
     updatedAt: 2026-10-21T02:45:00Z
@@ -43,17 +40,9 @@ handoffs:
     state: merged
     approvals:
       - at: 2026-10-21T03:20:00Z
-        by: ari
-        roles:
-          - architect
-      - at: 2026-10-21T03:20:00Z
         by: dana
-        roles:
-          - delivery-lead
       - at: 2026-10-21T03:20:00Z
         by: sam
-        roles:
-          - sre
     artifacts: []
     branch: handoff/fix-northwind-timeout/release
     by: dee
@@ -61,11 +50,7 @@ handoffs:
     pr:
       number: 2
       url: https://git.example.com/forge/forge-metarepo/pull/2
-    reviewers:
-      - ari
-      - dana
-      - dev
-      - sam
+    reviewers: []
     updatedAt: 2026-10-21T03:20:00Z
 history:
   - from: draft

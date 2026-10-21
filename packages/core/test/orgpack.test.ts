@@ -199,12 +199,33 @@ async function pack(files: Record<string, string>): Promise<string> {
   return dir;
 }
 
+describe("roles.yaml is deprecated (ADR 0073)", () => {
+  it("still loads and validates a pack that has it, approvals and all", async () => {
+    const op = await loadOrgPack(
+      await pack({
+        "roles.yaml":
+          "schemaVersion: 1\nenabledOptional: [sre]\nmappings: [ { group: Forge Delivery, role: delivery-lead } ]\napprovals:\n  release-go-no-go: { roles: [delivery-lead] }\n  catalog-assert: { people: [ari] }\n",
+      }),
+    );
+    expect(op.problems).toEqual([]);
+    expect(op.defaulted).not.toContain("roles.yaml");
+    expect(op.roles.approvals["catalog-assert"]?.people).toEqual(["ari"]);
+  });
+
+  it("still reports a broken one, so an old pack doesn't hide a typo", async () => {
+    const op = await loadOrgPack(
+      await pack({ "roles.yaml": "schemaVersion: 1\nmappings: [ { group: g, role: wizard } ]\n" }),
+    );
+    expect(op.problems.map((p) => p.file)).toContain("roles.yaml");
+  });
+});
+
 describe("loadOrgPack", () => {
   it("works with an empty folder: every file defaults", async () => {
     const op = await loadOrgPack(await pack({}));
     expect(op.problems).toEqual([]);
+    // roles.yaml is deprecated (ADR 0073): not having it isn't a default being used.
     expect(op.defaulted).toEqual([
-      "roles.yaml",
       "change-types.yaml",
       "gates.yaml",
       "runtime.yaml",

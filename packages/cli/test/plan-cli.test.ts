@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { ReplayRuntime } from "@maycombhq/ai";
-import { MockWorkTracker } from "@maycombhq/adapters";
+import { fileStepStore, MockWorkTracker } from "@maycombhq/adapters";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import {
   adoSync,
@@ -109,7 +110,9 @@ describe("atticus plan and ado sync", () => {
     expect(dry.out[0]).toBe(
       "Dry run: 15 work-item writes for add-transfer-limit. Nothing was sent.",
     );
-    expect(dry.out.at(-1)).toBe("Approve every write listed with --approve <you>.");
+    expect(dry.out.at(-1)).toBe(
+      "Approve every write listed with --approve (you approve as your Git user).",
+    );
     expect(wt.journal).toEqual([]);
     const live = io();
     expect(
@@ -157,6 +160,27 @@ describe("atticus plan and ado sync", () => {
       "  create gateway-route|gw-northwind-v2: a step for a person (request-gateway-route); see atticus todo.",
       "  create firewall-rule|gw-northwind-v2: a step for a person (request-firewall-rule); see atticus todo.",
     ]);
+  });
+
+  it("still needs --approve for every write now that the person is the Git user (ADR 0073)", async () => {
+    const { main } = await import("../src/main.js");
+    const r = await root({ manual: true });
+    await planStories(r, CHANGE, {}, io().io, await deps());
+    execFileSync("git", ["init", "-q", r]);
+    execFileSync("git", ["-C", r, "config", "user.name", "Bao Tran"]);
+    execFileSync("git", ["-C", r, "config", "user.email", "bao.tran@forge.example"]);
+    // No --approve: a dry run, whoever you are; nothing is written for a person to do.
+    const dry = io();
+    expect(await main(["ado", "sync", CHANGE, "--root", r], dry.io)).toBe(0);
+    expect(dry.out[0]).toMatch(
+      /^Dry run: \d+ work-item writes for add-transfer-limit\. Nothing was sent\.$/,
+    );
+    expect(await fileStepStore(r).list()).toEqual([]);
+    // --approve alone: the Git user approves each write.
+    const live = io();
+    expect(await main(["ado", "sync", CHANGE, "--approve", "--root", r], live.io)).toBe(0);
+    expect(live.out[0]).toMatch(/^Sent \d+ work-item writes for add-transfer-limit\.$/);
+    expect((await fileStepStore(r).list()).length).toBeGreaterThan(0);
   });
 
   it("drafts templates from knowledge as a proposal", async () => {

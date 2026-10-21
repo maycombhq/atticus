@@ -22,12 +22,15 @@ import {
   type CatalogIndex,
 } from "@maycombhq/index";
 import { readRound, reviewedGates, roundsOf } from "@maycombhq/naysayer";
-import { baseClonePath, loadRepos } from "@maycombhq/workspace";
+import { baseClonePath, loadRepos, type GitUser } from "@maycombhq/workspace";
 import { badRequest, intParam, notFound, strParam, type Router } from "./http.js";
 
 export interface Context {
   root: string;
+  /** The person's handle, recorded as `by` on everything they do (ADR 0073). */
   user: string;
+  /** The Git user behind `user`: name, email, and a warning when the OS user stood in. */
+  person?: GitUser;
   version: string;
 }
 

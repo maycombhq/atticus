@@ -267,7 +267,7 @@ export async function outcomeRecord(
 ): Promise<number> {
   if (!id || !measure || !o.value?.trim() || !o.by) {
     io.err(
-      'Usage: atticus outcome record <change> <measure id or number> --value "<what you measured>" --by <you> [--note "<how>"]',
+      'Usage: atticus outcome record <change> <measure id or number> --value "<what you measured>" [--by <you>] [--note "<how>"]',
     );
     return 2;
   }

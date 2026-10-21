@@ -71,7 +71,7 @@ function statusLine(s: GateStatus): string {
   if (s.mayProceed) return `The ${s.gate} gate may proceed: nothing blocking is open.`;
   if (s.humanDecides)
     return `The ${s.gate} gate is closed (${counts}) and its ${s.maxRounds} critic rounds are used: a person decides now.`;
-  return `The ${s.gate} gate is closed: ${counts}. Act on each with atticus finding <id> <action> --by <you>.`;
+  return `The ${s.gate} gate is closed: ${counts}. Act on each with atticus finding <id> <action>.`;
 }
 
 /**
@@ -377,7 +377,7 @@ export async function findingAction(
 ): Promise<number> {
   if (!changeId || !findingId || !action || !o.by) {
     io.err(
-      "Usage: atticus finding <change> <finding> <apply|edit-and-apply|not-relevant|waive|ask> --by <you> [--gate <gate>] [--reason <why>] [--asked-of <who>] [--edit <patch file>]",
+      "Usage: atticus finding <change> <finding> <apply|edit-and-apply|not-relevant|waive|ask> [--by <you>] [--gate <gate>] [--reason <why>] [--asked-of <who>] [--edit <patch file>]",
     );
     return 2;
   }

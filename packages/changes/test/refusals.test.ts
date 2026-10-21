@@ -48,7 +48,7 @@ async function inDesign(
     approval: approval("pat", T("10:00")),
     now: T("10:00"),
   });
-  gh.review(REPO, 1, "pat", "approved");
+  gh.review(REPO, 1, "ari", "approved");
   await syncHandoff(root, ID, {
     gitHost: gh,
     repo: REPO,
@@ -168,40 +168,21 @@ describe("refusals", () => {
     expect(r.reasons[0]).toMatchObject({ code: "bad-finding" });
   });
 
-  it("refuses Design when personal data is touched and roles.yaml has no privacy role", async () => {
-    const root = await forgeMetarepo({ personal: ["ledger-db.account.holder-name"] });
-    const gh = host();
-    await inDesign(root, gh);
-    const report = await changeReport(root, ID);
-    expect(report.privacy).toMatchObject({
-      touched: true,
-      records: [{ id: "ledger-db.account.holder-name", classification: "personal" }],
-      role: "privacy-officer",
-      roleDefined: false,
-      phase: "design",
-    });
-    const e = await handoff(root, ID, {
-      gitHost: gh,
-      repo: REPO,
-      by: "ari",
-      approval: approval("ari", T("12:30")),
-    }).catch((x: unknown) => x);
-    expect(e).toMatchObject({ code: "refused" });
-    expect((e as { reasons: { code: string; message: string }[] }).reasons).toEqual([
-      expect.objectContaining({ code: "privacy-role-missing" }),
-    ]);
-    expect((e as { reasons: { message: string }[] }).reasons[0]!.message).toBe(
-      "This change touches personal data (ledger-db.account.holder-name), so the privacy-officer role must approve it, but roles.yaml doesn't define that role.",
-    );
-  });
-
-  it("requires the privacy role's approval when roles.yaml defines it", async () => {
+  it("says personal data is touched on the hand-off PR, and asks for no role (ADR 0073)", async () => {
+    // roles.yaml with approvals and a privacy role is deprecated: it still loads, nothing reads it.
     const root = await forgeMetarepo({
       personal: ["ledger-db.account.holder-name"],
       roles: ROLES_WITH_PRIVACY,
     });
     const gh = host();
     await inDesign(root, gh, { ...FEATURE_OWNERS, "privacy-officer": ["priya"] });
+    const report = await changeReport(root, ID);
+    expect(report.problems).toEqual([]);
+    expect(report.privacy).toEqual({
+      touched: true,
+      records: [{ id: "ledger-db.account.holder-name", classification: "personal" }],
+      phase: "design",
+    });
     await handoff(root, ID, {
       gitHost: gh,
       repo: REPO,
@@ -209,39 +190,31 @@ describe("refusals", () => {
       approval: approval("ari", T("12:30")),
       now: T("12:30"),
     });
-    expect((await changeReport(root, ID)).required.map((r) => r.label)).toEqual([
-      "architect (change type feature, gate design)",
-      "privacy-officer (personal data)",
-    ]);
+    const body = (
+      gh.journal.filter((j) => j.method === "createPullRequest").at(-1)!.args[0] as {
+        body: string;
+      }
+    ).body;
+    expect(body).toContain(
+      "Touches personal data (ledger-db.account.holder-name); review it with the design hand-off.",
+    );
+    expect(body).not.toContain("privacy-officer");
+    // Any approval from someone other than the raiser, with the host's rules met, is the approval.
     gh.review(REPO, 2, "avery", "approved");
-    const s = await syncHandoff(root, ID, {
-      gitHost: gh,
-      repo: REPO,
-      approval: approval("avery", T("13:00")),
-      now: T("13:00"),
-    });
-    expect(s.merged).toBe(false);
-    expect(s.reasons).toEqual([
-      expect.objectContaining({ code: "approval-missing", role: "privacy-officer" }),
-    ]);
-    gh.review(REPO, 2, "priya", "approved");
     expect(
       await syncHandoff(root, ID, {
         gitHost: gh,
         repo: REPO,
-        approval: approval("avery", T("14:00")),
-        now: T("14:00"),
+        approval: approval("avery", T("13:00")),
+        now: T("13:00"),
       }),
     ).toMatchObject({ merged: true, state: "plan" });
   });
 
-  it("names a role nobody holds on the change", async () => {
+  it("names the PR the change waits on until it merges", async () => {
     const root = await forgeMetarepo();
     const gh = host();
-    const noArchitect = Object.fromEntries(
-      Object.entries(FEATURE_OWNERS).filter(([role]) => role !== "architect"),
-    );
-    await inDesign(root, gh, noArchitect);
+    await inDesign(root, gh);
     await handoff(root, ID, {
       gitHost: gh,
       repo: REPO,
@@ -250,8 +223,22 @@ describe("refusals", () => {
       now: T("12:30"),
     });
     const r = await canAdvance(ID, root);
-    expect(r.reasons[0]!.message).toBe(
-      "Needs approval from architect (change type feature, gate design). Nobody holds architect on this change; add them under owners in change.yaml.",
+    expect(r.reasons).toEqual([
+      {
+        code: "pr-not-merged",
+        message:
+          "Waiting for PR #2 to be approved and merged on the Git host: https://git.example.com/forge/forge-metarepo/pull/2",
+      },
+    ]);
+    // Without the person's approval, a PR that is ready is reported, never merged.
+    gh.review(REPO, 2, "avery", "approved");
+    const ready = await syncHandoff(root, ID, { gitHost: gh, repo: REPO, now: T("13:00") });
+    expect(ready).toMatchObject({ merged: false, ready: true, reasons: [] });
+    expect(gh.journal.filter((j) => j.method === "merge")).toHaveLength(1);
+    // Merged on the Git host itself (a person clicks merge there): the next sync moves it on.
+    await gh.merge(REPO, 2, approval("avery", T("13:30")));
+    expect(await syncHandoff(root, ID, { gitHost: gh, repo: REPO, now: T("14:00") })).toMatchObject(
+      { merged: true, state: "plan" },
     );
   });
 

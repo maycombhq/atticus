@@ -1,11 +1,10 @@
-import { accessible, expect, forgeJourney, open, test, workAs } from "../support/app.js";
+import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
 
 /** Delivery lead: the service-desk queue, the manual steps, the release plan and go/no-go. */
 const app = forgeJourney();
 
 test("works the service-desk queue", async ({ page }) => {
   await open(page, app(), "home");
-  await workAs(page, "delivery-lead");
   await open(page, app(), "service-desk");
   await expect(page.getByText("Gateway proxy deployment").first()).toBeVisible();
   await expect(page.getByText(/Missing: fill it in snow\.md/).first()).toBeVisible();
@@ -32,7 +31,6 @@ test("sees the releases across changes and their digest on Home", async ({ page 
     "add-transfer-limit",
   );
   await open(page, app(), "home");
-  await workAs(page, "delivery-lead");
   await page.getByRole("button", { name: "Show my digest" }).click();
   await expect(page.getByRole("status").filter({ hasText: /^Atticus: / })).toBeVisible();
   await accessible(page, "home with the digest");

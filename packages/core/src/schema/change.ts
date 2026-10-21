@@ -68,11 +68,14 @@ export const ChangeHandoff = z.strictObject({
   by: Handle,
   openedAt: IsoDateTime,
   updatedAt: IsoDateTime.optional(),
-  /** People asked to review: CODEOWNERS of the phase's files and holders of the required roles. */
+  /** People asked to review: CODEOWNERS of the phase's files. */
   reviewers: z.array(Handle).default([]),
-  /** Approvals that counted, as last read from the PR, with the role each one filled. */
+  /**
+   * Approving reviews on the PR, as last read from the Git host. `roles` is deprecated (ADR
+   * 0073): approvals no longer fill roles, so new entries leave it out; older files keep theirs.
+   */
   approvals: z
-    .array(z.strictObject({ by: Handle, roles: z.array(RecordId).min(1), at: IsoDateTime }))
+    .array(z.strictObject({ by: Handle, roles: z.array(RecordId).optional(), at: IsoDateTime }))
     .default([]),
   /** The files the PR carries, relative to the change folder, with their sha256 at hand-off. */
   artifacts: z
@@ -109,7 +112,7 @@ export const ChangeLifecycle = z
     /** The change template the brief started from. */
     template: RecordId.optional(),
     state: LifecycleState,
-    /** People by role on this change, e.g. architect: [ari]. Approval rights come from here and CODEOWNERS. */
+    /** Who is on this change, by what they do, e.g. architect: [ari]. Words, not permissions (ADR 0073). */
     owners: z.record(RecordId, z.array(Handle).min(1)).default({}),
     /** Catalog System ids the change touches. */
     systems: z.array(RecordId).default([]),
@@ -120,7 +123,7 @@ export const ChangeLifecycle = z
       records: [],
       repos: [],
     }),
-    /** Who wrote each artifact, for separation of duties. */
+    /** Who wrote each artifact. */
     authors: z.partialRecord(ChangeArtifact, z.array(Handle).min(1)).default({}),
     createdAt: IsoDateTime,
     createdBy: Handle,

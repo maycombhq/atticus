@@ -15,7 +15,7 @@ import {
   type LifecycleState,
 } from "@maycombhq/core";
 import type { OpenSpec } from "@maycombhq/openspec-adapter";
-import { evaluateApprovals, holders } from "./approvals.js";
+import { prApprovers } from "./approvals.js";
 import { assess, liveHandoff, type Assessment } from "./assess.js";
 import { ownersFor } from "./codeowners.js";
 import { loadChangeContext, type ChangeContext } from "./context.js";
@@ -133,17 +133,11 @@ function prBody(
     "",
     `Change ${c.id} (${c.title}), type ${c.type}, moves from ${phase} to ${next} when this pull request merges.`,
     "",
-    "Approving this pull request approves the hand-off. Atticus merges it once the required approvals are in.",
+    "Merging this pull request approves the hand-off. The Git host's own rules (branch protection, CODEOWNERS) decide who may approve it.",
     "",
     "### Files",
     "",
     ...(paths.length ? paths.map((f) => `- ${f}`) : ["- None"]),
-    "",
-    "### Required approvals",
-    "",
-    ...(a.required.length
-      ? a.required.map((r) => `- ${r.label}`)
-      : ["- None beyond the Git host's own rules"]),
     "",
     "### Reviewers",
     "",
@@ -158,7 +152,7 @@ function prBody(
     "### Privacy",
     "",
     a.privacy.touched
-      ? `Touches personal data (${a.privacy.records.map((r) => r.id).join(", ")}); ${a.privacy.role} approves at ${a.privacy.phase}.`
+      ? `Touches personal data (${a.privacy.records.map((r) => r.id).join(", ")}); review it with the ${a.privacy.phase} hand-off.`
       : "No personal data touched.",
   ];
   return lines.join("\n") + "\n";
@@ -177,9 +171,9 @@ export interface HandoffOptions extends HostOptions {
 }
 
 /**
- * Raise a phase's hand-off: check the phase is ready (artifacts, findings, privacy role),
+ * Raise a phase's hand-off: check the phase is ready (artifacts, findings, critic rounds),
  * open the PR `handoff/<change-id>/<phase>` → main with the phase's files, name the
- * reviewers (CODEOWNERS of those files and holders of the required roles) and record it in
+ * reviewers (CODEOWNERS of those files) and record it in
  * change.yaml. If the phase's PR is still open (changes were requested), the same PR is
  * updated instead. A returned change is resubmitted from its first phase.
  */
@@ -222,10 +216,7 @@ export async function handoff(
   const rel = changesRelOf(root);
   const metaFiles = [...files.map((f) => `${rel}/${id}/${f}`), `${rel}/${id}/change.yaml`];
   const reviewers = [
-    ...new Set([
-      ...files.flatMap((f) => ownersFor(ctx.codeowners, `${rel}/${id}/${f}`)),
-      ...a.required.flatMap((r) => r.roles.flatMap((role) => holders(change, role))),
-    ]),
+    ...new Set(files.flatMap((f) => ownersFor(ctx.codeowners, `${rel}/${id}/${f}`))),
   ]
     .filter((p) => p !== by)
     .sort();
@@ -346,10 +337,11 @@ export interface SyncResult {
 }
 
 /**
- * Read the hand-off PR from the Git host and act on it: changes requested → it stays;
- * required roles approved (separation of duties applied) and the host's own rules met →
- * auto-merge, the state advances and history records it. A PR merged by hand on the host
- * advances the change too; a PR closed on the host is recorded as closed.
+ * Read the hand-off PR from the Git host and act on it (ADR 0073: the PR is the approval).
+ * Merged on the host → the gate is approved, the state advances and history records it.
+ * Changes requested → it stays. Approved by someone other than the person who raised it,
+ * with the host's own rules met → ready: with the person's approval Atticus merges it,
+ * without it the PR is reported ready. A PR closed on the host is recorded as closed.
  */
 export async function syncHandoff(
   root: string,
@@ -401,16 +393,8 @@ export async function syncHandoff(
     .filter(([, s]) => s === "changes-requested")
     .map(([p]) => p)
     .sort();
-  const result = evaluateApprovals({
-    ctx,
-    change,
-    type: a.type,
-    phase: live.phase,
-    requirements: a.required,
-    approvers,
-    raiser: live.by,
-  });
-  const approvals = result.counted.map((c) => ({ ...c, at: now }));
+  const counted = prApprovers(live, approvers);
+  const approvals = counted.map((by) => ({ by, at: now }));
 
   const advance = async (by: string) => {
     const h: ChangeHandoff = { ...current, state: "merged", updatedAt: now, approvals };
@@ -460,7 +444,20 @@ export async function syncHandoff(
   }
 
   const h: ChangeHandoff = { ...current, state: "open", updatedAt: now, approvals };
-  const reasons: Reason[] = [...result.reasons];
+  const reasons: Reason[] = [];
+  if (counted.length === 0)
+    reasons.push(
+      approvers.length > 0
+        ? {
+            code: "self-approval",
+            person: strip(live.by),
+            message: `PR #${pr.number} is approved only by ${strip(live.by)}, who raised it; it needs someone else's approval.`,
+          }
+        : {
+            code: "approval-missing",
+            message: `PR #${pr.number} isn't approved yet: ask a reviewer on the Git host (${pr.url}).`,
+          },
+    );
   if (reasons.length === 0) {
     // Artifacts or findings may have changed since the hand-off was raised.
     reasons.push(...a.blockers);

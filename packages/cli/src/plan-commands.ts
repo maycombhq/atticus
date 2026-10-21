@@ -241,7 +241,8 @@ function printSync(r: SyncResult, what: string, io: Output): number {
       r.writes.filter((w) => w.action !== "unchanged").map((w) => [w.action, w.key, w.title]),
     ))
       io.out(line);
-    if (todo.length) io.out("Approve every write listed with --approve <you>.");
+    if (todo.length)
+      io.out("Approve every write listed with --approve (you approve as your Git user).");
     return 0;
   }
   io.out(`Sent ${plural(r.done.length, `${what} write`)} for ${r.change}.`);

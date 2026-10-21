@@ -34,9 +34,7 @@ handoffs:
     state: merged
     approvals:
       - at: 2026-10-19T11:00:00Z
-        by: pat
-        roles:
-          - product-owner
+        by: ari
     artifacts:
       - path: brief.md
         sha256: 0b4f6ce157b4d6d4b620aff8b3239c68454e8ff157a946e13ae45c37f95a8c72
@@ -58,8 +56,6 @@ handoffs:
     approvals:
       - at: 2026-10-19T14:00:00Z
         by: avery
-        roles:
-          - architect
     artifacts:
       - path: data.md
         sha256: 54e8f66ed9054f0205a85e75e2ceaba6d84b877334bd0314a8c20349634b1654
@@ -90,8 +86,6 @@ handoffs:
     approvals:
       - at: 2026-10-19T16:00:00Z
         by: tia
-        roles:
-          - team-lead
     artifacts:
       - path: snow.md
         sha256: 1b42896eef5997cfe3242513cd7e49b6d657bd144c2032b591dbb463799536bd
@@ -109,15 +103,12 @@ handoffs:
       url: https://git.example.com/forge/forge-metarepo/pull/3
     reviewers:
       - forge/platform
-      - tia
     updatedAt: 2026-10-19T16:00:00Z
   - phase: build
     state: merged
     approvals:
       - at: 2026-10-20T11:00:00Z
         by: dee
-        roles:
-          - developer
     artifacts:
       - path: tasks.md
         sha256: 5f51a266de34151a73907f779ccfd6bf3eba1fcc31eeb43d606b666fd72f14c2
@@ -128,16 +119,13 @@ handoffs:
       number: 4
       url: https://git.example.com/forge/forge-metarepo/pull/4
     reviewers:
-      - dee
       - forge/platform
     updatedAt: 2026-10-20T11:00:00Z
   - phase: qa
     state: merged
     approvals:
       - at: 2026-10-20T13:00:00Z
-        by: quinn
-        roles:
-          - qa
+        by: tia
     artifacts: []
     branch: handoff/add-transfer-limit/qa
     by: quinn
@@ -152,12 +140,8 @@ handoffs:
     approvals:
       - at: 2026-10-20T15:00:00Z
         by: dana
-        roles:
-          - delivery-lead
       - at: 2026-10-20T15:00:00Z
         by: sam
-        roles:
-          - sre
     artifacts: []
     branch: handoff/add-transfer-limit/release
     by: tia
@@ -165,9 +149,7 @@ handoffs:
     pr:
       number: 6
       url: https://git.example.com/forge/forge-metarepo/pull/6
-    reviewers:
-      - dana
-      - sam
+    reviewers: []
     updatedAt: 2026-10-20T15:00:00Z
 history:
   - from: draft

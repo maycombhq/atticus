@@ -210,8 +210,9 @@ describe("the forge change from Plan to Release with every outside system manual
     ).toBe("qa");
     expect(
       await walkPhase(root, a, store, {
+        // The person who raised a PR is never its only approver (ADR 0073).
         by: "quinn",
-        approvers: ["quinn"],
+        approvers: ["tia"],
         at: "2026-10-22T10:00:00Z",
       }),
     ).toBe("release-ready");
@@ -252,7 +253,7 @@ describe("the forge change from Plan to Release with every outside system manual
       ["design", ["avery"]],
       ["plan", ["tia"]],
       ["build", ["dee"]],
-      ["qa", ["quinn"]],
+      ["qa", ["tia"]],
       ["release", ["avery", "dana", "sam"]],
     ]);
     // Every step is closed, lives in the change folder, and every write step carries its approval.

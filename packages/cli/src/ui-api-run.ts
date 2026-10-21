@@ -602,7 +602,6 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
           .list({ change: id })
           .catch(() => [] as ManualStep[]);
         const requests = await changeRequests(root, id, op.serviceRequests, steps);
-        const gate = op.gates.gates.find((g) => g.phase === "release");
         const design = (await readChangeFiles(changeFolder(root, id))).docs.get("design.md");
         const sec = design?.sections.find((s) =>
           /rollout|rollback|release|deploy/i.test(s.heading),
@@ -627,13 +626,10 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
               ...(rep.next ? { next: rep.next } : {}),
               nextStep: rep.nextStep,
               risk: rep.risk,
-              required: rep.required,
               blockers: rep.blockers,
               reasons: rep.reasons,
             },
-            ...(gate
-              ? { releaseApprovers: { roles: gate.approvers, min: gate.minApprovals } }
-              : {}),
+            // Go / no-go is the release hand-off PR: merging it is the go (ADR 0073).
             ...(handoff
               ? {
                   handoff: {
@@ -785,7 +781,6 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
         ]);
         const changes = await openChanges(root);
         const waivers = [];
-        const separation = [];
         for (const c of changes) {
           for (const f of await latestFindings(root, c.id))
             if (f.state === "waived")
@@ -798,10 +793,6 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
                   ? { by: f.resolution.by, at: f.resolution.at, reason: f.resolution.reason }
                   : {}),
               });
-          const rep = await changeReport(root, c.id).catch(() => undefined);
-          for (const x of [...(rep?.blockers ?? []), ...(rep?.reasons ?? [])])
-            if (/separation|self-approval/.test(x.code))
-              separation.push({ change: c.id, code: x.code, message: x.message });
         }
         const stats = jsonOf(await run((io) => criticStats(root, { json: true }, io)));
         const count = (packs: { pack: { rules: unknown[] } }[]) =>
@@ -833,10 +824,6 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
                 ) === i,
             ),
             overrides: stats ?? { changes: 0, rules: [], suggestions: [] },
-            separation: separation.filter(
-              (s, i, a) =>
-                a.findIndex((x) => x.change === s.change && x.message === s.message) === i,
-            ),
           },
         };
       })
@@ -1111,8 +1098,6 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
             gates: op.gates.gates.map((g) => ({
               id: g.id,
               phase: g.phase,
-              approvers: g.approvers,
-              minApprovals: g.minApprovals,
               checklists: g.checklists,
               checks: g.checks.map((c) => c.check),
               maxAuthorRounds: g.maxAuthorRounds,

@@ -71,9 +71,17 @@ function GateHeader(p: {
                 ))}
               </ul>
             )}
-            {s.required.length > 0 && (
+            {s.handoff ? (
               <span className="muted" style={{ fontSize: 12 }}>
-                Approval: {s.required.map((r) => r.label).join("; ")}
+                Approval: merge{" "}
+                <a href={s.handoff.pr.url} target="_blank" rel="noreferrer">
+                  PR #{s.handoff.pr.number}
+                </a>{" "}
+                on the Git host; that approves the gate.
+              </span>
+            ) : (
+              <span className="muted" style={{ fontSize: 12 }}>
+                Approval: raise the hand-off; merging its PR approves the gate.
               </span>
             )}
             <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
@@ -120,7 +128,7 @@ function GateHeader(p: {
                   )
                 }
               >
-                Sync
+                Sync and merge when approved
               </button>
             </div>
             <Note note={act.note} />

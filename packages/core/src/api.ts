@@ -14,7 +14,8 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * per-session token Atticus prints at start-up, so other local programs and web pages
  * can't drive it. See ADR 0015.
  */
-export const API_VERSION = "1.0.0";
+/** 2.0.0 (ADR 0073): PUT /api/me and GET /api/me/approvals are gone; /api/me is the Git user. */
+export const API_VERSION = "2.0.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -300,14 +301,12 @@ export const CheckLessonRequest = z.strictObject({
 });
 export const SandboxRequest = z.strictObject({ dir: z.string().trim().min(1) });
 
-/** ADR 0047: accept the as-is catalog as the baseline, as the signed-in person. */
+/** ADR 0047: accept the as-is catalog as the baseline, as the person (their Git user, ADR 0073). */
 export const BaselineRequest = z.strictObject({ note: z.string().trim().min(1).optional() });
 
 /** ADR 0046: run the critic at a gate (the change's current one by default). */
 export const RunCriticRequest = z.strictObject({ gate: z.string().min(1).optional() });
 
-/** ADR 0044: the view (role) a person works in; it changes what they see, never what they approve. */
-export const SaveViewRequest = z.strictObject({ view: RecordId });
 
 /** ADR 0048: how often the person wants their digest, and where it goes. */
 export const SaveNotifyRequest = z.strictObject({
@@ -397,30 +396,14 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/me": {
     get: {
       id: "getMe",
-      summary: "Who is signed in, their view and where it came from, and what they may approve",
+      summary:
+        "Who is using the app: the metarepo's Git user (handle, name, email, and a warning when the OS user stood in), what AI may do and the digest settings (ADR 0073)",
       tag: "system",
       ok: {
         status: 200,
-        schema: { type: "object", required: ["user", "view", "roles"] },
+        schema: { type: "object", required: ["user", "source", "ai"] },
         description: "OK",
       },
-    },
-    put: {
-      id: "saveView",
-      summary: "Choose the view to work in; remembered per person in .atticus/me.yaml",
-      tag: "system",
-      body: SaveViewRequest,
-      ok: { status: 200, schema: { type: "object" }, description: "Saved" },
-      errors: [400],
-    },
-  },
-  "/api/me/approvals": {
-    get: {
-      id: "listMyApprovals",
-      summary:
-        "Hand-off PRs that wait on the signed-in person (a reviewer, or one of their groups), and their own hand-offs to revise",
-      tag: "system",
-      ok: { status: 200, schema: { type: "array", items: { type: "object" } }, description: "OK" },
     },
   },
   "/api/me/notify": {
@@ -1133,7 +1116,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getGovernance",
       summary:
-        "Org-pack conformance, rule layers, waivers, override rates and separation of duties",
+        "Org-pack conformance, rule layers, waivers and override rates",
       tag: "run",
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
     },

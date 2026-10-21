@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
@@ -175,6 +176,20 @@ describe("the local server (ADR 0015)", () => {
       openspec: "openspec",
       user: "priya",
     });
+  });
+
+  it("knows the person from the metarepo's Git user when nobody is named (ADR 0073)", async () => {
+    const own = await forgeMetarepo();
+    execFileSync("git", ["init", "-q", own]);
+    execFileSync("git", ["-C", own, "config", "user.name", "Priya Nair"]);
+    execFileSync("git", ["-C", own, "config", "user.email", "priya.nair@forge.example"]);
+    const s = await startServer({ root: own, port: 0 });
+    try {
+      const r = await fetch(`${s.url}/api/health`, { headers: { "X-Atticus-Token": s.token } });
+      expect(((await r.json()) as { user: string }).user).toBe("priya.nair");
+    } finally {
+      await s.close();
+    }
   });
 
   it("catalog: counts per kind, a filtered page, one record, and plain 400s and 404s", async () => {

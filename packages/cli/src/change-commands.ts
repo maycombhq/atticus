@@ -29,8 +29,10 @@ import { table } from "./index-commands.js";
 import { scanCommand } from "./scan-commands.js";
 
 /**
- * atticus change …: the change lifecycle. Every write to the Git host (opening, merging or
- * closing a hand-off PR) carries an approval from the person running the command (--by).
+ * atticus change …: the change lifecycle. A gate is approved when its hand-off PR merges
+ * (ADR 0073). Every write to the Git host (opening, merging or closing a hand-off PR) needs the
+ * person's explicit --approve; without it the command says what it would do and sends nothing.
+ * The person is the metarepo's Git user unless --by names someone.
  */
 
 /** Things tests (and the local API) inject instead of what runtime.yaml configures. */
@@ -115,7 +117,7 @@ export async function changeNew(
   deps: ChangeDeps = {},
 ): Promise<number> {
   if (!o.title || !o.type || !o.by) {
-    io.err('Usage: atticus change new "<title>" --type <change type> --by <you> [--template <id>]');
+    io.err('Usage: atticus change new "<title>" --type <change type> [--by <you>] [--template <id>]');
     return 2;
   }
   const owners = parseOwners(o.owners ?? []);
@@ -142,7 +144,7 @@ export async function changeNew(
   }
 }
 
-/** atticus change status <id>: state, next step, what blocks it, risk, approvals and test kinds. */
+/** atticus change status <id>: state, next step, what blocks it, risk, the hand-off PR and test kinds. */
 export async function changeStatus(
   root: string,
   id: string,
@@ -171,7 +173,6 @@ export async function changeStatus(
           nextStep: r.nextStep,
           reasons: r.reasons,
           risk: r.risk,
-          required: r.required.map((x) => x.label),
           tests: r.tests,
           privacy: r.privacy,
           handoff: r.handoff,
@@ -193,17 +194,19 @@ export async function changeStatus(
   );
   if (r.phase)
     io.out(
-      `Approvals needed: ${r.required.length ? r.required.map((x) => x.label).join("; ") : "none beyond the Git host's rules"}`,
+      r.handoff
+        ? r.handoff.state === "changes-requested"
+          ? `Hand-off: PR #${r.handoff.pr.number} has changes requested (${r.handoff.pr.url}); update the artifacts and hand off again.`
+          : `Hand-off: merge PR #${r.handoff.pr.number} to approve the ${r.phase} gate (${r.handoff.pr.url}).`
+        : `Hand-off: no PR yet; atticus change handoff ${r.change.id} --approve opens it, and merging it approves the ${r.phase} gate.`,
     );
   io.out(`Tests: ${r.tests.required.length ? r.tests.required.join(", ") : "none listed"}`);
   if (r.tests.note) io.out(`  (${r.tests.note})`);
   io.out(
     r.privacy.touched
-      ? `Privacy: touches personal data (${r.privacy.records.map((x) => x.id).join(", ")}); ${r.privacy.role} approves at ${r.privacy.phase}.`
+      ? `Privacy: touches personal data (${r.privacy.records.map((x) => x.id).join(", ")}); review it with the ${r.privacy.phase} hand-off.`
       : "Privacy: no personal data touched.",
   );
-  if (r.handoff)
-    io.out(`Hand-off: PR #${r.handoff.pr.number} ${r.handoff.state} (${r.handoff.pr.url})`);
   if (r.reasons.length > 0) {
     io.out("Blocked by:");
     for (const x of r.reasons) io.out(`  - ${x.message}`);
@@ -211,18 +214,22 @@ export async function changeStatus(
   return 0;
 }
 
-/** atticus change handoff <id> --by <you> [--repo <metarepo>] [--base <branch>] */
+/**
+ * atticus change handoff <id> [--approve] [--by <you>] [--repo <metarepo>] [--base <branch>].
+ * Without --approve it checks the phase is ready and says which PR it would open; nothing is sent.
+ */
 export async function changeHandoff(
   root: string,
   id: string,
-  o: { by?: string; repo?: string; base?: string },
+  o: { by?: string; approve?: boolean; repo?: string; base?: string },
   io: Output,
   deps: ChangeDeps = {},
 ): Promise<number> {
   if (!o.by) {
-    io.err("Say who is handing off: --by <you>. Your approval opens the pull request.");
+    io.err("Say who is handing off: set your Git user (git config user.name), or pass --by <you>.");
     return 2;
   }
+  if (!o.approve) return handoffPreview(root, id, o.by, io);
   const gitHost = await gitHostFor(root, deps, io);
   if (!gitHost) return 1;
   const now = deps.now ?? nowIso();
@@ -245,6 +252,7 @@ export async function changeHandoff(
     io.out(
       `Reviewers: ${h.reviewers.length ? h.reviewers.map((r) => `@${r}`).join(", ") : "none named"}`,
     );
+    io.out(`Merging it approves the gate; the Git host's own rules decide who may approve it.`);
     return 0;
   } catch (e) {
     if (e instanceof Error && e.name === "ChangeFileError") {
@@ -255,11 +263,48 @@ export async function changeHandoff(
   }
 }
 
-/** atticus change sync <id> [--by <you>] [--repo <metarepo>]: read the PR; merge it when approved. */
+/** What `change handoff` would do, without --approve: nothing goes to the Git host. */
+async function handoffPreview(root: string, id: string, by: string, io: Output): Promise<number> {
+  let r;
+  try {
+    r = await changeReport(root, id);
+  } catch (e) {
+    if (e instanceof Error && e.name === "ChangeFileError") {
+      io.err(e.message);
+      return 1;
+    }
+    return fail(io, e);
+  }
+  if (!r.phase) {
+    io.err(`${id} is ${r.state}; there is nothing to hand off.`);
+    return 1;
+  }
+  if (r.blockers.length) {
+    io.err(`${id} isn't ready to hand off ${r.phase}:`);
+    printReasons(io, r.blockers);
+    return 1;
+  }
+  const open = r.handoff && r.handoff.phase === r.phase;
+  io.out(
+    open
+      ? `Would update hand-off PR #${r.handoff!.pr.number} (${r.handoff!.pr.url}) with the ${r.phase} files, as ${by}.`
+      : `Would open the ${r.phase} hand-off PR ${handoffBranch(id, r.phase)} with the phase's files, as ${by}.`,
+  );
+  io.out(
+    `Nothing was sent. To do it: atticus change handoff ${id} --approve. Merging the PR approves the gate.`,
+  );
+  return 0;
+}
+
+/**
+ * atticus change sync <id> [--approve] [--by <you>] [--repo <metarepo>]: read the PR and record
+ * what happened on the Git host. A merged PR moves the change on; with --approve, a PR that is
+ * approved and meets the host's rules is merged as the person.
+ */
 export async function changeSync(
   root: string,
   id: string,
-  o: { by?: string; repo?: string },
+  o: { by?: string; approve?: boolean; repo?: string },
   io: Output,
   deps: ChangeDeps = {},
 ): Promise<number> {
@@ -271,7 +316,7 @@ export async function changeSync(
       gitHost,
       now,
       ...(o.repo ? { repo: o.repo } : {}),
-      ...(o.by ? { approval: approvalOf(o.by, now, `${id}#merge`) } : {}),
+      ...(o.approve && o.by ? { approval: approvalOf(o.by, now, `${id}#merge`) } : {}),
     });
     if (r.merged) {
       io.out(`PR #${r.handoff.pr.number} merged. ${id} is now ${r.state}.`);
@@ -279,7 +324,7 @@ export async function changeSync(
     }
     if (r.ready) {
       io.out(
-        `Approvals are in on PR #${r.handoff.pr.number}. Run again with --by <you> to merge it.`,
+        `PR #${r.handoff.pr.number} is approved and the Git host's rules are met. Merge it on the Git host, or run atticus change sync ${id} --approve to merge it as you.`,
       );
       return 1;
     }
@@ -295,17 +340,40 @@ export async function changeSync(
   }
 }
 
-/** atticus change return <id> --by <you> --reason "<why>": close the hand-off PR and return to the PO. */
+/**
+ * atticus change return <id> --reason "<why>" [--approve] [--by <you>]: close the hand-off PR
+ * and return the change to the product owner. Without --approve it says what it would do.
+ */
 export async function changeReturn(
   root: string,
   id: string,
-  o: { by?: string; reason?: string; repo?: string },
+  o: { by?: string; approve?: boolean; reason?: string; repo?: string },
   io: Output,
   deps: ChangeDeps = {},
 ): Promise<number> {
   if (!o.by || !o.reason) {
-    io.err('Usage: atticus change return <id> --by <you> --reason "<why>"');
+    io.err('Usage: atticus change return <id> --reason "<why>" --approve [--by <you>]');
     return 2;
+  }
+  if (!o.approve) {
+    try {
+      const r = await changeReport(root, id);
+      if (!r.handoff) {
+        io.err(`${id} has no open hand-off PR to return.`);
+        return 1;
+      }
+      io.out(
+        `Would comment on PR #${r.handoff.pr.number} (${r.handoff.pr.url}) and close it, and return ${id} to the product owner, as ${o.by}.`,
+      );
+      io.out(`Nothing was sent. To do it: atticus change return ${id} --reason "..." --approve.`);
+      return 0;
+    } catch (e) {
+      if (e instanceof Error && e.name === "ChangeFileError") {
+        io.err(e.message);
+        return 1;
+      }
+      return fail(io, e);
+    }
   }
   const gitHost = await gitHostFor(root, deps, io);
   if (!gitHost) return 1;

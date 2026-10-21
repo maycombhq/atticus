@@ -90,7 +90,7 @@ export async function taskRun(
 ): Promise<number> {
   if (!changeId || !taskId) {
     io.err(
-      "Usage: atticus task run <change> <task> --by <you> [--level plan|draft|pr] [--mode hand-off|model|headless-claude-code] [--approve]",
+      "Usage: atticus task run <change> <task> [--by <you>] [--level plan|draft|pr] [--mode hand-off|model|headless-claude-code] [--approve]",
     );
     return 2;
   }
@@ -235,7 +235,7 @@ export async function specHandUp(
   deps: RunDeps = {},
 ): Promise<number> {
   if (!changeId || !taskId) {
-    io.err("Usage: atticus spec hand-up <change> <task> --by <you> [--pr <number> --pr-url <url>]");
+    io.err("Usage: atticus spec hand-up <change> <task> [--by <you>] [--pr <number> --pr-url <url>]");
     return 2;
   }
   if (!o.by) {

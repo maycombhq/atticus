@@ -1,11 +1,10 @@
-import { accessible, expect, forgeJourney, open, test, workAs } from "../support/app.js";
+import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
 
 /** Team lead: orders the work across repos and watches the initiative's dates. */
 const app = forgeJourney();
 
 test("sees tasks by repo in the breakdown and on the board", async ({ page }) => {
   await open(page, app(), "home");
-  await workAs(page, "team-lead");
   await open(page, app(), "tasks?change=add-transfer-limit");
   await expect(page.getByRole("heading", { level: 2, name: "Tasks by repo" })).toBeVisible();
   await expect(page.getByText("forge-ledger").first()).toBeVisible();

@@ -11,7 +11,7 @@ import {
   WORKSPACE_SCHEMA_VERSION,
   writeFileAtomic,
 } from "@maycombhq/core";
-import { ensureGitignore, IGNORED } from "@maycombhq/workspace";
+import { ensureGitignore, gitUser, IGNORED } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { VERSION, versionAtLeast } from "./version.js";
 
@@ -122,7 +122,7 @@ export async function upgradeCheck(root: string, version = VERSION): Promise<Upg
   };
 }
 
-/** atticus upgrade [--check] [--dry-run] [--by you] [--json] */
+/** atticus upgrade [--check] [--dry-run] [--by you] [--json]; the person defaults to the Git user. */
 export async function upgradeCommand(
   root: string,
   o: { check?: boolean; dryRun?: boolean; by?: string; json?: boolean; now?: Date },
@@ -150,7 +150,7 @@ export async function upgradeCommand(
     return o.check && c.pending.length ? 1 : 0;
   }
   const now = o.now ?? new Date();
-  const by = o.by ?? process.env.USER ?? process.env.USERNAME ?? "unknown";
+  const by = o.by ?? (await gitUser(root)).handle;
   const stampTime = now.toISOString().replace(/\.\d{3}Z$/, "Z");
   const backup = join(
     root,
