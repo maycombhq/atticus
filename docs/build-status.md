@@ -104,6 +104,17 @@ Every open item, in the order to take them. Check work by running the real flow 
 - [ ] **B3. Feature grouping.** 134 of 150 features found on the real repo are one endpoint each (RPC-style API). Run and improve `atticus feature suggest-names` and merging so related endpoints group (all `/api/narrate/*`, `/api/factsheet/*`).
 - [ ] **B4. Planner.** Stories that do the same work get the same task (now told apart by requirement name): merge them into one task. Every story asks only for the change type's default tests.
 - [ ] **B5. `change draft`.** The map is chosen by words, not meaning: a brief worded unlike the code finds less. The drafter doesn't write or check `data.md` or `design.md`.
+- [ ] **B6. `atticus init` creates the git repository** (and says to set the git user if none is set). A metarepo whose approvals are pull requests must be one; `init` left a real metarepo without one.
+
+### H. Better with every correction (the model authors, with more data than OpenSpec gives it)
+
+Facts stay deterministic: from code, or from a decision a person recorded. The model writes drafts, verdicts and rules; corrections are kept as files in the metarepo, reviewed through PRs, so they work with any model the bank approves.
+
+- [ ] **H1. Capture draft against merged.** When a change's hand-off PR merges, keep what Atticus drafted (proposal, specs, interfaces, stories) beside what was accepted.
+- [ ] **H2. Past corrections in future drafts.** `change draft` and `plan stories` get the closest past drafted/accepted pairs as examples ("last time a draft said X, the team changed it to Y").
+- [ ] **H3. Measure it.** For every merged change, how much people changed the draft; report whether that falls over time, so "more accurate with every correction" is a number, not a claim.
+- [ ] **H4. Repeated corrections become proposed critic rules,** so the check catches them before a person has to.
+- [ ] **H5. Atticus inside the assistant.** Expose the map, `change draft`'s context, the critic and the domain profile to Copilot and Claude Code (skills or an MCP server), so developers work in their editor the way OpenSpec runs, with Atticus as the data and the checks.
 
 ### C. Scan review follow-ups (ADR 0072)
 
@@ -137,7 +148,7 @@ Every open item, in the order to take them. Check work by running the real flow 
 
 ### G. For a person, and later phases
 
-- [ ] **G1. Review ADRs 0053–0072.**
+- [ ] **G1. Review ADRs 0053–0073.**
 - [ ] **G2. Call each model provider** once against a real endpoint behind the corporate proxy (ADR 0065). Not built there: streaming, Vertex AI, AWS profiles and SSO, Azure managed identity, a provider plugin loaded from config.
 - [ ] **G3. Playwright journeys** on a machine with the browser (not run on this laptop).
 - [ ] **G4. `docs/coverage.md`:** what is read and done, partly, or not at all, per area, kept current.
