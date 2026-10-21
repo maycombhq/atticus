@@ -112,7 +112,14 @@ Why: on the first real repo almost every reader needed a fix, each found only by
 
 ### B. The core loop: scan → change → stories (what the product is for)
 
-- [ ] **B1. Cut the app down to the core flow.** Open on three things: the map, knowledge gaps, and new change → draft → stories. Hide the other screens behind All screens (or remove them); same short path on the command line.
+- [ ] **B1. A much simpler app: six screens that follow the work** (the product owner's design). Everything else in today's 27 screens goes, or folds into these:
+  1. **Dashboard:** what is scanned, changes in flight and where each one is, what needs a person.
+  2. **Onboarding:** repos and knowledge sources (wikis, documents, diagrams) set up, scans run, the gaps and scan review.
+  3. **Feature design:** a change started from a brief, existing stories or a Figma design (B7–B9); its proposal and spec drafted and checked.
+  4. **Architecture:** the map, the systems, calls and data the feature touches, the domain profile.
+  5. **Stories:** the breakdown, with acceptance criteria traced to the spec.
+  6. **Tasks:** per repo; for each task, the exact command or prompt to run in Copilot or Claude Code to implement it (copy button), and its state.
+     Same order on the command line. Empty, loading and error states and WCAG 2.1 AA stay for these screens.
 - [ ] **B2. Walk the knowledge side end to end** on a real repo: intake a real document or diagram, and judge what "knowledge vs code" gives. Expect holes like the change flow had.
 - [ ] **B3. Feature grouping.** 134 of 150 features found on the real repo are one endpoint each (RPC-style API). Run and improve `atticus feature suggest-names` and merging so related endpoints group (all `/api/narrate/*`, `/api/factsheet/*`).
 - [ ] **B4. Planner.** Stories that do the same work get the same task (now told apart by requirement name): merge them into one task. Every story asks only for the change type's default tests.
