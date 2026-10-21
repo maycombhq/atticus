@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -83,7 +83,7 @@
     "/api/me": {
       "get": {
         "operationId": "getMe",
-        "summary": "Who is signed in, their view and where it came from, and what they may approve",
+        "summary": "Who is using the app: the metarepo's Git user (handle, name, email, and a warning when the OS user stood in), what AI may do and the digest settings (ADR 0073)",
         "tags": [
           "system"
         ],
@@ -96,104 +96,9 @@
                   "type": "object",
                   "required": [
                     "user",
-                    "view",
-                    "roles"
+                    "source",
+                    "ai"
                   ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or wrong session token",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "operationId": "saveView",
-        "summary": "Choose the view to work in; remembered per person in .atticus/me.yaml",
-        "tags": [
-          "system"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "view": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120,
-                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
-                  }
-                },
-                "required": [
-                  "view"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Saved",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The request is invalid",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or wrong session token",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/me/approvals": {
-      "get": {
-        "operationId": "listMyApprovals",
-        "summary": "Hand-off PRs that wait on the signed-in person (a reviewer, or one of their groups), and their own hand-offs to revise",
-        "tags": [
-          "system"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object"
-                  }
                 }
               }
             }
@@ -4481,7 +4386,7 @@
     "/api/governance": {
       "get": {
         "operationId": "getGovernance",
-        "summary": "Org-pack conformance, rule layers, waivers, override rates and separation of duties",
+        "summary": "Org-pack conformance, rule layers, waivers and override rates",
         "tags": [
           "run"
         ],
