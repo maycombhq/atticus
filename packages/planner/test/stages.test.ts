@@ -9,6 +9,9 @@ import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { listQuestions, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import {
   architectureStage,
+  FlowDelta,
+  interfaceChanges,
+  loadEstate,
   featureStage,
   readFigma,
   storiesStage,
@@ -127,7 +130,10 @@ describe("the feature stage", () => {
     const prompts: string[] = [];
     // The first draft names a flow that doesn't exist; the check sends it back.
     const bad = PLACED.replace("forge-stock.reserve-stock", "forge-stock.hold-stock");
-    const r = await featureStage(root, CHANGE, { runtime: assistant([bad, PLACED], prompts), now: NOW });
+    const r = await featureStage(root, CHANGE, {
+      runtime: assistant([bad, PLACED], prompts),
+      now: NOW,
+    });
     expect(r.state).toBe("done");
     expect(r.drafts).toBe(2);
     // The estate went in as a compact index of flows and features; the brief as data.
@@ -144,7 +150,9 @@ describe("the feature stage", () => {
     expect(placed.conflicts).toEqual([
       expect.objectContaining({ change: "bulk-orders", flows: ["forge-orders.place-order"] }),
     ]);
-    expect(await readFile(join(dir(root), "feature.md"), "utf8")).toContain("bulk-orders (design) also changes forge-orders.place-order");
+    expect(await readFile(join(dir(root), "feature.md"), "utf8")).toContain(
+      "bulk-orders (design) also changes forge-orders.place-order",
+    );
     expect(r.pr).toBe("atticus change handoff add-fraud-check --approve");
     // The critic ran in every iteration.
     const loop = parse(await readFile(join(dir(root), "stage/feature.yaml"), "utf8"));
@@ -171,7 +179,10 @@ describe("the feature stage", () => {
   it("turns a finding that flips back into a question", async () => {
     const root = await estateRoot();
     const bad = PLACED.replace("cap-ordering", "cap-checkout");
-    const half = PLACED.replace("  - id: forge-orders.place-order", "  - id: forge-orders.place-orders");
+    const half = PLACED.replace(
+      "  - id: forge-orders.place-order",
+      "  - id: forge-orders.place-orders",
+    );
     const r = await featureStage(root, CHANGE, { runtime: assistant([bad, half, bad]), now: NOW });
     expect(r.state).toBe("questions");
     const q = (await listQuestions(root, { state: "open" })).questions;
@@ -192,7 +203,10 @@ describe("the feature stage", () => {
   ignored:
     - { figmaId: "5:2", why: A static title }
 `;
-    const fixed = design.replace("label: Gift note, backing: new }", "label: Gift note, backing: new, gap: A gift_note column and NewOrder.giftNote }");
+    const fixed = design.replace(
+      "label: Gift note, backing: new }",
+      "label: Gift note, backing: new, gap: A gift_note column and NewOrder.giftNote }",
+    );
     const prompts: string[] = [];
     const r = await featureStage(root, CHANGE, {
       runtime: assistant([design, fixed], prompts),
@@ -205,7 +219,9 @@ describe("the feature stage", () => {
     const placed = parse(await readFile(join(dir(root), "feature.yaml"), "utf8"));
     expect(placed.entry).toBe("figma");
     expect(placed.design.file).toBe("design/order-form.figma.json");
-    expect(placed.gaps).toContainEqual(expect.objectContaining({ from: "5:4", what: "A gift_note column and NewOrder.giftNote" }));
+    expect(placed.gaps).toContainEqual(
+      expect.objectContaining({ from: "5:4", what: "A gift_note column and NewOrder.giftNote" }),
+    );
   });
 });
 
@@ -233,7 +249,9 @@ describe("the loop in hand-off mode", () => {
     const third = await featureStage(root, CHANGE, { runtime: rt(), now: NOW, resume: run2 });
     expect(third.state).toBe("done");
     // In hand-off mode the critic ran its rules; its AI lenses run with /atticus-critic.
-    expect(third.notes.join("\n")).toContain("its AI lenses run with /atticus-critic add-fraud-check");
+    expect(third.notes.join("\n")).toContain(
+      "its AI lenses run with /atticus-critic add-fraud-check",
+    );
   });
 });
 
@@ -249,30 +267,67 @@ describe("the architecture stage", () => {
     const prompts: string[] = [];
     // The first draft writes to a table the catalog doesn't have without saying it is new.
     const bad = DELTAS.replace("table: forge-orders-db.orders", "table: forge-orders-db.purchases");
-    const r: StageResult<unknown> = await architectureStage(root, CHANGE, { runtime: assistant([bad, DELTAS], prompts), now: NOW });
+    const r: StageResult<unknown> = await architectureStage(root, CHANGE, {
+      runtime: assistant([bad, DELTAS], prompts),
+      now: NOW,
+    });
     expect(r.state).toBe("done");
     expect(r.drafts).toBe(2);
     expect(prompts[0]).toContain("kind: Flow");
     expect(prompts[0]).toContain("forge-orders.place-order");
-    expect(prompts[1]).toContain("uses table forge-orders-db.purchases, which the catalog doesn't have");
-    const delta = parse(await readFile(join(dir(root), "target-flows/forge-orders.place-order.yaml"), "utf8"));
+    expect(prompts[1]).toContain(
+      "uses table forge-orders-db.purchases, which the catalog doesn't have",
+    );
+    const delta = parse(
+      await readFile(join(dir(root), "target-flows/forge-orders.place-order.yaml"), "utf8"),
+    );
     expect(delta.schemaVersion).toBe(1);
     expect(delta.steps).toHaveLength(3);
     const design = await readFile(join(dir(root), "design.md"), "utf8");
-    expect(design).toContain("| forge-orders | northwind-pay | POST /v1/screenings | planned-new | sku, quantity, cardToken, verdict | forge-orders.place-order |");
-    expect(design).toContain("- forge-orders-db.orders: new columns fraud_verdict (forge-orders.place-order)");
+    expect(design).toContain(
+      "| forge-orders | northwind-pay | POST /v1/screenings | planned-new | sku, quantity, cardToken, verdict | forge-orders.place-order |",
+    );
+    expect(design).toContain(
+      "- forge-orders-db.orders: new columns fraud_verdict (forge-orders.place-order)",
+    );
     // data.md in the shape the critic reads, so its data rules pass on what the deltas say.
     const data = await readFile(join(dir(root), "data.md"), "utf8");
-    expect(data).toContain("| forge-orders-db | orders | add column fraud_verdict varchar(20) | V4__add_fraud_verdict.sql |");
+    expect(data).toContain(
+      "| forge-orders-db | orders | add column fraud_verdict varchar(20) | V4__add_fraud_verdict.sql |",
+    );
     expect(data).toContain("- fraud_verdict in orders is internal.");
     expect(r.notes[0]).toContain("feature PR of add-fraud-check isn't merged yet");
   });
 
+  it("reads an entry point's new fields off a changed entry step as an interface change", async () => {
+    const root = await estateRoot();
+    const { loadChangeContext } = await import("@maycombhq/changes");
+    const e = await loadEstate(root, (await loadChangeContext(root)).records);
+    const delta = FlowDelta.parse({
+      schemaVersion: 1,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "The order carries a card token.",
+      steps: [{ op: "change", step: 1, fields: { reads: ["sku", "quantity", "cardToken"] } }],
+    });
+    expect(interfaceChanges([delta], e)).toEqual([
+      {
+        flow: "forge-orders.place-order",
+        caller: "its callers",
+        callee: "forge-orders",
+        operation: "POST /orders",
+        status: "planned-modify",
+        fields: ["cardToken"],
+      },
+    ]);
+  });
+
   it("refuses to start before the feature is placed", async () => {
     const root = await estateRoot();
-    await expect(architectureStage(root, CHANGE, { runtime: assistant([DELTAS]), now: NOW })).rejects.toThrow(
-      "has no feature yet: run atticus change feature add-fraud-check first",
-    );
+    await expect(
+      architectureStage(root, CHANGE, { runtime: assistant([DELTAS]), now: NOW }),
+    ).rejects.toThrow("has no feature yet: run atticus change feature add-fraud-check first");
   });
 });
 
@@ -280,26 +335,44 @@ describe("the stories stage", () => {
   it("derives stories per repo and a task per changed step, with fields, evidence and a prompt; requests from knowledge with citations", async () => {
     const root = await estateRoot();
     await featured(root);
-    expect((await architectureStage(root, CHANGE, { runtime: assistant([DELTAS]), now: NOW })).state).toBe("done");
+    expect(
+      (await architectureStage(root, CHANGE, { runtime: assistant([DELTAS]), now: NOW })).state,
+    ).toBe("done");
     // The first wording forgets the fields in task 1.3's criteria.
-    const bad = STORIES.replace("then the orders row holds sku, quantity and fraud_verdict", "then the order is saved");
+    const bad = STORIES.replace(
+      "then the orders row holds sku, quantity and fraud_verdict",
+      "then the order is saved",
+    );
     const prompts: string[] = [];
-    const r = await storiesStage(root, CHANGE, { runtime: assistant([bad, STORIES], prompts), now: NOW });
+    const r = await storiesStage(root, CHANGE, {
+      runtime: assistant([bad, STORIES], prompts),
+      now: NOW,
+    });
     expect(r.state).toBe("done");
-    expect(prompts[1]).toContain("Task 1.3's criteria name none of the fields it touches (sku, quantity, fraud_verdict)");
+    expect(prompts[1]).toContain(
+      "Task 1.3's criteria name none of the fields it touches (sku, quantity, fraud_verdict)",
+    );
     expect(r.stories.map((s) => [s.id, s.repo, s.tasks.map((t) => t.id)])).toEqual([
       ["s1-place-order", "forge-orders", ["1.1", "1.2", "1.3"]],
     ]);
     const t3 = r.stories[0]!.tasks[2]!;
     expect(t3.fields).toEqual(["sku", "quantity", "fraud_verdict"]);
-    expect(t3.evidence).toEqual(["forge-orders:src/main/java/forge/orders/OrderController.java:13"]);
+    expect(t3.evidence).toEqual([
+      "forge-orders:src/main/java/forge/orders/OrderController.java:13",
+    ]);
     const story = await readFile(join(dir(root), "stories/s1-place-order.md"), "utf8");
     expect(story).toContain("Prompt for Copilot or Claude Code:");
-    expect(story).toContain("Implement task 1.1 of the change add-fraud-check in the repo forge-orders.");
+    expect(story).toContain(
+      "Implement task 1.1 of the change add-fraud-check in the repo forge-orders.",
+    );
     expect(story).toContain("It goes to northwind-pay POST /v1/screenings (new).");
     const tasks = await readFile(join(dir(root), "tasks.md"), "utf8");
-    expect(tasks).toContain("- [ ] 1.1 Add the call-out step: Northwind Pay screens the order for fraud (story s1-place-order)");
-    expect(tasks).toContain("  - Waits for: R1 Network firewall rule (10 working days); R2 Vendor onboarding (20 working days)");
+    expect(tasks).toContain(
+      "- [ ] 1.1 Add the call-out step: Northwind Pay screens the order for fraud (story s1-place-order)",
+    );
+    expect(tasks).toContain(
+      "  - Waits for: R1 Network firewall rule (10 working days); R2 Vendor onboarding (20 working days)",
+    );
     // The new call to a vendor suggests the firewall rule and vendor onboarding, each citing its item and the step.
     expect(await readFile(join(dir(root), "requests.md"), "utf8")).toBe(
       readFileSync(join(FIX, "expected/requests.md"), "utf8"),
@@ -313,7 +386,9 @@ describe("the stories stage", () => {
 
 describe("readFigma", () => {
   it("reads screens, fields and actions from the bench's export", () => {
-    const d = readFigma(readFileSync(join(HERE, "../../../bench/design/vaccinations.figma.json"), "utf8"));
+    const d = readFigma(
+      readFileSync(join(HERE, "../../../bench/design/vaccinations.figma.json"), "utf8"),
+    );
     expect(d.screens.map((s) => s.figmaId)).toEqual(["10:1", "20:1", "30:1", "40:1", "50:1"]);
     const add = d.screens[2]!;
     expect(add.fields.map((f) => [f.figmaId, f.control])).toContainEqual(["30:5", "select"]);

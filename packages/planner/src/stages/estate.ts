@@ -1,10 +1,5 @@
 import { readdir } from "node:fs/promises";
-import {
-  readRepoSpec,
-  specsDirOf,
-  type CatalogRecord,
-  type FlowRecord,
-} from "@maycombhq/core";
+import { readRepoSpec, specsDirOf, type CatalogRecord, type FlowRecord } from "@maycombhq/core";
 
 /**
  * The estate as the stages read it (ADR 0087): every repo's spec of flows (ADR 0079) and the
@@ -50,7 +45,11 @@ export async function loadEstate(root: string, records: CatalogRecord[]): Promis
   return estateOf(records, flows, problems);
 }
 
-export function estateOf(records: CatalogRecord[], flows: SpecFlow[], problems: string[] = []): Estate {
+export function estateOf(
+  records: CatalogRecord[],
+  flows: SpecFlow[],
+  problems: string[] = [],
+): Estate {
   const byId = new Map((records as Rec[]).map((r) => [r.id, r]));
   const flowById = new Map(flows.map((f) => [f.flow.id, f]));
   const endpoints = new Set<string>();
@@ -72,7 +71,10 @@ export function estateOf(records: CatalogRecord[], flows: SpecFlow[], problems: 
 export function endpointKey(s: string): string {
   const m = /^\s*([A-Za-z]+)\s+(\S+)/.exec(s);
   if (!m) return s.trim();
-  const path = m[2]!.replace(/\?.*$/, "").replace(/\{[^}]*\}/g, "{}").replace(/(.)\/$/, "$1");
+  const path = m[2]!
+    .replace(/\?.*$/, "")
+    .replace(/\{[^}]*\}/g, "{}")
+    .replace(/(.)\/$/, "$1");
   return `${m[1]!.toUpperCase()} ${path}`;
 }
 
@@ -87,7 +89,11 @@ export function flowLine(f: SpecFlow): string {
         ...(s.data?.reads ?? []),
         ...(s.store?.columns ?? []),
       ];
-      const where = s.to ? ` → ${s.to.component} ${s.to.entry}` : s.store ? ` ${s.store.table}` : "";
+      const where = s.to
+        ? ` → ${s.to.component} ${s.to.entry}`
+        : s.store
+          ? ` ${s.store.table}`
+          : "";
       return `${i + 1} ${s.kind}${where}${fields.length ? ` [${[...new Set(fields)].join(", ")}]` : ""}`;
     })
     .join("; ");
@@ -97,20 +103,33 @@ export function flowLine(f: SpecFlow): string {
 /** The compact index: features, flows, components and systems, endpoints, tables. */
 export function estateIndex(e: Estate): string {
   const recs = e.records as Rec[];
-  const of = (k: string) => recs.filter((r) => r.kind === k).sort((a, b) => a.id.localeCompare(b.id));
+  const of = (k: string) =>
+    recs.filter((r) => r.kind === k).sort((a, b) => a.id.localeCompare(b.id));
   const lines = [
     "The estate, from the repos' specs and the scanned catalog. Ids are exact: name only these, or say something is new.",
     "",
   ];
   for (const s of of("System"))
-    lines.push(`system ${s.id}${str(s.name) ? ` "${str(s.name)}"` : ""}${str(s.boundary) ? ` (${str(s.boundary)})` : ""}`);
+    lines.push(
+      `system ${s.id}${str(s.name) ? ` "${str(s.name)}"` : ""}${str(s.boundary) ? ` (${str(s.boundary)})` : ""}`,
+    );
   for (const c of of("Component"))
-    lines.push(`component ${c.id}: system ${str(c.system) ?? "?"}${str(c.repo) ? `, repo ${str(c.repo)}` : ""}${str(c.type) ? `, ${str(c.type)}` : ""}`);
+    lines.push(
+      `component ${c.id}: system ${str(c.system) ?? "?"}${str(c.repo) ? `, repo ${str(c.repo)}` : ""}${str(c.type) ? `, ${str(c.type)}` : ""}`,
+    );
   for (const f of of("Capability"))
-    lines.push(`feature ${f.id} "${str(f.name) ?? f.id}": entry points ${arr(f.entryPoints).join(", ") || "none"}`);
-  for (const f of [...e.flows].sort((a, b) => a.flow.id.localeCompare(b.flow.id))) lines.push(flowLine(f));
+    lines.push(
+      `feature ${f.id} "${str(f.name) ?? f.id}": entry points ${arr(f.entryPoints).join(", ") || "none"}`,
+    );
+  for (const f of [...e.flows].sort((a, b) => a.flow.id.localeCompare(b.flow.id)))
+    lines.push(flowLine(f));
   for (const x of of("Endpoint"))
-    lines.push(`endpoint ${x.id}: ${str(x.component) ?? "?"} serves ${str(x.method) ?? ""} ${str(x.pathOrTopic) ?? ""}`.replace(/ {2,}/g, " "));
+    lines.push(
+      `endpoint ${x.id}: ${str(x.component) ?? "?"} serves ${str(x.method) ?? ""} ${str(x.pathOrTopic) ?? ""}`.replace(
+        / {2,}/g,
+        " ",
+      ),
+    );
   for (const t of of("Table")) {
     const cols = recs
       .filter((r) => r.kind === "Column" && str(r.table) === t.id)

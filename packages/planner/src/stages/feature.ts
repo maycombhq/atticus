@@ -10,7 +10,13 @@ import { parseYamlAs } from "./answer.js";
 import { checkDesign, designGaps } from "./design-check.js";
 import { estateIndex, loadEstate, systemOf, type Estate } from "./estate.js";
 import { designText, readFigma, type DesignRead } from "./figma.js";
-import { runStageLoop, type StageIssue, type StageOptions, type StageResult, type StageSpec } from "./loop.js";
+import {
+  runStageLoop,
+  type StageIssue,
+  type StageOptions,
+  type StageResult,
+  type StageSpec,
+} from "./loop.js";
 import { FeaturePlacement, STAGE_SCHEMA_VERSION } from "./schema.js";
 
 /**
@@ -75,7 +81,9 @@ gaps:                # what the estate lacks for this change, at a high level
 questions:           # what only a person can answer; never answer them yourself
   - question: <plain words>
     options:
-      - { label: <a few words>, means: <what picking it means>, changes: <what it changes in the feature> }
+      - label: <a few words>
+        means: <what picking it means>
+        changes: <what it changes in the feature>
     evidence: [<metarepo path:line you read it at, e.g. <changes>/<change>/brief.md:12>]
 
 Rules:
@@ -156,21 +164,44 @@ export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRe
     out.push({ rule, target, message, blocking: true, ...(repo ? { repo } : {}) });
   for (const f of p.features)
     if (e.byId.get(f.id)?.kind !== "Capability")
-      issue("feature.unknown-feature", f.id, `Feature ${f.id} isn't in the catalog. Name a feature id from the index, or describe what is new under newFlows.`);
+      issue(
+        "feature.unknown-feature",
+        f.id,
+        `Feature ${f.id} isn't in the catalog. Name a feature id from the index, or describe what is new under newFlows.`,
+      );
   for (const f of p.flows)
     if (!e.flowById.has(f.id))
-      issue("feature.unknown-flow", f.id, `Flow ${f.id} isn't in any repo's spec. Name a flow id from the index, or put it under newFlows.`);
+      issue(
+        "feature.unknown-flow",
+        f.id,
+        `Flow ${f.id} isn't in any repo's spec. Name a flow id from the index, or put it under newFlows.`,
+      );
   const repos = new Set([
     ...e.flows.map((f) => f.repo),
-    ...e.records.map((r) => (r as { repo?: unknown }).repo).filter((x): x is string => typeof x === "string"),
+    ...e.records
+      .map((r) => (r as { repo?: unknown }).repo)
+      .filter((x): x is string => typeof x === "string"),
   ]);
   for (const n of p.newFlows)
     if (!repos.has(n.repo))
-      issue("feature.unknown-repo", `${n.name}:${n.repo}`, `New flow "${n.name}" is put in repo ${n.repo}, which the estate doesn't have.`);
+      issue(
+        "feature.unknown-repo",
+        `${n.name}:${n.repo}`,
+        `New flow "${n.name}" is put in repo ${n.repo}, which the estate doesn't have.`,
+      );
   if (p.features.length + p.flows.length + p.newFlows.length === 0)
-    issue("feature.nothing-placed", p.change, "The feature touches nothing: name the features and flows it touches, or the new flows it needs.");
+    issue(
+      "feature.nothing-placed",
+      p.change,
+      "The feature touches nothing: name the features and flows it touches, or the new flows it needs.",
+    );
   if (p.entry === "figma") {
-    if (!p.design) issue("design.missing", p.change, "The change starts from a design, but the answer maps none of it: write the design section.");
+    if (!p.design)
+      issue(
+        "design.missing",
+        p.change,
+        "The change starts from a design, but the answer maps none of it: write the design section.",
+      );
     else if (design)
       out.push(
         ...checkDesign(p.design, design, { id: (id) => e.ids.has(id), endpoints: e.endpoints }),
@@ -195,20 +226,43 @@ export function renderFeature(p: FeaturePlacement): string {
     "",
     "## Gaps",
     "",
-    ...(p.gaps.length ? p.gaps.map((g) => `- ${g.what}: ${g.why}${g.from ? ` (${g.from})` : ""}`) : ["- None found."]),
+    ...(p.gaps.length
+      ? p.gaps.map(
+          (g) => `- ${g.what.replace(/[.\s]+$/, "")}: ${g.why}${g.from ? ` (${g.from})` : ""}`,
+        )
+      : ["- None found."]),
     "",
     "## Other changes in flight",
     "",
-    ...(p.conflicts.length ? p.conflicts.map((c) => `- ${c.why}`) : ["- None touch the same flows or systems."]),
+    ...(p.conflicts.length
+      ? p.conflicts.map((c) => `- ${c.why}`)
+      : ["- None touch the same flows or systems."]),
     "",
   ];
   if (p.design) {
-    lines.push("## Design", "", `From ${p.design.file}.`, "", "| Screen | Element | Backing or call | Gap |", "| --- | --- | --- | --- |");
+    lines.push(
+      "## Design",
+      "",
+      `From ${p.design.file}.`,
+      "",
+      "| Screen | Element | Backing or call | Gap |",
+      "| --- | --- | --- | --- |",
+    );
     for (const s of p.design.screens) {
       for (const f of s.fields)
-        lines.push(`| ${s.name} | ${f.label} | ${f.backing}${f.mapsTo ? `: ${f.mapsTo}` : ""} | ${f.gap ?? ""} |`.replace(/\n/g, " "));
+        lines.push(
+          `| ${s.name} | ${f.label} | ${f.backing}${f.mapsTo ? `: ${f.mapsTo}` : ""} | ${f.gap ?? ""} |`.replace(
+            /\n/g,
+            " ",
+          ),
+        );
       for (const a of s.actions)
-        lines.push(`| ${s.name} | ${a.label} (action) | ${a.endpoint ?? "nothing"} | ${a.gap ?? ""} |`.replace(/\n/g, " "));
+        lines.push(
+          `| ${s.name} | ${a.label} (action) | ${a.endpoint ?? "nothing"} | ${a.gap ?? ""} |`.replace(
+            /\n/g,
+            " ",
+          ),
+        );
     }
     lines.push("");
   }
@@ -241,7 +295,10 @@ export async function featureStage(
   if (designRel) {
     const text = await readFile(join(dir, ...designRel.split("/")), "utf8").catch(() => undefined);
     if (text === undefined)
-      throw new PlannerError("refused", `The design file ${rel}/${designRel} isn't there; run with --from-figma <file.json>.`);
+      throw new PlannerError(
+        "refused",
+        `The design file ${rel}/${designRel} isn't there; run with --from-figma <file.json>.`,
+      );
     try {
       design = readFigma(text);
     } catch (e) {
@@ -260,12 +317,40 @@ export async function featureStage(
 
   const sources: SourceInput[] = [];
   if (hasBrief)
-    sources.push({ id: "brief.md", kind: "artifact", origin: `${rel}/brief.md`, text: brief, classification: "internal", priority: 100 });
+    sources.push({
+      id: "brief.md",
+      kind: "artifact",
+      origin: `${rel}/brief.md`,
+      text: brief,
+      classification: "internal",
+      priority: 100,
+    });
   for (const s of stories)
-    sources.push({ id: s.file, kind: "artifact", origin: `${rel}/${s.file}`, text: s.text, classification: "internal", priority: 95 });
+    sources.push({
+      id: s.file,
+      kind: "artifact",
+      origin: `${rel}/${s.file}`,
+      text: s.text,
+      classification: "internal",
+      priority: 95,
+    });
   if (design)
-    sources.push({ id: "design", kind: "artifact", origin: `${rel}/${designRel}`, text: designText(design), classification: "internal", priority: 98 });
-  sources.push({ id: "estate-index", kind: "catalog", origin: "atticus change feature (deterministic)", text: estateIndex(estate), classification: "internal", priority: 90 });
+    sources.push({
+      id: "design",
+      kind: "artifact",
+      origin: `${rel}/${designRel}`,
+      text: designText(design),
+      classification: "internal",
+      priority: 98,
+    });
+  sources.push({
+    id: "estate-index",
+    kind: "catalog",
+    origin: "atticus change feature (deterministic)",
+    text: estateIndex(estate),
+    classification: "internal",
+    priority: 90,
+  });
 
   const instructions = [
     "# Feature placer",
@@ -282,13 +367,16 @@ export async function featureStage(
     change: change.id,
     entry,
     conflicts: [],
-    ...(d.design && typeof d.design === "object" ? { design: { file: designRel, ...(d.design as object) } } : {}),
+    ...(d.design && typeof d.design === "object"
+      ? { design: { file: designRel, ...(d.design as object) } }
+      : {}),
   });
 
   const spec: StageSpec<FeaturePlacement> = {
     stage: "feature",
     agent: FEATURE_AGENT,
-    description: "Places a change against the estate: the features and flows it touches, gaps and questions.",
+    description:
+      "Places a change against the estate: the features and flows it touches, gaps and questions.",
     output: "feature-answer.yaml",
     instructions,
     sources,
@@ -314,5 +402,8 @@ export async function featureStage(
     current: () => readPlacement(dir),
     questions: (p) => p.questions,
   };
-  return runStageLoop(root, change.id, spec, o);
+  const res = await runStageLoop(root, change.id, spec, o);
+  // The result carries what was written: the conflicts and design gaps Atticus added.
+  if (res.answer) res.answer = (await readPlacement(dir)) ?? res.answer;
+  return res;
 }

@@ -50,10 +50,12 @@ describe("atticus upgrade", () => {
       ["catalog-schema-v2", ["catalog/generated/system/ledger.yaml"]],
       ["local-files-ignored", [".atticus/.gitignore"]],
       ["state-folders-ignored", [".gitignore"]],
+      // ADR 0087: the Forge pack's gates.yaml is at version 1.
+      ["gates-v2", ["org-pack/gates.yaml"]],
     ]);
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
-    expect(r.out[0]).toMatch(/3 upgrade steps to run/);
+    expect(r.out[0]).toMatch(/4 upgrade steps to run/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
     expect(await upgradeCommand(root, { dryRun: true }, io().io, "1.0.0")).toBe(0);
@@ -90,6 +92,13 @@ describe("atticus upgrade", () => {
       "catalog-schema-v2",
       "local-files-ignored",
       "state-folders-ignored",
+      "gates-v2",
+    ]);
+    // Each gate keeps the two rounds version 1 gave it; deleting the line makes it unlimited.
+    const gates = parse(await readFile(join(root, "org-pack/gates.yaml"), "utf8"));
+    expect(gates.schemaVersion).toBe(2);
+    expect(gates.gates.map((g: { maxAuthorRounds?: number }) => g.maxAuthorRounds)).toEqual([
+      2, 2, 2, 2,
     ]);
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
     expect(await upgradeCommand(root, { check: true }, io().io, "1.0.0")).toBe(0);

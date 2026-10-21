@@ -12,7 +12,9 @@ import { FLOW_STEP_KINDS, FLOW_TRIGGER_KINDS, QuestionDraft } from "@maycombhq/c
 export const STAGE_SCHEMA_VERSION = 1 as const;
 const V = z.literal(STAGE_SCHEMA_VERSION);
 const text = () => z.string().trim().min(1);
-const Id = z.string().regex(/^[a-z0-9][a-z0-9._-]*$/, "an id is lower case: letters, digits, . _ -");
+const Id = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9._-]*$/, "an id is lower case: letters, digits, . _ -");
 
 export const STAGES = ["feature", "architecture", "stories"] as const;
 export const Stage = z.enum(STAGES);
@@ -88,9 +90,7 @@ export const FeaturePlacement = z.strictObject({
     )
     .default([]),
   /** Flows that don't exist yet. */
-  newFlows: z
-    .array(z.strictObject({ name: text(), repo: Id, why: text() }))
-    .default([]),
+  newFlows: z.array(z.strictObject({ name: text(), repo: Id, why: text() })).default([]),
   gaps: z
     .array(
       z.strictObject({
@@ -148,9 +148,7 @@ export const DeltaStep = z.strictObject({
   /** What the step does once the change is in, in one plain sentence. */
   what: z.string().optional(),
   /** call-out and publish: where it goes. `new` when the component or entry doesn't exist yet. */
-  to: z
-    .strictObject({ component: Id, entry: text(), new: z.boolean().default(false) })
-    .optional(),
+  to: z.strictObject({ component: Id, entry: text(), new: z.boolean().default(false) }).optional(),
   /** read, lookup and write: the table and columns. `new` for a table this change adds. */
   store: z
     .strictObject({
@@ -226,8 +224,6 @@ export const StageLoop = z.strictObject({
   /** Answered questions whose answers a draft has read. */
   read: z.array(z.string()).default([]),
   /** The critic rounds the loop ran, newest last. */
-  critic: z
-    .array(z.strictObject({ gate: text(), round: z.number().int().positive() }))
-    .default([]),
+  critic: z.array(z.strictObject({ gate: text(), round: z.number().int().positive() })).default([]),
 });
 export type StageLoop = z.infer<typeof StageLoop>;

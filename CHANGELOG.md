@@ -4,6 +4,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The change lifecycle as three stage loops
+
+- `atticus change feature <change> [--from-figma f.json]` (ADR 0087): your assistant places the change against the estate from its brief, its existing stories or an exported Figma design: the features and flows it touches, picked by meaning from a compact index of the repo specs and the catalog, the new flows it needs, gaps and questions. Every id is checked; other changes in flight on the same flows or systems are found from their files. A design's screens, fields and actions are read from the export and mapped; a field with no backing is a gap.
+- `atticus change architecture <change>`: the target flows, one flow delta per flow at `target-flows/<flow>.yaml` (steps added, changed or removed, with fields), checked against the specs and the catalog; the interface and data changes go into `design.md` and `data.md`.
+- `atticus plan stories <change>` on a change with target flows: a story per flow and repo, a task per changed step with its fields, evidence and a prompt for Copilot or Claude Code, and `requests.md`: the change tasks and service requests the knowledge items call for, each citing its item and the step. A person raises them.
+- Every stage loops: draft, the stage's checks and a critic round on every draft, findings back to the assistant, with no cap on model calls. A finding that comes back unchanged twice, or comes back after it was fixed, becomes a question and the loop stops. When nothing blocks, the command prints the stage's PR for a person to approve.
+- The critic's round limit is a setting: `gates.yaml` version 2 makes a gate with no `maxAuthorRounds` unlimited. `atticus upgrade` migrates a version 1 file and keeps each gate's two rounds until a person removes the line.
+- `/atticus-feature` and `/atticus-stories` drive the loops; `/atticus-architecture` is new. `--handoff` works on `change feature` and `change architecture`. `atticus next` and the app's Run next name them.
+- `atticus bench design [--mode m]` scores a design reading against `bench/design/reference.yaml`: screens, fields, backing, actions and gaps.
+
 ### Every step as a slash command in Copilot Chat, and `atticus next`
 
 - `atticus assistant-files` writes eight more slash commands (ADR 0086), for Copilot (`.github/prompts/`) and Claude Code (`.claude/commands/`): `/atticus-survey`, `/atticus-verify`, `/atticus-spec`, `/atticus-answer`, `/atticus-knowledge`, `/atticus-feature`, `/atticus-stories` and `/atticus-next`. Copilot's own model does the AI work; the command has it run `atticus` for everything else. `/atticus-spec` loops until the spec check passes. Every command stops at a question for a person.

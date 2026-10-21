@@ -145,7 +145,7 @@ describe("what to run next (plan 4.5)", () => {
   });
 
   it("has the Architecture page follow a change at the design stage, else rescan", () => {
-    expect(architectureStep([change("a", "design")]).command).toBe("atticus change status a");
+    expect(architectureStep([change("a", "design")]).command).toBe("atticus change architecture a");
     expect(architectureStep([change("a", "plan")]).command).toBe("atticus scan");
   });
 });
@@ -458,6 +458,6 @@ describe("Feature design, Stories and Tasks", () => {
   it("gives the Architecture page a Run next", () => {
     const out = html(<ArchitectureStep list={{ state: "ready", data: [change("a", "design")] }} />);
     expect(out).toContain(R.title);
-    expect(out).toContain("atticus change status a");
+    expect(out).toContain("atticus change architecture a");
   });
 });

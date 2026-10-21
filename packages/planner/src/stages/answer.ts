@@ -34,7 +34,12 @@ export function parseYamlAs<S extends z.ZodType>(
   if (typeof data !== "object" || data === null || Array.isArray(data))
     return {
       issues: [
-        { rule: "stage.format", target, message: "The answer isn't a YAML mapping.", blocking: true },
+        {
+          rule: "stage.format",
+          target,
+          message: "The answer isn't a YAML mapping.",
+          blocking: true,
+        },
       ],
     };
   const r = schema.safeParse(fill(data as Record<string, unknown>));

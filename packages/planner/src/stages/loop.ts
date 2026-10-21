@@ -29,7 +29,11 @@ import {
   writeFileAtomic,
   type ChangeContext,
 } from "@maycombhq/changes";
-import { fingerprint as criticFingerprint, runCritic, writeQuarantineItems } from "@maycombhq/naysayer";
+import {
+  fingerprint as criticFingerprint,
+  runCritic,
+  writeQuarantineItems,
+} from "@maycombhq/naysayer";
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
 import {
@@ -192,7 +196,12 @@ export async function runStageLoop<A>(
   const at = now.toISOString().replace(/\.\d{3}Z$/, "Z");
   const loop = await readLoop(dir, change.id, spec.stage);
   const agent = agentFor(ctx, spec as StageSpec<unknown>);
-  const levels = ctx.orgPack.pack?.classification ?? ["public", "internal", "confidential", "restricted"];
+  const levels = ctx.orgPack.pack?.classification ?? [
+    "public",
+    "internal",
+    "confidential",
+    "restricted",
+  ];
   const notes: string[] = [];
   const runs: RunSummary[] = [];
   let drafts = 0;
@@ -285,7 +294,12 @@ export async function runStageLoop<A>(
         outputPath: spec.output,
         outputIn: "run",
       });
-      await writeQuarantineItems(root, change.id, prepared.runId, quarantineItems(pack.defences ?? []));
+      await writeQuarantineItems(
+        root,
+        change.id,
+        prepared.runId,
+        quarantineItems(pack.defences ?? []),
+      );
       run = await o.runtime.run(prepared.runId);
     }
     runs.push(toRunSummary(run));
@@ -323,7 +337,8 @@ export async function runStageLoop<A>(
       }
     }
     // ---- the critic, on every iteration
-    if (answer !== undefined) found.push(...(await criticRound(root, ctx, change, spec.stage, o, loop, notes)));
+    if (answer !== undefined)
+      found.push(...(await criticRound(root, ctx, change, spec.stage, o, loop, notes)));
 
     // ---- fingerprints and the end rule
     const toAsk: { f: LoopFinding; issue: StageIssue }[] = [];
@@ -346,7 +361,8 @@ export async function runStageLoop<A>(
       f.blocking = i.blocking;
       f.seenIn = [...f.seenIn, n];
       byFp.set(fp, f);
-      const repeated = f.seenIn.length >= 3 && f.seenIn.at(-3) === n - 2 && f.seenIn.at(-2) === n - 1;
+      const repeated =
+        f.seenIn.length >= 3 && f.seenIn.at(-3) === n - 2 && f.seenIn.at(-2) === n - 1;
       const flipped = f.seenIn.length >= 2 && f.seenIn.at(-2)! < n - 1;
       if (f.blocking && !f.question && (repeated || flipped)) toAsk.push({ f, issue: i });
     }
@@ -399,7 +415,8 @@ export async function runStageLoop<A>(
       (await questionsOf(loop.questions)).filter((q) => q.state === "answered").map((q) => q.id),
     );
     const blocking = current.filter(
-      (f) => f.blocking && !(f.question && (answeredNow.has(f.question) || decided.has(f.question))),
+      (f) =>
+        f.blocking && !(f.question && (answeredNow.has(f.question) || decided.has(f.question))),
     );
     if (open.length) {
       loop.state = "questions";
@@ -422,7 +439,9 @@ export async function runStageLoop<A>(
 }
 
 export function rerunOf(stage: Stage, change: string): string {
-  return stage === "stories" ? `atticus plan stories ${change}` : `atticus change ${stage} ${change}`;
+  return stage === "stories"
+    ? `atticus plan stories ${change}`
+    : `atticus change ${stage} ${change}`;
 }
 
 function instructionsWith(base: string, fix: StageIssue[], answered: Question[]): string {

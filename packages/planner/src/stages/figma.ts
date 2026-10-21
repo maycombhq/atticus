@@ -90,7 +90,9 @@ export function readFigma(json: string): DesignRead {
   try {
     data = JSON.parse(json) as typeof data;
   } catch {
-    throw new Error("The design file isn't JSON: export it with the Figma API (GET /v1/files/:key).");
+    throw new Error(
+      "The design file isn't JSON: export it with the Figma API (GET /v1/files/:key).",
+    );
   }
   if (!data.document || data.document.type !== "DOCUMENT")
     throw new Error("The design file has no document: export it with GET /v1/files/:key.");
@@ -134,8 +136,7 @@ export function readFigma(json: string): DesignRead {
               control: "heading",
               ...(n.characters ? { sample: n.characters.trim() } : {}),
             });
-          else if (n.characters?.trim())
-            message(n.id!, n.characters.trim());
+          else if (n.characters?.trim()) message(n.id!, n.characters.trim());
           return;
         }
         if (n.type !== "INSTANCE" && n.type !== "COMPONENT") {
@@ -147,7 +148,11 @@ export function readFigma(json: string): DesignRead {
           screen.actions.push({
             figmaId: n.id!,
             label,
-            style: /primary/i.test(comp) ? "primary" : /secondary/i.test(comp) ? "secondary" : comp || "button",
+            style: /primary/i.test(comp)
+              ? "primary"
+              : /secondary/i.test(comp)
+                ? "secondary"
+                : comp || "button",
           });
           ids.add(n.id!);
           return;

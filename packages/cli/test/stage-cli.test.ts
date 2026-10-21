@@ -57,25 +57,41 @@ describe("atticus change feature", () => {
   it("loops to done and prints the PR to open", async () => {
     const root = await estate();
     const o = io();
-    const mock = new MockRuntime((req) => (req.agent.id.endsWith("-critic") ? "findings: []" : PLACED), { now: () => NOW });
-    const code = await stageCli(root, ["change", "feature", CHANGE], {}, o.io, { runtime: mock, now: NOW });
+    const mock = new MockRuntime(
+      (req) => (req.agent.id.endsWith("-critic") ? "findings: []" : PLACED),
+      { now: () => NOW },
+    );
+    const code = await stageCli(root, ["change", "feature", CHANGE], {}, o.io, {
+      runtime: mock,
+      now: NOW,
+    });
     expect(o.err).toEqual([]);
     expect(code).toBe(0);
     expect(o.out).toContain(
       "The feature stage is done after 1 draft (1 draft this run): nothing blocking is open and no question is waiting.",
     );
-    expect(o.out).toContain("Open the stage's pull request for a person to approve: atticus change handoff add-fraud-check --approve");
+    expect(o.out).toContain(
+      "Open the stage's pull request for a person to approve: atticus change handoff add-fraud-check --approve",
+    );
   });
 
   it("with --handoff prints only the prompt, the result file and the commands that finish it", async () => {
     const root = await estate();
     const out: string[] = [];
-    const code = await main(["change", "feature", CHANGE, "--handoff", "--root", root], { out: (l) => out.push(l), err: () => {} }, { quiet: true });
+    const code = await main(
+      ["change", "feature", CHANGE, "--handoff", "--root", root],
+      { out: (l) => out.push(l), err: () => {} },
+      { quiet: true },
+    );
     expect(code).toBe(0);
     expect(out).toHaveLength(5);
     expect(out[0]).toMatch(/^Prompt: \.runs\/add-fraud-check\/run-[0-9a-z-]+\/prompt\.md$/);
-    expect(out[1]).toMatch(/^Result file: \.runs\/add-fraud-check\/run-[0-9a-z-]+\/feature-answer\.yaml$/);
-    expect(out[4]).toMatch(/^ {2}atticus change feature add-fraud-check --root .+ --handoff --resume run-/);
+    expect(out[1]).toMatch(
+      /^Result file: \.runs\/add-fraud-check\/run-[0-9a-z-]+\/feature-answer\.yaml$/,
+    );
+    expect(out[4]).toMatch(
+      /^ {2}atticus change feature add-fraud-check --root .+ --handoff --resume run-/,
+    );
   });
 });
 
@@ -84,10 +100,17 @@ describe("atticus bench design", () => {
     const cache = await mkdtemp(join(tmpdir(), "atticus-design-bench-"));
     const o = io();
     const mock = new MockRuntime(() => "design:\n  screens: []\n", { now: () => NOW });
-    const code = await stageCli(process.cwd(), ["bench", "design"], { bench: BENCH, cache }, o.io, { runtime: mock, now: NOW });
+    const code = await stageCli(process.cwd(), ["bench", "design"], { bench: BENCH, cache }, o.io, {
+      runtime: mock,
+      now: NOW,
+    });
     expect(o.err).toEqual([]);
     expect(code).toBe(0);
-    expect(o.out[0]).toMatch(/^Design bench: .+ \(5 screens, \d+ fields and actions read; 3 drafts\)$/);
-    expect(o.out).toContain("Screens: 0 of 5 found (missed: owner-pets, pet-vaccinations, add-vaccination, vaccination-saved, vaccinations-empty-error)");
+    expect(o.out[0]).toMatch(
+      /^Design bench: .+ \(5 screens, \d+ fields and actions read; 3 drafts\)$/,
+    );
+    expect(o.out).toContain(
+      "Screens: 0 of 5 found (missed: owner-pets, pet-vaccinations, add-vaccination, vaccination-saved, vaccinations-empty-error)",
+    );
   });
 });

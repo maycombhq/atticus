@@ -78,17 +78,44 @@ export interface DesignMapping {
 
 export interface DesignScore {
   screens: { found: number; of: number; missed: string[] };
-  fields: { found: number; of: number; extra: string[]; missed: string[]; precision: number; recall: number };
-  backing: { correct: number; of: number; wrong: { figmaId: string; label: string; why: string }[] };
-  actions: { found: number; of: number; mapped: number; wrong: { figmaId: string; label: string; why: string }[] };
-  gaps: { found: number; of: number; missed: string[]; flagged: number; matched: number; precision: number };
+  fields: {
+    found: number;
+    of: number;
+    extra: string[];
+    missed: string[];
+    precision: number;
+    recall: number;
+  };
+  backing: {
+    correct: number;
+    of: number;
+    wrong: { figmaId: string; label: string; why: string }[];
+  };
+  actions: {
+    found: number;
+    of: number;
+    mapped: number;
+    wrong: { figmaId: string; label: string; why: string }[];
+  };
+  gaps: {
+    found: number;
+    of: number;
+    missed: string[];
+    flagged: number;
+    matched: number;
+    precision: number;
+  };
 }
 
 const ratio = (a: number, b: number) => (b === 0 ? 1 : Math.round((a / b) * 1000) / 1000);
 const NAV = /^\s*(none|navigation)\b/i;
 /** Dotted identifiers (Owner.firstName, owners.first_name), lower case. */
 const tokens = (s: string | undefined) =>
-  new Set([...(s ?? "").matchAll(/\b[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+\b/g)].map((m) => m[0].toLowerCase()));
+  new Set(
+    [...(s ?? "").matchAll(/\b[A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)+\b/g)].map((m) =>
+      m[0].toLowerCase(),
+    ),
+  );
 const endpointOf = (s: string | undefined) => {
   const m = /\b(GET|POST|PUT|PATCH|DELETE)\s+\/\S+/.exec(s ?? "");
   return m ? endpointKey(m[0]) : undefined;
@@ -96,8 +123,12 @@ const endpointOf = (s: string | undefined) => {
 
 export function scoreDesign(ref: DesignReference, m: DesignMapping): DesignScore {
   const outScreens = new Set(m.design.screens.map((s) => s.figmaId));
-  const outFields = new Map(m.design.screens.flatMap((s) => s.fields.map((f) => [f.figmaId, f] as const)));
-  const outActions = new Map(m.design.screens.flatMap((s) => s.actions.map((a) => [a.figmaId, a] as const)));
+  const outFields = new Map(
+    m.design.screens.flatMap((s) => s.fields.map((f) => [f.figmaId, f] as const)),
+  );
+  const outActions = new Map(
+    m.design.screens.flatMap((s) => s.actions.map((a) => [a.figmaId, a] as const)),
+  );
   const refFields = ref.screens.flatMap((s) => s.fields);
   const refActions = ref.screens.flatMap((s) => s.actions);
   const trapTokens = new Set(ref.traps.flatMap((t) => [...tokens(t)]));
@@ -119,7 +150,8 @@ export function scoreDesign(ref: DesignReference, m: DesignMapping): DesignScore
     else if (trap) why = `fell into a trap: ${trap}`;
     else if (rf.backing === "existing" && wantT.size && ![...wantT].some((t) => gotT.has(t)))
       why = `maps to "${f.mapsTo ?? ""}", should be ${rf.maps_to}`;
-    else if (rf.backing === "existing" && rf.gap && !f.gap?.trim()) why = "backed, but the missing link isn't named as a gap";
+    else if (rf.backing === "existing" && rf.gap && !f.gap?.trim())
+      why = "backed, but the missing link isn't named as a gap";
     if (why) backingWrong.push({ figmaId: rf.figma_id, label: rf.label, why });
     else backingRight++;
   }
@@ -134,8 +166,10 @@ export function scoreDesign(ref: DesignReference, m: DesignMapping): DesignScore
     let why: string | undefined;
     if (want) {
       if (got !== want) why = `calls ${got ?? "nothing"}, should call ${want}`;
-    } else if (got) why = `calls ${got}${trapEndpoints.has(got) ? " (a trap)" : ""}, but nothing serves it today`;
-    else if (ra.gap && !a.gap?.trim() && !NAV.test(ra.existing_endpoint ?? "")) why = "names no gap for the missing call";
+    } else if (got)
+      why = `calls ${got}${trapEndpoints.has(got) ? " (a trap)" : ""}, but nothing serves it today`;
+    else if (ra.gap && !a.gap?.trim() && !NAV.test(ra.existing_endpoint ?? ""))
+      why = "names no gap for the missing call";
     if (why) actionWrong.push({ figmaId: ra.figma_id, label: ra.label, why });
     else mapped++;
   }
@@ -212,8 +246,16 @@ export interface BenchEstate {
 
 /** The petclinic estate from the bench's own files: its flows, and the API's endpoints and tables. */
 export async function benchEstate(benchRoot: string, ref: DesignReference): Promise<BenchEstate> {
-  const flows = (parse(await readFile(join(benchRoot, "flows", `${ref.estate}.yaml`), "utf8")) as { flows?: BenchFlow[] }).flows ?? [];
-  const lines = ["The estate, from the bench's specs of flows and its references. Ids are exact.", ""];
+  const flows =
+    (
+      parse(await readFile(join(benchRoot, "flows", `${ref.estate}.yaml`), "utf8")) as {
+        flows?: BenchFlow[];
+      }
+    ).flows ?? [];
+  const lines = [
+    "The estate, from the bench's specs of flows and its references. Ids are exact.",
+    "",
+  ];
   const ids = new Set<string>();
   const endpoints = new Set<string>();
   const columns = new Map<string, Set<string>>();
@@ -230,10 +272,14 @@ export async function benchEstate(benchRoot: string, ref: DesignReference): Prom
         return `${i + 1} ${s.kind}${s.repo ? ` (${s.repo})` : ""}${s.to?.entry ? ` → ${s.to.entry}` : ""}${s.store ? ` ${s.store.table}` : ""}${fields.length ? ` [${[...new Set(fields)].join(", ")}]` : ""}`;
       })
       .join("; ");
-    lines.push(`flow ${f.id} "${f.name}": ${f.trigger.kind} in ${f.trigger.repo ?? "?"}: ${f.trigger.what}. Steps: ${steps}`);
+    lines.push(
+      `flow ${f.id} "${f.name}": ${f.trigger.kind} in ${f.trigger.repo ?? "?"}: ${f.trigger.what}. Steps: ${steps}`,
+    );
   }
   for (const repo of ref.repos) {
-    const r = parse(await readFile(join(benchRoot, "references", `${repo}.yaml`), "utf8").catch(() => "{}")) as {
+    const r = parse(
+      await readFile(join(benchRoot, "references", `${repo}.yaml`), "utf8").catch(() => "{}"),
+    ) as {
       serves?: { method?: string; path: string }[];
       stores?: { table: string }[];
     };
@@ -244,7 +290,9 @@ export async function benchEstate(benchRoot: string, ref: DesignReference): Prom
       }
     for (const t of r.stores ?? []) {
       ids.add(t.table);
-      lines.push(`table ${t.table} (${repo}): columns ${[...(columns.get(t.table) ?? [])].sort().join(", ") || "not listed"}`);
+      lines.push(
+        `table ${t.table} (${repo}): columns ${[...(columns.get(t.table) ?? [])].sort().join(", ") || "not listed"}`,
+      );
     }
   }
   return { text: lines.join("\n"), ids, endpoints };
@@ -274,7 +322,13 @@ export interface DesignBenchOptions {
 
 export type DesignBenchResult =
   | { status: "waiting"; runId: string }
-  | { status: "scored"; score: DesignScore; drafts: number; problems: string[]; read: { screens: number; candidates: number } };
+  | {
+      status: "scored";
+      score: DesignScore;
+      drafts: number;
+      problems: string[];
+      read: { screens: number; candidates: number };
+    };
 
 export async function runDesignBench(o: DesignBenchOptions): Promise<DesignBenchResult> {
   const dir = join(o.bench, "design");
@@ -318,17 +372,52 @@ export async function runDesignBench(o: DesignBenchOptions): Promise<DesignBench
             "gaps:   # anything else the design needs that the estate lacks",
             "  - what: <what is missing>",
             "    why: <why>",
-            ...(problems.length ? ["", "Your last answer had these problems. Fix every one:", ...problems.map((p) => `- ${p}`)] : []),
+            ...(problems.length
+              ? [
+                  "",
+                  "Your last answer had these problems. Fix every one:",
+                  ...problems.map((p) => `- ${p}`),
+                ]
+              : []),
           ].join("\n"),
         },
-        { id: "design", kind: "artifact", origin: `bench/design/${ref.design}`, text: designText(read), classification: "internal", priority: 100 },
-        { id: "estate", kind: "catalog", origin: "bench/flows and bench/references", text: estate.text, classification: "internal", priority: 90 },
+        {
+          id: "design",
+          kind: "artifact",
+          origin: `bench/design/${ref.design}`,
+          text: designText(read),
+          classification: "internal",
+          priority: 100,
+        },
+        {
+          id: "estate",
+          kind: "catalog",
+          origin: "bench/flows and bench/references",
+          text: estate.text,
+          classification: "internal",
+          priority: 90,
+        },
       ];
-      const pack = buildContextPack({ change: "design-bench", agent: agent.id, budget: agent.tokenBudget, sources, levels: ["public", "internal"], maxClassification: "internal", now });
-      const prepared = await o.runtime.prepare({ change: "design-bench", agent, pack, outputPath: OUTPUT, outputIn: "run" });
+      const pack = buildContextPack({
+        change: "design-bench",
+        agent: agent.id,
+        budget: agent.tokenBudget,
+        sources,
+        levels: ["public", "internal"],
+        maxClassification: "internal",
+        now,
+      });
+      const prepared = await o.runtime.prepare({
+        change: "design-bench",
+        agent,
+        pack,
+        outputPath: OUTPUT,
+        outputIn: "run",
+      });
       run = await o.runtime.run(prepared.runId);
     }
-    if (run.state === "waiting" || run.state === "prepared") return { status: "waiting", runId: run.runId };
+    if (run.state === "waiting" || run.state === "prepared")
+      return { status: "waiting", runId: run.runId };
     drafts++;
     if (run.output === undefined) {
       problems = [`The assistant gave no answer (${run.state}).`];
@@ -347,15 +436,24 @@ export async function runDesignBench(o: DesignBenchOptions): Promise<DesignBench
       continue;
     }
     last = { design: { file: ref.design, ...r.data.design }, gaps: r.data.gaps };
-    problems = checkDesign(last.design, read, { id: (id) => estate.ids.has(id), endpoints: estate.endpoints }).map((i) => i.message);
+    problems = checkDesign(last.design, read, {
+      id: (id) => estate.ids.has(id),
+      endpoints: estate.endpoints,
+    }).map((i) => i.message);
     if (problems.length === 0) break;
   }
-  const score = scoreDesign(ref, last ?? { design: { file: ref.design, screens: [], ignored: [] } });
+  const score = scoreDesign(
+    ref,
+    last ?? { design: { file: ref.design, screens: [], ignored: [] } },
+  );
   return {
     status: "scored",
     score,
     drafts,
     problems,
-    read: { screens: read.screens.length, candidates: read.screens.reduce((a, s) => a + s.fields.length + s.actions.length, 0) },
+    read: {
+      screens: read.screens.length,
+      candidates: read.screens.reduce((a, s) => a + s.fields.length + s.actions.length, 0),
+    },
   };
 }

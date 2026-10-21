@@ -9,7 +9,13 @@ import { PlannerError } from "../errors.js";
 import { parseYamlAs } from "./answer.js";
 import { columnsOf, estateIndex, loadEstate, type Estate } from "./estate.js";
 import { readPlacement } from "./feature.js";
-import { runStageLoop, type StageIssue, type StageOptions, type StageResult, type StageSpec } from "./loop.js";
+import {
+  runStageLoop,
+  type StageIssue,
+  type StageOptions,
+  type StageResult,
+  type StageSpec,
+} from "./loop.js";
 import { FlowDelta, STAGE_SCHEMA_VERSION, type FeaturePlacement } from "./schema.js";
 import { z } from "zod";
 
@@ -56,7 +62,9 @@ Rules:
 
 const Answer = z.strictObject({ flows: z.array(FlowDelta) });
 
-export async function readDeltas(dir: string): Promise<{ deltas: FlowDelta[]; problems: string[] }> {
+export async function readDeltas(
+  dir: string,
+): Promise<{ deltas: FlowDelta[]; problems: string[] }> {
   const deltas: FlowDelta[] = [];
   const problems: string[] = [];
   for (const f of (await readdir(join(dir, TARGET_DIR)).catch(() => [] as string[])).sort()) {
@@ -64,7 +72,10 @@ export async function readDeltas(dir: string): Promise<{ deltas: FlowDelta[]; pr
     try {
       const r = FlowDelta.safeParse(parse(await readFile(join(dir, TARGET_DIR, f), "utf8")));
       if (r.success) deltas.push(r.data);
-      else problems.push(`${TARGET_DIR}/${f}: ${r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
+      else
+        problems.push(
+          `${TARGET_DIR}/${f}: ${r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+        );
     } catch (e) {
       problems.push(`${TARGET_DIR}/${f}: ${(e as Error).message.split("\n")[0]}`);
     }
@@ -72,7 +83,15 @@ export async function readDeltas(dir: string): Promise<{ deltas: FlowDelta[]; pr
   return { deltas, problems };
 }
 
-const MOVES_DATA = new Set(["call-out", "publish", "respond", "transform", "write", "read", "lookup"]);
+const MOVES_DATA = new Set([
+  "call-out",
+  "publish",
+  "respond",
+  "transform",
+  "write",
+  "read",
+  "lookup",
+]);
 
 export function checkDeltas(deltas: FlowDelta[], e: Estate, p: FeaturePlacement): StageIssue[] {
   const out: StageIssue[] = [];
@@ -81,18 +100,37 @@ export function checkDeltas(deltas: FlowDelta[], e: Estate, p: FeaturePlacement)
   const seen = new Set<string>();
   for (const d of deltas) {
     const t = d.flow;
-    if (seen.has(t)) issue("delta.twice", t, `Flow ${t} has two deltas; write one per flow.`, d.repo);
+    if (seen.has(t))
+      issue("delta.twice", t, `Flow ${t} has two deltas; write one per flow.`, d.repo);
     seen.add(t);
     const today = e.flowById.get(t);
     if (d.change !== "new" && !today) {
-      issue("delta.unknown-flow", t, `Flow ${t} isn't in any repo's spec; a flow that doesn't exist yet is change: new.`, d.repo);
+      issue(
+        "delta.unknown-flow",
+        t,
+        `Flow ${t} isn't in any repo's spec; a flow that doesn't exist yet is change: new.`,
+        d.repo,
+      );
       continue;
     }
     if (d.change === "new") {
-      if (today) issue("delta.exists", t, `Flow ${t} already exists; change it with change: modify.`, d.repo);
+      if (today)
+        issue(
+          "delta.exists",
+          t,
+          `Flow ${t} already exists; change it with change: modify.`,
+          d.repo,
+        );
       if (!d.name?.trim()) issue("delta.new-no-name", t, `New flow ${t} has no name.`, d.repo);
-      if (!d.trigger) issue("delta.new-no-trigger", t, `New flow ${t} has no trigger: say what starts it.`, d.repo);
-      if (d.steps.length === 0) issue("delta.new-no-steps", t, `New flow ${t} has no steps.`, d.repo);
+      if (!d.trigger)
+        issue(
+          "delta.new-no-trigger",
+          t,
+          `New flow ${t} has no trigger: say what starts it.`,
+          d.repo,
+        );
+      if (d.steps.length === 0)
+        issue("delta.new-no-steps", t, `New flow ${t} has no steps.`, d.repo);
     }
     if (today && today.repo !== d.repo)
       issue("delta.wrong-repo", t, `Flow ${t} is in repo ${today.repo}, not ${d.repo}.`, d.repo);
@@ -101,69 +139,182 @@ export function checkDeltas(deltas: FlowDelta[], e: Estate, p: FeaturePlacement)
       const at = `${t}#${i + 1}`;
       if (s.op === "add") {
         if (d.change !== "new" && s.after === undefined)
-          issue("delta.add-no-place", at, `Step ${i + 1} of ${t} adds a step but says not where: give after (the step it follows).`, d.repo);
+          issue(
+            "delta.add-no-place",
+            at,
+            `Change ${i + 1} to ${t} adds a step but says not where: give after (the step it follows).`,
+            d.repo,
+          );
         if (s.after !== undefined && s.after > count && d.change !== "new")
-          issue("delta.bad-step", at, `Step ${i + 1} of ${t} goes after step ${s.after}, but the flow has ${count} steps.`, d.repo);
+          issue(
+            "delta.bad-step",
+            at,
+            `Change ${i + 1} to ${t} goes after step ${s.after}, but the flow has ${count} steps.`,
+            d.repo,
+          );
         if (!s.kind || !s.what?.trim())
-          issue("delta.add-incomplete", at, `Step ${i + 1} of ${t} adds a step without its kind and what it does.`, d.repo);
+          issue(
+            "delta.add-incomplete",
+            at,
+            `Change ${i + 1} to ${t} adds a step without its kind and what it does.`,
+            d.repo,
+          );
       } else if (s.step === undefined || s.step > count)
-        issue("delta.bad-step", at, `Step ${i + 1} of ${t} ${s.op}s step ${s.step ?? "?"}, which today's flow doesn't have (it has ${count}).`, d.repo);
+        issue(
+          "delta.bad-step",
+          at,
+          `Change ${i + 1} to ${t} ${s.op}s step ${s.step ?? "?"}, which today's flow doesn't have (it has ${count}).`,
+          d.repo,
+        );
       if (s.op === "remove") return;
       const kind = s.kind ?? (s.step ? today?.flow.steps[s.step - 1]?.kind : undefined);
       if ((kind === "call-out" || kind === "publish") && s.op === "add" && !s.to)
-        issue("delta.no-target", at, `Step ${i + 1} of ${t} is a ${kind} with no target: say which component and entry it goes to.`, d.repo);
-      if (s.to && !s.to.new && !["Component", "System"].includes(e.byId.get(s.to.component)?.kind ?? ""))
-        issue("delta.unknown-component", at, `Step ${i + 1} of ${t} goes to ${s.to.component}, which the catalog doesn't have; use an id from the index, or new: true.`, d.repo);
+        issue(
+          "delta.no-target",
+          at,
+          `Change ${i + 1} to ${t} is a ${kind} with no target: say which component and entry it goes to.`,
+          d.repo,
+        );
+      if (
+        s.to &&
+        !s.to.new &&
+        !["Component", "System"].includes(e.byId.get(s.to.component)?.kind ?? "")
+      )
+        issue(
+          "delta.unknown-component",
+          at,
+          `Change ${i + 1} to ${t} goes to ${s.to.component}, which the catalog doesn't have; use an id from the index, or new: true.`,
+          d.repo,
+        );
       if (s.store) {
         if (!s.store.new && e.byId.get(s.store.table)?.kind !== "Table")
-          issue("delta.unknown-table", at, `Step ${i + 1} of ${t} uses table ${s.store.table}, which the catalog doesn't have; use an id from the index, or new: true.`, d.repo);
-        if ((kind === "write" || kind === "read" || kind === "lookup") && s.store.columns.length === 0)
-          issue("delta.no-columns", at, `Step ${i + 1} of ${t} ${kind === "write" ? "writes" : "reads"} ${s.store.table} without naming its columns.`, d.repo);
+          issue(
+            "delta.unknown-table",
+            at,
+            `Change ${i + 1} to ${t} uses table ${s.store.table}, which the catalog doesn't have; use an id from the index, or new: true.`,
+            d.repo,
+          );
+        if (
+          (kind === "write" || kind === "read" || kind === "lookup") &&
+          s.store.columns.length === 0
+        )
+          issue(
+            "delta.no-columns",
+            at,
+            `Change ${i + 1} to ${t} ${kind === "write" ? "writes" : "reads"} ${s.store.table} without naming its columns.`,
+            d.repo,
+          );
         const have = columnsOf(e, s.store.table);
         const added = s.store.columns.filter((c) => s.store!.new || !have.has(c));
         for (const c of added) {
           if (!s.store.types?.[c])
-            issue("delta.no-type", `${at}:${c}`, `Step ${i + 1} of ${t} adds column ${c} to ${s.store.table} without its type: give it under store.types.`, d.repo);
+            issue(
+              "delta.no-type",
+              `${at}:${c}`,
+              `Change ${i + 1} to ${t} adds column ${c} to ${s.store.table} without its type: give it under store.types.`,
+              d.repo,
+            );
           if (!s.store.classification?.[c])
-            issue("delta.no-classification", `${at}:${c}`, `Step ${i + 1} of ${t} adds column ${c} to ${s.store.table} without its classification: give it under store.classification.`, d.repo);
+            issue(
+              "delta.no-classification",
+              `${at}:${c}`,
+              `Change ${i + 1} to ${t} adds column ${c} to ${s.store.table} without its classification: give it under store.classification.`,
+              d.repo,
+            );
         }
         if (added.length && !s.store.migration?.trim())
-          issue("delta.no-migration", at, `Step ${i + 1} of ${t} changes ${s.store.table} without naming the migration: give it as store.migration.`, d.repo);
+          issue(
+            "delta.no-migration",
+            at,
+            `Change ${i + 1} to ${t} changes ${s.store.table} without naming the migration: give it as store.migration.`,
+            d.repo,
+          );
         if (s.store.new && !s.store.retention?.trim())
-          issue("delta.no-retention", at, `Step ${i + 1} of ${t} adds table ${s.store.table} without saying how long its rows are kept: give store.retention.`, d.repo);
+          issue(
+            "delta.no-retention",
+            at,
+            `Change ${i + 1} to ${t} adds table ${s.store.table} without saying how long its rows are kept: give store.retention.`,
+            d.repo,
+          );
       }
       const named = Object.values(s.fields ?? {}).flat().length + (s.store?.columns.length ?? 0);
       if (kind && MOVES_DATA.has(kind) && named === 0)
-        issue("delta.no-fields", at, `Step ${i + 1} of ${t} (${kind}) names no fields: say what it sends, returns, reads or stores.`, d.repo);
+        issue(
+          "delta.no-fields",
+          at,
+          `Change ${i + 1} to ${t} (${kind}) names no fields: say what it sends, returns, reads or stores.`,
+          d.repo,
+        );
     });
   }
   for (const f of p.flows)
     if (f.how === "changed" && !seen.has(f.id))
-      issue("delta.flow-missing", f.id, `The feature changes flow ${f.id}, but there is no delta for it.`, e.flowById.get(f.id)?.repo ?? p.change);
+      issue(
+        "delta.flow-missing",
+        f.id,
+        `The feature changes flow ${f.id}, but there is no delta for it.`,
+        e.flowById.get(f.id)?.repo ?? p.change,
+      );
   for (const n of p.newFlows)
     if (!deltas.some((d) => d.change === "new" && d.repo === n.repo))
-      issue("delta.new-flow-missing", `${n.repo}:${n.name}`, `The feature needs a new flow in ${n.repo} ("${n.name}"), but no delta adds one there.`, n.repo);
+      issue(
+        "delta.new-flow-missing",
+        `${n.repo}:${n.name}`,
+        `The feature needs a new flow in ${n.repo} ("${n.name}"), but no delta adds one there.`,
+        n.repo,
+      );
   return out;
 }
 
 /** Interface changes, from the deltas: a call-out or publish added, changed or removed. */
 export function interfaceChanges(deltas: FlowDelta[], e: Estate) {
-  const out: { flow: string; caller: string; callee: string; operation: string; status: string; fields: string[] }[] = [];
+  const out: {
+    flow: string;
+    caller: string;
+    callee: string;
+    operation: string;
+    status: string;
+    fields: string[];
+  }[] = [];
   for (const d of deltas) {
     const today = e.flowById.get(d.flow)?.flow;
     const caller = today?.component ?? d.flow.split(".")[0]!;
     for (const s of d.steps) {
       const old = s.step ? today?.steps[s.step - 1] : undefined;
       const kind = s.kind ?? old?.kind;
+      // The flow's own entry point changes when its entry or response gains or loses fields.
+      if ((kind === "entry" || kind === "respond") && s.op === "change" && today) {
+        const was = new Set([...(old?.data?.reads ?? []), ...(old?.data?.returns ?? [])]);
+        const now = [...(s.fields?.reads ?? []), ...(s.fields?.returns ?? [])];
+        const ep = e.byId.get(today.trigger.ref ?? "") as
+          { method?: string; pathOrTopic?: string } | undefined;
+        if (ep?.pathOrTopic && now.some((f) => !was.has(f)))
+          out.push({
+            flow: d.flow,
+            caller: "its callers",
+            callee: today.component,
+            operation: `${ep.method ?? ""} ${ep.pathOrTopic}`.trim(),
+            status: "planned-modify",
+            fields: now.filter((f) => !was.has(f)),
+          });
+        continue;
+      }
       if (kind !== "call-out" && kind !== "publish") continue;
-      const to = s.to ?? (old?.to ? { component: old.to.component, entry: old.to.entry, new: false } : undefined);
+      const to =
+        s.to ??
+        (old?.to ? { component: old.to.component, entry: old.to.entry, new: false } : undefined);
       if (!to) continue;
       out.push({
         flow: d.flow,
         caller,
         callee: to.component,
         operation: to.entry,
-        status: s.op === "remove" ? "planned-retire" : s.op === "add" || to.new ? "planned-new" : "planned-modify",
+        status:
+          s.op === "remove"
+            ? "planned-retire"
+            : s.op === "add" || to.new
+              ? "planned-new"
+              : "planned-modify",
         fields: [...(s.fields?.sends ?? []), ...(s.fields?.returns ?? [])],
       });
     }
@@ -194,13 +345,28 @@ export function dataChanges(deltas: FlowDelta[], e: Estate) {
       };
       if (s.store.new) {
         if (!out.some((x) => x.table === s.store!.table && x.change === "new table"))
-          out.push({ flow: d.flow, table: s.store.table, change: "new table", columns: s.store.columns, ...extra });
+          out.push({
+            flow: d.flow,
+            table: s.store.table,
+            change: "new table",
+            columns: s.store.columns,
+            ...extra,
+          });
         continue;
       }
       const have = columnsOf(e, s.store.table);
       const add = s.store.columns.filter((c) => !have.has(c));
-      if (add.length && !out.some((x) => x.table === s.store!.table && add.every((c) => x.columns.includes(c))))
-        out.push({ flow: d.flow, table: s.store.table, change: "new columns", columns: add, ...extra });
+      if (
+        add.length &&
+        !out.some((x) => x.table === s.store!.table && add.every((c) => x.columns.includes(c)))
+      )
+        out.push({
+          flow: d.flow,
+          table: s.store.table,
+          change: "new columns",
+          columns: add,
+          ...extra,
+        });
     }
   return out;
 }
@@ -209,7 +375,8 @@ export function dataChanges(deltas: FlowDelta[], e: Estate) {
 export function renderData(deltas: FlowDelta[], e: Estate): string | undefined {
   const changes = dataChanges(deltas, e);
   if (!changes.length) return undefined;
-  const rec = (table: string) => e.byId.get(table) as { dataStore?: string; name?: string } | undefined;
+  const rec = (table: string) =>
+    e.byId.get(table) as { dataStore?: string; name?: string } | undefined;
   const store = (table: string) => rec(table)?.dataStore ?? table.split(".")[0]!;
   const name = (table: string) => rec(table)?.name ?? table.split(".").pop()!;
   const rows = changes.map((c) => {
@@ -227,7 +394,10 @@ export function renderData(deltas: FlowDelta[], e: Estate): string | undefined {
   );
   const kept = changes
     .filter((c) => c.retention)
-    .map((c) => `- Rows of ${name(c.table)} are kept for ${c.retention!.replace(/^kept for\s+/i, "")}.`);
+    .map(
+      (c) =>
+        `- Rows of ${name(c.table)} are kept for ${c.retention!.replace(/^kept for\s+/i, "")}.`,
+    );
   return [
     `${MARK} from the target flows (target-flows/). Edit the flows and run the stage again. -->`,
     "# Data",
@@ -259,23 +429,38 @@ export function renderArchitecture(deltas: FlowDelta[], e: Estate): string {
   ];
   for (const d of deltas) {
     const today = e.flowById.get(d.flow)?.flow;
-    lines.push(`### ${d.change === "new" ? `New flow ${d.flow}: ${d.name ?? ""}` : `${d.flow}: ${today?.name ?? ""}`} (${d.repo}, ${d.change})`, "", d.why, "");
+    lines.push(
+      `### ${d.change === "new" ? `New flow ${d.flow}: ${d.name ?? ""}` : `${d.flow}: ${today?.name ?? ""}`} (${d.repo}, ${d.change})`,
+      "",
+      d.why,
+      "",
+    );
     for (const s of d.steps) {
       const fields = [...Object.values(s.fields ?? {}).flat(), ...(s.store?.columns ?? [])];
       const where = s.op === "add" ? `after step ${s.after ?? 0}` : `step ${s.step}`;
-      lines.push(`- ${s.op} ${where}${s.kind ? ` (${s.kind})` : ""}: ${s.what ?? today?.steps[(s.step ?? 1) - 1]?.what ?? ""}${s.to ? ` → ${s.to.component} ${s.to.entry}${s.to.new ? " (new)" : ""}` : ""}${s.store ? ` [${s.store.table}${s.store.new ? ", new" : ""}]` : ""}${fields.length ? `; fields ${[...new Set(fields)].join(", ")}` : ""}`);
+      lines.push(
+        `- ${s.op} ${where}${s.kind ? ` (${s.kind})` : ""}: ${s.what ?? today?.steps[(s.step ?? 1) - 1]?.what ?? ""}${s.to ? ` → ${s.to.component} ${s.to.entry}${s.to.new ? " (new)" : ""}` : ""}${s.store ? ` [${s.store.table}${s.store.new ? ", new" : ""}]` : ""}${fields.length ? `; fields ${[...new Set(fields)].join(", ")}` : ""}`,
+      );
     }
     lines.push("");
   }
   const ifs = interfaceChanges(deltas, e);
   lines.push("## Interface changes", "");
   if (ifs.length) {
-    lines.push("| Caller | Callee | Operation | Status | Fields | Flow |", "| --- | --- | --- | --- | --- | --- |");
-    for (const i of ifs) lines.push(`| ${i.caller} | ${i.callee} | ${i.operation} | ${i.status} | ${i.fields.join(", ")} | ${i.flow} |`);
+    lines.push(
+      "| Caller | Callee | Operation | Status | Fields | Flow |",
+      "| --- | --- | --- | --- | --- | --- |",
+    );
+    for (const i of ifs)
+      lines.push(
+        `| ${i.caller} | ${i.callee} | ${i.operation} | ${i.status} | ${i.fields.join(", ")} | ${i.flow} |`,
+      );
   } else lines.push("None.");
   const data = dataChanges(deltas, e);
   lines.push("", "## Data changes", "");
-  if (data.length) for (const x of data) lines.push(`- ${x.table}: ${x.change} ${x.columns.join(", ")} (${x.flow})`);
+  if (data.length)
+    for (const x of data)
+      lines.push(`- ${x.table}: ${x.change} ${x.columns.join(", ")} (${x.flow})`);
   else lines.push("None.");
   lines.push("");
   return lines.join("\n");
@@ -295,7 +480,10 @@ export async function architectureStage(
   const rel = `${changesRelOf(root)}/${change.id}`;
   const placement = await readPlacement(dir);
   if (!placement)
-    throw new PlannerError("refused", `${change.id} has no feature yet: run atticus change feature ${change.id} first.`);
+    throw new PlannerError(
+      "refused",
+      `${change.id} has no feature yet: run atticus change feature ${change.id} first.`,
+    );
   const ctx = await loadChangeContext(root);
   const estate = await loadEstate(root, ctx.records);
   const knowledge = await readKnowledge(root);
@@ -303,19 +491,48 @@ export async function architectureStage(
 
   const touched = placement.flows.map((f) => estate.flowById.get(f.id)).filter((x) => !!x);
   const flowsText = touched
-    .map((f) => `# ${f!.flow.id} (repo ${f!.repo}). Steps are numbered from 1 in the order listed.\n${serializeRecord(f!.flow)}`)
+    .map(
+      (f) =>
+        `# ${f!.flow.id} (repo ${f!.repo}). Steps are numbered from 1 in the order listed.\n${serializeRecord(f!.flow)}`,
+    )
     .join("\n---\n");
   const sources: SourceInput[] = [
-    { id: "feature.yaml", kind: "artifact", origin: `${rel}/feature.yaml`, text: stringify(placement, { lineWidth: 0 }), classification: "internal", priority: 100 },
-    { id: "flows", kind: "catalog", origin: "the repos' specs (specs/<repo>/)", text: flowsText || "The feature touches no existing flow.", classification: "internal", priority: 95 },
-    { id: "estate-index", kind: "catalog", origin: "atticus change architecture (deterministic)", text: estateIndex(estate), classification: "internal", priority: 80 },
+    {
+      id: "feature.yaml",
+      kind: "artifact",
+      origin: `${rel}/feature.yaml`,
+      text: stringify(placement, { lineWidth: 0 }),
+      classification: "internal",
+      priority: 100,
+    },
+    {
+      id: "flows",
+      kind: "catalog",
+      origin: "the repos' specs (specs/<repo>/)",
+      text: flowsText || "The feature touches no existing flow.",
+      classification: "internal",
+      priority: 95,
+    },
+    {
+      id: "estate-index",
+      kind: "catalog",
+      origin: "atticus change architecture (deterministic)",
+      text: estateIndex(estate),
+      classification: "internal",
+      priority: 80,
+    },
   ];
   if (patterns.length)
     sources.push({
       id: "patterns",
       kind: "document",
       origin: "knowledge/items (ADR 0083)",
-      text: patterns.map((i) => `${i.kind} ${i.id}: ${(i as { title?: string; name?: string }).title ?? (i as { name?: string }).name ?? ""}. Applies when: ${(i as { appliesWhen?: string }).appliesWhen ?? ""} (${i.quote?.page ?? ""})`).join("\n"),
+      text: patterns
+        .map(
+          (i) =>
+            `${i.kind} ${i.id}: ${(i as { title?: string; name?: string }).title ?? (i as { name?: string }).name ?? ""}. Applies when: ${(i as { appliesWhen?: string }).appliesWhen ?? ""} (${i.quote?.page ?? ""})`,
+        )
+        .join("\n"),
       classification: "internal",
       priority: 70,
     });
@@ -324,7 +541,8 @@ export async function architectureStage(
   const spec: StageSpec<{ flows: FlowDelta[] }> = {
     stage: "architecture",
     agent: ARCHITECTURE_AGENT,
-    description: "Writes a change's target flows: the steps each touched flow adds, changes or removes, with fields.",
+    description:
+      "Writes a change's target flows: the steps each touched flow adds, changes or removes, with fields.",
     output: "architecture-answer.yaml",
     instructions: [
       "# Flow architect",
@@ -338,7 +556,12 @@ export async function architectureStage(
       const r = parseYamlAs(
         text,
         Answer,
-        (d) => ({ flows: (Array.isArray(d.flows) ? d.flows : []).map((f: Record<string, unknown>) => ({ schemaVersion: STAGE_SCHEMA_VERSION, ...f })) }),
+        (d) => ({
+          flows: (Array.isArray(d.flows) ? d.flows : []).map((f: Record<string, unknown>) => ({
+            schemaVersion: STAGE_SCHEMA_VERSION,
+            ...f,
+          })),
+        }),
         "target-flows",
       );
       return { ...(r.value ? { answer: r.value } : {}), issues: r.issues };
@@ -347,7 +570,8 @@ export async function architectureStage(
     write: async (a) => {
       const keep = new Set(a.flows.map((d) => `${d.flow}.yaml`));
       for (const f of await readdir(join(dir, TARGET_DIR)).catch(() => [] as string[]))
-        if (f.endsWith(".yaml") && !keep.has(f)) await rm(join(dir, TARGET_DIR, f), { force: true });
+        if (f.endsWith(".yaml") && !keep.has(f))
+          await rm(join(dir, TARGET_DIR, f), { force: true });
       const files: string[] = [];
       for (const d of a.flows) {
         await writeFileAtomic(
@@ -368,7 +592,8 @@ export async function architectureStage(
       if (data && (ownData === undefined || ownData.startsWith(MARK))) {
         await writeFileAtomic(join(dir, "data.md"), data);
         files.push("data.md");
-      } else if (!data && ownData?.startsWith(MARK)) await rm(join(dir, "data.md"), { force: true });
+      } else if (!data && ownData?.startsWith(MARK))
+        await rm(join(dir, "data.md"), { force: true });
       return files;
     },
     current: async () => {
@@ -378,6 +603,8 @@ export async function architectureStage(
   };
   const res = await runStageLoop(root, change.id, spec, o);
   if (!approved)
-    res.notes.unshift(`The feature PR of ${change.id} isn't merged yet, so these target flows rest on a feature a person hasn't approved.`);
+    res.notes.unshift(
+      `The feature PR of ${change.id} isn't merged yet, so these target flows rest on a feature a person hasn't approved.`,
+    );
   return res;
 }
