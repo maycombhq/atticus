@@ -112,9 +112,9 @@ Why: on the first real repo almost every reader needed a fix, each found only by
 
 ### B. The core loop: scan → change → stories (what the product is for)
 
-- [ ] **B1. A much simpler app: six screens that follow the work** (the product owner's design). Everything else in today's 27 screens goes, or folds into these:
+- [ ] **B1. A much simpler app: six screens that follow the work** (the product owner's design). **The app is an editor for the metarepo's files and a visualiser, and on every page it shows the command to run next; it never runs anything itself** (no scans, no AI, no git). Each page: edit the files behind it, see them drawn, copy the next command for a terminal, Copilot or Claude Code (including the `git commit` / PR command after an edit). The local server shrinks to reading the catalog and reading and writing metarepo files; job running, scan endpoints and AI calls leave it. Everything else in today's 27 screens goes, or folds into these:
   1. **Dashboard:** what is scanned, changes in flight and where each one is, what needs a person.
-  2. **Onboarding:** repos and knowledge sources (wikis, documents, diagrams) set up, scans run, the gaps and scan review.
+  2. **Onboarding** (the product owner's steps): (1) list the Git repos in the organisation (the Git host adapter's listing); (2) filter and select the repos to scan (name, language, last commit), written to the manifest; (3) connect knowledge sources: (a) git URLs of knowledge repos, cloned into `knowledge-repos/`, apart from code repos and read as knowledge (docs, ADRs, wiki-as-code), not code; (b) diagrams; (c) API specs; (d) vendor names and the online URLs of their API docs, fetched once into a dated snapshot under `inputs/` by a command (a scan never touches the network), refreshable on demand; (4) the commands to clone and update everything and to run the full scan, shown to copy; (5) once onboarded, the commands (and their triggers) for later scans, deterministic and AI, and the gaps and scan review.
   3. **Feature design:** a change started from a brief, existing stories or a Figma design (B7–B9); its proposal and spec drafted and checked.
   4. **Architecture:** the map, the systems, calls and data the feature touches, the domain profile.
   5. **Stories:** the breakdown, with acceptance criteria traced to the spec.
