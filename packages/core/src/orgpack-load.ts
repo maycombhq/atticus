@@ -4,6 +4,7 @@ import { parse } from "yaml";
 import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
 import { RepoType } from "./schema/repo-type.js";
+import { ScannerPlugin } from "./schema/plugin.js";
 import type { z } from "zod";
 import {
   DEFAULT_CHANGE_TYPES,
@@ -58,6 +59,8 @@ export interface OrgPack {
   scanSettings: ScanSettings[];
   /** Repo types (ADR 0077), from repo-types/<id>/type.yaml. */
   repoTypes: RepoType[];
+  /** Scanner plugins (ADR 0080), from plugins/<id>/plugin.yaml, with their folders. */
+  plugins: { manifest: ScannerPlugin; dir: string }[];
   checklists: ChecklistPack[];
   skills: (z.infer<typeof SkillMeta> & { body: string })[];
   serviceRequests: z.infer<typeof ServiceRequestTemplate>[];
@@ -208,6 +211,23 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
         message: `is for ${v.repo}; name it scan/${v.repo}.yaml`,
       });
     else scanSettings.push(v);
+  }
+  // Scanner plugins (ADR 0080): one folder per plugin, named after its id. Only the top
+  // plugin.yaml of each folder: anything under test/ is a test repo's data.
+  const plugins: OrgPack["plugins"] = [];
+  const pluginDirs = await readdir(join(dir, "plugins"), { withFileTypes: true }).catch(() => []);
+  for (const e of pluginDirs.sort((a, b) => a.name.localeCompare(b.name))) {
+    const f = join(dir, "plugins", e.name, "plugin.yaml");
+    if (!e.isDirectory() || !(await exists(f))) continue;
+    const v = await load(f, ScannerPlugin);
+    if (!v) continue;
+    if (v.id !== e.name)
+      problems.push({
+        file: rel(f),
+        path: "id",
+        message: `is ${v.id}; keep it in plugins/${v.id}/`,
+      });
+    else plugins.push({ manifest: v, dir: join(dir, "plugins", e.name) });
   }
   const checklists = await many("checklists", /\.ya?ml$/, ChecklistPack);
   const serviceRequests = await many("process/snow", /\.ya?ml$/, ServiceRequestTemplate);
@@ -432,6 +452,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     frameworks,
     scanSettings,
     repoTypes,
+    plugins,
     checklists,
     skills,
     serviceRequests,

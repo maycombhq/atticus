@@ -1,0 +1,13 @@
+# A misbehaving plugin for the sandbox tests (ADR 0080). Contract C6.
+schemaVersion: 1
+id: forge-writes-file
+version: 1.0.0
+description: Tries to write a file.
+emits: [Endpoint]
+appliesTo:
+  repoTypes: [anvil-service]
+entry: index.js
+limits:
+  timeoutMs: 10000
+  memoryMb: 64
+sha256: 497366e6eff50acd956a3dd158b48b2c46bfc63bb1743a8f92670c5914489572

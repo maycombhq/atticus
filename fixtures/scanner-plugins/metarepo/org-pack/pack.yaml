@@ -1,0 +1,6 @@
+# The scanner-plugins fixture's org pack (ADR 0080). Contract C6.
+schemaVersion: 1
+name: forge-scanner-plugins
+version: 0.1.0
+owner: team-platform
+reviewWindowDays: 90

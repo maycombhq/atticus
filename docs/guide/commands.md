@@ -61,6 +61,7 @@ Usage:
   atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
   atticus dialect tree <file> [--language l]   Print a file's syntax tree, for syntax matches
+  atticus plugin test|pin <id>         Run a scanner plugin against its golden files, sandboxed; or pin its entry file's sha256
   atticus onboard <repo> [--name n] [--attempts 3] [--mode m]   Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal
   atticus onboard check <name> --repo <repo>   Check a proposal (drafted, handed off or hand-written)
   atticus onboard eval <dir> [--mode m] [--json]   Score the assistant's drafts against reference dialects

@@ -52,6 +52,7 @@ import {
   NO_SETTINGS,
   withExcludes,
 } from "./scan-settings.js";
+import { pluginApplies, usablePlugins, withPluginScan } from "./plugins.js";
 
 export interface ScanOptions {
   /** The metarepo root (holds org-pack/, catalog/, workspace/). */
@@ -384,6 +385,9 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const brokenDialects = new Set<string>();
   const dialects = await usableDialects(op, orgPackDir, problems, brokenDialects);
   const frameworks = await usableFrameworks(op, problems);
+  // Scanner plugins (ADR 0080): pinned, re-tested, then run sandboxed after the built-ins.
+  const pluginSet = await usablePlugins(op);
+  problems.push(...pluginSet.problems);
   const byName = new Map(dialects.map((d) => [d.name, d]));
   const dialectExtractors = dialects.map((d) => ({ d, x: dialectExtractor(d, byName) }));
   const cache =
@@ -470,6 +474,24 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         frameworks,
         repoInfo,
       });
+      // Plugins after the built-ins, each in its own sandbox: one that fails, times out, runs
+      // out of memory or tries something forbidden is a failed run, reported below.
+      const here = pluginSet.plugins.filter((p) => pluginApplies(p.manifest, r));
+      if (here.length > 0)
+        scan = withPluginScan(
+          scan,
+          await scanRepo({
+            repo: handle,
+            extractors: here.map((p) => p.extractor),
+            dialects: r.dialects,
+            scannedAt,
+            dirty: state.dirty,
+            ...(cache ? { cache } : {}),
+            configFor: (x) => here.find((p) => p.extractor === x)?.config,
+            frameworks,
+            repoInfo,
+          }),
+        );
       // What it imports, for naming house frameworks with no model (ADR 0066). Read while the
       // parse cache is live; later readings of this handle parse afresh.
       readers.set(r.id, {

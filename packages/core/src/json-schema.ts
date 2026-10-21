@@ -15,6 +15,7 @@ import { ScanSettings } from "./schema/scan-settings.js";
 import { Question } from "./schema/question.js";
 import { RepoType } from "./schema/repo-type.js";
 import { DiagramLayout } from "./schema/layout.js";
+import { ScannerPlugin } from "./schema/plugin.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
 import * as C6 from "./schema/orgpack.js";
 import * as C5 from "./schema/ai.js";
@@ -93,6 +94,7 @@ export function orgPackJsonSchemas(): Record<string, object> {
     ScanSettings,
     Question,
     RepoType,
+    ScannerPlugin,
     Sources: C6.Sources,
     Runtime: C6.Runtime,
     SkillMeta: C6.SkillMeta,

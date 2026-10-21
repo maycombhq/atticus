@@ -1,0 +1,13 @@
+# A misbehaving plugin for the sandbox tests (ADR 0080). Contract C6.
+schemaVersion: 1
+id: forge-opens-socket
+version: 1.0.0
+description: Tries to open a socket.
+emits: [Endpoint]
+appliesTo:
+  repoTypes: [anvil-service]
+entry: index.js
+limits:
+  timeoutMs: 10000
+  memoryMb: 64
+sha256: 9b9e2f92c8ea36acf24bae22f9955f6457422914e05f9b187f83b8e41910db7f
