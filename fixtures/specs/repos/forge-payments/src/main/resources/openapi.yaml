@@ -1,0 +1,17 @@
+openapi: 3.0.3
+paths:
+  /payments/settlements:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SettlementRequest" }
+components:
+  schemas:
+    SettlementRequest:
+      type: object
+      required: [merchantRef, amount, currency]
+      properties:
+        merchantRef: { type: string, maxLength: 20 }
+        amount: { type: integer, minimum: 1 }
+        currency: { type: string, pattern: "^[A-Z]{3}$" }

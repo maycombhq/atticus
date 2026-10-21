@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Spec flows draw the steps a person draws
+
+- `atticus spec draft` and `atticus spec check` (ADR 0089): a UI flow starts at the person's action (the form, the button; a page's route) and ends with what the screen does after the response. Two new findings say when it doesn't: `ui-start-not-action` and `ui-end-missing`, for action and page triggers only.
+- A flow an entry point starts names who calls it and how the call arrives, in `trigger.caller` (the vendor or component, and the gateway or direct). When nothing in the code or config says, `atticus spec check` asks a person at once (`caller-unknown`), one question per component.
+- Every validation layer is a step, and a transform step goes wherever data crosses types; `field-from-nowhere` now says to add the missing transform.
+- A flow's `what`, `when` and `then` accept a bare number or true/false (`then: 404`), read as text, instead of costing a retry round.
+- The UI words the critic reads by are in the spec template (`ui`), so an organisation with its own UI framework lists its own.
+- A question another step already asked about the same repo (a cited line in common, or near-identical words) is reused, not asked again: the step is recorded on the question, reads its answer, and says so.
+
 ### The change lifecycle as three stage loops
 
 - `atticus change feature <change> [--from-figma f.json]` (ADR 0087): your assistant places the change against the estate from its brief, its existing stories or an exported Figma design: the features and flows it touches, picked by meaning from a compact index of the repo specs and the catalog, the new flows it needs, gaps and questions. Every id is checked; other changes in flight on the same flows or systems are found from their files. A design's screens, fields and actions are read from the export and mapped; a field with no backing is a gap.

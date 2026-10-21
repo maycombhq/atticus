@@ -28,6 +28,7 @@ import {
   orgPackDirOf,
   questionsRelOf,
   raiseQuestions,
+  reusedLine,
   RecordId,
   type OrgPack,
 } from "@maycombhq/core";
@@ -654,7 +655,7 @@ export async function scanSurvey(
   for (const c of s.clients)
     io.out(`  ${c.base} in front of the calls in ${c.paths.join(", ")}: ${c.why} (${c.at})`);
   const rerun = `atticus scan survey ${repo.id} --force`;
-  const { raised, known } = await raiseQuestions(root, r.questions ?? [], {
+  const { raised, known, reused } = await raiseQuestions(root, r.questions ?? [], {
     step: "scan-survey",
     repo: repo.id,
     command: `atticus scan survey ${repo.id}`,
@@ -667,6 +668,7 @@ export async function scanSurvey(
     io.out(`${plural(raised.length, "question")} for a person, in ${questionsRelOf(root)}/:`);
     for (const q of raised) io.out(`  ${q.id} ${q.question}`);
   }
+  for (const q of reused) io.out(reusedLine(q));
   if (waiting.length)
     io.out(
       `${plural(waiting.length, "question")} still waiting for an answer: ${waiting.map((q) => q.id).join(", ")}`,

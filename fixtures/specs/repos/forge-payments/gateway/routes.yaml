@@ -1,0 +1,6 @@
+# The external API gateway's routes into forge-payments.
+routes:
+  - id: northwind-settlements
+    consumer: northwind-pay
+    match: POST /partners/northwind/settlements
+    upstream: forge-payments POST /payments/settlements

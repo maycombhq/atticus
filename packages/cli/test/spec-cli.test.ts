@@ -96,7 +96,7 @@ describe("atticus spec draft and atticus spec check (ADR 0079)", () => {
       "forge-orders: 2 flows, 8 steps; 3 of 3 triggers in the catalog have a flow; the check confirmed 5 steps on its cited lines.",
     );
     expect(c1.out).toContain(
-      "  [field-from-nowhere] forge-orders.get-order step 3 (respond) uses colour, which no earlier step or the trigger names",
+      "  [field-from-nowhere] forge-orders.get-order step 3 (respond) uses colour, which no earlier step or the trigger names; where it comes from another field (a form value, a request, a DTO, an entity), add a transform step before it that maps one to the other in data.from and data.to",
     );
     expect((await readSpecFindings(root, "forge-orders"))!.findings.map((f) => f.seen)).toEqual([
       1,
@@ -156,5 +156,44 @@ describe("atticus spec draft and atticus spec check (ADR 0079)", () => {
       "Every trigger of forge-orders has a flow, no cited file changed and the last check found nothing to fix. Re-run with --force to draft the spec again.",
     ]);
     expect(await specDraft(root, "nowhere-at-all", {}, { runtime }, io().io)).toBe(2);
+  });
+
+  it("asks a person at once who calls an entry point nothing names a caller for, and doesn't ask twice (ADR 0089)", async () => {
+    const base = await mkdtemp(join(tmpdir(), "atticus-spec-cli-"));
+    const root = join(base, "meta");
+    const repo = join(base, "forge-payments");
+    await cp(join(SPECS, "repos", "forge-payments"), repo, { recursive: true });
+    for (const f of ["catalog.yaml", "catalog-ui-api.yaml"])
+      for (const r of parse(await readFile(join(SPECS, f), "utf8")) as unknown[]) {
+        const p = parseRecord(r);
+        if (!p.ok) throw new Error(JSON.stringify(p.issues));
+        const file = join(root, "catalog", "generated", recordPath(p.record));
+        await mkdir(dirname(file), { recursive: true });
+        await writeFile(file, serializeRecord(p.record));
+      }
+    await mkdir(join(root, "org-pack"), { recursive: true });
+    const coarse = readFileSync(join(SPECS, "answers", "forge-payments.coarse.yaml"), "utf8");
+    const runtime = new MockRuntime(() => coarse, { now: () => T1 });
+    expect(await specDraft(root, repo, {}, { runtime, now: T1 }, io().io)).toBe(0);
+    const c1 = io();
+    expect(await specCheck(root, repo, { now: T1 }, c1.io)).toBe(1);
+    const asked = (await listQuestions(root, { step: "spec-check" })).questions;
+    expect(asked.map((q) => [q.question, q.evidence])).toEqual([
+      [
+        "Who calls this entry point of forge-payments, and how does each call arrive (through which gateway, or direct)? POST /payments/settlements",
+        ["src/main/java/forge/payments/SettlementController.java:11"],
+      ],
+    ]);
+    expect(c1.out).toContain(
+      `Nothing in the code or config says who calls some entry points, so a question asks a person in questions/: ${asked[0]!.id}`,
+    );
+    const f1 = (await readSpecFindings(root, "forge-payments"))!.findings;
+    expect(f1.find((f) => f.rule === "caller-unknown")!.question).toBe(asked[0]!.id);
+    // The next check finds the question on file: the caller is no longer a finding.
+    const c2 = io();
+    await specCheck(root, repo, { now: T2 }, c2.io);
+    const f2 = (await readSpecFindings(root, "forge-payments"))!.findings;
+    expect(f2.map((f) => f.rule)).toEqual(["field-from-nowhere"]);
+    expect((await listQuestions(root)).questions).toHaveLength(1);
   });
 });

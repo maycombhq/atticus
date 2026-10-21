@@ -72,6 +72,22 @@ export const Question = z
       run: z.string().min(1).optional(),
       at: IsoDateTime,
     }),
+    /**
+     * Other steps that would have asked the same thing (the same repo, the same evidence line
+     * or near-identical words) and wait on this question instead (ADR 0089). Each reads the
+     * answer; its rerun is the command to run once it is answered.
+     */
+    alsoAskedBy: z
+      .array(
+        z.strictObject({
+          step: RecordId,
+          command: z.string().min(1),
+          run: z.string().min(1).optional(),
+          at: IsoDateTime,
+          rerun: z.string().min(1),
+        }),
+      )
+      .optional(),
     /** The repo the question is about. */
     repo: RecordId,
     /** The question in plain words. */

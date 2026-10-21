@@ -149,24 +149,89 @@ export async function listQuestions(
         (q) =>
           (!o.state || q.state === o.state) &&
           (!o.repo || q.repo === o.repo) &&
-          (!o.step || q.askedBy.step === o.step),
+          (!o.step || askedByStep(q, o.step)),
       )
       .sort((a, b) => a.askedBy.at.localeCompare(b.askedBy.at) || a.id.localeCompare(b.id)),
     problems,
   };
 }
 
+/** Whether a step is one that asked the question, or one that waits on it (ADR 0089). */
+export const askedByStep = (q: Question, step: string): boolean =>
+  q.askedBy.step === step || (q.alsoAskedBy ?? []).some((a) => a.step === step);
+
+const STOP = new Set(
+  "a an and are as at be by can do does for from has have in is it its of on or should so that the this these those to was were what when where which who why will with would".split(
+    " ",
+  ),
+);
+
+/** A question's content words: lower case, without small words and the repo's own id. */
+const contentWords = (s: string, repo: string) =>
+  new Set(
+    s
+      .toLowerCase()
+      .split(/[^a-z0-9_./-]+/)
+      .map((w) => w.replace(/^[./-]+|[./-]+$/g, ""))
+      .filter((w) => w.length > 1 && !STOP.has(w) && w !== repo.toLowerCase()),
+  );
+
+/**
+ * What a question asks about, without its asides: the words before ", or", with brackets and
+ * a clause between commas left out ("Is X, the old project, still used, or ..." is "Is X still
+ * used").
+ */
+const kernel = (s: string) =>
+  s
+    .replace(/\([^)]*\)/g, " ")
+    .split(/,\s+or\s+|\s+or\s+/i)[0]!
+    .replace(/,[^,]*,/, " ");
+
+const jaccard = (a: Set<string>, b: Set<string>) => {
+  if (a.size === 0 || b.size === 0) return 0;
+  let n = 0;
+  for (const w of a) if (b.has(w)) n++;
+  return n / (a.size + b.size - n);
+};
+
+/**
+ * Whether two questions about one repo ask the same thing (ADR 0089): they cite a line in
+ * common and share a quarter of their words, or their words are near-identical (what each asks
+ * about, asides left out, shares three quarters of its words, or the whole questions share
+ * seven in ten).
+ */
+export function sameQuestion(
+  a: { repo: string; question: string; evidence: readonly string[] },
+  b: { repo: string; question: string; evidence: readonly string[] },
+): boolean {
+  if (a.repo !== b.repo) return false;
+  const ka = contentWords(kernel(a.question), a.repo);
+  const kb = contentWords(kernel(b.question), b.repo);
+  const k = jaccard(ka, kb);
+  const whole = jaccard(contentWords(a.question, a.repo), contentWords(b.question, b.repo));
+  // Two questions can read the same line and ask different things ("which format?" and "leave
+  // the redacted ones out?"), so a shared line needs a quarter of the words in common too.
+  if (a.evidence.some((e) => b.evidence.includes(e)) && Math.max(k, whole) >= 0.25) return true;
+  if (Math.min(ka.size, kb.size) >= 3 && k >= 0.75) return true;
+  return whole >= 0.7;
+}
+
 /**
  * Write the questions a step raised. One already on file (open, answered or retired) is left
- * as it is and returned in `known`: an answered question is not asked again.
+ * as it is and returned in `known`: an answered question is not asked again. A question
+ * another step already asked about the same repo, open or answered, with a line in common or
+ * near-identical words, is reused (ADR 0089): the step is added to its `alsoAskedBy`, so it
+ * reads the same answer, and the question is returned in `reused` (and in `known`).
  */
 export async function raiseQuestions(
   root: string,
   drafts: QuestionDraft[],
   by: AskedBy,
-): Promise<{ raised: Question[]; known: Question[] }> {
+): Promise<{ raised: Question[]; known: Question[]; reused: Question[] }> {
   const raised: Question[] = [];
   const known: Question[] = [];
+  const reused: Question[] = [];
+  let others: Question[] | undefined;
   for (const d of drafts) {
     const q = questionFromDraft(d, by);
     const existing = await readQuestion(root, q.id).catch(() => undefined);
@@ -175,11 +240,45 @@ export async function raiseQuestions(
       continue;
     }
     if (raised.some((r) => r.id === q.id)) continue;
+    others ??= (await listQuestions(root, { repo: by.repo })).questions;
+    const same = others.find(
+      (x) =>
+        x.state !== "retired" &&
+        x.askedBy.step !== by.step &&
+        sameQuestion({ repo: by.repo, question: d.question, evidence: d.evidence }, x),
+    );
+    if (same) {
+      let kept = same;
+      if (!askedByStep(same, by.step)) {
+        kept = Question.parse({
+          ...same,
+          alsoAskedBy: [
+            ...(same.alsoAskedBy ?? []),
+            {
+              step: by.step,
+              command: by.command,
+              ...(by.run ? { run: by.run } : {}),
+              at: by.at,
+              rerun: by.rerun,
+            },
+          ],
+        });
+        await write(root, kept);
+        others = others.map((x) => (x.id === kept.id ? kept : x));
+      }
+      if (!reused.some((k) => k.id === kept.id)) reused.push(kept);
+      if (!known.some((k) => k.id === kept.id)) known.push(kept);
+      continue;
+    }
     await write(root, q);
     raised.push(q);
   }
-  return { raised, known };
+  return { raised, known, reused };
 }
+
+/** What a step says of a question it reused: who asked it first, and that it waits on it. */
+export const reusedLine = (q: Question): string =>
+  `${q.id} was already asked by ${q.askedBy.command}: "${q.question.trim()}" This step ${q.state === "answered" ? "reads its answer" : "waits on the same answer"} instead of asking again.`;
 
 /**
  * The skill file of a repo type, relative to the root, where a repo-type answer goes: the

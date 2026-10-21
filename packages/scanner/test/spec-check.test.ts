@@ -107,7 +107,7 @@ describe("atticus spec check: the critic (ADR 0079)", () => {
     };
     const r = await run([{ ...f, steps }, get]);
     expect(r.findings.map((x) => x.message)).toEqual([
-      "forge-orders.place-order step 2 (call-out) uses colour, which no earlier step or the trigger names",
+      "forge-orders.place-order step 2 (call-out) uses colour, which no earlier step or the trigger names; where it comes from another field (a form value, a request, a DTO, an entity), add a transform step before it that maps one to the other in data.from and data.to",
       "forge-orders.place-order step 4 (write) names the column price, which orders doesn't have in the catalog",
       "forge-orders.place-order step 5 (respond) says the check confirmed it, but its cited lines don't name id, sku, quantity",
       "forge-orders.get-order stands for forge-stock.post-stock-reservations, which isn't on the same resource (/orders) of the same component",

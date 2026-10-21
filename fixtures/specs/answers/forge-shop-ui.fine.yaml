@@ -1,0 +1,30 @@
+# A fine answer to atticus spec draft forge-shop-ui (ADR 0089), drawn the way the hand-checked
+# petclinic reference draws add-owner (bench/flows/petclinic.yaml): it starts at the form, names
+# the form's checks, the transform before the call, and ends with the navigation after it.
+flows:
+  - id: place-order
+    component: forge-shop-ui
+    name: A person places an order
+    trigger:
+      kind: action
+      what: The New Order form is submitted with the Place Order button
+      at: "src/app/orders/order-add.component.html:6"
+    steps:
+      - kind: validate
+        what: Place Order stays disabled until the form is valid (item letters, digits and dashes up to 40, quantity at least 1, both required)
+        data: { reads: [id, sku, quantity], checks: [sku, quantity] }
+        at: ["src/app/orders/order-add.component.html:9", "src/app/orders/order-add.component.html:11"]
+      - kind: transform
+        what: The form value's id is set to null
+        data: { from: [order.id], to: [order.id] }
+        at: "src/app/orders/order-add.component.ts:13"
+      - kind: call-out
+        what: POST /api/orders with the form's fields
+        to: { component: forge-orders, entry: "POST /api/orders" }
+        data: { sends: [id, sku, quantity] }
+        at: "src/app/orders/order.service.ts:18"
+      - kind: respond
+        what: On success the app navigates to the orders list
+        at: "src/app/orders/order-add.component.ts:15"
+    errors:
+      - { when: The API returns an error, then: the form stays and shows the error in a red alert, at: "src/app/orders/order-add.component.ts:16" }

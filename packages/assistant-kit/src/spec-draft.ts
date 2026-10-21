@@ -5,6 +5,7 @@ import {
   AgentDefinition,
   answerWords,
   FLOW_SCHEMA_VERSION,
+  FlowCaller,
   FlowError,
   FlowStep,
   FlowTrigger,
@@ -64,6 +65,9 @@ const ADVISORY = new Set([
   "family-mismatch",
   "write-unmapped",
   "no-flow",
+  "ui-start-not-action",
+  "ui-end-missing",
+  "caller-unknown",
 ]);
 
 const INSTRUCTIONS = (
@@ -86,6 +90,7 @@ flows:
       ref: <the catalog id of the trigger, when it is a catalog record>
       what: <what happens, one sentence>
       at: "<file>:<line>"
+      caller: { who: <who calls: a vendor, another organisation's service, a scheduler, a catalog component>, ref: <its catalog id, when it has one>, via: <the route in: the gateway and its route, or direct>, at: "<file>:<line> of the config or code that says so" }   # endpoint, listener and job only
     family: [<catalog ids of the other triggers this flow stands for>]
     steps:
       - kind: entry | lookup | read | write | call-out | publish | transform | validate | branch | log | respond | loop | retry
@@ -97,6 +102,16 @@ flows:
         at: "<file>:<line>"   # or a list of them
     errors:
       - { when: <the condition>, then: <what happens>, at: "<file>:<line>" }
+
+Where a flow starts and ends:
+- A flow a person starts in a UI (trigger kind action or page) starts at the person's action in the component or template: the form, the button, the link (for a page, its route or load hook), not the service the screen calls. It ends with what the screen does after the response: it navigates, refreshes, shows the result or shows an error. Cite those lines.
+- A flow an endpoint, listener or job starts begins at the entry point, and many have no UI at all: a vendor, another organisation's service or a scheduler calls it, often through an external gateway. Its trigger.caller names who calls and the route in (the gateway, or direct), citing the config or code that says so. When neither says who calls, leave caller out and ask a person (a question, below); don't guess. It ends with the response or acknowledgement to that caller, after every downstream call-out, event and write, in order.
+
+The steps a person draws, in every flow:
+- Every validation layer is its own validate step, with its rules in data.checks: the form's checks, the request schema, the entity's constraints, a database constraint the code relies on.
+- A transform step wherever data crosses types: a form value to the request, a request to a DTO, a DTO to an entity, an entity to a DTO, a request to an event, or one API's request to the next API's request. Name the fields in data.from and data.to, in the same order.
+- Name the fields in data at each step (reads, checks, sends, returns, from, to), so a field's origin is named before a later step uses it.
+- Keep it to the steps a person would draw: usually 4 to 15. A family stands for near-identical triggers, so their shared steps are written once.
 
 Rules:
 - Every trigger, step and error cites path:line in this repo, and Atticus checks that the line exists. Cite the line that does the step.
@@ -131,7 +146,10 @@ const DraftFlow = z.strictObject({
   id: RecordId,
   component: RecordId,
   name: z.string().min(1),
-  trigger: FlowTrigger.omit({ evidence: true }).extend({ at: At }),
+  trigger: FlowTrigger.omit({ evidence: true, caller: true }).extend({
+    at: At,
+    caller: FlowCaller.omit({ evidence: true }).extend({ at: At.optional() }).optional(),
+  }),
   family: z.array(RecordId).default([]),
   steps: z.array(DraftStep).min(1),
   errors: z
@@ -195,6 +213,8 @@ export async function checkSpecDraft(
     repoId: string;
     records: readonly CatalogRecord[];
     template: SpecTemplate;
+    /** Questions on file (ADR 0078); an entry point a question cites isn't caller-unknown. */
+    questions?: readonly Pick<Question, "evidence">[];
   },
 ): Promise<SpecDraftCheck> {
   const empty: SpecDraftCheck = {
@@ -257,7 +277,15 @@ export async function checkSpecDraft(
     }
     const f = d.data;
     const id = f.id.startsWith(`${f.component}.`) ? f.id : `${f.component}.${f.id}`;
-    const { at: tAt, ...trigger } = f.trigger;
+    const { at: tAt, caller: drafted, ...rest } = f.trigger;
+    const trigger = {
+      ...rest,
+      ...(drafted
+        ? (({ at: cAt, ...c }) => ({ caller: { ...c, evidence: cAt ? evidence(cAt) : [] } }))(
+            drafted,
+          )
+        : {}),
+    };
     const record = {
       schemaVersion: FLOW_SCHEMA_VERSION,
       kind: "Flow" as const,
@@ -295,6 +323,8 @@ export async function checkSpecDraft(
     records: o.records,
     template: o.template,
     perFlowOnly: true,
+    // A question this answer asks, or one on file, about a trigger: a person settles its caller.
+    questions: [...(o.questions ?? []), ...questions],
   });
   const passed: FlowRecord[] = [];
   const advisory: SpecCheckFinding[] = [];
@@ -349,6 +379,11 @@ function catalogSources(records: readonly CatalogRecord[], repoId: string): Sour
     else if (r.kind === "Interface" && comps.has(r.from))
       mine.push(
         `Interface ${r.id}: ${r.from} -> ${r.to} ${r.method ?? ""} ${r.normalizedPath} via ${r.via}${line(r)}`,
+      );
+    else if (r.kind === "Interface" && comps.has(r.to))
+      // A call into the repo: who calls an entry point, for trigger.caller (ADR 0089).
+      mine.push(
+        `Interface ${r.id} (a caller of this repo): ${r.from} -> ${r.to} ${r.method ?? ""} ${r.normalizedPath} via ${r.via}${line(r)}`,
       );
     else if (
       r.kind === "Table" &&
@@ -642,6 +677,7 @@ export async function draftSpec(
       repoId: o.repoId,
       records: o.records,
       template: o.template,
+      questions: [...(o.questions ?? []).filter((q) => q.state !== "retired"), ...questions],
     });
     for (const f of c.passed) kept.set(f.id, f);
     for (const q of c.questions)

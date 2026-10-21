@@ -45,6 +45,86 @@ export const TriggerSource = z.discriminatedUnion("kind", [
 ]);
 export type TriggerSource = z.infer<typeof TriggerSource>;
 
+/**
+ * How the critic tells a screen's own lines in a UI flow (ADR 0089): words, letter case
+ * aside, that a line naming a person's action, a page load or what the screen does after a
+ * response contains. An organisation with its own UI framework lists its own words.
+ */
+export const DEFAULT_UI_WORDS = {
+  action: [
+    "submit",
+    "click",
+    "press",
+    "tap",
+    "button",
+    "form",
+    "input",
+    "select",
+    "change",
+    "href",
+    "link",
+    "keyup",
+    "keydown",
+    "drop",
+    "toggle",
+  ],
+  page: [
+    "route",
+    "path",
+    "page",
+    "load",
+    "init",
+    "mount",
+    "effect",
+    "created",
+    "activated",
+    "resolve",
+    "view",
+    "screen",
+  ],
+  end: [
+    "navigate",
+    "router",
+    "redirect",
+    "location",
+    "route",
+    "refresh",
+    "reload",
+    "render",
+    "show",
+    "display",
+    "setstate",
+    "set(",
+    "emit",
+    "alert",
+    "error",
+    "message",
+    "toast",
+    "notify",
+    "dialog",
+    "close",
+  ],
+} as const;
+
+export const SpecUi = z.strictObject({
+  /** Words on a line where a person acts: a button, a form, a link. */
+  actionWords: z
+    .array(z.string().min(1))
+    .min(1)
+    .default([...DEFAULT_UI_WORDS.action]),
+  /** Words on a line where a page loads: a route, an init hook. */
+  pageWords: z
+    .array(z.string().min(1))
+    .min(1)
+    .default([...DEFAULT_UI_WORDS.page]),
+  /** Words on a line where the screen acts on a response: navigate, refresh, show an error. */
+  endWords: z
+    .array(z.string().min(1))
+    .min(1)
+    .default([...DEFAULT_UI_WORDS.end]),
+});
+export type SpecUi = z.infer<typeof SpecUi>;
+
 export const SpecTemplate = z.strictObject({
   schemaVersion: z.literal(SPEC_TEMPLATE_SCHEMA_VERSION),
   /** The repo type it belongs to (the folder under repo-types/), or `default`. */
@@ -85,6 +165,8 @@ export const SpecTemplate = z.strictObject({
       }),
     )
     .default([]),
+  /** How the critic reads a UI flow's first and last lines (ADR 0089). */
+  ui: SpecUi.default(SpecUi.parse({})),
 });
 export type SpecTemplate = z.infer<typeof SpecTemplate>;
 
@@ -109,20 +191,26 @@ export const DEFAULT_SPEC_TEMPLATE: SpecTemplate = SpecTemplate.parse({
           "transaction",
         ],
       },
-      why: "Every entry point the repo serves starts a flow.",
+      why: "Every entry point the repo serves starts a flow. It starts at the entry point; the trigger names who calls it (a vendor, another organisation's service, a scheduler, another repo's component) and how the call arrives (the gateway it comes through, or direct); when the code and config don't say, ask. It ends with the response or acknowledgement to that caller, after every call-out, event and write in order.",
     },
     {
       kind: "listener",
       from: { kind: "Endpoint", endpointType: ["event-topic", "mq-queue", "file-drop"] },
-      why: "Every topic, queue or file drop the repo listens to starts a flow.",
+      why: "Every topic, queue or file drop the repo listens to starts a flow. The trigger names who sends to it and through what; when the code and config don't say, ask. It ends with the acknowledgement, after every call-out, event and write in order.",
     },
     {
       kind: "job",
       from: { kind: "Endpoint", endpointType: ["batch-job", "function"] },
       why: "Every job or scheduled function starts a flow.",
     },
-    { kind: "page", why: "In a UI, a page that loads data starts a flow." },
-    { kind: "action", why: "In a UI, a button or form that calls out starts a flow." },
+    {
+      kind: "page",
+      why: "In a UI, a page that loads data starts a flow. It starts at the page's route or load hook and ends with what the page shows, or does on an error.",
+    },
+    {
+      kind: "action",
+      why: "In a UI, a button or form that calls out starts a flow. It starts at the person's action in the component or template (the form, the button), not in the service it calls, and ends with what the screen does after the response (navigate, refresh, show an error).",
+    },
   ],
   steps: [
     { kind: "entry" },
@@ -138,9 +226,13 @@ export const DEFAULT_SPEC_TEMPLATE: SpecTemplate = SpecTemplate.parse({
     {
       kind: "transform",
       requires: ["data.from", "data.to"],
-      why: "A transform names which fields become which.",
+      why: "A transform names which fields become which. Write one wherever data crosses types: a form value to a request, a request to a DTO, a DTO to an entity, an entity to a DTO, a request to an event or to a downstream API's request.",
     },
-    { kind: "validate", requires: ["data.checks"], why: "A validation names its rules." },
+    {
+      kind: "validate",
+      requires: ["data.checks"],
+      why: "A validation names its rules. Each layer is its own step: the form, the request schema, the entity's constraints.",
+    },
     { kind: "branch" },
     { kind: "log" },
     { kind: "respond" },

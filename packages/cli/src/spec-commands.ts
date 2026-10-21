@@ -2,12 +2,15 @@ import { execFile } from "node:child_process";
 import { resolve } from "node:path";
 import { draftSpec } from "@maycombhq/assistant-kit";
 import {
+  askedByStep,
   listQuestions,
   loadOrgPack,
   orgPackDirOf,
   questionsRelOf,
   raiseQuestions,
   readRepoSpec,
+  reusedLine,
+  sameQuestion,
   readSpecFindings,
   serializeRecord,
   specFindingFingerprint,
@@ -123,7 +126,7 @@ export async function specDraft(
     }
   }
   const questions = (await listQuestions(root, { repo: repo.id })).questions.filter(
-    (q) => q.askedBy.step === "spec-draft" || q.askedBy.step === "spec-check",
+    (q) => askedByStep(q, "spec-draft") || askedByStep(q, "spec-check"),
   );
   const r = await draftSpec(handle, {
     repoId: repo.id,
@@ -173,7 +176,7 @@ export async function specDraft(
     ...(await citedFileHashes(handle, [...keep.filter((f) => !fresh.has(f.id)), ...r.flows])),
   };
   const rerun = `atticus spec draft ${repo.id}`;
-  const { raised, known } = await raiseQuestions(root, r.questions, {
+  const { raised, known, reused } = await raiseQuestions(root, r.questions, {
     step: "spec-draft",
     repo: repo.id,
     command: rerun,
@@ -217,6 +220,7 @@ export async function specDraft(
     io.out(`${plural(raised.length, "question")} for a person, in ${questionsRelOf(root)}/:`);
     for (const q of raised) io.out(`  ${q.id} ${q.question}`);
   }
+  for (const q of reused) io.out(reusedLine(q));
   if (r.status === "failed") {
     io.out(
       `No flow passed its checks in ${plural(r.attempts.length, "attempt")}; nothing new was written.`,
@@ -272,12 +276,17 @@ export async function specCheck(
     return 2;
   }
   const { records } = await loadCatalog(root, { out: () => {}, err: (l) => io.err(l) });
+  // Questions on file about the repo: an entry point a question cites has its caller asked.
+  const onFile = (await listQuestions(root, { repo: repo.id })).questions.filter(
+    (q) => q.state !== "retired",
+  );
   const r = await checkSpec({
     repo: handle,
     repoId: repo.id,
     flows: spec.flows,
     records,
     template,
+    questions: onFile,
   });
   const findings: SpecCheckFinding[] = [...r.findings];
   for (const p of spec.problems)
@@ -320,7 +329,9 @@ export async function specCheck(
     return n >= 1 && n <= lines.get(path)!;
   };
   const stored: SpecFinding[] = [];
-  const toAsk: { f: SpecCheckFinding; q: QuestionDraft }[] = [];
+  const toAsk: { fs: SpecCheckFinding[]; q: QuestionDraft }[] = [];
+  // ADR 0089: who calls an entry point is asked at once, one question per component.
+  const callers = new Map<string, { fs: SpecCheckFinding[]; labels: string[]; at: string[] }>();
   for (const f of findings) {
     const p = prev?.findings.find((x) => x.fingerprint === f.fingerprint);
     const seen = p ? (redrafted ? p.seen + 1 : p.seen) : 1;
@@ -330,7 +341,17 @@ export async function specCheck(
       const a = t?.path && t.line ? `${t.path}:${t.line}` : undefined;
       if (a && (await exists(a))) evidence = a;
     }
-    if (!p?.question && seen >= 2 && evidence) toAsk.push({ f, q: findingQuestion(f, evidence) });
+    const flow = f.flow ? spec.flows.find((x) => x.id === f.flow) : undefined;
+    // A caller the catalog shows goes back to the assistant to name; only an unknown one is asked.
+    if (f.rule === "caller-unknown" && !f.callers?.length && !p?.question && evidence && flow) {
+      const c = callers.get(flow.component) ?? { fs: [], labels: [], at: [] };
+      const t = r.triggers.find((x) => x.id === flow.trigger.ref);
+      c.fs.push(f);
+      c.labels.push(t?.label ?? flow.trigger.what);
+      if (!c.at.includes(evidence)) c.at.push(evidence);
+      callers.set(flow.component, c);
+    } else if (!p?.question && seen >= 2 && evidence)
+      toAsk.push({ fs: [f], q: findingQuestion(f, evidence) });
     stored.push({
       fingerprint: f.fingerprint,
       rule: f.rule,
@@ -341,6 +362,16 @@ export async function specCheck(
       ...(p?.question ? { question: p.question } : {}),
     });
   }
+  for (const [component, c] of callers)
+    toAsk.push({
+      fs: c.fs,
+      q: {
+        question: `Who calls ${c.labels.length === 1 ? "this entry point" : "these entry points"} of ${component}, and how does each call arrive (through which gateway, or direct)? ${c.labels.join("; ")}`,
+        options: [],
+        evidence: c.at,
+        scope: "repo",
+      },
+    });
   const rerun = `atticus spec draft ${repo.id}`;
   const asked = await raiseQuestions(
     root,
@@ -348,14 +379,19 @@ export async function specCheck(
     { step: "spec-check", repo: repo.id, command: `atticus spec check ${repo.id}`, rerun, at: now },
   );
   const questionIds: string[] = [];
+  const callerIds = new Set<string>();
   for (const x of toAsk) {
-    const q = [...asked.raised, ...asked.known].find(
-      (k) => k.question === x.q.question && k.evidence[0] === x.q.evidence[0],
-    );
+    const all = [...asked.raised, ...asked.known];
+    const q =
+      all.find((k) => k.question === x.q.question && k.evidence[0] === x.q.evidence[0]) ??
+      asked.reused.find((k) => sameQuestion({ repo: repo.id, ...x.q }, k));
     if (!q) continue;
     questionIds.push(q.id);
-    const s = stored.find((y) => y.fingerprint === x.f.fingerprint)!;
-    s.question = q.id;
+    if (x.fs[0]?.rule === "caller-unknown") callerIds.add(q.id);
+    for (const f of x.fs) {
+      const s = stored.find((y) => y.fingerprint === f.fingerprint)!;
+      s.question = q.id;
+    }
   }
   await writeSpecFindings(root, {
     schemaVersion: 1,
@@ -404,11 +440,19 @@ export async function specCheck(
   io.out(`${plural(stored.length, "finding")}:`);
   for (const f of stored)
     io.out(`  [${f.rule}] ${f.message}${f.question ? ` (question ${f.question})` : ""}`);
-  if (asked.raised.length) {
+  const callerQs = asked.raised.filter((q) => callerIds.has(q.id));
+  const backQs = asked.raised.filter((q) => !callerQs.includes(q));
+  if (callerQs.length)
     io.out(
-      `${plural(asked.raised.length, "finding")} came back unchanged after a redraft, so ${asked.raised.length === 1 ? "it is" : "they are"} now ${asked.raised.length === 1 ? "a question" : "questions"} for a person in ${questionsRelOf(root)}/: ${asked.raised.map((q) => q.id).join(", ")}`,
+      `Nothing in the code or config says who calls some entry points, so ${callerQs.length === 1 ? "a question asks" : "questions ask"} a person in ${questionsRelOf(root)}/: ${callerQs.map((q) => q.id).join(", ")}`,
     );
+  if (backQs.length)
+    io.out(
+      `${plural(backQs.length, "finding")} came back unchanged after a redraft, so ${backQs.length === 1 ? "it is" : "they are"} now ${backQs.length === 1 ? "a question" : "questions"} for a person in ${questionsRelOf(root)}/: ${backQs.map((q) => q.id).join(", ")}`,
+    );
+  for (const q of asked.reused) io.out(reusedLine(q));
+  if (asked.raised.length)
     io.out(`Answer with atticus questions answer <id> --text "...", then run ${rerun}`);
-  } else io.out(`Next: ${rerun} hands the findings back to your assistant.`);
+  else io.out(`Next: ${rerun} hands the findings back to your assistant.`);
   return 1;
 }

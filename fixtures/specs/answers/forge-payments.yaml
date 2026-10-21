@@ -1,0 +1,69 @@
+# What an assistant answers to atticus spec draft forge-payments (ADR 0089): a flow with no UI
+# at all. The vendor Northwind Pay calls the orchestration API through the external gateway;
+# the API checks the request, looks up the merchant, maps fields, calls two downstream APIs,
+# checks and writes the settlement, and acknowledges. `then: 404` is a bare YAML number.
+flows:
+  - id: settle
+    component: forge-payments
+    name: Northwind Pay settles a payment
+    trigger:
+      kind: endpoint
+      ref: forge-payments.post-payments-settlements
+      what: Northwind Pay posts a settlement for a merchant
+      at: "src/main/java/forge/payments/SettlementController.java:11"
+      caller:
+        who: Northwind Pay
+        via: the external API gateway, route northwind-settlements (POST /partners/northwind/settlements)
+        at: "gateway/routes.yaml:4"
+    steps:
+      - kind: entry
+        what: SettlementController.settle receives the settlement
+        refs: [forge-payments.post-payments-settlements]
+        data: { reads: [merchantRef, amount, currency] }
+        at: "src/main/java/forge/payments/SettlementController.java:11"
+      - kind: validate
+        what: The body is checked against SettlementRequest (all three required; merchantRef up to 20, amount at least 1, currency three capitals)
+        data: { checks: [merchantRef, amount, currency] }
+        at: "src/main/resources/openapi.yaml:13"
+      - kind: lookup
+        what: The merchant is looked up by its reference
+        store: { table: forge-payments-db.merchants, columns: [id, merchant_ref, account_id, contact_email] }
+        data: { reads: [merchantRef], returns: [id, accountId, contactEmail] }
+        at: "src/main/java/forge/payments/SettlementController.java:13"
+      - kind: transform
+        what: The request and the merchant become a LedgerEntryRequest
+        data:
+          from: [merchant.accountId, body.amount, body.currency]
+          to: [LedgerEntryRequest.accountId, LedgerEntryRequest.amount, LedgerEntryRequest.currency]
+        at: "src/main/java/forge/payments/SettlementController.java:14"
+      - kind: call-out
+        what: The ledger records the entry
+        to: { component: forge-ledger, entry: "POST /ledger/entries" }
+        data: { sends: [accountId, amount, currency] }
+        at: "src/main/java/forge/payments/LedgerClient.java:7"
+      - kind: call-out
+        what: The merchant is told of the settlement
+        to: { component: forge-notify, entry: "POST /notifications" }
+        data: { sends: [contactEmail, amount] }
+        at: "src/main/java/forge/payments/NotifyClient.java:7"
+      - kind: transform
+        what: The merchant's id and the request become a Settlement entity
+        data:
+          from: [merchant.id, body.amount, body.currency]
+          to: [Settlement.merchantId, Settlement.amount, Settlement.currency]
+        at: "src/main/java/forge/payments/SettlementController.java:17"
+      - kind: validate
+        what: On persist the entity's own constraints run (merchantId required, amount positive, currency three letters)
+        data: { checks: [Settlement.merchantId, Settlement.amount, Settlement.currency] }
+        at: ["src/main/java/forge/payments/Settlement.java:7", "src/main/java/forge/payments/Settlement.java:8", "src/main/java/forge/payments/Settlement.java:9"]
+      - kind: write
+        what: The settlement is inserted
+        refs: [forge-payments-db.settlements]
+        store: { table: forge-payments-db.settlements, columns: [merchant_id, amount, currency] }
+        data: { sends: [merchantId, amount, currency] }
+        at: "src/main/java/forge/payments/SettlementController.java:17"
+      - kind: respond
+        what: 202 Accepted with no body, back to Northwind Pay
+        at: "src/main/java/forge/payments/SettlementController.java:18"
+    errors:
+      - { when: No merchant has the reference, then: 404, at: "src/main/java/forge/payments/SettlementController.java:13" }

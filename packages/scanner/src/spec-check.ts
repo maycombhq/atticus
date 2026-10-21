@@ -31,6 +31,9 @@ export type SpecRule =
   | "write-unmapped"
   | "template-requires"
   | "field-from-nowhere"
+  | "ui-start-not-action"
+  | "ui-end-missing"
+  | "caller-unknown"
   | "family-mismatch"
   | "check-fails"
   | "stale";
@@ -45,6 +48,11 @@ export interface SpecCheckFinding {
   fingerprint: string;
   /** The flow it is in, when it is in one. */
   flow?: string;
+  /**
+   * For `caller-unknown`: the callers the catalog's interfaces show (`<component> (<interface>,
+   * <via>)`), so the next draft names them and no person is asked (ADR 0089).
+   */
+  callers?: string[];
 }
 
 export interface SpecTrigger {
@@ -276,6 +284,79 @@ const methodPath = (s: string) => {
   return m ? { method: m[1]!.toUpperCase(), path: m[2]! } : undefined;
 };
 
+const OUT_STEPS = new Set(["call-out", "publish"]);
+
+/**
+ * Whether a line holds one of the words, letter case aside, where a word or a camelCase part
+ * starts: `ngSubmit`, `onClick` and `ownerForm` name submit, click and form; `transform` doesn't
+ * name form.
+ */
+export const lineNamesUiWord = (line: string, words: readonly string[]) => {
+  const l = line.toLowerCase();
+  return words.some((w) => {
+    const word = w.toLowerCase();
+    for (let k = l.indexOf(word); k >= 0; k = l.indexOf(word, k + 1))
+      if (k === 0 || !/[a-z]/.test(line[k - 1]!) || /[A-Z]/.test(line[k]!)) return true;
+    return false;
+  });
+};
+const namesAny = lineNamesUiWord;
+
+/**
+ * The UI rules (ADR 0089), for a flow a person starts (trigger kind action or page) only:
+ * `ui-start-not-action`, the trigger is the call to the server (its line names no action or
+ * page word, and it is the file a call-out is made from, or the flow opens with an entry), not
+ * the button, form or page; `ui-end-missing`, nothing after the last call-out says what the
+ * screen does with the response (no later step cites another file than the call-outs, or a
+ * line naming a navigation, a refresh or a message). Flows an endpoint, listener or job
+ * starts are never asked for a UI.
+ */
+export function uiFindings(
+  f: FlowRecord,
+  triggerLines: readonly string[],
+  stepLines: readonly (readonly string[])[],
+  template: SpecTemplate,
+): Omit<SpecCheckFinding, "fingerprint" | "flow">[] {
+  const kind = f.trigger.kind;
+  if (kind !== "action" && kind !== "page") return [];
+  const out: Omit<SpecCheckFinding, "fingerprint" | "flow">[] = [];
+  const ui = template.ui;
+  const fileOf = (e: EvidenceT[]) => e.map((x) => x.path).filter((p): p is string => !!p);
+  const calls = f.steps.flatMap((s, i) => (OUT_STEPS.has(s.kind) ? [i] : []));
+  const callFiles = new Set(calls.flatMap((i) => fileOf(f.steps[i]!.evidence)));
+  const startWords = kind === "action" ? ui.actionWords : [...ui.pageWords, ...ui.actionWords];
+  const trigAt = at(f.trigger.evidence[0]);
+  const atCall = fileOf(f.trigger.evidence).some((p) => callFiles.has(p));
+  const opensWithEntry = f.steps[0]?.kind === "entry";
+  if (!triggerLines.some((l) => namesAny(l, startWords)) && (atCall || opensWithEntry))
+    out.push({
+      rule: "ui-start-not-action",
+      target: `${f.id} trigger`,
+      ...(trigAt ? { evidence: trigAt } : {}),
+      message:
+        kind === "action"
+          ? `${f.id} starts at ${trigAt ?? "its trigger"}, ${atCall ? "where the call to the server is made" : "with an entry"}, not at the person's action: start it at the button or form in the component or template, with a validate step for the form's own checks and a transform where the form's value becomes what is sent`
+          : `${f.id} starts at ${trigAt ?? "its trigger"}, ${atCall ? "where the call to the server is made" : "with an entry"}, not where the page loads: start it at the page's route or load hook`,
+    });
+  const last = calls.at(-1);
+  if (last !== undefined) {
+    const after = f.steps.slice(last + 1);
+    const ends = after.some(
+      (s, k) =>
+        fileOf(s.evidence).some((p) => !callFiles.has(p)) ||
+        (stepLines[last + 1 + k] ?? []).some((l) => namesAny(l, ui.endWords)),
+    );
+    if (!ends)
+      out.push({
+        rule: "ui-end-missing",
+        target: `${f.id} end`,
+        ...(at(f.steps[last]!.evidence[0]) ? { evidence: at(f.steps[last]!.evidence[0])! } : {}),
+        message: `${f.id} ends at the call in step ${last + 1}${after.length ? " and what goes back from it" : ""}, not at what the screen does after the response: add a last step citing the line that navigates, refreshes, shows the result or shows an error`,
+      });
+  }
+  return out;
+}
+
 /** Check a repo's spec. Reads only the cited files of the repo. */
 export async function checkSpec(o: {
   repo: RepoHandle;
@@ -286,6 +367,11 @@ export async function checkSpec(o: {
   template: SpecTemplate;
   /** Leave out the trigger-coverage rule (the drafter's per-flow checks). */
   perFlowOnly?: boolean;
+  /**
+   * Questions on file about the repo (open or answered): an entry point whose trigger line a
+   * question cites isn't `caller-unknown`, since a person is asked or has answered (ADR 0089).
+   */
+  questions?: readonly { evidence: readonly string[] }[];
 }): Promise<SpecCheckResult> {
   const byId = new Map(o.records.map((r) => [r.id, r]));
   const comps = repoComponents(o.records, o.repoId);
@@ -411,9 +497,50 @@ export async function checkSpec(o: {
   const flows: FlowRecord[] = [];
   for (const f of o.flows) {
     const fid = f.id;
-    await cited(f.trigger.evidence, fid, "trigger");
+    const trigLines = await cited(f.trigger.evidence, fid, "trigger");
     const trig = f.trigger.ref ? byId.get(f.trigger.ref) : undefined;
     if (f.trigger.ref) known(f.trigger.ref, fid, "trigger", at(f.trigger.evidence[0]));
+    // Who calls an entry point, and how the call arrives (ADR 0089).
+    const caller = f.trigger.caller;
+    if (caller) {
+      await cited(caller.evidence, fid, "caller");
+      if (caller.ref) known(caller.ref, fid, "caller", at(caller.evidence[0]));
+    } else if (f.trigger.kind === "endpoint" || f.trigger.kind === "listener") {
+      const cites = f.trigger.evidence.map(at).filter((x): x is string => !!x);
+      const asked = (o.questions ?? []).some((q) => q.evidence.some((e) => cites.includes(e)));
+      const label = trig?.kind === "Endpoint" ? endpointLabel(trig) : "its trigger";
+      // The catalog's own interfaces into the entry point name a caller the code shows.
+      const inbound =
+        trig?.kind === "Endpoint"
+          ? interfaces.filter(
+              (i) =>
+                i.endpoint === trig.id ||
+                (i.to === trig.component &&
+                  (!i.method ||
+                    !trig.method ||
+                    i.method.toUpperCase() === trig.method.toUpperCase()) &&
+                  pathScore(i.normalizedPath, trig.normalizedPath ?? trig.pathOrTopic) === 1000),
+            )
+          : [];
+      const callers = [...new Set(inbound.map((i) => `${i.from} (${i.id}, ${i.via})`))];
+      if (callers.length)
+        add({
+          rule: "caller-unknown",
+          target: `${fid} trigger caller`,
+          ...(cites[0] ? { evidence: cites[0] } : {}),
+          message: `${fid}: trigger.caller is missing, and the catalog has ${callers.join(", ")} calling ${label}: name the caller and its route in, in trigger.caller`,
+          flow: fid,
+          callers,
+        });
+      else if (!asked)
+        add({
+          rule: "caller-unknown",
+          target: `${fid} trigger caller`,
+          ...(cites[0] ? { evidence: cites[0] } : {}),
+          message: `${fid}: nothing says who calls ${label} or how the call arrives (through a gateway, or direct); name them in trigger.caller where the code or config says so, else ask a person`,
+          flow: fid,
+        });
+    }
     if (!comps.has(f.component) && comps.size > 0)
       known(f.component, fid, "component", at(f.trigger.evidence[0]));
     // Families: every member shares the trigger's component and resource, and its work.
@@ -438,10 +565,12 @@ export async function checkSpec(o: {
       for (const m of trig.pathOrTopic.matchAll(/[{:<]\$?\{?([A-Za-z_]\w*)/g))
         seenFields.add(fieldKey(m[1]!));
     const steps: FlowRecord["steps"] = [];
+    const stepLines: string[][] = [];
     for (const [i, s] of f.steps.entries()) {
       const where = `step ${i + 1} (${s.kind})`;
       const ev = at(s.evidence[0]);
       const lines = await cited(s.evidence, fid, where);
+      stepLines.push(lines);
       for (const r of s.refs) known(r, fid, where, ev);
       for (const req of requires.get(s.kind) ?? [])
         if (!has(s, req))
@@ -548,7 +677,7 @@ export async function checkSpec(o: {
               rule: "field-from-nowhere",
               target: `${fid} ${where} ${x}`,
               ...(ev ? { evidence: ev } : {}),
-              message: `${fid} ${where} uses ${x}, which no earlier step or the trigger names`,
+              message: `${fid} ${where} uses ${x}, which no earlier step or the trigger names; where it comes from another field (a form value, a request, a DTO, an entity), add a transform step before it that maps one to the other in data.from and data.to`,
               flow: fid,
             });
       for (const x of [
@@ -611,6 +740,7 @@ export async function checkSpec(o: {
         });
       steps.push({ ...s, ...(confirmedBy ? { confirmedBy } : {}) });
     }
+    for (const u of uiFindings(f, trigLines, stepLines, o.template)) add({ ...u, flow: fid });
     flows.push({ ...f, steps });
   }
 

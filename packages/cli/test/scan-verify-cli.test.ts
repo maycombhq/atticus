@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { MockRuntime } from "@maycombhq/ai";
-import { listQuestions, ScanSettings, ScanVerifyProposal } from "@maycombhq/core";
+import { listQuestions, raiseQuestions, ScanSettings, ScanVerifyProposal } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
 import { scanCommand } from "../src/scan-commands.js";
 import { scanVerify, scanVerifyAccept } from "../src/scan-verify-commands.js";
@@ -258,6 +258,50 @@ describe("atticus scan verify (ADR 0082)", () => {
       expect(noProposal.err[0]).toBe(
         "There is no proposal for forge-tasks yet: run atticus scan verify forge-tasks first.",
       );
+    },
+    T,
+  );
+
+  it(
+    "reuses the question scan survey already asked about the same thing, and says so (ADR 0089)",
+    async () => {
+      const root = await scanned();
+      const i = await ids(root);
+      const survey = await raiseQuestions(
+        root,
+        [
+          {
+            question:
+              "Is samples/, the folder of demos, still part of the product, or should it be left out?",
+            options: [],
+            evidence: ["samples/demo.js:1", "README.md:1"],
+            scope: "repo",
+          },
+        ],
+        {
+          step: "scan-survey",
+          repo: "forge-tasks",
+          command: "atticus scan survey forge-tasks",
+          rerun: "atticus scan survey forge-tasks --force",
+          at: NOW.toISOString(),
+        },
+      );
+      const id = survey.raised[0]!.id;
+      const runtime = new MockRuntime(() => answer(i), { now: () => NOW });
+      const t = io();
+      expect(await scanVerify(root, "forge-tasks", {}, { runtime, now: NOW }, t.io)).toBe(0);
+      expect(t.out).toContain(
+        `${id} was already asked by atticus scan survey forge-tasks: "Is samples/, the folder of demos, still part of the product, or should it be left out?" This step waits on the same answer instead of asking again.`,
+      );
+      const all = (await listQuestions(root)).questions;
+      expect(all.map((q) => q.id)).toEqual([id]);
+      expect(all[0]!.alsoAskedBy).toEqual([
+        expect.objectContaining({ step: "scan-verify", rerun: "atticus scan verify forge-tasks" }),
+      ]);
+      const proposal = ScanVerifyProposal.parse(
+        parse(await readFile(join(root, "proposals", "scan", "forge-tasks.yaml"), "utf8")),
+      );
+      expect(proposal.questions).toEqual([id]);
     },
     T,
   );
