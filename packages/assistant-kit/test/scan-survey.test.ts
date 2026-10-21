@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MockRuntime, type AiRequest } from "@maycombhq/ai";
+import { loadOrgPack } from "@maycombhq/core";
 import { fsRepo } from "@maycombhq/sdk";
 import { checkSurvey, surveyRepo } from "../src/scan-survey.js";
 
@@ -72,5 +73,49 @@ describe("atticus scan survey (ADR 0075)", () => {
     const empty = await checkSurvey("schemaVersion: 1\nrepo: forge-notes\n", repo(), "forge-notes");
     expect(empty.problems).toEqual([]);
     expect(empty.settings).toMatchObject({ exclude: [], prefixes: [] });
+  });
+
+  it("hands the assistant the matched repo type's settings, resolved on the repo, and its skills as instructions (ADR 0077)", async () => {
+    const op = await loadOrgPack(
+      join(
+        dirname(fileURLToPath(import.meta.url)),
+        "../../../fixtures/repo-types/metarepo/org-pack",
+      ),
+    );
+    const type = op.repoTypes.find((t) => t.id === "forge-spring-service")!;
+    const prompts: string[] = [];
+    const runtime = new MockRuntime(
+      (req: AiRequest) => {
+        prompts.push(req.pack.prompt);
+        return answer("/notes-api");
+      },
+      { now: () => NOW },
+    );
+    const r = await surveyRepo(repo(), {
+      repoId: "forge-notes",
+      runtime,
+      now: NOW,
+      repoType: {
+        type,
+        verdict: "clear",
+        score: 1,
+        skills: op.skills.filter((s) => s.id === "read-forge-spring-service"),
+      },
+    });
+    expect(r.status).toBe("drafted");
+    const p = prompts[0]!;
+    expect(p).toContain(
+      "This repo matches the organisation's repo type Forge Spring service (forge-spring-service): a clear match, 100% of its fingerprint.",
+    );
+    expect(p).toContain("key: server.servlet.context-path");
+    expect(p).toContain("at: src/main/resources/application.properties:3");
+    expect(p).toContain("each checked against its line");
+    expect(p).toContain("Skill for this repo type: Read a Forge Spring service");
+    // Instructions come before the repo's own content, which stays quoted data.
+    expect(p.indexOf("Skill for this repo type")).toBeLessThan(p.indexOf("Folders of forge-notes"));
+    // Without a type, none of it.
+    prompts.length = 0;
+    await surveyRepo(repo(), { repoId: "forge-notes", runtime, now: NOW });
+    expect(prompts[0]).not.toContain("repo type");
   });
 });

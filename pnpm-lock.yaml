@@ -865,6 +865,9 @@ importers:
       '@maycombhq/workspace':
         specifier: workspace:*
         version: link:../workspace
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
     devDependencies:
       '@maycombhq/index':
         specifier: workspace:*
@@ -872,9 +875,6 @@ importers:
       '@maycombhq/synth':
         specifier: workspace:*
         version: link:../synth
-      yaml:
-        specifier: ^2.9.1
-        version: 2.9.1
 
   packages/sdk:
     dependencies:

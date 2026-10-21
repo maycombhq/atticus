@@ -1,0 +1,36 @@
+# A Forge back-end service: Spring Boot or the in-house Forge framework (ADR 0077). Contract C6.
+schemaVersion: 1
+id: forge-spring-service
+name: Forge Spring service
+description: A Forge back-end service built with Maven or Gradle on Spring Boot or the Forge framework, serving HTTP endpoints.
+owner: team-platform
+fingerprint:
+  - kind: build-file
+    globs: [pom.xml, build.gradle, build.gradle.kts]
+    weight: 2
+  - kind: dependency
+    names: ["spring-boot*", "forge-framework*"]
+    weight: 3
+  - kind: marker
+    pattern: "@(RestController|Controller|ForgeService)\\b"
+    in: ["**/*.java", "**/*.kt"]
+    weight: 3
+  - kind: layout
+    globs: ["src/main/java/**", "src/main/kotlin/**"]
+    weight: 1
+  - kind: layout
+    globs: ["src/main/resources/application*"]
+    weight: 1
+settings:
+  exclude:
+    - { path: "docs/**", why: a generated API playground }
+  prefixes:
+    - key: server.servlet.context-path
+      files:
+        - "src/main/resources/application*.properties"
+        - "src/main/resources/application*.yml"
+        - "src/main/resources/application*.yaml"
+      paths: ["src/main/java/**", "src/main/kotlin/**"]
+      why: server.servlet.context-path
+skills:
+  - process/skills/read-forge-spring-service/SKILL.md

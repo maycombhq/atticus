@@ -11,6 +11,7 @@ export * from "./template.js";
 export * from "./schema/dialect.js";
 export * from "./schema/frameworks.js";
 export * from "./schema/scan-settings.js";
+export * from "./schema/repo-type.js";
 export * from "./schema/review.js";
 export * from "./schema/orgpack.js";
 export * from "./schema/executors.js";

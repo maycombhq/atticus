@@ -135,6 +135,7 @@ export async function orgPackValidate(dir: string, io: Output): Promise<number> 
     `${op.checklists.length} checklist packs`,
     `${op.skills.length} skills`,
     `${op.serviceRequests.length} request templates`,
+    ...(op.repoTypes.length ? [`${op.repoTypes.length} repo types`] : []),
   ].join(", ");
   io.out(`${counts}${op.defaulted.length ? `; defaults used for ${op.defaulted.join(", ")}` : ""}`);
   io.out(op.problems.length === 0 ? "Org pack is valid" : `${op.problems.length} problems`);

@@ -12,6 +12,8 @@ Usage:
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
   atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes); checked against the code [--attempts 3] [--force]
+  atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
+  atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
           [--repos a,b]                Only these repos
           [--full]                     Ignore the scan cache

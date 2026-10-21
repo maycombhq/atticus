@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Repo types, matched by fingerprint
+
+- A new org-pack folder, `repo-types/<id>/type.yaml` (ADR 0077, C6). It holds what a kind of repo looks like (build files, dependencies, framework markers and folders, each with a weight), the scan settings every repo of the kind gets (written as patterns), and the skills for reading it.
+- `atticus repo-type detect <repo> [--json]` scores the repo against every type and cites the file or line behind each signal. It says whether the match is clear, partial, none or a tie.
+- `atticus repo-type new <id> --from <repo>` drafts a type from a repo, with no AI, for a person to edit.
+- `atticus scan survey` gives your assistant the matched type's settings (resolved on the repo and checked) and its skills.
+
 ### You are your Git user; approving is the pull request
 
 - Atticus knows you by the metarepo's Git user (`git config user.name` and `user.email`, ADR 0073). The app shows it in the top bar and every command records it; `--by <handle>` is now an optional override everywhere it was required (`change new`, `change handoff`, `finding`, `baseline`, `todo done`, `task run`, `glossary`, `initiative`, `outcome record` and the rest), and `digest --as` likewise. With no Git user, the OS user name stands in with a warning that says how to set it.

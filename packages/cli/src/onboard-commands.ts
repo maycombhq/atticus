@@ -17,7 +17,9 @@ import {
   proposalYaml,
   type FrameworkCheck,
   type Learned,
+  type SurveyRepoType,
 } from "@maycombhq/assistant-kit";
+import { matchRepoType } from "@maycombhq/scanner";
 import {
   Dialect,
   FrameworkModel,
@@ -50,7 +52,7 @@ const proposalPath = (root: string, name: string) =>
 const isDir = async (p: string) => !!(await stat(p).catch(() => undefined))?.isDirectory();
 
 /** A repo by manifest id (its base clone) or a folder. */
-async function repoFor(
+export async function repoFor(
   root: string,
   target: string,
 ): Promise<{ id: string; dir: string } | undefined> {
@@ -556,6 +558,31 @@ export async function onboardFrameworkAccept(
  * the readers can't see); every entry is checked against the code before
  * org-pack/scan/<repo>.yaml is written. The next scan applies it.
  */
+/** The repo type the repo clearly or partly matches (ADR 0077), said aloud; none on a tie. */
+async function matchedRepoType(
+  repo: ReturnType<typeof fsRepo>,
+  id: string,
+  op: OrgPack,
+  io: Output,
+): Promise<SurveyRepoType | undefined> {
+  if (op.repoTypes.length === 0) return undefined;
+  const m = await matchRepoType(repo, op.repoTypes);
+  if (m.verdict === "tie") {
+    io.out(
+      `${id} matches ${m.tied!.join(" and ")} about as well, so the survey uses neither. See atticus repo-type detect ${id}.`,
+    );
+    return undefined;
+  }
+  if (m.verdict === "none") return undefined;
+  const type = op.repoTypes.find((t) => t.id === m.best)!;
+  const score = m.matches[0]!.score;
+  io.out(
+    `${id} is a ${m.verdict} match for the repo type ${type.id} (${Math.round(score * 100)}%); its settings and skills go to your assistant.`,
+  );
+  const skills = op.skills.filter((s) => type.skills.includes(`process/skills/${s.id}/SKILL.md`));
+  return { type, verdict: m.verdict, score, skills };
+}
+
 export async function scanSurvey(
   root: string,
   target: string,
@@ -578,10 +605,13 @@ export async function scanSurvey(
     return 1;
   }
   const op = await loadOrgPack(orgPackDirOf(root));
-  const r = await surveyRepo(fsRepo(repo.id, repo.dir, "0".repeat(40)), {
+  const handle = fsRepo(repo.id, repo.dir, "0".repeat(40));
+  const repoType = await matchedRepoType(handle, repo.id, op, io);
+  const r = await surveyRepo(handle, {
     repoId: repo.id,
     runtime: deps.runtime,
     orgPack: op,
+    ...(repoType ? { repoType } : {}),
     maxAttempts: o.attempts ?? 3,
     ...(deps.now ? { now: deps.now } : {}),
     ...(o.resume ? { resume: o.resume } : {}),

@@ -1,9 +1,9 @@
 import { parse, stringify } from "yaml";
 import { buildContextPack, type AiRuntime, type Run, type SourceInput } from "@maycombhq/ai";
-import { ScanSettings, type OrgPack } from "@maycombhq/core";
+import { ScanSettings, type OrgPack, type RepoType } from "@maycombhq/core";
 import { BUILT_IN_EXTRACTORS } from "@maycombhq/extractors";
 import { globToRegExp, scanRepo, type RepoHandle } from "@maycombhq/sdk";
-import { checkScanSettings } from "@maycombhq/scanner";
+import { checkScanSettings, resolveSettingsTemplate } from "@maycombhq/scanner";
 import { dialectDrafterAgent } from "./onboard.js";
 
 /**
@@ -187,6 +187,68 @@ async function surveySources(repo: RepoHandle): Promise<SourceInput[]> {
   return out;
 }
 
+/** The repo type a repo matched (ADR 0077), with its skills, handed to the survey. */
+export interface SurveyRepoType {
+  type: RepoType;
+  verdict: "clear" | "partial";
+  /** The share of the type's fingerprint the repo matched, 0 to 1. */
+  score: number;
+  skills: { id: string; name: string; body: string }[];
+}
+
+/**
+ * The repo type's settings template, what it resolves to on this repo, and its skills, as
+ * trusted instructions: they are the organisation's reviewed org pack, not the repo's content.
+ */
+async function repoTypeSources(
+  rt: SurveyRepoType,
+  repo: RepoHandle,
+  repoId: string,
+): Promise<SourceInput[]> {
+  const t = rt.type;
+  const resolved = await resolveSettingsTemplate(t, repo, repoId);
+  const checked = await checkScanSettings(resolved, repo);
+  const found = resolved.exclude.length + resolved.prefixes.length;
+  const checks = checked.problems.length
+    ? `checks: ${checked.problems.join("; ")}`
+    : "each checked against its line";
+  const text = [
+    `This repo matches the organisation's repo type ${t.name} (${t.id}): a ${rt.verdict} match, ${Math.round(rt.score * 100)}% of its fingerprint. ${t.description}`,
+    "",
+    "Every repo of this type gets these scan settings, as patterns:",
+    stringify(t.settings).trim(),
+    "",
+    found
+      ? `On this repo the patterns give these entries (${checks}):\n${stringify({ exclude: resolved.exclude, prefixes: resolved.prefixes }).trim()}`
+      : "On this repo the patterns give no entries.",
+    "",
+    "Start from these entries: keep the ones that hold, and add what the patterns don't cover.",
+    ...(rt.verdict === "partial"
+      ? [
+          "The match is partial, so this repo may do things the type doesn't describe. Look for them.",
+        ]
+      : []),
+  ].join("\n");
+  return [
+    {
+      id: "1-repo-type",
+      kind: "instruction",
+      origin: `org-pack/repo-types/${t.id}/type.yaml`,
+      text,
+      classification: "internal",
+      trusted: true,
+    },
+    ...rt.skills.map((s): SourceInput => ({
+      id: `2-skill-${s.id}`,
+      kind: "instruction",
+      origin: `org-pack/process/skills/${s.id}/SKILL.md`,
+      text: `Skill for this repo type: ${s.name}\n\n${s.body.trim()}`,
+      classification: "internal",
+      trusted: true,
+    })),
+  ];
+}
+
 /** Survey a repo with the assistant, checking each answer and handing back what was wrong. */
 export async function surveyRepo(
   repo: RepoHandle,
@@ -197,6 +259,8 @@ export async function surveyRepo(
     maxAttempts?: number;
     now?: Date;
     resume?: string;
+    /** The repo type the repo matched: its settings template and skills go in the prompt. */
+    repoType?: SurveyRepoType;
   },
 ): Promise<SurveyResult> {
   const agent = dialectDrafterAgent(o.orgPack);
@@ -216,7 +280,10 @@ export async function surveyRepo(
     classification: "public",
     trusted: true,
   };
-  const sources = await surveySources(repo);
+  const sources = [
+    ...(o.repoType ? await repoTypeSources(o.repoType, repo, o.repoId) : []),
+    ...(await surveySources(repo)),
+  ];
   const change = `survey-${o.repoId}`;
   const attempts: SurveyAttempt[] = [];
   let feedback: SourceInput[] = [];

@@ -329,6 +329,7 @@ const scanReview: typeof import("./onboard-commands.js").scanReview = (...a) =>
   loadOnboardCommands().then((m) => m.scanReview(...a));
 const scanSurvey: typeof import("./onboard-commands.js").scanSurvey = (...a) =>
   loadOnboardCommands().then((m) => m.scanSurvey(...a));
+const loadRepoTypeCommands = () => import("./repo-type-commands.js");
 const onboardEval: typeof import("./onboard-commands.js").onboardEval = (...a) =>
   loadOnboardCommands().then((m) => m.onboardEval(...a));
 const onboardFramework: typeof import("./onboard-commands.js").onboardFramework = (...a) =>
@@ -351,6 +352,8 @@ Usage:
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
   atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes); checked against the code [--attempts 3] [--force]
+  atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
+  atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
           [--repos a,b]                Only these repos
           [--full]                     Ignore the scan cache
@@ -748,6 +751,22 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
+  if (group === "repo-type" && (command === "detect" || command === "new")) {
+    const m = await loadRepoTypeCommands();
+    const from = typeof values.from === "string" ? values.from : undefined;
+    if (command === "new")
+      return m.repoTypeNew(
+        root,
+        arg ?? "",
+        { ...(from ? { from } : {}), force: values.force === true },
+        io,
+      );
+    if (!arg) {
+      io.err("Usage: atticus repo-type detect <repo> [--json]");
+      return 2;
+    }
+    return m.repoTypeDetect(root, arg, { json: values.json === true }, io);
+  }
   if (group === "scan" && command === "survey") {
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);
     if (!arg) {
