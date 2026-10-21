@@ -266,6 +266,7 @@ export async function resolveSettingsTemplate(
     repo: repoId,
     exclude: [],
     prefixes: [],
+    clients: [],
   };
   for (const e of t.settings.exclude) {
     const first = (await files.matching([e.path]))[0];

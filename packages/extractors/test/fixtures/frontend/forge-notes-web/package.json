@@ -1,0 +1,8 @@
+{
+  "name": "forge-notes-web",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@angular/common": "^19.0.0"
+  }
+}

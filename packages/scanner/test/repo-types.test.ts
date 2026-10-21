@@ -100,6 +100,7 @@ describe("repo types: the settings template on one repo", () => {
           value: "/notes-api",
         },
       ],
+      clients: [],
     });
     expect((await checkScanSettings(s, notes)).problems).toEqual([]);
   });

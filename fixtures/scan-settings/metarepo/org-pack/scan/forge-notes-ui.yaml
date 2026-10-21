@@ -1,0 +1,10 @@
+# Drafted the way atticus scan survey would; every entry cites its line (ADR 0075, 0076).
+schemaVersion: 1
+repo: forge-notes-ui
+clients:
+  - paths: ["src/**"]
+    base: https://notes.forge.internal/notes-api/
+    names: [environment.NOTES_API_URL]
+    why: the notes service's URL in the build's environment file
+    at: "src/environment.js:4"
+    value: https://notes.forge.internal/notes-api/

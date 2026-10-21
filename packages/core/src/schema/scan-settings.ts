@@ -4,7 +4,8 @@ import { RecordId } from "./common.js";
 /**
  * Scan settings for one repo (ADR 0075, C6): org-pack/scan/<repo>.yaml. Facts about the repo a
  * built-in reader can't know in general, each citing the file and line it comes from: folders
- * that aren't the product, and path prefixes in front of its HTTP entry points. Drafted by the
+ * that aren't the product, path prefixes in front of its HTTP entry points, and base URLs in
+ * front of the HTTP calls its clients make (ADR 0076). Drafted by the
  * AI (atticus scan survey), checked against the code, reviewed like any org-pack change.
  */
 
@@ -44,6 +45,38 @@ export const ScanSettings = z.strictObject({
         why: z.string().min(1),
         at: At,
         /** The value as written at `at`; the citation check looks for it on that line. */
+        value: z.string().min(1),
+      }),
+    )
+    .default([]),
+  /**
+   * Base URLs in front of the HTTP calls a client makes (ADR 0076): an environment file's API
+   * URL, an interceptor that prepends one, an axios baseURL. For calls in files matching
+   * `paths`, a URL that starts with one of `names` (as the readers write it, `${name}`), or a
+   * path with no host, gets `base` in front, so it can join the endpoint it reaches.
+   */
+  clients: z
+    .array(
+      z.strictObject({
+        paths: z.array(RepoGlob).min(1),
+        base: z
+          .string()
+          .regex(
+            /^(https?:\/\/[^\s/?#]+(\/[^\s?#]*)?|\/[^\s?#]*)$/,
+            "a URL (https://host/path) or a path starting with /",
+          ),
+        /** The expressions in code that hold the base: environment.REST_API_URL, this.baseUrl. */
+        names: z
+          .array(
+            z
+              .string()
+              .min(1)
+              .regex(/^[^\s{}$]+$/, "an expression, no spaces"),
+          )
+          .default([]),
+        why: z.string().min(1),
+        at: At,
+        /** The base as written at `at`; the citation check looks for it on that line. */
         value: z.string().min(1),
       }),
     )

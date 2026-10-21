@@ -1,6 +1,14 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
-import { frontendCall, SourceFile } from "./backends/shared.js";
+import {
+  axiosInstances,
+  frontendCall,
+  frontendExprCall,
+  instanceCall,
+  mockHandler,
+  serverPackages,
+  SourceFile,
+} from "./backends/shared.js";
 import { componentOf, evidence, looseEnd, repoConfig, splitUrl } from "./facts.js";
 import { LIQUIBASE_CLAIMS, liquibaseChangeSets } from "./data/liquibase.js";
 import { moduleType, moduleUses } from "./module-uses.js";
@@ -115,27 +123,55 @@ export const componentExtractor = defineExtractor({
 /**
  * Browser and Node clients: fetch, axios and HttpClient calls with a literal or template
  * URL. Template expressions become path parameters: `/api/balance/${id}` → /api/balance/{id}.
+ * A URL built from a configured base keeps the base's expression (ADR 0076),
+ * `GET ${environment.API}owners/{id}`, for the repo's scan settings to resolve, and requests
+ * through an axios instance the repo makes (`api.get("/x")` with `api = axios.create({ baseURL
+ * })`) are read with the instance's base. Mock handlers (msw's `http.get`) aren't calls. In a
+ * Node server package the built and instance calls are the node reader's, which knows its
+ * environment.
  */
 export const frontendExtractor = defineExtractor({
   id: "frontend",
-  version: "1.1.0",
+  version: "1.2.0",
   claims: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.vue"],
   async *scan(repo, ctx) {
+    const servers = (await serverPackages(repo)).map((p) => p.slice(0, -"package.json".length));
+    const inServer = (path: string) => servers.some((r) => path.startsWith(r));
     const all: string[] = [];
+    const read: string[] = [];
     for await (const path of repo.listFiles(this.claims)) {
       all.push(path);
       if (
-        /(^|\/)(node_modules|dist|build|coverage|__tests__)\//.test(path) ||
-        /\.(test|spec|d)\.[jt]sx?$/.test(path)
+        !/(^|\/)(node_modules|dist|build|coverage|__tests__)\//.test(path) &&
+        !/\.(test|spec|d)\.[jt]sx?$/.test(path)
       )
-        continue;
-      let text = await repo.readText(path);
+        read.push(path);
+    }
+    const parse = async (path: string, text: string) =>
+      SourceFile.parse(path, path.endsWith(".vue") ? vueScript(text) : text, "js", repo.parseCache);
+    // Axios instances the repo makes, by file (ADR 0076): their requests are read where the
+    // instance is imported, with its base.
+    const instancesIn = new Map<string, Map<string, string | undefined>>();
+    for (const path of read) {
+      if (inServer(path)) continue;
+      const text = await repo.readText(path);
+      if (!/\.create\s*\(/.test(text) || !text.includes("axios")) continue;
+      const found = axiosInstances(await parse(path, text));
+      if (found.length) instancesIn.set(path, new Map(found.map((x) => [x.name, x.base])));
+    }
+    const names = new Set([...instancesIn.values()].flatMap((m) => [...m.keys()]));
+    for (const path of read) {
+      const text = await repo.readText(path);
       // Only a file naming one of the clients can hold such a call: skip the rest unparsed.
-      if (!["fetch", "axios", "http"].some((w) => text.includes(w))) continue;
-      if (path.endsWith(".vue")) text = vueScript(text);
-      const src = await SourceFile.parse(path, text, "js", repo.parseCache);
+      if (![...["fetch", "axios", "http"], ...names].some((w) => text.includes(w))) continue;
+      const src = await parse(path, text);
+      const server = inServer(path);
+      const instances = server ? new Map() : instancesFor(path, src, instancesIn);
       for (const c of src.calls) {
-        const call = frontendCall(src, c);
+        if (mockHandler(src, c)) continue;
+        const call =
+          frontendCall(src, c) ??
+          (server ? undefined : (frontendExprCall(src, c) ?? instanceCall(src, c, instances)));
         if (!call) continue;
         yield looseEnd(repo, ctx, "http-call", `${call.method} ${call.url}`, {
           source: "code",
@@ -157,6 +193,54 @@ export const frontendExtractor = defineExtractor({
       });
   },
 });
+
+/**
+ * The axios instances a file can use, by local name: its own, and those it imports from the
+ * file that makes them. A relative import is resolved; an alias (`@/lib/api-client`) names the
+ * instance file whose path ends with what follows the alias, nearest the importing file.
+ */
+function instancesFor(
+  path: string,
+  src: SourceFile,
+  instancesIn: ReadonlyMap<string, ReadonlyMap<string, string | undefined>>,
+): Map<string, string | undefined> {
+  const out = new Map(instancesIn.get(path) ?? []);
+  if (instancesIn.size === 0) return out;
+  const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+  const strip = (p: string) => p.replace(/\.(m?[jt]sx?|vue)$/, "").replace(/\/index$/, "");
+  const shared = (a: string, b: string) => {
+    let n = 0;
+    const x = a.split("/");
+    const y = b.split("/");
+    while (n < x.length && n < y.length && x[n] === y[n]) n++;
+    return n;
+  };
+  for (const imp of src.imports) {
+    let candidates: string[];
+    if (imp.spec.startsWith(".")) {
+      const parts: string[] = dir ? dir.split("/") : [];
+      for (const seg of imp.spec.split("/")) {
+        if (seg === "..") parts.pop();
+        else if (seg !== ".") parts.push(seg);
+      }
+      const target = strip(parts.join("/"));
+      candidates = [...instancesIn.keys()].filter((f) => strip(f) === target);
+    } else {
+      const tail = imp.spec.replace(/^[@~#]\//, "").replace(/^src\//, "");
+      if (!tail.includes("/")) continue;
+      candidates = [...instancesIn.keys()]
+        .filter((f) => strip(f) === tail || strip(f).endsWith(`/${tail}`))
+        .sort((a, b) => shared(b, path) - shared(a, path));
+    }
+    const file = candidates[0];
+    if (!file) continue;
+    for (const n of imp.names) {
+      const inst = instancesIn.get(file)!;
+      if (inst.has(n.name)) out.set(n.local, inst.get(n.name));
+    }
+  }
+  return out;
+}
 
 /**
  * A Vue single-file component with everything outside its `<script>` blocks blanked (line
