@@ -18,8 +18,9 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
 /**
  * 2.0.0 (ADR 0073): PUT /api/me and GET /api/me/approvals are gone; /api/me is the Git user.
  * 2.1.0 (ADR 0078): the questions API, /api/questions.
+ * 2.2.0 (ADR 0084): GET /api/onboarding, for the Onboarding and Dashboard screens.
  */
-export const API_VERSION = "2.1.0";
+export const API_VERSION = "2.2.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -339,6 +340,57 @@ export const RepoView = ManifestRepo.extend({
     dirty: z.boolean().optional(),
   }),
 });
+
+/**
+ * ADR 0084: what the Onboarding and Dashboard screens show, read from files only: each repo
+ * of every manifest, whether its base clone and scan settings are there, and what the last
+ * scan wrote for it (counted from the evidence of catalog/generated); and the knowledge sources.
+ */
+export const OnboardingRepo = z.object({
+  id: RecordId,
+  platform: RecordId,
+  type: RecordId,
+  owner: RecordId,
+  /** The manifest file that lists it, relative to the metarepo. */
+  manifest: z.string(),
+  cloned: z.boolean(),
+  /** org-pack/scan/<repo>.yaml (ADR 0075). */
+  scanSettings: z.object({ path: z.string(), present: z.boolean() }),
+  /** Null when no record in catalog/generated cites this repo. */
+  lastScan: z
+    .object({
+      records: z.number().int(),
+      kinds: z.record(z.string(), z.number().int()),
+      commit: z.string().optional(),
+      scannedAt: z.string().optional(),
+    })
+    .nullable(),
+});
+
+export const OnboardingView = z.object({
+  manifests: z.array(z.object({ platform: RecordId, path: z.string(), repos: z.number().int() })),
+  repos: z.array(OnboardingRepo),
+  sources: z.object({
+    path: z.string(),
+    present: z.boolean(),
+    wikis: z.array(
+      z.object({
+        id: z.string(),
+        type: z.string(),
+        location: z.string(),
+        spaces: z.array(z.string()),
+        owner: z.string().optional(),
+      }),
+    ),
+    absorbed: z.array(
+      z.object({ id: z.string(), url: z.string(), format: z.string(), mode: z.string() }),
+    ),
+  }),
+  catalog: z.object({ records: z.number().int() }),
+  /** Files that couldn't be read: a manifest, sources.yaml or a catalog file. */
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+export type OnboardingViewT = z.infer<typeof OnboardingView>;
 
 export const OrgPackView = z.object({
   defaulted: z.array(z.string()),
@@ -985,6 +1037,15 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: arrayOf("RepoView"), description: "OK" },
     },
   },
+  "/api/onboarding": {
+    get: {
+      id: "getOnboarding",
+      summary:
+        "Each manifest repo with its clone, scan settings and last scan's counts, and the knowledge sources (ADR 0084)",
+      tag: "workspace",
+      ok: { status: 200, schema: "OnboardingView", description: "OK" },
+    },
+  },
   "/api/workspace/sync": {
     post: {
       id: "syncWorkspace",
@@ -1627,6 +1688,7 @@ export function openApiDocument(): Record<string, unknown> {
     Task,
     RunView,
     RepoView,
+    OnboardingView,
     OrgPackView,
     Health,
     Finding,

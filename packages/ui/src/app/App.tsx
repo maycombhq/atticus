@@ -6,7 +6,8 @@ import { ScreenBoundary } from "./boundary.js";
 import { MeProvider, useMe } from "./me.js";
 import { CommandPalette } from "./palette.js";
 import { replayTour, Tour } from "./tour.js";
-import { GROUPS, SCREENS, screenOf, type ScreenDef } from "./screens.js";
+import { Nav } from "./nav.js";
+import { screenOf } from "./screens.js";
 
 interface Health {
   version: string;
@@ -22,65 +23,6 @@ function useHash(): string {
     return () => removeEventListener("hashchange", on);
   }, []);
   return h;
-}
-
-function Logo() {
-  return (
-    <svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26">
-      <polygon
-        points="13,2 24,8 24,18 13,24 2,18 2,8"
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="1.5"
-        style={{ filter: "drop-shadow(0 0 4px #2EE6F6)" }}
-      />
-      <path
-        d="M8 18 L13 7 L18 18 M10 14 H16"
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="1.5"
-      />
-    </svg>
-  );
-}
-
-/** One navigation for everyone (ADR 0073): every screen, in the canvas's menu groups. */
-function Nav({ current }: { current: ScreenDef }) {
-  return (
-    <nav aria-label="Main" className="nav">
-      <div className="brand">
-        <Logo />
-        ATTICUS
-      </div>
-      {GROUPS.map((g) => (
-        <div key={g} role="group" aria-label={g}>
-          <div className="group">{g}</div>
-          {SCREENS.filter((s) => s.group === g).map((s) => (
-            <a
-              key={s.id}
-              href={`#/${s.id}`}
-              aria-current={s.id === current.id ? "page" : undefined}
-            >
-              {s.label}
-            </a>
-          ))}
-        </div>
-      ))}
-      <a className="ask" href="#/explore">
-        <span
-          aria-hidden="true"
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: "var(--accent)",
-            boxShadow: "0 0 8px var(--accent)",
-          }}
-        />
-        Ask Atticus
-      </a>
-    </nav>
-  );
 }
 
 /** Shows when AI is limited here, so nobody wonders why an AI button is missing. */

@@ -12,6 +12,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - `atticus spec check <repo> [--json]`: the deterministic critic. Every trigger has a flow, every cited line exists, a call-out's target and a write's table and columns are in the catalog, a field doesn't appear from nowhere, and a step's claim is on its cited line (which marks the step confirmed by the check). A finding that comes back unchanged after a redraft becomes a question.
 - `atticus bench run --specs` also scores drafted specs against the bench's reference flows (`bench/flows/`): triggers covered, steps matched in order, tables and fields named, citations correct.
 
+### The app's six screens, and More
+
+- The menu shows six screens that follow the work: Dashboard, Onboarding, Feature design, Architecture, Stories and Tasks. Every other page is under More, unchanged; nothing is removed. `#/` opens the Dashboard; the Command center is at `#/home`.
+- Every one of the six shows "Run next": the command for its step with a copy button, and the slash command for Copilot Chat where `atticus assistant-files` writes one.
+- Dashboard: repos listed, cloned, with scan settings and scanned; changes in flight and their stage; open questions; the slash commands that exist.
+- Onboarding: the manifest file, each repo's clone, scan settings, last scan and the `atticus repo-type detect` command; the knowledge sources in `sources.yaml`; the steps in order (repos discover, workspace sync, scan survey, scan, answer, scan review).
+- Feature design, Stories and Tasks: the change's files and the command for its stage; Tasks lists each task with `atticus task run` and `/atticus-task`.
+- Local API (ADR 0084, 2.2.0): `GET /api/onboarding`, read from files only.
+
 ### Repo types, matched by fingerprint
 
 - A new org-pack folder, `repo-types/<id>/type.yaml` (ADR 0077, C6). It holds what a kind of repo looks like (build files, dependencies, framework markers and folders, each with a weight), the scan settings every repo of the kind gets (written as patterns), and the skills for reading it.
