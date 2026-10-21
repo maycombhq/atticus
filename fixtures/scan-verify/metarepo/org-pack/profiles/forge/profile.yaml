@@ -1,0 +1,6 @@
+schemaVersion: 1
+platform: forge
+name: Forge tasks, with things the scan misses and gets wrong
+systems:
+  - { id: tasks, name: Tasks, boundary: product, owner: team-tasks, aliases: [] }
+environments: [dev, prod]

@@ -1,0 +1,4 @@
+CREATE TABLE task (
+  id BIGINT PRIMARY KEY,
+  title VARCHAR(200) NOT NULL
+);

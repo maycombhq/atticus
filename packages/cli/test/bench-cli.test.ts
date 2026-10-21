@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { MockRuntime } from "@maycombhq/ai";
+import { benchVerify } from "../src/bench-commands.js";
 import { main } from "../src/main.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -121,6 +123,54 @@ describe("atticus bench", () => {
       repos: { repo: string; settings: boolean; kinds: { stores: { found: number } } }[];
     };
     expect(result.repos[0]).toMatchObject({ settings: true, kinds: { stores: { found: 0 } } });
+  }, 300_000);
+
+  it("verifies each repo's scan with the assistant, keeps the proposal, and scores what it flagged (ADR 0082)", async () => {
+    const b = await bench();
+    const args = ["--bench", b.dir, "--cache", b.cache];
+    expect(await main(["bench", "fetch", ...args], io().io)).toBe(0);
+    // The reference has account and entry; the assistant calls entry wrong (the reference
+    // disagrees) and confirms account.
+    const runtime = new MockRuntime(
+      (req) => {
+        const id = (name: string) =>
+          new RegExp(`^(\\S+) ${name}\\s+\\(`, "m").exec(req.pack.prompt)![1]!;
+        return [
+          "wrong:",
+          `  - record: ${id("entry")}`,
+          '    at: "src/main/resources/db/migration/V2__create_entry.sql:1"',
+          "    says: CREATE TABLE entry",
+          "    why: made up for the test",
+          "    fix: { reader: nothing }",
+          `confirmed: [${id("account")}]`,
+        ].join("\n");
+      },
+      { now: () => new Date("2026-10-21T12:00:00Z") },
+    );
+    const v = io();
+    expect(
+      await benchVerify({ bench: b.dir, cache: b.cache }, v.io, { runtime }),
+      v.err.join("\n"),
+    ).toBe(0);
+    expect(v.out[0]).toBe(
+      "forge-ledger: Checked forge-ledger against its last scan: 0 missed, 1 wrong, 1 confirmed.",
+    );
+    expect(await readFile(join(b.cache, "verify", "forge-ledger.yaml"), "utf8")).toContain(
+      "wrong:",
+    );
+    const r = io();
+    expect(await main(["bench", "run", ...args, "--json"], r.io), r.err.join("\n")).toBe(0);
+    const result = JSON.parse(r.out.join("\n")) as { repos: { verifier: unknown }[] };
+    expect(result.repos[0]!.verifier).toEqual({
+      missed: { flagged: 0, scored: 0, agreed: 0 },
+      wrong: { flagged: 1, scored: 1, agreed: 0 },
+      precision: 0,
+    });
+    const table = io();
+    expect(await main(["bench", "run", ...args], table.io)).toBe(0);
+    expect(table.out).toContainEqual(
+      expect.stringMatching(/^forge-ledger\s+0 \(0\)\s+1 \(0\)\s+0%$/),
+    );
   }, 300_000);
 
   it("skips a repo with no reference or no clone, and refuses a reference for another commit", async () => {

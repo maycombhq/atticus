@@ -220,6 +220,9 @@ const benchRun: typeof import("./bench-commands.js").benchRun = (...a) =>
   loadBenchCommands().then((m) => m.benchRun(...a));
 const benchSurvey: typeof import("./bench-commands.js").benchSurvey = (...a) =>
   loadBenchCommands().then((m) => m.benchSurvey(...a));
+const benchVerify: typeof import("./bench-commands.js").benchVerify = (...a) =>
+  loadBenchCommands().then((m) => m.benchVerify(...a));
+const loadScanVerifyCommands = () => import("./scan-verify-commands.js");
 const defencesScan: typeof import("./eval-commands.js").defencesScan = (...a) =>
   loadEvalCommands().then((m) => m.defencesScan(...a));
 const evalReport: typeof import("./eval-commands.js").evalReport = (...a) =>
@@ -359,6 +362,7 @@ Usage:
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
   atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force]
+  atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept]
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
@@ -505,6 +509,7 @@ Usage:
   atticus eval report                  The latest eval results and AI quality
   atticus bench fetch [--repo id] [--batch n] [--cache dir]  Clone the bench's public repos at their pinned commits
   atticus bench survey [--repo id] [--batch n] [--mode m]  Your assistant drafts each bench repo's scan settings; kept for later runs
+  atticus bench verify [--repo id] [--batch n] [--mode m]  Your assistant verifies each bench repo's scan; kept for bench run to score
   atticus bench run [--repo id] [--batch n] [--json]  Scan each bench repo and score it against its reference
   atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts
   atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>
@@ -704,6 +709,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       bench: { type: "string" },
       cache: { type: "string" },
       batch: { type: "string" },
+      accept: { type: "boolean" },
     },
     strict: false,
   });
@@ -801,6 +807,47 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
         {
           attempts,
           force: values.force === true,
+          ...(text(values.resume) ? { resume: text(values.resume)! } : {}),
+        },
+        { runtime },
+        io,
+      );
+    } catch (e) {
+      if (e instanceof RuntimeConfigError) {
+        io.err(e.message);
+        return 2;
+      }
+      throw e;
+    }
+  }
+  if (group === "scan" && command === "verify") {
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    if (!arg) {
+      io.err(
+        "Usage: atticus scan verify <repo> [--attempts 3] [--resume run] [--mode m] [--json] | --accept",
+      );
+      return 2;
+    }
+    const m = await loadScanVerifyCommands();
+    if (values.accept === true) {
+      const by = given ?? (await gitUser(root)).handle ?? "someone";
+      return m.scanVerifyAccept(root, arg, { by }, io);
+    }
+    const attempts = Number(text(values.attempts) ?? "3");
+    if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) {
+      io.err("--attempts is a whole number from 1 to 10.");
+      return 2;
+    }
+    try {
+      const { runtime } = await runtimeForCli(root, {
+        ...(text(values.mode) ? { mode: text(values.mode)! } : {}),
+      });
+      return await m.scanVerify(
+        root,
+        arg,
+        {
+          attempts,
+          json: values.json === true,
           ...(text(values.resume) ? { resume: text(values.resume)! } : {}),
         },
         { runtime },
@@ -1044,7 +1091,10 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       io,
     );
   if (group === "eval" && command === "report") return evalReport(root, { json }, io);
-  if (group === "bench" && (command === "fetch" || command === "run" || command === "survey")) {
+  if (
+    group === "bench" &&
+    (command === "fetch" || command === "run" || command === "survey" || command === "verify")
+  ) {
     const b = {
       ...(str(values.bench) ? { bench: str(values.bench)! } : {}),
       ...(str(values.cache) ? { cache: str(values.cache)! } : {}),
@@ -1054,6 +1104,8 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     };
     if (command === "survey")
       return benchSurvey({ ...b, ...(str(values.mode) ? { mode: str(values.mode)! } : {}) }, io);
+    if (command === "verify")
+      return benchVerify({ ...b, ...(str(values.mode) ? { mode: str(values.mode)! } : {}) }, io);
     return command === "fetch" ? benchFetch(b, io) : benchRun(b, io);
   }
   if (group === "ui")

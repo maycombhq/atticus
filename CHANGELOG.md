@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The scan's AI verify step
+
+- `atticus scan verify <repo>` (ADR 0082) hands your assistant what the last scan recorded for the repo (entry points, calls, tables and deployments, each with its file and line), its folders and its scan settings. The assistant lists what the scan missed, what it has wrong and what it confirms, each with the line it read and a fix: a scan settings entry, a question for a person, or a change a reader must make.
+- Atticus checks every item: the cited line exists and says what is quoted, a missed entry point, call or table is named on its line and isn't in the scan already, a wrong or confirmed record is in the catalog, a settings entry passes the scan settings' own checks, and a question's evidence exists. What fails is handed back; what still fails on the last attempt is left out and listed.
+- Results go to `proposals/scan/<repo>.yaml` (settings entries to accept, merged across runs, and the confirmed records pinned to their lines), `questions/`, and `proposals/scan/<repo>.findings.md` (what a reader must read differently, in plain words). The catalog isn't changed. `atticus scan verify <repo> --accept` checks the settings entries again and merges them into `org-pack/scan/<repo>.yaml`.
+- `atticus bench verify` runs it on the bench repos and keeps the proposals in the bench cache; `atticus bench run` then says how many of the flagged misses and wrong records the reference agrees with.
+
 ### Repo types, matched by fingerprint
 
 - A new org-pack folder, `repo-types/<id>/type.yaml` (ADR 0077, C6). It holds what a kind of repo looks like (build files, dependencies, framework markers and folders, each with a weight), the scan settings every repo of the kind gets (written as patterns), and the skills for reading it.

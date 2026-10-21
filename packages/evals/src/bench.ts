@@ -158,6 +158,74 @@ export function benchFacts(records: CatalogRecord[]): Record<FactKind, string[]>
   };
 }
 
+/** A fact the AI verify step (ADR 0082) flagged, in its own terms. */
+export interface FlaggedFact {
+  kind: "entry-point" | "call" | "table" | "deployment" | "other";
+  method?: string;
+  name: string;
+}
+
+export interface VerifierScore {
+  /** Misses flagged; scored when the reference covers the kind; agreed when the reference has it. */
+  missed: { flagged: number; scored: number; agreed: number };
+  /** Wrong records flagged; agreed when the reference doesn't have the record's fact. */
+  wrong: { flagged: number; scored: number; agreed: number };
+  /** Agreed over scored, both together; 1 when nothing could be scored. */
+  precision: number;
+}
+
+/** A flagged fact as the reference writes it, or undefined when the reference can't say. */
+function flaggedFact(ref: BenchReference, f: FlaggedFact): [FactKind, string] | undefined {
+  const k: FactKind | undefined =
+    f.kind === "entry-point"
+      ? "serves"
+      : f.kind === "call"
+        ? "calls"
+        : f.kind === "table"
+          ? "stores"
+          : f.kind === "deployment"
+            ? "deploys"
+            : undefined;
+  if (!k || !ref.covers.includes(k)) return undefined;
+  if (k === "stores") return [k, table(f.name)];
+  if (k === "deploys") return [k, f.name.toLowerCase()];
+  if (!/\//.test(f.name)) return undefined;
+  return [
+    k,
+    k === "serves" ? serveFact("rest", f.method, f.name) : callFact("rest", f.method, f.name),
+  ];
+}
+
+/**
+ * The verifier's precision on one repo (ADR 0082): of the misses and wrong records it flagged
+ * that the reference can judge, how many the reference agrees with.
+ */
+export function scoreVerifier(
+  ref: BenchReference,
+  flagged: { missed: FlaggedFact[]; wrong: FlaggedFact[] },
+): VerifierScore {
+  const want = referenceFacts(ref);
+  const has = (k: FactKind, x: string) => want[k].some((y) => sameFact(x, y));
+  const count = (items: FlaggedFact[], agrees: (k: FactKind, x: string) => boolean) => {
+    let scored = 0;
+    let agreed = 0;
+    for (const f of items) {
+      const fact = flaggedFact(ref, f);
+      if (!fact) continue;
+      scored++;
+      if (agrees(...fact)) agreed++;
+    }
+    return { flagged: items.length, scored, agreed };
+  };
+  const missed = count(flagged.missed, has);
+  const wrong = count(flagged.wrong, (k, x) => !has(k, x));
+  return {
+    missed,
+    wrong,
+    precision: ratio(missed.agreed + wrong.agreed, missed.scored + wrong.scored),
+  };
+}
+
 export interface KindScore {
   found: number;
   /** In the reference, not in the scan. */
