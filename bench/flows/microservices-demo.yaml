@@ -1,0 +1,1218 @@
+# Written by reading the code at the pinned commit in ../repos.yaml, not from an Atticus scan.
+estate: microservices-demo
+repos:
+  [
+    frontend,
+    adservice,
+    cartservice,
+    checkoutservice,
+    currencyservice,
+    emailservice,
+    paymentservice,
+    productcatalogservice,
+    recommendationservice,
+    shippingservice,
+  ]
+notes: >-
+  All ten services live in one repository (GoogleCloudPlatform/microservices-demo); each directory
+  under src/ is treated as its own repo, and every `at` is relative to src/<service>/ (so
+  cartservice's "src/services/CartService.cs" is src/cartservice/src/services/CartService.cs in the
+  repository). Services talk gRPC over the hipstershop protos (protos/demo.proto); call-out entries
+  are the gRPC method names and `sends`/`returns` use the proto field names (user_id,
+  item.product_id, price_usd, cost_usd), while transforms inside Go code use the Go struct names
+  (OrderItem.Cost, OrderResult.ShippingTrackingId). The frontend is a Go server rendering
+  html/template pages, so its triggers are routes in main.go (BASE_URL is empty by default) and
+  its last step is the template that shows the data. Every frontend request goes through
+  ensureSessionID (middleware.go:85), which gives a browser without a shop_session-id cookie a
+  random UUID (or a fixed id when ENABLE_SINGLE_SHARED_SESSION=true); that id is the user_id sent
+  to cartservice, checkoutservice and recommendationservice. It is shown once, in the home page
+  flow. The currency is the shop_currency cookie, defaulting to USD (handlers.go:573). The cart
+  store is Redis, the store the kubernetes manifests configure (REDIS_ADDR, kubernetes-manifests/
+  cartservice.yaml:50); the Spanner and AlloyDB stores and the in-memory fallback are not followed.
+  Redis holds one key per user_id whose value is the serialized hipstershop.Cart, so cart reads and
+  writes name the key and value in `what` and carry no `store` (there is no table or column). The
+  product catalog is read from products.json into memory at startup (server.go:138) and served from
+  memory (reloaded on each call only after SIGUSR1); the AlloyDB catalog is not followed. The
+  currency rates come from data/currency_conversion.json (EUR-based). Payment and shipping are
+  pretend: paymentservice checks the card and returns a random UUID, shippingservice quotes a flat
+  8.99 USD for any non-empty cart and makes a random tracking id. emailservice only starts as
+  DummyEmailService (start(dummy_mode = True), email_server.py:200), which logs and sends nothing.
+  Notable from the code: the home page asks adservice for ads and picks one, but the home template
+  never renders an ad (only product.html includes text_ad). The frontend computes cart and order
+  totals itself with money.Sum and money.MultiplySlow, separately from checkoutservice. A
+  paymentservice CreditCardError carries code 400, which is not a gRPC status code; how grpc-js maps
+  it is not confirmed from the code, but checkoutservice turns any charge failure into Internal
+  "failed to charge card". The card is charged before ShipOrder runs, and nothing refunds it if
+  shipping fails. A currency that passes the frontend's iso4217 check but is missing from the rates
+  file would make Convert compute NaN; what the gRPC layer then does is not confirmed, so it is not
+  listed as an error path. Error paths are read from the code, not observed by running it. Left
+  out: empty cart (POST /cart/empty), logout, the shopping assistant (/assistant and /bot, an HTTP
+  call to the Python service and Gemini), /product-meta, the optional external packaging service
+  (shown only as a branch), SearchProducts (no caller in the estate), health checks, the
+  loadgenerator and tracing.
+flows:
+  - id: home-page
+    name: A shopper opens the home page
+    trigger:
+      kind: page
+      repo: frontend
+      what: GET / loads the home page
+      at: "main.go:150"
+    steps:
+      - kind: branch
+        repo: frontend
+        what: ensureSessionID reads the shop_session-id cookie; without one it makes a random UUID and sets the cookie for 48 hours
+        data: { reads: [shop_session-id] }
+        at: "middleware.go:89"
+      - kind: entry
+        repo: frontend
+        what: homeHandler handles the request
+        at: "handlers.go:59"
+      - kind: lookup
+        repo: frontend
+        what: The display currency is read from the shop_currency cookie, USD when there is none
+        data: { reads: [shop_currency] }
+        at: "handlers.go:574"
+      - kind: call-out
+        repo: frontend
+        what: GetSupportedCurrencies is called for the currency picker
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/GetSupportedCurrencies" }
+        at: "rpc.go:31"
+      - kind: entry
+        repo: currencyservice
+        what: getSupportedCurrencies receives the call
+        at: "server.js:128"
+      - kind: read
+        repo: currencyservice
+        what: The EUR-based rates are read from data/currency_conversion.json
+        at: "server.js:110"
+      - kind: respond
+        repo: currencyservice
+        what: Every currency code in the rates file is returned
+        data: { returns: [currency_codes] }
+        at: "server.js:131"
+      - kind: transform
+        repo: frontend
+        what: The codes are filtered to the whitelist USD, EUR, CAD, JPY, GBP and TRY
+        data: { from: [currency_codes], to: [currencies] }
+        at: "rpc.go:38"
+      - kind: call-out
+        repo: frontend
+        what: ListProducts is called for every product
+        to: { repo: productcatalogservice, entry: "hipstershop.ProductCatalogService/ListProducts" }
+        at: "rpc.go:46"
+      - kind: entry
+        repo: productcatalogservice
+        what: ListProducts receives the call (after an optional EXTRA_LATENCY sleep)
+        at: "product_catalog.go:41"
+      - kind: read
+        repo: productcatalogservice
+        what: The catalog is served from memory, loaded from products.json at startup
+        data: { reads: [id, name, description, picture, price_usd, categories] }
+        at: "catalog_loader.go:47"
+      - kind: respond
+        repo: productcatalogservice
+        what: All products are returned
+        data: { returns: [products] }
+        at: "product_catalog.go:44"
+      - kind: call-out
+        repo: frontend
+        what: GetCart is called with the session id
+        to: { repo: cartservice, entry: "hipstershop.CartService/GetCart" }
+        data: { sends: [user_id] }
+        at: "rpc.go:58"
+      - kind: entry
+        repo: cartservice
+        what: CartService.GetCart receives the user_id
+        at: "src/services/CartService.cs:40"
+      - kind: read
+        repo: cartservice
+        what: The Redis key user_id is read
+        data: { reads: [user_id] }
+        at: "src/cartstore/RedisCartStore.cs:90"
+      - kind: respond
+        repo: cartservice
+        what: The stored Cart is parsed and returned, or an empty Cart when the key is missing
+        data: { returns: [user_id, items] }
+        at: "src/cartstore/RedisCartStore.cs:94"
+      - kind: loop
+        repo: frontend
+        what: For each product the USD price is converted to the display currency
+        at: "handlers.go:83"
+      - kind: call-out
+        repo: frontend
+        what: Convert is called with the product's price_usd and the display currency
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/Convert" }
+        data: { sends: [from.currency_code, from.units, from.nanos, to_code] }
+        at: "rpc.go:81"
+      - kind: entry
+        repo: currencyservice
+        what: convert receives the request
+        at: "server.js:138"
+      - kind: transform
+        repo: currencyservice
+        what: The amount is divided by the from currency's rate to get euros, carrying fractions into nanos
+        data: { from: [from.units, from.nanos, from.currency_code], to: [euros.units, euros.nanos] }
+        at: "server.js:145"
+      - kind: transform
+        repo: currencyservice
+        what: The euros are multiplied by the to_code rate, floored, and tagged with to_code
+        data: { from: [euros.units, euros.nanos, to_code], to: [units, nanos, currency_code] }
+        at: "server.js:153"
+      - kind: respond
+        repo: currencyservice
+        what: The converted Money is returned
+        data: { returns: [currency_code, units, nanos] }
+        at: "server.js:163"
+      - kind: transform
+        repo: frontend
+        what: The cart size is the sum of the item quantities
+        data: { from: [items.quantity], to: [cart_size] }
+        at: "handlers.go:598"
+      - kind: call-out
+        repo: frontend
+        what: GetAds is called with no context keys and a 100 ms timeout
+        to: { repo: adservice, entry: "hipstershop.AdService/GetAds" }
+        data: { sends: [context_keys] }
+        at: "rpc.go:123"
+      - kind: entry
+        repo: adservice
+        what: AdServiceImpl.getAds receives the request
+        at: "src/main/java/hipstershop/AdService.java:94"
+      - kind: branch
+        repo: adservice
+        what: With no context keys it serves random ads
+        data: { reads: [context_keys] }
+        at: "src/main/java/hipstershop/AdService.java:99"
+      - kind: read
+        repo: adservice
+        what: Two ads (MAX_ADS_TO_SERVE) are picked at random from the in-memory ads map
+        at: "src/main/java/hipstershop/AdService.java:129"
+      - kind: respond
+        repo: adservice
+        what: The ads are returned
+        data: { returns: [ads.redirect_url, ads.text] }
+        at: "src/main/java/hipstershop/AdService.java:111"
+      - kind: transform
+        repo: frontend
+        what: chooseAd picks one ad at random (the home template never shows it)
+        at: "handlers.go:533"
+      - kind: respond
+        repo: frontend
+        what: The home template is rendered with currencies, products and their converted prices, and cart_size
+        data: { returns: [currencies, products, cart_size, ad, user_currency, session_id] }
+        at: "handlers.go:110"
+      - kind: respond
+        repo: frontend
+        what: The page shows each product's picture, name and price linked to its product page, the currency picker and the cart count badge
+        data: { reads: [Item.Id, Item.Picture, Item.Name, Price, currencies, cart_size] }
+        at: "templates/home.html:46"
+    errors:
+      - {
+          when: "currencyservice, productcatalogservice or cartservice fails",
+          then: "500 with the error page (could not retrieve currencies / products / cart)",
+          at: "handlers.go:64",
+        }
+      - {
+          when: "Redis cannot be reached",
+          then: "cartservice returns FailedPrecondition Can't access cart storage, and the page is a 500",
+          at: "src/cartstore/RedisCartStore.cs:102",
+        }
+      - {
+          when: "A price conversion fails",
+          then: "500 with failed to do currency conversion for product <id>",
+          at: "handlers.go:86",
+        }
+      - {
+          when: "adservice fails or takes over 100 ms",
+          then: "a warning is logged and no ad is chosen; the page still renders",
+          at: "handlers.go:530",
+        }
+
+  - id: view-product
+    name: A shopper views a product with recommendations and an ad
+    trigger:
+      kind: page
+      repo: frontend
+      what: GET /product/{id} loads, usually from a product card on the home page
+      at: "main.go:151"
+    steps:
+      - kind: entry
+        repo: frontend
+        what: productHandler takes the id from the path
+        at: "handlers.go:144"
+      - kind: validate
+        repo: frontend
+        what: An empty id ends the request with 400
+        data: { checks: [id] }
+        at: "handlers.go:147"
+      - kind: call-out
+        repo: frontend
+        what: GetProduct is called with the id
+        to: { repo: productcatalogservice, entry: "hipstershop.ProductCatalogService/GetProduct" }
+        data: { sends: [id] }
+        at: "rpc.go:53"
+      - kind: entry
+        repo: productcatalogservice
+        what: GetProduct receives the id
+        at: "product_catalog.go:47"
+      - kind: lookup
+        repo: productcatalogservice
+        what: The in-memory catalog is scanned for the id
+        data: { reads: [id] }
+        at: "product_catalog.go:51"
+      - kind: respond
+        repo: productcatalogservice
+        what: The product is returned
+        data: { returns: [id, name, description, picture, price_usd, categories] }
+        at: "product_catalog.go:53"
+      - kind: call-out
+        repo: frontend
+        what: GetSupportedCurrencies is called (as on the home page)
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/GetSupportedCurrencies" }
+        at: "rpc.go:31"
+      - kind: entry
+        repo: currencyservice
+        what: getSupportedCurrencies returns the codes from the rates file
+        at: "server.js:128"
+      - kind: call-out
+        repo: frontend
+        what: GetCart is called with the session id for the cart badge
+        to: { repo: cartservice, entry: "hipstershop.CartService/GetCart" }
+        data: { sends: [user_id] }
+        at: "rpc.go:58"
+      - kind: entry
+        repo: cartservice
+        what: CartService.GetCart reads the Redis key user_id and returns the Cart
+        at: "src/services/CartService.cs:40"
+      - kind: call-out
+        repo: frontend
+        what: Convert is called with the product's price_usd and the display currency
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/Convert" }
+        data: { sends: [from.currency_code, from.units, from.nanos, to_code] }
+        at: "rpc.go:81"
+      - kind: entry
+        repo: currencyservice
+        what: convert converts through euros (from rate, then to_code rate) and returns the Money
+        at: "server.js:138"
+      - kind: call-out
+        repo: frontend
+        what: ListRecommendations is called with the session id and this product's id
+        to:
+          {
+            repo: recommendationservice,
+            entry: "hipstershop.RecommendationService/ListRecommendations",
+          }
+        data: { sends: [user_id, product_ids] }
+        at: "rpc.go:100"
+      - kind: entry
+        repo: recommendationservice
+        what: RecommendationService.ListRecommendations receives the request
+        at: "recommendation_server.py:70"
+      - kind: call-out
+        repo: recommendationservice
+        what: ListProducts is called on the product catalog
+        to: { repo: productcatalogservice, entry: "hipstershop.ProductCatalogService/ListProducts" }
+        at: "recommendation_server.py:73"
+      - kind: entry
+        repo: productcatalogservice
+        what: ListProducts returns every product from memory
+        at: "product_catalog.go:41"
+      - kind: transform
+        repo: recommendationservice
+        what: The ids of the products asked about are removed from all product ids
+        data: { from: [products.id, product_ids], to: [filtered_products] }
+        at: "recommendation_server.py:75"
+      - kind: transform
+        repo: recommendationservice
+        what: Up to five of the rest are sampled at random
+        data: { from: [filtered_products], to: [prod_list] }
+        at: "recommendation_server.py:79"
+      - kind: respond
+        repo: recommendationservice
+        what: The sampled ids are returned
+        data: { returns: [product_ids] }
+        at: "recommendation_server.py:86"
+      - kind: call-out
+        repo: frontend
+        what: GetProduct is called for each recommended id
+        to: { repo: productcatalogservice, entry: "hipstershop.ProductCatalogService/GetProduct" }
+        data: { sends: [id] }
+        at: "rpc.go:107"
+      - kind: transform
+        repo: frontend
+        what: Only the first four recommendations are kept to fit the page
+        at: "rpc.go:113"
+      - kind: branch
+        repo: frontend
+        what: Only when PACKAGING_SERVICE_URL is set, packaging info is fetched over HTTP from an external service outside the estate
+        at: "handlers.go:191"
+      - kind: call-out
+        repo: frontend
+        what: GetAds is called with the product's categories as context keys (100 ms timeout)
+        to: { repo: adservice, entry: "hipstershop.AdService/GetAds" }
+        data: { sends: [context_keys] }
+        at: "rpc.go:123"
+      - kind: entry
+        repo: adservice
+        what: AdServiceImpl.getAds receives the categories
+        at: "src/main/java/hipstershop/AdService.java:94"
+      - kind: loop
+        repo: adservice
+        what: Each category's ads are taken from the in-memory map (clothing, accessories, footwear, hair, decor, kitchen)
+        data: { reads: [context_keys] }
+        at: "src/main/java/hipstershop/AdService.java:101"
+      - kind: branch
+        repo: adservice
+        what: When no category has ads, two random ads are served instead
+        at: "src/main/java/hipstershop/AdService.java:107"
+      - kind: respond
+        repo: adservice
+        what: The ads are returned
+        data: { returns: [ads.redirect_url, ads.text] }
+        at: "src/main/java/hipstershop/AdService.java:111"
+      - kind: transform
+        repo: frontend
+        what: chooseAd picks one ad at random
+        at: "handlers.go:533"
+      - kind: respond
+        repo: frontend
+        what: The product template is rendered with the product, converted price, recommendations, ad, cart_size and currencies
+        data: { returns: [product, recommendations, ad, cart_size, currencies, packagingInfo] }
+        at: "handlers.go:198"
+      - kind: respond
+        repo: frontend
+        what: The page shows the picture, name, price and description, a quantity picker with Add To Cart, You May Also Like and the ad
+        data:
+          {
+            reads:
+              [
+                product.Item.Name,
+                product.Price,
+                product.Item.Description,
+                recommendations,
+                ad.RedirectUrl,
+                ad.Text,
+              ],
+          }
+        at: "templates/product.html:34"
+    errors:
+      - {
+          when: "No product has that id",
+          then: "productcatalogservice returns NotFound no product with ID <id>",
+          at: "product_catalog.go:57",
+        }
+      - {
+          when: "GetProduct, GetSupportedCurrencies, GetCart or Convert fails",
+          then: "500 with the error page (could not retrieve product, and so on)",
+          at: "handlers.go:156",
+        }
+      - {
+          when: "recommendationservice or a recommended product lookup fails",
+          then: "a warning is logged and the page renders without recommendations",
+          at: "handlers.go:180",
+        }
+      - {
+          when: "adservice fails or takes over 100 ms",
+          then: "a warning is logged and no ad is shown",
+          at: "handlers.go:530",
+        }
+
+  - id: add-to-cart
+    name: A shopper adds a product to the cart
+    trigger:
+      kind: action
+      repo: frontend
+      what: Add To Cart is pressed on a product page, posting product_id and quantity to POST /cart
+      at: "templates/product.html:69"
+    steps:
+      - kind: entry
+        repo: frontend
+        what: addToCartHandler handles POST /cart
+        at: "handlers.go:211"
+      - kind: transform
+        repo: frontend
+        what: The quantity form value is parsed as an unsigned integer (an unparsable value becomes 0)
+        data:
+          {
+            from: [quantity, product_id],
+            to: [AddToCartPayload.Quantity, AddToCartPayload.ProductID],
+          }
+        at: "handlers.go:213"
+      - kind: validate
+        repo: frontend
+        what: The quantity must be 1 to 10 and the product id is required
+        data: { checks: [Quantity, ProductID] }
+        at: "validator/validator.go:38"
+      - kind: call-out
+        repo: frontend
+        what: GetProduct is called to check the product exists
+        to: { repo: productcatalogservice, entry: "hipstershop.ProductCatalogService/GetProduct" }
+        data: { sends: [id] }
+        at: "rpc.go:53"
+      - kind: entry
+        repo: productcatalogservice
+        what: GetProduct receives the id
+        at: "product_catalog.go:47"
+      - kind: lookup
+        repo: productcatalogservice
+        what: The in-memory catalog is scanned for the id
+        data: { reads: [id] }
+        at: "product_catalog.go:51"
+      - kind: respond
+        repo: productcatalogservice
+        what: The product is returned
+        data: { returns: [id, name, description, picture, price_usd, categories] }
+        at: "product_catalog.go:53"
+      - kind: call-out
+        repo: frontend
+        what: AddItem is called with the session id, the catalog's product id and the quantity
+        to: { repo: cartservice, entry: "hipstershop.CartService/AddItem" }
+        data: { sends: [user_id, item.product_id, item.quantity] }
+        at: "rpc.go:68"
+      - kind: entry
+        repo: cartservice
+        what: CartService.AddItem passes user_id, product_id and quantity to the cart store
+        at: "src/services/CartService.cs:34"
+      - kind: read
+        repo: cartservice
+        what: The Redis key user_id is read
+        data: { reads: [user_id] }
+        at: "src/cartstore/RedisCartStore.cs:40"
+      - kind: branch
+        repo: cartservice
+        what: With no stored cart a new Cart is made with this one item
+        at: "src/cartstore/RedisCartStore.cs:41"
+      - kind: branch
+        repo: cartservice
+        what: Otherwise an item with the same product_id has its quantity increased, or a new item is added
+        data: { reads: [items.product_id] }
+        at: "src/cartstore/RedisCartStore.cs:50"
+      - kind: write
+        repo: cartservice
+        what: The serialized Cart is written back under the key user_id
+        data: { sends: [user_id, items.product_id, items.quantity] }
+        at: "src/cartstore/RedisCartStore.cs:60"
+      - kind: respond
+        repo: cartservice
+        what: Empty is returned
+        at: "src/services/CartService.cs:37"
+      - kind: respond
+        repo: frontend
+        what: 302 Found to /cart, which loads the cart page
+        at: "handlers.go:235"
+    errors:
+      - {
+          when: "The quantity is not 1-10 or the product id is missing",
+          then: "422 with the error page listing Field '<name>' is invalid: <rule>",
+          at: "handlers.go:220",
+        }
+      - {
+          when: "No product has that id",
+          then: "NotFound from productcatalogservice becomes a 500 could not retrieve product",
+          at: "handlers.go:227",
+        }
+      - {
+          when: "Redis cannot be read or written",
+          then: "cartservice returns FailedPrecondition Can't access cart storage, and the frontend shows a 500 failed to add to cart",
+          at: "src/cartstore/RedisCartStore.cs:64",
+        }
+
+  - id: view-cart
+    name: A shopper views the cart with a shipping quote and total
+    trigger:
+      kind: page
+      repo: frontend
+      what: GET /cart loads, from the header cart icon or after adding an item
+      at: "main.go:152"
+    steps:
+      - kind: entry
+        repo: frontend
+        what: viewCartHandler handles the request
+        at: "handlers.go:251"
+      - kind: call-out
+        repo: frontend
+        what: GetSupportedCurrencies is called for the currency picker
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/GetSupportedCurrencies" }
+        at: "rpc.go:31"
+      - kind: entry
+        repo: currencyservice
+        what: getSupportedCurrencies returns the codes from the rates file
+        at: "server.js:128"
+      - kind: call-out
+        repo: frontend
+        what: GetCart is called with the session id
+        to: { repo: cartservice, entry: "hipstershop.CartService/GetCart" }
+        data: { sends: [user_id] }
+        at: "rpc.go:58"
+      - kind: entry
+        repo: cartservice
+        what: CartService.GetCart receives the user_id
+        at: "src/services/CartService.cs:40"
+      - kind: read
+        repo: cartservice
+        what: The Redis key user_id is read
+        data: { reads: [user_id] }
+        at: "src/cartstore/RedisCartStore.cs:90"
+      - kind: respond
+        repo: cartservice
+        what: The stored Cart, or an empty Cart
+        data: { returns: [user_id, items] }
+        at: "src/cartstore/RedisCartStore.cs:94"
+      - kind: call-out
+        repo: frontend
+        what: ListRecommendations is called with the cart's product ids
+        to:
+          {
+            repo: recommendationservice,
+            entry: "hipstershop.RecommendationService/ListRecommendations",
+          }
+        data: { sends: [user_id, product_ids] }
+        at: "rpc.go:100"
+      - kind: entry
+        repo: recommendationservice
+        what: ListRecommendations lists the catalog, drops the cart's products and samples up to five
+        at: "recommendation_server.py:70"
+      - kind: call-out
+        repo: frontend
+        what: GetQuote is called with the cart items and no address
+        to: { repo: shippingservice, entry: "hipstershop.ShippingService/GetQuote" }
+        data: { sends: [address, items] }
+        at: "rpc.go:88"
+      - kind: entry
+        repo: shippingservice
+        what: GetQuote receives the items
+        at: "main.go:119"
+      - kind: transform
+        repo: shippingservice
+        what: The item quantities are summed
+        data: { from: [items.quantity], to: [count] }
+        at: "main.go:124"
+      - kind: branch
+        repo: shippingservice
+        what: No items costs 0, any items cost a flat 8.99
+        data: { reads: [count] }
+        at: "quote.go:35"
+      - kind: respond
+        repo: shippingservice
+        what: The quote is returned in USD
+        data: { returns: [cost_usd.currency_code, cost_usd.units, cost_usd.nanos] }
+        at: "main.go:131"
+      - kind: call-out
+        repo: frontend
+        what: Convert is called with the shipping cost_usd and the display currency
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/Convert" }
+        data: { sends: [from, to_code] }
+        at: "rpc.go:95"
+      - kind: entry
+        repo: currencyservice
+        what: convert converts through euros and returns the Money
+        at: "server.js:138"
+      - kind: loop
+        repo: frontend
+        what: For each cart item the product is fetched and its price converted
+        at: "handlers.go:284"
+      - kind: call-out
+        repo: frontend
+        what: GetProduct is called with the item's product_id
+        to: { repo: productcatalogservice, entry: "hipstershop.ProductCatalogService/GetProduct" }
+        data: { sends: [id] }
+        at: "handlers.go:285"
+      - kind: entry
+        repo: productcatalogservice
+        what: GetProduct finds the product in the in-memory catalog
+        at: "product_catalog.go:47"
+      - kind: call-out
+        repo: frontend
+        what: Convert is called with the product's price_usd and the display currency
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/Convert" }
+        data: { sends: [from, to_code] }
+        at: "handlers.go:290"
+      - kind: entry
+        repo: currencyservice
+        what: convert converts through euros and returns the Money
+        at: "server.js:138"
+      - kind: transform
+        repo: frontend
+        what: The converted price is multiplied by the quantity (repeated money.Sum)
+        data: { from: [Price, quantity], to: [cartItemView.Price] }
+        at: "handlers.go:296"
+      - kind: transform
+        repo: frontend
+        what: Each line price is added to the total
+        data: { from: [cartItemView.Price], to: [totalPrice] }
+        at: "handlers.go:301"
+      - kind: transform
+        repo: frontend
+        what: The converted shipping cost is added to the total
+        data: { from: [shippingCost], to: [totalPrice] }
+        at: "handlers.go:303"
+      - kind: respond
+        repo: frontend
+        what: The cart template is rendered with items, shipping_cost, total_cost, cart_size, recommendations and five expiration years from this year
+        data:
+          {
+            returns:
+              [
+                items,
+                shipping_cost,
+                total_cost,
+                cart_size,
+                recommendations,
+                currencies,
+                expiration_years,
+              ],
+          }
+        at: "handlers.go:306"
+      - kind: branch
+        repo: frontend
+        what: An empty cart shows Your shopping cart is empty! with Continue Shopping instead of the items and checkout form
+        data: { reads: [items] }
+        at: "templates/cart.html:28"
+      - kind: respond
+        repo: frontend
+        what: The page lists each item's picture, name, SKU, quantity and line price, then Shipping, Total and the checkout form prefilled with sample details
+        data: { reads: [Item.Name, Item.Id, Quantity, Price, shipping_cost, total_cost] }
+        at: "templates/cart.html:56"
+    errors:
+      - {
+          when: "GetSupportedCurrencies or GetCart fails",
+          then: "500 with could not retrieve currencies / cart",
+          at: "handlers.go:256",
+        }
+      - {
+          when: "The shipping quote or its conversion fails",
+          then: "500 with failed to get shipping quote",
+          at: "handlers.go:273",
+        }
+      - {
+          when: "A cart item's product is no longer in the catalog, or its price conversion fails",
+          then: "500 with could not retrieve product #<id> (or could not convert currency)",
+          at: "handlers.go:287",
+        }
+      - {
+          when: "Recommendations fail",
+          then: "a warning is logged and the page renders without them",
+          at: "handlers.go:268",
+        }
+
+  - id: place-order
+    name: A shopper places an order
+    trigger:
+      kind: action
+      repo: frontend
+      what: Place Order is pressed on the cart page, posting the checkout form to POST /cart/checkout
+      at: "templates/cart.html:212"
+    steps:
+      - kind: entry
+        repo: frontend
+        what: placeOrderHandler handles POST /cart/checkout
+        at: "handlers.go:320"
+      - kind: transform
+        repo: frontend
+        what: The form values are read; zip code, card month, year and CVV are parsed as integers (unparsable values become 0)
+        data:
+          {
+            from:
+              [
+                email,
+                street_address,
+                zip_code,
+                city,
+                state,
+                country,
+                credit_card_number,
+                credit_card_expiration_month,
+                credit_card_expiration_year,
+                credit_card_cvv,
+              ],
+            to:
+              [
+                PlaceOrderPayload.Email,
+                PlaceOrderPayload.StreetAddress,
+                PlaceOrderPayload.ZipCode,
+                PlaceOrderPayload.City,
+                PlaceOrderPayload.State,
+                PlaceOrderPayload.Country,
+                PlaceOrderPayload.CcNumber,
+                PlaceOrderPayload.CcMonth,
+                PlaceOrderPayload.CcYear,
+                PlaceOrderPayload.CcCVV,
+              ],
+          }
+        at: "handlers.go:325"
+      - kind: validate
+        repo: frontend
+        what: All fields are required; email must be an email, street address at most 512, city, state and country at most 128, the card number must pass the credit_card check and the month be 1-12
+        data:
+          {
+            checks:
+              [
+                Email,
+                StreetAddress,
+                ZipCode,
+                City,
+                State,
+                Country,
+                CcNumber,
+                CcMonth,
+                CcYear,
+                CcCVV,
+              ],
+          }
+        at: "validator/validator.go:42"
+      - kind: call-out
+        repo: frontend
+        what: PlaceOrder is called with the session id as user_id, the display currency, the address, email and card
+        to: { repo: checkoutservice, entry: "hipstershop.CheckoutService/PlaceOrder" }
+        data:
+          {
+            sends:
+              [
+                user_id,
+                user_currency,
+                email,
+                address.street_address,
+                address.city,
+                address.state,
+                address.zip_code,
+                address.country,
+                credit_card.credit_card_number,
+                credit_card.credit_card_expiration_month,
+                credit_card.credit_card_expiration_year,
+                credit_card.credit_card_cvv,
+              ],
+          }
+        at: "handlers.go:354"
+      - kind: entry
+        repo: checkoutservice
+        what: checkoutService.PlaceOrder receives the request
+        at: "main.go:230"
+      - kind: transform
+        repo: checkoutservice
+        what: A time-based UUID is made as the order id
+        data: { to: [orderID] }
+        at: "main.go:233"
+      - kind: call-out
+        repo: checkoutservice
+        what: GetCart is called with the user_id
+        to: { repo: cartservice, entry: "hipstershop.CartService/GetCart" }
+        data: { sends: [user_id] }
+        at: "main.go:325"
+      - kind: entry
+        repo: cartservice
+        what: CartService.GetCart receives the user_id
+        at: "src/services/CartService.cs:40"
+      - kind: read
+        repo: cartservice
+        what: The Redis key user_id is read
+        data: { reads: [user_id] }
+        at: "src/cartstore/RedisCartStore.cs:90"
+      - kind: respond
+        repo: cartservice
+        what: The stored Cart is returned
+        data: { returns: [user_id, items] }
+        at: "src/cartstore/RedisCartStore.cs:94"
+      - kind: loop
+        repo: checkoutservice
+        what: prepOrderItems handles each cart item in turn
+        at: "main.go:343"
+      - kind: call-out
+        repo: checkoutservice
+        what: GetProduct is called with the item's product_id
+        to: { repo: productcatalogservice, entry: "hipstershop.ProductCatalogService/GetProduct" }
+        data: { sends: [id] }
+        at: "main.go:344"
+      - kind: entry
+        repo: productcatalogservice
+        what: GetProduct receives the id
+        at: "product_catalog.go:47"
+      - kind: lookup
+        repo: productcatalogservice
+        what: The in-memory catalog is scanned for the id
+        data: { reads: [id] }
+        at: "product_catalog.go:51"
+      - kind: respond
+        repo: productcatalogservice
+        what: The product is returned
+        data: { returns: [id, name, price_usd, categories] }
+        at: "product_catalog.go:53"
+      - kind: call-out
+        repo: checkoutservice
+        what: Convert is called with the product's price_usd and user_currency
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/Convert" }
+        data: { sends: [from.currency_code, from.units, from.nanos, to_code] }
+        at: "main.go:348"
+      - kind: entry
+        repo: currencyservice
+        what: convert receives the request
+        at: "server.js:138"
+      - kind: read
+        repo: currencyservice
+        what: The EUR-based rates are read from data/currency_conversion.json
+        at: "server.js:110"
+      - kind: transform
+        repo: currencyservice
+        what: The amount is divided by the from rate to get euros
+        data: { from: [from.units, from.nanos, from.currency_code], to: [euros.units, euros.nanos] }
+        at: "server.js:145"
+      - kind: transform
+        repo: currencyservice
+        what: The euros are multiplied by the to_code rate and floored
+        data: { from: [euros.units, euros.nanos, to_code], to: [units, nanos, currency_code] }
+        at: "server.js:153"
+      - kind: respond
+        repo: currencyservice
+        what: The converted Money is returned
+        data: { returns: [currency_code, units, nanos] }
+        at: "server.js:163"
+      - kind: transform
+        repo: checkoutservice
+        what: Each cart item becomes an OrderItem with its converted unit price as Cost
+        data: { from: [CartItem, price], to: [OrderItem.Item, OrderItem.Cost] }
+        at: "main.go:352"
+      - kind: call-out
+        repo: checkoutservice
+        what: GetQuote is called with the address and the cart items
+        to: { repo: shippingservice, entry: "hipstershop.ShippingService/GetQuote" }
+        data: { sends: [address, items] }
+        at: "main.go:315"
+      - kind: entry
+        repo: shippingservice
+        what: GetQuote receives the address and items
+        at: "main.go:119"
+      - kind: transform
+        repo: shippingservice
+        what: The item quantities are summed
+        data: { from: [items.quantity], to: [count] }
+        at: "main.go:124"
+      - kind: branch
+        repo: shippingservice
+        what: No items costs 0, any items cost a flat 8.99
+        data: { reads: [count] }
+        at: "quote.go:35"
+      - kind: respond
+        repo: shippingservice
+        what: The quote is returned in USD
+        data: { returns: [cost_usd] }
+        at: "main.go:131"
+      - kind: call-out
+        repo: checkoutservice
+        what: Convert is called with the shipping cost_usd and user_currency
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/Convert" }
+        data: { sends: [from, to_code] }
+        at: "main.go:302"
+      - kind: entry
+        repo: currencyservice
+        what: convert converts through euros and returns the Money (same steps as above)
+        at: "server.js:138"
+      - kind: transform
+        repo: checkoutservice
+        what: The total starts at zero in user_currency and the converted shipping cost is added
+        data: { from: [shippingCostLocalized], to: [total] }
+        at: "main.go:246"
+      - kind: transform
+        repo: checkoutservice
+        what: Each item's Cost times its quantity (money.MultiplySlow) is added to the total
+        data: { from: [OrderItem.Cost, OrderItem.Item.Quantity], to: [total] }
+        at: "main.go:248"
+      - kind: call-out
+        repo: checkoutservice
+        what: Charge is called with the total and the card
+        to: { repo: paymentservice, entry: "hipstershop.PaymentService/Charge" }
+        data:
+          {
+            sends:
+              [
+                amount,
+                credit_card.credit_card_number,
+                credit_card.credit_card_cvv,
+                credit_card.credit_card_expiration_year,
+                credit_card.credit_card_expiration_month,
+              ],
+          }
+        at: "main.go:370"
+      - kind: entry
+        repo: paymentservice
+        what: ChargeServiceHandler receives the request and logs it
+        at: "server.js:41"
+      - kind: validate
+        repo: paymentservice
+        what: simple-card-validator checks the card number; an invalid number throws InvalidCreditCard
+        data: { checks: [credit_card_number] }
+        at: "charge.js:70"
+      - kind: validate
+        repo: paymentservice
+        what: Only VISA and MasterCard are accepted
+        data: { checks: [card_type] }
+        at: "charge.js:74"
+      - kind: validate
+        repo: paymentservice
+        what: The expiry month and year must not be before the current month
+        data: { checks: [credit_card_expiration_year, credit_card_expiration_month] }
+        at: "charge.js:80"
+      - kind: log
+        repo: paymentservice
+        what: Transaction processed is logged with the card type, last four digits and amount
+        at: "charge.js:82"
+      - kind: respond
+        repo: paymentservice
+        what: A random UUID is returned as the transaction id (nothing is charged)
+        data: { returns: [transaction_id] }
+        at: "charge.js:85"
+      - kind: log
+        repo: checkoutservice
+        what: payment went through is logged with the transaction id
+        at: "main.go:256"
+      - kind: call-out
+        repo: checkoutservice
+        what: ShipOrder is called with the address and the cart items
+        to: { repo: shippingservice, entry: "hipstershop.ShippingService/ShipOrder" }
+        data: { sends: [address, items] }
+        at: "main.go:387"
+      - kind: entry
+        repo: shippingservice
+        what: ShipOrder receives the address and items
+        at: "main.go:142"
+      - kind: transform
+        repo: shippingservice
+        what: A random tracking id is made, salted with the length of street, city and state
+        data: { from: [address.street_address, address.city, address.state], to: [tracking_id] }
+        at: "main.go:146"
+      - kind: respond
+        repo: shippingservice
+        what: The tracking id is returned
+        data: { returns: [tracking_id] }
+        at: "main.go:150"
+      - kind: call-out
+        repo: checkoutservice
+        what: EmptyCart is called with the user_id; its result is ignored
+        to: { repo: cartservice, entry: "hipstershop.CartService/EmptyCart" }
+        data: { sends: [user_id] }
+        at: "main.go:333"
+      - kind: entry
+        repo: cartservice
+        what: CartService.EmptyCart receives the user_id
+        at: "src/services/CartService.cs:45"
+      - kind: write
+        repo: cartservice
+        what: An empty Cart is written under the Redis key user_id
+        data: { sends: [user_id] }
+        at: "src/cartstore/RedisCartStore.cs:75"
+      - kind: transform
+        repo: checkoutservice
+        what: The OrderResult is built from the order id, tracking id, converted shipping cost, address and order items
+        data:
+          {
+            from: [orderID, shippingTrackingID, shippingCostLocalized, req.Address, orderItems],
+            to:
+              [
+                OrderResult.OrderId,
+                OrderResult.ShippingTrackingId,
+                OrderResult.ShippingCost,
+                OrderResult.ShippingAddress,
+                OrderResult.Items,
+              ],
+          }
+        at: "main.go:265"
+      - kind: call-out
+        repo: checkoutservice
+        what: SendOrderConfirmation is called with the email and the order
+        to: { repo: emailservice, entry: "hipstershop.EmailService/SendOrderConfirmation" }
+        data: { sends: [email, order] }
+        at: "main.go:380"
+      - kind: entry
+        repo: emailservice
+        what: DummyEmailService.SendOrderConfirmation receives the request
+        at: "email_server.py:109"
+      - kind: log
+        repo: emailservice
+        what: The request is logged with the email address; no email is sent
+        data: { reads: [email] }
+        at: "email_server.py:110"
+      - kind: respond
+        repo: emailservice
+        what: Empty is returned
+        at: "email_server.py:111"
+      - kind: respond
+        repo: checkoutservice
+        what: The PlaceOrderResponse carries the order
+        data:
+          {
+            returns:
+              [
+                order.order_id,
+                order.shipping_tracking_id,
+                order.shipping_cost,
+                order.shipping_address,
+                order.items,
+              ],
+          }
+        at: "main.go:278"
+      - kind: call-out
+        repo: frontend
+        what: ListRecommendations is called with the session id and no product ids; errors are ignored
+        to:
+          {
+            repo: recommendationservice,
+            entry: "hipstershop.RecommendationService/ListRecommendations",
+          }
+        data: { sends: [user_id] }
+        at: "handlers.go:378"
+      - kind: transform
+        repo: frontend
+        what: The total paid is recomputed from the order's shipping cost plus each item's cost times quantity
+        data:
+          {
+            from: [order.shipping_cost, order.items.cost, order.items.item.quantity],
+            to: [totalPaid],
+          }
+        at: "handlers.go:380"
+      - kind: call-out
+        repo: frontend
+        what: GetSupportedCurrencies is called for the header
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/GetSupportedCurrencies" }
+        at: "rpc.go:31"
+      - kind: respond
+        repo: frontend
+        what: The order template is rendered with the order, total_paid and recommendations
+        data: { returns: [order, total_paid, recommendations, currencies] }
+        at: "handlers.go:392"
+      - kind: respond
+        repo: frontend
+        what: The page says Your order is complete! with the confirmation number, tracking number and total paid
+        data: { reads: [order.OrderId, order.ShippingTrackingId, total_paid] }
+        at: "templates/order.html:45"
+    errors:
+      - {
+          when: "A form field fails validation",
+          then: "422 with the error page listing Field '<name>' is invalid: <rule>",
+          at: "handlers.go:350",
+        }
+      - {
+          when: "GetCart, GetProduct, a Convert or GetQuote fails (for example a cart item no longer in the catalog)",
+          then: "checkoutservice returns Internal with the wrapped error and nothing is charged",
+          at: "main.go:240",
+        }
+      - {
+          when: "The card number is invalid",
+          then: "paymentservice throws InvalidCreditCard Credit card info is invalid and passes it back as the gRPC error",
+          at: "charge.js:70",
+        }
+      - {
+          when: "The card is not VISA or MasterCard (for example AMEX)",
+          then: "paymentservice throws UnacceptedCreditCard Sorry, we cannot process <type> credit cards",
+          at: "charge.js:74",
+        }
+      - {
+          when: "The card has expired",
+          then: "paymentservice throws ExpiredCreditCard Your credit card (ending <last4>) expired on <month>/<year>",
+          at: "charge.js:80",
+        }
+      - {
+          when: "Charge fails for any reason",
+          then: "checkoutservice returns Internal failed to charge card; the cart is not emptied",
+          at: "main.go:254",
+        }
+      - {
+          when: "ShipOrder fails after the card was charged",
+          then: "checkoutservice returns Unavailable shipping error; the charge is not undone",
+          at: "main.go:260",
+        }
+      - {
+          when: "EmptyCart fails",
+          then: "the error is dropped and the order still succeeds",
+          at: "main.go:263",
+        }
+      - {
+          when: "SendOrderConfirmation fails",
+          then: "a warning is logged and the order still succeeds",
+          at: "main.go:274",
+        }
+      - {
+          when: "PlaceOrder returns any error",
+          then: "the frontend shows a 500 error page failed to complete the order with the error text",
+          at: "handlers.go:372",
+        }
+
+  - id: change-currency
+    name: A shopper changes the display currency
+    trigger:
+      kind: action
+      repo: frontend
+      what: A currency is picked in the header's currency select, which submits the form to POST /setCurrency
+      at: "templates/header.html:74"
+    steps:
+      - kind: entry
+        repo: frontend
+        what: setCurrencyHandler reads currency_code from the form
+        at: "handlers.go:499"
+      - kind: validate
+        repo: frontend
+        what: The code is required and must be an ISO 4217 code (not limited to the six in the picker)
+        data: { checks: [Currency] }
+        at: "validator/validator.go:56"
+      - kind: transform
+        repo: frontend
+        what: The code is set as the shop_currency cookie for 48 hours
+        data: { from: [currency_code], to: [shop_currency] }
+        at: "handlers.go:511"
+      - kind: respond
+        repo: frontend
+        what: 302 Found back to the Referer, or to / when there is none
+        at: "handlers.go:521"
+      - kind: lookup
+        repo: frontend
+        what: On the page the browser returns to, currentCurrency reads the new shop_currency cookie
+        data: { reads: [shop_currency] }
+        at: "handlers.go:574"
+      - kind: call-out
+        repo: frontend
+        what: Every price on that page is converted from USD with Convert to the new code (on the home page, one call per product)
+        to: { repo: currencyservice, entry: "hipstershop.CurrencyService/Convert" }
+        data: { sends: [from.currency_code, from.units, from.nanos, to_code] }
+        at: "rpc.go:81"
+      - kind: entry
+        repo: currencyservice
+        what: convert receives the request
+        at: "server.js:138"
+      - kind: read
+        repo: currencyservice
+        what: The EUR-based rates are read from data/currency_conversion.json
+        at: "server.js:110"
+      - kind: transform
+        repo: currencyservice
+        what: The amount is divided by the from rate to get euros, rounding the nanos
+        data: { from: [from.units, from.nanos, from.currency_code], to: [euros.units, euros.nanos] }
+        at: "server.js:145"
+      - kind: transform
+        repo: currencyservice
+        what: The euros are multiplied by the new currency's rate, floored and tagged with to_code
+        data: { from: [euros.units, euros.nanos, to_code], to: [units, nanos, currency_code] }
+        at: "server.js:153"
+      - kind: respond
+        repo: currencyservice
+        what: The converted Money is returned
+        data: { returns: [currency_code, units, nanos] }
+        at: "server.js:163"
+      - kind: transform
+        repo: frontend
+        what: renderMoney shows the amount as the currency's symbol (default $), units and two decimals
+        data: { from: [currency_code, units, nanos] }
+        at: "handlers.go:606"
+      - kind: respond
+        repo: frontend
+        what: The header shows the new currency's symbol and the picker selects it
+        data: { reads: [user_currency, currencies] }
+        at: "templates/header.html:76"
+    errors:
+      - {
+          when: "The code is missing or not ISO 4217",
+          then: "422 with the error page Field 'Currency' is invalid: <rule>",
+          at: "handlers.go:504",
+        }
+      - {
+          when: "A conversion fails on the page loaded next",
+          then: "that page's handler shows a 500 error page (for example failed to do currency conversion for product <id>)",
+          at: "handlers.go:86",
+        }

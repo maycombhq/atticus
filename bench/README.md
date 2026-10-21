@@ -68,12 +68,13 @@ These are the kinds of gap ADR 0074 expects: each needs a reader change today. P
 
 ## With the AI's scan settings (Phase 2a, first step)
 
-`atticus bench survey` has the assistant read each repo and draft its scan settings (ADR 0075): the path prefixes the readers can't see and the folders that aren't the product, every entry checked against the code. `atticus bench run` then scans with them. First three repos, surveyed with headless Claude Code (one run each, about 30 seconds):
+`atticus bench survey` has the assistant read each repo and draft its scan settings (ADR 0075): the path prefixes the readers can't see and the folders that aren't the product, every entry checked against the code. `atticus bench run` then scans with them. All 22 repos surveyed with headless Claude Code, one run each of about 30 seconds; the assistant judged 11 to need no settings.
 
-| Repo                  | Before    | After      | What the assistant found                                                                                                 |
-| --------------------- | --------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
-| spring-petclinic-rest | 17% / 17% | 98% / 98%  | `/petclinic` from `server.servlet.context-path`, `/api` from the controllers' class-level mapping; test folders left out |
-| fastapi-realworld     | 0% / 0%   | 100% / 70% | `/api` from `api_prefix` in the app settings                                                                             |
-| node-realworld        | 21% / 19% | 100% / 89% | `/api` from the router mount                                                                                             |
+|                             | Found | Missed | Wrong | Precision | Recall |
+| --------------------------- | ----: | -----: | ----: | --------: | -----: |
+| Built-in readers alone      |   269 |    563 |   195 |       58% |    32% |
+| With the AI's scan settings |   378 |    454 |    81 |       82% |    45% |
 
-(Precision / recall.) The rest of the bench is surveyed next; the remaining misses on these three are other gaps (a JPA join table, a few routes).
+Biggest gains: spring-petclinic-rest 17% to 98% (precision and recall), fastapi-realworld 0% to 100% precision and 70% recall, node-realworld 21% to 100% and 89%, fastapi-template 0% to 100% and 53%, piggymetrics 31% to 100% and 14% to 52%; the Angular repo's generated `docs/` is no longer read (7 wrong calls gone).
+
+Still missed: front-end calls (none found in four UI repos: client base URLs come next), events and gRPC clients, conventional and legacy .NET routes, convention-named tables, some platforms. Wrong: spring-realworld and eshop-on-web route conventions the settings can't express yet.

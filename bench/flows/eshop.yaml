@@ -1,0 +1,1296 @@
+# Written by reading the code at the pinned commit in ../repos.yaml, not from an Atticus scan.
+estate: eshop
+repos:
+  [
+    WebApp,
+    WebAppComponents,
+    ClientApp,
+    Basket.API,
+    Catalog.API,
+    Ordering.API,
+    Ordering.Domain,
+    Ordering.Infrastructure,
+    OrderProcessor,
+    PaymentProcessor,
+    Webhooks.API,
+    WebhookClient,
+  ]
+notes: >-
+  All twelve "repos" are projects under src/ of the one dotnet/eShop repository at the pinned commit;
+  each step's repo is the project and each `at` path is relative to src/<project>/. Service names and
+  wiring come from src/eShop.AppHost/AppHost.cs. The WebApp calls catalog-api with api-version=2.0 and
+  ordering-api with api-version=1.0 (WebApp/Extensions/Extensions.cs:35-41), and basket-api over gRPC
+  (basket.proto, http://basket-api), all with the signed-in user's bearer token; entries are named by
+  the server's route (WebApp writes /api/Orders/ and catalogBrands, routing is case-insensitive).
+  ClientApp (MAUI) reaches Ordering.API through the YARP mobile-bff declared in the AppHost
+  (eShop.AppHost/Extensions.cs:146 forwards /api/orders/{*any} unchanged), so the cancel call-out names
+  Ordering.API as its target. Integration events go over RabbitMQ exchange eshop_event_bus with the
+  event's class name as routing key (EventBusRabbitMQ/RabbitMQEventBus.cs:33), so each service's own copy
+  of an event record with the same name receives it; data lists the publisher's fields (every event also
+  carries Id and CreationDate from IntegrationEvent). Publish steps cite the line that creates the event.
+  Ordering.API saves each event to the IntegrationEventLog outbox inside the command's transaction and
+  TransactionBehavior publishes the transaction's events after commit (TransactionBehavior.cs:52,
+  OrderingIntegrationEventService.cs:24); Catalog.API saves then publishes at once
+  (CatalogIntegrationEventService.cs:37-38 and :18). Tables are the ToTable names (ordering tables are in
+  the "ordering" schema, Order.Address is an owned type stored as Address_* columns of orders, PaymentMethod
+  maps private fields to named columns and does not store the security number); columns are EF's
+  property names as the migrations show. Basket.API keeps a basket as one JSON string in Redis under the
+  key /basket/{userId}; its store is written as that key with the serialized CustomerBasket fields, not a
+  table. Judgement calls: the checkout flow follows the default path (PaymentOptions:PaymentSucceeded is
+  true in PaymentProcessor/appsettings.json, grace period 1 minute checked every 30 seconds in
+  OrderProcessor/appsettings.json) and lists stock rejection, payment failure and command failure as
+  errors; the webhook delivery to WebhookClient is followed inside the checkout flow because it starts at
+  OrderStatusChangedToPaidIntegrationEvent, and the webhook flow covers registering it. Catalog price
+  changes do not reach baskets through events: Basket.API subscribes only to OrderStartedIntegrationEvent
+  (Basket.API/Extensions/Extensions.cs:19), the only subscriber is Webhooks.API, whose handler does nothing
+  (no webhook is sent for CatalogItemPriceChange), and the WebApp shows the current price only because it
+  re-reads GET /api/catalog/items/by every time it loads the basket (WebApp/Services/BasketState.cs:132,
+  141). Nothing in the clients calls PUT /api/catalog/items, so that flow starts at the endpoint. Each
+  error names its repo (a field petclinic does not need) because a flow's errors come from several
+  projects. Error paths marked "read from the code" were not observed by running it. Left out: ship order (PUT
+  /api/orders/ship has no caller in any client; it publishes OrderStatusChangedToShippedIntegrationEvent
+  to the WebApp and to Webhooks.API OrderShipped subscribers), order drafts, item detail and semantic
+  search, the AI chatbot, Identity.API sign-in (library OIDC), the basket quantity page, the CartMenu
+  badge and the HybridApp.
+flows:
+  - id: browse-catalog
+    name: A shopper browses the catalog
+    trigger:
+      kind: page
+      repo: WebApp
+      what: The catalog page / loads, optionally with ?page=, repeated ?brand= and repeated ?type= filters from the filter tags
+      at: "Components/Pages/Catalog/Catalog.razor:1"
+    steps:
+      - kind: call-out
+        repo: WebApp
+        what: The page asks for page (page - 1) of 9 items with the brand and type filters
+        data: { sends: [pageIndex, pageSize, brand, type] }
+        at: "Components/Pages/Catalog/Catalog.razor:198"
+      - kind: call-out
+        repo: WebAppComponents
+        what: CatalogService GETs api/catalog/items?type=..&brand=..&pageIndex=..&pageSize=9 with api-version=2.0
+        to: { repo: Catalog.API, entry: "GET /api/catalog/items" }
+        data: { sends: [type, brand, pageIndex, pageSize] }
+        at: "Services/CatalogService.cs:20"
+      - kind: entry
+        repo: Catalog.API
+        what: The v2 GetAllItems receives the PaginationRequest and the optional name, type and brand filters
+        at: "Apis/CatalogApi.cs:131"
+      - kind: branch
+        repo: Catalog.API
+        what: Each filter that is present narrows the query (name prefix, CatalogTypeId in type, CatalogBrandId in brand)
+        data: { reads: [name, type, brand] }
+        at: "Apis/CatalogApi.cs:143"
+      - kind: read
+        repo: Catalog.API
+        what: The matching items are counted
+        store: { table: Catalog, fields: [Id, Name, CatalogTypeId, CatalogBrandId] }
+        at: "Apis/CatalogApi.cs:157"
+      - kind: read
+        repo: Catalog.API
+        what: One page of items is read with its brand joined, ordered by name
+        store:
+          {
+            table: Catalog,
+            fields:
+              [
+                Id,
+                Name,
+                Description,
+                Price,
+                PictureFileName,
+                CatalogTypeId,
+                CatalogBrandId,
+                AvailableStock,
+                RestockThreshold,
+                MaxStockThreshold,
+                OnReorder,
+              ],
+          }
+        at: "Apis/CatalogApi.cs:159"
+      - kind: read
+        repo: Catalog.API
+        what: Each item's brand is read through the CatalogBrand include
+        store: { table: CatalogBrand, fields: [Id, Brand] }
+        at: "Apis/CatalogApi.cs:160"
+      - kind: respond
+        repo: Catalog.API
+        what: 200 OK with the page (Embedding is never serialized)
+        data: { returns: [PageIndex, PageSize, Count, Data] }
+        at: "Apis/CatalogApi.cs:166"
+      - kind: call-out
+        repo: WebAppComponents
+        what: In parallel the filter panel GETs the brands (api/catalogBrands)
+        to: { repo: Catalog.API, entry: "GET /api/catalog/catalogbrands" }
+        at: "Services/CatalogService.cs:41"
+      - kind: read
+        repo: Catalog.API
+        what: All brands are read, ordered by Brand
+        store: { table: CatalogBrand, fields: [Id, Brand] }
+        at: "Apis/CatalogApi.cs:93"
+      - kind: call-out
+        repo: WebAppComponents
+        what: The filter panel GETs the item types (api/catalogTypes)
+        to: { repo: Catalog.API, entry: "GET /api/catalog/catalogtypes" }
+        at: "Services/CatalogService.cs:48"
+      - kind: read
+        repo: Catalog.API
+        what: All types are read, ordered by Type
+        store: { table: CatalogType, fields: [Id, Type] }
+        at: "Apis/CatalogApi.cs:86"
+      - kind: call-out
+        repo: WebAppComponents
+        what: The filter panel GETs api/catalog/items/facets with the same type and brand filters
+        to: { repo: Catalog.API, entry: "GET /api/catalog/items/facets" }
+        data: { sends: [type, brand] }
+        at: "Services/CatalogService.cs:65"
+      - kind: entry
+        repo: Catalog.API
+        what: GetCatalogFacets receives the type and brand filters
+        at: "Apis/CatalogApi.cs:169"
+      - kind: read
+        repo: Catalog.API
+        what: Items are counted per brand within the type filter and per type within the brand filter
+        store: { table: Catalog, fields: [CatalogBrandId, CatalogTypeId] }
+        at: "Apis/CatalogApi.cs:186"
+      - kind: respond
+        repo: Catalog.API
+        what: 200 OK with the brand counts, type counts and their totals
+        data: { returns: [BrandCounts, TypeCounts, BrandTotal, TypeTotal] }
+        at: "Apis/CatalogApi.cs:200"
+      - kind: respond
+        repo: WebApp
+        what: The page shows the product count, one card per item and the page links; the filter tags show brand and type names with counts
+        data: { reads: [Count, Data, PageSize] }
+        at: "Components/Pages/Catalog/Catalog.razor:86"
+      - kind: respond
+        repo: WebAppComponents
+        what: Each card links to item/{Id} and shows the image, brand, name and price
+        data: { reads: [Id, Name, Price, CatalogBrand.Brand] }
+        at: "Catalog/CatalogListItem.razor:17"
+      - kind: call-out
+        repo: WebApp
+        what: Each card's image is requested as product-images/{id}?api-version=2.0, which the WebApp forwards to catalog-api
+        to: { repo: Catalog.API, entry: "GET /api/catalog/items/{id}/pic" }
+        data: { sends: [id] }
+        at: "Program.cs:32"
+      - kind: lookup
+        repo: Catalog.API
+        what: GetItemPictureById finds the item to get its picture file name
+        store: { table: Catalog, fields: [Id, PictureFileName] }
+        at: "Apis/CatalogApi.cs:256"
+      - kind: read
+        repo: Catalog.API
+        what: The picture file is read from the service's Pics folder
+        at: "Apis/CatalogApi.cs:263"
+      - kind: respond
+        repo: Catalog.API
+        what: 200 OK with the file stream and a content type from the file extension
+        at: "Apis/CatalogApi.cs:272"
+    errors:
+      - {
+          repo: WebApp,
+          when: "No items match the filters",
+          then: "the page shows No products match these filters with a Clear all filters link",
+          at: "Components/Pages/Catalog/Catalog.razor:31",
+        }
+      - {
+          repo: Catalog.API,
+          when: "The item has no picture file name or the file is missing",
+          then: "404 Not Found and the card shows a broken image",
+          at: "Apis/CatalogApi.cs:260",
+        }
+
+  - id: add-to-basket
+    name: A shopper adds an item to the basket
+    trigger:
+      kind: action
+      repo: WebApp
+      what: Add to shopping bag is submitted on the item page item/{itemId}, which loaded the item with GET /api/catalog/items/{id}
+      at: "Components/Pages/Item/ItemPage.razor:39"
+    steps:
+      - kind: branch
+        repo: WebApp
+        what: A signed-out shopper is sent to the log-in page instead
+        at: "Components/Pages/Item/ItemPage.razor:147"
+      - kind: call-out
+        repo: WebApp
+        what: BasketState first fetches the current basket with the gRPC GetBasket call
+        to: { repo: Basket.API, entry: "gRPC Basket.GetBasket" }
+        at: "Services/BasketService.cs:11"
+      - kind: entry
+        repo: Basket.API
+        what: BasketService.GetBasket takes the user id from the token's sub claim
+        data: { reads: [sub] }
+        at: "Grpc/BasketService.cs:15"
+      - kind: read
+        repo: Basket.API
+        what: The basket JSON is read from Redis and deserialized
+        store: { table: "/basket/{userId}", fields: [BuyerId, Items.ProductId, Items.Quantity] }
+        at: "Repositories/RedisBasketRepository.cs:25"
+      - kind: respond
+        repo: Basket.API
+        what: The basket's items as product_id and quantity (empty when there is no basket)
+        data: { returns: [items.product_id, items.quantity] }
+        at: "Grpc/BasketService.cs:30"
+      - kind: call-out
+        repo: WebAppComponents
+        what: For a non-empty basket the WebApp GETs api/catalog/items/by?ids=.. to price the lines
+        to: { repo: Catalog.API, entry: "GET /api/catalog/items/by" }
+        data: { sends: [ids] }
+        at: "Services/CatalogService.cs:27"
+      - kind: read
+        repo: Catalog.API
+        what: The items with those ids are read
+        store: { table: Catalog, fields: [Id, Name, Price, PictureFileName] }
+        at: "Apis/CatalogApi.cs:212"
+      - kind: transform
+        repo: WebApp
+        what: Each basket line becomes a BasketItem with the catalog's name and current price
+        data:
+          {
+            from: [ProductId, Quantity, CatalogItem.Name, CatalogItem.Price],
+            to:
+              [
+                BasketItem.ProductId,
+                BasketItem.Quantity,
+                BasketItem.ProductName,
+                BasketItem.UnitPrice,
+              ],
+          }
+        at: "Services/BasketState.cs:136"
+      - kind: transform
+        repo: WebApp
+        what: The item's quantity goes up by one, or a new line with quantity 1 is added
+        data: { from: [item.Id], to: [BasketQuantity.ProductId, BasketQuantity.Quantity] }
+        at: "Services/BasketState.cs:37"
+      - kind: call-out
+        repo: WebApp
+        what: The whole basket is sent with the gRPC UpdateBasket call
+        to: { repo: Basket.API, entry: "gRPC Basket.UpdateBasket" }
+        data: { sends: [items.product_id, items.quantity] }
+        at: "Services/BasketService.cs:34"
+      - kind: entry
+        repo: Basket.API
+        what: BasketService.UpdateBasket takes the user id from the sub claim
+        data: { reads: [sub] }
+        at: "Grpc/BasketService.cs:38"
+      - kind: transform
+        repo: Basket.API
+        what: The request becomes a CustomerBasket with BuyerId set to the user id
+        data:
+          {
+            from: [userId, items.product_id, items.quantity],
+            to: [CustomerBasket.BuyerId, BasketItem.ProductId, BasketItem.Quantity],
+          }
+        at: "Grpc/BasketService.cs:49"
+      - kind: write
+        repo: Basket.API
+        what: The basket is serialized to JSON and SET in Redis, replacing the previous basket
+        store: { table: "/basket/{userId}", fields: [BuyerId, Items.ProductId, Items.Quantity] }
+        at: "Repositories/RedisBasketRepository.cs:37"
+      - kind: read
+        repo: Basket.API
+        what: The saved basket is read back
+        store: { table: "/basket/{userId}", fields: [BuyerId, Items] }
+        at: "Repositories/RedisBasketRepository.cs:47"
+      - kind: respond
+        repo: Basket.API
+        what: The saved basket's items
+        data: { returns: [items.product_id, items.quantity] }
+        at: "Grpc/BasketService.cs:56"
+      - kind: respond
+        repo: WebApp
+        what: The basket is fetched again and the page shows how many of this item are in the shopping bag; change subscribers such as the header cart are notified
+        data: { reads: [ProductId, Quantity] }
+        at: "Components/Pages/Item/ItemPage.razor:163"
+    errors:
+      - {
+          repo: Basket.API,
+          when: "The token has no sub claim",
+          then: "UpdateBasket fails with gRPC Unauthenticated",
+          at: "Grpc/BasketService.cs:41",
+        }
+      - {
+          repo: Basket.API,
+          when: "The Redis SET does not succeed",
+          then: "UpdateBasket fails with gRPC NotFound, basket does not exist",
+          at: "Grpc/BasketService.cs:53",
+        }
+
+  - id: place-order
+    name: A shopper checks out and the order is validated, paid and announced
+    trigger:
+      kind: action
+      repo: WebApp
+      what: Place order is submitted on /checkout with the shipping address (prefilled from the address claims)
+      at: "Components/Pages/Checkout/Checkout.razor:56"
+    steps:
+      - kind: validate
+        repo: WebApp
+        what: The form needs Street, City, State, Country and ZipCode, and a non-empty basket
+        data: { checks: [Street, City, State, Country, ZipCode] }
+        at: "Components/Pages/Checkout/Checkout.razor:122"
+      - kind: transform
+        repo: WebApp
+        what: CardTypeId is set to 1, and the order request is built from the sub and name claims, the address, a fixed test card (1111222233334444, TESTUSER, CVV 111, expiry a year from now) and the basket lines priced from the catalog
+        data:
+          {
+            from: [sub, name, Street, City, State, Country, ZipCode, CardTypeId, BasketItem],
+            to:
+              [
+                UserId,
+                UserName,
+                Street,
+                City,
+                State,
+                Country,
+                ZipCode,
+                CardNumber,
+                CardHolderName,
+                CardExpiration,
+                CardSecurityNumber,
+                CardTypeId,
+                Buyer,
+                Items,
+              ],
+          }
+        at: "Services/BasketState.cs:92"
+      - kind: call-out
+        repo: WebApp
+        what: POST /api/Orders/ with the request and an x-requestid header holding the form's RequestId
+        to: { repo: Ordering.API, entry: "POST /api/orders" }
+        data:
+          {
+            sends:
+              [
+                x-requestid,
+                UserId,
+                UserName,
+                City,
+                Street,
+                State,
+                Country,
+                ZipCode,
+                CardNumber,
+                CardHolderName,
+                CardExpiration,
+                CardSecurityNumber,
+                CardTypeId,
+                Buyer,
+                Items,
+              ],
+          }
+        at: "Services/OrderingService.cs:17"
+      - kind: entry
+        repo: Ordering.API
+        what: CreateOrderAsync receives the x-requestid and the CreateOrderRequest
+        at: "Apis/OrdersApi.cs:118"
+      - kind: validate
+        repo: Ordering.API
+        what: An empty request id is refused
+        data: { checks: [x-requestid] }
+        at: "Apis/OrdersApi.cs:132"
+      - kind: transform
+        repo: Ordering.API
+        what: The card number is masked to its last four digits and the request becomes a CreateOrderCommand, basket lines becoming OrderItemDTOs, wrapped in an IdentifiedCommand with the request id
+        data:
+          {
+            from:
+              [
+                CardNumber,
+                Items.ProductId,
+                Items.ProductName,
+                Items.UnitPrice,
+                Items.Quantity,
+                Items.PictureUrl,
+              ],
+            to:
+              [
+                CardNumber,
+                OrderItems.ProductId,
+                OrderItems.ProductName,
+                OrderItems.UnitPrice,
+                OrderItems.Units,
+                OrderItems.PictureUrl,
+              ],
+          }
+        at: "Apis/OrdersApi.cs:140"
+      - kind: transform
+        repo: Ordering.API
+        what: The MediatR pipeline opens a database transaction around the command (TransactionBehavior)
+        at: "Application/Behaviors/TransactionBehavior.cs:38"
+      - kind: lookup
+        repo: Ordering.Infrastructure
+        what: The request id is looked up to detect a duplicate
+        store: { table: requests, fields: [Id] }
+        at: "Idempotency/RequestManager.cs:16"
+      - kind: branch
+        repo: Ordering.API
+        what: A request id seen before returns true without running the command again
+        at: "Application/Commands/IdentifiedCommandHandler.cs:42"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: The request id is recorded with the command name and time
+        store: { table: requests, fields: [Id, Name, Time] }
+        at: "Idempotency/RequestManager.cs:34"
+      - kind: validate
+        repo: Ordering.API
+        what: CreateOrderCommandValidator checks the command (address fields not empty, CardNumber 12-19 characters, CardHolderName set, CardExpiration not past, CardSecurityNumber 3 characters, CardTypeId set, at least one order item)
+        data:
+          {
+            checks:
+              [
+                City,
+                Street,
+                State,
+                Country,
+                ZipCode,
+                CardNumber,
+                CardHolderName,
+                CardExpiration,
+                CardSecurityNumber,
+                CardTypeId,
+                OrderItems,
+              ],
+          }
+        at: "Application/Validations/CreateOrderCommandValidator.cs:6"
+      - kind: write
+        repo: Ordering.API
+        what: An OrderStartedIntegrationEvent for the user is saved to the outbox in the transaction
+        store:
+          {
+            table: IntegrationEventLog,
+            fields:
+              [EventId, EventTypeName, Content, State, TimesSent, CreationTime, TransactionId],
+          }
+        at: "Application/Commands/CreateOrderCommandHandler.cs:33"
+      - kind: transform
+        repo: Ordering.Domain
+        what: A new Order gets status Submitted, OrderDate now and the Address, and raises OrderStartedDomainEvent with the user and card details
+        data:
+          {
+            from:
+              [
+                UserId,
+                UserName,
+                Street,
+                City,
+                State,
+                Country,
+                ZipCode,
+                CardTypeId,
+                CardNumber,
+                CardSecurityNumber,
+                CardHolderName,
+                CardExpiration,
+              ],
+            to: [Order.OrderStatus, Order.OrderDate, Order.Address, OrderStartedDomainEvent],
+          }
+        at: "AggregatesModel/OrderAggregate/Order.cs:52"
+      - kind: validate
+        repo: Ordering.Domain
+        what: Each item is added as an OrderItem (a repeated product adds units); units must be above zero and the line total not below the discount
+        data: { checks: [Units, UnitPrice, Discount] }
+        at: "AggregatesModel/OrderAggregate/OrderItem.cs:25"
+      - kind: lookup
+        repo: Ordering.Infrastructure
+        what: Saving dispatches the domain events first; ValidateOrAddBuyerAggregateWhenOrderStartedDomainEventHandler looks up the buyer by IdentityGuid with its payment methods
+        store: { table: buyers, fields: [Id, IdentityGuid, Name] }
+        at: "Repositories/BuyerRepository.cs:35"
+      - kind: branch
+        repo: Ordering.Domain
+        what: A new buyer is created when none exists; a payment method equal on card type, number and expiration is reused, otherwise a new one is added; either way BuyerAndPaymentMethodVerifiedDomainEvent is raised
+        data: { reads: [CardTypeId, CardNumber, CardExpiration] }
+        at: "AggregatesModel/BuyerAggregate/Buyer.cs:33"
+      - kind: validate
+        repo: Ordering.Domain
+        what: A new payment method needs a card number, security number and holder name, and an expiration not in the past
+        data: { checks: [cardNumber, securityNumber, cardHolderName, expiration] }
+        at: "AggregatesModel/BuyerAggregate/PaymentMethod.cs:23"
+      - kind: transform
+        repo: Ordering.API
+        what: UpdateOrderWhenBuyerAndPaymentMethodVerifiedDomainEventHandler sets the order's BuyerId and PaymentId
+        data: { from: [Buyer.Id, PaymentMethod.Id], to: [Order.BuyerId, Order.PaymentId] }
+        at: "Application/DomainEventHandlers/UpdateOrderWhenBuyerAndPaymentMethodVerifiedDomainEventHandler.cs:22"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: The order is inserted (ids come from the HiLo sequences), saved by the buyer handler's own SaveEntitiesAsync and again by the command handler's
+        store:
+          {
+            table: orders,
+            fields:
+              [
+                Id,
+                OrderDate,
+                Address_Street,
+                Address_City,
+                Address_State,
+                Address_Country,
+                Address_ZipCode,
+                OrderStatus,
+                Description,
+                BuyerId,
+                PaymentMethodId,
+              ],
+          }
+        at: "OrderingContext.cs:59"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: The order's lines are inserted
+        store:
+          {
+            table: orderItems,
+            fields: [Id, OrderId, ProductId, ProductName, UnitPrice, Discount, Units, PictureUrl],
+          }
+        at: "OrderingContext.cs:59"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: A new buyer is inserted
+        store: { table: buyers, fields: [Id, IdentityGuid, Name] }
+        at: "OrderingContext.cs:59"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: A new payment method is inserted (the security number is not stored)
+        store:
+          {
+            table: paymentmethods,
+            fields: [Id, BuyerId, Alias, CardNumber, CardHolderName, Expiration, CardTypeId],
+          }
+        at: "OrderingContext.cs:59"
+      - kind: write
+        repo: Ordering.API
+        what: OrderStatusChangedToSubmittedIntegrationEvent is saved to the outbox
+        store:
+          {
+            table: IntegrationEventLog,
+            fields:
+              [EventId, EventTypeName, Content, State, TimesSent, CreationTime, TransactionId],
+          }
+        at: "Application/DomainEventHandlers/ValidateOrAddBuyerAggregateWhenOrderStartedDomainEventHandler.cs:51"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: The transaction commits
+        at: "OrderingContext.cs:81"
+      - kind: publish
+        repo: Ordering.API
+        what: publishes OrderStartedIntegrationEvent (sent after commit with the transaction's other events, each marked InProgress then Published)
+        data: { sends: [UserId] }
+        at: "Application/Commands/CreateOrderCommandHandler.cs:32"
+      - kind: entry
+        repo: Basket.API
+        what: OrderStartedIntegrationEventHandler receives the event
+        data: { reads: [UserId] }
+        at: "IntegrationEvents/EventHandling/OrderStartedIntegrationEventHandler.cs:10"
+      - kind: write
+        repo: Basket.API
+        what: The user's basket key is deleted from Redis
+        store: { table: "/basket/{userId}", fields: [BuyerId, Items] }
+        at: "Repositories/RedisBasketRepository.cs:20"
+      - kind: publish
+        repo: Ordering.API
+        what: publishes OrderStatusChangedToSubmittedIntegrationEvent
+        data: { sends: [OrderId, OrderStatus, BuyerName, BuyerIdentityGuid] }
+        at: "Application/DomainEventHandlers/ValidateOrAddBuyerAggregateWhenOrderStartedDomainEventHandler.cs:50"
+      - kind: entry
+        repo: WebApp
+        what: OrderStatusChangedToSubmittedIntegrationEventHandler notifies the buyer's open pages subscribed by BuyerIdentityGuid
+        data: { reads: [BuyerIdentityGuid] }
+        at: "Services/OrderStatus/IntegrationEvents/EventHandling/OrderStatusChangedToSubmittedIntegrationEventHandler.cs:13"
+      - kind: respond
+        repo: Ordering.API
+        what: 200 OK with no body
+        at: "Apis/OrdersApi.cs:166"
+      - kind: call-out
+        repo: WebApp
+        what: Without checking the response, the WebApp also deletes the basket with the gRPC DeleteBasket call
+        to: { repo: Basket.API, entry: "gRPC Basket.DeleteBasket" }
+        at: "Services/BasketService.cs:17"
+      - kind: write
+        repo: Basket.API
+        what: DeleteBasket deletes the caller's basket key
+        store: { table: "/basket/{userId}", fields: [BuyerId, Items] }
+        at: "Grpc/BasketService.cs:67"
+      - kind: call-out
+        repo: WebApp
+        what: The app navigates to /user/orders, which GETs /api/Orders/
+        to: { repo: Ordering.API, entry: "GET /api/orders" }
+        at: "Services/OrderingService.cs:9"
+      - kind: entry
+        repo: Ordering.API
+        what: GetOrdersByUserAsync takes the caller's sub claim as the user id
+        data: { reads: [sub] }
+        at: "Apis/OrdersApi.cs:93"
+      - kind: read
+        repo: Ordering.API
+        what: The orders whose buyer's IdentityGuid is the caller's sub, totalling UnitPrice times Units
+        store: { table: orders, fields: [Id, OrderDate, OrderStatus, BuyerId] }
+        at: "Application/Queries/OrderQueries.cs:39"
+      - kind: respond
+        repo: WebApp
+        what: The Orders page lists number, date, total and status (Submitted); its OrdersRefreshOnStatusChange component subscribes by buyer id and reloads the page whenever a status event for this buyer arrives
+        data: { reads: [OrderNumber, Date, Total, Status] }
+        at: "Components/Pages/User/Orders.razor:38"
+      - kind: loop
+        repo: OrderProcessor
+        what: GracePeriodManagerService checks every CheckUpdateTime seconds (30) for orders past the grace period (GracePeriodTime, 1 minute)
+        at: "Services/GracePeriodManagerService.cs:25"
+      - kind: read
+        repo: OrderProcessor
+        what: Raw SQL reads the ids of Submitted orders older than the grace period
+        store: { table: orders, fields: [Id, OrderDate, OrderStatus] }
+        at: "Services/GracePeriodOrdersRepository.cs:24"
+      - kind: publish
+        repo: OrderProcessor
+        what: publishes GracePeriodConfirmedIntegrationEvent for each id (again on every check while the order stays Submitted)
+        data: { sends: [OrderId] }
+        at: "Services/GracePeriodManagerService.cs:56"
+      - kind: entry
+        repo: Ordering.API
+        what: GracePeriodConfirmedIntegrationEventHandler sends SetAwaitingValidationOrderStatusCommand
+        data: { reads: [OrderId] }
+        at: "Application/IntegrationEvents/EventHandling/GracePeriodConfirmedIntegrationEventHandler.cs:19"
+      - kind: lookup
+        repo: Ordering.Infrastructure
+        what: The order and its items are loaded
+        store: { table: orders, fields: [Id, OrderStatus, BuyerId] }
+        at: "Repositories/OrderRepository.cs:23"
+      - kind: transform
+        repo: Ordering.Domain
+        what: Only a Submitted order moves to AwaitingValidation, raising OrderStatusChangedToAwaitingValidationDomainEvent with its items
+        data: { from: [OrderStatus], to: [OrderStatus] }
+        at: "AggregatesModel/OrderAggregate/Order.cs:101"
+      - kind: lookup
+        repo: Ordering.API
+        what: The domain event handler loads the order and its buyer
+        store: { table: buyers, fields: [Id, Name, IdentityGuid] }
+        at: "Application/DomainEventHandlers/OrderStatusChangedToAwaitingValidationDomainEventHandler.cs:28"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: The status is saved and the event goes to the outbox; the transaction commits
+        store: { table: orders, fields: [OrderStatus] }
+        at: "OrderingContext.cs:59"
+      - kind: publish
+        repo: Ordering.API
+        what: publishes OrderStatusChangedToAwaitingValidationIntegrationEvent
+        data:
+          {
+            sends:
+              [
+                OrderId,
+                OrderStatus,
+                BuyerName,
+                BuyerIdentityGuid,
+                OrderStockItems.ProductId,
+                OrderStockItems.Units,
+              ],
+          }
+        at: "Application/DomainEventHandlers/OrderStatusChangedToAwaitingValidationDomainEventHandler.cs:33"
+      - kind: entry
+        repo: WebApp
+        what: OrderStatusChangedToAwaitingValidationIntegrationEventHandler notifies the buyer's Orders page, which reloads
+        data: { reads: [BuyerIdentityGuid] }
+        at: "Services/OrderStatus/IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:13"
+      - kind: entry
+        repo: Catalog.API
+        what: OrderStatusChangedToAwaitingValidationIntegrationEventHandler checks the stock of each line
+        data: { reads: [OrderId, OrderStockItems.ProductId, OrderStockItems.Units] }
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:9"
+      - kind: lookup
+        repo: Catalog.API
+        what: Each product is found by id (unknown products are skipped)
+        store: { table: Catalog, fields: [Id, AvailableStock] }
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:17"
+      - kind: validate
+        repo: Catalog.API
+        what: A line has stock when AvailableStock is at least its Units
+        data: { checks: [AvailableStock, Units] }
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:20"
+      - kind: branch
+        repo: Catalog.API
+        what: Any line without stock gives OrderStockRejectedIntegrationEvent, otherwise OrderStockConfirmedIntegrationEvent
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:27"
+      - kind: write
+        repo: Catalog.API
+        what: The event is saved to the catalog outbox in a local transaction
+        store:
+          {
+            table: IntegrationEventLog,
+            fields:
+              [EventId, EventTypeName, Content, State, TimesSent, CreationTime, TransactionId],
+          }
+        at: "IntegrationEvents/CatalogIntegrationEventService.cs:38"
+      - kind: publish
+        repo: Catalog.API
+        what: publishes OrderStockConfirmedIntegrationEvent
+        data: { sends: [OrderId] }
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToAwaitingValidationIntegrationEventHandler.cs:29"
+      - kind: entry
+        repo: Ordering.API
+        what: OrderStockConfirmedIntegrationEventHandler sends SetStockConfirmedOrderStatusCommand
+        data: { reads: [OrderId] }
+        at: "Application/IntegrationEvents/EventHandling/OrderStockConfirmedIntegrationEventHandler.cs:12"
+      - kind: transform
+        repo: Ordering.API
+        what: The handler waits 10 seconds to simulate work, then loads the order
+        at: "Application/Commands/SetStockConfirmedOrderStatusCommandHandler.cs:22"
+      - kind: transform
+        repo: Ordering.Domain
+        what: Only an AwaitingValidation order moves to StockConfirmed with a Description, raising OrderStatusChangedToStockConfirmedDomainEvent
+        data: { from: [OrderStatus], to: [OrderStatus, Description] }
+        at: "AggregatesModel/OrderAggregate/Order.cs:110"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: The status and description are saved with the next event in the outbox; the transaction commits
+        store: { table: orders, fields: [OrderStatus, Description] }
+        at: "OrderingContext.cs:59"
+      - kind: publish
+        repo: Ordering.API
+        what: publishes OrderStatusChangedToStockConfirmedIntegrationEvent
+        data: { sends: [OrderId, OrderStatus, BuyerName, BuyerIdentityGuid] }
+        at: "Application/DomainEventHandlers/OrderStatusChangedToStockConfirmedDomainEventHandler.cs:30"
+      - kind: entry
+        repo: WebApp
+        what: OrderStatusChangedToStockConfirmedIntegrationEventHandler notifies the buyer's Orders page, which reloads
+        data: { reads: [BuyerIdentityGuid] }
+        at: "Services/OrderStatus/IntegrationEvents/EventHandling/OrderStatusChangedToStockConfirmedIntegrationEventHandler.cs:13"
+      - kind: entry
+        repo: PaymentProcessor
+        what: OrderStatusChangedToStockConfirmedIntegrationEventHandler simulates the payment
+        data: { reads: [OrderId] }
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToStockConfirmedIntegrationEventHandler.cs:9"
+      - kind: branch
+        repo: PaymentProcessor
+        what: PaymentOptions.PaymentSucceeded (true by default) decides between success and failure
+        data: { reads: [PaymentSucceeded] }
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToStockConfirmedIntegrationEventHandler.cs:21"
+      - kind: publish
+        repo: PaymentProcessor
+        what: publishes OrderPaymentSucceededIntegrationEvent
+        data: { sends: [OrderId] }
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToStockConfirmedIntegrationEventHandler.cs:23"
+      - kind: entry
+        repo: Ordering.API
+        what: OrderPaymentSucceededIntegrationEventHandler sends SetPaidOrderStatusCommand
+        data: { reads: [OrderId] }
+        at: "Application/IntegrationEvents/EventHandling/OrderPaymentSucceededIntegrationEventHandler.cs:12"
+      - kind: transform
+        repo: Ordering.API
+        what: The handler waits 10 seconds to simulate work, then loads the order
+        at: "Application/Commands/SetPaidOrderStatusCommandHandler.cs:22"
+      - kind: transform
+        repo: Ordering.Domain
+        what: Only a StockConfirmed order moves to Paid with a simulated bank Description, raising OrderStatusChangedToPaidDomainEvent with its items
+        data: { from: [OrderStatus], to: [OrderStatus, Description] }
+        at: "AggregatesModel/OrderAggregate/Order.cs:121"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: The status and description are saved with the next event in the outbox; the transaction commits
+        store: { table: orders, fields: [OrderStatus, Description] }
+        at: "OrderingContext.cs:59"
+      - kind: publish
+        repo: Ordering.API
+        what: publishes OrderStatusChangedToPaidIntegrationEvent
+        data:
+          {
+            sends:
+              [
+                OrderId,
+                OrderStatus,
+                BuyerName,
+                BuyerIdentityGuid,
+                OrderStockItems.ProductId,
+                OrderStockItems.Units,
+              ],
+          }
+        at: "Application/DomainEventHandlers/OrderStatusChangedToPaidDomainEventHandler.cs:32"
+      - kind: entry
+        repo: WebApp
+        what: OrderStatusChangedToPaidIntegrationEventHandler notifies the buyer's Orders page, which reloads showing Paid
+        data: { reads: [BuyerIdentityGuid] }
+        at: "Services/OrderStatus/IntegrationEvents/EventHandling/OrderStatusChangedToPaidIntegrationEventHandler.cs:13"
+      - kind: entry
+        repo: Catalog.API
+        what: OrderStatusChangedToPaidIntegrationEventHandler takes the paid units out of stock
+        data: { reads: [OrderStockItems.ProductId, OrderStockItems.Units] }
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToPaidIntegrationEventHandler.cs:8"
+      - kind: transform
+        repo: Catalog.API
+        what: RemoveStock takes the smaller of Units and AvailableStock off each found product
+        data: { from: [Units, AvailableStock], to: [AvailableStock] }
+        at: "Model/CatalogItem.cs:76"
+      - kind: write
+        repo: Catalog.API
+        what: The new stock levels are saved
+        store: { table: Catalog, fields: [AvailableStock] }
+        at: "IntegrationEvents/EventHandling/OrderStatusChangedToPaidIntegrationEventHandler.cs:20"
+      - kind: entry
+        repo: Webhooks.API
+        what: OrderStatusChangedToPaidIntegrationEventHandler receives the event
+        data: { reads: [OrderId, OrderStockItems] }
+        at: "IntegrationEvents/OrderStatusChangedToPaidIntegrationEventHandler.cs:8"
+      - kind: lookup
+        repo: Webhooks.API
+        what: Every subscription of type OrderPaid is read, whoever registered it
+        store: { table: Subscriptions, fields: [Id, Type, DestUrl, Token, UserId, Date] }
+        at: "Services/WebhooksRetriever.cs:7"
+      - kind: transform
+        repo: Webhooks.API
+        what: The event becomes WebhookData with the time, type OrderPaid and the event serialized as Payload
+        data: { from: [OrderId, OrderStockItems], to: [When, Type, Payload] }
+        at: "Model/WebhookData.cs:13"
+      - kind: call-out
+        repo: Webhooks.API
+        what: POST of the WebhookData JSON to each subscription's DestUrl, with an X-eshop-whtoken header when the subscription has a token; responses are not checked
+        to: { repo: WebhookClient, entry: "POST /webhook-received" }
+        data: { sends: [When, Payload, Type, X-eshop-whtoken] }
+        at: "Services/WebhooksSender.cs:32"
+      - kind: entry
+        repo: WebhookClient
+        what: The /webhook-received endpoint receives the WebhookData and the token header
+        at: "Endpoints/WebhookEndpoints.cs:31"
+      - kind: validate
+        repo: WebhookClient
+        what: The token must equal WebhookClientOptions:Token only when ValidateToken is true (it is not set by default)
+        data: { checks: [X-eshop-whtoken] }
+        at: "Endpoints/WebhookEndpoints.cs:37"
+      - kind: write
+        repo: WebhookClient
+        what: The hook is kept in memory (a queue, lost on restart) as Data, When and Token
+        data:
+          {
+            from: [Payload, When, X-eshop-whtoken],
+            to: [WebHookReceived.Data, WebHookReceived.When, WebHookReceived.Token],
+          }
+        at: "Services/HooksRepository.cs:12"
+      - kind: respond
+        repo: WebhookClient
+        what: 200 OK with the stored hook
+        data: { returns: [When, Data, Token] }
+        at: "Endpoints/WebhookEndpoints.cs:48"
+      - kind: respond
+        repo: WebhookClient
+        what: The home page's received-messages grid refreshes and shows When, Data and Token
+        data: { reads: [When, Data, Token] }
+        at: "Components/Pages/Home/ReceivedMessages.razor:42"
+    errors:
+      - {
+          repo: Ordering.API,
+          when: "The x-requestid header is empty",
+          then: "400 Bad Request, RequestId is missing; the WebApp does not check and still deletes the basket",
+          at: "Apis/OrdersApi.cs:135",
+        }
+      - {
+          repo: Ordering.API,
+          when: "The command fails validation or a domain rule (read from the code)",
+          then: "the exception is swallowed by the identified-command handler, which returns false; the API still answers 200 OK, no order is saved, and an OrderStartedIntegrationEvent saved before the failing domain step is still published",
+          at: "Application/Commands/IdentifiedCommandHandler.cs:101",
+        }
+      - {
+          repo: Ordering.Domain,
+          when: "A product does not have enough stock",
+          then: "Catalog.API publishes OrderStockRejectedIntegrationEvent; Ordering.API waits 10 seconds and cancels the order with a description naming the products, but raises no domain event, so no status event is published and the Orders page is not told",
+          at: "AggregatesModel/OrderAggregate/Order.cs:155",
+        }
+      - {
+          repo: Ordering.API,
+          when: "PaymentSucceeded is false",
+          then: "PaymentProcessor publishes OrderPaymentFailedIntegrationEvent; Ordering.API runs CancelOrderCommand, the order becomes Cancelled and OrderStatusChangedToCancelledIntegrationEvent reaches the WebApp",
+          at: "Application/IntegrationEvents/EventHandling/OrderPaymentFailedIntegrationEventHandler.cs:12",
+        }
+      - {
+          repo: Ordering.API,
+          when: "Publishing an outbox event fails",
+          then: "the event is marked PublishedFailed and nothing retries it",
+          at: "Application/IntegrationEvents/OrderingIntegrationEventService.cs:31",
+        }
+
+  - id: cancel-order
+    name: A shopper cancels an order from the mobile app
+    trigger:
+      kind: action
+      repo: ClientApp
+      what: CANCEL ORDER is tapped on the order detail view, shown only while the order's status is Submitted
+      at: "Views/OrderDetailView.xaml:78"
+    steps:
+      - kind: call-out
+        repo: ClientApp
+        what: OrderDetailViewModel calls OrderService.CancelOrderAsync with the order number
+        data: { sends: [OrderNumber] }
+        at: "ViewModels/OrderDetailViewModel.cs:46"
+      - kind: branch
+        repo: ClientApp
+        what: Without an auth token the cancel returns false and the order is reloaded
+        at: "Services/Order/OrderService.cs:87"
+      - kind: transform
+        repo: ClientApp
+        what: The body is a CancelOrderCommand with OrderNumber, and an x-requestid header with a new Guid is added
+        data: { from: [orderId], to: [OrderNumber, x-requestid] }
+        at: "Services/RequestProvider/RequestProvider.cs:136"
+      - kind: call-out
+        repo: ClientApp
+        what: PUT {gateway}/api/orders/cancel?api-version=1.0 with the bearer token, through the mobile-bff
+        to: { repo: Ordering.API, entry: "PUT /api/orders/cancel" }
+        data: { sends: [OrderNumber, x-requestid] }
+        at: "Services/Order/OrderService.cs:100"
+      - kind: entry
+        repo: Ordering.API
+        what: CancelOrderAsync receives the request id and CancelOrderCommand (the group requires an authenticated user)
+        at: "Apis/OrdersApi.cs:22"
+      - kind: validate
+        repo: Ordering.API
+        what: An empty request id is refused
+        data: { checks: [x-requestid] }
+        at: "Apis/OrdersApi.cs:27"
+      - kind: transform
+        repo: Ordering.API
+        what: The command is wrapped in an IdentifiedCommand and run in a transaction
+        at: "Apis/OrdersApi.cs:32"
+      - kind: lookup
+        repo: Ordering.Infrastructure
+        what: The request id is looked up; a duplicate returns true without cancelling again
+        store: { table: requests, fields: [Id] }
+        at: "Idempotency/RequestManager.cs:16"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: The request id is recorded
+        store: { table: requests, fields: [Id, Name, Time] }
+        at: "Idempotency/RequestManager.cs:34"
+      - kind: validate
+        repo: Ordering.API
+        what: CancelOrderCommandValidator requires an OrderNumber
+        data: { checks: [OrderNumber] }
+        at: "Application/Validations/CancelOrderCommandValidator.cs:7"
+      - kind: lookup
+        repo: Ordering.Infrastructure
+        what: The order and its items are loaded by number; the caller's ownership is not checked
+        store: { table: orders, fields: [Id, OrderStatus, BuyerId] }
+        at: "Repositories/OrderRepository.cs:23"
+      - kind: validate
+        repo: Ordering.Domain
+        what: A Paid or Shipped order cannot be cancelled
+        data: { checks: [OrderStatus] }
+        at: "AggregatesModel/OrderAggregate/Order.cs:144"
+      - kind: transform
+        repo: Ordering.Domain
+        what: The order becomes Cancelled with Description "The order was cancelled." and raises OrderCancelledDomainEvent
+        data: { from: [OrderStatus], to: [OrderStatus, Description] }
+        at: "AggregatesModel/OrderAggregate/Order.cs:150"
+      - kind: lookup
+        repo: Ordering.API
+        what: OrderCancelledDomainEventHandler loads the order's buyer
+        store: { table: buyers, fields: [Id, Name, IdentityGuid] }
+        at: "Application/DomainEventHandlers/OrderCancelledDomainEventHandler.cs:28"
+      - kind: write
+        repo: Ordering.API
+        what: OrderStatusChangedToCancelledIntegrationEvent is saved to the outbox
+        store:
+          {
+            table: IntegrationEventLog,
+            fields:
+              [EventId, EventTypeName, Content, State, TimesSent, CreationTime, TransactionId],
+          }
+        at: "Application/DomainEventHandlers/OrderCancelledDomainEventHandler.cs:31"
+      - kind: write
+        repo: Ordering.Infrastructure
+        what: The status and description are saved and the transaction commits
+        store: { table: orders, fields: [OrderStatus, Description] }
+        at: "OrderingContext.cs:59"
+      - kind: publish
+        repo: Ordering.API
+        what: publishes OrderStatusChangedToCancelledIntegrationEvent
+        data: { sends: [OrderId, OrderStatus, BuyerName, BuyerIdentityGuid] }
+        at: "Application/DomainEventHandlers/OrderCancelledDomainEventHandler.cs:30"
+      - kind: entry
+        repo: WebApp
+        what: OrderStatusChangedToCancelledIntegrationEventHandler notifies the buyer's open Orders pages in the web store, which reload showing Cancelled
+        data: { reads: [BuyerIdentityGuid] }
+        at: "Services/OrderStatus/IntegrationEvents/EventHandling/OrderStatusChangedToCancelledIntegrationEventHandler.cs:13"
+      - kind: respond
+        repo: Ordering.API
+        what: 200 OK with no body
+        at: "Apis/OrdersApi.cs:48"
+      - kind: respond
+        repo: ClientApp
+        what: On success the view shows Cancelled and hides the button
+        data: { reads: [OrderStatusText] }
+        at: "ViewModels/OrderDetailViewModel.cs:50"
+    errors:
+      - {
+          repo: Ordering.API,
+          when: "The request id is empty",
+          then: "400 Bad Request, which the app catches: it reloads the order and shows its status",
+          at: "Apis/OrdersApi.cs:29",
+        }
+      - {
+          repo: Ordering.API,
+          when: "No order has that number, or it is Paid or Shipped (the domain exception is swallowed)",
+          then: "500 with a ProblemDetails, Cancel order failed to process; the app catches only 400, so the HttpRequestExceptionEx propagates out of the command (read from the code)",
+          at: "Apis/OrdersApi.cs:45",
+        }
+      - {
+          repo: ClientApp,
+          when: "The 200 response has no body (read from the code)",
+          then: "PutAsync deserializes the empty body as JSON, which throws after the order is already cancelled",
+          at: "Services/RequestProvider/RequestProvider.cs:101",
+        }
+
+  - id: catalog-price-change
+    name: A product's price is changed in the catalog
+    trigger:
+      kind: endpoint
+      repo: Catalog.API
+      what: PUT /api/catalog/items/{id}?api-version=2.0 with the full CatalogItem (no client in the repository calls it; v1 PUT /api/catalog/items takes the id from the body and calls the same code)
+      at: "Apis/CatalogApi.cs:105"
+    steps:
+      - kind: entry
+        repo: Catalog.API
+        what: UpdateItem receives the id and the CatalogItem body (the catalog API has no authorization)
+        at: "Apis/CatalogApi.cs:373"
+      - kind: lookup
+        repo: Catalog.API
+        what: The current item is looked up by id
+        store:
+          {
+            table: Catalog,
+            fields:
+              [
+                Id,
+                Name,
+                Description,
+                Price,
+                PictureFileName,
+                CatalogTypeId,
+                CatalogBrandId,
+                AvailableStock,
+                RestockThreshold,
+                MaxStockThreshold,
+                OnReorder,
+                Embedding,
+              ],
+          }
+        at: "Apis/CatalogApi.cs:379"
+      - kind: branch
+        repo: Catalog.API
+        what: No item with that id ends the request with 404
+        at: "Apis/CatalogApi.cs:381"
+      - kind: transform
+        repo: Catalog.API
+        what: Every scalar value of the body is copied onto the tracked item (a full replace, not a patch)
+        data:
+          {
+            from:
+              [
+                Name,
+                Description,
+                Price,
+                PictureFileName,
+                CatalogTypeId,
+                CatalogBrandId,
+                AvailableStock,
+                RestockThreshold,
+                MaxStockThreshold,
+                OnReorder,
+              ],
+            to:
+              [
+                CatalogItem.Name,
+                CatalogItem.Description,
+                CatalogItem.Price,
+                CatalogItem.PictureFileName,
+                CatalogItem.CatalogTypeId,
+                CatalogItem.CatalogBrandId,
+                CatalogItem.AvailableStock,
+                CatalogItem.RestockThreshold,
+                CatalogItem.MaxStockThreshold,
+                CatalogItem.OnReorder,
+              ],
+          }
+        at: "Apis/CatalogApi.cs:390"
+      - kind: transform
+        repo: Catalog.API
+        what: The embedding is recomputed through the configured AI provider, or set to null when none is configured
+        data: { from: [Name, Description], to: [Embedding] }
+        at: "Apis/CatalogApi.cs:392"
+      - kind: branch
+        repo: Catalog.API
+        what: Only a modified Price raises an event; otherwise the item is just saved
+        data: { reads: [Price] }
+        at: "Apis/CatalogApi.cs:396"
+      - kind: write
+        repo: Catalog.API
+        what: The item and the event are saved together in one local transaction
+        store:
+          {
+            table: Catalog,
+            fields:
+              [
+                Name,
+                Description,
+                Price,
+                PictureFileName,
+                CatalogTypeId,
+                CatalogBrandId,
+                AvailableStock,
+                RestockThreshold,
+                MaxStockThreshold,
+                OnReorder,
+                Embedding,
+              ],
+          }
+        at: "IntegrationEvents/CatalogIntegrationEventService.cs:37"
+      - kind: write
+        repo: Catalog.API
+        what: The event row is added to the catalog outbox
+        store:
+          {
+            table: IntegrationEventLog,
+            fields:
+              [EventId, EventTypeName, Content, State, TimesSent, CreationTime, TransactionId],
+          }
+        at: "IntegrationEvents/CatalogIntegrationEventService.cs:38"
+      - kind: publish
+        repo: Catalog.API
+        what: publishes ProductPriceChangedIntegrationEvent, marking the outbox row InProgress then Published
+        data: { sends: [ProductId, NewPrice, OldPrice] }
+        at: "Apis/CatalogApi.cs:399"
+      - kind: entry
+        repo: Webhooks.API
+        what: ProductPriceChangedIntegrationEventHandler, the event's only subscriber, receives it and does nothing (no CatalogItemPriceChange webhook is sent, and Basket.API does not subscribe)
+        data: { reads: [ProductId, NewPrice, OldPrice] }
+        at: "IntegrationEvents/ProductPriceChangedIntegrationEventHandler.cs:7"
+      - kind: respond
+        repo: Catalog.API
+        what: 201 Created with Location /api/catalog/items/{id}
+        at: "Apis/CatalogApi.cs:411"
+    errors:
+      - {
+          repo: Catalog.API,
+          when: "No item has that id",
+          then: "404 Not Found with a ProblemDetails, Item with id {id} not found.",
+          at: "Apis/CatalogApi.cs:383",
+        }
+      - {
+          repo: Catalog.API,
+          when: "Publishing to the event bus fails",
+          then: "the outbox row is marked PublishedFailed and nothing retries it; the item change is already saved",
+          at: "IntegrationEvents/CatalogIntegrationEventService.cs:24",
+        }
+      - {
+          repo: Catalog.API,
+          when: "The body's Id differs from the route id (read from the code)",
+          then: "SetValues tries to change the key and EF Core throws, giving a 500",
+          at: "Apis/CatalogApi.cs:390",
+        }
+
+  - id: register-webhook
+    name: A webhook client registers for paid orders
+    trigger:
+      kind: action
+      repo: WebhookClient
+      what: Register is submitted on /add-webhook with the token (prefilled from WebhookClientOptions:Token)
+      at: "Components/Pages/AddWebhook.razor:16"
+    steps:
+      - kind: validate
+        repo: WebhookClient
+        what: An empty token does nothing
+        data: { checks: [token] }
+        at: "Components/Pages/AddWebhook.razor:35"
+      - kind: transform
+        repo: WebhookClient
+        what: The request is built for event OrderPaid with Url {base}webhook-received and GrantUrl {base}check, base being SelfUrl or the app's own address
+        data: { from: [SelfUrl, token], to: [Event, Url, GrantUrl, Token] }
+        at: "Components/Pages/AddWebhook.razor:47"
+      - kind: call-out
+        repo: WebhookClient
+        what: POST /api/webhooks with api-version=1.0 and the user's bearer token
+        to: { repo: Webhooks.API, entry: "POST /api/webhooks" }
+        data: { sends: [Url, Token, Event, GrantUrl] }
+        at: "Services/WebHooksClient.cs:7"
+      - kind: entry
+        repo: Webhooks.API
+        what: The POST handler receives the WebhookSubscriptionRequest (the group requires an authenticated user)
+        at: "Apis/WebHooksApi.cs:35"
+      - kind: validate
+        repo: Webhooks.API
+        what: An endpoint filter checks GrantUrl and Url are absolute URLs and Event names a WebhookType
+        data: { checks: [GrantUrl, Url, Event] }
+        at: "Model/WebhookSubscriptionRequest.cs:12"
+      - kind: validate
+        repo: Webhooks.API
+        what: The hook URL and the grant URL must share scheme, host and port
+        data: { checks: [Url, GrantUrl] }
+        at: "Services/GrantUrlTesterService.cs:7"
+      - kind: call-out
+        repo: Webhooks.API
+        what: OPTIONS to the GrantUrl with the token in X-eshop-whtoken
+        to: { repo: WebhookClient, entry: "OPTIONS /check" }
+        data: { sends: [X-eshop-whtoken] }
+        at: "Services/GrantUrlTesterService.cs:21"
+      - kind: entry
+        repo: WebhookClient
+        what: The /check endpoint receives the token header
+        at: "Endpoints/WebhookEndpoints.cs:16"
+      - kind: validate
+        repo: WebhookClient
+        what: The token must match WebhookClientOptions:Token only when ValidateToken is true
+        data: { checks: [X-eshop-whtoken] }
+        at: "Endpoints/WebhookEndpoints.cs:18"
+      - kind: respond
+        repo: WebhookClient
+        what: 200 OK echoing the token in X-eshop-whtoken
+        data: { returns: [X-eshop-whtoken] }
+        at: "Endpoints/WebhookEndpoints.cs:22"
+      - kind: validate
+        repo: Webhooks.API
+        what: The grant passes when the response succeeded and echoed the expected token
+        data: { checks: [X-eshop-whtoken] }
+        at: "Services/GrantUrlTesterService.cs:27"
+      - kind: transform
+        repo: Webhooks.API
+        what: The request becomes a WebhookSubscription with the time, the caller's user id and the parsed type
+        data:
+          {
+            from: [Url, Token, Event, user id],
+            to:
+              [
+                WebhookSubscription.DestUrl,
+                WebhookSubscription.Token,
+                WebhookSubscription.Type,
+                WebhookSubscription.UserId,
+                WebhookSubscription.Date,
+              ],
+          }
+        at: "Apis/WebHooksApi.cs:45"
+      - kind: write
+        repo: Webhooks.API
+        what: The subscription is inserted
+        store: { table: Subscriptions, fields: [Type, Date, DestUrl, Token, UserId] }
+        at: "Apis/WebHooksApi.cs:55"
+      - kind: respond
+        repo: Webhooks.API
+        what: 201 Created with Location /api/webhooks/{id}
+        at: "Apis/WebHooksApi.cs:57"
+      - kind: respond
+        repo: WebhookClient
+        what: On success the app navigates to the home page
+        at: "Components/Pages/AddWebhook.razor:58"
+    errors:
+      - {
+          repo: Webhooks.API,
+          when: "A URL is not absolute or the event name is unknown",
+          then: "400 with a ValidationProblem listing the fields",
+          at: "Extensions/RouteHandlerBuilderExtensions.cs:20",
+        }
+      - {
+          repo: Webhooks.API,
+          when: "The URLs differ in origin, the OPTIONS call fails or the token is not echoed",
+          then: "400 Bad Request, Invalid grant URL",
+          at: "Apis/WebHooksApi.cs:61",
+        }
+      - {
+          repo: WebhookClient,
+          when: "Registration is refused",
+          then: "the page shows Registation was rejected with status and the code",
+          at: "Components/Pages/AddWebhook.razor:62",
+        }

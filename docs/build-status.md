@@ -101,12 +101,12 @@ Every open item, in the order to take them. Check work by running the real flow 
 - [ ] **A8. CI on the hosted runners** checked for the pushed commits (needs GitHub access in the session, or a look at the Actions tab).
 - [x] **P1.1 The bench and its scorer** (revamp Phase 1): `bench/` with pinned repos and references written by reading the code; `atticus bench fetch` and `atticus bench run`. Batch 1 (6 repos) baseline for today's readers: precision 60%, recall 31% (`bench/README.md`, with the gaps by cause).
 - [x] **P1.2 Bench batch 2:** all 22 approved repos have references. Baseline over 22: precision 58%, recall 32%; the biggest single cause is dropped path prefixes in every stack (`bench/README.md`).
-- [ ] **P1.3 Reference flows:** petclinic done (`bench/flows/petclinic.yaml`, 8 flows, 87 steps, UI to API to database). microservices-demo and eShop still to write, one at a time (deferred to keep usage down).
+- [x] **P1.3 Reference flows:** petclinic (8 flows), microservices-demo (6 flows, 173 steps across 10 services), eShop (6 flows across 12 projects, place-order 79 steps), in `bench/flows/`.
 - [x] **P1.4 Knowledge bench:** `bench/knowledge/`: 17 invented Forge wiki pages, 37 reference items, 2 conflicts, 1 superseded page, 1 hidden injection, 8 questions. Scored once Phase 3's knowledge scan exists.
 - [x] **P1.5 Design bench:** `bench/design/`: an invented Vaccination records feature for petclinic as a Figma file export, 5 screens, 33 fields (16 existing, 12 new, 5 unbacked), 12 gaps and 6 traps. Scored once Phase 5 reads designs.
 - [ ] **P1.6 Diagram spike:** measured: ELK.js chosen (dagre fails on nested graphs), focus mode and transitive reduction make the dense views legible, limits set (`docs/plan/diagram-spike.md`). Still to do: try the interaction in a browser (a spike page is published for the product owner), and swimlanes for the reference flows (P1.3).
 - [x] **P2a.1 Scan settings per repo, drafted by the AI** (ADR 0075): `org-pack/scan/<repo>.yaml` (folders to leave out, path prefixes), every entry checked against its cited line; the scanner applies it; `atticus scan survey <repo>` has the assistant draft it; `atticus bench survey` keeps settings for bench runs. Live on three bench repos: spring-petclinic-rest 17% to 98%, fastapi-realworld 0% to 100% precision and 70% recall, node-realworld 21% to 100% and 89%.
-- [ ] **P2a.2 Survey the rest of the bench** and record the new totals; then client base URLs and the AI verify step (compare the scan with the assistant's own reading).
+- [x] **P2a.2 The whole bench surveyed:** with the AI's scan settings, 82% precision (from 58%) and 45% recall (from 32%); wrong facts 195 to 81 (`bench/README.md`).
 
 ### I. The AI reads the code; a thin deterministic layer verifies (direction change, decided by the product owner)
 
