@@ -342,7 +342,8 @@ export async function specCheck(
       if (a && (await exists(a))) evidence = a;
     }
     const flow = f.flow ? spec.flows.find((x) => x.id === f.flow) : undefined;
-    if (f.rule === "caller-unknown" && !p?.question && evidence && flow) {
+    // A caller the catalog shows goes back to the assistant to name; only an unknown one is asked.
+    if (f.rule === "caller-unknown" && !f.callers?.length && !p?.question && evidence && flow) {
       const c = callers.get(flow.component) ?? { fs: [], labels: [], at: [] };
       const t = r.triggers.find((x) => x.id === flow.trigger.ref);
       c.fs.push(f);

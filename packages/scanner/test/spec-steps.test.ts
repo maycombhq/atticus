@@ -38,8 +38,17 @@ const evidence = (repo: string, a: At | undefined) =>
 
 /** The flows of an answer file, as the drafter turns them into records. */
 function flowsOf(answer: string, repo: string): FlowRecord[] {
+  type Cited = { at: At } & Record<string, unknown>;
   const doc = parse(readFileSync(join(SPECS, "answers", answer), "utf8")) as {
-    flows: Record<string, any>[];
+    flows: {
+      id: string;
+      component: string;
+      name: string;
+      family?: string[];
+      trigger: Cited & { caller?: { who: string; via?: string; at?: At } };
+      steps: Cited[];
+      errors?: Cited[];
+    }[];
   };
   return doc.flows.map((f) => {
     const { at, caller, ...trigger } = f.trigger;
@@ -64,11 +73,11 @@ function flowsOf(answer: string, repo: string): FlowRecord[] {
             }
           : {}),
       },
-      steps: f.steps.map(({ at: a, ...s }: Record<string, any>) => ({
+      steps: f.steps.map(({ at: a, ...s }) => ({
         ...s,
         evidence: evidence(repo, a),
       })),
-      errors: (f.errors ?? []).map(({ at: a, ...e }: Record<string, any>) => ({
+      errors: (f.errors ?? []).map(({ at: a, ...e }) => ({
         ...e,
         evidence: evidence(repo, a),
       })),
@@ -169,6 +178,47 @@ describe("the critic on a flow an external system starts (ADR 0089)", () => {
     expect(rules(r)).toEqual(["field-from-nowhere"]);
   });
 
+  it("names the caller the catalog's interfaces show, so the next draft writes it and no person is asked", async () => {
+    const call = parseRecord({
+      kind: "Interface",
+      schemaVersion: 2,
+      id: "if-ac88cbc62e928d02",
+      status: "current",
+      confidence: "verified",
+      evidence: [
+        {
+          source: "code",
+          repo: "forge-shop-ui",
+          path: "src/app/orders/order.service.ts",
+          line: 18,
+        },
+      ],
+      from: "forge-shop-ui",
+      to: "forge-payments",
+      endpoint: "forge-payments.post-payments-settlements",
+      method: "POST",
+      normalizedPath: "/payments/settlements",
+      direction: "outbound",
+      sync: "sync",
+      via: "direct",
+    });
+    if (!call.ok) throw new Error(JSON.stringify(call.issues));
+    const r = await checkSpec({
+      repo: fsRepo("forge-payments", join(SPECS, "repos", "forge-payments"), "0".repeat(40)),
+      repoId: "forge-payments",
+      flows: flowsOf("forge-payments.coarse.yaml", "forge-payments"),
+      records: [...records(), call.record],
+      template: DEFAULT_SPEC_TEMPLATE,
+      // Even with a question on file, the catalog's caller is named.
+      questions: [{ evidence: ["src/main/java/forge/payments/SettlementController.java:11"] }],
+    });
+    const f = r.findings.find((x) => x.rule === "caller-unknown")!;
+    expect(f.message).toBe(
+      "forge-payments.settle: trigger.caller is missing, and the catalog has forge-shop-ui (if-ac88cbc62e928d02, direct) calling POST /payments/settlements: name the caller and its route in, in trigger.caller",
+    );
+    expect(f.callers).toEqual(["forge-shop-ui (if-ac88cbc62e928d02, direct)"]);
+  });
+
   it("checks the caller's citation and catalog id", async () => {
     const [f] = flowsOf("forge-payments.yaml", "forge-payments");
     const r = await checkSpec({
@@ -182,7 +232,9 @@ describe("the critic on a flow an external system starts (ADR 0089)", () => {
             caller: {
               who: "Northwind Pay",
               ref: "northwind-pay",
-              evidence: [{ source: "code", repo: "forge-payments", path: "gateway/routes.yaml", line: 40 }],
+              evidence: [
+                { source: "code", repo: "forge-payments", path: "gateway/routes.yaml", line: 40 },
+              ],
             },
           },
         },

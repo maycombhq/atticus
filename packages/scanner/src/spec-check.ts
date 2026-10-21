@@ -48,6 +48,11 @@ export interface SpecCheckFinding {
   fingerprint: string;
   /** The flow it is in, when it is in one. */
   flow?: string;
+  /**
+   * For `caller-unknown`: the callers the catalog's interfaces show (`<component> (<interface>,
+   * <via>)`), so the next draft names them and no person is asked (ADR 0089).
+   */
+  callers?: string[];
 }
 
 export interface SpecTrigger {
@@ -503,12 +508,36 @@ export async function checkSpec(o: {
     } else if (f.trigger.kind === "endpoint" || f.trigger.kind === "listener") {
       const cites = f.trigger.evidence.map(at).filter((x): x is string => !!x);
       const asked = (o.questions ?? []).some((q) => q.evidence.some((e) => cites.includes(e)));
-      if (!asked)
+      const label = trig?.kind === "Endpoint" ? endpointLabel(trig) : "its trigger";
+      // The catalog's own interfaces into the entry point name a caller the code shows.
+      const inbound =
+        trig?.kind === "Endpoint"
+          ? interfaces.filter(
+              (i) =>
+                i.endpoint === trig.id ||
+                (i.to === trig.component &&
+                  (!i.method ||
+                    !trig.method ||
+                    i.method.toUpperCase() === trig.method.toUpperCase()) &&
+                  pathScore(i.normalizedPath, trig.normalizedPath ?? trig.pathOrTopic) === 1000),
+            )
+          : [];
+      const callers = [...new Set(inbound.map((i) => `${i.from} (${i.id}, ${i.via})`))];
+      if (callers.length)
         add({
           rule: "caller-unknown",
           target: `${fid} trigger caller`,
           ...(cites[0] ? { evidence: cites[0] } : {}),
-          message: `${fid}: nothing says who calls ${trig?.kind === "Endpoint" ? endpointLabel(trig) : "its trigger"} or how the call arrives (through a gateway, or direct); name them in trigger.caller where the code or config says so, else ask a person`,
+          message: `${fid}: trigger.caller is missing, and the catalog has ${callers.join(", ")} calling ${label}: name the caller and its route in, in trigger.caller`,
+          flow: fid,
+          callers,
+        });
+      else if (!asked)
+        add({
+          rule: "caller-unknown",
+          target: `${fid} trigger caller`,
+          ...(cites[0] ? { evidence: cites[0] } : {}),
+          message: `${fid}: nothing says who calls ${label} or how the call arrives (through a gateway, or direct); name them in trigger.caller where the code or config says so, else ask a person`,
           flow: fid,
         });
     }

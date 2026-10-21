@@ -28,7 +28,9 @@ describe("Flow text written as a bare YAML number or boolean (ADR 0089)", () => 
       return {
         ...f,
         trigger: { ...(f.trigger as object), what: 7 },
-        errors: [{ when: true, then: 404, evidence: (f.trigger as { evidence: unknown }).evidence }],
+        errors: [
+          { when: true, then: 404, evidence: (f.trigger as { evidence: unknown }).evidence },
+        ],
       };
     });
     expect(r.ok).toBe(true);
@@ -62,7 +64,9 @@ describe("who calls an entry point (ADR 0089)", () => {
         caller: {
           who: "Northwind Pay",
           via: "the external API gateway",
-          evidence: [{ source: "code", repo: "forge-orders", path: "gateway/routes.yaml", line: 3 }],
+          evidence: [
+            { source: "code", repo: "forge-orders", path: "gateway/routes.yaml", line: 3 },
+          ],
         },
       },
     }));
@@ -130,13 +134,28 @@ const verify = {
 
 describe("the same question from two steps (ADR 0089)", () => {
   it("tells the same question by a shared line or near-identical words, and a different one apart", () => {
-    const q = (question: string, evidence: string[]) => ({ repo: "forge-suite", question, evidence });
-    expect(sameQuestion(q(survey.question, survey.evidence), q(verify.question, verify.evidence))).toBe(
-      true,
-    );
-    expect(sameQuestion(q("Which gateway?", ["a.yaml:1"]), q("Who calls it?", ["a.yaml:1"]))).toBe(
-      true,
-    );
+    const q = (question: string, evidence: string[]) => ({
+      repo: "forge-suite",
+      question,
+      evidence,
+    });
+    expect(
+      sameQuestion(q(survey.question, survey.evidence), q(verify.question, verify.evidence)),
+    ).toBe(true);
+    // A shared line and some words in common is the same question.
+    expect(
+      sameQuestion(
+        q("Who calls POST /payments, and through which gateway?", ["a.yaml:1"]),
+        q("Which gateway does POST /payments come through?", ["a.yaml:1", "b.yaml:2"]),
+      ),
+    ).toBe(true);
+    // A shared line alone isn't: two questions can read the same line and ask different things.
+    expect(
+      sameQuestion(
+        q("Should messages that held a redacted chart be left out of the export?", ["brief.md:25"]),
+        q("Which file format should the export use?", ["brief.md:25"]),
+      ),
+    ).toBe(false);
     expect(
       sameQuestion(
         q("Is forge-legacy still part of the product?", ["pom.xml:1"]),

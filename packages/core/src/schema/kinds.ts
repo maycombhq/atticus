@@ -610,7 +610,9 @@ const fields = () => z.array(str()).optional();
 const text = () =>
   z
     .union([str(), z.number(), z.boolean()])
-    .transform((v) => (typeof v === "string" ? v : String(v)));
+    .transform((v) => (typeof v === "string" ? v : String(v)))
+    // So the output's JSON Schema is still a non-empty string.
+    .pipe(str());
 
 /**
  * Who calls an entry point and how the call arrives (ADR 0089): the caller (an external system

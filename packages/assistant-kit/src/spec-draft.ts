@@ -380,6 +380,11 @@ function catalogSources(records: readonly CatalogRecord[], repoId: string): Sour
       mine.push(
         `Interface ${r.id}: ${r.from} -> ${r.to} ${r.method ?? ""} ${r.normalizedPath} via ${r.via}${line(r)}`,
       );
+    else if (r.kind === "Interface" && comps.has(r.to))
+      // A call into the repo: who calls an entry point, for trigger.caller (ADR 0089).
+      mine.push(
+        `Interface ${r.id} (a caller of this repo): ${r.from} -> ${r.to} ${r.method ?? ""} ${r.normalizedPath} via ${r.via}${line(r)}`,
+      );
     else if (
       r.kind === "Table" &&
       ((r.ownerComponent && comps.has(r.ownerComponent)) ||
@@ -672,10 +677,7 @@ export async function draftSpec(
       repoId: o.repoId,
       records: o.records,
       template: o.template,
-      questions: [
-        ...(o.questions ?? []).filter((q) => q.state !== "retired"),
-        ...questions,
-      ],
+      questions: [...(o.questions ?? []).filter((q) => q.state !== "retired"), ...questions],
     });
     for (const f of c.passed) kept.set(f.id, f);
     for (const q of c.questions)

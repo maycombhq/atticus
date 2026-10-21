@@ -196,19 +196,24 @@ const jaccard = (a: Set<string>, b: Set<string>) => {
 
 /**
  * Whether two questions about one repo ask the same thing (ADR 0089): they cite a line in
- * common, or their words are near-identical (what each asks about, asides left out, shares at
- * least three quarters of its words, or the whole questions share seven in ten).
+ * common and share a quarter of their words, or their words are near-identical (what each asks
+ * about, asides left out, shares three quarters of its words, or the whole questions share
+ * seven in ten).
  */
 export function sameQuestion(
   a: { repo: string; question: string; evidence: readonly string[] },
   b: { repo: string; question: string; evidence: readonly string[] },
 ): boolean {
   if (a.repo !== b.repo) return false;
-  if (a.evidence.some((e) => b.evidence.includes(e))) return true;
   const ka = contentWords(kernel(a.question), a.repo);
   const kb = contentWords(kernel(b.question), b.repo);
-  if (Math.min(ka.size, kb.size) >= 3 && jaccard(ka, kb) >= 0.75) return true;
-  return jaccard(contentWords(a.question, a.repo), contentWords(b.question, b.repo)) >= 0.7;
+  const k = jaccard(ka, kb);
+  const whole = jaccard(contentWords(a.question, a.repo), contentWords(b.question, b.repo));
+  // Two questions can read the same line and ask different things ("which format?" and "leave
+  // the redacted ones out?"), so a shared line needs a quarter of the words in common too.
+  if (a.evidence.some((e) => b.evidence.includes(e)) && Math.max(k, whole) >= 0.25) return true;
+  if (Math.min(ka.size, kb.size) >= 3 && k >= 0.75) return true;
+  return whole >= 0.7;
 }
 
 /**
