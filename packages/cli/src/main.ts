@@ -211,6 +211,11 @@ const learnStart: typeof import("./learn-commands.js").learnStart = (...a) =>
 const sandboxCreate: typeof import("./learn-commands.js").sandboxCreate = (...a) =>
   loadLearnCommands().then((m) => m.sandboxCreate(...a));
 const loadEvalCommands = () => import("./eval-commands.js");
+const loadBenchCommands = () => import("./bench-commands.js");
+const benchFetch: typeof import("./bench-commands.js").benchFetch = (...a) =>
+  loadBenchCommands().then((m) => m.benchFetch(...a));
+const benchRun: typeof import("./bench-commands.js").benchRun = (...a) =>
+  loadBenchCommands().then((m) => m.benchRun(...a));
 const defencesScan: typeof import("./eval-commands.js").defencesScan = (...a) =>
   loadEvalCommands().then((m) => m.defencesScan(...a));
 const evalReport: typeof import("./eval-commands.js").evalReport = (...a) =>
@@ -479,6 +484,8 @@ Usage:
   atticus explain <id|command>         Explain a record, finding, change or command in plain words
   atticus eval run [--agent a]... [--mode mock|replay|live] [--runs n]  Evaluate AI agents
   atticus eval report                  The latest eval results and AI quality
+  atticus bench fetch [--repo id] [--batch n] [--cache dir]  Clone the bench's public repos at their pinned commits
+  atticus bench run [--repo id] [--batch n] [--json]  Scan each bench repo and score it against its reference
   atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts
   atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>
                                        Check a catalog, org pack, dialect, plugin or executor against the spec
@@ -674,6 +681,9 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       runs: { type: "string" },
       audience: { type: "string" },
       value: { type: "string" },
+      bench: { type: "string" },
+      cache: { type: "string" },
+      batch: { type: "string" },
     },
     strict: false,
   });
@@ -962,6 +972,16 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       io,
     );
   if (group === "eval" && command === "report") return evalReport(root, { json }, io);
+  if (group === "bench" && (command === "fetch" || command === "run")) {
+    const b = {
+      ...(str(values.bench) ? { bench: str(values.bench)! } : {}),
+      ...(str(values.cache) ? { cache: str(values.cache)! } : {}),
+      ...(str(values.repo) ? { repo: str(values.repo)! } : {}),
+      ...(num(values.batch) ? { batch: num(values.batch)! } : {}),
+      json,
+    };
+    return command === "fetch" ? benchFetch(b, io) : benchRun(b, io);
+  }
   if (group === "ui")
     return uiCommand(
       root,

@@ -1,0 +1,234 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: spring-petclinic-angular
+commit: 7c9f1ab259f0dbc8a987c4e21d97dc616607b362
+covers: [calls]
+notes: >-
+  An Angular single-page front end for the spring-petclinic-rest API. Every HTTP call is in the six
+  services under src/app (owners, pets, pettypes, specialties, vets, visits) and goes to the base
+  URL REST_API_URL = http://localhost:9966/petclinic/api/ (src/environments/environment.ts:26; the
+  production file environment.prod.ts:25 has the same value), so every path starts /petclinic/api/.
+  Each line points at the HttpClient get/post/put/delete call. searchOwners (owner.service.ts:83)
+  calls GET /petclinic/api/owners with an optional ?lastName= query, so it is listed as its own call
+  with the same method and path as getOwners; the query string is left out of the path. Adding a pet
+  and adding a visit post to nested owner URLs, not to /pets or /visits. Pages (serves) are not
+  covered. Deploys are not covered: the repo has a Dockerfile (nginx image) and a GitHub Actions CI
+  workflow but no k8s manifest, Helm chart or cloud config. docs/ is generated Compodoc output and
+  was ignored, as were tests and e2e.
+calls:
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/owners",
+      to: spring-petclinic-rest,
+      at: "src/app/owners/owner.service.ts:48",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/owners/{ownerId}",
+      to: spring-petclinic-rest,
+      at: "src/app/owners/owner.service.ts:54",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/owners",
+      to: spring-petclinic-rest,
+      at: "src/app/owners/owner.service.ts:60",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/owners/{ownerId}",
+      to: spring-petclinic-rest,
+      at: "src/app/owners/owner.service.ts:67",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/owners/{ownerId}",
+      to: spring-petclinic-rest,
+      at: "src/app/owners/owner.service.ts:73",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/owners",
+      to: spring-petclinic-rest,
+      at: "src/app/owners/owner.service.ts:83",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/pets",
+      to: spring-petclinic-rest,
+      at: "src/app/pets/pet.service.ts:48",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/pets/{petId}",
+      to: spring-petclinic-rest,
+      at: "src/app/pets/pet.service.ts:55",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/owners/{ownerId}/pets",
+      to: spring-petclinic-rest,
+      at: "src/app/pets/pet.service.ts:64",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/pets/{petId}",
+      to: spring-petclinic-rest,
+      at: "src/app/pets/pet.service.ts:71",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/pets/{petId}",
+      to: spring-petclinic-rest,
+      at: "src/app/pets/pet.service.ts:78",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/pettypes",
+      to: spring-petclinic-rest,
+      at: "src/app/pettypes/pettype.service.ts:48",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/pettypes/{typeId}",
+      to: spring-petclinic-rest,
+      at: "src/app/pettypes/pettype.service.ts:55",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/pettypes/{typeId}",
+      to: spring-petclinic-rest,
+      at: "src/app/pettypes/pettype.service.ts:62",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/pettypes",
+      to: spring-petclinic-rest,
+      at: "src/app/pettypes/pettype.service.ts:69",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/pettypes/{typeId}",
+      to: spring-petclinic-rest,
+      at: "src/app/pettypes/pettype.service.ts:76",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/specialties",
+      to: spring-petclinic-rest,
+      at: "src/app/specialties/specialty.service.ts:48",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/specialties/{specId}",
+      to: spring-petclinic-rest,
+      at: "src/app/specialties/specialty.service.ts:55",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/specialties",
+      to: spring-petclinic-rest,
+      at: "src/app/specialties/specialty.service.ts:62",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/specialties/{specId}",
+      to: spring-petclinic-rest,
+      at: "src/app/specialties/specialty.service.ts:69",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/specialties/{specId}",
+      to: spring-petclinic-rest,
+      at: "src/app/specialties/specialty.service.ts:76",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/vets",
+      to: spring-petclinic-rest,
+      at: "src/app/vets/vet.service.ts:49",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/vets/{vetId}",
+      to: spring-petclinic-rest,
+      at: "src/app/vets/vet.service.ts:56",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/vets/{vetId}",
+      to: spring-petclinic-rest,
+      at: "src/app/vets/vet.service.ts:63",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/vets",
+      to: spring-petclinic-rest,
+      at: "src/app/vets/vet.service.ts:70",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/vets/{vetId}",
+      to: spring-petclinic-rest,
+      at: "src/app/vets/vet.service.ts:77",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/visits",
+      to: spring-petclinic-rest,
+      at: "src/app/visits/visit.service.ts:48",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/visits/{visitId}",
+      to: spring-petclinic-rest,
+      at: "src/app/visits/visit.service.ts:55",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/owners/{ownerId}/pets/{petId}/visits",
+      to: spring-petclinic-rest,
+      at: "src/app/visits/visit.service.ts:65",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/visits/{visitId}",
+      to: spring-petclinic-rest,
+      at: "src/app/visits/visit.service.ts:72",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/visits/{visitId}",
+      to: spring-petclinic-rest,
+      at: "src/app/visits/visit.service.ts:79",
+    }

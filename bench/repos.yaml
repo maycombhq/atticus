@@ -1,0 +1,38 @@
+# The bench (revamp plan, Phase 1): public open-source repos, each pinned to a commit, with a
+# reference in references/<id>.yaml written by reading the code. Clones live outside this repo
+# (atticus bench fetch). Batch 1 first; the rest of the approved list follows once the scorer
+# and references are proven.
+schemaVersion: 1
+repos:
+  - id: spring-petclinic
+    url: https://github.com/spring-projects/spring-petclinic
+    commit: 500158f732419217507c7656904b8e6aa1bcc0d6
+    stack: Spring Boot MVC, JPA, Thymeleaf
+    batch: 1
+  - id: spring-petclinic-rest
+    url: https://github.com/spring-petclinic/spring-petclinic-rest
+    commit: afc8fc1d3b8ec8de69414482b3bd70a1da78cb95
+    stack: Spring Boot REST, JPA
+    batch: 1
+    estate: petclinic
+  - id: spring-petclinic-angular
+    url: https://github.com/spring-petclinic/spring-petclinic-angular
+    commit: 7c9f1ab259f0dbc8a987c4e21d97dc616607b362
+    stack: Angular
+    batch: 1
+    estate: petclinic
+  - id: eshop
+    url: https://github.com/dotnet/eShop
+    commit: 913acea66708a59595351174cee9b29f37179d29
+    stack: ASP.NET Core, YARP, RabbitMQ events, EF Core
+    batch: 1
+  - id: eshop-modernizing
+    url: https://github.com/dotnet-architecture/eShopModernizing
+    commit: 63bc9ec4414d7e281dc9f9d7bdcf70030950457d
+    stack: .NET Framework MVC, WebForms, WCF N-tier
+    batch: 1
+  - id: microservices-demo
+    url: https://github.com/GoogleCloudPlatform/microservices-demo
+    commit: 38e7348eb289eb5b87c0c6e8cb19ced0449dc389
+    stack: Go, C#, Node, Python, Java services over gRPC; Kubernetes, Helm, Kustomize, Terraform
+    batch: 1

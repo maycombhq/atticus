@@ -1,0 +1,250 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: spring-petclinic-rest
+commit: afc8fc1d3b8ec8de69414482b3bd70a1da78cb95
+covers: [serves, calls, stores, deploys]
+notes: >-
+  A Spring Boot REST API (no UI) for the petclinic domain. Endpoints are declared in
+  src/main/resources/openapi.yml; the OpenAPI generator turns that into interfaces (generated
+  code, not cited) that the controllers in rest/controller/v1 and v2 implement under a class-level
+  @RequestMapping("/api"). Each endpoint cites the operation line in openapi.yml. Every path
+  includes server.servlet.context-path=/petclinic/ (application.properties:25), so the full path is
+  /petclinic/api/... . /oops is in the spec but no controller implements its interface, so it isn't
+  served and is left out. RootRestControllerV1 maps "/" for any HTTP method (no method key) and
+  redirects to Swagger UI. It calls no other service. Tables come from the H2 schema (the HSQLDB,
+  MySQL and Postgres schemas define the same tables). Deploys is empty:
+  docker-compose.yml only starts local MySQL/Postgres, and the GitHub workflow only builds and
+  pushes an image to Docker Hub with Jib; no Kubernetes, Helm or cloud platform config exists.
+serves:
+  - {
+      type: rest,
+      path: "/petclinic/",
+      at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/RootRestControllerV1.java:41",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/owners",
+      at: "src/main/resources/openapi.yml:66",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/owners",
+      at: "src/main/resources/openapi.yml:98",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/v2/owners",
+      at: "src/main/resources/openapi.yml:140",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/owners/{ownerId}",
+      at: "src/main/resources/openapi.yml:207",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/owners/{ownerId}",
+      at: "src/main/resources/openapi.yml:260",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/owners/{ownerId}",
+      at: "src/main/resources/openapi.yml:309",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/owners/{ownerId}/pets",
+      at: "src/main/resources/openapi.yml:363",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/owners/{ownerId}/pets/{petId}",
+      at: "src/main/resources/openapi.yml:412",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/owners/{ownerId}/pets/{petId}",
+      at: "src/main/resources/openapi.yml:474",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/owners/{ownerId}/pets/{petId}/visits",
+      at: "src/main/resources/openapi.yml:529",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/pettypes",
+      at: "src/main/resources/openapi.yml:587",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/pettypes",
+      at: "src/main/resources/openapi.yml:620",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/pettypes/{petTypeId}",
+      at: "src/main/resources/openapi.yml:671",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/pettypes/{petTypeId}",
+      at: "src/main/resources/openapi.yml:724",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/pettypes/{petTypeId}",
+      at: "src/main/resources/openapi.yml:784",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/pets",
+      at: "src/main/resources/openapi.yml:839",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/v2/pets",
+      at: "src/main/resources/openapi.yml:873",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/pets/{petId}",
+      at: "src/main/resources/openapi.yml:927",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/pets/{petId}",
+      at: "src/main/resources/openapi.yml:980",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/pets/{petId}",
+      at: "src/main/resources/openapi.yml:1040",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/visits",
+      at: "src/main/resources/openapi.yml:1094",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/visits",
+      at: "src/main/resources/openapi.yml:1127",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/visits/{visitId}",
+      at: "src/main/resources/openapi.yml:1178",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/visits/{visitId}",
+      at: "src/main/resources/openapi.yml:1231",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/visits/{visitId}",
+      at: "src/main/resources/openapi.yml:1291",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/specialties",
+      at: "src/main/resources/openapi.yml:1345",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/specialties",
+      at: "src/main/resources/openapi.yml:1378",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/specialties/{specialtyId}",
+      at: "src/main/resources/openapi.yml:1429",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/specialties/{specialtyId}",
+      at: "src/main/resources/openapi.yml:1482",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/specialties/{specialtyId}",
+      at: "src/main/resources/openapi.yml:1542",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/vets",
+      at: "src/main/resources/openapi.yml:1596",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/vets",
+      at: "src/main/resources/openapi.yml:1630",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/petclinic/api/vets/{vetId}",
+      at: "src/main/resources/openapi.yml:1681",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/petclinic/api/vets/{vetId}",
+      at: "src/main/resources/openapi.yml:1734",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/petclinic/api/vets/{vetId}",
+      at: "src/main/resources/openapi.yml:1794",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/petclinic/api/users",
+      at: "src/main/resources/openapi.yml:1848",
+    }
+calls: []
+stores:
+  - { table: vets, at: "src/main/resources/db/h2/schema.sql:1" }
+  - { table: specialties, at: "src/main/resources/db/h2/schema.sql:9" }
+  - { table: vet_specialties, at: "src/main/resources/db/h2/schema.sql:16" }
+  - { table: types, at: "src/main/resources/db/h2/schema.sql:24" }
+  - { table: owners, at: "src/main/resources/db/h2/schema.sql:31" }
+  - { table: pets, at: "src/main/resources/db/h2/schema.sql:42" }
+  - { table: visits, at: "src/main/resources/db/h2/schema.sql:54" }
+  - { table: users, at: "src/main/resources/db/h2/schema.sql:62" }
+  - { table: roles, at: "src/main/resources/db/h2/schema.sql:68" }
+deploys: []

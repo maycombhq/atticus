@@ -1,0 +1,283 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: microservices-demo
+commit: 38e7348eb289eb5b87c0c6e8cb19ced0449dc389
+covers: [serves, calls, stores, deploys]
+notes: >-
+  Services covered: adservice (Java), cartservice (C#), checkoutservice, frontend, productcatalogservice,
+  shippingservice (Go), currencyservice, paymentservice (Node.js), emailservice, recommendationservice,
+  shoppingassistantservice (Python, Flask). gRPC serves cite the implementing method in each service,
+  not the proto. grpc.health.v1: counted as grpc.health.v1.Health/Check only where this repo's own
+  code implements and registers the handler (cartservice, currencyservice, paymentservice, emailservice,
+  recommendationservice). checkoutservice, productcatalogservice and shippingservice define Check/Watch
+  methods but register the grpc-go library health.NewServer() instead, and adservice uses the grpc-java
+  HealthStatusManager, so those are left out. The Python Watch stubs only return UNIMPLEMENTED and are
+  left out. emailservice SendOrderConfirmation cites DummyEmailService, the only mode that starts (the
+  non-dummy mode raises). Frontend routes come from the gorilla/mux router in main.go; all are prefixed
+  by an optional BASE_URL env var (empty by default). /, /product/{id} and /cart (GET) also accept HEAD,
+  recorded once as GET. /robots.txt and /_healthz set no method and are recorded as GET; /static/ is a
+  path-prefix file server. Outbound HTTP: frontend POSTs to shoppingassistantservice and, only when
+  PACKAGING_SERVICE_URL is set, GETs an external packaging service that is not in this repo. Left out:
+  generated stubs, tests, the loadgenerator (a locust test client), the AdServiceClient.java,
+  client.js and client.py test clients, the frontend's GCP metadata-server lookup and the shopping
+  assistant's Gemini and Secret Manager calls (made through Google SDKs, not service calls). Stores:
+  Redis (the default cart store) has no tables, so it is not listed. Spanner CartItems is a constant in
+  code. The AlloyDB table names come from env vars (ALLOYDB_TABLE_NAME) in code; the names cart_items
+  (cart) and catalog_items (product catalog and shopping assistant) are declared in the kustomize setup
+  script, cited at their CREATE TABLE. products.json is a file read, not a store. Deploys: one each for
+  kubernetes-manifests, helm-chart, kustomize and terraform (GKE cluster); release/ and istio-manifests/
+  are not counted as separate platforms.
+serves:
+  - {
+      type: grpc,
+      path: "hipstershop.AdService/GetAds",
+      at: "src/adservice/src/main/java/hipstershop/AdService.java:94",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CartService/AddItem",
+      at: "src/cartservice/src/services/CartService.cs:34",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CartService/GetCart",
+      at: "src/cartservice/src/services/CartService.cs:40",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CartService/EmptyCart",
+      at: "src/cartservice/src/services/CartService.cs:45",
+    }
+  - {
+      type: grpc,
+      path: "grpc.health.v1.Health/Check",
+      at: "src/cartservice/src/services/HealthCheckService.cs:33",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CheckoutService/PlaceOrder",
+      at: "src/checkoutservice/main.go:230",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CurrencyService/GetSupportedCurrencies",
+      at: "src/currencyservice/server.js:128",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CurrencyService/Convert",
+      at: "src/currencyservice/server.js:138",
+    }
+  - { type: grpc, path: "grpc.health.v1.Health/Check", at: "src/currencyservice/server.js:174" }
+  - {
+      type: grpc,
+      path: "hipstershop.EmailService/SendOrderConfirmation",
+      at: "src/emailservice/email_server.py:109",
+    }
+  - { type: grpc, path: "grpc.health.v1.Health/Check", at: "src/emailservice/email_server.py:53" }
+  - { type: grpc, path: "hipstershop.PaymentService/Charge", at: "src/paymentservice/server.js:41" }
+  - { type: grpc, path: "grpc.health.v1.Health/Check", at: "src/paymentservice/server.js:52" }
+  - {
+      type: grpc,
+      path: "hipstershop.ProductCatalogService/ListProducts",
+      at: "src/productcatalogservice/product_catalog.go:41",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ProductCatalogService/GetProduct",
+      at: "src/productcatalogservice/product_catalog.go:47",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ProductCatalogService/SearchProducts",
+      at: "src/productcatalogservice/product_catalog.go:60",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.RecommendationService/ListRecommendations",
+      at: "src/recommendationservice/recommendation_server.py:70",
+    }
+  - {
+      type: grpc,
+      path: "grpc.health.v1.Health/Check",
+      at: "src/recommendationservice/recommendation_server.py:88",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ShippingService/GetQuote",
+      at: "src/shippingservice/main.go:119",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ShippingService/ShipOrder",
+      at: "src/shippingservice/main.go:142",
+    }
+  - { type: rest, method: GET, path: /, at: "src/frontend/main.go:150" }
+  - { type: rest, method: GET, path: "/product/{id}", at: "src/frontend/main.go:151" }
+  - { type: rest, method: GET, path: /cart, at: "src/frontend/main.go:152" }
+  - { type: rest, method: POST, path: /cart, at: "src/frontend/main.go:153" }
+  - { type: rest, method: POST, path: /cart/empty, at: "src/frontend/main.go:154" }
+  - { type: rest, method: POST, path: /setCurrency, at: "src/frontend/main.go:155" }
+  - { type: rest, method: GET, path: /logout, at: "src/frontend/main.go:156" }
+  - { type: rest, method: POST, path: /cart/checkout, at: "src/frontend/main.go:157" }
+  - { type: rest, method: GET, path: /assistant, at: "src/frontend/main.go:158" }
+  - { type: rest, method: GET, path: /static/, at: "src/frontend/main.go:159" }
+  - { type: rest, method: GET, path: /robots.txt, at: "src/frontend/main.go:160" }
+  - { type: rest, method: GET, path: /_healthz, at: "src/frontend/main.go:161" }
+  - { type: rest, method: GET, path: "/product-meta/{ids}", at: "src/frontend/main.go:162" }
+  - { type: rest, method: POST, path: /bot, at: "src/frontend/main.go:163" }
+  - {
+      type: rest,
+      method: POST,
+      path: /,
+      at: "src/shoppingassistantservice/shoppingassistantservice.py:65",
+    }
+calls:
+  - {
+      type: grpc,
+      path: "hipstershop.CurrencyService/GetSupportedCurrencies",
+      to: currencyservice,
+      at: "src/frontend/rpc.go:32",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ProductCatalogService/ListProducts",
+      to: productcatalogservice,
+      at: "src/frontend/rpc.go:47",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ProductCatalogService/GetProduct",
+      to: productcatalogservice,
+      at: "src/frontend/rpc.go:53",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CartService/GetCart",
+      to: cartservice,
+      at: "src/frontend/rpc.go:58",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CartService/EmptyCart",
+      to: cartservice,
+      at: "src/frontend/rpc.go:63",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CartService/AddItem",
+      to: cartservice,
+      at: "src/frontend/rpc.go:68",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CurrencyService/Convert",
+      to: currencyservice,
+      at: "src/frontend/rpc.go:82",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ShippingService/GetQuote",
+      to: shippingservice,
+      at: "src/frontend/rpc.go:88",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.RecommendationService/ListRecommendations",
+      to: recommendationservice,
+      at: "src/frontend/rpc.go:100",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.AdService/GetAds",
+      to: adservice,
+      at: "src/frontend/rpc.go:123",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CheckoutService/PlaceOrder",
+      to: checkoutservice,
+      at: "src/frontend/handlers.go:355",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ShippingService/GetQuote",
+      to: shippingservice,
+      at: "src/checkoutservice/main.go:315",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CartService/GetCart",
+      to: cartservice,
+      at: "src/checkoutservice/main.go:325",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CartService/EmptyCart",
+      to: cartservice,
+      at: "src/checkoutservice/main.go:333",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ProductCatalogService/GetProduct",
+      to: productcatalogservice,
+      at: "src/checkoutservice/main.go:344",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.CurrencyService/Convert",
+      to: currencyservice,
+      at: "src/checkoutservice/main.go:360",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.PaymentService/Charge",
+      to: paymentservice,
+      at: "src/checkoutservice/main.go:370",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.EmailService/SendOrderConfirmation",
+      to: emailservice,
+      at: "src/checkoutservice/main.go:380",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ShippingService/ShipOrder",
+      to: shippingservice,
+      at: "src/checkoutservice/main.go:387",
+    }
+  - {
+      type: grpc,
+      path: "hipstershop.ProductCatalogService/ListProducts",
+      to: productcatalogservice,
+      at: "src/recommendationservice/recommendation_server.py:73",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /,
+      to: shoppingassistantservice,
+      at: "src/frontend/handlers.go:465",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/{productId}",
+      to: packaging-service,
+      at: "src/frontend/packaging_info.go:54",
+    }
+stores:
+  - { table: CartItems, at: "src/cartservice/src/cartstore/SpannerCartStore.cs:25" }
+  - {
+      table: cart_items,
+      at: "kustomize/components/shopping-assistant/scripts/2_create_populate_alloydb_tables.sh:33",
+    }
+  - {
+      table: catalog_items,
+      at: "kustomize/components/shopping-assistant/scripts/2_create_populate_alloydb_tables.sh:41",
+    }
+deploys:
+  - { platform: kubernetes, at: "kubernetes-manifests/cartservice.yaml:16" }
+  - { platform: helm, at: "helm-chart/Chart.yaml:16" }
+  - { platform: kustomize, at: "kustomize/kustomization.yaml:16" }
+  - { platform: terraform, at: "terraform/main.tf:40" }

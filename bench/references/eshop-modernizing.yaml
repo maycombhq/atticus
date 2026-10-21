@@ -1,0 +1,660 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: eshop-modernizing
+commit: 63bc9ec4414d7e281dc9f9d7bdcf70030950457d
+covers: [serves, calls, stores, deploys]
+notes: >-
+  Covered seven app folders, each counted once as its own deployable: eShopLegacyMVCSolution/src/eShopLegacyMVC (ASP.NET MVC 5 + Web API 2),
+  eShopLegacyMVCSolution/eShopPorted (ASP.NET Core 2.2 port, in the same solution), eShopLegacyWebFormsSolution/src/eShopLegacyWebForms,
+  eShopModernizedMVCSolution/src/eShopModernizedMVC, eShopModernizedWebFormsSolution/src/eShopModernizedWebForms, and the WCF service plus
+  WinForms client in both eShopLegacyNTier/src and eShopModernizedNTier/src. Identical paths in different apps are listed once per app.
+  MVC routing: the conventional route {controller}/{action}/{id} with defaults Catalog/Index (RouteConfig.cs) gives /Catalog/<Action>/{id};
+  Catalog.Index is written as "/" (the URL MVC generates for the defaults; /Catalog and /Catalog/Index reach it too). Actions with no verb
+  attribute are written GET; [HttpPost] overloads are POST on the same path (Html.BeginForm posts back to the current URL), and
+  DeleteConfirmed is POST /Catalog/Delete/{id} via [ActionName("Delete")]. Attribute routes ([Route]) use the attribute's line; all other
+  actions use the method's line. Web API in the legacy MVC app uses api/{controller}/{id} from WebApiConfig.cs. eShopPorted
+  BrandsController.Index and FilesController.Index have no verb attribute under [Route("api/[controller]")], so they answer any verb; written GET.
+  The modernized MVC AccountController actions (SignIn, SignOut, EndSession) have no verb attribute; written GET.
+  Left out: legacy MVC Controllers/Api/CatalogController.cs declares class CatalogController2 with [Route("api")], but MVC only discovers
+  types whose name ends in "Controller", so it is never routed. /Pics/* in the modernized MVC app is static files (IgnoreRoute).
+  WebForms: each .aspx page is GET "/<file>.aspx" at its Page directive (line 1), plus one GET entry per MapPageRoute friendly URL at the
+  RouteConfig.cs url line. Postbacks (button click handlers posting the page to itself) are not listed as separate POST endpoints. The
+  IIS default document (Default.aspx at "/") is server config, not code, so "/" is not listed for WebForms. The modernized WebForms
+  ScriptService PicUploader.asmx is POST /Catalog/PicUploader.asmx/UploadImage (called by Scripts/site.js as JSON), at its [WebMethod].
+  Master pages and .ascx controls are not endpoints. WCF: ICatalogService (basicHttpBinding at CatalogService.svc) has 10 operations,
+  listed per NTier folder at each [OperationContract]; the mex metadata endpoint is not listed.
+  Calls: each WinForms client calls ICatalogService through the generated eShopServiceReference.CatalogServiceClient; one entry per operation
+  at its first call site in eShopWinForms/Controllers/CatalogController.cs (GetDiscount is also called at line 80, GetCatalogItems at line 90).
+  The eShopWCFService/CatalogServiceClient.cs file is not compiled (absent from the csproj) and is ignored. Browser JavaScript calling its
+  own app (site.js) is not an inter-app call. The modernized MVC and WebForms apps use the Azure Storage SDK (ImageAzureStorage.cs) and Azure AD
+  OpenID Connect (Startup.Auth.cs); these are SDK/middleware calls with no declared path and are left out of calls.
+  Stores: tables per app. MVC, WebForms and eShopPorted map CatalogItem to Catalog, plus CatalogBrand and CatalogType, via ToTable. The WCF
+  EntityModel has no ToTable, so EF6's pluralizing convention names CatalogBrands, CatalogItems, CatalogTypes and DiscountItems (at the DbSet
+  line); CatalogItemsStock comes from [Table]. The hilo SQL sequences (dbo.catalog_hilo etc.) are sequences, not tables, and are left out; the
+  Setup/*.csv files are seed data for the same tables. eShopPorted's EF Core migration (Migrations/20201130044339_Initial.cs) creates the same three tables.
+  Deploys: one entry per platform. kubernetes = Kubernetes/ and Kubernetes-DockerForWindows/ manifests (MVC, WebForms, WCF, SQL, RabbitMQ);
+  service-fabric = ServiceFabric/*/ApplicationPackageRoot manifests (MVC, WebForms, SQL container apps); azure-arm = ACI/aci.json, an ARM
+  template for Azure Container Instances (the ServiceFabric-ARM-Templates-Scripts cluster templates are also ARM); docker-compose = the root
+  docker-compose.yml, which runs the three modernized apps plus SQL Server as Windows containers on the nat network (the per-solution and
+  VM/ compose files are the same idea per app). Dockerfiles are build inputs, not counted.
+serves:
+  - {
+      type: rest,
+      method: GET,
+      path: "/",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/CatalogController.cs:22",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Details/{id}",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/CatalogController.cs:31",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Create",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/CatalogController.cs:49",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/Create",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/CatalogController.cs:62",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Edit/{id}",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/CatalogController.cs:77",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/Edit/{id}",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/CatalogController.cs:100",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Delete/{id}",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/CatalogController.cs:114",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/Delete/{id}",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/CatalogController.cs:134",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/items/{catalogItemId}/pic",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/PicController.cs:24",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/Brands",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/WebApi/BrandsController.cs:22",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/Brands/{id}",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/WebApi/BrandsController.cs:29",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/Brands/{id}",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/WebApi/BrandsController.cs:40",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/Files",
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Controllers/WebApi/FilesController.cs:21",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/CatalogController.cs:23",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Details/{id}",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/CatalogController.cs:32",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Create",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/CatalogController.cs:50",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/Create",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/CatalogController.cs:63",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Edit/{id}",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/CatalogController.cs:78",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/Edit/{id}",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/CatalogController.cs:101",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Delete/{id}",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/CatalogController.cs:115",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/Delete/{id}",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/CatalogController.cs:135",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/items/{catalogItemId}/pic",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/PicController.cs:24",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/Brands",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/Api/BrandsController.cs:18",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/Brands/{id}",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/Api/BrandsController.cs:24",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/Files",
+      at: "eShopLegacyMVCSolution/eShopPorted/Controllers/Api/FilesController.cs:20",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/CatalogController.cs:25",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Details/{id}",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/CatalogController.cs:34",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Create",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/CatalogController.cs:53",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/Create",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/CatalogController.cs:71",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Edit/{id}",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/CatalogController.cs:98",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/Edit/{id}",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/CatalogController.cs:124",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Delete/{id}",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/CatalogController.cs:147",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/Delete/{id}",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/CatalogController.cs:167",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Account/SignIn",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/AccountController.cs:14",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Account/SignOut",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/AccountController.cs:23",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Account/EndSession",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/AccountController.cs:31",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/uploadimage",
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Controllers/PicController.cs:26",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Default.aspx",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/Default.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/About.aspx",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/About.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Contact.aspx",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/Contact.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Create.aspx",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/Catalog/Create.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Edit.aspx",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/Catalog/Edit.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Details.aspx",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/Catalog/Details.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Delete.aspx",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/Catalog/Delete.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Default",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/App_Start/RouteConfig.cs:11",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Default/index/{index}/size/{size}",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/App_Start/RouteConfig.cs:16",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Create",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/App_Start/RouteConfig.cs:21",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Edit/{id}",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/App_Start/RouteConfig.cs:26",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Details/{id}",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/App_Start/RouteConfig.cs:31",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Delete/{id}",
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/App_Start/RouteConfig.cs:36",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Default.aspx",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Default.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Create.aspx",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Catalog/Create.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Edit.aspx",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Catalog/Edit.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Details.aspx",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Catalog/Details.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Delete.aspx",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Catalog/Delete.aspx:1",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Default",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/App_Start/RouteConfig.cs:14",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Default/index/{index}/size/{size}",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/App_Start/RouteConfig.cs:19",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Create",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/App_Start/RouteConfig.cs:24",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Edit/{id}",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/App_Start/RouteConfig.cs:29",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Details/{id}",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/App_Start/RouteConfig.cs:34",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/Catalog/Delete/{id}",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/App_Start/RouteConfig.cs:39",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/Catalog/PicUploader.asmx/UploadImage",
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Catalog/PicUploader.asmx.cs:30",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/FindCatalogItem",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:15",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetCatalogBrands",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:17",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetCatalogItems",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:19",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetCatalogTypes",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:21",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetAvailableStock",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:23",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/CreateAvailableStock",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:25",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/CreateCatalogItem",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:27",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/UpdateCatalogItem",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:29",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/RemoveCatalogItem",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:31",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetDiscount",
+      at: "eShopLegacyNTier/src/eShopWCFService/ICatalogService.cs:33",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/FindCatalogItem",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:15",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetCatalogBrands",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:17",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetCatalogItems",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:19",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetCatalogTypes",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:21",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetAvailableStock",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:23",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/CreateAvailableStock",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:25",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/CreateCatalogItem",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:27",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/UpdateCatalogItem",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:29",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/RemoveCatalogItem",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:31",
+    }
+  - {
+      type: soap,
+      path: "ICatalogService/GetDiscount",
+      at: "eShopModernizedNTier/src/eShopWCFService/ICatalogService.cs:33",
+    }
+calls:
+  - {
+      path: "ICatalogService/CreateAvailableStock",
+      to: eShopWCFService,
+      at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:42",
+    }
+  - {
+      path: "ICatalogService/GetAvailableStock",
+      to: eShopWCFService,
+      at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:52",
+    }
+  - {
+      path: "ICatalogService/GetDiscount",
+      to: eShopWCFService,
+      at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:63",
+    }
+  - {
+      path: "ICatalogService/GetCatalogItems",
+      to: eShopWCFService,
+      at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:78",
+    }
+  - {
+      path: "ICatalogService/GetCatalogBrands",
+      to: eShopWCFService,
+      at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:101",
+    }
+  - {
+      path: "ICatalogService/GetCatalogTypes",
+      to: eShopWCFService,
+      at: "eShopLegacyNTier/src/eShopWinForms/Controllers/CatalogController.cs:127",
+    }
+  - {
+      path: "ICatalogService/CreateAvailableStock",
+      to: eShopWCFService,
+      at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:42",
+    }
+  - {
+      path: "ICatalogService/GetAvailableStock",
+      to: eShopWCFService,
+      at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:52",
+    }
+  - {
+      path: "ICatalogService/GetDiscount",
+      to: eShopWCFService,
+      at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:63",
+    }
+  - {
+      path: "ICatalogService/GetCatalogItems",
+      to: eShopWCFService,
+      at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:78",
+    }
+  - {
+      path: "ICatalogService/GetCatalogBrands",
+      to: eShopWCFService,
+      at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:101",
+    }
+  - {
+      path: "ICatalogService/GetCatalogTypes",
+      to: eShopWCFService,
+      at: "eShopModernizedNTier/src/eShopWinForms/Controllers/CatalogController.cs:127",
+    }
+stores:
+  - {
+      table: CatalogType,
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Models/CatalogDBContext.cs:31",
+    }
+  - {
+      table: CatalogBrand,
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Models/CatalogDBContext.cs:45",
+    }
+  - {
+      table: Catalog,
+      at: "eShopLegacyMVCSolution/src/eShopLegacyMVC/Models/CatalogDBContext.cs:59",
+    }
+  - {
+      table: CatalogType,
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/Models/CatalogDBContext.cs:31",
+    }
+  - {
+      table: CatalogBrand,
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/Models/CatalogDBContext.cs:45",
+    }
+  - {
+      table: Catalog,
+      at: "eShopLegacyWebFormsSolution/src/eShopLegacyWebForms/Models/CatalogDBContext.cs:59",
+    }
+  - {
+      table: CatalogType,
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Models/CatalogDBContext.cs:32",
+    }
+  - {
+      table: CatalogBrand,
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Models/CatalogDBContext.cs:46",
+    }
+  - {
+      table: Catalog,
+      at: "eShopModernizedMVCSolution/src/eShopModernizedMVC/Models/CatalogDBContext.cs:60",
+    }
+  - {
+      table: CatalogType,
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Models/CatalogDBContext.cs:31",
+    }
+  - {
+      table: CatalogBrand,
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Models/CatalogDBContext.cs:45",
+    }
+  - {
+      table: Catalog,
+      at: "eShopModernizedWebFormsSolution/src/eShopModernizedWebForms/Models/CatalogDBContext.cs:59",
+    }
+  - {
+      table: CatalogType,
+      at: "eShopLegacyMVCSolution/eShopPorted/Models/Config/CatalogTypeConfig.cs:10",
+    }
+  - {
+      table: CatalogBrand,
+      at: "eShopLegacyMVCSolution/eShopPorted/Models/Config/CatalogBrandConfig.cs:11",
+    }
+  - {
+      table: Catalog,
+      at: "eShopLegacyMVCSolution/eShopPorted/Models/Config/CatalogItemConfig.cs:11",
+    }
+  - { table: CatalogBrands, at: "eShopLegacyNTier/src/eShopWCFService/EntityModel.cs:18" }
+  - { table: CatalogItems, at: "eShopLegacyNTier/src/eShopWCFService/EntityModel.cs:19" }
+  - {
+      table: CatalogItemsStock,
+      at: "eShopLegacyNTier/src/eShopWCFService/Models/CatalogItemsStock.cs:10",
+    }
+  - { table: CatalogTypes, at: "eShopLegacyNTier/src/eShopWCFService/EntityModel.cs:21" }
+  - { table: DiscountItems, at: "eShopLegacyNTier/src/eShopWCFService/EntityModel.cs:22" }
+  - { table: CatalogBrands, at: "eShopModernizedNTier/src/eShopWCFService/EntityModel.cs:18" }
+  - { table: CatalogItems, at: "eShopModernizedNTier/src/eShopWCFService/EntityModel.cs:19" }
+  - {
+      table: CatalogItemsStock,
+      at: "eShopModernizedNTier/src/eShopWCFService/Models/CatalogItemsStock.cs:10",
+    }
+  - { table: CatalogTypes, at: "eShopModernizedNTier/src/eShopWCFService/EntityModel.cs:21" }
+  - { table: DiscountItems, at: "eShopModernizedNTier/src/eShopWCFService/EntityModel.cs:22" }
+deploys:
+  - {
+      platform: kubernetes,
+      at: "Kubernetes/eShopModernizedMVC-K8s/ServiceDeployments/eshop-modernized-mvc-k8s-services-deployment.yml:2",
+    }
+  - {
+      platform: service-fabric,
+      at: "ServiceFabric/eShopModernizedMVC-ServiceFabricApp/ApplicationPackageRoot/ApplicationManifest.xml:2",
+    }
+  - { platform: azure-arm, at: "ACI/aci.json:25" }
+  - { platform: docker-compose, at: "docker-compose.yml:3" }

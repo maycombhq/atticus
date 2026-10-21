@@ -5,3 +5,4 @@ export * from "./suites.js";
 export * from "./datasets.js";
 export * from "./report.js";
 export * from "./run.js";
+export * from "./bench.js";

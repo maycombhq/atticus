@@ -1,0 +1,122 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: spring-petclinic
+commit: 500158f732419217507c7656904b8e6aa1bcc0d6
+covers: [serves, calls, stores, deploys]
+notes: >-
+  A server-rendered Spring MVC monolith (Thymeleaf). It calls no other service. Tables are the
+  H2 schema (the MySQL and Postgres schemas have the same tables). docker-compose.yml only
+  starts local databases, so it isn't counted as a deployment.
+serves:
+  - {
+      type: rest,
+      method: GET,
+      path: /,
+      at: "src/main/java/org/springframework/samples/petclinic/system/WelcomeController.java:25",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /oups,
+      at: "src/main/java/org/springframework/samples/petclinic/system/CrashController.java:31",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /owners/new,
+      at: "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:72",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /owners/new,
+      at: "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:77",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /owners/find,
+      at: "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:89",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /owners,
+      at: "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:94",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/owners/{ownerId}/edit",
+      at: "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:148",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/owners/{ownerId}/edit",
+      at: "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:153",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/owners/{ownerId}",
+      at: "src/main/java/org/springframework/samples/petclinic/owner/OwnerController.java:178",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/owners/{ownerId}/pets/new",
+      at: "src/main/java/org/springframework/samples/petclinic/owner/PetController.java:100",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/owners/{ownerId}/pets/new",
+      at: "src/main/java/org/springframework/samples/petclinic/owner/PetController.java:107",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/owners/{ownerId}/pets/{petId}/edit",
+      at: "src/main/java/org/springframework/samples/petclinic/owner/PetController.java:139",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/owners/{ownerId}/pets/{petId}/edit",
+      at: "src/main/java/org/springframework/samples/petclinic/owner/PetController.java:144",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/owners/{ownerId}/pets/{petId}/visits/new",
+      at: "src/main/java/org/springframework/samples/petclinic/owner/VisitController.java:90",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/owners/{ownerId}/pets/{petId}/visits/new",
+      at: "src/main/java/org/springframework/samples/petclinic/owner/VisitController.java:97",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /vets.html,
+      at: "src/main/java/org/springframework/samples/petclinic/vet/VetController.java:45",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /vets,
+      at: "src/main/java/org/springframework/samples/petclinic/vet/VetController.java:72",
+    }
+calls: []
+stores:
+  - { table: vets, at: "src/main/resources/db/h2/schema.sql:10" }
+  - { table: specialties, at: "src/main/resources/db/h2/schema.sql:17" }
+  - { table: vet_specialties, at: "src/main/resources/db/h2/schema.sql:23" }
+  - { table: types, at: "src/main/resources/db/h2/schema.sql:30" }
+  - { table: owners, at: "src/main/resources/db/h2/schema.sql:36" }
+  - { table: pets, at: "src/main/resources/db/h2/schema.sql:46" }
+  - { table: visits, at: "src/main/resources/db/h2/schema.sql:58" }
+deploys:
+  - { platform: kubernetes, at: "k8s/petclinic.yml:16" }
