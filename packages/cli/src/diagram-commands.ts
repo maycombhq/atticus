@@ -60,8 +60,8 @@ export async function diagramRender(
   io: Output,
 ): Promise<number> {
   const format = o.format ?? "mermaid";
-  if (format !== "mermaid" && format !== "drawio") {
-    io.err(`Unknown format "${format}": use mermaid or drawio.`);
+  if (format !== "mermaid" && format !== "drawio" && format !== "json") {
+    io.err(`Unknown format "${format}": use mermaid, drawio or json.`);
     return 2;
   }
   if (/\.drawio(\.xml)?$/i.test(o.view)) {
@@ -99,7 +99,7 @@ export async function diagramRender(
     );
     return 2;
   }
-  if (name === "sequence" && format === "drawio") {
+  if (name === "sequence" && format !== "mermaid") {
     io.err("A sequence view renders as Mermaid only.");
     return 2;
   }
@@ -123,6 +123,11 @@ export async function diagramRender(
       `Nothing to draw: the catalog has nothing for the ${name} view${o.focus ? ` of ${o.focus}` : ""}.`,
     );
     return 1;
+  }
+  if (format === "json" && view.type !== "sequence") {
+    // The view itself, for the app's canvas: groups, nodes and edges.
+    await emit(root, JSON.stringify(view), o.out, io);
+    return 0;
   }
   await emit(
     root,

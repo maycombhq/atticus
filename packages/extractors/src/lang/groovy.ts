@@ -1,5 +1,6 @@
 import type Parser from "web-tree-sitter";
-import { parseSyntax } from "./syntax.js";
+import type { ParsedAt } from "./parsed.js";
+import { useSyntaxTree } from "./syntax.js";
 
 /**
  * Calls in a Groovy file (Jenkinsfile, build.gradle), from its syntax tree (ADR 0060): each
@@ -30,8 +31,12 @@ function stringValue(n: Node): string | undefined {
 const kids = (n: Node | null | undefined) =>
   (n?.namedChildren ?? []).filter((c) => !/comment$/.test(c.type));
 
-export async function groovyCalls(text: string): Promise<GroovyCall[]> {
-  const tree = await parseSyntax("groovy", text);
+export async function groovyCalls(text: string, where?: ParsedAt): Promise<GroovyCall[]> {
+  const read = (t: string) => useSyntaxTree("groovy", t, (tree) => callsOf(tree), where);
+  return where?.cache ? where.cache.getAsync("groovy-calls", where.path, text, read) : read(text);
+}
+
+function callsOf(tree: Parser.Tree): GroovyCall[] {
   const out: { call: GroovyCall; at: number }[] = [];
   const walk = (n: Node) => {
     if (n.type === "method_invocation" || n.type === "juxt_function_call") {
@@ -66,6 +71,5 @@ export async function groovyCalls(text: string): Promise<GroovyCall[]> {
     for (const c of kids(n)) walk(c);
   };
   walk(tree.rootNode);
-  tree.delete();
   return out.sort((a, b) => a.at - b.at).map((x) => x.call);
 }

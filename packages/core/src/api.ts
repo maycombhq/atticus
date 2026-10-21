@@ -669,6 +669,29 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400],
     },
   },
+  "/api/diagram/{view}/graph": {
+    get: {
+      id: "getDiagramGraph",
+      summary: "A catalog view's groups, nodes and edges, for the app's canvas",
+      tag: "views",
+      params: [
+        p("view", {
+          schema: { type: "string", enum: ["context", "container", "data", "event"] },
+        }),
+        q("focus", str, "The system, for the container view"),
+      ],
+      ok: {
+        status: 200,
+        schema: {
+          type: "object",
+          required: ["view"],
+          properties: { view: { type: "object" } },
+        },
+        description: "OK",
+      },
+      errors: [400, 422],
+    },
+  },
   "/api/ask": {
     get: {
       id: "ask",

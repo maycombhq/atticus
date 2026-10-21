@@ -8,3 +8,4 @@ export * from "./coverage.js";
 export * from "./freshness.js";
 export * from "./feature-checks.js";
 export * from "./glossary-check.js";
+export * from "./domain-profile.js";

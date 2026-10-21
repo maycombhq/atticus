@@ -205,7 +205,7 @@ async function appsettings(repo: RepoHandle): Promise<Map<string, ConfigValue>> 
   );
   const out = new Map<string, ConfigValue>();
   for (const f of files) {
-    const flat = flattenYaml(stripJsonComments(await repo.readText(f)), f);
+    const flat = flattenYaml(stripJsonComments(await repo.readText(f)), f, repo.parseCache);
     for (const [k, v] of flat) if (!out.has(k.toLowerCase())) out.set(k.toLowerCase(), v);
   }
   return out;
@@ -242,11 +242,14 @@ export function stripJsonComments(text: string): string {
 const configKey = (k: string) => k.replace(/__/g, ":").replace(/:/g, ".").toLowerCase();
 const isConfig = (recv: string) => /(^|\.)_?config(uration)?$/i.test(recv);
 
-/** Route template tokens: [controller] and [action], lower-cased so callers' paths match. */
+/**
+ * Route template tokens: [controller] and [action], lower-cased so callers' paths match. An
+ * action's Async suffix is dropped, as ASP.NET Core does by default (GetUserAsync → getuser).
+ */
 const tokens = (tpl: string, controller: string, action: string) =>
   tpl
     .replace(/\[controller\]/gi, controller.toLowerCase())
-    .replace(/\[action\]/gi, action.toLowerCase());
+    .replace(/\[action\]/gi, action.replace(/(?<=.)Async$/, "").toLowerCase());
 
 const combine = (prefix: string, tpl: string) =>
   /^~?\//.test(tpl) ? joinPath(tpl.replace(/^~/, "")) : joinPath(prefix, tpl);
@@ -260,7 +263,7 @@ const combine = (prefix: string, tpl: string) =>
  */
 export const dotnetExtractor = defineExtractor({
   id: "dotnet",
-  version: "0.1.0",
+  version: "0.1.1",
   claims: ["**/*.cs", "**/*.csproj", "**/*.sln", "**/appsettings*.json"],
   async *scan(repo, ctx) {
     const em = new Emitter(repo, ctx);
@@ -270,7 +273,12 @@ export const dotnetExtractor = defineExtractor({
     const env = await dotenv(repo);
     const files: { path: string; src: SourceFile; ev: Evaluator }[] = [];
     for (const path of await listSources(repo, ["**/*.cs"])) {
-      const src = await SourceFile.parse(path, await repo.readText(path), "csharp");
+      const src = await SourceFile.parse(
+        path,
+        await repo.readText(path),
+        "csharp",
+        repo.parseCache,
+      );
       const ev = new Evaluator(src, {
         index: (recv, key) =>
           isConfig(recv) ? (config.get(configKey(key))?.value ?? unresolved(key)) : undefined,

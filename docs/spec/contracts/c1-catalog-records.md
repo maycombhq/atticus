@@ -91,14 +91,15 @@ Every record kind has these fields.
 
 ## Component
 
-| Field       | Type              | Required | Values                                                 | Description                                                                                                                                                  |
-| ----------- | ----------------- | -------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `system`    | string (RecordId) | yes      |                                                        | Stable record id. Lowercase slug, safe as a file name on Linux, macOS and Windows (no ":" or "/"), so every record can live in its own file named by its id. |
-| `repo`      | string            | no       |                                                        |                                                                                                                                                              |
-| `path`      | string            | no       |                                                        |                                                                                                                                                              |
-| `type`      | string            | yes      |                                                        | What the component is. Free text; the documented values are COMPONENT_TYPES (ADR 0040).                                                                      |
-| `runtime`   | string            | no       |                                                        | Where it runs today, e.g. kubernetes, openshift, cloud-run, vm.                                                                                              |
-| `migration` | enum              | no       | `not-started`, `in-progress`, `done`, `not-applicable` |                                                                                                                                                              |
+| Field       | Type                | Required | Values                                                 | Description                                                                                                                                                                 |
+| ----------- | ------------------- | -------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system`    | string (RecordId)   | yes      |                                                        | Stable record id. Lowercase slug, safe as a file name on Linux, macOS and Windows (no ":" or "/"), so every record can live in its own file named by its id.                |
+| `repo`      | string              | no       |                                                        |                                                                                                                                                                             |
+| `path`      | string              | no       |                                                        |                                                                                                                                                                             |
+| `type`      | string              | yes      |                                                        | What the component is. Free text; the documented values are COMPONENT_TYPES (ADR 0040).                                                                                     |
+| `runtime`   | string              | no       |                                                        | Where it runs today, e.g. kubernetes, openshift, cloud-run, vm.                                                                                                             |
+| `migration` | enum                | no       | `not-started`, `in-progress`, `done`, `not-applicable` |                                                                                                                                                                             |
+| `uses`      | string (RecordId)[] | no       |                                                        | Components it builds on (ADR 0068): the modules of the same repo its build file depends on (a pom's dependencies, a package.json's packages). Left out when there are none. |
 
 ## Endpoint
 

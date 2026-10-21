@@ -141,3 +141,42 @@ describe("atticus onboard eval (ADR 0059)", () => {
     );
   }, 600_000);
 });
+
+describe("atticus scan review (ADR 0072)", () => {
+  it("finds what the scan couldn't read, takes the assistant's verdicts and rule, and after accept the rescan reads it", async () => {
+    const { scanReview } = await import("../src/onboard-commands.js");
+    const { stringify } = await import("yaml");
+    const root = await estate();
+    expect(await interfaces(root)).not.toContain("ledger-svc gateway");
+    // Deterministic first: the gaps alone.
+    const g = capture();
+    expect(
+      await scanReview(
+        root,
+        "gw-kong",
+        { gapsOnly: true },
+        { runtime: new MockRuntime(() => "", { now: () => NOW }) },
+        g.io,
+      ),
+    ).toBe(0);
+    expect(g.out.join("\n")).toContain("g1 unread-file kong/kong.yml");
+    // Then the assistant's verdicts and rule, checked.
+    const dialect = (await reference()).replace("name: tide-kong", "name: gw-kong-review");
+    const runtime = new MockRuntime(
+      () => stringify({ verdicts: [{ gap: "g1", verdict: "rule", why: "Kong routes" }], dialect }),
+      { now: () => NOW },
+    );
+    const c = capture();
+    expect(await scanReview(root, "gw-kong", {}, { runtime, now: NOW }, c.io)).toBe(0);
+    const text = c.out.join("\n");
+    expect(text).toContain("g1 rule: Kong routes");
+    expect(text).toContain("atticus onboard accept gw-kong-review");
+    expect(await readFile(join(root, "proposals/reviews/gw-kong.md"), "utf8")).toContain(
+      "| g1 | unread-file | kong/kong.yml | rule | Kong routes |",
+    );
+    // Nothing applies until a person accepts; then deterministic again, with the rule.
+    expect(await interfaces(root)).not.toContain("ledger-svc gateway");
+    expect(await onboardAccept(root, "gw-kong-review", {}, capture().io)).toBe(0);
+    expect(await interfaces(root)).toContain("ledger-svc gateway");
+  });
+});

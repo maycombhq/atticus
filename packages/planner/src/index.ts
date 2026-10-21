@@ -10,3 +10,4 @@ export * from "./bar.js";
 export * from "./sync.js";
 export * from "./templates.js";
 export * from "./adapters.js";
+export * from "./draft.js";

@@ -4,6 +4,43 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Scan review
+
+- `atticus scan review <repo>` (ADR 0072): the gaps the last scan left (files no rule reads, unresolved calls and data access, modules where it found nothing) go to your assistant, which gives each a verdict (a rule can read it, an Atticus reader misreads it, a vendor, ignore, or a person must say) and writes a dialect for the readable ones. Every verdict and the dialect are checked against the repo before anything is written; a person accepts the dialect and the next scan reads with it. `--gaps` lists the gaps alone.
+- The SQL reader no longer takes `IS DISTINCT FROM`, a CTE's name or `information_schema` tables as tables (found by the first scan review).
+
+### Domain profiles from the catalog
+
+- `atticus domain profile <system> [--out file]` (ADR 0071): a system's domain profile filled from the catalog: components and repos, interfaces with their consumers, data with who reads and writes it, related domains, features, and an evidence register of every claim. What code can't tell (owners, controls, retention) is Unknown and asked as an open question. An organisation's own layout goes in `org-pack/templates/domain-profile.md`.
+- ASP.NET Core actions named `GetUserAsync` route as `getuser`, as ASP.NET Core does by default.
+
+### Draft a change from its brief and the map
+
+- `atticus change draft <change>` (ADR 0070): your assistant drafts the OpenSpec proposal, spec delta and interfaces from the brief and the part of the catalog the change is about, picked without AI. Atticus checks the draft (every system, call and interface is in the catalog or marked new, every requirement has a scenario) and sends problems back before anything is written.
+- `atticus plan stories --draft` writes draft stories before the design is approved.
+- In the app, calls inside one box are counted on it instead of drawn as a loop, and every graph draws on the layered canvas.
+
+### A repo's own HTTP helpers are followed
+
+- The frontend reader follows the helpers a repo writes around fetch and axios (ADR 0069): `post("reports")` through `post(path)` → `http(\`/api/${path}\`, { method: "POST" })`→`fetch(BASE + path)`reads as`POST /api/reports`, verified from code, across files through relative imports. An app with its own thin client now gives its calls, so its API's endpoints are entry points and features are found.
+- Each module's component takes its type from its own build file: a React module in a Maven repo is `frontend`.
+- The command center's system map draws the estate's context view, or the one system's components and links, on the same canvas as Diagrams.
+
+### Diagrams draw the view; modules show what they build on
+
+- The Diagrams screen draws the chosen view itself (ADR 0068): Data shows each component's reads and writes to the tables inside their store, Container a system's components and their links, with a layered layout where no label sits on another. Pointing at a box lights its edges. `GET /api/diagram/{view}/graph` and `atticus diagram render <view> --format json` give a view's groups, nodes and edges.
+- `Component.uses` (C1, optional): the modules of the same repo a module's pom or package.json depends on. The container view draws them as `uses` edges.
+- A JPQL `@Query` is read against the entity's table (`@Table`, `@Entity(name)`, else Spring's naming), not the entity's name; a PostgreSQL or MySQL upsert and `SELECT ... FOR UPDATE` no longer give a table called `set` or similar.
+
+### Discover: a clone's subfolders are its modules
+
+- `atticus repos discover <folder>` on a folder that is itself a Git clone proposes one repo, with each subfolder that builds (a pom, a package.json, a pyproject and so on) as a module with its own component (ADR 0057). A clone inside it stays a repo of its own. A folder of clones is read as before. Discover now writes `modules` into the manifest.
+
+### Shared parse cache
+
+- Each file is read and parsed once per repo scan and shared by every reader (ADR 0067): built-in extractors, dialects and their rules, the Helm and Kustomize builders, Terraform and the framework survey. Tree-sitter trees, JavaFiles, SourceFiles, YAML documents, flattened configuration, HCL, XML and Groovy calls are cached, keyed by path and content. Values are frozen, so a reader that changed one fails instead of changing another's; the cache is bounded (8M characters of plain values, 1M of syntax trees, 16M of file text, least recently used first out) and frees every tree when the repo's scan ends, on error too. The SDK's `RepoHandle` gains an optional `parseCache` (`createParseCache`, `withParseCache`); handles without one work as before. Records are byte-for-byte unchanged. On the M1 exit estate parses per file went from 2.9 to 1 and the first scan of 300 repos from 59 to 90 s to 32 to 41 s.
+- Tree-sitter grammars run as baseline WebAssembly code: V8 compiling them to optimised code took up to 2.2 GB of transient memory per process and killed test workers under load ("Fatal process out of memory: Zone", exit 0x80000003). The `frameworks-cli` test worker now peaks at 184 MB instead of 2.6 GB.
+
 ### Onboarding framework models
 
 - `atticus onboard framework <name> --from <source|jar|tgz> [--users <repo>,...]` (ADR 0066): the learner reads the house framework first, then your organisation's assistant drafts only what it couldn't (base URLs of service ids, wrapper methods whose parameters don't name the method or path, what pipeline templates and Jenkins shared-library steps do), with the framework kit as instructions and the code as data. Checks decide: valid C6, every entry with a source, nothing read from code changed by the draft, drafted entries citing a document or a person, its tests pass, and the repos that use it give something with it they don't without it and no invalid record. Failures go back to the next attempt (`--attempts`, default 3). A passing model is a proposal in `proposals/frameworks/`, listing what it reads per repo, which records came from drafted entries, and entries that change nothing. With AI off or `--no-ai`, the learned model alone is checked.

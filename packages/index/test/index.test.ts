@@ -148,6 +148,48 @@ describe("graph", () => {
     expect(graph(ix, { focus: "nope" })).toEqual({ nodes: [], edges: [] });
     ix.close();
   });
+
+  it("draws what a module builds on as a uses edge (ADR 0068)", async () => {
+    const comp = (id: string, uses?: string[]) => {
+      const p = parseRecord({
+        schemaVersion: 2,
+        kind: "Component",
+        id,
+        status: "current",
+        confidence: "verified",
+        system: "ledger",
+        type: "java",
+        evidence: [
+          {
+            repo: "forge-ledger",
+            commit: "0".repeat(40),
+            extractor: "component@1.2.0",
+            source: "config",
+            path: `${id}/pom.xml`,
+          },
+        ],
+        ...(uses ? { uses } : {}),
+      });
+      if (!p.ok) throw new Error(id);
+      return p.record;
+    };
+    const ix = await openIndex(
+      await forgeRoot([comp("ledger-rules", ["ledger-core"]), comp("ledger-core")]),
+    );
+    expect(graph(ix).edges.find((e) => e.via === "uses")).toEqual({
+      id: "uses.ledger-rules.ledger-core",
+      from: "ledger-rules",
+      to: "ledger-core",
+      via: "uses",
+      confidence: "verified",
+      status: "current",
+    });
+    // A focus follows it like any other link.
+    expect(graph(ix, { focus: "ledger-core", depth: 1 }).nodes.map((n) => n.id)).toContain(
+      "ledger-rules",
+    );
+    ix.close();
+  });
 });
 
 describe("impact", () => {

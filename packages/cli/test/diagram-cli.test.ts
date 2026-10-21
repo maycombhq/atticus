@@ -43,6 +43,31 @@ async function forgeRoot(): Promise<string> {
 }
 
 describe("atticus diagram render", () => {
+  it("prints a catalog view as JSON for the app's canvas: its groups, nodes and edges", async () => {
+    const root = await forgeRoot();
+    const c = capture();
+    expect(await diagramRender(root, { view: "data", format: "json" }, c.io)).toBe(0);
+    const v = JSON.parse(c.out.join("\n")) as {
+      type: string;
+      groups: { id: string }[];
+      nodes: { id: string; group?: string }[];
+      edges: { from: string; to: string; label: string }[];
+    };
+    expect(v.type).toBe("data");
+    expect(v.edges.length).toBeGreaterThan(0);
+    // Every edge joins two nodes of the view, and every grouped node's group is drawn.
+    const ids = new Set(v.nodes.map((n) => n.id));
+    for (const e of v.edges) expect([ids.has(e.from), ids.has(e.to)]).toEqual([true, true]);
+    const groups = new Set(v.groups.map((g) => g.id));
+    for (const n of v.nodes) if (n.group) expect(groups.has(n.group)).toBe(true);
+    // A sequence view has no canvas form.
+    const s = capture();
+    expect(
+      await diagramRender(root, { view: "sequence", focus: "portal-ui", format: "json" }, s.io),
+    ).toBe(2);
+    expect(s.err.join("\n")).toMatch(/Mermaid only/);
+  });
+
   it("prints a catalog view as Mermaid", async () => {
     const root = await forgeRoot();
     const c = capture();
@@ -233,5 +258,30 @@ describe("atticus stub serve (everything before listen)", () => {
       await stubServe(root, "specs/accounts-openapi.yaml", { port: 70000 }, capture().io, listen),
     ).toBe(2);
     expect(got.handler).toBeUndefined();
+  });
+});
+
+describe("atticus domain profile", () => {
+  it("prints a system's profile from the catalog, writes it with --out, and uses the org pack's template", async () => {
+    const { domainProfileCommand } = await import("../src/domain-commands.js");
+    const root = await forgeRoot();
+    const c = capture();
+    expect(await domainProfileCommand(root, "ledger", {}, c.io)).toBe(0);
+    expect(c.out[0]).toBe("# Ledger");
+    expect(c.out.join("\n")).toContain("| POST /transfers | API | ledger-api |");
+    const w = capture();
+    expect(await domainProfileCommand(root, "ledger", { out: "domains/ledger.md" }, w.io)).toBe(0);
+    expect(await readFile(join(root, "domains/ledger.md"), "utf8")).toMatch(/^# Ledger\n/);
+    await mkdir(join(root, "org-pack/templates"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack/templates/domain-profile.md"),
+      "# {{name}} (ours)\n\n{{systems}}\n",
+    );
+    const t = capture();
+    expect(await domainProfileCommand(root, "ledger", {}, t.io)).toBe(0);
+    expect(t.out[0]).toBe("# Ledger (ours)");
+    const bad = capture();
+    expect(await domainProfileCommand(root, "nope", {}, bad.io)).toBe(1);
+    expect(bad.err.join("\n")).toContain('No system "nope"');
   });
 });

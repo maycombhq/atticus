@@ -71,7 +71,9 @@ function checkShapes(recs: CatalogRecord[], component: string, extractor: string
       expect(r.confidence).toBe("inferred");
     }
     for (const e of r.evidence) {
-      expect(e.extractor).toBe(`${extractor}@0.1.0`);
+      expect(e.extractor).toBe(
+        `${extractor}@${BACKEND_EXTRACTORS.find((b) => b.id === extractor)!.version}`,
+      );
       expect(e.repo).toBeDefined();
       expect(e.commit).toBe(SHA);
     }
@@ -560,7 +562,7 @@ describe("node", () => {
       .sort();
     expect(calls).toEqual([
       "GET http://ledger-api.forge.internal/accounts/{id}/balance @src/routes/accounts.js:13:caller node@0.1.0",
-      "POST http://audit-svc.forge.internal/audit/events @src/routes/accounts.js:19:caller frontend@1.0.0",
+      "POST http://audit-svc.forge.internal/audit/events @src/routes/accounts.js:19:caller frontend@1.1.0",
       "POST http://kyc-svc.forge.internal/checks @src/routes/accounts.js:18:caller node@0.1.0",
     ]);
     expect(recs.filter((r) => r.kind === "Component").map(ev)).toEqual(["package.json::"]);
@@ -687,9 +689,9 @@ server.route([{ method: "GET", path: "/a/{id}", handler }, { method: ["POST", "P
 });
 
 describe("backend extractors", () => {
-  it("are versioned 0.1.0 with stable ids", () => {
+  it("are versioned with stable ids", () => {
     expect(BACKEND_EXTRACTORS.map((x) => `${x.id}@${x.version}`)).toEqual([
-      "dotnet@0.1.0",
+      "dotnet@0.1.1",
       "go@0.1.0",
       "node@0.1.0",
       "python@0.1.0",
@@ -764,5 +766,26 @@ const cart = await fetch("/api/cart");
       "Unresolved svc http-call GET /api/rates @src/api.ts:7:caller",
       "Unresolved svc http-call POST /api/balance/{id} @src/api.ts:4:caller",
     ]);
+  });
+});
+
+describe("ASP.NET Core action names", () => {
+  it("drops the Async suffix from [action], as ASP.NET Core does by default", async () => {
+    const repo = mem({
+      "Api/StatementsController.cs": `using Microsoft.AspNetCore.Mvc;
+[ApiController]
+[Route("api/[controller]/[action]")]
+public class StatementsController : ControllerBase
+{
+    [HttpGet]
+    public async Task<IActionResult> GetLatestAsync() => Ok();
+    [HttpPost]
+    public IActionResult Close() => Ok();
+}`,
+    });
+    const paths = golden(await scan(repo, [dotnetExtractor], { component: "a" }))
+      .filter((l) => l.startsWith("Endpoint"))
+      .map((l) => l.split(" ").slice(2, 4).join(" "));
+    expect(paths).toEqual(["GET /api/statements/getlatest", "POST /api/statements/close"]);
   });
 });

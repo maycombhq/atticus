@@ -86,7 +86,7 @@ export const webhooksExtractor = defineExtractor({
         !/webhooks/.test(text)
       )
         continue;
-      const doc = readYamlDocs(text)?.[0];
+      const doc = readYamlDocs(text, { cache: repo.parseCache, path })?.[0];
       const hooks = isObj(doc?.value) ? doc.value.webhooks : undefined;
       if (!doc || !isObj(hooks)) continue;
       for (const [name, item] of Object.entries(hooks)) {
@@ -115,42 +115,53 @@ export const webhooksExtractor = defineExtractor({
       const text = await read(repo, ctx, path);
       const lang = syntaxLanguageOf(path);
       if (text === undefined || !lang || !/hook/i.test(text)) continue;
-      const found = await withTree(lang, text, (root) => {
-        const out: { callback: string; line: number; registrar?: string }[] = [];
-        for (const n of descendants(root)) {
-          const keyNode =
-            n.type === "pair"
-              ? n.childForFieldName("key")
-              : n.type === "keyword_argument"
-                ? n.childForFieldName("name")
-                : null;
-          const key = n.type === "pair" ? keyOf(n) : keyNode?.text;
-          const callback = stringValue(n.childForFieldName("value"), true);
-          if (!keyNode || !key || !CALLBACK_KEYS.has(key) || !callback || !HTTP_URL.test(callback))
-            continue;
-          // The outermost call the key is written in, within its function.
-          const call = enclosingCalls(n).at(-1);
-          if (!call) continue;
-          const callee = call.path?.join(".") ?? call.name;
-          const before = [...descendants(call.node)].filter(
-            (x) => x.endIndex <= keyNode.startIndex,
-          );
-          const said = before
-            .filter((x) => x.childCount === 0 || isString(x))
-            .map((x) => x.text)
-            .join(" ");
-          if (!/hook/i.test(`${callee} ${said}`)) continue;
-          const url = before
-            .filter(isString)
-            .map((x) => stringValue(x, true))
-            .find((v) => v !== undefined && HTTP_URL.test(v));
-          const root0 = callee.split(".")[0]!;
-          const registrar =
-            url ?? (GENERIC.has(root0.toLowerCase()) ? undefined : root0.toLowerCase());
-          out.push({ callback, line: lineOf(keyNode), ...(registrar ? { registrar } : {}) });
-        }
-        return out;
-      });
+      const found = await withTree(
+        lang,
+        text,
+        (root) => {
+          const out: { callback: string; line: number; registrar?: string }[] = [];
+          for (const n of descendants(root)) {
+            const keyNode =
+              n.type === "pair"
+                ? n.childForFieldName("key")
+                : n.type === "keyword_argument"
+                  ? n.childForFieldName("name")
+                  : null;
+            const key = n.type === "pair" ? keyOf(n) : keyNode?.text;
+            const callback = stringValue(n.childForFieldName("value"), true);
+            if (
+              !keyNode ||
+              !key ||
+              !CALLBACK_KEYS.has(key) ||
+              !callback ||
+              !HTTP_URL.test(callback)
+            )
+              continue;
+            // The outermost call the key is written in, within its function.
+            const call = enclosingCalls(n).at(-1);
+            if (!call) continue;
+            const callee = call.path?.join(".") ?? call.name;
+            const before = [...descendants(call.node)].filter(
+              (x) => x.endIndex <= keyNode.startIndex,
+            );
+            const said = before
+              .filter((x) => x.childCount === 0 || isString(x))
+              .map((x) => x.text)
+              .join(" ");
+            if (!/hook/i.test(`${callee} ${said}`)) continue;
+            const url = before
+              .filter(isString)
+              .map((x) => stringValue(x, true))
+              .find((v) => v !== undefined && HTTP_URL.test(v));
+            const root0 = callee.split(".")[0]!;
+            const registrar =
+              url ?? (GENERIC.has(root0.toLowerCase()) ? undefined : root0.toLowerCase());
+            out.push({ callback, line: lineOf(keyNode), ...(registrar ? { registrar } : {}) });
+          }
+          return out;
+        },
+        { cache: repo.parseCache, path },
+      );
       for (const { callback, line, registrar } of found) {
         const cbPath = /^https?:\/\/[^/]+(\/[^?#]*)?/.exec(callback)?.[1] ?? "/";
         add(

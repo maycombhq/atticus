@@ -1,5 +1,5 @@
 import type Parser from "web-tree-sitter";
-import { parseSyntax, type SyntaxLanguage } from "./syntax.js";
+import { useSyntaxTree, type ParsedAt, type SyntaxLanguage } from "./syntax.js";
 
 /**
  * A small call layer over syntax trees (ADR 0060) that the built-in readers share: calls and
@@ -43,18 +43,17 @@ export function* descendants(n: Node): Generator<Node> {
   }
 }
 
-/** The syntax tree of a file, handed to `use` and freed after. */
+/**
+ * The syntax tree of a file, handed to `use`: the repo scan's shared tree when `at` gives a parse
+ * cache (ADR 0067), else one parsed here and freed after. `use` must not keep nodes.
+ */
 export async function withTree<T>(
   lang: SyntaxLanguage,
   text: string,
   use: (root: Node) => T,
+  at?: ParsedAt,
 ): Promise<T> {
-  const tree = await parseSyntax(lang, text);
-  try {
-    return use(tree.rootNode);
-  } finally {
-    tree.delete();
-  }
+  return useSyntaxTree(lang, text, (tree) => use(tree.rootNode), at);
 }
 
 const TYPE_ARGS = /^(type_arguments|type_argument_list)$/;

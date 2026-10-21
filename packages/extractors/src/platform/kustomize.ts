@@ -1,6 +1,7 @@
 import { normalize, type ReadText, type Source } from "./helm.js";
 import { arr, at, dirOf, envOf, isObj, str, type Obj } from "./util.js";
 import { readYamlDocs, type PathSeg, type YamlDoc } from "./yamldoc.js";
+import type { ParseCache } from "@maycombhq/sdk";
 
 /**
  * Kustomize read without running kustomize (ADR 0064). Every kustomization no other one uses
@@ -125,6 +126,8 @@ function ensure(o: Obj, ...path: string[]): Obj {
 export async function buildKustomizations(
   paths: readonly string[],
   read: ReadText,
+  /** The repo scan's parse cache (ADR 0067): each file parsed once. */
+  cache?: ParseCache,
 ): Promise<KustomizeResult> {
   const result: KustomizeResult = { overlays: [], warnings: [], consumed: new Set() };
   const all = new Set(paths);
@@ -136,7 +139,7 @@ export async function buildKustomizations(
   const docsOf = async (file: string) => {
     if (!docs.has(file)) {
       const text = await read(file);
-      const d = text === undefined ? undefined : readYamlDocs(text);
+      const d = text === undefined ? undefined : readYamlDocs(text, { cache, path: file });
       if (text !== undefined && !d)
         result.warnings.push({
           message: "Could not read this file as YAML; skipped it.",

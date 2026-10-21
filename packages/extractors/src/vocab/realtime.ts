@@ -102,7 +102,7 @@ export const realtimeExtractor = defineExtractor({
         )
       )
         continue;
-      const file = await parseJava(text, path);
+      const file = await parseJava(text, path, repo.parseCache);
       javaFiles.push({ path, file });
       const prefix = file.calls.find(
         (c) => c.method === "setApplicationDestinationPrefixes" && c.args[0] !== undefined,
@@ -144,79 +144,95 @@ export const realtimeExtractor = defineExtractor({
       const text = await read(repo, ctx, path);
       const lang = syntaxLanguageOf(path);
       if (text === undefined || !lang || !/\bws\b|socket\.io|event-stream/.test(text)) continue;
-      await withTree(lang, text, (root) => {
-        const strings = new Set<string>();
-        for (const n of descendants(root)) {
-          const v = stringValue(n);
-          if (v !== undefined) strings.add(v);
-        }
-        const calls = callsIn(root);
-        /** The `path` option of an options object among a call's arguments. */
-        const pathOption = (c: CodeCall) => {
-          for (const a of c.args) {
-            const v = stringValue(objectProperty(a, "path"), true);
-            if (v !== undefined) return v;
+      await withTree(
+        lang,
+        text,
+        (root) => {
+          const strings = new Set<string>();
+          for (const n of descendants(root)) {
+            const v = stringValue(n);
+            if (v !== undefined) strings.add(v);
           }
-          return undefined;
-        };
-        if (strings.has("ws"))
+          const calls = callsIn(root);
+          /** The `path` option of an options object among a call's arguments. */
+          const pathOption = (c: CodeCall) => {
+            for (const a of c.args) {
+              const v = stringValue(objectProperty(a, "path"), true);
+              if (v !== undefined) return v;
+            }
+            return undefined;
+          };
+          if (strings.has("ws"))
+            for (const c of calls) {
+              const p = c.path?.join(".") ?? "";
+              if (!c.isNew || !/^(WebSocketServer|WebSocket\.Server|\w+\.Server)$/.test(p))
+                continue;
+              const v = c.args[0]?.type === "object" ? pathOption(c) : undefined;
+              if (v) add("websocket", v, path, lineOf(c.node));
+            }
+          if (strings.has("socket.io")) {
+            for (const c of calls)
+              if (c.isNew && c.path?.join(".") === "Server")
+                add("websocket", pathOption(c) ?? "/socket.io", path, lineOf(c.node));
+            for (const c of calls) {
+              const ns = stringValue(c.args[0], true);
+              if (c.name === "of" && c.receiver && ns?.startsWith("/"))
+                add("websocket", ns, path, c.line);
+            }
+          }
+          // An Express-style GET route whose handler sends an event stream.
           for (const c of calls) {
-            const p = c.path?.join(".") ?? "";
-            if (!c.isNew || !/^(WebSocketServer|WebSocket\.Server|\w+\.Server)$/.test(p)) continue;
-            const v = c.args[0]?.type === "object" ? pathOption(c) : undefined;
-            if (v) add("websocket", v, path, lineOf(c.node));
+            const route = stringValue(c.args[0], true);
+            if (
+              c.name !== "get" ||
+              !/^(app|router|server)$/.test(c.receiver?.text ?? "") ||
+              !route?.startsWith("/")
+            )
+              continue;
+            const sse = c.args.slice(1).some((a) => [...descendants(a)].some(mentionsSse));
+            if (sse) add("sse", route, path, lineOf(c.node), "GET");
           }
-        if (strings.has("socket.io")) {
-          for (const c of calls)
-            if (c.isNew && c.path?.join(".") === "Server")
-              add("websocket", pathOption(c) ?? "/socket.io", path, lineOf(c.node));
-          for (const c of calls) {
-            const ns = stringValue(c.args[0], true);
-            if (c.name === "of" && c.receiver && ns?.startsWith("/"))
-              add("websocket", ns, path, c.line);
-          }
-        }
-        // An Express-style GET route whose handler sends an event stream.
-        for (const c of calls) {
-          const route = stringValue(c.args[0], true);
-          if (
-            c.name !== "get" ||
-            !/^(app|router|server)$/.test(c.receiver?.text ?? "") ||
-            !route?.startsWith("/")
-          )
-            continue;
-          const sse = c.args.slice(1).some((a) => [...descendants(a)].some(mentionsSse));
-          if (sse) add("sse", route, path, lineOf(c.node), "GET");
-        }
-      });
+        },
+        { cache: repo.parseCache, path },
+      );
     }
 
     // ---- ASP.NET SignalR
     for (const path of await sources(repo, CS)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !/MapHub/.test(text)) continue;
-      await withTree("c_sharp", text, (root) => {
-        for (const c of callsIn(root)) {
-          const hub = stringValue(c.args[0]);
-          if (c.name === "MapHub" && c.typeArgs.length === 1 && hub)
-            add("websocket", hub, path, c.line);
-        }
-      });
+      await withTree(
+        "c_sharp",
+        text,
+        (root) => {
+          for (const c of callsIn(root)) {
+            const hub = stringValue(c.args[0]);
+            if (c.name === "MapHub" && c.typeArgs.length === 1 && hub)
+              add("websocket", hub, path, c.line);
+          }
+        },
+        { cache: repo.parseCache, path },
+      );
     }
 
     // ---- Python
     for (const path of await sources(repo, PY)) {
       const text = await read(repo, ctx, path);
       if (text === undefined || !/\.websocket\s*\(/.test(text)) continue;
-      await withTree("python", text, (root) => {
-        for (const n of descendants(root)) {
-          if (n.type !== "decorator") continue;
-          const c = kids(n)[0] ? callOf(kids(n)[0]!) : undefined;
-          const p = stringValue(c?.args[0]);
-          if (c?.name === "websocket" && c.path?.length === 2 && p?.startsWith("/"))
-            add("websocket", p, path, lineOf(n));
-        }
-      });
+      await withTree(
+        "python",
+        text,
+        (root) => {
+          for (const n of descendants(root)) {
+            if (n.type !== "decorator") continue;
+            const c = kids(n)[0] ? callOf(kids(n)[0]!) : undefined;
+            const p = stringValue(c?.args[0]);
+            if (c?.name === "websocket" && c.path?.length === 2 && p?.startsWith("/"))
+              add("websocket", p, path, lineOf(n));
+          }
+        },
+        { cache: repo.parseCache, path },
+      );
     }
 
     yield* out.values();

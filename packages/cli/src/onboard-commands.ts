@@ -8,6 +8,8 @@ import {
   draftDialect,
   draftFramework,
   evalOnboarding,
+  findGaps,
+  reviewRepo,
   formatEval,
   learnFrameworkFrom,
   loadEvalCases,
@@ -32,6 +34,7 @@ import {
 import { fsRepo } from "@maycombhq/sdk";
 import { baseClonePath } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
+import { loadCatalog } from "./diagram-commands.js";
 
 /**
  * atticus onboard (ADR 0059): the organisation's assistant drafts a dialect for a repo Atticus
@@ -543,5 +546,106 @@ export async function onboardFrameworkAccept(
   io.out(
     `Accepted: org-pack/frameworks/${name}.yaml. Scans read every repo that imports ${model.packages.join(", ")} through it. Commit the org pack for review, as with any change to it.`,
   );
+  return 0;
+}
+
+/**
+ * atticus scan review <repo> [--gaps] [--name n] [--attempts 3] [--resume run] (ADR 0072):
+ * deterministic first (the gaps the last scan left), then the assistant's verdict on each and
+ * a rule for the ones code can read, checked; then a person accepts and the next scan reads
+ * with it. Writes proposals/reviews/<repo>.md and, for a rule, proposals/dialects/<name>.yaml.
+ */
+export async function scanReview(
+  root: string,
+  target: string,
+  o: { gapsOnly?: boolean; name?: string; attempts?: number; resume?: string },
+  deps: OnboardDeps,
+  io: Output,
+): Promise<number> {
+  const repo = await repoFor(root, target);
+  if (!repo) {
+    io.err(
+      `${target} isn't a cloned repo of the manifest or a folder; clone it with atticus workspace sync, or give its folder.`,
+    );
+    return 2;
+  }
+  const name = o.name ?? `${repo.id.toLowerCase().replace(/[^a-z0-9._-]+/g, "-")}-review`;
+  if (!RecordId.safeParse(name).success) {
+    io.err(`"${name}" isn't a dialect name: use lower case, digits and dashes (--name).`);
+    return 2;
+  }
+  const { records } = await loadCatalog(root, { out: () => {}, err: (l) => io.err(l) });
+  const handle = fsRepo(repo.id, repo.dir, "0".repeat(40));
+  const gaps = await findGaps(handle, records);
+  if (gaps.length === 0) {
+    io.out(`The last scan of ${repo.id} left no gaps: everything it found is read and resolved.`);
+    return 0;
+  }
+  io.out(`${plural(gaps.length, "gap")} in ${repo.id} after the last scan:`);
+  for (const g of gaps)
+    io.out(
+      `  ${g.id} ${g.kind} ${g.path}${g.line ? `:${g.line}` : ""}${g.raw ? ` ${g.raw}` : ""}${g.component ? ` (${g.component})` : ""}`,
+    );
+  if (o.gapsOnly) return 0;
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const r = await reviewRepo(handle, {
+    name,
+    runtime: deps.runtime,
+    gaps,
+    orgPack: op,
+    maxAttempts: o.attempts ?? 3,
+    ...(deps.now ? { now: deps.now } : {}),
+    ...(o.resume ? { resume: o.resume } : {}),
+  });
+  if (r.status === "waiting") {
+    io.out(
+      `Handed the gaps to your assistant (run ${r.runId}). When it is done: atticus handoff done ${r.runId}, then atticus scan review ${repo.id} --resume ${r.runId}`,
+    );
+    return 0;
+  }
+  for (const a of r.attempts.filter((x) => x.problems.length > 0)) {
+    io.out(`Attempt ${a.attempt}: ${plural(a.problems.length, "problem")}, handed back:`);
+    for (const p of a.problems) io.out(`  - ${p}`);
+  }
+  if (r.status === "failed") {
+    io.err(`No answer passed in ${plural(r.attempts.length, "attempt")}. Nothing was written.`);
+    return 1;
+  }
+  io.out("Verdicts:");
+  for (const v of r.verdicts) io.out(`  ${v.gap} ${v.verdict}: ${v.why}`);
+  const report = [
+    `# Scan review of ${repo.id}`,
+    "",
+    "Drafted by atticus scan review from the gaps the last scan left; a person decides on each.",
+    "",
+    "| Gap | Kind | Where | Verdict | Why |",
+    "| --- | --- | --- | --- | --- |",
+    ...gaps.map((g) => {
+      const v = r.verdicts.find((x) => x.gap === g.id);
+      const where = `${g.path}${g.line ? `:${g.line}` : ""}${g.raw ? ` (${g.raw})` : ""}`;
+      return `| ${g.id} | ${g.kind} | ${where.replace(/\|/g, "\\|")} | ${v?.verdict ?? ""} | ${(v?.why ?? "").replace(/\|/g, "\\|")} |`;
+    }),
+    "",
+  ].join("\n");
+  await mkdir(join(root, "proposals", "reviews"), { recursive: true });
+  await writeFile(join(root, "proposals", "reviews", `${repo.id}.md`), report, "utf8");
+  io.out(`Wrote proposals/reviews/${repo.id}.md.`);
+  if (r.yaml) {
+    await mkdir(join(root, "proposals", "dialects"), { recursive: true });
+    await writeFile(proposalPath(root, name), r.yaml, "utf8");
+    io.out(
+      `Drafted proposals/dialects/${name}.yaml: its tests pass, and it reads ${plural(r.resolved.length, "gap")} (${r.resolved.join(", ")}) with ${plural(r.records.length, "record")}. Review it, then: atticus onboard accept ${name}, and atticus scan.`,
+    );
+  }
+  const misread = r.verdicts.filter((v) => v.verdict === "reader");
+  if (misread.length)
+    io.out(
+      `For Atticus: ${plural(misread.length, "gap")} where a built-in reader misreads the code (${misread.map((v) => v.gap).join(", ")}); the review file says what each misreads.`,
+    );
+  const others = r.verdicts.filter((v) => v.verdict === "vendor" || v.verdict === "person");
+  if (others.length)
+    io.out(
+      `For a person: ${others.map((v) => `${v.gap} (${v.verdict})`).join(", ")}. Record a vendor with atticus alias, or answer in the review file.`,
+    );
   return 0;
 }

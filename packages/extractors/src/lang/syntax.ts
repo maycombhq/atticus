@@ -1,6 +1,10 @@
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { setFlagsFromString } from "node:v8";
 import Parser from "web-tree-sitter";
+import type { ParsedAt } from "./parsed.js";
+
+export type { ParsedAt } from "./parsed.js";
 
 /**
  * Syntax trees for rules (ADR 0060): tree-sitter parsers for a dozen languages, shipped with
@@ -53,8 +57,23 @@ const languages = new Map<SyntaxLanguage, Promise<Parser.Language>>();
 const queries = new Map<string, Parser.Query>();
 const parsers = new Map<SyntaxLanguage, Parser>();
 
+/**
+ * Grammars run as baseline WebAssembly code only. They are generated C with very large
+ * functions, and V8's optimising compiler needed up to 2.2 GB of transient memory to tier one up
+ * (measured: TSX; TypeScript 1.3 GB, Kotlin 0.5 GB), against about 0.1 GB for the process
+ * otherwise. Where the machine didn't have it the process died ("Fatal process out of memory:
+ * Zone", exit 0x80000003): the test-worker crashes under parallel load (ADR 0067). A file parses
+ * up to about twice as slowly as baseline code, but each is parsed once per scan now and no time
+ * goes to compiling; the M1 exit scan stayed about twice as fast as before the parse cache. Set
+ * before the runtime compiles anything; Atticus runs no other WebAssembly.
+ */
+function baselineWasmOnly(): void {
+  setFlagsFromString("--no-wasm-tier-up");
+  setFlagsFromString("--no-wasm-dynamic-tiering");
+}
+
 async function language(lang: SyntaxLanguage): Promise<Parser.Language> {
-  ready ??= Parser.init();
+  ready ??= (baselineWasmOnly(), Parser.init());
   await ready;
   if (!languages.has(lang))
     languages.set(
@@ -81,7 +100,48 @@ export async function parseSyntax(lang: SyntaxLanguage, text: string): Promise<P
     parser.setLanguage(l);
     parsers.set(lang, parser);
   }
-  return parser.parse(text);
+  const tree = parser.parse(text);
+  live++;
+  // Freed once: a second delete would free the same WebAssembly memory twice.
+  const free = tree.delete.bind(tree);
+  let freed = false;
+  tree.delete = () => {
+    if (freed) return;
+    freed = true;
+    live--;
+    free();
+  };
+  return tree;
+}
+
+let live = 0;
+/** Trees parsed and not yet freed in this process: for tests that prove trees don't leak. */
+export const liveTrees = () => live;
+
+/**
+ * Hand a file's syntax tree to `use`. With a parse cache the tree is the scan's shared one,
+ * parsed once for every reader of the file and freed when it leaves the cache or the scan ends
+ * (never while `use` runs); without one it is parsed here and freed after. `use` must not keep
+ * nodes past its return: the tree may be freed then.
+ */
+export async function useSyntaxTree<T>(
+  lang: SyntaxLanguage,
+  text: string,
+  use: (tree: Parser.Tree) => T | Promise<T>,
+  at?: ParsedAt,
+): Promise<T> {
+  if (at?.cache)
+    return at.cache.use(`tree:${lang}`, at.path, text, (t) => parseSyntax(lang, t), use, {
+      pool: "native",
+      freeze: false,
+      dispose: (tree) => tree.delete(),
+    });
+  const tree = await parseSyntax(lang, text);
+  try {
+    return await use(tree);
+  } finally {
+    tree.delete();
+  }
 }
 
 /** The tree as tree-sitter prints it, with node names a query uses; long trees are cut. */
@@ -115,6 +175,7 @@ export async function querySyntax(
   lang: SyntaxLanguage,
   text: string,
   query: string,
+  at?: ParsedAt,
 ): Promise<{ captures: Record<string, { value: string; line: number }>; line: number }[]> {
   const l = await language(lang);
   const key = `${lang}\u0000${query}`;
@@ -127,7 +188,13 @@ export async function querySyntax(
     }
     queries.set(key, q);
   }
-  const tree = await parseSyntax(lang, text);
+  return useSyntaxTree(lang, text, (tree) => matchesOf(q, tree), at);
+}
+
+function matchesOf(
+  q: Parser.Query,
+  tree: Parser.Tree,
+): { captures: Record<string, { value: string; line: number }>; line: number }[] {
   const out: { captures: Record<string, { value: string; line: number }>; line: number }[] = [];
   for (const m of q.matches(tree.rootNode)) {
     // A pattern whose predicates failed comes back with no captures.
@@ -139,6 +206,5 @@ export async function querySyntax(
     const first = m.captures.reduce((a, b) => (b.node.startIndex < a.node.startIndex ? b : a));
     out.push({ captures, line: first.node.startPosition.row + 1 });
   }
-  tree.delete();
   return out;
 }

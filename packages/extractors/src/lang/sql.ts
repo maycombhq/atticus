@@ -366,11 +366,25 @@ export function tablesInQuery(query: string): TableAccess[] {
     const table = unquote(name.split(".").pop()!);
     if (!out.some((o) => o.table === table && o.access === access)) out.push({ table, access });
   };
-  for (const m of q.matchAll(/\b(?:insert\s+into|update|merge\s+into)\s+([\w."`]+)/gi))
-    add(m[1]!, "write");
+  // An UPDATE after DO (PostgreSQL ON CONFLICT), KEY (MySQL ON DUPLICATE KEY) or FOR (a locking
+  // read) names no table: the upsert's table is its INSERT's.
+  for (const m of q.matchAll(
+    /\b(?:insert\s+into|(?<!\b(?:do|key|for)\s+)update|merge\s+into)\s+([\w."`]+)/gi,
+  ))
+    if (!/^set$/i.test(m[1]!)) add(m[1]!, "write");
   for (const m of q.matchAll(/\bdelete\s+from\s+([\w."`]+)/gi)) add(m[1]!, "write");
-  for (const m of q.matchAll(/\b(delete\s+)?(?:from|join)\s+([\w."`]+)/gi)) {
+  // A CTE's name (WITH x AS (...)) is the query's own, not a table.
+  const ctes = new Set(
+    [...q.matchAll(/(?:\bwith(?:\s+recursive)?|,)\s+([\w"`]+)\s+as\s*\(/gi)].map((m) =>
+      unquote(m[1]!).toLowerCase(),
+    ),
+  );
+  // FROM in IS [NOT] DISTINCT FROM is a comparison, not a table.
+  for (const m of q.matchAll(/\b(delete\s+)?(?<!\bdistinct\s+)(?:from|join)\s+([\w."`]+)/gi)) {
     if (m[1] || /^(select|\()/i.test(m[2]!)) continue;
+    // The database's own catalog (information_schema, pg_catalog, sys) isn't the app's data.
+    if (/^["`]?(information_schema|pg_catalog|sys)["`]?\./i.test(m[2]!)) continue;
+    if (ctes.has(unquote(m[2]!.split(".").pop()!).toLowerCase()) && !m[2]!.includes(".")) continue;
     add(m[2]!, "read");
   }
   return out;

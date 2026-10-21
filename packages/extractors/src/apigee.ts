@@ -1,6 +1,7 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor } from "@maycombhq/sdk";
 import { evidence } from "./facts.js";
+import { at } from "./lang/parsed.js";
 import { parseXml, select, selectText } from "./lang/xml.js";
 
 /**
@@ -24,7 +25,7 @@ export const apigeeExtractor = defineExtractor({
       byProxy.set(dir, [...(byProxy.get(dir) ?? []), p]);
     }
     for (const [dir, files] of [...byProxy.entries()].sort()) {
-      const read = async (f: string) => parseXml(await repo.readText(f));
+      const read = async (f: string) => parseXml(await repo.readText(f), at(repo, f));
       const top = files.find((f) => f.slice(dir.length + 1).split("/").length === 1);
       const topXml = top ? await read(top) : undefined;
       const proxy = topXml?.attrs.name ?? dir.split("/").at(-2) ?? dir;

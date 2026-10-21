@@ -139,7 +139,7 @@ async function* apigeeProducts(repo: RepoHandle, ctx: ScanContext): AsyncGenerat
   for await (const path of repo.listFiles(APIGEE)) {
     const text = await readOrWarn(repo, ctx, path);
     if (text === undefined) continue;
-    const doc = readYamlDocs(text)?.[0];
+    const doc = readYamlDocs(text, { cache: repo.parseCache, path })?.[0];
     if (!doc) {
       ctx.warn(MALFORMED_YAML, path);
       continue;

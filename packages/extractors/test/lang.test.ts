@@ -235,4 +235,44 @@ ALTER TABLE entry ADD COLUMN posted_at timestamp;`);
       { table: "entry", access: "write" },
     ]);
   });
+
+  it("reads an upsert as a write to its table, not to a table called set", () => {
+    // PostgreSQL, MySQL and a locking read: none of these UPDATEs names a table.
+    expect(
+      tablesInQuery(
+        "insert into public_item (user_id, ref) values (?, ?) on conflict (user_id, ref) do update set shown = excluded.shown",
+      ),
+    ).toEqual([{ table: "public_item", access: "write" }]);
+    expect(
+      tablesInQuery("INSERT INTO hold (id, n) VALUES (?, ?) ON DUPLICATE KEY UPDATE n = n + 1"),
+    ).toEqual([{ table: "hold", access: "write" }]);
+    expect(tablesInQuery("SELECT id FROM account WHERE id = ? FOR UPDATE SKIP LOCKED")).toEqual([
+      { table: "account", access: "read" },
+    ]);
+    expect(tablesInQuery("UPDATE account SET n = 1")).toEqual([
+      { table: "account", access: "write" },
+    ]);
+  });
+
+  it("doesn't read a comparison, a CTE's name or the database's own catalog as a table", () => {
+    // Found by atticus scan review on a real estate (ADR 0072).
+    expect(
+      tablesInQuery(
+        "insert into card_rating (a, b) values (?, ?) on conflict (a) do update set b = excluded.b where card_rating.b is distinct from excluded.b or card_rating.c is not distinct from excluded.c",
+      ),
+    ).toEqual([{ table: "card_rating", access: "write" }]);
+    expect(
+      tablesInQuery(
+        "with mine as (select x from measured where h = ?), pool as (select m.x from measured m join consent c on c.u = m.u) select * from mine join pool on true",
+      ),
+    ).toEqual([
+      { table: "measured", access: "read" },
+      { table: "consent", access: "read" },
+    ]);
+    expect(
+      tablesInQuery(
+        "select table_name from information_schema.columns where column_name = 'user_id' union select relname from pg_catalog.pg_class",
+      ),
+    ).toEqual([]);
+  });
 });

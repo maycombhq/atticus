@@ -5,10 +5,12 @@ import { featuresForScan } from "@maycombhq/features";
 import { glossaryForScan } from "@maycombhq/glossary";
 import {
   configHash,
+  createParseCache,
   DEFAULT_IGNORES,
   fsRepo,
   fsScanCache,
   scanRepo,
+  withParseCache,
   type Extractor,
   type RepoScan,
   type ScanCache,
@@ -418,46 +420,58 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         )
         .map(({ x }) => x),
     ];
+    // One parse cache for the repo (ADR 0067): every extractor and dialect shares each file's
+    // parse, and everything it holds (syntax trees too) is freed when the repo is done.
+    const parsed = createParseCache();
     // .atticus/ is Atticus's own folder (an adopted repo scans itself): never read as code.
-    const handle = fsRepo(r.id, dir, state.commit, { ignore: [...DEFAULT_IGNORES, ".atticus"] });
-    const modules = r.modules.length
-      ? r.modules
-      : (await detectModules(handle)).map((m) => ({ ...m, hosts: [] as string[] }));
-    modulesOf.set(r.id, modules);
-    const structured: string[] = [];
-    for await (const f of handle.listFiles(["**/*"]))
-      if (STRUCTURED.test(f) && !TOOLING.test(f)) structured.push(f);
-    structuredOf.set(r.id, structured.sort());
-    const repoInfo = {
-      ...(modules.length
-        ? { modules: modules.map(({ path, component }) => ({ path, component })) }
-        : {}),
-      ...(r.component ? { component: r.component } : {}),
-      ...(r.system ? { system: r.system } : {}),
-      repoType: r.type,
-    };
-    const scan = await scanRepo({
-      repo: handle,
-      extractors,
-      dialects: r.dialects,
-      scannedAt,
-      dirty: state.dirty,
-      ...(cache ? { cache } : {}),
-      configFor: (x) => {
-        const d = dialectExtractors.find((de) => de.x === x)?.d;
-        return d ? configHash({ dialect: JSON.stringify(d) }) : undefined;
-      },
-      frameworks,
-      repoInfo,
-    });
-    // What it imports, for naming house frameworks with no model (ADR 0066).
-    readers.set(r.id, {
-      handle,
-      repoInfo,
-      dialects: r.dialects,
-      dirty: state.dirty,
-      imports: await repoImports(handle),
-    });
+    const handle = withParseCache(
+      fsRepo(r.id, dir, state.commit, { ignore: [...DEFAULT_IGNORES, ".atticus"] }),
+      parsed,
+    );
+    let scan: RepoScan;
+    try {
+      const modules = r.modules.length
+        ? r.modules
+        : (await detectModules(handle)).map((m) => ({ ...m, hosts: [] as string[] }));
+      modulesOf.set(r.id, modules);
+      const structured: string[] = [];
+      for await (const f of handle.listFiles(["**/*"]))
+        if (STRUCTURED.test(f) && !TOOLING.test(f)) structured.push(f);
+      structuredOf.set(r.id, structured.sort());
+      const repoInfo = {
+        ...(modules.length
+          ? { modules: modules.map(({ path, component }) => ({ path, component })) }
+          : {}),
+        ...(r.component ? { component: r.component } : {}),
+        ...(r.system ? { system: r.system } : {}),
+        repoType: r.type,
+      };
+      scan = await scanRepo({
+        repo: handle,
+        extractors,
+        dialects: r.dialects,
+        scannedAt,
+        dirty: state.dirty,
+        ...(cache ? { cache } : {}),
+        configFor: (x) => {
+          const d = dialectExtractors.find((de) => de.x === x)?.d;
+          return d ? configHash({ dialect: JSON.stringify(d) }) : undefined;
+        },
+        frameworks,
+        repoInfo,
+      });
+      // What it imports, for naming house frameworks with no model (ADR 0066). Read while the
+      // parse cache is live; later readings of this handle parse afresh.
+      readers.set(r.id, {
+        handle,
+        repoInfo,
+        dialects: r.dialects,
+        dirty: state.dirty,
+        imports: await repoImports(handle),
+      });
+    } finally {
+      parsed.dispose();
+    }
     for (const run of scan.runs.filter((x) => x.status === "failed"))
       problems.push({ repo: r.id, source: run.extractor, message: run.error ?? "failed" });
     for (const rej of scan.rejected)

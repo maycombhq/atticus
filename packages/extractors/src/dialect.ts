@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
-import { isMap, isScalar, isSeq, LineCounter, parseAllDocuments, type Node } from "yaml";
+import { isMap, isScalar, isSeq, type LineCounter, type Node } from "yaml";
 import {
   interfaceId,
   matchType,
@@ -25,7 +25,9 @@ import {
   type RepoHandle,
   type ScanContext,
 } from "@maycombhq/sdk";
-import { flattenProperties, flattenYaml, relaxedKey, type ConfigValue } from "./lang/config.js";
+import { flattenConfig, flattenYaml, relaxedKey, type ConfigValue } from "./lang/config.js";
+import { at } from "./lang/parsed.js";
+import { parseYamlStream } from "./lang/yaml.js";
 import { parseJava, type Annotation, type Decl, type JavaFile } from "./lang/java.js";
 import { parseXml, type XmlElement } from "./lang/xml.js";
 import { querySyntax, syntaxLanguageOf } from "./lang/syntax.js";
@@ -275,7 +277,8 @@ async function places(
   const type = matchType(m);
   const javaCache = new Map<string, JavaFile>();
   const java = async (p: string) => {
-    if (!javaCache.has(p)) javaCache.set(p, await parseJava(await repo.readText(p), p));
+    if (!javaCache.has(p))
+      javaCache.set(p, await parseJava(await repo.readText(p), p, repo.parseCache));
     return javaCache.get(p)!;
   };
   for await (const path of repo.listFiles(m.files)) {
@@ -345,10 +348,7 @@ async function places(
         });
       }
     } else if (type === "configKey" && "configKey" in m) {
-      const text = await repo.readText(path);
-      const flat = path.endsWith(".properties")
-        ? flattenProperties(text, path)
-        : flattenYaml(text, path);
+      const flat = flattenConfig(await repo.readText(path), path, repo.parseCache);
       const re = globToRe(m.configKey);
       for (const [k, v] of flat) {
         const g = re.exec(k);
@@ -362,7 +362,7 @@ async function places(
           });
       }
     } else if (type === "xpath" && "xpath" in m) {
-      const root = parseXml(await repo.readText(path));
+      const root = parseXml(await repo.readText(path), at(repo, path));
       const parents = new Map<XmlElement, XmlElement>();
       const index = (e: XmlElement) =>
         e.children.forEach((c) => {
@@ -392,12 +392,10 @@ async function places(
         });
       }
     } else if (type === "jsonPath" && "jsonPath" in m) {
-      const lc = new LineCounter();
-      // Every YAML document in the file (Kubernetes-style files hold several, split by ---).
-      const docs = parseAllDocuments(await repo.readText(path), { lineCounter: lc });
-      const hits = (Array.isArray(docs) ? docs : [docs]).flatMap((doc) =>
-        jsonPath(doc.contents, m.jsonPath, lc),
-      );
+      // Every YAML document in the file (Kubernetes-style files hold several, split by ---),
+      // parsed once for every rule and reader of the scan (ADR 0067).
+      const { docs, lc } = parseYamlStream(await repo.readText(path), at(repo, path));
+      const hits = (docs ?? []).flatMap((doc) => jsonPath(doc.contents, m.jsonPath, lc));
       for (const hit of hits) {
         const attrs = plainFields(hit.value);
         const value = hit.value;
@@ -429,7 +427,7 @@ async function places(
       // A local module's folder is read once per instantiation, with that caller's values (ADR 0063).
       const mods = (await terraform()).get(dirOf(path)) ?? [undefined];
       let mod: TfModule | undefined;
-      const hcl = parseHcl(await repo.readText(path));
+      const hcl = parseHcl(await repo.readText(path), at(repo, path));
       const value = (v: HclValue | undefined) => hclString(mod ? tfResolve(mod, v) : v);
       const fieldsOf = (b: HclBlock) => {
         const f: Record<string, string> = {};
@@ -469,7 +467,12 @@ async function places(
     } else if (type === "syntax" && "syntax" in m) {
       const lang = m.language ?? syntaxLanguageOf(path);
       if (!lang) continue;
-      for (const hit of await querySyntax(lang, await repo.readText(path), m.syntax))
+      for (const hit of await querySyntax(
+        lang,
+        await repo.readText(path),
+        m.syntax,
+        at(repo, path),
+      ))
         out.push({
           path,
           line: hit.line,
@@ -530,10 +533,7 @@ async function repoConfigFiles(
   const out = new Map<string, ConfigValue>();
   if (globs.length === 0) return out;
   for await (const f of repo.listFiles(globs)) {
-    const text = await repo.readText(f);
-    for (const [k, v] of f.endsWith(".properties")
-      ? flattenProperties(text, f)
-      : flattenYaml(text, f))
+    for (const [k, v] of flattenConfig(await repo.readText(f), f, repo.parseCache))
       if (!out.has(k)) out.set(k, v);
   }
   return out;
@@ -590,7 +590,10 @@ export function dialectExtractor(
       const yamlKey = async (file: string, key: string) => {
         if (!yamlCache.has(file)) {
           const text = await repo.readText(file).catch(() => undefined);
-          yamlCache.set(file, text === undefined ? new Map() : flattenYaml(text, file));
+          yamlCache.set(
+            file,
+            text === undefined ? new Map() : flattenYaml(text, file, repo.parseCache),
+          );
         }
         return yamlCache.get(file)!.get(key)?.value;
       };

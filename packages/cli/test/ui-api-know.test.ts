@@ -75,6 +75,16 @@ describe("read-only views run the CLI's --json commands", () => {
     expect((await get("/api/diagram/container?focus=..%2Fx")).status).toBe(400);
   });
 
+  it("gives a catalog view's groups, nodes and edges for the canvas", async () => {
+    const r = await get("/api/diagram/context/graph");
+    expect(r.status).toBe(200);
+    const v = (r.body as { view: { type: string; nodes: unknown[]; edges: unknown[] } }).view;
+    expect(v.type).toBe("context");
+    expect(Array.isArray(v.nodes) && Array.isArray(v.edges)).toBe(true);
+    expect((await get("/api/diagram/everything/graph")).status).toBe(400);
+    expect((await get("/api/diagram/sequence/graph")).status).toBe(400);
+  });
+
   it("decides a triage item as the signed-in person, and refuses an unknown item or a bad body", async () => {
     const before = (await get("/api/view/triage")).body.data as { items: { id: string }[] };
     const item = before.items.find((i) => i.id.startsWith("alias-needed."));

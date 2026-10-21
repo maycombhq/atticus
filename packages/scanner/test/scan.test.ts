@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { endpointId, type CatalogRecord } from "@maycombhq/core";
+import { liveTrees } from "@maycombhq/extractors";
 import { diffCatalogs, diffIsEmpty, readCatalog, scanEstate, writeCatalog } from "../src/index.js";
 import { compareCatalog } from "./compare.js";
 
@@ -36,6 +37,18 @@ async function scanForge(opts: { root?: string; cache?: null; repos?: string } =
 }
 
 describe("scan of the Forge fixture (M1 exit)", () => {
+  it(
+    "frees every syntax tree it parsed: none are alive once the scan is done (ADR 0067)",
+    async () => {
+      const before = liveTrees();
+      const { scan } = await scanForge({ cache: null });
+      expect(scan.problems).toEqual([]);
+      expect(scan.records.length).toBeGreaterThan(0);
+      expect(liveTrees()).toBe(before);
+    },
+    T,
+  );
+
   it(
     "finds every interface in the expected catalog and no others",
     async () => {

@@ -169,14 +169,15 @@ async function runView(root: string, change: string, runId: string) {
     startedAt: string;
     finishedAt?: string;
     errors: string[];
-    request: { agent: string; change: string; outputPath?: string };
+    request: { agent: string | { id: string }; change: string; outputPath?: string };
   };
   const manifest = await readFile(join(dir, "context-manifest.json"), "utf8").catch(() => "");
   return {
     schemaVersion: 1,
     runId: r.runId,
     change: r.request.change,
-    agent: r.request.agent,
+    // A run records the whole agent definition; the view names it.
+    agent: typeof r.request.agent === "string" ? r.request.agent : r.request.agent.id,
     runtime: r.runtime,
     state: r.state,
     startedAt: r.startedAt,

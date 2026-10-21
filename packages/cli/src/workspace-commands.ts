@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { SCAN_REVIEW_OUTPUT } from "@maycombhq/assistant-kit";
 import {
   createOpenSpec,
   ORG_FLOW,
@@ -18,6 +20,8 @@ import { GLOSSARY_CHANGE, GLOSSARY_OUTPUT } from "@maycombhq/glossary";
 import { lensRunOf } from "@maycombhq/naysayer";
 import {
   STORY_PROSE_OUTPUT,
+  DRAFT_OUTPUT,
+  parseDraft,
   TEMPLATE_PROSE_CHANGE,
   TEMPLATE_PROSE_OUTPUT,
 } from "@maycombhq/planner";
@@ -155,12 +159,16 @@ export function completionOf(request: {
   | "feature-names"
   | "glossary"
   | "templates"
-  | "story-prose" {
+  | "story-prose"
+  | "change-draft"
+  | "scan-review" {
   if (handUpLensTask(request.outputPath)) return "hand-up";
   if (lensRunOf(request)) return "critic-lens";
   if (request.change === GLOSSARY_CHANGE && request.outputPath === GLOSSARY_OUTPUT)
     return "glossary";
   if (request.outputIn === "run" && request.outputPath === STORY_PROSE_OUTPUT) return "story-prose";
+  if (request.outputIn === "run" && request.outputPath === DRAFT_OUTPUT) return "change-draft";
+  if (request.outputIn === "run" && request.outputPath === SCAN_REVIEW_OUTPUT) return "scan-review";
   if (request.change === NAMING_CHANGE && request.outputPath === NAMING_OUTPUT)
     return "feature-names";
   if (request.change === TEMPLATE_PROSE_CHANGE && request.outputPath === TEMPLATE_PROSE_OUTPUT)
@@ -189,6 +197,13 @@ export async function handoffDone(
       // Answers that aren't change artifacts (a lens review, name proposals, definitions,
       // template or story prose) are checked as YAML here and read in full by the command
       // they finish.
+      // A change draft is checked in full by `change draft --resume`; here, that it is one.
+      if (completionOf(request) === "change-draft") {
+        const files = parseDraft(await readFile(_file, "utf8").catch(() => ""));
+        return files.has("proposal.md")
+          ? []
+          : ['The draft has no "=== proposal.md" file; start each file with a line "=== <path>".'];
+      }
       if (completionOf(request) !== "artifact") return yamlAnswerProblems(_file, request);
       const report = await os.validate({ item: request.change, type: "change" });
       return report.items.flatMap((i) =>
@@ -223,6 +238,17 @@ export async function handoffDone(
     if (kind === "story-prose") {
       io.out(
         `The story prose for ${run.request.change} is valid. Next: atticus plan stories ${run.request.change} --resume ${runId}`,
+      );
+      return 0;
+    }
+    if (kind === "scan-review") {
+      const repo = run.request.change.replace(/^review-/, "");
+      io.out(`The review of ${repo} is in. Next: atticus scan review ${repo} --resume ${runId}`);
+      return 0;
+    }
+    if (kind === "change-draft") {
+      io.out(
+        `The draft for ${run.request.change} is in. Next: atticus change draft ${run.request.change} --resume ${runId}`,
       );
       return 0;
     }

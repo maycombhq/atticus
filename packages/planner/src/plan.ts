@@ -18,6 +18,8 @@ export interface PlanStoriesOptions {
   force?: boolean;
   /** Finish a hand-off run: the run id `atticus handoff done` completed. */
   resume?: string;
+  /** Plan from the design as it stands, before it is approved: draft stories to review. */
+  draft?: boolean;
 }
 
 export interface PlanStoriesResult {
@@ -87,7 +89,11 @@ export async function planStories(
   changeId: string,
   o: PlanStoriesOptions = {},
 ): Promise<PlanStoriesResult> {
-  const ctx = await loadPlanContext(root, changeId);
+  const ctx = await loadPlanContext(
+    root,
+    changeId,
+    o.draft ? { requireApprovedDesign: false } : {},
+  );
   const skeleton = buildSkeleton(ctx);
   if (skeleton.stories.length === 0)
     throw new PlannerError(

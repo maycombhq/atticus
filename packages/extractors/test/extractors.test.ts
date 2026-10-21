@@ -738,3 +738,36 @@ describe("dialect engine", () => {
     ]);
   });
 });
+
+describe("Spring Data JPQL queries", () => {
+  it("name the entity's table, not the entity, so the access joins the table", async () => {
+    const repo = memoryRepo("x", SHA, {
+      "src/main/java/tide/ChatMember.java": `package tide;
+import jakarta.persistence.*;
+@Entity
+@Table(name = "chat_member")
+public class ChatMember { @Id Long id; }`,
+      "src/main/java/tide/RoomInvite.java": `package tide;
+import jakarta.persistence.*;
+@Entity
+public class RoomInvite { @Id Long id; }`,
+      "src/main/java/tide/ChatMemberRepository.java": `package tide;
+import org.springframework.data.jpa.repository.*;
+public interface ChatMemberRepository extends JpaRepository<ChatMember, Long> {
+  @Query("select m from ChatMember m where m.id = :id")
+  ChatMember one(Long id);
+  @Query("select i from RoomInvite i")
+  java.util.List<RoomInvite> invites();
+  @Query(value = "select * from chat_member_audit", nativeQuery = true)
+  java.util.List<Object> audit();
+}`,
+    });
+    const s = await scanRepo({ repo, extractors: [springExtractor], repoInfo: { component: "x" } });
+    const raws = s.records
+      .filter((r) => r.kind === "Unresolved")
+      .map((r) => (r as unknown as { raw: string }).raw)
+      .sort();
+    // @Table's name; Spring's naming for an entity without one; a native query as written.
+    expect(raws).toEqual(["read chat_member", "read chat_member_audit", "read room_invite"]);
+  });
+});

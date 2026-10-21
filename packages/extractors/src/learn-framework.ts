@@ -9,6 +9,7 @@ import {
 } from "./lang/classfile.js";
 import { attr, parseJava } from "./lang/java.js";
 import { parseJavaMembers } from "./lang/java-tree.js";
+import { at } from "./lang/parsed.js";
 import { parseXml, selectText } from "./lang/xml.js";
 import { CLIENT_PACKAGES, READ_ANNOTATIONS } from "./spring.js";
 
@@ -162,15 +163,15 @@ export async function learnFramework(
     if (path.endsWith("pom.xml")) {
       if (path === "pom.xml") {
         // The project's own coordinates; a groupId left out is the parent's (Maven inherits it).
-        const pom = parseXml(text);
+        const pom = parseXml(text, at(repo, path));
         const g = selectText(pom, "project/groupId") ?? selectText(pom, "project/parent/groupId");
         const a = selectText(pom, "project/artifactId");
         if (g?.text && a?.text) c.artifacts.push(`${g.text}:${a.text}`);
       }
       continue;
     }
-    const file = await parseJava(text, path);
-    const members = await parseJavaMembers(text);
+    const file = await parseJava(text, path, repo.parseCache);
+    const members = await parseJavaMembers(text, at(repo, path));
     if (file.packageName) c.packages.add(file.packageName);
     for (const d of file.decls.filter((x) => x.kind === "annotation-type")) {
       const aliases = new Map<string, { annotation?: string; attribute: string }>();

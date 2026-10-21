@@ -23,5 +23,5 @@ Build engine: speckit (each task runs as a Spec Kit feature in the repo, under s
 
 Build engine: speckit (each task runs as a Spec Kit feature in the repo, under specs/<task id>/).
 
-- [ ] 3.1 Update the screens as ux.md describes, with tests (story s1-daily-transfer-limit)
-- [ ] 3.2 Update the screens as ux.md describes, with tests (story s2-remaining-limit)
+- [ ] 3.1 Daily transfer limit: update the screens as ux.md describes, with tests (story s1-daily-transfer-limit)
+- [ ] 3.2 Remaining limit: update the screens as ux.md describes, with tests (story s2-remaining-limit)

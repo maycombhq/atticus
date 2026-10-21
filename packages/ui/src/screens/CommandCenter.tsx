@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, ApiError, useApi, useLiveEvents } from "../api/client.js";
-import { GraphView, type Graph } from "../app/graph.js";
+import { FlowCanvas, type FlowViewData } from "../app/flow.js";
+import type { Graph } from "../app/graph.js";
 import { useMe } from "../app/me.js";
 import { inboxOf, type InboxData } from "../app/inbox.js";
 import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
@@ -217,10 +218,29 @@ export function CommandCenter() {
     steps: todo.state === "ready" ? todo.data.steps : [],
   });
   const graph = useApi<Graph>("/api/graph");
+  // The map is the estate's context view; with one system, that system's components and links.
+  const systems =
+    graph.state === "ready"
+      ? [
+          ...new Set(
+            graph.data.nodes.map((n) => n.system ?? (n.kind === "System" ? n.id : undefined)),
+          ),
+        ]
+          .filter((x): x is string => !!x)
+          .sort()
+      : [];
+  const map = useApi<{ view: FlowViewData }>(
+    graph.state !== "ready" || graph.data.nodes.length === 0
+      ? undefined
+      : systems.length === 1
+        ? `/api/diagram/container/graph?focus=${encodeURIComponent(systems[0]!)}`
+        : "/api/diagram/context/graph",
+  );
   useLiveEvents((e) => {
     if (e.type === "index.rebuilt" || e.type === "file.changed") {
       kinds.reload();
       graph.reload();
+      map.reload();
       changes.reload();
       findings.reload();
     }
@@ -383,7 +403,15 @@ export function CommandCenter() {
             empty={(g) => g.nodes.length === 0}
             emptyText="The catalog is empty. Run a scan to map your repos."
           >
-            {(g) => <GraphView g={g} />}
+            {() => (
+              <View
+                of={map}
+                empty={(m) => m.view.nodes.length === 0}
+                emptyText="The catalog is empty. Run a scan to map your repos."
+              >
+                {(m) => <FlowCanvas view={m.view} height={420} />}
+              </View>
+            )}
           </View>
         </Panel>
 

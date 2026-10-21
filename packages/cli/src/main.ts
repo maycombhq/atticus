@@ -39,11 +39,13 @@ import {
   taskRun,
 } from "./run-commands.js";
 import { featureSuggestNames } from "./feature-commands.js";
+import { domainProfileCommand } from "./domain-commands.js";
 import { isTaskRun } from "@maycombhq/taskrun";
 import { AiOffError, runtimeForCli, RuntimeConfigError, type AiRuntime } from "@maycombhq/ai";
 import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
 import {
   adoSync,
+  changeDraft,
   planStories,
   snowDraft,
   snowSubmit,
@@ -142,6 +144,7 @@ import {
   onboardAccept,
   onboardCheck,
   onboardDraft,
+  scanReview,
   onboardEval,
   onboardFramework,
   onboardFrameworkAccept,
@@ -159,6 +162,7 @@ Usage:
           [--fix]                      Rewrite files that aren't in canonical form
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
   atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated
+  atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
           [--repos a,b]                Only these repos
           [--full]                     Ignore the scan cache
           [--dry-run]                  Show what would change; write nothing
@@ -218,6 +222,8 @@ Usage:
   atticus frameworks survey [--package <prefix>[,...]]   How the repos use house frameworks, any language [--json]
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
   atticus change new "<title>"         Start a change from a template: --type <type>
+  atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
+  atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
   atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
@@ -249,7 +255,7 @@ Usage:
   atticus drift <change> [--json]      Compare design, repo plans and code
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
-  atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m]
+  atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]
   atticus plan snow <change>           Draft service-desk requests the change needs [--force]
   atticus plan bar <change>            Measure the story bar [--eval file]
   atticus plan submit <change>         File the drafted requests (a dry run until you add --approve)
@@ -400,6 +406,8 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       executor: { type: "string" },
       fixture: { type: "string" },
       force: { type: "boolean" },
+      draft: { type: "boolean" },
+      gaps: { type: "boolean" },
       full: { type: "boolean" },
       "dry-run": { type: "boolean" },
       json: { type: "boolean" },
@@ -545,6 +553,43 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
+  if (group === "scan" && command === "review") {
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    if (!arg) {
+      io.err(
+        "Usage: atticus scan review <repo> [--gaps] [--name n] [--attempts 3] [--resume run] [--mode m]",
+      );
+      return 2;
+    }
+    const attempts = Number(text(values.attempts) ?? "3");
+    if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) {
+      io.err("--attempts is a whole number from 1 to 10.");
+      return 2;
+    }
+    try {
+      const { runtime } = await runtimeForCli(root, {
+        ...(text(values.mode) ? { mode: text(values.mode)! } : {}),
+      });
+      return await scanReview(
+        root,
+        arg,
+        {
+          gapsOnly: values.gaps === true,
+          attempts,
+          ...(text(values.name) ? { name: text(values.name)! } : {}),
+          ...(text(values.resume) ? { resume: text(values.resume)! } : {}),
+        },
+        { runtime },
+        io,
+      );
+    } catch (e) {
+      if (e instanceof RuntimeConfigError) {
+        io.err(e.message);
+        return 2;
+      }
+      throw e;
+    }
+  }
   if (group === "scan")
     return scanCommand(
       root,
@@ -974,6 +1019,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
         arg,
         {
           force: values.force === true,
+          draft: values.draft === true,
           ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
           ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
           json,
@@ -1274,6 +1320,19 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       );
     if (command === "list") return changeList(root, { json }, io);
     if (command === "conflicts") return changeConflicts(root, { json }, io);
+    if (command === "draft")
+      return changeDraft(
+        root,
+        arg,
+        {
+          ...(str(values.attempts) ? { attempts: Number(str(values.attempts)) } : {}),
+          force: values.force === true,
+          ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
+          ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
+          json,
+        },
+        io,
+      );
     if (!arg) {
       io.err(
         `change ${command ?? ""} needs a change id, for example: atticus change status add-transfer-limit`,
@@ -1652,6 +1711,8 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
   if (group === "patterns" && command === "scan")
     return patternsScan(root, io, { json: values.json === true });
   if (group === "coverage") return coverageCommand(root, io, { json: values.json === true });
+  if (group === "domain" && command === "profile")
+    return domainProfileCommand(root, arg, str(values.out) ? { out: str(values.out)! } : {}, io);
   if (group === "questions") return questionsCommand(root, io, { json: values.json === true });
   if (group === "reconcile")
     return reconcileCommand(root, positionals.slice(1), { json: values.json === true }, io);

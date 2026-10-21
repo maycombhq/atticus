@@ -1,3 +1,4 @@
+import type { ParseCache } from "@maycombhq/sdk";
 import { parseJavaTree } from "./java-tree.js";
 
 /**
@@ -75,9 +76,19 @@ export interface JavaFile {
  * type) and method calls, from its syntax tree (ADR 0060). The language follows the path's
  * extension (.kt, .kts are Kotlin), or is given.
  */
-export async function parseJava(src: string, pathOrLang: string = "java"): Promise<JavaFile> {
+export async function parseJava(
+  src: string,
+  pathOrLang: string = "java",
+  /**
+   * The repo scan's parse cache (ADR 0067), with `pathOrLang` the file's path: every reader then
+   * gets the same frozen JavaFile. A reader that changes it (house annotations) copies it first.
+   */
+  cache?: ParseCache,
+): Promise<JavaFile> {
   const lang = pathOrLang === "kotlin" || /.kts?$/i.test(pathOrLang) ? "kotlin" : "java";
-  return parseJavaTree(src, lang);
+  if (!cache) return parseJavaTree(src, lang);
+  const at = { cache, path: pathOrLang };
+  return cache.getAsync(`java:${lang}`, pathOrLang, src, (t) => parseJavaTree(t, lang, at));
 }
 
 /** A string attribute (the first item if it's a list). */

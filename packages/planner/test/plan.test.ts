@@ -152,6 +152,10 @@ describe("planning artifacts from the approved design (golden)", () => {
       message:
         "add-transfer-limit is design; plan from an approved design (the change must be in plan).",
     });
+    // A draft plan from the design as it stands, before it is approved.
+    const r = await planStories(root, CHANGE, { draft: true });
+    expect(r.state).toBe("written");
+    expect(r.skeleton.stories.length).toBeGreaterThan(0);
   });
 });
 

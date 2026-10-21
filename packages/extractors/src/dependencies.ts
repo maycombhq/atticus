@@ -1,7 +1,8 @@
 import type { RepoHandle } from "@maycombhq/sdk";
 import { groovyCalls } from "./lang/groovy.js";
 import type Parser from "web-tree-sitter";
-import { parseSyntax } from "./lang/syntax.js";
+import { at, type ParsedAt } from "./lang/parsed.js";
+import { useSyntaxTree } from "./lang/syntax.js";
 import { parseXml, select, selectText } from "./lang/xml.js";
 
 /** One house artifact a repo declares, where it says so. */
@@ -60,7 +61,7 @@ export async function houseDependencies(
         }
       }
     } else if (path.endsWith("pom.xml")) {
-      const pom = parseXml(text);
+      const pom = parseXml(text, at(repo, path));
       const props = new Map<string, string>();
       for (const block of select(pom, "project/properties"))
         for (const p of block.children) props.set(p.name, p.text.trim());
@@ -75,11 +76,12 @@ export async function houseDependencies(
         out.push({ group, artifact, ...(version ? { version: fill(version) } : {}), path });
       }
     } else if (path.endsWith(".kts")) {
-      for (const d of await kotlinDependencies(text)) if (ours(d.group)) out.push({ ...d, path });
+      for (const d of await kotlinDependencies(text, at(repo, path)))
+        if (ours(d.group)) out.push({ ...d, path });
     } else {
       // Groovy build.gradle, from its syntax tree: "group:artifact[:version]" string arguments,
       // or group:, name:, version: named ones. Comments aren't read.
-      for (const c of await groovyCalls(text)) {
+      for (const c of await groovyCalls(text, at(repo, path))) {
         for (const a of c.args) {
           const m = COORDINATE.exec(a);
           if (m && ours(m[1]!))
@@ -104,8 +106,14 @@ const COORDINATE = /^([\w.-]+):([\w.-]+)(?::([\w.+-]+))?$/;
  */
 async function kotlinDependencies(
   text: string,
+  where?: ParsedAt,
 ): Promise<{ group: string; artifact: string; version?: string }[]> {
-  const tree = await parseSyntax("kotlin", text);
+  return useSyntaxTree("kotlin", text, (tree) => kotlinCoordinates(tree.rootNode), where);
+}
+
+function kotlinCoordinates(
+  root: Parser.SyntaxNode,
+): { group: string; artifact: string; version?: string }[] {
   const out: { group: string; artifact: string; version?: string }[] = [];
   /** A string literal's parts: its text, and whether a template is in it. */
   const str = (n: Parser.SyntaxNode | undefined) => {
@@ -143,7 +151,6 @@ async function kotlinDependencies(
     }
     for (const c of n.namedChildren) walk(c);
   };
-  walk(tree.rootNode);
-  tree.delete();
+  walk(root);
   return out;
 }

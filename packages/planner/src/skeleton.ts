@@ -4,7 +4,7 @@ import type { z } from "zod";
 type TestType = z.infer<typeof TestTypeSchema>;
 import { normalizePath, type DataChange, type Hop } from "@maycombhq/naysayer";
 import type { OpenQuestion, PlanContext, SpecRequirement, SpecScenario } from "./context.js";
-import { coverage, overlap, slug } from "./words.js";
+import { contentWords, coverage, overlap, slug } from "./words.js";
 
 /**
  * The deterministic part of planning: which stories there are, what each one links to
@@ -91,6 +91,25 @@ function requirementMentionsHop(ctx: PlanContext, r: SpecRequirement, h: Hop): b
   const tokens = new Set(r.text.match(UPPER_TOKEN) ?? []);
   if (tokens.size === 0) return false;
   return (hopText(ctx, h).match(UPPER_TOKEN) ?? []).some((t) => tokens.has(t));
+}
+
+/**
+ * A spec that states behaviour, not paths: a word of the requirement's name in the hop's path
+ * ("Export a chat's messages", GET /api/chats/{id}/messages/export), or two words of its text
+ * in the path and the hop's notes. Used only for a requirement no hop matches by path or code.
+ */
+function requirementIsAboutHop(ctx: PlanContext, r: SpecRequirement, h: Hop): boolean {
+  const path = contentWords((h.path ?? h.operation).replace(/\{[^}]*\}/g, " "));
+  if (contentWords(r.name).some((w) => path.includes(w))) return true;
+  return (
+    overlap(
+      r.text,
+      `${path.join(" ")} ${ctx
+        .notes(h)
+        .map((n) => n.text)
+        .join(" ")}`,
+    ) >= 2
+  );
 }
 
 /** Does a requirement talk about this data change: a new column's or the table's name? */
@@ -188,17 +207,29 @@ export function buildSkeleton(ctx: PlanContext): PlanSkeleton {
     material: [],
   });
 
-  // 1. One story per spec requirement.
+  // 1. One story per spec requirement. A hop a requirement names (its path, an error code) is
+  // that requirement's; a requirement that names none takes the hops it is about by its words,
+  // among those no requirement names.
+  const known = (h: Hop) => ctx.isKnown(h.callee) && ctx.isKnown(h.caller);
+  const named = new Set(
+    hops.filter((h) => known(h) && ctx.requirements.some((r) => requirementMentionsHop(ctx, r, h))),
+  );
   for (const r of ctx.requirements) {
     const s = blank(slug(r.name), "requirement");
     s.requirement = r;
     s.scenarios = r.scenarios;
     s.trace = { path: r.file, line: r.line, text: `Requirement: ${r.name}` };
     for (const h of hops)
-      if (ctx.isKnown(h.callee) && ctx.isKnown(h.caller) && requirementMentionsHop(ctx, r, h)) {
+      if (known(h) && requirementMentionsHop(ctx, r, h)) {
         s.hops.push(h);
         used.add(h);
       }
+    if (s.hops.length === 0)
+      for (const h of hops)
+        if (known(h) && !named.has(h) && requirementIsAboutHop(ctx, r, h)) {
+          s.hops.push(h);
+          used.add(h);
+        }
     for (const d of ctx.data)
       if (requirementMentionsData(r, d)) {
         s.data.push(d);
@@ -434,18 +465,31 @@ function planTasks(ctx: PlanContext, stories: StorySkeleton[], repos: string[]):
   const out: TaskPlan[] = [];
   repos.forEach((repo, ri) => {
     let n = 0;
-    const component = ctx.componentOfRepo(repo);
+    // A repo with modules builds several components: each one's part is named.
+    const inRepo = new Set(
+      ctx.records
+        .filter((r) => r.kind === "Component" && ctx.repoOf(r.id) === repo)
+        .map((r) => r.id),
+    );
+    const single = ctx.componentOfRepo(repo);
+    if (single) inRepo.add(single);
+    const several = inRepo.size > 1;
     for (const s of stories) {
       if (!s.repos.includes(repo)) continue;
       const parts: string[] = [];
       for (const h of s.hops) {
         const verb = h.status === "planned-new" ? "Add" : "Change";
-        if (component && h.callee === component) parts.push(`${verb} ${h.operation}`);
-        if (component && h.caller === component)
+        if (inRepo.has(h.callee))
+          parts.push(`${verb} ${h.operation}${several ? ` in ${h.callee}` : ""}`);
+        if (inRepo.has(h.caller))
           parts.push(
-            h.status === "planned-new"
-              ? `Call ${h.operation} on ${h.callee}`
-              : `Update the call to ${h.operation} on ${h.callee}`,
+            several && inRepo.has(h.callee)
+              ? h.status === "planned-new"
+                ? `call it from ${h.caller}`
+                : `update the call to ${h.operation} from ${h.caller}`
+              : h.status === "planned-new"
+                ? `Call ${h.operation} on ${h.callee}${several ? ` from ${h.caller}` : ""}`
+                : `Update the call to ${h.operation} on ${h.callee}${several ? ` from ${h.caller}` : ""}`,
           );
       }
       for (const d of s.data) {
@@ -457,16 +501,26 @@ function planTasks(ctx: PlanContext, stories: StorySkeleton[], repos: string[]):
         if (!d.newTable && d.newColumns.length === 0)
           parts.push(`Change table ${d.table} with a migration`);
       }
-      if (parts.length === 0) parts.push(`Update the screens as ux.md describes`);
+      if (parts.length === 0)
+        parts.push(
+          ctx.files.docs.has("ux.md")
+            ? "Update the screens as ux.md describes"
+            : `Build what story ${s.id} describes`,
+        );
       n++;
-      out.push({
-        id: `${ri + 1}.${n}`,
-        repo,
-        story: s.id,
-        title: `${parts.map((p, i) => (i ? p[0]!.toLowerCase() + p.slice(1) : p)).join("; ")}, with tests`,
-        waitsFor: [],
-      });
+      const title = `${parts.map((p, i) => (i ? p[0]!.toLowerCase() + p.slice(1) : p)).join("; ")}, with tests`;
+      out.push({ id: `${ri + 1}.${n}`, repo, story: s.id, title, waitsFor: [] });
     }
   });
+  // Stories doing the same work in a repo: each task says which requirement it serves.
+  const requirementOf = new Map(stories.map((s) => [s.id, s.requirement?.name]));
+  const key = (t: TaskPlan) => `${t.repo}\u0000${t.title}`;
+  const count = new Map<string, number>();
+  for (const t of out) count.set(key(t), (count.get(key(t)) ?? 0) + 1);
+  for (const t of out) {
+    const name = requirementOf.get(t.story);
+    if ((count.get(key(t)) ?? 0) > 1 && name)
+      t.title = `${name}: ${t.title[0]!.toLowerCase()}${t.title.slice(1)}`;
+  }
   return out;
 }
