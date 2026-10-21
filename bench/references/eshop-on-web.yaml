@@ -1,0 +1,444 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: eshop-on-web
+commit: 4da8212117e87d808d4bbc7da6286fd2147ce606
+covers: [serves, calls, stores, deploys]
+notes: >-
+  eShopOnWeb: a monolith with two hosts. src/Web is ASP.NET Core MVC + Razor Pages (and hosts the Blazor
+  WebAssembly admin, src/BlazorAdmin, inside its /Admin page); src/PublicApi is a minimal-API host using
+  MinimalApi.Endpoint classes (app.MapGet etc. inside each endpoint's AddRoute) plus one Ardalis
+  ApiEndpoints controller (POST api/authenticate). Web controllers use attribute routes
+  [controller]/[action]; Program.cs adds RouteTokenTransformerConvention(SlugifyParameterTransformer),
+  which lower-cases and hyphenates those tokens, so Manage/MyAccount is served at /manage/my-account
+  (literal route text, like "Logout" on UserController, is not transformed). Razor Pages are listed by
+  file path (Index pages at their folder; the Identity area pages under /Identity/Account), one entry per
+  handler: OnGet as GET, OnPost as POST, and the named handler OnPostUpdate on Basket/Index, whose
+  @page "{handler?}" template puts it at POST /Basket/Update. Pages with no handler method (Admin/Index)
+  are listed as GET at their @page line. The health checks (UseHealthChecks("/health") and the two
+  MapHealthChecks paths) accept any method, so they have no method key. Left out of serves: the PublicApi
+  Swagger JSON/UI, the Web's MapFallbackToFile("index.html") and its unused conventional route (every
+  controller is attribute-routed), dev-only middleware (migrations end point, WASM debugging), and the
+  BlazorAdmin client-side @page routes (/admin, /logout), which are routed in the browser inside the
+  Web's /Admin page. An optional CatalogBaseUrl setting can set a PathBase on the Web; it is unset in the
+  committed appsettings, so no prefix is applied. Calls: the BlazorAdmin services call PublicApi through
+  HttpService and CatalogLookupDataService with ApiBase from BlazorAdmin/wwwroot/appsettings.json
+  (https://localhost:5099/api/), so paths start /api/; HttpDelete appends /{id}; the lookup endpoint names
+  come from [Endpoint(Name = ...)] on BlazorShared CatalogBrand and CatalogType, both resolved at the one
+  GetFromJsonAsync line. CustomAuthStateProvider and Logout.razor call the Web host's own UserController
+  (HttpClient BaseAddress = the host's base address) at "User" and "User/Logout", written as requested.
+  The Web's ApiHealthCheck calls GET {ApiBase}catalog-items on PublicApi. Each endpoint is listed once per
+  caller at its first call site (CatalogItemService has two GET catalog-items list calls; the one at line
+  65 is listed). HomePageHealthCheck's GET to the Web's own home page is a self-call and left out. Stores:
+  two EF Core contexts, CatalogContext and AppIdentityDbContext, with committed migrations; tables are
+  cited at the CreateTable name in the initial migrations (CatalogItem maps to Catalog via ToTable; the
+  later FixBuyerId and FixShipToAddress migrations create no tables). The three HiLo sequences
+  (catalog_hilo, catalog_brand_hilo, catalog_type_hilo) are sequences, not tables, and are left out.
+  Deploys: azure.yaml has one service, web, with host appservice, and infra/main.bicep creates it with
+  core/host/appservice.bicep (Microsoft.Web/sites) plus two Azure SQL databases; PublicApi is not in the
+  azd deployment. docker-compose.yml runs Web, PublicApi and SQL Server for local development and is not
+  counted as a deployment; the GitHub workflows only build and test.
+serves:
+  # src/Web: MVC controllers
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/my-account,
+      at: "src/Web/Controllers/ManageController.cs:46",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/my-account,
+      at: "src/Web/Controllers/ManageController.cs:67",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/send-verification-email,
+      at: "src/Web/Controllers/ManageController.cs:106",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/change-password,
+      at: "src/Web/Controllers/ManageController.cs:136",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/change-password,
+      at: "src/Web/Controllers/ManageController.cs:155",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/set-password,
+      at: "src/Web/Controllers/ManageController.cs:185",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/set-password,
+      at: "src/Web/Controllers/ManageController.cs:205",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/external-logins,
+      at: "src/Web/Controllers/ManageController.cs:233",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/link-login,
+      at: "src/Web/Controllers/ManageController.cs:252",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/link-login-callback,
+      at: "src/Web/Controllers/ManageController.cs:265",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/remove-login,
+      at: "src/Web/Controllers/ManageController.cs:293",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/two-factor-authentication,
+      at: "src/Web/Controllers/ManageController.cs:318",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/disable2fa-warning,
+      at: "src/Web/Controllers/ManageController.cs:337",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/disable2fa,
+      at: "src/Web/Controllers/ManageController.cs:354",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/enable-authenticator,
+      at: "src/Web/Controllers/ManageController.cs:374",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/show-recovery-codes,
+      at: "src/Web/Controllers/ManageController.cs:389",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/enable-authenticator,
+      at: "src/Web/Controllers/ManageController.cs:403",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/reset-authenticator-warning,
+      at: "src/Web/Controllers/ManageController.cs:440",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/reset-authenticator,
+      at: "src/Web/Controllers/ManageController.cs:446",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /manage/generate-recovery-codes,
+      at: "src/Web/Controllers/ManageController.cs:463",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /manage/generate-recovery-codes-warning,
+      at: "src/Web/Controllers/ManageController.cs:486",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /order/my-orders,
+      at: "src/Web/Controllers/OrderController.cs:22",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/order/detail/{orderId}",
+      at: "src/Web/Controllers/OrderController.cs:31",
+    }
+  - { type: rest, method: GET, path: /user, at: "src/Web/Controllers/UserController.cs:35" }
+  - { type: rest, method: POST, path: /user/Logout, at: "src/Web/Controllers/UserController.cs:42" }
+  # src/Web: Razor Pages
+  - { type: rest, method: GET, path: /, at: "src/Web/Pages/Index.cshtml.cs:18" }
+  - { type: rest, method: GET, path: /Privacy, at: "src/Web/Pages/Privacy.cshtml.cs:7" }
+  - { type: rest, method: GET, path: /Error, at: "src/Web/Pages/Error.cshtml.cs:14" }
+  - { type: rest, method: GET, path: /Admin, at: "src/Web/Pages/Admin/Index.cshtml:1" }
+  - {
+      type: rest,
+      method: GET,
+      path: /Admin/EditCatalogItem,
+      at: "src/Web/Pages/Admin/EditCatalogItem.cshtml.cs:24",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Admin/EditCatalogItem,
+      at: "src/Web/Pages/Admin/EditCatalogItem.cshtml.cs:29",
+    }
+  - { type: rest, method: GET, path: /Basket, at: "src/Web/Pages/Basket/Index.cshtml.cs:28" }
+  - { type: rest, method: POST, path: /Basket, at: "src/Web/Pages/Basket/Index.cshtml.cs:33" }
+  - {
+      type: rest,
+      method: POST,
+      path: /Basket/Update,
+      at: "src/Web/Pages/Basket/Index.cshtml.cs:55",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Basket/Checkout,
+      at: "src/Web/Pages/Basket/Checkout.cshtml.cs:39",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Basket/Checkout,
+      at: "src/Web/Pages/Basket/Checkout.cshtml.cs:44",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Basket/Success,
+      at: "src/Web/Pages/Basket/Success.cshtml.cs:14",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Identity/Account/ConfirmEmail,
+      at: "src/Web/Areas/Identity/Pages/Account/ConfirmEmail.cshtml.cs:23",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Identity/Account/Login,
+      at: "src/Web/Areas/Identity/Pages/Account/Login.cshtml.cs:51",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Identity/Account/Login,
+      at: "src/Web/Areas/Identity/Pages/Account/Login.cshtml.cs:68",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Identity/Account/Logout,
+      at: "src/Web/Areas/Identity/Pages/Account/Logout.cshtml.cs:27",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Identity/Account/Logout,
+      at: "src/Web/Areas/Identity/Pages/Account/Logout.cshtml.cs:31",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /Identity/Account/Register,
+      at: "src/Web/Areas/Identity/Pages/Account/Register.cshtml.cs:61",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /Identity/Account/Register,
+      at: "src/Web/Areas/Identity/Pages/Account/Register.cshtml.cs:66",
+    }
+  # src/Web: health checks (any method)
+  - { type: rest, path: /health, at: "src/Web/Program.cs:151" }
+  - { type: rest, path: /home_page_health_check, at: "src/Web/Program.cs:196" }
+  - { type: rest, path: /api_health_check, at: "src/Web/Program.cs:197" }
+  # src/PublicApi
+  - {
+      type: rest,
+      method: POST,
+      path: /api/authenticate,
+      at: "src/PublicApi/AuthEndpoints/AuthenticateEndpoint.cs:29",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog-brands,
+      at: "src/PublicApi/CatalogBrandEndpoints/CatalogBrandListEndpoint.cs:27",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog-items/{catalogItemId}",
+      at: "src/PublicApi/CatalogItemEndpoints/CatalogItemGetByIdEndpoint.cs:25",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog-items,
+      at: "src/PublicApi/CatalogItemEndpoints/CatalogItemListPagedEndpoint.cs:31",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/catalog-items,
+      at: "src/PublicApi/CatalogItemEndpoints/CreateCatalogItemEndpoint.cs:29",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/catalog-items/{catalogItemId}",
+      at: "src/PublicApi/CatalogItemEndpoints/DeleteCatalogItemEndpoint.cs:20",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: /api/catalog-items,
+      at: "src/PublicApi/CatalogItemEndpoints/UpdateCatalogItemEndpoint.cs:27",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog-types,
+      at: "src/PublicApi/CatalogTypeEndpoints/CatalogTypeListEndpoint.cs:27",
+    }
+calls:
+  # BlazorAdmin -> PublicApi
+  - {
+      type: rest,
+      method: POST,
+      path: /api/catalog-items,
+      to: public-api,
+      at: "src/BlazorAdmin/Services/CatalogItemService.cs:31",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: /api/catalog-items,
+      to: public-api,
+      at: "src/BlazorAdmin/Services/CatalogItemService.cs:37",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/catalog-items/{catalogItemId}",
+      to: public-api,
+      at: "src/BlazorAdmin/Services/CatalogItemService.cs:42",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/catalog-items/{catalogItemId}",
+      to: public-api,
+      at: "src/BlazorAdmin/Services/CatalogItemService.cs:49",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog-items,
+      to: public-api,
+      at: "src/BlazorAdmin/Services/CatalogItemService.cs:65",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog-brands,
+      to: public-api,
+      at: "src/BlazorAdmin/Services/CatalogLookupDataService.cs:40",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog-types,
+      to: public-api,
+      at: "src/BlazorAdmin/Services/CatalogLookupDataService.cs:40",
+    }
+  # BlazorAdmin -> Web (its host)
+  - {
+      type: rest,
+      method: GET,
+      path: /User,
+      to: web,
+      at: "src/BlazorAdmin/CustomAuthStateProvider.cs:57",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /User/Logout,
+      to: web,
+      at: "src/BlazorAdmin/Pages/Logout.razor:10",
+    }
+  # Web -> PublicApi (health check)
+  - {
+      type: rest,
+      method: GET,
+      path: /api/catalog-items,
+      to: public-api,
+      at: "src/Web/HealthChecks/ApiHealthCheck.cs:25",
+    }
+stores:
+  # CatalogContext
+  - { table: Baskets, at: "src/Infrastructure/Data/Migrations/20201202111507_InitialModel.cs:23" }
+  - {
+      table: CatalogBrands,
+      at: "src/Infrastructure/Data/Migrations/20201202111507_InitialModel.cs:36",
+    }
+  - {
+      table: CatalogTypes,
+      at: "src/Infrastructure/Data/Migrations/20201202111507_InitialModel.cs:48",
+    }
+  - { table: Orders, at: "src/Infrastructure/Data/Migrations/20201202111507_InitialModel.cs:60" }
+  - {
+      table: BasketItems,
+      at: "src/Infrastructure/Data/Migrations/20201202111507_InitialModel.cs:79",
+    }
+  - { table: Catalog, at: "src/Infrastructure/Data/Migrations/20201202111507_InitialModel.cs:101" }
+  - {
+      table: OrderItems,
+      at: "src/Infrastructure/Data/Migrations/20201202111507_InitialModel.cs:130",
+    }
+  # AppIdentityDbContext
+  - {
+      table: AspNetRoles,
+      at: "src/Infrastructure/Identity/Migrations/20201202111612_InitialIdentityModel.cs:11",
+    }
+  - {
+      table: AspNetUsers,
+      at: "src/Infrastructure/Identity/Migrations/20201202111612_InitialIdentityModel.cs:25",
+    }
+  - {
+      table: AspNetRoleClaims,
+      at: "src/Infrastructure/Identity/Migrations/20201202111612_InitialIdentityModel.cs:50",
+    }
+  - {
+      table: AspNetUserClaims,
+      at: "src/Infrastructure/Identity/Migrations/20201202111612_InitialIdentityModel.cs:71",
+    }
+  - {
+      table: AspNetUserLogins,
+      at: "src/Infrastructure/Identity/Migrations/20201202111612_InitialIdentityModel.cs:92",
+    }
+  - {
+      table: AspNetUserRoles,
+      at: "src/Infrastructure/Identity/Migrations/20201202111612_InitialIdentityModel.cs:112",
+    }
+  - {
+      table: AspNetUserTokens,
+      at: "src/Infrastructure/Identity/Migrations/20201202111612_InitialIdentityModel.cs:136",
+    }
+deploys:
+  - { platform: azure-app-service, at: "infra/core/host/appservice.bicep:38" }

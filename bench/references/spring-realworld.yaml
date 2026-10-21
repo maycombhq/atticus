@@ -1,0 +1,236 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: spring-realworld
+commit: ee17e31aafe733d98c4853c8b9a74d7f2f6c924a
+covers: [serves, calls, stores, deploys]
+notes: >-
+  The RealWorld (Conduit) back end in Spring Boot, with MyBatis XML mappers on SQLite and a
+  GraphQL API through Netflix DGS. No context path is set in application.properties, so REST
+  paths are the class-level @RequestMapping plus the method mapping (ArticleFavoriteApi,
+  ProfileApi and TagsApi omit the leading slash; written here with it). REST entries cite the
+  method mapping annotation. GraphQL entries are the root Query and Mutation fields, cited at
+  schema.graphqls; each one has a DGS data fetcher in src/main/java/io/spring/graphql. Nested
+  type resolvers (Profile.feed, Article.comments, payload fields and so on) are not counted as
+  entry points. The /graphql endpoint itself is DGS's default and isn't listed as REST. The
+  DGS codegen output (DgsConstants, generated types) is generated and was ignored. No
+  outbound calls: image.default is a default avatar URL stored in data, never requested.
+  Tables come from the one Flyway migration; the MyBatis mappers use only these tables. The
+  only CI workflow runs tests, and there is no Dockerfile or deployment config, so deploys is
+  empty.
+serves:
+  - {
+      type: rest,
+      method: GET,
+      path: "/articles/{slug}",
+      at: "src/main/java/io/spring/api/ArticleApi.java:35",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/articles/{slug}",
+      at: "src/main/java/io/spring/api/ArticleApi.java:44",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/articles/{slug}",
+      at: "src/main/java/io/spring/api/ArticleApi.java:65",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/articles/{slug}/favorite",
+      at: "src/main/java/io/spring/api/ArticleFavoriteApi.java:29",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/articles/{slug}/favorite",
+      at: "src/main/java/io/spring/api/ArticleFavoriteApi.java:39",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/articles",
+      at: "src/main/java/io/spring/api/ArticlesApi.java:28",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/articles/feed",
+      at: "src/main/java/io/spring/api/ArticlesApi.java:40",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/articles",
+      at: "src/main/java/io/spring/api/ArticlesApi.java:48",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/articles/{slug}/comments",
+      at: "src/main/java/io/spring/api/CommentsApi.java:40",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/articles/{slug}/comments",
+      at: "src/main/java/io/spring/api/CommentsApi.java:53",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/articles/{slug}/comments/{id}",
+      at: "src/main/java/io/spring/api/CommentsApi.java:67",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/user",
+      at: "src/main/java/io/spring/api/CurrentUserApi.java:31",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/user",
+      at: "src/main/java/io/spring/api/CurrentUserApi.java:40",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/profiles/{username}",
+      at: "src/main/java/io/spring/api/ProfileApi.java:28",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/profiles/{username}/follow",
+      at: "src/main/java/io/spring/api/ProfileApi.java:37",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/profiles/{username}/follow",
+      at: "src/main/java/io/spring/api/ProfileApi.java:51",
+    }
+  - { type: rest, method: GET, path: "/tags", at: "src/main/java/io/spring/api/TagsApi.java:17" }
+  - { type: rest, method: POST, path: "/users", at: "src/main/java/io/spring/api/UsersApi.java:39" }
+  - {
+      type: rest,
+      method: POST,
+      path: "/users/login",
+      at: "src/main/java/io/spring/api/UsersApi.java:47",
+    }
+  - {
+      type: graphql,
+      method: QUERY,
+      path: "article",
+      at: "src/main/resources/schema/schema.graphqls:3",
+    }
+  - {
+      type: graphql,
+      method: QUERY,
+      path: "articles",
+      at: "src/main/resources/schema/schema.graphqls:4",
+    }
+  - { type: graphql, method: QUERY, path: "me", at: "src/main/resources/schema/schema.graphqls:13" }
+  - {
+      type: graphql,
+      method: QUERY,
+      path: "feed",
+      at: "src/main/resources/schema/schema.graphqls:14",
+    }
+  - {
+      type: graphql,
+      method: QUERY,
+      path: "profile",
+      at: "src/main/resources/schema/schema.graphqls:15",
+    }
+  - {
+      type: graphql,
+      method: QUERY,
+      path: "tags",
+      at: "src/main/resources/schema/schema.graphqls:16",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "createUser",
+      at: "src/main/resources/schema/schema.graphqls:23",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "login",
+      at: "src/main/resources/schema/schema.graphqls:24",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "updateUser",
+      at: "src/main/resources/schema/schema.graphqls:25",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "followUser",
+      at: "src/main/resources/schema/schema.graphqls:26",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "unfollowUser",
+      at: "src/main/resources/schema/schema.graphqls:27",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "createArticle",
+      at: "src/main/resources/schema/schema.graphqls:30",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "updateArticle",
+      at: "src/main/resources/schema/schema.graphqls:31",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "favoriteArticle",
+      at: "src/main/resources/schema/schema.graphqls:32",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "unfavoriteArticle",
+      at: "src/main/resources/schema/schema.graphqls:33",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "deleteArticle",
+      at: "src/main/resources/schema/schema.graphqls:34",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "addComment",
+      at: "src/main/resources/schema/schema.graphqls:37",
+    }
+  - {
+      type: graphql,
+      method: MUTATION,
+      path: "deleteComment",
+      at: "src/main/resources/schema/schema.graphqls:38",
+    }
+calls: []
+stores:
+  - { table: users, at: "src/main/resources/db/migration/V1__create_tables.sql:1" }
+  - { table: articles, at: "src/main/resources/db/migration/V1__create_tables.sql:10" }
+  - { table: article_favorites, at: "src/main/resources/db/migration/V1__create_tables.sql:21" }
+  - { table: follows, at: "src/main/resources/db/migration/V1__create_tables.sql:27" }
+  - { table: tags, at: "src/main/resources/db/migration/V1__create_tables.sql:32" }
+  - { table: article_tags, at: "src/main/resources/db/migration/V1__create_tables.sql:37" }
+  - { table: comments, at: "src/main/resources/db/migration/V1__create_tables.sql:42" }
+deploys: []

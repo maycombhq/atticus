@@ -1,0 +1,226 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: clean-architecture
+commit: fab85b18342d3175b0b720adc92b9771f657aa1e
+covers: [serves, calls, stores, deploys]
+notes: >-
+  Jason Taylor's Clean Architecture dotnet new template: one ASP.NET Core minimal-API host (src/Web) with
+  an Aspire AppHost, plus two SPA variants (src/Web/ClientApp Angular, src/Web/ClientApp-React React)
+  of which the template keeps one. Endpoint groups are classes implementing IEndpointGroup, discovered by
+  reflection in src/Web/Infrastructure/WebApplicationExtensions.cs; none overrides RoutePrefix, so every
+  group is mounted at /api/<ClassName> (line 22 there). The repo's MapGet/MapPost helpers default the
+  pattern to "" (the group root). Left out of serves: the ASP.NET Core Identity endpoints added by
+  MapIdentityApi<ApplicationUser>() under /api/Users (register, login, refresh, confirmEmail, manage/info
+  and the rest; they come from the library, not this repo; only the repo's own POST /api/Users/logout is
+  listed); the dev-only /health and /alive from ServiceDefaults; MapOpenApi and Scalar; the static file
+  server and the SPA fallback (MapFallbackToFile index.html); and the "/" redirect to /scalar, which only
+  exists in the UseApiOnly template variant. Calls: both SPAs call the API through an NSwag client
+  (web-api-client.ts) generated at build time and not committed; client method names are the endpoint
+  names (handler method names, set by WithName in EndpointRouteBuilderExtensions.cs), so each call maps to
+  one route. The API base is the SPA's own origin, proxied to the webapi service in dev (proxy.conf.js,
+  vite.config.ts). Each endpoint is listed once per SPA, at its first call site; repeated calls (React
+  Todo.jsx calls updateTodoItem twice, and Angular's unrouted fetch-data component repeats
+  getWeatherForecasts) are not repeated. Calls to the Identity endpoints (login, register, infoGET) are
+  left out as auth-library built-ins; logout is the repo's own and is listed. Stores: ApplicationDbContext
+  is an IdentityDbContext with no migrations (the initialiser uses EnsureCreated), so table names are EF
+  Core conventions: the DbSet names TodoLists and TodoItems (Colour is an owned type stored in TodoLists)
+  and the seven default ASP.NET Core Identity tables, cited at the context declaration. The database is
+  SQLite, SQL Server or PostgreSQL depending on the template option. Deploys: the AppHost calls
+  AddAzureContainerAppEnvironment, so Aspire/azd publishing puts the web API on Azure Container Apps; the
+  SPA is added to the AppHost only in run mode and is served from the API when published. There is no
+  Bicep or infra folder at this commit; the GitHub workflows only build, test and pack the template.
+serves:
+  - { type: rest, method: POST, path: /api/TodoItems, at: "src/Web/Endpoints/TodoItems.cs:15" }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/TodoItems/{id}",
+      at: "src/Web/Endpoints/TodoItems.cs:16",
+    }
+  - {
+      type: rest,
+      method: PATCH,
+      path: "/api/TodoItems/UpdateDetail/{id}",
+      at: "src/Web/Endpoints/TodoItems.cs:17",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/TodoItems/{id}",
+      at: "src/Web/Endpoints/TodoItems.cs:18",
+    }
+  - { type: rest, method: GET, path: /api/TodoLists, at: "src/Web/Endpoints/TodoLists.cs:15" }
+  - { type: rest, method: POST, path: /api/TodoLists, at: "src/Web/Endpoints/TodoLists.cs:16" }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/TodoLists/{id}",
+      at: "src/Web/Endpoints/TodoLists.cs:17",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/TodoLists/{id}",
+      at: "src/Web/Endpoints/TodoLists.cs:18",
+    }
+  - { type: rest, method: POST, path: /api/Users/logout, at: "src/Web/Endpoints/Users.cs:14" }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/WeatherForecasts,
+      at: "src/Web/Endpoints/WeatherForecasts.cs:12",
+    }
+calls:
+  # Angular SPA
+  - {
+      type: rest,
+      method: GET,
+      path: /api/TodoLists,
+      to: webapi,
+      at: "src/Web/ClientApp/src/app/todo/todo.component.ts:44",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/TodoLists,
+      to: webapi,
+      at: "src/Web/ClientApp/src/app/todo/todo.component.ts:83",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/TodoLists/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp/src/app/todo/todo.component.ts:120",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/TodoLists/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp/src/app/todo/todo.component.ts:140",
+    }
+  - {
+      type: rest,
+      method: PATCH,
+      path: "/api/TodoItems/UpdateDetail/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp/src/app/todo/todo.component.ts:167",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/TodoItems,
+      to: webapi,
+      at: "src/Web/ClientApp/src/app/todo/todo.component.ts:209",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/TodoItems/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp/src/app/todo/todo.component.ts:254",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/TodoItems/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp/src/app/todo/todo.component.ts:277",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/WeatherForecasts,
+      to: webapi,
+      at: "src/Web/ClientApp/src/app/weather/weather.component.ts:16",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/Users/logout,
+      to: webapi,
+      at: "src/Web/ClientApp/src/api-authorization/auth.service.ts:35",
+    }
+  # React SPA
+  - {
+      type: rest,
+      method: GET,
+      path: /api/TodoLists,
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/Todo.jsx:34",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/TodoLists,
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/Todo.jsx:72",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/TodoLists/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/Todo.jsx:98",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/TodoLists/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/Todo.jsx:113",
+    }
+  - {
+      type: rest,
+      method: PATCH,
+      path: "/api/TodoItems/UpdateDetail/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/Todo.jsx:138",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/TodoItems/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/Todo.jsx:155",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/TodoItems/{id}",
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/Todo.jsx:165",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/TodoItems,
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/Todo.jsx:218",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/WeatherForecasts,
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/Weather.jsx:13",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/Users/logout,
+      to: webapi,
+      at: "src/Web/ClientApp-React/src/components/api-authorization/AuthContext.jsx:27",
+    }
+stores:
+  - { table: TodoLists, at: "src/Infrastructure/Data/ApplicationDbContext.cs:14" }
+  - { table: TodoItems, at: "src/Infrastructure/Data/ApplicationDbContext.cs:16" }
+  - { table: AspNetUsers, at: "src/Infrastructure/Data/ApplicationDbContext.cs:10" }
+  - { table: AspNetRoles, at: "src/Infrastructure/Data/ApplicationDbContext.cs:10" }
+  - { table: AspNetUserRoles, at: "src/Infrastructure/Data/ApplicationDbContext.cs:10" }
+  - { table: AspNetUserClaims, at: "src/Infrastructure/Data/ApplicationDbContext.cs:10" }
+  - { table: AspNetUserLogins, at: "src/Infrastructure/Data/ApplicationDbContext.cs:10" }
+  - { table: AspNetUserTokens, at: "src/Infrastructure/Data/ApplicationDbContext.cs:10" }
+  - { table: AspNetRoleClaims, at: "src/Infrastructure/Data/ApplicationDbContext.cs:10" }
+deploys:
+  - { platform: azure-container-apps, at: "src/AppHost/Program.cs:5" }

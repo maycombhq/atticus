@@ -1,0 +1,15 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: jenkins-maven
+commit: bffd953ff1ea7e0ae32fb7ee2f4b5221d1d96918
+covers: [serves, calls, stores, deploys]
+notes: >-
+  A hello-world Java console app (App.main prints "Hello World!") used by the Jenkins
+  tutorial. It exposes no HTTP or other entry points, calls nothing and has no database, so
+  serves, calls and stores are empty. The Jenkinsfile's Deliver stage runs
+  jenkins/scripts/deliver.sh, which only installs the jar into the local Maven repository and
+  runs it with java -jar on the Jenkins agent. That is not a deployment to any platform, so
+  deploys is empty too.
+serves: []
+calls: []
+stores: []
+deploys: []

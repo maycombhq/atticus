@@ -1,0 +1,192 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: piggymetrics
+commit: 6bb2cf9ddbca980b664d3edbb6ff775d75369278
+covers: [serves, calls, stores, deploys]
+notes: >-
+  Spring Cloud microservices (Spring Boot 2 / Netflix stack): a Zuul gateway that also serves a
+  jQuery UI from its static folder, auth-service (OAuth2 authorization server), account-, statistics-
+  and notification-service, plus config server, Eureka registry, Hystrix monitoring and Turbine.
+  Service paths include the servlet context-path each service gets from the config server
+  (config/src/main/resources/shared/<service>.yml: /accounts, /uaa, /statistics, /notifications).
+  The gateway's Zuul routes (shared/gateway.yml) are recorded as serves of the gateway with the
+  route path as written ("/uaa/**" etc.) and no method, since a route accepts every method; the
+  proxying itself is not recorded as calls. Framework-provided endpoints are left out: the OAuth2
+  token endpoint /uaa/oauth/token (@EnableAuthorizationServer), actuator, config server, Eureka,
+  Hystrix dashboard and Turbine; the gateway's static index.html is not recorded as a page route.
+  Feign clients resolve service ids through Eureka, so their paths are written as declared (they
+  already include the target's context path). ExchangeRatesClient's base is rates.url =
+  https://api.exchangeratesapi.io (shared/statistics-service.yml). The UI's calls are relative URLs
+  against the gateway (accounts/current is /accounts/current). The UI's call to uaa/oauth/token, the
+  services' client-credentials token requests, and the user-info token checks (/uaa/users/current
+  via user-info-uri, made by Spring Security or the copied CustomUserInfoTokenServices) are
+  auth-library mechanics and left out. The UI also calls api.exchangeratesapi.io directly
+  (launch.js), counted as a third-party API call. login.js uses bare CR line endings; its line
+  numbers count CR as a line break. Spring Cloud Bus (AMQP) and Hystrix stream publish to RabbitMQ
+  through framework auto-configuration with no topic declared in the repo, so there are no event
+  facts; e-mail goes over SMTP (JavaMailSender) and is not counted. Stores are the @Document MongoDB
+  collections; account-service and statistics-service each have their own "accounts" collection in
+  separate MongoDB instances, so both are listed. Deployment is docker-compose: the README says to
+  copy docker-compose.yml and run it, and it runs the published images of every service; Travis
+  only builds and pushes images.
+serves:
+  - { type: rest, path: "/uaa/**", at: "config/src/main/resources/shared/gateway.yml:21" }
+  - { type: rest, path: "/accounts/**", at: "config/src/main/resources/shared/gateway.yml:27" }
+  - { type: rest, path: "/statistics/**", at: "config/src/main/resources/shared/gateway.yml:33" }
+  - { type: rest, path: "/notifications/**", at: "config/src/main/resources/shared/gateway.yml:39" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/accounts/{name}",
+      at: "account-service/src/main/java/com/piggymetrics/account/controller/AccountController.java:20",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /accounts/current,
+      at: "account-service/src/main/java/com/piggymetrics/account/controller/AccountController.java:25",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: /accounts/current,
+      at: "account-service/src/main/java/com/piggymetrics/account/controller/AccountController.java:30",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /accounts/,
+      at: "account-service/src/main/java/com/piggymetrics/account/controller/AccountController.java:35",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /uaa/users/current,
+      at: "auth-service/src/main/java/com/piggymetrics/auth/controller/UserController.java:22",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /uaa/users,
+      at: "auth-service/src/main/java/com/piggymetrics/auth/controller/UserController.java:28",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /notifications/recipients/current,
+      at: "notification-service/src/main/java/com/piggymetrics/notification/controller/RecipientController.java:21",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: /notifications/recipients/current,
+      at: "notification-service/src/main/java/com/piggymetrics/notification/controller/RecipientController.java:26",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /statistics/current,
+      at: "statistics-service/src/main/java/com/piggymetrics/statistics/controller/StatisticsController.java:20",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/statistics/{accountName}",
+      at: "statistics-service/src/main/java/com/piggymetrics/statistics/controller/StatisticsController.java:26",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/statistics/{accountName}",
+      at: "statistics-service/src/main/java/com/piggymetrics/statistics/controller/StatisticsController.java:32",
+    }
+calls:
+  - {
+      type: rest,
+      method: POST,
+      path: /uaa/users,
+      to: auth-service,
+      at: "account-service/src/main/java/com/piggymetrics/account/client/AuthServiceClient.java:12",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/statistics/{accountName}",
+      to: statistics-service,
+      at: "account-service/src/main/java/com/piggymetrics/account/client/StatisticsServiceClient.java:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/accounts/{accountName}",
+      to: account-service,
+      at: "notification-service/src/main/java/com/piggymetrics/notification/client/AccountServiceClient.java:12",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /latest,
+      to: exchangeratesapi,
+      at: "statistics-service/src/main/java/com/piggymetrics/statistics/client/ExchangeRatesClient.java:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /accounts/current,
+      to: account-service,
+      at: "gateway/src/main/resources/static/js/launch.js:59",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /latest,
+      to: exchangeratesapi,
+      at: "gateway/src/main/resources/static/js/launch.js:83",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: /accounts/current,
+      to: account-service,
+      at: "gateway/src/main/resources/static/js/main.js:871",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /accounts/,
+      to: account-service,
+      at: "gateway/src/main/resources/static/js/login.js:19",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: /notifications/recipients/current,
+      to: notification-service,
+      at: "gateway/src/main/resources/static/js/login.js:62",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /accounts/demo,
+      to: account-service,
+      at: "gateway/src/main/resources/static/js/login.js:137",
+    }
+stores:
+  - {
+      table: accounts,
+      at: "account-service/src/main/java/com/piggymetrics/account/domain/Account.java:13",
+    }
+  - { table: users, at: "auth-service/src/main/java/com/piggymetrics/auth/domain/User.java:10" }
+  - {
+      table: recipients,
+      at: "notification-service/src/main/java/com/piggymetrics/notification/domain/Recipient.java:11",
+    }
+  - {
+      table: accounts,
+      at: "statistics-service/src/main/java/com/piggymetrics/statistics/domain/Account.java:10",
+    }
+  - {
+      table: datapoints,
+      at: "statistics-service/src/main/java/com/piggymetrics/statistics/domain/timeseries/DataPoint.java:15",
+    }
+deploys:
+  - { platform: docker, at: "docker-compose.yml:2" }

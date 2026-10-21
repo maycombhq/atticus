@@ -100,11 +100,11 @@ Every open item, in the order to take them. Check work by running the real flow 
 - [x] **A7. The bank's answers** recorded in `docs/plan/bank-questions.md` (Copilot in IntelliJ IDEA and VS Code only, no model API, npm likely); the open ones listed for the product owner. Nothing is sent to anyone.
 - [ ] **A8. CI on the hosted runners** checked for the pushed commits (needs GitHub access in the session, or a look at the Actions tab).
 - [x] **P1.1 The bench and its scorer** (revamp Phase 1): `bench/` with pinned repos and references written by reading the code; `atticus bench fetch` and `atticus bench run`. Batch 1 (6 repos) baseline for today's readers: precision 60%, recall 31% (`bench/README.md`, with the gaps by cause).
-- [ ] **P1.2 Bench batch 2:** the other 16 approved repos and their references.
+- [x] **P1.2 Bench batch 2:** all 22 approved repos have references. Baseline over 22: precision 58%, recall 32%; the biggest single cause is dropped path prefixes in every stack (`bench/README.md`).
 - [ ] **P1.3 Reference flows** for the connected estates (petclinic UI to API to database; microservices-demo; eShop).
 - [ ] **P1.4 Knowledge bench:** an invented Forge wiki corpus with reference extractions.
 - [ ] **P1.5 Design bench:** an invented Figma export for one UI repo.
-- [ ] **P1.6 Diagram spike:** React Flow and ELK.js on NadiEngine and the reference flows; layout score limits.
+- [ ] **P1.6 Diagram spike:** measured: ELK.js chosen (dagre fails on nested graphs), focus mode and transitive reduction make the dense views legible, limits set (`docs/plan/diagram-spike.md`). Still to do: try the interaction in a browser (a spike page is published for the product owner), and swimlanes for the reference flows (P1.3).
 
 ### I. The AI reads the code; a thin deterministic layer verifies (direction change, decided by the product owner)
 

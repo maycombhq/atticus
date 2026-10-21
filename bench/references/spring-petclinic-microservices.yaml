@@ -1,0 +1,318 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: spring-petclinic-microservices
+commit: 1d76b00d683e86b62867a6bf59530f8ab301244f
+covers: [serves, calls, stores, deploys]
+notes: >-
+  Spring Cloud microservices: a Spring Cloud Gateway (WebFlux) api-gateway, customers-, vets- and
+  visits-service (Spring MVC + JPA), a genai-service (Spring AI chat bot), plus config server,
+  Eureka discovery server and Spring Boot Admin. The UI served by the gateway's static folder is
+  not AngularJS at this commit: it is a Vue 3 app (ES modules, vue and vue-router from webjars via
+  an import map) that calls the back end with fetch through scripts/api/client.js request().
+  The gateway's own route paths (spring.cloud.gateway routes in api-gateway application.yml) are
+  recorded as serves of the gateway with the Path predicate as written ("/api/vet/**" etc.) and no
+  method, since a route accepts every method; StripPrefix=2 forwards /api/customer/owners to
+  customers-service /owners. The proxying itself is not recorded as calls. No service sets a
+  context path in this repo (service config lives in the external spring-petclinic-microservices-config
+  repo, which is not part of this reference), so service paths are the controller mappings. Paths
+  keep the literal "*" segment where the mapping uses one (owners/*/pets/{petId}). FallbackController
+  /fallback accepts GET and POST, so it is two entries at the same line. Framework endpoints
+  (actuator, Eureka, config server, Spring Boot Admin, chaos monkey) are left out. Calls: the
+  gateway's WebClient clients (base http://customers-service and http://visits-service, load-balanced
+  through Eureka); the genai-service's RestClient calls to customers-service (base URI from the
+  DiscoveryClient) and its WebClient call to vets-service /vets (only made when vectorstore.json is
+  absent); and the Vue UI's fetch calls, written as the path the browser requests, with to: the
+  service the gateway route forwards to (api-gateway for its own /api/gateway controller). JS
+  template params are written as {name}. PetFormPage line 61 sends PUT .../pets/{petId} when editing
+  and POST .../pets when adding, so it is two entries at that line. The genai-service's calls to
+  OpenAI / Azure OpenAI go through Spring AI's ChatClient and model starter with no path in the repo,
+  so they are not counted. No messaging. Stores are the hsqldb schema.sql tables of each service
+  (the mysql schemas define the same tables; JPA @Table names match). Deployment: docker-compose.yml
+  runs every service of the system from its published image (with memory limits), not just local
+  dependencies, and there is no other deployment target, so it is counted as docker; the README
+  frames it as starting the system locally, which makes this a judgement call.
+serves:
+  - {
+      type: rest,
+      path: "/api/vet/**",
+      at: "spring-petclinic-api-gateway/src/main/resources/application.yml:24",
+    }
+  - {
+      type: rest,
+      path: "/api/visit/**",
+      at: "spring-petclinic-api-gateway/src/main/resources/application.yml:30",
+    }
+  - {
+      type: rest,
+      path: "/api/customer/**",
+      at: "spring-petclinic-api-gateway/src/main/resources/application.yml:36",
+    }
+  - {
+      type: rest,
+      path: "/api/genai/**",
+      at: "spring-petclinic-api-gateway/src/main/resources/application.yml:42",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/gateway/owners/{ownerId}",
+      at: "spring-petclinic-api-gateway/src/main/java/org/springframework/samples/petclinic/api/boundary/web/ApiGatewayController.java:54",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /fallback,
+      at: "spring-petclinic-api-gateway/src/main/java/org/springframework/samples/petclinic/api/boundary/web/FallbackController.java:12",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /fallback,
+      at: "spring-petclinic-api-gateway/src/main/java/org/springframework/samples/petclinic/api/boundary/web/FallbackController.java:12",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /owners,
+      at: "spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/web/OwnerResource.java:57",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/owners/{ownerId}",
+      at: "spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/web/OwnerResource.java:67",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /owners,
+      at: "spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/web/OwnerResource.java:75",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/owners/{ownerId}",
+      at: "spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/web/OwnerResource.java:83",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /petTypes,
+      at: "spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/web/PetResource.java:50",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/owners/{ownerId}/pets",
+      at: "spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/web/PetResource.java:55",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/owners/*/pets/{petId}",
+      at: "spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/web/PetResource.java:69",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/owners/*/pets/{petId}",
+      at: "spring-petclinic-customers-service/src/main/java/org/springframework/samples/petclinic/customers/web/PetResource.java:89",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /vets,
+      at: "spring-petclinic-vets-service/src/main/java/org/springframework/samples/petclinic/vets/web/VetResource.java:44",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/owners/*/pets/{petId}/visits",
+      at: "spring-petclinic-visits-service/src/main/java/org/springframework/samples/petclinic/visits/web/VisitResource.java:56",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/owners/*/pets/{petId}/visits",
+      at: "spring-petclinic-visits-service/src/main/java/org/springframework/samples/petclinic/visits/web/VisitResource.java:67",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /pets/visits,
+      at: "spring-petclinic-visits-service/src/main/java/org/springframework/samples/petclinic/visits/web/VisitResource.java:72",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /chatclient,
+      at: "spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/PetclinicChatClient.java:57",
+    }
+calls:
+  - {
+      type: rest,
+      method: GET,
+      path: "/owners/{ownerId}",
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/java/org/springframework/samples/petclinic/api/application/CustomersServiceClient.java:37",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /pets/visits,
+      to: visits-service,
+      at: "spring-petclinic-api-gateway/src/main/java/org/springframework/samples/petclinic/api/application/VisitsServiceClient.java:45",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /owners,
+      to: customers-service,
+      at: "spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/AIDataProvider.java:45",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/owners/{ownerId}/pets",
+      to: customers-service,
+      at: "spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/AIDataProvider.java:73",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /owners,
+      to: customers-service,
+      at: "spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/AIDataProvider.java:82",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /vets,
+      to: vets-service,
+      at: "spring-petclinic-genai-service/src/main/java/org/springframework/samples/petclinic/genai/VectorStoreController.java:69",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/genai/chatclient,
+      to: genai-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/components/ChatBox.js:47",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/gateway/owners/{ownerId}",
+      to: api-gateway,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/OwnerDetailsPage.js:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/customer/owners/{ownerId}",
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/OwnerFormPage.js:23",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/customer/owners/{ownerId}",
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/OwnerFormPage.js:46",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/customer/owners,
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/OwnerFormPage.js:49",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/customer/owners,
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/OwnersPage.js:12",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/customer/petTypes,
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/PetFormPage.js:25",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/customer/owners/{ownerId}/pets/{petId}",
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/PetFormPage.js:28",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/customer/owners/{ownerId}",
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/PetFormPage.js:37",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/customer/owners/{ownerId}/pets/{petId}",
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/PetFormPage.js:61",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/customer/owners/{ownerId}/pets",
+      to: customers-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/PetFormPage.js:61",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/vet/vets,
+      to: vets-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/VetsPage.js:10",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/visit/owners/{ownerId}/pets/{petId}/visits",
+      to: visits-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/VisitsPage.js:23",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/visit/owners/{ownerId}/pets/{petId}/visits",
+      to: visits-service,
+      at: "spring-petclinic-api-gateway/src/main/resources/static/scripts/pages/VisitsPage.js:35",
+    }
+stores:
+  - {
+      table: types,
+      at: "spring-petclinic-customers-service/src/main/resources/db/hsqldb/schema.sql:5",
+    }
+  - {
+      table: owners,
+      at: "spring-petclinic-customers-service/src/main/resources/db/hsqldb/schema.sql:11",
+    }
+  - {
+      table: pets,
+      at: "spring-petclinic-customers-service/src/main/resources/db/hsqldb/schema.sql:21",
+    }
+  - { table: vets, at: "spring-petclinic-vets-service/src/main/resources/db/hsqldb/schema.sql:5" }
+  - {
+      table: specialties,
+      at: "spring-petclinic-vets-service/src/main/resources/db/hsqldb/schema.sql:12",
+    }
+  - {
+      table: vet_specialties,
+      at: "spring-petclinic-vets-service/src/main/resources/db/hsqldb/schema.sql:18",
+    }
+  - {
+      table: visits,
+      at: "spring-petclinic-visits-service/src/main/resources/db/hsqldb/schema.sql:3",
+    }
+deploys:
+  - { platform: docker, at: "docker-compose.yml:1" }

@@ -1,0 +1,132 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: fastapi-realworld
+commit: 029eb7781c60d5f563ee8990a0cbfb79b244538c
+covers: [serves, calls, stores, deploys]
+notes: >-
+  The RealWorld (Conduit) API in FastAPI, with raw SQL in aiosql .sql files under
+  app/db/queries/sql and pypika query builders in app/db/queries/tables.py. Serves: the top router
+  is included under settings.api_prefix = "/api" (app/core/settings/app.py:27, applied at
+  app/main.py:40); app/api/routes/api.py then adds /users (authentication), /user (current user),
+  /profiles, /articles (via app/api/routes/articles/api.py:7-8) and /articles/{slug}/comments and
+  /tags. Decorator paths of "" give the bare prefix (e.g. POST /api/users is register, GET /api/user
+  is the current user). The generated OpenAPI and docs routes are left out. Calls: none; the app
+  calls no other service (no HTTP client is used; starlette "requests" imports are the request
+  type). Stores: seven tables, all created by the single Alembic migration
+  app/db/migrations/versions/fdf8821871d7_main_tables.py and cited at each op.create_table. They
+  are the same seven the .sql queries read and write; users_subquery and author_subquery in the
+  SQL are aliases, not tables. The migration also creates an update_updated_at_column trigger
+  function, not a table. Deploys: the README has a "Deployment with Docker" section whose
+  instructions are docker-compose up -d db and docker-compose up -d app, and docker-compose.yml
+  runs the app (restart: on-failure, port 8000) with its Postgres; no other platform is
+  configured, so docker-compose is taken as the deployment and recorded as docker, cited at the
+  app service. The Deploy workflow (.github/workflows/deploy.yml) only builds and pushes an image
+  to Docker Hub, which is not a deployment.
+serves:
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/users/login",
+      at: "app/api/routes/authentication.py:22",
+    }
+  - { type: rest, method: POST, path: "/api/users", at: "app/api/routes/authentication.py:56" }
+  - { type: rest, method: GET, path: "/api/user", at: "app/api/routes/users.py:18" }
+  - { type: rest, method: PUT, path: "/api/user", at: "app/api/routes/users.py:38" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/profiles/{username}",
+      at: "app/api/routes/profiles.py:16",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/profiles/{username}/follow",
+      at: "app/api/routes/profiles.py:27",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/profiles/{username}/follow",
+      at: "app/api/routes/profiles.py:57",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/feed",
+      at: "app/api/routes/articles/articles_common.py:22",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles/{slug}/favorite",
+      at: "app/api/routes/articles/articles_common.py:47",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}/favorite",
+      at: "app/api/routes/articles/articles_common.py:77",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles",
+      at: "app/api/routes/articles/articles_resource.py:30",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles",
+      at: "app/api/routes/articles/articles_resource.py:53",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/{slug}",
+      at: "app/api/routes/articles/articles_resource.py:82",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/articles/{slug}",
+      at: "app/api/routes/articles/articles_resource.py:89",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}",
+      at: "app/api/routes/articles/articles_resource.py:109",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/{slug}/comments",
+      at: "app/api/routes/comments.py:26",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles/{slug}/comments",
+      at: "app/api/routes/comments.py:40",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}/comments/{comment_id}",
+      at: "app/api/routes/comments.py:60",
+    }
+  - { type: rest, method: GET, path: "/api/tags", at: "app/api/routes/tags.py:10" }
+calls: []
+stores:
+  - { table: users, at: "app/db/migrations/versions/fdf8821871d7_main_tables.py:54" }
+  - {
+      table: followers_to_followings,
+      at: "app/db/migrations/versions/fdf8821871d7_main_tables.py:77",
+    }
+  - { table: articles, at: "app/db/migrations/versions/fdf8821871d7_main_tables.py:100" }
+  - { table: tags, at: "app/db/migrations/versions/fdf8821871d7_main_tables.py:124" }
+  - { table: articles_to_tags, at: "app/db/migrations/versions/fdf8821871d7_main_tables.py:128" }
+  - { table: favorites, at: "app/db/migrations/versions/fdf8821871d7_main_tables.py:149" }
+  - { table: commentaries, at: "app/db/migrations/versions/fdf8821871d7_main_tables.py:168" }
+deploys:
+  - { platform: docker, at: "docker-compose.yml:4" }

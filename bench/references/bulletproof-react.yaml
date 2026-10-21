@@ -1,0 +1,356 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: bulletproof-react
+commit: 9506629ed003a561c6627735480cce4994244bb4
+covers: [calls]
+notes: >-
+  A React reference architecture with three app variants of the same discussions app under apps/:
+  react-vite (Vite SPA, axios client), nextjs-app (Next.js App Router, fetch-based client) and
+  nextjs-pages (Next.js Pages Router, axios client). Each app has its own copy of the API layer
+  (src/features/*/api and src/lib/auth.tsx) making the same 16 calls, so every call is listed once
+  per app (48 in all) and the app is the folder in `at`. Base URLs come from each app's .env.example
+  through src/config/env.ts and src/lib/api-client.ts: react-vite uses VITE_APP_API_URL =
+  https://api.bulletproofapp.com (no path prefix, so its paths have no /api; its .env.example-e2e
+  uses http://localhost:8080/api instead), and both Next.js apps use NEXT_PUBLIC_API_URL =
+  http://localhost:8080/api, so their paths start /api. Query parameters (page, discussionId) are
+  left out of paths; {param} names follow the template variables. The MSW mocks (src/testing/mocks,
+  mock-server.ts) are test code and are left out, as are tests and e2e. No app serves an API of its
+  own (no route handlers or pages/api); pages are not covered. Deploys are not covered: the GitHub
+  workflows only build, lint and test, and there is no hosting config. docs/ is prose and was
+  ignored.
+calls:
+  - {
+      type: rest,
+      method: POST,
+      path: "/comments",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/comments/api/create-comment.ts:22",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/comments/{commentId}",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/comments/api/delete-comment.ts:9",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/comments",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/comments/api/get-comments.ts:14",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/discussions",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/discussions/api/create-discussion.ts:22",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/discussions/{discussionId}",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/discussions/api/delete-discussion.ts:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/discussions/{discussionId}",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/discussions/api/get-discussion.ts:12",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/discussions",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/discussions/api/get-discussions.ts:13",
+    }
+  - {
+      type: rest,
+      method: PATCH,
+      path: "/discussions/{discussionId}",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/discussions/api/update-discussion.ts:24",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/teams",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/teams/api/get-teams.ts:8",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/users/{userId}",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/users/api/delete-user.ts:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/users",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/users/api/get-users.ts:8",
+    }
+  - {
+      type: rest,
+      method: PATCH,
+      path: "/users/profile",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/features/users/api/update-profile.ts:18",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/auth/me",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/lib/auth.tsx:14",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/auth/logout",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/lib/auth.tsx:20",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/auth/login",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/lib/auth.tsx:30",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/auth/register",
+      to: bulletproof-api,
+      at: "apps/react-vite/src/lib/auth.tsx:59",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/comments",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/comments/api/create-comment.ts:22",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/comments/{commentId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/comments/api/delete-comment.ts:9",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/comments",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/comments/api/get-comments.ts:14",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/discussions",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/discussions/api/create-discussion.ts:23",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/discussions/{discussionId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/discussions/api/delete-discussion.ts:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/discussions/{discussionId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/discussions/api/get-discussion.ts:12",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/discussions",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/discussions/api/get-discussions.ts:13",
+    }
+  - {
+      type: rest,
+      method: PATCH,
+      path: "/api/discussions/{discussionId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/discussions/api/update-discussion.ts:25",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/teams",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/teams/api/get-teams.ts:8",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/users/{userId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/users/api/delete-user.ts:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/users",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/users/api/get-users.ts:8",
+    }
+  - {
+      type: rest,
+      method: PATCH,
+      path: "/api/users/profile",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/features/users/api/update-profile.ts:18",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/auth/me",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/lib/auth.tsx:17",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/auth/logout",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/lib/auth.tsx:67",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/auth/login",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/lib/auth.tsx:77",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/auth/register",
+      to: bulletproof-api,
+      at: "apps/nextjs-app/src/lib/auth.tsx:106",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/comments",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/comments/api/create-comment.ts:22",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/comments/{commentId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/comments/api/delete-comment.ts:9",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/comments",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/comments/api/get-comments.ts:16",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/discussions",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/discussions/api/create-discussion.ts:23",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/discussions/{discussionId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/discussions/api/delete-discussion.ts:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/discussions/{discussionId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/discussions/api/get-discussion.ts:14",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/discussions",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/discussions/api/get-discussions.ts:13",
+    }
+  - {
+      type: rest,
+      method: PATCH,
+      path: "/api/discussions/{discussionId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/discussions/api/update-discussion.ts:25",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/teams",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/teams/api/get-teams.ts:8",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/users/{userId}",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/users/api/delete-user.ts:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/users",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/users/api/get-users.ts:8",
+    }
+  - {
+      type: rest,
+      method: PATCH,
+      path: "/api/users/profile",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/features/users/api/update-profile.ts:18",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/auth/me",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/lib/auth.tsx:15",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/auth/logout",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/lib/auth.tsx:21",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/auth/login",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/lib/auth.tsx:31",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/auth/register",
+      to: bulletproof-api,
+      at: "apps/nextjs-pages/src/lib/auth.tsx:60",
+    }

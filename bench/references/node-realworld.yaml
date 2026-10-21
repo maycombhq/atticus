@@ -1,0 +1,123 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: node-realworld
+commit: 30b68e1e881462b2f4164ea09ab4c4f5699c7b0b
+covers: [serves, calls, stores]
+notes: >-
+  The RealWorld (Conduit) back end in Express with Prisma on PostgreSQL. Every controller router
+  is mounted under /api in src/app/routes/routes.ts, so all controller paths carry that prefix;
+  Express :param segments are written as {param}. GET / in src/main.ts is a status route and is
+  included; express.static serving src/assets is not listed as a route. It calls no other
+  service (the api.realworld.io image URLs are default avatar strings, not calls). Tables use the
+  names Prisma gives them with no @@map: the models Article, Comment, Tag and User keep their model
+  names, and the implicit many-to-many relations create the join tables _ArticleToTag,
+  _UserFavorites and _UserFollows, cited at the migrations that create them (the ArticleTags table
+  from the first migration is dropped by a later one, so it is left out). The Dockerfile only
+  builds an image and there are no deployment manifests, so deploys is not covered.
+serves:
+  - { type: rest, method: GET, path: /, at: "src/main.ts:21" }
+  - { type: rest, method: GET, path: /api/tags, at: "src/app/routes/tag/tag.controller.ts:13" }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/articles,
+      at: "src/app/routes/article/article.controller.ts:30",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/articles/feed,
+      at: "src/app/routes/article/article.controller.ts:45",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/articles,
+      at: "src/app/routes/article/article.controller.ts:71",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/{slug}",
+      at: "src/app/routes/article/article.controller.ts:87",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/articles/{slug}",
+      at: "src/app/routes/article/article.controller.ts:110",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}",
+      at: "src/app/routes/article/article.controller.ts:129",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/{slug}/comments",
+      at: "src/app/routes/article/article.controller.ts:149",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles/{slug}/comments",
+      at: "src/app/routes/article/article.controller.ts:170",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}/comments/{id}",
+      at: "src/app/routes/article/article.controller.ts:190",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles/{slug}/favorite",
+      at: "src/app/routes/article/article.controller.ts:210",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}/favorite",
+      at: "src/app/routes/article/article.controller.ts:230",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/profiles/{username}",
+      at: "src/app/routes/profile/profile.controller.ts:14",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/profiles/{username}/follow",
+      at: "src/app/routes/profile/profile.controller.ts:34",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/profiles/{username}/follow",
+      at: "src/app/routes/profile/profile.controller.ts:54",
+    }
+  - { type: rest, method: POST, path: /api/users, at: "src/app/routes/auth/auth.controller.ts:14" }
+  - {
+      type: rest,
+      method: POST,
+      path: /api/users/login,
+      at: "src/app/routes/auth/auth.controller.ts:30",
+    }
+  - { type: rest, method: GET, path: /api/user, at: "src/app/routes/auth/auth.controller.ts:45" }
+  - { type: rest, method: PUT, path: /api/user, at: "src/app/routes/auth/auth.controller.ts:61" }
+calls: []
+stores:
+  - { table: Article, at: "src/prisma/schema.prisma:11" }
+  - { table: Comment, at: "src/prisma/schema.prisma:26" }
+  - { table: Tag, at: "src/prisma/schema.prisma:37" }
+  - { table: User, at: "src/prisma/schema.prisma:43" }
+  - { table: _UserFavorites, at: "src/prisma/migrations/20210924225358_initial/migration.sql:57" }
+  - { table: _UserFollows, at: "src/prisma/migrations/20210924225358_initial/migration.sql:63" }
+  - {
+      table: _ArticleToTag,
+      at: "src/prisma/migrations/20211001143221_implicit_tags/migration.sql:18",
+    }

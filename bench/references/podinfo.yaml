@@ -1,0 +1,75 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: podinfo
+commit: 3e0ff8ae123b710bc91de1315cba0f996a8896c2
+covers: [serves, calls, stores, deploys]
+notes: >-
+  podinfo is a small Go demo microservice with an HTTP API (gorilla/mux) and a gRPC API. The
+  --prefix flag defaults to "/" (cmd/podinfo/main.go:33), so routes are listed without a prefix,
+  and the extra rootPath+"/" routes registered only for a non-root prefix are left out. Routes
+  with no .Methods() accept every method and have no method key; a route with several methods is
+  one entry per method. GET / is registered twice (an HTML page for browsers, JSON info
+  otherwise) and is listed once. Left out: the PathPrefix catch-alls /echo/, /api/echo/ (the same
+  echo handler as /echo and /api/echo), /debug/pprof/ (the net/http/pprof library) and /swagger/
+  (the http-swagger UI library); the separate metrics-port server's /metrics and /healthz, which
+  repeat paths already listed; and gRPC reflection and the grpc.health.v1 health service, which
+  are library built-ins. gRPC paths use the proto package names (headers.proto declares package
+  header). The only outbound call is the echo handler's POST to each --backend-url; the Kustomize
+  frontend base sets it to http://backend:9898/echo (deploy/bases/frontend/deployment.yaml:41),
+  another podinfo instance, so the path is /echo. Redis (the /cache routes and a heartbeat key)
+  is a key-value store with no tables and the /store routes write files, so stores is empty.
+  podcli is a separate diagnostic CLI that calls whatever address a user passes, so its requests
+  are not counted. The Helm chart, the Kustomize bases and overlays, the plain manifests under
+  deploy/ and the Timoni module all target Kubernetes; otel/docker-compose.yaml is a local
+  tracing stack, not a deployment.
+serves:
+  - { type: rest, method: GET, path: "/", at: "pkg/api/http/server.go:140" }
+  - { type: rest, path: "/metrics", at: "pkg/api/http/server.go:138" }
+  - { type: rest, method: GET, path: "/version", at: "pkg/api/http/server.go:146" }
+  - { type: rest, path: "/echo", at: "pkg/api/http/server.go:147" }
+  - { type: rest, method: GET, path: "/env", at: "pkg/api/http/server.go:149" }
+  - { type: rest, method: POST, path: "/env", at: "pkg/api/http/server.go:149" }
+  - { type: rest, method: GET, path: "/headers", at: "pkg/api/http/server.go:150" }
+  - { type: rest, method: POST, path: "/headers", at: "pkg/api/http/server.go:150" }
+  - { type: rest, method: GET, path: "/delay/{wait}", at: "pkg/api/http/server.go:151" }
+  - { type: rest, method: GET, path: "/healthz", at: "pkg/api/http/server.go:152" }
+  - { type: rest, method: GET, path: "/readyz", at: "pkg/api/http/server.go:153" }
+  - { type: rest, method: POST, path: "/readyz/enable", at: "pkg/api/http/server.go:154" }
+  - { type: rest, method: POST, path: "/readyz/disable", at: "pkg/api/http/server.go:155" }
+  - { type: rest, method: POST, path: "/fault_injection/enable", at: "pkg/api/http/server.go:156" }
+  - { type: rest, method: POST, path: "/fault_injection/disable", at: "pkg/api/http/server.go:157" }
+  - { type: rest, method: GET, path: "/fault_injection/status", at: "pkg/api/http/server.go:158" }
+  - { type: rest, method: GET, path: "/panic", at: "pkg/api/http/server.go:159" }
+  - { type: rest, method: GET, path: "/status/{code}", at: "pkg/api/http/server.go:160" }
+  - { type: rest, method: POST, path: "/status/{code}", at: "pkg/api/http/server.go:160" }
+  - { type: rest, method: PUT, path: "/status/{code}", at: "pkg/api/http/server.go:160" }
+  - { type: rest, method: POST, path: "/store", at: "pkg/api/http/server.go:161" }
+  - { type: rest, method: PUT, path: "/store", at: "pkg/api/http/server.go:161" }
+  - { type: rest, method: GET, path: "/store/{hash}", at: "pkg/api/http/server.go:162" }
+  - { type: rest, method: POST, path: "/cache/{key}", at: "pkg/api/http/server.go:163" }
+  - { type: rest, method: PUT, path: "/cache/{key}", at: "pkg/api/http/server.go:163" }
+  - { type: rest, method: DELETE, path: "/cache/{key}", at: "pkg/api/http/server.go:164" }
+  - { type: rest, method: GET, path: "/cache/{key}", at: "pkg/api/http/server.go:165" }
+  - { type: rest, method: GET, path: "/configs", at: "pkg/api/http/server.go:166" }
+  - { type: rest, method: POST, path: "/token", at: "pkg/api/http/server.go:167" }
+  - { type: rest, method: GET, path: "/token/validate", at: "pkg/api/http/server.go:168" }
+  - { type: rest, method: GET, path: "/api/info", at: "pkg/api/http/server.go:169" }
+  - { type: rest, path: "/api/echo", at: "pkg/api/http/server.go:170" }
+  - { type: rest, path: "/ws/echo", at: "pkg/api/http/server.go:172" }
+  - { type: rest, path: "/chunked", at: "pkg/api/http/server.go:173" }
+  - { type: rest, path: "/chunked/{wait}", at: "pkg/api/http/server.go:174" }
+  - { type: rest, path: "/swagger.json", at: "pkg/api/http/server.go:178" }
+  - { type: grpc, path: delay.DelayService/Delay, at: "pkg/api/grpc/delay.go:17" }
+  - { type: grpc, path: echo.EchoService/Echo, at: "pkg/api/grpc/echo.go:16" }
+  - { type: grpc, path: env.EnvService/Env, at: "pkg/api/grpc/env.go:17" }
+  - { type: grpc, path: header.HeaderService/Header, at: "pkg/api/grpc/headers.go:20" }
+  - { type: grpc, path: info.InfoService/Info, at: "pkg/api/grpc/info.go:20" }
+  - { type: grpc, path: panic.PanicService/Panic, at: "pkg/api/grpc/panic.go:18" }
+  - { type: grpc, path: status.StatusService/Status, at: "pkg/api/grpc/status.go:18" }
+  - { type: grpc, path: token.TokenService/TokenGenerate, at: "pkg/api/grpc/token.go:28" }
+  - { type: grpc, path: token.TokenService/TokenValidate, at: "pkg/api/grpc/token.go:58" }
+  - { type: grpc, path: version.VersionService/Version, at: "pkg/api/grpc/version.go:17" }
+calls:
+  - { type: rest, method: POST, path: /echo, to: backend, at: "pkg/api/http/echo.go:50" }
+stores: []
+deploys:
+  - { platform: kubernetes, at: "charts/podinfo/templates/deployment.yaml:2" }

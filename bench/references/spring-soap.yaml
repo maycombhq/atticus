@@ -1,0 +1,23 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: spring-soap
+commit: c9c88ea61cfbcef0de6275c7b6c8b1320549017a
+covers: [serves, calls, stores, deploys]
+notes: >-
+  The Spring guide "Producing a SOAP web service". The repo holds two copies of the project:
+  initial/ (the starting point, with only an empty Spring Boot application) and complete/ (the
+  finished service). This reference covers complete/ only; initial/ serves nothing. The one
+  SOAP operation is getCountry: CountryEndpoint maps the getCountryRequest payload root from
+  countriesWs.xsd, and WebServiceConfig publishes the WSDL with port type CountriesPort at
+  /services (Spring WS derives the operation name by dropping the Request suffix). It is
+  cited at the @PayloadRoot mapping. The JAXB classes are generated from the XSD at build time
+  and were ignored. No outbound calls. No database: CountryRepository is an in-memory HashMap,
+  so stores is empty. The only CI workflow builds and tests; there is no deployment config.
+serves:
+  - {
+      type: soap,
+      path: CountriesPort/getCountry,
+      at: "complete/src/main/java/com/example/producingwebservice/CountryEndpoint.java:22",
+    }
+calls: []
+stores: []
+deploys: []

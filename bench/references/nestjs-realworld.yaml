@@ -1,0 +1,105 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: nestjs-realworld
+commit: c1c2cc4e448b279ff083272df1ac50d20c3304fa
+covers: [serves, calls, stores]
+notes: >-
+  The RealWorld (Conduit) back end in NestJS with TypeORM on MySQL (ormconfig.json.example,
+  synchronize on, so the entities are the schema). src/main.ts:8 sets the global prefix 'api', so
+  every controller path is /api/<controller prefix>/<method path>; :param segments are written as
+  {param}. The Swagger UI that SwaggerModule.setup mounts at /docs is a library-generated page and
+  is left out. The committed dist/ folder is compiled output and is ignored. At this commit there
+  is no Prisma schema (prisma/ holds only a .env), so stores come from TypeORM alone. Table names
+  come from @Entity('name') where given; Comment has a bare @Entity(), so TypeORM's default naming
+  makes it comment; the @JoinTable() on UserEntity.favorites gets the default join table name
+  user_favorites_article (owning table user, property favorites, target table article). It calls
+  no other service. No deployment files exist, so deploys is not covered.
+serves:
+  - { type: rest, method: GET, path: /api, at: "src/app.controller.ts:5" }
+  - { type: rest, method: GET, path: /api/articles, at: "src/article/article.controller.ts:24" }
+  - {
+      type: rest,
+      method: GET,
+      path: /api/articles/feed,
+      at: "src/article/article.controller.ts:33",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/{slug}",
+      at: "src/article/article.controller.ts:38",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/{slug}/comments",
+      at: "src/article/article.controller.ts:43",
+    }
+  - { type: rest, method: POST, path: /api/articles, at: "src/article/article.controller.ts:51" }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/articles/{slug}",
+      at: "src/article/article.controller.ts:59",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}",
+      at: "src/article/article.controller.ts:68",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles/{slug}/comments",
+      at: "src/article/article.controller.ts:76",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}/comments/{id}",
+      at: "src/article/article.controller.ts:84",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles/{slug}/favorite",
+      at: "src/article/article.controller.ts:93",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}/favorite",
+      at: "src/article/article.controller.ts:101",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/profiles/{username}",
+      at: "src/profile/profile.controller.ts:18",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/profiles/{username}/follow",
+      at: "src/profile/profile.controller.ts:23",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/profiles/{username}/follow",
+      at: "src/profile/profile.controller.ts:28",
+    }
+  - { type: rest, method: GET, path: /api/tags, at: "src/tag/tag.controller.ts:17" }
+  - { type: rest, method: GET, path: /api/user, at: "src/user/user.controller.ts:21" }
+  - { type: rest, method: PUT, path: /api/user, at: "src/user/user.controller.ts:26" }
+  - { type: rest, method: POST, path: /api/users, at: "src/user/user.controller.ts:32" }
+  - { type: rest, method: DELETE, path: "/api/users/{slug}", at: "src/user/user.controller.ts:37" }
+  - { type: rest, method: POST, path: /api/users/login, at: "src/user/user.controller.ts:43" }
+calls: []
+stores:
+  - { table: article, at: "src/article/article.entity.ts:5" }
+  - { table: comment, at: "src/article/comment.entity.ts:4" }
+  - { table: follows, at: "src/profile/follows.entity.ts:3" }
+  - { table: tag, at: "src/tag/tag.entity.ts:3" }
+  - { table: user, at: "src/user/user.entity.ts:6" }
+  - { table: user_favorites_article, at: "src/user/user.entity.ts:34" }

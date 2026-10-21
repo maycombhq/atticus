@@ -1,0 +1,144 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: todo-nodejs-mongo
+commit: 16695b06631a166eb5dc90ea2f0d52b917578013
+covers: [serves, calls, stores, deploys]
+notes: >-
+  An Azure Developer CLI template: an Express API (src/api) and a React/Vite UI (src/web) for todo
+  lists, with Bicep in infra/. Serves: routers are mounted in src/api/src/app.ts at /lists (line 59)
+  and /lists/:listId/items (line 58); there is no global prefix. The Swagger UI page mounted at /
+  (app.ts:63) is counted as GET /, the one server-rendered page. Calls: the UI's only HTTP client is
+  the generic RestService (src/web/src/services/restService.ts, axios), built with base
+  VITE_API_BASE_URL (default http://localhost:3100 in src/web/src/config/index.ts:18; at deploy time
+  azure.yaml writes it from the Bicep output API_BASE_URL, which is the API App Service URI because
+  useAPIM defaults to false, so no /todo APIM prefix) plus a base route of /lists or
+  /lists/{listId}/items. Each call is cited at the action that issues it (src/web/src/actions);
+  save() issues PUT when the entity has an id and POST otherwise, so both are listed at the same
+  line. {param} names follow the API's route names. RestService.patch is never called, and the UI
+  never calls the /items/state/{state} routes. Query options (top, skip) are left out. Telemetry to
+  Application Insights is not counted. Stores: despite the repo name, the API uses the Cosmos DB
+  NoSQL SDK (@azure/cosmos), not MongoDB; its two containers TodoList and TodoItem are cited where
+  the code opens them (src/api/src/models/cosmosClient.ts), and infra/app/db-avm.bicep:7 and :13
+  declare the same containers. Deploys: Bicep puts both the API and the web UI on Azure App Service
+  (one shared Linux plan), so there is one azure-app-service entry cited at the API site module;
+  the web site module is infra/app/web-appservice-avm.bicep:11. The Dockerfiles are not used by
+  azure.yaml (host: appservice) and are not a deployment. Pipelines only run azd. Tests ignored.
+serves:
+  - { type: rest, method: GET, path: "/", at: "src/api/src/app.ts:63" }
+  - { type: rest, method: GET, path: "/lists", at: "src/api/src/routes/lists.ts:16" }
+  - { type: rest, method: POST, path: "/lists", at: "src/api/src/routes/lists.ts:36" }
+  - { type: rest, method: GET, path: "/lists/{listId}", at: "src/api/src/routes/lists.ts:52" }
+  - { type: rest, method: PUT, path: "/lists/{listId}", at: "src/api/src/routes/lists.ts:71" }
+  - { type: rest, method: DELETE, path: "/lists/{listId}", at: "src/api/src/routes/lists.ts:90" }
+  - { type: rest, method: GET, path: "/lists/{listId}/items", at: "src/api/src/routes/items.ts:18" }
+  - {
+      type: rest,
+      method: POST,
+      path: "/lists/{listId}/items",
+      at: "src/api/src/routes/items.ts:38",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}/items/{itemId}",
+      at: "src/api/src/routes/items.ts:57",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/lists/{listId}/items/{itemId}",
+      at: "src/api/src/routes/items.ts:76",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/lists/{listId}/items/{itemId}",
+      at: "src/api/src/routes/items.ts:98",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}/items/state/{state}",
+      at: "src/api/src/routes/items.ts:117",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/lists/{listId}/items/state/{state}",
+      at: "src/api/src/routes/items.ts:137",
+    }
+calls:
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists",
+      to: todo-api,
+      at: "src/web/src/actions/listActions.ts:21",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}",
+      to: todo-api,
+      at: "src/web/src/actions/listActions.ts:35",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/lists",
+      to: todo-api,
+      at: "src/web/src/actions/listActions.ts:43",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/lists/{listId}",
+      to: todo-api,
+      at: "src/web/src/actions/listActions.ts:43",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/lists/{listId}",
+      to: todo-api,
+      at: "src/web/src/actions/listActions.ts:53",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}/items",
+      to: todo-api,
+      at: "src/web/src/actions/itemActions.ts:22",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}/items/{itemId}",
+      to: todo-api,
+      at: "src/web/src/actions/itemActions.ts:37",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/lists/{listId}/items",
+      to: todo-api,
+      at: "src/web/src/actions/itemActions.ts:46",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/lists/{listId}/items/{itemId}",
+      to: todo-api,
+      at: "src/web/src/actions/itemActions.ts:46",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/lists/{listId}/items/{itemId}",
+      to: todo-api,
+      at: "src/web/src/actions/itemActions.ts:56",
+    }
+stores:
+  - { table: TodoList, at: "src/api/src/models/cosmosClient.ts:30" }
+  - { table: TodoItem, at: "src/api/src/models/cosmosClient.ts:31" }
+deploys:
+  - { platform: azure-app-service, at: "infra/app/api-appservice-avm.bicep:23" }

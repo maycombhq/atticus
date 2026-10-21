@@ -1,0 +1,142 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: todo-csharp-sql
+commit: e75277cfae02bcae40b6d92d7c3e409163aeef4e
+covers: [serves, calls, stores, deploys]
+notes: >-
+  An azd template: an ASP.NET Core minimal API (src/api) and a React/Vite UI (src/web). The API maps
+  every route on MapGroup("/lists") in src/api/Program.cs:49, so each path is /lists plus the route in
+  TodoEndpointsExtensions.cs. Left out of serves: the Swagger UI (UseSwaggerUI with RoutePrefix "") and the
+  static wwwroot/openapi.yaml, which are documentation, not API routes. Calls are the web UI's calls to its
+  own API: the base URL is VITE_API_BASE_URL (set by azd from the API_BASE_URL Bicep output, either the
+  App Service or the optional API Management front), defaulting to http://localhost:3100 in
+  src/web/src/config/index.ts. The services are axios instances with baseURL = base + '/lists' or
+  '/lists/{listId}/items', and get/delete/put append the id. save() sends POST without an id and PUT with
+  one, so both are listed at the save call. RestService.patch is never called, so no PATCH is listed. Ids
+  are written with the server's parameter names ({listId}, {itemId}). Application Insights telemetry from
+  the UI and API is left out (analytics). The API also reads Key Vault through the Azure SDK at start-up
+  (configuration, not a service call), left out. Stores: EF Core TodoDb with EnsureCreated and no table
+  mapping, so table names follow the DbSet property names (Items, Lists) in Azure SQL. Deploys: azure.yaml
+  hosts both services on appservice and infra/main.bicep creates two App Service sites (avm web/site) on a
+  Linux plan; the GitHub and Azure DevOps pipelines just run azd provision/deploy, so one
+  azure-app-service entry.
+serves:
+  - { type: rest, method: GET, path: /lists, at: "src/api/TodoEndpointsExtensions.cs:9" }
+  - { type: rest, method: POST, path: /lists, at: "src/api/TodoEndpointsExtensions.cs:10" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}",
+      at: "src/api/TodoEndpointsExtensions.cs:11",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/lists/{listId}",
+      at: "src/api/TodoEndpointsExtensions.cs:12",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/lists/{listId}",
+      at: "src/api/TodoEndpointsExtensions.cs:13",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}/items",
+      at: "src/api/TodoEndpointsExtensions.cs:14",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/lists/{listId}/items",
+      at: "src/api/TodoEndpointsExtensions.cs:15",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}/items/{itemId}",
+      at: "src/api/TodoEndpointsExtensions.cs:16",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/lists/{listId}/items/{itemId}",
+      at: "src/api/TodoEndpointsExtensions.cs:17",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/lists/{listId}/items/{itemId}",
+      at: "src/api/TodoEndpointsExtensions.cs:18",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}/state/{state}",
+      at: "src/api/TodoEndpointsExtensions.cs:19",
+    }
+calls:
+  - { type: rest, method: GET, path: /lists, to: api, at: "src/web/src/actions/listActions.ts:21" }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}",
+      to: api,
+      at: "src/web/src/actions/listActions.ts:35",
+    }
+  - { type: rest, method: POST, path: /lists, to: api, at: "src/web/src/actions/listActions.ts:43" }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/lists/{listId}",
+      to: api,
+      at: "src/web/src/actions/listActions.ts:43",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/lists/{listId}",
+      to: api,
+      at: "src/web/src/actions/listActions.ts:53",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}/items",
+      to: api,
+      at: "src/web/src/actions/itemActions.ts:22",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/lists/{listId}/items/{itemId}",
+      to: api,
+      at: "src/web/src/actions/itemActions.ts:37",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/lists/{listId}/items",
+      to: api,
+      at: "src/web/src/actions/itemActions.ts:46",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/lists/{listId}/items/{itemId}",
+      to: api,
+      at: "src/web/src/actions/itemActions.ts:46",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/lists/{listId}/items/{itemId}",
+      to: api,
+      at: "src/web/src/actions/itemActions.ts:56",
+    }
+stores:
+  - { table: Items, at: "src/api/TodoDb.cs:7" }
+  - { table: Lists, at: "src/api/TodoDb.cs:8" }
+deploys:
+  - { platform: azure-app-service, at: "infra/app/api-appservice-avm.bicep:23" }

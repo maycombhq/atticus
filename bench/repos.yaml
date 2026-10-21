@@ -36,3 +36,83 @@ repos:
     commit: 38e7348eb289eb5b87c0c6e8cb19ced0449dc389
     stack: Go, C#, Node, Python, Java services over gRPC; Kubernetes, Helm, Kustomize, Terraform
     batch: 1
+  - id: piggymetrics
+    url: https://github.com/sqshq/piggymetrics
+    commit: 6bb2cf9ddbca980b664d3edbb6ff775d75369278
+    stack: Spring Cloud microservices, MongoDB, Spring Cloud Bus
+    batch: 2
+  - id: spring-realworld
+    url: https://github.com/gothinkster/spring-boot-realworld-example-app
+    commit: ee17e31aafe733d98c4853c8b9a74d7f2f6c924a
+    stack: Spring Boot, MyBatis, GraphQL
+    batch: 2
+  - id: spring-soap
+    url: https://github.com/spring-guides/gs-producing-web-service
+    commit: c9c88ea61cfbcef0de6275c7b6c8b1320549017a
+    stack: Spring WS SOAP service
+    batch: 2
+  - id: eshop-on-web
+    url: https://github.com/dotnet-architecture/eShopOnWeb
+    commit: 4da8212117e87d808d4bbc7da6286fd2147ce606
+    stack: ASP.NET Core MVC and Blazor admin, EF Core
+    batch: 2
+  - id: clean-architecture
+    url: https://github.com/jasontaylordev/CleanArchitecture
+    commit: fab85b18342d3175b0b720adc92b9771f657aa1e
+    stack: ASP.NET Core Web API with Angular and React SPA templates, EF Core
+    batch: 2
+  - id: todo-csharp-sql
+    url: https://github.com/Azure-Samples/todo-csharp-sql
+    commit: e75277cfae02bcae40b6d92d7c3e409163aeef4e
+    stack: ASP.NET Core API, React, Bicep, pipelines
+    batch: 2
+  - id: angular-realworld
+    url: https://github.com/gothinkster/angular-realworld-example-app
+    commit: dd99ed2cf39c805d719f943c5d7061a5683d98a8
+    stack: Angular
+    batch: 2
+  - id: bulletproof-react
+    url: https://github.com/alan2207/bulletproof-react
+    commit: 9506629ed003a561c6627735480cce4994244bb4
+    stack: React
+    batch: 2
+  - id: node-realworld
+    url: https://github.com/gothinkster/node-express-realworld-example-app
+    commit: 30b68e1e881462b2f4164ea09ab4c4f5699c7b0b
+    stack: Node Express, Prisma
+    batch: 2
+  - id: nestjs-realworld
+    url: https://github.com/lujakob/nestjs-realworld-example-app
+    commit: c1c2cc4e448b279ff083272df1ac50d20c3304fa
+    stack: NestJS, TypeORM
+    batch: 2
+  - id: fastapi-template
+    url: https://github.com/fastapi/full-stack-fastapi-template
+    commit: b1125d8839482cb7bbae603ddc6d0081bf87532e
+    stack: FastAPI, SQLModel, React, Docker
+    batch: 2
+  - id: fastapi-realworld
+    url: https://github.com/nsidnev/fastapi-realworld-example-app
+    commit: 029eb7781c60d5f563ee8990a0cbfb79b244538c
+    stack: FastAPI, raw SQL (aiosql)
+    batch: 2
+  - id: podinfo
+    url: https://github.com/stefanprodan/podinfo
+    commit: 3e0ff8ae123b710bc91de1315cba0f996a8896c2
+    stack: Go service, Helm, Kustomize
+    batch: 2
+  - id: todo-nodejs-mongo
+    url: https://github.com/Azure-Samples/todo-nodejs-mongo
+    commit: 16695b06631a166eb5dc90ea2f0d52b917578013
+    stack: Node API, React, MongoDB, Bicep, pipelines
+    batch: 2
+  - id: jenkins-maven
+    url: https://github.com/jenkins-docs/simple-java-maven-app
+    commit: bffd953ff1ea7e0ae32fb7ee2f4b5221d1d96918
+    stack: Java with a Jenkinsfile
+    batch: 2
+  - id: spring-petclinic-microservices
+    url: https://github.com/spring-petclinic/spring-petclinic-microservices
+    commit: 1d76b00d683e86b62867a6bf59530f8ab301244f
+    stack: Spring Cloud gateway, discovery, config server, four services
+    batch: 2

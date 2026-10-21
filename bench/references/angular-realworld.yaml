@@ -1,0 +1,150 @@
+# Written by reading the code at the pinned commit, not from an Atticus scan.
+repo: angular-realworld
+commit: dd99ed2cf39c805d719f943c5d7061a5683d98a8
+covers: [calls]
+notes: >-
+  An Angular single-page front end (Conduit) for the RealWorld API. Every HTTP call is in five
+  services (user, articles, comments, tags, profile) and uses a relative path; apiInterceptor
+  (src/app/core/interceptors/api.interceptor.ts:4, registered in src/app/app.config.ts:73) prefixes
+  every request with https://api.realworld.show/api, so every path starts /api. There are no
+  environment files. ArticlesService.query (articles.service.ts:21) calls GET /api/articles or GET
+  /api/articles/feed depending on config.type, so it is listed as two calls at the same line; the
+  query string (filters) is left out. Multi-line calls are cited at the line holding the
+  get/post/put/delete. Pages (serves) are not covered. Deploys are not covered: the deploy workflow
+  only builds and zips the app into a GitHub release, and src/_redirects is a single SPA rewrite
+  with no netlify.toml or other hosting config. The realworld git submodule (the API spec and its
+  tests), unit tests (*.spec.ts) and e2e were ignored.
+calls:
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/users/login",
+      to: realworld-api,
+      at: "src/app/core/auth/services/user.service.ts:76",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/users",
+      to: realworld-api,
+      at: "src/app/core/auth/services/user.service.ts:81",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/user",
+      to: realworld-api,
+      at: "src/app/core/auth/services/user.service.ts:90",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/user",
+      to: realworld-api,
+      at: "src/app/core/auth/services/user.service.ts:159",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles",
+      to: realworld-api,
+      at: "src/app/features/article/services/articles.service.ts:21",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/feed",
+      to: realworld-api,
+      at: "src/app/features/article/services/articles.service.ts:21",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/{slug}",
+      to: realworld-api,
+      at: "src/app/features/article/services/articles.service.ts:28",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}",
+      to: realworld-api,
+      at: "src/app/features/article/services/articles.service.ts:32",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles",
+      to: realworld-api,
+      at: "src/app/features/article/services/articles.service.ts:36",
+    }
+  - {
+      type: rest,
+      method: PUT,
+      path: "/api/articles/{slug}",
+      to: realworld-api,
+      at: "src/app/features/article/services/articles.service.ts:41",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles/{slug}/favorite",
+      to: realworld-api,
+      at: "src/app/features/article/services/articles.service.ts:48",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}/favorite",
+      to: realworld-api,
+      at: "src/app/features/article/services/articles.service.ts:52",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/articles/{slug}/comments",
+      to: realworld-api,
+      at: "src/app/features/article/services/comments.service.ts:12",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/articles/{slug}/comments",
+      to: realworld-api,
+      at: "src/app/features/article/services/comments.service.ts:17",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/articles/{slug}/comments/{commentId}",
+      to: realworld-api,
+      at: "src/app/features/article/services/comments.service.ts:24",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/tags",
+      to: realworld-api,
+      at: "src/app/features/article/services/tags.service.ts:11",
+    }
+  - {
+      type: rest,
+      method: GET,
+      path: "/api/profiles/{username}",
+      to: realworld-api,
+      at: "src/app/features/profile/services/profile.service.ts:19",
+    }
+  - {
+      type: rest,
+      method: POST,
+      path: "/api/profiles/{username}/follow",
+      to: realworld-api,
+      at: "src/app/features/profile/services/profile.service.ts:27",
+    }
+  - {
+      type: rest,
+      method: DELETE,
+      path: "/api/profiles/{username}/follow",
+      to: realworld-api,
+      at: "src/app/features/profile/services/profile.service.ts:33",
+    }

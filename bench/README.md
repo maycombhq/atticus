@@ -21,28 +21,47 @@ atticus bench run --repo eshop --json
 
 Facts are compared as one set per repo, so the same route in two apps of one repo counts once. Found means in both; missed means in the reference only; wrong means in the scan only, for kinds the reference covers.
 
-## Baseline: today's built-in readers (2026-10-21, batch 1)
+## Baseline: today's built-in readers (2026-10-21, all 22 repos)
 
-| Repo                     |   Found |  Missed |  Wrong | Precision |  Recall |
-| ------------------------ | ------: | ------: | -----: | --------: | ------: |
-| spring-petclinic         |      24 |       1 |      0 |      100% |     96% |
-| spring-petclinic-rest    |       8 |      38 |     38 |       17% |     17% |
-| spring-petclinic-angular |       0 |      30 |      7 |        0% |      0% |
-| eshop                    |      42 |      80 |      9 |       82% |     34% |
-| eshop-modernizing        |       9 |      46 |      3 |       75% |     16% |
-| microservices-demo       |      20 |      31 |     13 |       61% |     39% |
-| **All**                  | **103** | **226** | **70** |   **60%** | **31%** |
+| Repo                           |   Found |  Missed |   Wrong | Precision |  Recall |
+| ------------------------------ | ------: | ------: | ------: | --------: | ------: |
+| spring-petclinic               |      24 |       1 |       0 |      100% |     96% |
+| spring-petclinic-rest          |       8 |      38 |      38 |       17% |     17% |
+| spring-petclinic-angular       |       0 |      30 |       7 |        0% |      0% |
+| spring-petclinic-microservices |      30 |      17 |       4 |       88% |     64% |
+| piggymetrics                   |       4 |      25 |       9 |       31% |     14% |
+| spring-realworld               |      26 |      18 |      18 |       59% |     59% |
+| spring-soap                    |       0 |       1 |       0 |      100% |      0% |
+| jenkins-maven                  |       0 |       0 |       0 |      100% |    100% |
+| eshop                          |      42 |      80 |       9 |       82% |     34% |
+| eshop-modernizing              |       9 |      46 |       3 |       75% |     16% |
+| eshop-on-web                   |      18 |      61 |      29 |       38% |     23% |
+| clean-architecture             |       2 |      28 |       1 |       67% |      7% |
+| todo-csharp-sql                |      12 |      12 |       2 |       86% |     50% |
+| angular-realworld              |       0 |      19 |       0 |      100% |      0% |
+| bulletproof-react              |       0 |      32 |       0 |      100% |      0% |
+| node-realworld                 |       5 |      22 |      19 |       21% |     19% |
+| nestjs-realworld               |      21 |       6 |       0 |      100% |     78% |
+| todo-nodejs-mongo              |      12 |      14 |       0 |      100% |     46% |
+| fastapi-template               |       0 |      43 |      23 |        0% |      0% |
+| fastapi-realworld              |       0 |      27 |      19 |        0% |      0% |
+| microservices-demo             |      20 |      31 |      13 |       61% |     39% |
+| podinfo                        |      36 |      12 |       1 |       97% |     75% |
+| **All**                        | **269** | **563** | **195** |   **58%** | **32%** |
 
-Only the plain Spring monolith reads well. What the misses and wrong facts come from:
+(Batch 1 alone: 60% precision, 31% recall.) Precision of 100% with low recall means the readers found little but nothing false; a repo with nothing to find (jenkins-maven) scores 100% on both.
 
-1. **Path prefixes ignored.** A context path in config (`server.servlet.context-path`) and class-level prefixes are dropped, so every endpoint of the petclinic REST API is reported at the wrong path: each counts once as missed and once as wrong.
-2. **Base URLs not resolved in clients.** The Angular app builds every URL as `environment.REST_API_URL + 'owners'`; none of its 30 calls is found. eShop's clients lose the `/api` prefix the same way.
-3. **Generated folders scanned.** The Angular repo's `docs/` (a generated documentation app) gives 7 calls the product never makes.
-4. **Events not read.** eShop's 18 RabbitMQ subscriptions and 13 published integration events are almost all missed.
-5. **gRPC clients not followed.** In microservices-demo 15 of 16 gRPC calls between services are missed, though the servers are found.
-6. **WCF client calls missed**, and most legacy MVC and WebForms routes (conventional routing, `.aspx` pages).
-7. **Tables named by convention missed:** a JPA `@JoinTable`, EF 6 pluralised names, the ASP.NET Identity tables a library creates, tables in Spanner and AlloyDB setup scripts.
-8. **Platforms not known:** Azure Container Apps (from the .NET Aspire host), Service Fabric, Azure Container Instances.
-9. **Go routes misread:** the frontend's routes come out as `ANY /{}/...` with a stray prefix.
+What the misses and wrong facts come from, biggest first:
+
+1. **Path prefixes dropped, in every stack.** Spring's context path and class-level prefixes, Express router prefixes, FastAPI's API prefix from settings, ASP.NET's route-token conventions. The endpoints are found but at the wrong path, so each counts once as missed and once as wrong: this alone explains most of the wrong facts and the zeros of both FastAPI repos and node-realworld.
+2. **Client calls not found.** Base URLs from environment files, interceptors and generated clients aren't resolved: no call is found in any of the four front ends (petclinic Angular, angular-realworld, bulletproof-react, the fastapi-template front end).
+3. **Gateway routes missed.** Zuul and Spring Cloud Gateway route predicates (`/accounts/**`).
+4. **Generated folders scanned.** The petclinic Angular repo's `docs/` gives 7 calls the product never makes.
+5. **Events not read.** eShop's 18 RabbitMQ subscriptions and 13 published integration events are almost all missed.
+6. **gRPC clients not followed.** In microservices-demo 15 of 16 calls between services are missed, though the servers are found.
+7. **Legacy .NET:** WCF client calls, conventional MVC routes and WebForms pages mostly missed.
+8. **Tables named by convention:** a JPA `@JoinTable`, EF pluralised names, ASP.NET Identity tables, Prisma's hidden join tables, Spanner and AlloyDB setup scripts.
+9. **Platforms not known:** Azure Container Apps (from a .NET Aspire host), Service Fabric, Azure Container Instances.
+10. **SOAP operations and GraphQL fields** (spring-soap, spring-realworld) not read.
 
 These are the kinds of gap ADR 0074 expects: each needs a reader change today. Phase 2a's AI-first scan is measured against this table.
