@@ -71,6 +71,46 @@ describe("atticus scan survey (ADR 0075)", () => {
     // Nothing to set is a correct answer.
     const empty = await checkSurvey("schemaVersion: 1\nrepo: forge-notes\n", repo(), "forge-notes");
     expect(empty.problems).toEqual([]);
-    expect(empty.settings).toMatchObject({ exclude: [], prefixes: [] });
+    expect(empty.settings).toMatchObject({ exclude: [], prefixes: [], clients: [] });
+  });
+
+  it("asks for client bases, shows the calls built from a name, and checks the answer (ADR 0076)", async () => {
+    const ui = fsRepo("forge-notes-ui", `${NOTES}-ui`, "a".repeat(40));
+    const clients = (value: string, glob = "src/**") =>
+      [
+        "schemaVersion: 1",
+        "repo: forge-notes-ui",
+        "clients:",
+        `  - paths: ["${glob}"]`,
+        "    base: https://notes.forge.internal/notes-api/",
+        "    names: [environment.NOTES_API_URL]",
+        "    why: the environment file's API URL",
+        '    at: "src/environment.js:4"',
+        `    value: ${value}`,
+      ].join("\n");
+    const prompts: string[] = [];
+    const replies = [
+      clients("https://notes.forge.internal/v2/", "web/**"),
+      clients("https://notes.forge.internal/notes-api/"),
+    ];
+    const runtime = new MockRuntime(
+      (req: AiRequest) => {
+        prompts.push(req.pack.prompt);
+        return replies[prompts.length - 1]!;
+      },
+      { now: () => NOW },
+    );
+    const r = await surveyRepo(ui, { repoId: "forge-notes-ui", runtime, now: NOW });
+    expect(r.status).toBe("drafted");
+    expect(r.attempts[0]!.problems).toEqual([
+      "clients.0: src/environment.js:4 doesn't say https://notes.forge.internal/v2/, so the base isn't applied",
+      "clients.0.paths.0: web/** matches no file in the repo",
+    ]);
+    expect(r.settings?.clients[0]?.names).toEqual(["environment.NOTES_API_URL"]);
+    expect(prompts[0]).toContain("Base URLs in front of the HTTP calls a client makes");
+    expect(prompts[0]).toMatch(
+      /GET \$\{environment\.NOTES_API_URL\}notes\/\{id\}\s+\(src\/note\.service\.ts:20\)/,
+    );
+    expect(prompts[0]).toContain('4:   NOTES_API_URL: "https://notes.forge.internal/notes-api/",');
   });
 });

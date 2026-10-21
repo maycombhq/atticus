@@ -17,6 +17,16 @@ const good = {
       value: "/ledger",
     },
   ],
+  clients: [
+    {
+      paths: ["web/src/**"],
+      base: "https://ledger.forge.internal/ledger/",
+      names: ["environment.LEDGER_API_URL"],
+      why: "the ledger API's URL in the build's environment file",
+      at: "web/src/environments/environment.ts:3",
+      value: "https://ledger.forge.internal/ledger/",
+    },
+  ],
 };
 
 describe("scan settings per repo (ADR 0075)", () => {
@@ -27,7 +37,24 @@ describe("scan settings per repo (ADR 0075)", () => {
       repo: "x",
       exclude: [],
       prefixes: [],
+      clients: [],
     });
+  });
+
+  it("takes client bases as a URL or a path, and refuses anything else (ADR 0076)", () => {
+    const client = good.clients[0]!;
+    const ok = (patch: object) =>
+      ScanSettings.safeParse({ ...good, clients: [{ ...client, ...patch }] }).success;
+    expect(ok({ base: "/ledger/api" })).toBe(true);
+    expect(ok({ base: "http://localhost:9966/petclinic/api/" })).toBe(true);
+    expect(ok({ base: "ledger/api" })).toBe(false);
+    expect(ok({ base: "https://" })).toBe(false);
+    expect(ok({ names: ["environment. LEDGER"] })).toBe(false);
+    expect(ok({ names: ["${BASE}"] })).toBe(false);
+    expect(ok({ paths: [] })).toBe(false);
+    // Names may be left out: the entry then covers only paths with no host.
+    const { names: _n, ...noNames } = client;
+    expect(ScanSettings.parse({ ...good, clients: [noNames] }).clients[0]!.names).toEqual([]);
   });
 
   it("refuses an entry without a citation, a prefix that isn't a path, or an unsafe glob", () => {

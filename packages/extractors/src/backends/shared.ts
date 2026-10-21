@@ -383,28 +383,168 @@ export function frontendCall(
   src: SourceFile,
   c: SrcCall,
 ): { method: string; url: string } | undefined {
-  if (c.generics.length) return undefined;
-  const segs = c.callee.split(".");
-  const tail = segs[segs.length - 1]!;
-  const prev = segs[segs.length - 2];
-  const verb = ["get", "post", "put", "delete", "patch"].includes(tail) ? tail : undefined;
-  if (!(tail === "fetch" || tail === "axios" || (verb && (prev === "axios" || prev === "http"))))
-    return undefined;
+  const client = clientCall(c);
+  if (!client) return undefined;
   const a = c.args[0];
   const t = a ? src.tok(a.from) : undefined;
-  if (!t || t.t !== "str") return undefined;
+  // A written URL is the whole argument: `"/profiles/" + name` is built, so frontendExprCall's.
+  if (!t || t.t !== "str" || a!.to - a!.from !== 1) return undefined;
   const url = t.v.replace(
     /\$\{\s*([^}]+?)\s*\}/g,
     (_w, expr: string) => `{${expr.split(".").pop()!.replace(/\W/g, "")}}`,
   );
   if (!/^(\/|https?:)/.test(url)) return undefined;
-  let method = verb?.toUpperCase();
-  if (!method) {
-    const o = src.arg(c, 1);
-    const m = o && src.is(o.from, "{") ? src.field(o.from, "method") : undefined;
-    method = (m && src.str(m)?.toUpperCase()) || "GET";
+  return { method: clientMethod(src, c, client.verb), url };
+}
+
+/**
+ * A direct client call: `fetch(...)`, `axios(...)`, `axios.<verb>(...)` or `http.<verb>(...)`
+ * (Angular's HttpClient, `this.http.get<T>(...)`, with its type arguments).
+ */
+function clientCall(c: SrcCall): { verb?: string } | undefined {
+  const segs = c.callee.split(".");
+  const tail = segs[segs.length - 1]!;
+  const prev = segs[segs.length - 2];
+  const verb = ["get", "post", "put", "delete", "patch"].includes(tail) ? tail : undefined;
+  if (verb && (prev === "axios" || prev === "http")) return { verb };
+  if ((tail === "fetch" || tail === "axios") && !c.generics.length) return {};
+  return undefined;
+}
+
+function clientMethod(src: SourceFile, c: SrcCall, verb: string | undefined): string {
+  if (verb) return verb.toUpperCase();
+  const o = src.arg(c, 1);
+  const m = o && src.is(o.from, "{") ? src.field(o.from, "method") : undefined;
+  return (m && src.str(m)?.toUpperCase()) || "GET";
+}
+
+// Private-use characters around a name the reader can't know, while the URL is read.
+const MARK_OPEN = "";
+const MARK_CLOSE = "";
+const MARKS = /([^]*)/g;
+const lastName = (expr: string) => expr.split(".").pop()!.replace(/\W/g, "");
+
+/**
+ * A direct client call whose URL is built from an expression (ADR 0076): `this.http.get(this.
+ * entityUrl)` with `entityUrl = environment.API + "owners"`, `fetch(config.base + "/x")`,
+ * `` `${environment.apiUrl}/x/${id}` ``. Names the file assigns are followed (class fields
+ * too); the first name it can't know is the base, written `${name}`, so the call reads
+ * `GET ${environment.API}owners/{id}` and a repo's scan settings can put the base in front.
+ * Only a base that names configuration is kept: a member (`environment.API`, `this.url`), a
+ * constant in capitals or an imported name, followed by a written part of the path, or alone
+ * when it is a member. A bare parameter (`fetch(url)`) says nothing and isn't recorded. Calls
+ * `frontendCall` reads (a written URL) aren't this function's.
+ */
+export function frontendExprCall(
+  src: SourceFile,
+  c: SrcCall,
+): { method: string; url: string } | undefined {
+  const client = clientCall(c);
+  if (!client || frontendCall(src, c) || mockHandler(src, c)) return undefined;
+  const url = clientUrl(src, src.arg(c, 0));
+  return url === undefined ? undefined : { method: clientMethod(src, c, client.verb), url };
+}
+
+/** `http.get(...)` from a mocking library (msw) declares a fake server, not a call. */
+export function mockHandler(src: SourceFile, c: SrcCall): boolean {
+  const root = c.callee.split(".")[0]!;
+  return src.imports.some(
+    (i) => (i.spec === "msw" || i.spec.startsWith("msw/")) && i.names.some((n) => n.local === root),
+  );
+}
+
+/**
+ * Axios instances a file makes (`export const api = axios.create({ baseURL: env.API_URL })`):
+ * the name each is assigned to and its base, read as `clientUrl` reads a URL (ADR 0076).
+ */
+export function axiosInstances(src: SourceFile): { name: string; base?: string }[] {
+  const out: { name: string; base?: string }[] = [];
+  const axiosNames = new Set(["axios"]);
+  for (const i of src.imports)
+    if (i.spec === "axios") for (const n of i.names) axiosNames.add(n.local);
+  for (const c of src.calls) {
+    if (c.name !== "create" || !axiosNames.has(c.recv)) continue;
+    const name = src.assignedTo(c);
+    if (!name || name.includes(".")) continue;
+    const o = src.arg(c, 0);
+    const b = o && src.is(o.from, "{") ? src.field(o.from, "baseURL") : undefined;
+    const base = b ? clientUrl(src, b) : undefined;
+    out.push({ name, ...(base !== undefined ? { base } : {}) });
   }
-  return { method, url };
+  return out;
+}
+
+/** A request through an axios instance: `api.get(url)` → method and path, with its base. */
+export function instanceCall(
+  src: SourceFile,
+  c: SrcCall,
+  instances: ReadonlyMap<string, string | undefined>,
+): { method: string; url: string } | undefined {
+  const segs = c.callee.split(".");
+  if (segs.length !== 2 || !instances.has(segs[0]!)) return undefined;
+  const verb = ["get", "post", "put", "delete", "patch"].includes(segs[1]!) ? segs[1]! : undefined;
+  if (!verb) return undefined;
+  const path = clientUrl(src, src.arg(c, 0), true);
+  if (path === undefined) return undefined;
+  const base = instances.get(segs[0]!);
+  const url =
+    base === undefined || /^https?:/.test(path) || path.startsWith("${")
+      ? path
+      : `${base.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  return { method: verb.toUpperCase(), url };
+}
+
+/**
+ * The URL an argument makes, as `frontendExprCall` describes: a written URL, or one built from
+ * a configured base, `${environment.API}owners/{id}`. With `relative`, a path with no leading
+ * slash counts too (an axios instance joins it to its base).
+ */
+export function clientUrl(
+  src: SourceFile,
+  a: Arg | undefined,
+  relative = false,
+): string | undefined {
+  if (!a || src.is(a.from, "{")) return undefined;
+  let depth = 0;
+  const ev: Evaluator = new Evaluator(src, {
+    name: (dotted, at) => {
+      // A class field read as this.x: the field's written value, when the file has one.
+      const field = dotted.startsWith("this.") ? dotted.slice(5) : undefined;
+      const list = field ? src.assigns.get(field) : undefined;
+      if (list && depth < 6) {
+        const before = list.filter((x) => x.at < at);
+        const x = before[before.length - 1] ?? list[0]!;
+        depth++;
+        try {
+          const v = ev.value(x.from, x.to);
+          if (v !== undefined) return v;
+        } finally {
+          depth--;
+        }
+      }
+      return `${MARK_OPEN}${dotted}${MARK_CLOSE}`;
+    },
+  });
+  let v = ev.arg(a);
+  if (v === undefined) return undefined;
+  // A part that isn't a name (`cond ? "/feed" : ""`, a call) glued to the text before it
+  // can't be told: the URL is the written part up to it.
+  const glued = /[^/]\{[^}]*\}/.exec(v);
+  if (glued) v = v.slice(0, glued.index + 1);
+  const params = (s: string) => s.replace(MARKS, (_w, d: string) => `{${lastName(d)}}`);
+  if (!v.startsWith(MARK_OPEN)) {
+    const url = params(v);
+    if (/^(\/|https?:)/.test(url)) return url;
+    return relative && /^[\w-]+(\/|$)/.test(url) && !/\.\w+$/.test(url) ? url : undefined;
+  }
+  const end = v.indexOf(MARK_CLOSE);
+  const base = v.slice(1, end);
+  const rest = v.slice(end + 1);
+  const imported = src.imports.some((i) => i.names.some((n) => n.local === base));
+  const configured = base.includes(".") || /^[A-Z][A-Z0-9_]*$/.test(base) || imported;
+  if (!configured || /^[{]/.test(rest) || (rest === "" && !base.includes("."))) return undefined;
+  if (/[^\w.$]/.test(base)) return undefined;
+  return `\${${base}}${params(rest)}`;
 }
 
 // ------------------------------------------------------------------ evaluation

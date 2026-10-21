@@ -553,7 +553,7 @@ export async function onboardFrameworkAccept(
 /**
  * atticus scan survey <repo> [--attempts 3] [--resume run] [--force] (ADR 0075): the assistant
  * reads the repo and drafts its scan settings (folders that aren't the product, path prefixes
- * the readers can't see); every entry is checked against the code before
+ * the readers can't see, client base URLs per ADR 0076); every entry is checked against the code before
  * org-pack/scan/<repo>.yaml is written. The next scan applies it.
  */
 export async function scanSurvey(
@@ -610,11 +610,13 @@ export async function scanSurvey(
   );
   const s = r.settings;
   io.out(
-    `Wrote org-pack/scan/${repo.id}.yaml: ${plural(s.exclude.length, "folder")} left out, ${plural(s.prefixes.length, "prefix", "prefixes")}.`,
+    `Wrote org-pack/scan/${repo.id}.yaml: ${plural(s.exclude.length, "folder")} left out, ${plural(s.prefixes.length, "prefix", "prefixes")}${s.clients.length ? `, ${plural(s.clients.length, "client base")}` : ""}.`,
   );
   for (const e of s.exclude) io.out(`  leave out ${e.path}: ${e.why} (${e.at})`);
   for (const p of s.prefixes)
     io.out(`  ${p.prefix} in front of ${p.paths.join(", ")}: ${p.why} (${p.at})`);
+  for (const c of s.clients)
+    io.out(`  ${c.base} in front of the calls in ${c.paths.join(", ")}: ${c.why} (${c.at})`);
   io.out(`Next: atticus scan, then review the file in a pull request.`);
   return 0;
 }

@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Client base URLs in scan settings
+
+- Scan settings (`org-pack/scan/<repo>.yaml`) take `clients` (ADR 0076): a base URL in front of the HTTP calls in the files an entry covers, for calls built from a name the entry lists (`environment.REST_API_URL`) and for paths with no host (an interceptor puts the base in front). Each entry cites the line the base is written on; the scan refuses one whose line doesn't say it, whose base isn't that value, or whose names aren't in its files. A resolved call cites both its own line and the base's.
+- The frontend reader now records calls built from a configured base, with the base's expression: `GET ${environment.REST_API_URL}owners/{id}`, following class fields such as `this.entityUrl`; Angular `HttpClient` calls with type arguments (`this.http.get<T>(...)`); requests through an axios instance the repo makes (`api.get("/comments")` with `api = axios.create({ baseURL })`), also when imported by an alias such as `@/lib/api-client`; and `"/profiles/" + name` as `/profiles/{name}` (before, only `/profiles/`). msw mock handlers are no longer read as calls.
+- `atticus scan survey` asks your assistant for client bases too, shows it the calls whose base the readers couldn't know, and checks its answer.
+- Without settings, such calls are recorded but don't join anything; on the bench that shows as wrong calls until the repo is surveyed.
+
 ### You are your Git user; approving is the pull request
 
 - Atticus knows you by the metarepo's Git user (`git config user.name` and `user.email`, ADR 0073). The app shows it in the top bar and every command records it; `--by <handle>` is now an optional override everywhere it was required (`change new`, `change handoff`, `finding`, `baseline`, `todo done`, `task run`, `glossary`, `initiative`, `outcome record` and the rest), and `digest --as` likewise. With no Git user, the OS user name stands in with a warning that says how to set it.
