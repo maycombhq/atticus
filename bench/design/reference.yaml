@@ -1,0 +1,359 @@
+# Written by hand from vaccinations.figma.json and the code at the pinned commits in ../repos.yaml
+# (spring-petclinic-rest afc8fc1, spring-petclinic-angular 7c9f1ab), not from an Atticus scan.
+# Endpoint names and lines are the ones in ../references/spring-petclinic-rest.yaml.
+design: vaccinations.figma.json
+estate: petclinic
+repos: [spring-petclinic-angular, spring-petclinic-rest]
+notes: >-
+  The design is invented: a Vaccination records feature for the petclinic estate. backing is one of
+  existing (today's API returns it and a table stores it), new (data this feature introduces; the
+  design is the first place it appears, so it needs a column and an API field) or unbacked (the
+  design assumes the data already exists somewhere and nothing in the estate provides it; a correct
+  reading must not invent a source). API field names are the openapi.yml schema names
+  (src/main/resources/openapi.yml); columns are from src/main/resources/db/h2/schema.sql. The
+  existing UI these screens extend is the Angular owner detail page (owners/:id, OwnerDetailComponent,
+  which lists pets with app-pet-list) and the pet's visit list. Navigation-only buttons are actions
+  with no call. Page loads are listed under loads, since the design shows the data but no button
+  fetches it. Pet in the API has ownerId but no owner object (openapi.yml Pet schema), so an owner
+  name on a pet screen needs GET /petclinic/api/owners/{ownerId} as well; the Angular Pet interface
+  declares owner, but the API never fills it.
+screens:
+  - id: owner-pets
+    frame: Owner / Pets and vaccinations
+    figma_id: "10:1"
+    extends: "spring-petclinic-angular src/app/owners/owner-detail/owner-detail.component.html"
+    loads:
+      - does: Load the owner with their pets
+        existing_endpoint: "GET /petclinic/api/owners/{ownerId}"
+        at: "src/main/resources/openapi.yml:207"
+      - does: Know, per pet, whether any vaccination is overdue
+        gap: >-
+          The Pet objects inside Owner.pets carry visits but no vaccinations or next due date, so
+          the badge has nothing to read; Pet needs vaccinations (or a nextDueDate / overdue field).
+    fields:
+      - label: Name
+        figma_id: "10:3"
+        control: readonly
+        backing: existing
+        maps_to: "Owner.firstName, Owner.lastName (owners.first_name, owners.last_name)"
+      - label: Telephone
+        figma_id: "10:4"
+        control: readonly
+        backing: existing
+        maps_to: "Owner.telephone (owners.telephone)"
+      - label: Reminder emails
+        figma_id: "10:5"
+        control: toggle
+        backing: unbacked
+        gap: >-
+          No owner email: owners has no email column and OwnerFields has no email field. No
+          reminder opt-in is stored anywhere, and nothing in the estate sends email.
+      - label: Pet
+        figma_id: "I10:7;3:1"
+        control: table-column
+        backing: existing
+        maps_to: "Pet.name (pets.name)"
+      - label: Type
+        figma_id: "I10:7;3:2"
+        control: table-column
+        backing: existing
+        maps_to: "Pet.type.name (types.name via pets.type_id)"
+      - label: Birth date
+        figma_id: "I10:7;3:3"
+        control: table-column
+        backing: existing
+        maps_to: "Pet.birthDate (pets.birth_date)"
+      - label: Overdue
+        figma_id: "10:8"
+        control: badge
+        backing: new
+        gap: >-
+          Derived from a vaccination's next due date, which nothing stores; Pet in GET
+          /petclinic/api/owners/{ownerId} needs the vaccinations or an overdue flag.
+    actions:
+      - label: View vaccinations
+        figma_id: "10:10"
+        does: Open the pet's Vaccinations tab (screen pet-vaccinations)
+        existing_endpoint: none (navigation; the tab's loads make the calls)
+        gap: "No Angular route for a pet's vaccinations (pets-routing.module.ts has pets/:id, edit and visits/add only)"
+      - label: Add New Pet
+        figma_id: "10:11"
+        does: Open the existing Add Pet form, which then posts the pet
+        existing_endpoint: "POST /petclinic/api/owners/{ownerId}/pets"
+        at: "src/main/resources/openapi.yml:363"
+
+  - id: pet-vaccinations
+    frame: Pet detail / Vaccinations tab
+    figma_id: "20:1"
+    extends: "spring-petclinic-angular src/app/pets/pet-list/pet-list.component.html"
+    loads:
+      - does: Load the pet
+        existing_endpoint: "GET /petclinic/api/pets/{petId}"
+        at: "src/main/resources/openapi.yml:927"
+      - does: Load the owner's name (Pet has only ownerId)
+        existing_endpoint: "GET /petclinic/api/owners/{ownerId}"
+        at: "src/main/resources/openapi.yml:207"
+      - does: List the pet's vaccinations
+        gap: "No endpoint lists vaccinations: needs GET /petclinic/api/owners/{ownerId}/pets/{petId}/vaccinations or Pet.vaccinations"
+    fields:
+      - label: Pet name
+        figma_id: "20:2"
+        control: heading
+        backing: existing
+        maps_to: "Pet.name (pets.name)"
+      - label: Owner
+        figma_id: "20:3"
+        control: readonly
+        backing: existing
+        maps_to: "Owner.firstName, Owner.lastName (owners.first_name, owners.last_name), found through Pet.ownerId"
+      - label: Birth Date
+        figma_id: "20:4"
+        control: readonly
+        backing: existing
+        maps_to: "Pet.birthDate (pets.birth_date)"
+      - label: Type
+        figma_id: "20:5"
+        control: readonly
+        backing: existing
+        maps_to: "Pet.type.name (types.name)"
+      - label: Visits
+        figma_id: "I20:6;2:1"
+        control: tab
+        backing: existing
+        maps_to: "Pet.visits (visits table), shown today by app-visit-list"
+      - label: Vaccine
+        figma_id: "I20:7;3:1"
+        control: table-column
+        backing: new
+        gap: "Column vaccinations.vaccine (or vaccine_id) and API field Vaccination.vaccine. Not visits.description."
+      - label: Date given
+        figma_id: "I20:7;3:2"
+        control: table-column
+        backing: new
+        gap: "Column vaccinations.date_given and API field Vaccination.dateGiven. Not visits.visit_date."
+      - label: Next due
+        figma_id: "I20:7;3:3"
+        control: table-column
+        backing: new
+        gap: "Column vaccinations.next_due_date and API field Vaccination.nextDueDate"
+      - label: Given by
+        figma_id: "I20:7;3:4"
+        control: table-column
+        backing: existing
+        maps_to: "Vet.firstName, Vet.lastName (vets.first_name, vets.last_name)"
+        gap: >-
+          The names exist, but no record links a vet to a pet or visit today (visits has no vet_id),
+          so the vaccination needs vaccinations.vet_id referencing vets(id) and Vaccination.vetId.
+      - label: Batch no.
+        figma_id: "I20:7;3:5"
+        control: table-column
+        backing: new
+        gap: "Column vaccinations.batch_number and API field Vaccination.batchNumber"
+      - label: Clinic
+        figma_id: "I20:7;3:6"
+        control: table-column
+        backing: unbacked
+        gap: "No clinic or location exists anywhere: no table, no API field, no endpoint. The estate models a single clinic."
+      - label: Overdue
+        figma_id: "20:8"
+        control: badge
+        backing: new
+        gap: "Derived from Vaccination.nextDueDate, which does not exist yet"
+    actions:
+      - label: Add vaccination
+        figma_id: "20:9"
+        does: Open the Add vaccination form (screen add-vaccination)
+        existing_endpoint: none (navigation)
+        gap: "No Angular route for adding a vaccination (today's equivalent is pets/:id/visits/add)"
+      - label: Delete
+        figma_id: "20:10"
+        does: Delete one vaccination
+        gap: "No endpoint: needs DELETE /petclinic/api/vaccinations/{vaccinationId}"
+      - label: Back
+        figma_id: "20:11"
+        does: Return to the owner page, which reloads the owner
+        existing_endpoint: "GET /petclinic/api/owners/{ownerId}"
+        at: "src/main/resources/openapi.yml:207"
+
+  - id: add-vaccination
+    frame: Add vaccination
+    figma_id: "30:1"
+    extends: "spring-petclinic-angular src/app/visits/visit-add (the closest existing form)"
+    loads:
+      - does: Load the pet
+        existing_endpoint: "GET /petclinic/api/pets/{petId}"
+        at: "src/main/resources/openapi.yml:927"
+      - does: Load the owner's name
+        existing_endpoint: "GET /petclinic/api/owners/{ownerId}"
+        at: "src/main/resources/openapi.yml:207"
+      - does: Fill the Given by options
+        existing_endpoint: "GET /petclinic/api/vets"
+        at: "src/main/resources/openapi.yml:1596"
+      - does: Fill the Vaccine options
+        gap: "No vaccine catalogue: needs a vaccines table and GET /petclinic/api/vaccines"
+      - does: Fill the Clinic location options
+        gap: "Nothing provides clinics: no table or endpoint"
+    fields:
+      - label: Pet
+        figma_id: "30:3"
+        control: readonly
+        backing: existing
+        maps_to: "Pet.name, Pet.type.name (pets.name, types.name)"
+      - label: Owner
+        figma_id: "30:4"
+        control: readonly
+        backing: existing
+        maps_to: "Owner.firstName, Owner.lastName (owners.first_name, owners.last_name)"
+      - label: Vaccine
+        figma_id: "30:5"
+        control: select
+        backing: new
+        gap: >-
+          Needs the stored value (vaccinations.vaccine or vaccine_id) and a source for the options
+          (vaccines table, GET /petclinic/api/vaccines). Pet types and specialties are not vaccines.
+      - label: Date given
+        figma_id: "30:6"
+        control: date
+        backing: new
+        gap: "Column vaccinations.date_given and API field Vaccination.dateGiven"
+      - label: Next due date
+        figma_id: "30:7"
+        control: date
+        backing: new
+        gap: "Column vaccinations.next_due_date and API field Vaccination.nextDueDate"
+      - label: Given by
+        figma_id: "30:8"
+        control: select
+        backing: existing
+        maps_to: "Vet.id, Vet.firstName, Vet.lastName from GET /petclinic/api/vets (vets.id, vets.first_name, vets.last_name)"
+        gap: "The chosen vet must be stored: vaccinations.vet_id and Vaccination.vetId are new"
+      - label: Batch number
+        figma_id: "30:9"
+        control: text
+        backing: new
+        gap: "Column vaccinations.batch_number and API field Vaccination.batchNumber"
+      - label: Clinic location
+        figma_id: "30:10"
+        control: select
+        backing: unbacked
+        gap: "No clinics table, no location field on any schema, no endpoint to list clinics"
+      - label: Send reminder email
+        figma_id: "30:11"
+        control: toggle
+        backing: unbacked
+        gap: >-
+          Needs an owner email (owners has no email column; OwnerFields has no email), a stored
+          reminder flag, and something that sends email; spring-petclinic-rest calls nothing.
+    actions:
+      - label: Save vaccination
+        figma_id: "30:12"
+        does: Create the vaccination for this pet with every field on the form
+        gap: >-
+          No endpoint: needs POST /petclinic/api/owners/{ownerId}/pets/{petId}/vaccinations (the
+          shape of addVisitToOwner). POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits is not a
+          substitute: Visit has only date and description.
+      - label: Cancel
+        figma_id: "30:13"
+        does: Return to the pet's Vaccinations tab without saving
+        existing_endpoint: none (navigation)
+
+  - id: vaccination-saved
+    frame: Vaccination saved
+    figma_id: "40:1"
+    fields:
+      - label: Pet
+        figma_id: "40:3"
+        control: readonly
+        backing: existing
+        maps_to: "Pet.name (pets.name)"
+      - label: Vaccine
+        figma_id: "40:4"
+        control: readonly
+        backing: new
+        gap: "Vaccination.vaccine, returned by the missing POST"
+      - label: Next due date
+        figma_id: "40:5"
+        control: readonly
+        backing: new
+        gap: "Vaccination.nextDueDate, returned by the missing POST"
+      - label: Reminder note (owner email, reminder date)
+        figma_id: "40:6"
+        control: text
+        backing: unbacked
+        gap: "Shows the owner's email address and a reminder date; no email is stored and no reminder is scheduled anywhere"
+    actions:
+      - label: Back to owner
+        figma_id: "40:7"
+        does: Open the owner page, which reloads the owner
+        existing_endpoint: "GET /petclinic/api/owners/{ownerId}"
+        at: "src/main/resources/openapi.yml:207"
+      - label: Add another
+        figma_id: "40:8"
+        does: Open an empty Add vaccination form for the same pet
+        existing_endpoint: none (navigation)
+
+  - id: vaccinations-empty-error
+    frame: Vaccinations tab / Empty and error
+    figma_id: "50:1"
+    fields:
+      - label: Pet name
+        figma_id: "50:2"
+        control: heading
+        backing: existing
+        maps_to: "Pet.name (pets.name)"
+    actions:
+      - label: Add first vaccination
+        figma_id: "50:4"
+        does: Open the Add vaccination form
+        existing_endpoint: none (navigation)
+      - label: Retry
+        figma_id: "50:6"
+        does: Call the vaccination list again
+        gap: "The list endpoint is missing (same gap as pet-vaccinations loads)"
+
+gaps:
+  - what: "A vaccinations table: id, pet_id (references pets), vaccine (or vaccine_id), date_given, next_due_date, batch_number, vet_id (references vets)"
+    why: "Vaccine, date given, next due date, batch number and the giving vet are stored nowhere; schema.sql has vets, specialties, vet_specialties, types, owners, pets, visits, users, roles only"
+    screens: [owner-pets, pet-vaccinations, add-vaccination, vaccination-saved]
+  - what: "Vaccination schemas in openapi.yml (VaccinationFields, Vaccination) and a Vaccination type and VaccinationService in the Angular app"
+    why: "No API field carries any vaccination data; the Angular app has services only for owners, pets, pettypes, specialties, vets and visits"
+    screens: [pet-vaccinations, add-vaccination, vaccination-saved]
+  - what: "POST /petclinic/api/owners/{ownerId}/pets/{petId}/vaccinations"
+    why: "Save vaccination has nothing to call; the visits endpoint takes only date and description"
+    screens: [add-vaccination, vaccination-saved]
+  - what: "GET /petclinic/api/owners/{ownerId}/pets/{petId}/vaccinations, or vaccinations on the Pet schema"
+    why: "The Vaccinations tab and Retry have nothing to load"
+    screens: [pet-vaccinations, vaccinations-empty-error]
+  - what: "DELETE /petclinic/api/vaccinations/{vaccinationId}"
+    why: "The Delete row action has nothing to call"
+    screens: [pet-vaccinations]
+  - what: "Overdue state on the pets that GET /petclinic/api/owners/{ownerId} returns (Pet.vaccinations or Pet.nextDueDate)"
+    why: "The owner page badge needs each pet's next due date, and Owner.pets carries only visits"
+    screens: [owner-pets, pet-vaccinations]
+  - what: "A vaccine catalogue: vaccines table and GET /petclinic/api/vaccines"
+    why: "The Vaccine select needs its options; nothing lists vaccines (pet types and specialties are different things)"
+    screens: [add-vaccination]
+  - what: "A link from a record to the vet who acted (vaccinations.vet_id, Vaccination.vetId)"
+    why: "Vet names exist (GET /petclinic/api/vets) but no table links a vet to a pet or visit today, so Given by cannot be derived from visits"
+    screens: [pet-vaccinations, add-vaccination]
+  - what: "An owner email: owners.email column, OwnerFields.email in openapi.yml, Owner.email in the Angular model"
+    why: "Reminder emails, Send reminder email and the confirmation's reminder note all need an address; owners has first_name, last_name, address, city and telephone only"
+    screens: [owner-pets, add-vaccination, vaccination-saved]
+  - what: "Reminder opt-in storage and an email sender (a scheduled job and a mail integration)"
+    why: "Nothing stores a reminder preference and spring-petclinic-rest calls no other system (calls: [] in its reference), so no reminder is ever sent"
+    screens: [owner-pets, add-vaccination, vaccination-saved]
+  - what: "Clinic locations: a clinics table, a location field and an endpoint to list them"
+    why: "Clinic location and the Clinic column have no source anywhere in the estate; it models one clinic"
+    screens: [pet-vaccinations, add-vaccination]
+  - what: "Angular routes for a pet's vaccinations and for adding one"
+    why: "pets-routing.module.ts routes pets/:id, pets/:id/edit and pets/:id/visits/add only"
+    screens: [owner-pets, pet-vaccinations, add-vaccination]
+
+traps:
+  # Wrong readings a scorer should count as misclassified backing.
+  - "Vaccine mapped to visits.description / Visit.description (its openapi example is 'rabies shot', but it is free text on a visit)"
+  - "Date given mapped to visits.visit_date / Visit.date"
+  - "Save vaccination mapped to POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits"
+  - "Given by marked fully backed: the names are, the link to the vaccination is not"
+  - "Reminder email marked existing because Owner has contact fields (telephone, address)"
+  - "Owner name on pet screens read from Pet.owner: the Angular Pet interface declares it, the API Pet schema has only ownerId"

@@ -1,0 +1,2429 @@
+{
+  "name": "Petclinic: Vaccination records",
+  "role": "owner",
+  "lastModified": "2026-10-14T09:42:17Z",
+  "editorType": "figma",
+  "thumbnailUrl": "",
+  "version": "4821093716",
+  "schemaVersion": 0,
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [
+      {
+        "id": "0:1",
+        "name": "Vaccinations",
+        "type": "CANVAS",
+        "backgroundColor": {
+          "r": 0.96,
+          "g": 0.96,
+          "b": 0.96,
+          "a": 1
+        },
+        "children": [
+          {
+            "id": "10:1",
+            "name": "Owner / Pets and vaccinations",
+            "type": "FRAME",
+            "absoluteBoundingBox": {
+              "x": 0,
+              "y": 0,
+              "width": 1280,
+              "height": 900
+            },
+            "background": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 1,
+                  "g": 1,
+                  "b": 1,
+                  "a": 1
+                }
+              }
+            ],
+            "children": [
+              {
+                "id": "10:2",
+                "name": "Title",
+                "type": "TEXT",
+                "absoluteBoundingBox": {
+                  "x": 80,
+                  "y": 60,
+                  "width": 600,
+                  "height": 36
+                },
+                "characters": "Owner Information",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 700,
+                  "fontSize": 28,
+                  "lineHeightPx": 39.2
+                }
+              },
+              {
+                "id": "10:3",
+                "name": "Field: Name",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 80,
+                  "y": 120,
+                  "width": 360,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I10:3;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 80,
+                      "y": 120,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Name",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I10:3;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 80,
+                      "y": 144,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Ada Fenwick",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "10:4",
+                "name": "Field: Telephone",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 480,
+                  "y": 120,
+                  "width": 360,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I10:4;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 480,
+                      "y": 120,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Telephone",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I10:4;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 480,
+                      "y": 144,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "6085550142",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "10:5",
+                "name": "Toggle: Reminder emails",
+                "type": "INSTANCE",
+                "componentId": "1:9",
+                "absoluteBoundingBox": {
+                  "x": 80,
+                  "y": 190,
+                  "width": 360,
+                  "height": 44
+                },
+                "children": [
+                  {
+                    "id": "I10:5;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 132,
+                      "y": 190,
+                      "width": 300,
+                      "height": 20
+                    },
+                    "characters": "Reminder emails",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I10:5;2:3",
+                    "name": "Helper",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 132,
+                      "y": 212,
+                      "width": 300,
+                      "height": 18
+                    },
+                    "characters": "Email the owner when a vaccination is due",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  }
+                ],
+                "componentProperties": {
+                  "State": {
+                    "type": "VARIANT",
+                    "value": "On"
+                  }
+                }
+              },
+              {
+                "id": "10:6",
+                "name": "Section",
+                "type": "TEXT",
+                "absoluteBoundingBox": {
+                  "x": 80,
+                  "y": 260,
+                  "width": 600,
+                  "height": 30
+                },
+                "characters": "Pets",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 700,
+                  "fontSize": 22,
+                  "lineHeightPx": 30.8
+                }
+              },
+              {
+                "id": "10:7",
+                "name": "Table: Pets",
+                "type": "INSTANCE",
+                "componentId": "1:7",
+                "absoluteBoundingBox": {
+                  "x": 80,
+                  "y": 300,
+                  "width": 900,
+                  "height": 96
+                },
+                "children": [
+                  {
+                    "id": "I10:7;3:1",
+                    "name": "Header: Pet",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 80,
+                      "y": 300,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "Pet",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I10:7;3:2",
+                    "name": "Header: Type",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 305,
+                      "y": 300,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "Type",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I10:7;3:3",
+                    "name": "Header: Birth date",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 530,
+                      "y": 300,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "Birth date",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I10:7;3:4",
+                    "name": "Header: Vaccinations",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 755,
+                      "y": 300,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "Vaccinations",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I10:7;4:1",
+                    "name": "Cell r1: Pet",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 80,
+                      "y": 332,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "Biscuit",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I10:7;4:2",
+                    "name": "Cell r1: Type",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 305,
+                      "y": 332,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "dog",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I10:7;4:3",
+                    "name": "Cell r1: Birth date",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 530,
+                      "y": 332,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "2021-03-14",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I10:7;4:4",
+                    "name": "Cell r1: Vaccinations",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 755,
+                      "y": 332,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I10:7;4:11",
+                    "name": "Cell r2: Pet",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 80,
+                      "y": 364,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "Pepper",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I10:7;4:12",
+                    "name": "Cell r2: Type",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 305,
+                      "y": 364,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "cat",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I10:7;4:13",
+                    "name": "Cell r2: Birth date",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 530,
+                      "y": 364,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "2019-11-02",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I10:7;4:14",
+                    "name": "Cell r2: Vaccinations",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 755,
+                      "y": 364,
+                      "width": 225,
+                      "height": 20
+                    },
+                    "characters": "",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "10:8",
+                "name": "Badge: Overdue",
+                "type": "INSTANCE",
+                "componentId": "1:8",
+                "absoluteBoundingBox": {
+                  "x": 760,
+                  "y": 332,
+                  "width": 72,
+                  "height": 22
+                },
+                "children": [
+                  {
+                    "id": "I10:8;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 768,
+                      "y": 334,
+                      "width": 56,
+                      "height": 18
+                    },
+                    "characters": "Overdue",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 11,
+                      "lineHeightPx": 15.4
+                    }
+                  }
+                ],
+                "componentProperties": {
+                  "Tone": {
+                    "type": "VARIANT",
+                    "value": "Danger"
+                  }
+                }
+              },
+              {
+                "id": "10:9",
+                "name": "Badge: Up to date",
+                "type": "INSTANCE",
+                "componentId": "1:8",
+                "absoluteBoundingBox": {
+                  "x": 760,
+                  "y": 364,
+                  "width": 72,
+                  "height": 22
+                },
+                "children": [
+                  {
+                    "id": "I10:9;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 768,
+                      "y": 366,
+                      "width": 56,
+                      "height": 18
+                    },
+                    "characters": "Up to date",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 11,
+                      "lineHeightPx": 15.4
+                    }
+                  }
+                ],
+                "componentProperties": {
+                  "Tone": {
+                    "type": "VARIANT",
+                    "value": "Success"
+                  }
+                }
+              },
+              {
+                "id": "10:10",
+                "name": "Button: View vaccinations",
+                "type": "INSTANCE",
+                "componentId": "1:5",
+                "absoluteBoundingBox": {
+                  "x": 80,
+                  "y": 420,
+                  "width": 200,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I10:10;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 96,
+                      "y": 430,
+                      "width": 168,
+                      "height": 20
+                    },
+                    "characters": "View vaccinations",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "10:11",
+                "name": "Button: Add New Pet",
+                "type": "INSTANCE",
+                "componentId": "1:6",
+                "absoluteBoundingBox": {
+                  "x": 300,
+                  "y": 420,
+                  "width": 180,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I10:11;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 316,
+                      "y": 430,
+                      "width": 148,
+                      "height": 20
+                    },
+                    "characters": "Add New Pet",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "20:1",
+            "name": "Pet detail / Vaccinations tab",
+            "type": "FRAME",
+            "absoluteBoundingBox": {
+              "x": 1400,
+              "y": 0,
+              "width": 1280,
+              "height": 900
+            },
+            "background": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 1,
+                  "g": 1,
+                  "b": 1,
+                  "a": 1
+                }
+              }
+            ],
+            "children": [
+              {
+                "id": "20:2",
+                "name": "Title",
+                "type": "TEXT",
+                "absoluteBoundingBox": {
+                  "x": 1480,
+                  "y": 60,
+                  "width": 600,
+                  "height": 36
+                },
+                "characters": "Biscuit",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 700,
+                  "fontSize": 28,
+                  "lineHeightPx": 39.2
+                }
+              },
+              {
+                "id": "20:3",
+                "name": "Field: Owner",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 1480,
+                  "y": 110,
+                  "width": 360,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I20:3;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1480,
+                      "y": 110,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Owner",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I20:3;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1480,
+                      "y": 134,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Ada Fenwick",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "20:4",
+                "name": "Field: Birth Date",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 1880,
+                  "y": 110,
+                  "width": 360,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I20:4;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1880,
+                      "y": 110,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Birth Date",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I20:4;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1880,
+                      "y": 134,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "2021-03-14",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "20:5",
+                "name": "Field: Type",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 2280,
+                  "y": 110,
+                  "width": 240,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I20:5;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2280,
+                      "y": 110,
+                      "width": 240,
+                      "height": 20
+                    },
+                    "characters": "Type",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I20:5;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2280,
+                      "y": 134,
+                      "width": 240,
+                      "height": 20
+                    },
+                    "characters": "dog",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "20:6",
+                "name": "Tabs: Pet detail",
+                "type": "INSTANCE",
+                "componentId": "1:10",
+                "absoluteBoundingBox": {
+                  "x": 1480,
+                  "y": 180,
+                  "width": 400,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I20:6;2:1",
+                    "name": "Tab: Visits",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1480,
+                      "y": 190,
+                      "width": 120,
+                      "height": 20
+                    },
+                    "characters": "Visits",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:6;2:2",
+                    "name": "Tab: Vaccinations",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1620,
+                      "y": 190,
+                      "width": 140,
+                      "height": 20
+                    },
+                    "characters": "Vaccinations",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ],
+                "componentProperties": {
+                  "Active": {
+                    "type": "VARIANT",
+                    "value": "Vaccinations"
+                  }
+                }
+              },
+              {
+                "id": "20:7",
+                "name": "Table: Vaccinations",
+                "type": "INSTANCE",
+                "componentId": "1:7",
+                "absoluteBoundingBox": {
+                  "x": 1480,
+                  "y": 240,
+                  "width": 1100,
+                  "height": 96
+                },
+                "children": [
+                  {
+                    "id": "I20:7;3:1",
+                    "name": "Header: Vaccine",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1480,
+                      "y": 240,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Vaccine",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I20:7;3:2",
+                    "name": "Header: Date given",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1663,
+                      "y": 240,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Date given",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I20:7;3:3",
+                    "name": "Header: Next due",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1846,
+                      "y": 240,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Next due",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I20:7;3:4",
+                    "name": "Header: Given by",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2029,
+                      "y": 240,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Given by",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I20:7;3:5",
+                    "name": "Header: Batch no.",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2212,
+                      "y": 240,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Batch no.",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I20:7;3:6",
+                    "name": "Header: Clinic",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2395,
+                      "y": 240,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Clinic",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:1",
+                    "name": "Cell r1: Vaccine",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1480,
+                      "y": 272,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Rabies",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:2",
+                    "name": "Cell r1: Date given",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1663,
+                      "y": 272,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "2025-04-10",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:3",
+                    "name": "Cell r1: Next due",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1846,
+                      "y": 272,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "2026-04-10",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:4",
+                    "name": "Cell r1: Given by",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2029,
+                      "y": 272,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Dr. Iris Moreau",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:5",
+                    "name": "Cell r1: Batch no.",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2212,
+                      "y": 272,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "RB-20931",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:6",
+                    "name": "Cell r1: Clinic",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2395,
+                      "y": 272,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Riverside",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:11",
+                    "name": "Cell r2: Vaccine",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1480,
+                      "y": 304,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "DHPP booster",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:12",
+                    "name": "Cell r2: Date given",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1663,
+                      "y": 304,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "2025-09-02",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:13",
+                    "name": "Cell r2: Next due",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1846,
+                      "y": 304,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "2026-09-02",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:14",
+                    "name": "Cell r2: Given by",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2029,
+                      "y": 304,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Dr. Tomas Varga",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:15",
+                    "name": "Cell r2: Batch no.",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2212,
+                      "y": 304,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "DH-77410",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I20:7;4:16",
+                    "name": "Cell r2: Clinic",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2395,
+                      "y": 304,
+                      "width": 183,
+                      "height": 20
+                    },
+                    "characters": "Hillcrest",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "20:8",
+                "name": "Badge: Overdue",
+                "type": "INSTANCE",
+                "componentId": "1:8",
+                "absoluteBoundingBox": {
+                  "x": 2000,
+                  "y": 272,
+                  "width": 72,
+                  "height": 22
+                },
+                "children": [
+                  {
+                    "id": "I20:8;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2008,
+                      "y": 274,
+                      "width": 56,
+                      "height": 18
+                    },
+                    "characters": "Overdue",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 11,
+                      "lineHeightPx": 15.4
+                    }
+                  }
+                ],
+                "componentProperties": {
+                  "Tone": {
+                    "type": "VARIANT",
+                    "value": "Danger"
+                  }
+                }
+              },
+              {
+                "id": "20:9",
+                "name": "Button: Add vaccination",
+                "type": "INSTANCE",
+                "componentId": "1:5",
+                "absoluteBoundingBox": {
+                  "x": 1480,
+                  "y": 360,
+                  "width": 180,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I20:9;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1496,
+                      "y": 370,
+                      "width": 148,
+                      "height": 20
+                    },
+                    "characters": "Add vaccination",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "20:10",
+                "name": "Button: Delete",
+                "type": "INSTANCE",
+                "componentId": "1:6",
+                "absoluteBoundingBox": {
+                  "x": 2400,
+                  "y": 272,
+                  "width": 100,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I20:10;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2416,
+                      "y": 282,
+                      "width": 68,
+                      "height": 20
+                    },
+                    "characters": "Delete",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "20:11",
+                "name": "Button: Back",
+                "type": "INSTANCE",
+                "componentId": "1:6",
+                "absoluteBoundingBox": {
+                  "x": 1680,
+                  "y": 360,
+                  "width": 100,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I20:11;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 1696,
+                      "y": 370,
+                      "width": 68,
+                      "height": 20
+                    },
+                    "characters": "Back",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "30:1",
+            "name": "Add vaccination",
+            "type": "FRAME",
+            "absoluteBoundingBox": {
+              "x": 2800,
+              "y": 0,
+              "width": 1280,
+              "height": 900
+            },
+            "background": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 1,
+                  "g": 1,
+                  "b": 1,
+                  "a": 1
+                }
+              }
+            ],
+            "children": [
+              {
+                "id": "30:2",
+                "name": "Title",
+                "type": "TEXT",
+                "absoluteBoundingBox": {
+                  "x": 2880,
+                  "y": 60,
+                  "width": 600,
+                  "height": 36
+                },
+                "characters": "New Vaccination",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 700,
+                  "fontSize": 28,
+                  "lineHeightPx": 39.2
+                }
+              },
+              {
+                "id": "30:3",
+                "name": "Field: Pet",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 2880,
+                  "y": 110,
+                  "width": 360,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I30:3;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2880,
+                      "y": 110,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Pet",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I30:3;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2880,
+                      "y": 134,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Biscuit (dog)",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "30:4",
+                "name": "Field: Owner",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 3280,
+                  "y": 110,
+                  "width": 360,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I30:4;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 3280,
+                      "y": 110,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Owner",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I30:4;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 3280,
+                      "y": 134,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Ada Fenwick",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "30:5",
+                "name": "Field: Vaccine",
+                "type": "INSTANCE",
+                "componentId": "1:4",
+                "absoluteBoundingBox": {
+                  "x": 2880,
+                  "y": 180,
+                  "width": 360,
+                  "height": 64
+                },
+                "children": [
+                  {
+                    "id": "I30:5;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2880,
+                      "y": 180,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Vaccine",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I30:5;2:2",
+                    "name": "Placeholder",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2892,
+                      "y": 210,
+                      "width": 336,
+                      "height": 20
+                    },
+                    "characters": "Choose a vaccine",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "30:6",
+                "name": "Field: Date given",
+                "type": "INSTANCE",
+                "componentId": "1:3",
+                "absoluteBoundingBox": {
+                  "x": 2880,
+                  "y": 260,
+                  "width": 360,
+                  "height": 64
+                },
+                "children": [
+                  {
+                    "id": "I30:6;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2880,
+                      "y": 260,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Date given",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I30:6;2:2",
+                    "name": "Placeholder",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2892,
+                      "y": 290,
+                      "width": 336,
+                      "height": 20
+                    },
+                    "characters": "YYYY-MM-DD",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "30:7",
+                "name": "Field: Next due date",
+                "type": "INSTANCE",
+                "componentId": "1:3",
+                "absoluteBoundingBox": {
+                  "x": 3280,
+                  "y": 260,
+                  "width": 360,
+                  "height": 64
+                },
+                "children": [
+                  {
+                    "id": "I30:7;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 3280,
+                      "y": 260,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Next due date",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I30:7;2:2",
+                    "name": "Placeholder",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 3292,
+                      "y": 290,
+                      "width": 336,
+                      "height": 20
+                    },
+                    "characters": "YYYY-MM-DD",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "30:8",
+                "name": "Field: Given by",
+                "type": "INSTANCE",
+                "componentId": "1:4",
+                "absoluteBoundingBox": {
+                  "x": 2880,
+                  "y": 340,
+                  "width": 360,
+                  "height": 64
+                },
+                "children": [
+                  {
+                    "id": "I30:8;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2880,
+                      "y": 340,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Given by",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I30:8;2:2",
+                    "name": "Placeholder",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2892,
+                      "y": 370,
+                      "width": 336,
+                      "height": 20
+                    },
+                    "characters": "Choose a vet",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "30:9",
+                "name": "Field: Batch number",
+                "type": "INSTANCE",
+                "componentId": "1:2",
+                "absoluteBoundingBox": {
+                  "x": 3280,
+                  "y": 340,
+                  "width": 360,
+                  "height": 64
+                },
+                "children": [
+                  {
+                    "id": "I30:9;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 3280,
+                      "y": 340,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Batch number",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I30:9;2:2",
+                    "name": "Placeholder",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 3292,
+                      "y": 370,
+                      "width": 336,
+                      "height": 20
+                    },
+                    "characters": "e.g. RB-20931",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "30:10",
+                "name": "Field: Clinic location",
+                "type": "INSTANCE",
+                "componentId": "1:4",
+                "absoluteBoundingBox": {
+                  "x": 2880,
+                  "y": 420,
+                  "width": 360,
+                  "height": 64
+                },
+                "children": [
+                  {
+                    "id": "I30:10;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2880,
+                      "y": 420,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Clinic location",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I30:10;2:2",
+                    "name": "Placeholder",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2892,
+                      "y": 450,
+                      "width": 336,
+                      "height": 20
+                    },
+                    "characters": "Choose a clinic",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "30:11",
+                "name": "Toggle: Send reminder email",
+                "type": "INSTANCE",
+                "componentId": "1:9",
+                "absoluteBoundingBox": {
+                  "x": 2880,
+                  "y": 500,
+                  "width": 360,
+                  "height": 44
+                },
+                "children": [
+                  {
+                    "id": "I30:11;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2932,
+                      "y": 500,
+                      "width": 300,
+                      "height": 20
+                    },
+                    "characters": "Send reminder email",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  },
+                  {
+                    "id": "I30:11;2:3",
+                    "name": "Helper",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2932,
+                      "y": 522,
+                      "width": 300,
+                      "height": 18
+                    },
+                    "characters": "Sent to the owner 14 days before the due date",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  }
+                ],
+                "componentProperties": {
+                  "State": {
+                    "type": "VARIANT",
+                    "value": "On"
+                  }
+                }
+              },
+              {
+                "id": "30:12",
+                "name": "Button: Save vaccination",
+                "type": "INSTANCE",
+                "componentId": "1:5",
+                "absoluteBoundingBox": {
+                  "x": 2880,
+                  "y": 580,
+                  "width": 180,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I30:12;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 2896,
+                      "y": 590,
+                      "width": 148,
+                      "height": 20
+                    },
+                    "characters": "Save vaccination",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "30:13",
+                "name": "Button: Cancel",
+                "type": "INSTANCE",
+                "componentId": "1:6",
+                "absoluteBoundingBox": {
+                  "x": 3080,
+                  "y": 580,
+                  "width": 120,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I30:13;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 3096,
+                      "y": 590,
+                      "width": 88,
+                      "height": 20
+                    },
+                    "characters": "Cancel",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "40:1",
+            "name": "Vaccination saved",
+            "type": "FRAME",
+            "absoluteBoundingBox": {
+              "x": 4200,
+              "y": 0,
+              "width": 1280,
+              "height": 600
+            },
+            "background": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 1,
+                  "g": 1,
+                  "b": 1,
+                  "a": 1
+                }
+              }
+            ],
+            "children": [
+              {
+                "id": "40:2",
+                "name": "Alert: Saved",
+                "type": "INSTANCE",
+                "componentId": "1:12",
+                "absoluteBoundingBox": {
+                  "x": 4280,
+                  "y": 60,
+                  "width": 700,
+                  "height": 56
+                },
+                "children": [
+                  {
+                    "id": "I40:2;2:1",
+                    "name": "Message",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 4300,
+                      "y": 70,
+                      "width": 600,
+                      "height": 24
+                    },
+                    "characters": "Vaccination saved",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 700,
+                      "fontSize": 16,
+                      "lineHeightPx": 22.4
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "40:3",
+                "name": "Field: Pet",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 4280,
+                  "y": 140,
+                  "width": 360,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I40:3;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 4280,
+                      "y": 140,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Pet",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I40:3;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 4280,
+                      "y": 164,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Biscuit",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "40:4",
+                "name": "Field: Vaccine",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 4680,
+                  "y": 140,
+                  "width": 360,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I40:4;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 4680,
+                      "y": 140,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Vaccine",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I40:4;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 4680,
+                      "y": 164,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Rabies",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "40:5",
+                "name": "Field: Next due date",
+                "type": "INSTANCE",
+                "componentId": "1:13",
+                "absoluteBoundingBox": {
+                  "x": 4280,
+                  "y": 200,
+                  "width": 360,
+                  "height": 48
+                },
+                "children": [
+                  {
+                    "id": "I40:5;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 4280,
+                      "y": 200,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "Next due date",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 12,
+                      "lineHeightPx": 16.8
+                    }
+                  },
+                  {
+                    "id": "I40:5;2:2",
+                    "name": "Value",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 4280,
+                      "y": 224,
+                      "width": 360,
+                      "height": 20
+                    },
+                    "characters": "2027-04-10",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "40:6",
+                "name": "Reminder note",
+                "type": "TEXT",
+                "absoluteBoundingBox": {
+                  "x": 4280,
+                  "y": 270,
+                  "width": 700,
+                  "height": 24
+                },
+                "characters": "A reminder will be emailed to ada.fenwick@example.com on 2027-03-27.",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 400,
+                  "fontSize": 14,
+                  "lineHeightPx": 19.6
+                }
+              },
+              {
+                "id": "40:7",
+                "name": "Button: Back to owner",
+                "type": "INSTANCE",
+                "componentId": "1:5",
+                "absoluteBoundingBox": {
+                  "x": 4280,
+                  "y": 330,
+                  "width": 180,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I40:7;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 4296,
+                      "y": 340,
+                      "width": 148,
+                      "height": 20
+                    },
+                    "characters": "Back to owner",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "40:8",
+                "name": "Button: Add another",
+                "type": "INSTANCE",
+                "componentId": "1:6",
+                "absoluteBoundingBox": {
+                  "x": 4480,
+                  "y": 330,
+                  "width": 180,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I40:8;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 4496,
+                      "y": 340,
+                      "width": 148,
+                      "height": 20
+                    },
+                    "characters": "Add another",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "50:1",
+            "name": "Vaccinations tab / Empty and error",
+            "type": "FRAME",
+            "absoluteBoundingBox": {
+              "x": 5600,
+              "y": 0,
+              "width": 1280,
+              "height": 600
+            },
+            "background": [
+              {
+                "type": "SOLID",
+                "color": {
+                  "r": 1,
+                  "g": 1,
+                  "b": 1,
+                  "a": 1
+                }
+              }
+            ],
+            "children": [
+              {
+                "id": "50:2",
+                "name": "Title",
+                "type": "TEXT",
+                "absoluteBoundingBox": {
+                  "x": 5680,
+                  "y": 60,
+                  "width": 600,
+                  "height": 36
+                },
+                "characters": "Pepper",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 700,
+                  "fontSize": 28,
+                  "lineHeightPx": 39.2
+                }
+              },
+              {
+                "id": "50:3",
+                "name": "Empty message",
+                "type": "TEXT",
+                "absoluteBoundingBox": {
+                  "x": 5680,
+                  "y": 140,
+                  "width": 600,
+                  "height": 24
+                },
+                "characters": "No vaccinations recorded for Pepper yet.",
+                "style": {
+                  "fontFamily": "Inter",
+                  "fontWeight": 400,
+                  "fontSize": 14,
+                  "lineHeightPx": 19.6
+                }
+              },
+              {
+                "id": "50:4",
+                "name": "Button: Add first vaccination",
+                "type": "INSTANCE",
+                "componentId": "1:5",
+                "absoluteBoundingBox": {
+                  "x": 5680,
+                  "y": 180,
+                  "width": 220,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I50:4;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 5696,
+                      "y": 190,
+                      "width": 188,
+                      "height": 20
+                    },
+                    "characters": "Add first vaccination",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "50:5",
+                "name": "Alert: Load failed",
+                "type": "INSTANCE",
+                "componentId": "1:11",
+                "absoluteBoundingBox": {
+                  "x": 5680,
+                  "y": 280,
+                  "width": 700,
+                  "height": 56
+                },
+                "children": [
+                  {
+                    "id": "I50:5;2:1",
+                    "name": "Message",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 5700,
+                      "y": 290,
+                      "width": 600,
+                      "height": 24
+                    },
+                    "characters": "We couldn't load vaccinations. Try again.",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 400,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "50:6",
+                "name": "Button: Retry",
+                "type": "INSTANCE",
+                "componentId": "1:6",
+                "absoluteBoundingBox": {
+                  "x": 5680,
+                  "y": 350,
+                  "width": 120,
+                  "height": 40
+                },
+                "children": [
+                  {
+                    "id": "I50:6;2:1",
+                    "name": "Label",
+                    "type": "TEXT",
+                    "absoluteBoundingBox": {
+                      "x": 5696,
+                      "y": 360,
+                      "width": 88,
+                      "height": 20
+                    },
+                    "characters": "Retry",
+                    "style": {
+                      "fontFamily": "Inter",
+                      "fontWeight": 600,
+                      "fontSize": 14,
+                      "lineHeightPx": 19.6
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "components": {
+    "1:2": {
+      "key": "c0mp1x2k3y",
+      "name": "Input/Text",
+      "description": "Single-line text input with label and placeholder",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:3": {
+      "key": "c0mp1x3k3y",
+      "name": "Input/Date",
+      "description": "Date picker input with label",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:4": {
+      "key": "c0mp1x4k3y",
+      "name": "Select",
+      "description": "Dropdown select with label",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:5": {
+      "key": "c0mp1x5k3y",
+      "name": "Button/Primary",
+      "description": "Primary action button",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:6": {
+      "key": "c0mp1x6k3y",
+      "name": "Button/Secondary",
+      "description": "Secondary action button",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:7": {
+      "key": "c0mp1x7k3y",
+      "name": "Table",
+      "description": "Data table with header row",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:8": {
+      "key": "c0mp1x8k3y",
+      "name": "Badge",
+      "description": "Status badge",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:9": {
+      "key": "c0mp1x9k3y",
+      "name": "Toggle",
+      "description": "On/off switch with label",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:10": {
+      "key": "c0mp1x10k3y",
+      "name": "Tabs",
+      "description": "Horizontal tab bar",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:11": {
+      "key": "c0mp1x11k3y",
+      "name": "Alert/Error",
+      "description": "Inline error alert",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:12": {
+      "key": "c0mp1x12k3y",
+      "name": "Alert/Success",
+      "description": "Inline success alert",
+      "remote": false,
+      "documentationLinks": []
+    },
+    "1:13": {
+      "key": "c0mp1x13k3y",
+      "name": "Input/ReadOnly",
+      "description": "Read-only value with label",
+      "remote": false,
+      "documentationLinks": []
+    }
+  },
+  "componentSets": {},
+  "styles": {}
+}

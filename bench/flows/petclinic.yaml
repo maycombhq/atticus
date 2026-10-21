@@ -1,0 +1,763 @@
+# Written by reading the code at the pinned commits in ../repos.yaml, not from an Atticus scan.
+estate: petclinic
+repos: [spring-petclinic-angular, spring-petclinic-rest]
+notes: >-
+  The Angular app calls the REST API at REST_API_URL = http://localhost:9966/petclinic/api/
+  (src/environments/environment.ts:26); the API serves under server.servlet.context-path=/petclinic/
+  (application.properties:25) and class-level @RequestMapping("/api"), so entries are named
+  /petclinic/api/... . The REST repo runs with the default profiles h2,spring-data-jpa
+  (application.properties:20), so lookups and writes go through the springdatajpa repositories, and
+  tables and columns are taken from src/main/resources/db/h2/schema.sql; the jdbc and jpa
+  repository layers are not followed. Request bodies are validated by Bean Validation on the
+  interfaces the OpenAPI generator makes from openapi.yml (generated code, not in the repo), so
+  validate steps cite the schema in openapi.yml. petclinic.security.enable=false by default
+  (application.properties:49), so DisableSecurityConfig permits every request and the
+  @PreAuthorize role checks are not enforced; the 401/403 paths with security on are left out
+  (the Angular app sends no credentials). Every Angular service pipes errors through
+  HttpErrorHandler.handleError, which logs and rethrows a message string
+  (src/app/error.service.ts:65); the API's 400 and 404 bodies are ProblemDetail objects and it
+  sets no "errors" header, so the UI shows the generic "server returned code ..." message. Owner,
+  pet and visit loads are eager (Owner.pets and Pet.visits are FetchType.EAGER, Pet.type is a
+  default-eager @ManyToOne), so every owner read also reads pets, types and visits. Pages that
+  load data before a form is submitted (edit owner, add pet, add visit) are described in the
+  flow's trigger rather than as separate flows. Add specialty was not chosen as the admin flow:
+  its body schema (Specialty, openapi.yml:1968) marks id as required while the form sends no id,
+  and whether the generated DTO rejects that cannot be confirmed without the generated code; add
+  pet type has no such doubt. The telephone 500 error and the unknown-pet-type and unknown-pet
+  404s are read from the code and the H2 schema (entity Bean Validation at persist time, NOT NULL
+  and foreign keys), not observed by running it. Left out: delete flows, edit pet, edit visit, vet
+  add and edit, the v2 paged endpoints (the UI never calls them) and the users endpoint.
+flows:
+  - id: find-owners
+    name: A person finds owners by last name
+    trigger:
+      kind: action
+      repo: spring-petclinic-angular
+      what: The Find Owner button on the Owners page is clicked with a last name (the page also loads every owner when it first opens)
+      at: "src/app/owners/owner-list/owner-list.component.html:32"
+    steps:
+      - kind: branch
+        repo: spring-petclinic-angular
+        what: An empty search term calls getOwners, any other term calls searchOwners
+        data: { reads: [lastName] }
+        at: "src/app/owners/owner-list/owner-list.component.ts:45"
+      - kind: call-out
+        repo: spring-petclinic-angular
+        what: GET /petclinic/api/owners?lastName=<term> (without the query for an empty term)
+        to: { repo: spring-petclinic-rest, entry: "GET /petclinic/api/owners" }
+        data: { sends: [lastName] }
+        at: "src/app/owners/owner.service.ts:83"
+      - kind: entry
+        repo: spring-petclinic-rest
+        what: OwnerRestControllerV1.listOwners receives the optional lastName
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:76"
+      - kind: branch
+        repo: spring-petclinic-rest
+        what: With a lastName it searches by last name, otherwise it loads all owners
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:78"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: Owners whose last name starts with the term are read with their pets joined (LIKE :lastName%)
+        store: { table: owners, fields: [id, first_name, last_name, address, city, telephone] }
+        at: "src/main/java/org/springframework/samples/petclinic/repository/springdatajpa/SpringDataOwnerRepository.java:40"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: Each owner's pets are read (left join fetch owner.pets, eager)
+        store: { table: pets, fields: [id, name, birth_date, type_id, owner_id] }
+        at: "src/main/java/org/springframework/samples/petclinic/model/Owner.java:52"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: Each pet's type is read (eager many-to-one on type_id)
+        store: { table: types, fields: [id, name] }
+        at: "src/main/java/org/springframework/samples/petclinic/model/Pet.java:38"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: Each pet's visits are read (eager one-to-many)
+        store: { table: visits, fields: [id, pet_id, visit_date, description] }
+        at: "src/main/java/org/springframework/samples/petclinic/model/Pet.java:45"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The owners become OwnerDtos, each pet a PetDto with ownerId taken from owner.id
+        data:
+          {
+            from:
+              [
+                Owner.firstName,
+                Owner.lastName,
+                Owner.address,
+                Owner.city,
+                Owner.telephone,
+                Owner.pets,
+                Pet.owner.id,
+              ],
+            to:
+              [
+                OwnerDto.firstName,
+                OwnerDto.lastName,
+                OwnerDto.address,
+                OwnerDto.city,
+                OwnerDto.telephone,
+                OwnerDto.pets,
+                PetDto.ownerId,
+              ],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/mapper/OwnerMapper.java:29"
+      - kind: respond
+        repo: spring-petclinic-rest
+        what: 200 OK with the list of owners
+        data: { returns: [id, firstName, lastName, address, city, telephone, pets] }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:86"
+      - kind: respond
+        repo: spring-petclinic-angular
+        what: The owners table shows name (linked to the owner page), address, city, telephone and pet names
+        data: { reads: [id, firstName, lastName, address, city, telephone, pets] }
+        at: "src/app/owners/owner-list/owner-list.component.html:54"
+    errors:
+      - {
+          when: "No owner matches (or there are no owners)",
+          then: "404 Not Found with no body",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:84",
+        }
+      - {
+          when: "The API returns 404 or any error",
+          then: "the handler rethrows, the resource has no value and the page shows No owners with LastName starting with the term",
+          at: "src/app/owners/owner-list/owner-list.component.html:39",
+        }
+
+  - id: view-owner
+    name: A person opens an owner with their pets and visits
+    trigger:
+      kind: page
+      repo: spring-petclinic-angular
+      what: The owner page /owners/:id loads, usually from a click on an owner's name in the owners table
+      at: "src/app/owners/owners-routing.module.ts:34"
+    steps:
+      - kind: call-out
+        repo: spring-petclinic-angular
+        what: GET /petclinic/api/owners/{ownerId} with the id from the route
+        to: { repo: spring-petclinic-rest, entry: "GET /petclinic/api/owners/{ownerId}" }
+        data: { sends: [ownerId] }
+        at: "src/app/owners/owner.service.ts:54"
+      - kind: entry
+        repo: spring-petclinic-rest
+        what: OwnerRestControllerV1.getOwner receives the ownerId
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:91"
+      - kind: lookup
+        repo: spring-petclinic-rest
+        what: The owner is looked up by id with its pets joined
+        store: { table: owners, fields: [id, first_name, last_name, address, city, telephone] }
+        at: "src/main/java/org/springframework/samples/petclinic/repository/springdatajpa/SpringDataOwnerRepository.java:56"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: The owner's pets are read (left join fetch, eager)
+        store: { table: pets, fields: [id, name, birth_date, type_id, owner_id] }
+        at: "src/main/java/org/springframework/samples/petclinic/model/Owner.java:52"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: Each pet's type is read
+        store: { table: types, fields: [id, name] }
+        at: "src/main/java/org/springframework/samples/petclinic/model/Pet.java:38"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: Each pet's visits are read
+        store: { table: visits, fields: [id, pet_id, visit_date, description] }
+        at: "src/main/java/org/springframework/samples/petclinic/model/Pet.java:45"
+      - kind: branch
+        repo: spring-petclinic-rest
+        what: No owner with that id ends the request with 404
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:93"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: Pets are sorted by name, case-insensitive, when read for mapping
+        at: "src/main/java/org/springframework/samples/petclinic/model/Owner.java:92"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: Each pet's visits are sorted newest first
+        at: "src/main/java/org/springframework/samples/petclinic/model/Pet.java:85"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The owner becomes an OwnerDto; pets become PetDtos with ownerId, visits become VisitDtos with petId
+        data:
+          {
+            from:
+              [
+                Owner.firstName,
+                Owner.lastName,
+                Owner.address,
+                Owner.city,
+                Owner.telephone,
+                Owner.pets,
+                Pet.owner.id,
+                Visit.pet.id,
+              ],
+            to:
+              [
+                OwnerDto.firstName,
+                OwnerDto.lastName,
+                OwnerDto.address,
+                OwnerDto.city,
+                OwnerDto.telephone,
+                OwnerDto.pets,
+                PetDto.ownerId,
+                VisitDto.petId,
+              ],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/mapper/OwnerMapper.java:21"
+      - kind: respond
+        repo: spring-petclinic-rest
+        what: 200 OK with the owner, pets and visits
+        data: { returns: [id, firstName, lastName, address, city, telephone, pets] }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:96"
+      - kind: respond
+        repo: spring-petclinic-angular
+        what: The page shows the owner's details and one pet panel per pet, each with its visits and Edit Pet, Delete Pet and Add Visit buttons
+        data: { reads: [firstName, lastName, address, city, telephone, pets] }
+        at: "src/app/owners/owner-detail/owner-detail.component.html:57"
+    errors:
+      - {
+          when: "No owner has that id",
+          then: "404 Not Found with no body",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:94",
+        }
+      - {
+          when: "The API returns an error",
+          then: "the page shows the error message in a red alert above an empty owner",
+          at: "src/app/owners/owner-detail/owner-detail.component.html:25",
+        }
+
+  - id: add-owner
+    name: A person adds a pet owner
+    trigger:
+      kind: action
+      repo: spring-petclinic-angular
+      what: The New Owner form is submitted with the Add Owner button
+      at: "src/app/owners/owner-add/owner-add.component.html:25"
+    steps:
+      - kind: validate
+        repo: spring-petclinic-angular
+        what: Add Owner stays disabled until the form is valid (names letters only up to 30, address up to 255, city up to 80, telephone digits up to 20, all required)
+        data: { checks: [firstName, lastName, address, city, telephone] }
+        at: "src/app/owners/owner-add/owner-add.component.html:111"
+      - kind: transform
+        repo: spring-petclinic-angular
+        what: The form value's id is set to null
+        data: { from: [owner.id], to: [owner.id] }
+        at: "src/app/owners/owner-add/owner-add.component.ts:43"
+      - kind: call-out
+        repo: spring-petclinic-angular
+        what: POST /petclinic/api/owners with the form's fields
+        to: { repo: spring-petclinic-rest, entry: "POST /petclinic/api/owners" }
+        data: { sends: [id, firstName, lastName, address, city, telephone] }
+        at: "src/app/owners/owner.service.ts:60"
+      - kind: entry
+        repo: spring-petclinic-rest
+        what: OwnerRestControllerV1.addOwner receives the body as an OwnerFieldsDto
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:101"
+      - kind: validate
+        repo: spring-petclinic-rest
+        what: The body is checked against OwnerFields (all five required; firstName and lastName 1-30 letters, address 1-255, city 1-80, telephone 1-20 digits)
+        data: { checks: [firstName, lastName, address, city, telephone] }
+        at: "src/main/resources/openapi.yml:1991"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The DTO becomes an Owner entity, id and pets ignored
+        data:
+          {
+            from:
+              [
+                OwnerFieldsDto.firstName,
+                OwnerFieldsDto.lastName,
+                OwnerFieldsDto.address,
+                OwnerFieldsDto.city,
+                OwnerFieldsDto.telephone,
+              ],
+            to: [Owner.firstName, Owner.lastName, Owner.address, Owner.city, Owner.telephone],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/mapper/OwnerMapper.java:27"
+      - kind: validate
+        repo: spring-petclinic-rest
+        what: On persist the entity's own constraints run, including telephone at most 10 digits
+        data: { checks: [Owner.telephone] }
+        at: "src/main/java/org/springframework/samples/petclinic/model/Owner.java:48"
+      - kind: write
+        repo: spring-petclinic-rest
+        what: The owner is inserted and the database generates its id
+        store: { table: owners, fields: [first_name, last_name, address, city, telephone] }
+        at: "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java:235"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The saved owner becomes an OwnerDto
+        data:
+          {
+            from:
+              [
+                Owner.id,
+                Owner.firstName,
+                Owner.lastName,
+                Owner.address,
+                Owner.city,
+                Owner.telephone,
+                Owner.pets,
+              ],
+            to:
+              [
+                OwnerDto.id,
+                OwnerDto.firstName,
+                OwnerDto.lastName,
+                OwnerDto.address,
+                OwnerDto.city,
+                OwnerDto.telephone,
+                OwnerDto.pets,
+              ],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:105"
+      - kind: respond
+        repo: spring-petclinic-rest
+        what: 201 Created with the saved owner and a Location header /api/owners/{id}
+        data: { returns: [id, firstName, lastName, address, city, telephone, pets] }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:108"
+      - kind: respond
+        repo: spring-petclinic-angular
+        what: On success the app navigates to the owners list, which reloads all owners
+        at: "src/app/owners/owner-add/owner-add.component.ts:45"
+    errors:
+      - {
+          when: "The body fails the OwnerFields checks",
+          then: "400 Bad Request with a ProblemDetail listing schemaValidationErrors",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:117",
+        }
+      - {
+          when: "The telephone has 11 to 20 digits (allowed by the API, refused by the entity's @Digits(integer = 10))",
+          then: "500 Internal Server Error with a ProblemDetail",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:80",
+        }
+      - {
+          when: "The API returns an error",
+          then: "the form stays and shows the error message in a red alert",
+          at: "src/app/owners/owner-add/owner-add.component.ts:46",
+        }
+
+  - id: edit-owner
+    name: A person edits an owner's details
+    trigger:
+      kind: action
+      repo: spring-petclinic-angular
+      what: The Edit Owner form, prefilled from GET /petclinic/api/owners/{ownerId} when /owners/:id/edit loads, is submitted with Update Owner
+      at: "src/app/owners/owner-edit/owner-edit.component.html:25"
+    steps:
+      - kind: validate
+        repo: spring-petclinic-angular
+        what: Update Owner stays disabled until the form is valid (same field rules as adding an owner)
+        data: { checks: [firstName, lastName, address, city, telephone] }
+        at: "src/app/owners/owner-edit/owner-edit.component.html:114"
+      - kind: call-out
+        repo: spring-petclinic-angular
+        what: PUT /petclinic/api/owners/{ownerId} with the route id and the form's fields
+        to: { repo: spring-petclinic-rest, entry: "PUT /petclinic/api/owners/{ownerId}" }
+        data: { sends: [ownerId, id, firstName, lastName, address, city, telephone] }
+        at: "src/app/owners/owner.service.ts:67"
+      - kind: entry
+        repo: spring-petclinic-rest
+        what: OwnerRestControllerV1.updateOwner receives the ownerId and an OwnerFieldsDto
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:113"
+      - kind: validate
+        repo: spring-petclinic-rest
+        what: The body is checked against OwnerFields
+        data: { checks: [firstName, lastName, address, city, telephone] }
+        at: "src/main/resources/openapi.yml:1991"
+      - kind: lookup
+        repo: spring-petclinic-rest
+        what: The current owner is looked up by id with its pets
+        store: { table: owners, fields: [id, first_name, last_name, address, city, telephone] }
+        at: "src/main/java/org/springframework/samples/petclinic/repository/springdatajpa/SpringDataOwnerRepository.java:56"
+      - kind: branch
+        repo: spring-petclinic-rest
+        what: No owner with that id ends the request with 404
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:115"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The five fields are copied from the DTO onto the loaded owner
+        data:
+          {
+            from:
+              [
+                OwnerFieldsDto.address,
+                OwnerFieldsDto.city,
+                OwnerFieldsDto.firstName,
+                OwnerFieldsDto.lastName,
+                OwnerFieldsDto.telephone,
+              ],
+            to: [Owner.address, Owner.city, Owner.firstName, Owner.lastName, Owner.telephone],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:118"
+      - kind: write
+        repo: spring-petclinic-rest
+        what: The owner row is updated
+        store: { table: owners, fields: [first_name, last_name, address, city, telephone] }
+        at: "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java:235"
+      - kind: respond
+        repo: spring-petclinic-rest
+        what: 204 No Content
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:124"
+      - kind: respond
+        repo: spring-petclinic-angular
+        what: On success the app navigates to the owner page /owners/{id}
+        at: "src/app/owners/owner-edit/owner-edit.component.ts:60"
+    errors:
+      - {
+          when: "No owner has that id",
+          then: "404 Not Found with no body",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:116",
+        }
+      - {
+          when: "The body fails the OwnerFields checks",
+          then: "400 Bad Request with a ProblemDetail listing schemaValidationErrors",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:117",
+        }
+      - {
+          when: "The telephone has 11 to 20 digits",
+          then: "500 Internal Server Error from the entity's @Digits(integer = 10) check",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:80",
+        }
+      - {
+          when: "The API returns an error",
+          then: "the form stays and shows the error message in a red alert",
+          at: "src/app/owners/owner-edit/owner-edit.component.ts:61",
+        }
+
+  - id: add-pet
+    name: A person adds a pet to an owner
+    trigger:
+      kind: action
+      repo: spring-petclinic-angular
+      what: The Add Pet form is submitted with Save Pet; the page /owners/:id/pets/add has loaded the owner (GET /petclinic/api/owners/{ownerId}) and the type choices (GET /petclinic/api/pettypes)
+      at: "src/app/pets/pet-add/pet-add.component.html:25"
+    steps:
+      - kind: validate
+        repo: spring-petclinic-angular
+        what: Save Pet stays disabled until name (1-30, starting with a letter or digit), birth date and type are set
+        data: { checks: [name, birthDate, type] }
+        at: "src/app/pets/pet-add/pet-add.component.html:84"
+      - kind: transform
+        repo: spring-petclinic-angular
+        what: The form value gets id null, the loaded owner, and birthDate formatted as YYYY-MM-DD
+        data: { from: [currentOwner, birthDate], to: [pet.id, pet.owner, pet.birthDate] }
+        at: "src/app/pets/pet-add/pet-add.component.ts:73"
+      - kind: call-out
+        repo: spring-petclinic-angular
+        what: POST /petclinic/api/owners/{ownerId}/pets with ownerId taken from pet.owner.id
+        to: { repo: spring-petclinic-rest, entry: "POST /petclinic/api/owners/{ownerId}/pets" }
+        data: { sends: [ownerId, id, name, birthDate, type, owner] }
+        at: "src/app/pets/pet.service.ts:64"
+      - kind: entry
+        repo: spring-petclinic-rest
+        what: OwnerRestControllerV1.addPetToOwner receives the ownerId and a PetFieldsDto (the extra id and owner are not part of it)
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:141"
+      - kind: validate
+        repo: spring-petclinic-rest
+        what: The body is checked against PetFields (name, birthDate and type required; name at most 30; type needs id and name)
+        data: { checks: [name, birthDate, type] }
+        at: "src/main/resources/openapi.yml:2154"
+      - kind: validate
+        repo: spring-petclinic-rest
+        what: PetAgeValidator refuses a birth date in the future or more than 50 years ago
+        data: { checks: [birthDate] }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/validation/PetAgeValidator.java:19"
+      - kind: lookup
+        repo: spring-petclinic-rest
+        what: The owner is looked up by id
+        store: { table: owners, fields: [id, first_name, last_name, address, city, telephone] }
+        at: "src/main/java/org/springframework/samples/petclinic/repository/springdatajpa/SpringDataOwnerRepository.java:56"
+      - kind: branch
+        repo: spring-petclinic-rest
+        what: No owner with that id ends the request with 404
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:143"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The DTO becomes a Pet (id, owner and visits ignored), then the owner is attached and the type's name cleared
+        data:
+          {
+            from: [PetFieldsDto.name, PetFieldsDto.birthDate, PetFieldsDto.type, ownerId],
+            to: [Pet.name, Pet.birthDate, Pet.type, Pet.owner],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/mapper/PetMapper.java:35"
+      - kind: lookup
+        repo: spring-petclinic-rest
+        what: ClinicServiceImpl.savePet replaces the type with the one found by type.id
+        store: { table: types, fields: [id, name] }
+        at: "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java:215"
+      - kind: write
+        repo: spring-petclinic-rest
+        what: The pet is inserted and the database generates its id
+        store: { table: pets, fields: [name, birth_date, type_id, owner_id] }
+        at: "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java:216"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The saved pet becomes a PetDto, ownerId from owner.id
+        data:
+          {
+            from: [Pet.id, Pet.name, Pet.birthDate, Pet.type, Pet.owner.id, Pet.visits],
+            to:
+              [
+                PetDto.id,
+                PetDto.name,
+                PetDto.birthDate,
+                PetDto.type,
+                PetDto.ownerId,
+                PetDto.visits,
+              ],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/mapper/PetMapper.java:22"
+      - kind: respond
+        repo: spring-petclinic-rest
+        what: 201 Created with the pet and a Location header /api/pets/{id}
+        data: { returns: [id, name, birthDate, type, ownerId, visits] }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:155"
+      - kind: respond
+        repo: spring-petclinic-angular
+        what: On success the app navigates to the owner page, which reloads the owner with the new pet
+        at: "src/app/pets/pet-add/pet-add.component.ts:80"
+    errors:
+      - {
+          when: "The body fails PetFields, or the birth date is in the future or over 50 years ago",
+          then: "400 Bad Request with a ProblemDetail listing schemaValidationErrors",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:117",
+        }
+      - {
+          when: "No owner has that id",
+          then: "404 Not Found with no body",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:144",
+        }
+      - {
+          when: "No pet type has the given type.id, so the pet is saved with no type and the pets.type_id NOT NULL fails",
+          then: "the DataIntegrityViolationException becomes 404 Not Found with a ProblemDetail",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:105",
+        }
+      - {
+          when: "The API returns an error",
+          then: "the form stays and shows the error message in a red alert",
+          at: "src/app/pets/pet-add/pet-add.component.ts:82",
+        }
+
+  - id: add-visit
+    name: A person books a visit for a pet
+    trigger:
+      kind: action
+      repo: spring-petclinic-angular
+      what: The New Visit form is submitted with Add Visit; the page /pets/:id/visits/add (from a pet's Add Visit button) has loaded the pet (GET /petclinic/api/pets/{petId}) and then its owner
+      at: "src/app/visits/visit-add/visit-add.component.html:34"
+    steps:
+      - kind: validate
+        repo: spring-petclinic-angular
+        what: Add Visit stays disabled until a date and a description (1-255) are set
+        data: { checks: [date, description] }
+        at: "src/app/visits/visit-add/visit-add.component.html:67"
+      - kind: transform
+        repo: spring-petclinic-angular
+        what: The form value gets id null, the loaded pet, and date formatted as YYYY-MM-DD
+        data: { from: [currentPet, date], to: [visit.id, visit.pet, visit.date] }
+        at: "src/app/visits/visit-add/visit-add.component.ts:75"
+      - kind: call-out
+        repo: spring-petclinic-angular
+        what: POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits with ownerId from visit.pet.ownerId and petId from visit.pet.id
+        to:
+          {
+            repo: spring-petclinic-rest,
+            entry: "POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits",
+          }
+        data: { sends: [ownerId, petId, id, date, description, pet] }
+        at: "src/app/visits/visit.service.ts:65"
+      - kind: entry
+        repo: spring-petclinic-rest
+        what: OwnerRestControllerV1.addVisitToOwner receives ownerId, petId and a VisitFieldsDto
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:177"
+      - kind: validate
+        repo: spring-petclinic-rest
+        what: The body is checked against VisitFields (description required, 1-255; date optional)
+        data: { checks: [date, description] }
+        at: "src/main/resources/openapi.yml:2263"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The DTO becomes a Visit (id and pet ignored)
+        data:
+          {
+            from: [VisitFieldsDto.date, VisitFieldsDto.description],
+            to: [Visit.date, Visit.description],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/mapper/VisitMapper.java:21"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: A Pet holding only the path's petId is attached; the ownerId is never checked or used
+        data: { from: [petId], to: [Visit.pet.id] }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:180"
+      - kind: write
+        repo: spring-petclinic-rest
+        what: The visit is inserted and the database generates its id
+        store: { table: visits, fields: [pet_id, visit_date, description] }
+        at: "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java:222"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The saved visit becomes a VisitDto, petId from pet.id
+        data:
+          {
+            from: [Visit.id, Visit.date, Visit.description, Visit.pet.id],
+            to: [VisitDto.id, VisitDto.date, VisitDto.description, VisitDto.petId],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/mapper/VisitMapper.java:23"
+      - kind: respond
+        repo: spring-petclinic-rest
+        what: 201 Created with the visit and a Location header /api/visits/{id}
+        data: { returns: [id, date, description, petId] }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:187"
+      - kind: respond
+        repo: spring-petclinic-angular
+        what: On success the app navigates to the owner page, which shows the new visit under the pet
+        at: "src/app/visits/visit-add/visit-add.component.ts:84"
+    errors:
+      - {
+          when: "The description is missing or too long",
+          then: "400 Bad Request with a ProblemDetail listing schemaValidationErrors",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:117",
+        }
+      - {
+          when: "No pet has that petId, so the visits.pet_id foreign key fails",
+          then: "the DataIntegrityViolationException becomes 404 Not Found with a ProblemDetail",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:105",
+        }
+      - {
+          when: "The API returns an error",
+          then: "the form stays and shows the error message in a red alert",
+          at: "src/app/visits/visit-add/visit-add.component.ts:86",
+        }
+
+  - id: list-vets
+    name: A person lists the vets and their specialties
+    trigger:
+      kind: page
+      repo: spring-petclinic-angular
+      what: The Veterinarians page /vets loads (menu Veterinarians, All)
+      at: "src/app/vets/vets-routing.module.ts:32"
+    steps:
+      - kind: call-out
+        repo: spring-petclinic-angular
+        what: GET /petclinic/api/vets
+        to: { repo: spring-petclinic-rest, entry: "GET /petclinic/api/vets" }
+        at: "src/app/vets/vet.service.ts:49"
+      - kind: entry
+        repo: spring-petclinic-rest
+        what: VetRestControllerV1.listVets is called
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/VetRestControllerV1.java:58"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: All vets are read
+        store: { table: vets, fields: [id, first_name, last_name] }
+        at: "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java:110"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: Each vet's specialty links are read through the join table (eager many-to-many)
+        store: { table: vet_specialties, fields: [vet_id, specialty_id] }
+        at: "src/main/java/org/springframework/samples/petclinic/model/Vet.java:37"
+      - kind: read
+        repo: spring-petclinic-rest
+        what: The linked specialties are read
+        store: { table: specialties, fields: [id, name] }
+        at: "src/main/java/org/springframework/samples/petclinic/model/Vet.java:36"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: Specialties are sorted by name and the vets become VetDtos
+        data:
+          {
+            from: [Vet.id, Vet.firstName, Vet.lastName, Vet.specialties],
+            to: [VetDto.id, VetDto.firstName, VetDto.lastName, VetDto.specialties],
+          }
+        at: "src/main/java/org/springframework/samples/petclinic/mapper/VetMapper.java:23"
+      - kind: branch
+        repo: spring-petclinic-rest
+        what: An empty list ends the request with 404
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/VetRestControllerV1.java:60"
+      - kind: respond
+        repo: spring-petclinic-rest
+        what: 200 OK with the vets
+        data: { returns: [id, firstName, lastName, specialties] }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/VetRestControllerV1.java:63"
+      - kind: respond
+        repo: spring-petclinic-angular
+        what: The table lists each vet's name and specialty names, with Edit Vet and Delete Vet buttons
+        data: { reads: [firstName, lastName, specialties] }
+        at: "src/app/vets/vet-list/vet-list.component.html:37"
+    errors:
+      - {
+          when: "There are no vets",
+          then: "404 Not Found with no body",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/VetRestControllerV1.java:61",
+        }
+      - {
+          when: "The API returns an error",
+          then: "the page shows the error message in a red alert over an empty table",
+          at: "src/app/vets/vet-list/vet-list.component.html:24",
+        }
+
+  - id: add-pet-type
+    name: An admin adds a pet type
+    trigger:
+      kind: action
+      repo: spring-petclinic-angular
+      what: The New Pet Type form, opened with Add on the Pet Types page, is submitted with Save
+      at: "src/app/pettypes/pettype-add/pettype-add.component.html:25"
+    steps:
+      - kind: validate
+        repo: spring-petclinic-angular
+        what: Save stays disabled until the name is 1-80 characters starting with a letter or digit
+        data: { checks: [name] }
+        at: "src/app/pettypes/pettype-add/pettype-add.component.html:45"
+      - kind: transform
+        repo: spring-petclinic-angular
+        what: The form value's id is set to null
+        data: { from: [pettype.id], to: [pettype.id] }
+        at: "src/app/pettypes/pettype-add/pettype-add.component.ts:20"
+      - kind: call-out
+        repo: spring-petclinic-angular
+        what: POST /petclinic/api/pettypes with the name
+        to: { repo: spring-petclinic-rest, entry: "POST /petclinic/api/pettypes" }
+        data: { sends: [id, name] }
+        at: "src/app/pettypes/pettype.service.ts:69"
+      - kind: entry
+        repo: spring-petclinic-rest
+        what: PetTypeRestControllerV1.addPetType receives a PetTypeFieldsDto
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/PetTypeRestControllerV1.java:73"
+      - kind: validate
+        repo: spring-petclinic-rest
+        what: The body is checked against PetTypeFields (name required, 1-80)
+        data: { checks: [name] }
+        at: "src/main/resources/openapi.yml:2308"
+      - kind: transform
+        repo: spring-petclinic-rest
+        what: The DTO becomes a PetType, id ignored
+        data: { from: [PetTypeFieldsDto.name], to: [PetType.name] }
+        at: "src/main/java/org/springframework/samples/petclinic/mapper/PetTypeMapper.java:21"
+      - kind: write
+        repo: spring-petclinic-rest
+        what: The pet type is inserted and the database generates its id
+        store: { table: types, fields: [name] }
+        at: "src/main/java/org/springframework/samples/petclinic/service/ClinicServiceImpl.java:161"
+      - kind: respond
+        repo: spring-petclinic-rest
+        what: 201 Created with the pet type and a Location header /api/pettypes/{id}
+        data: { returns: [id, name] }
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/PetTypeRestControllerV1.java:78"
+      - kind: respond
+        repo: spring-petclinic-angular
+        what: The form emits the new type; the list appends it and hides the form without reloading
+        data: { reads: [id, name] }
+        at: "src/app/pettypes/pettype-list/pettype-list.component.ts:38"
+    errors:
+      - {
+          when: "The name is missing or longer than 80",
+          then: "400 Bad Request with a ProblemDetail listing schemaValidationErrors",
+          at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:117",
+        }
+      - {
+          when: "The API returns an error",
+          then: "the form stays and shows the error message in a red alert",
+          at: "src/app/pettypes/pettype-add/pettype-add.component.ts:23",
+        }
