@@ -176,7 +176,7 @@ export async function critic(
     io.err(`Refused ${x.file}${x.rule ? ` (rule ${x.rule})` : ""}: ${x.reason}`);
   const s = r.status;
   io.out(
-    `Critic round ${r.round} of ${s.maxRounds} at the ${r.gate} gate for ${r.change}: ${s.total.blocking} blocking, ${s.total.gaps} gaps, ${s.total.risks} risks, ${s.total.ideas} ideas.`,
+    `Critic round ${r.round}${s.maxRounds !== undefined ? ` of ${s.maxRounds}` : ""} at the ${r.gate} gate for ${r.change}: ${s.total.blocking} blocking, ${s.total.gaps} gaps, ${s.total.risks} risks, ${s.total.ideas} ideas.`,
   );
   if (r.findings.length) {
     for (const line of table(

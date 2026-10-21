@@ -5,7 +5,7 @@ import {
   loadChangeContext,
   type ChangeContext,
 } from "@maycombhq/changes";
-import type { ChangeLifecycle } from "@maycombhq/core";
+import { gateRoundLimit, type ChangeLifecycle } from "@maycombhq/core";
 import { CriticError } from "./errors.js";
 import { readRound, readRoundMeta, roundsOf, type StoredFinding } from "./findings.js";
 
@@ -20,7 +20,8 @@ export interface GateStatus {
   gate: string;
   /** The newest round, if the critic has run at this gate. */
   round?: number;
-  maxRounds: number;
+  /** The round limit; undefined when the gate has none (ADR 0087). */
+  maxRounds?: number;
   /** Open findings in the newest round, by severity. */
   open: SeverityCounts;
   /** Every finding in the newest round, whatever its state. */
@@ -46,9 +47,9 @@ const count = (fs: StoredFinding[]): SeverityCounts => ({
   ideas: fs.filter((f) => f.finding.severity === "idea").length,
 });
 
-export function maxRoundsOf(lifecycle: ChangeContext, gate: string): number {
-  const g = lifecycle.orgPack.gates.gates.find((x) => x.id === gate);
-  return Math.max(1, g?.maxAuthorRounds ?? 2);
+/** The gate's critic round limit, or undefined when it has none (ADR 0087). */
+export function maxRoundsOf(lifecycle: ChangeContext, gate: string): number | undefined {
+  return gateRoundLimit(lifecycle.orgPack.gates, gate);
 }
 
 export async function gateStatusOf(
@@ -81,11 +82,11 @@ export async function gateStatusOf(
   return {
     gate,
     ...(round ? { round } : {}),
-    maxRounds,
+    ...(maxRounds !== undefined ? { maxRounds } : {}),
     open: count(open),
     total: count(findings),
     mayProceed: reasons.length === 0,
-    humanDecides: blocking.length > 0 && (round ?? 0) >= maxRounds,
+    humanDecides: blocking.length > 0 && maxRounds !== undefined && (round ?? 0) >= maxRounds,
     waiting,
     reasons,
     findings,

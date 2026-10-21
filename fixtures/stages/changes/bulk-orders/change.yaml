@@ -1,0 +1,21 @@
+schemaVersion: 1
+id: bulk-orders
+title: Place orders in bulk
+type: feature
+template: feature
+state: design
+createdAt: 2026-10-18T09:00:00Z
+createdBy: pat
+systems:
+  - forge
+history:
+  - from: draft
+    to: define
+    at: 2026-10-18T09:00:00Z
+    by: pat
+    reason: Created from the feature template
+  - from: define
+    to: design
+    at: 2026-10-19T09:00:00Z
+    by: pat
+    reason: Send to architecture merged

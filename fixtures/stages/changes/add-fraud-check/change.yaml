@@ -1,0 +1,16 @@
+schemaVersion: 1
+id: add-fraud-check
+title: Screen orders for fraud
+type: feature
+template: feature
+state: define
+createdAt: 2026-10-20T09:00:00Z
+createdBy: pat
+systems:
+  - forge
+history:
+  - from: draft
+    to: define
+    at: 2026-10-20T09:00:00Z
+    by: pat
+    reason: Created from the feature template

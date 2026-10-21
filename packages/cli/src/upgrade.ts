@@ -8,6 +8,7 @@ import {
   LOCAL_ONLY,
   MetarepoStamp,
   migrateCatalog,
+  migrateGatesText,
   WORKSPACE_SCHEMA_VERSION,
   writeFileAtomic,
 } from "@maycombhq/core";
@@ -85,7 +86,30 @@ export const MIGRATIONS: Migration[] = [
       return (await ensureGitignore(root)).length ? [".gitignore"] : [];
     },
   },
+  {
+    id: "gates-v2",
+    summary:
+      "gates.yaml at version 2: each gate's critic round limit written out, so leaving it out means no limit (ADR 0087)",
+    async pending(root) {
+      const rel = gatesRel(root);
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && migrateGatesText(text).changed ? [rel] : [];
+    },
+    async apply(root) {
+      const rel = gatesRel(root);
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      if (text === undefined) return [];
+      const r = migrateGatesText(text);
+      if (!r.changed) return [];
+      await writeFileAtomic(join(root, rel), r.text);
+      return [rel];
+    },
+  },
 ];
+
+function gatesRel(root: string): string {
+  return `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/gates.yaml`;
+}
 
 export async function readStamp(root: string): Promise<MetarepoStamp | undefined> {
   try {

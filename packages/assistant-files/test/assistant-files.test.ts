@@ -45,6 +45,7 @@ const METAREPO_PATHS = [
   ".claude/agents/task-runner.md",
   ".claude/agents/ux-critic.md",
   ".claude/commands/atticus-answer.md",
+  ".claude/commands/atticus-architecture.md",
   ".claude/commands/atticus-ask.md",
   ".claude/commands/atticus-critic.md",
   ".claude/commands/atticus-feature.md",
@@ -74,6 +75,7 @@ const METAREPO_PATHS = [
   ".github/instructions/add-forge-endpoint.instructions.md",
   ".github/instructions/forge-migrations.instructions.md",
   ".github/prompts/atticus-answer.prompt.md",
+  ".github/prompts/atticus-architecture.prompt.md",
   ".github/prompts/atticus-ask.prompt.md",
   ".github/prompts/atticus-critic.prompt.md",
   ".github/prompts/atticus-feature.prompt.md",
@@ -226,7 +228,8 @@ const STEPS: [name: string, run: string | undefined][] = [
   ["atticus-spec", "atticus spec draft"],
   ["atticus-answer", undefined],
   ["atticus-knowledge", "atticus knowledge scan --source"],
-  ["atticus-feature", "atticus change draft"],
+  ["atticus-feature", "atticus change feature"],
+  ["atticus-architecture", "atticus change architecture"],
   ["atticus-stories", "atticus plan stories"],
   ["atticus-next", undefined],
 ];
@@ -246,6 +249,7 @@ describe("step slash commands (ADR 0086)", () => {
     [".github/prompts/atticus-spec.prompt.md", "atticus-spec.prompt.md"],
     [".claude/commands/atticus-knowledge.md", "atticus-knowledge.claude.md"],
     [".github/prompts/atticus-next.prompt.md", "atticus-next.prompt.md"],
+    [".github/prompts/atticus-architecture.prompt.md", "atticus-architecture.prompt.md"],
   ] as const)
     it(`${rel} matches its golden file`, async () => {
       const want = (await readFile(join(STEP_GOLDEN, golden), "utf8")).replace(/\r\n/g, "\n");

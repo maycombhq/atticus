@@ -223,6 +223,9 @@ const benchSurvey: typeof import("./bench-commands.js").benchSurvey = (...a) =>
 const benchVerify: typeof import("./bench-commands.js").benchVerify = (...a) =>
   loadBenchCommands().then((m) => m.benchVerify(...a));
 const loadScanVerifyCommands = () => import("./scan-verify-commands.js");
+// ADR 0087: change feature|architecture, plan stories from target flows, bench design.
+const stageCli: typeof import("./stage-commands.js").stageCli = (...a) =>
+  import("./stage-commands.js").then((m) => m.stageCli(...a));
 // ADR 0083: sources tag, knowledge scan|list|ask, bench knowledge.
 const knowledgeCli: typeof import("./knowledge-scan-commands.js").knowledgeCli = (...a) =>
   import("./knowledge-scan-commands.js").then((m) => m.knowledgeCli(...a));
@@ -404,6 +407,7 @@ Usage:
   atticus knowledge list [--tag t] [--kind k] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run]  An answer from the knowledge items only, citing them
   atticus bench knowledge [--mode m] [--resume run]  Scan the bench's invented wiki, ask its questions, and score both
+  atticus bench design [--mode m] [--resume run]  Read the bench's Figma export, map it against the petclinic estate, and score it
   atticus sources refresh [--json]     Fetch every absorbed source again and show what changed
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
@@ -445,6 +449,8 @@ Usage:
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
   atticus change new "<title>"         Start a change from a template: --type <type>
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
+  atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force]
+  atticus change architecture <change> The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
@@ -478,6 +484,7 @@ Usage:
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
   atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]
+                                       (with target flows: the stories stage, a task per changed step with its prompt, requests from knowledge)
   atticus plan snow <change>           Draft service-desk requests the change needs [--force]
   atticus plan bar <change>            Measure the story bar [--eval file]
   atticus plan submit <change>         File the drafted requests (a dry run until you add --approve)
@@ -536,7 +543,7 @@ Usage:
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
-  atticus <step> --handoff             On scan survey, scan verify, spec draft, knowledge scan, change draft and plan stories: print only the prompt, the result file and the commands that finish it
+  atticus <step> --handoff             On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change draft and plan stories: print only the prompt, the result file and the commands that finish it
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
   atticus workspace open <change>      Create the change's worktrees, repos.yaml and editor workspaces
@@ -731,6 +738,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       accept: { type: "boolean" },
       tag: { type: "string" },
       source: { type: "string" },
+      "from-figma": { type: "string" },
     },
     strict: false,
   });
@@ -800,6 +808,15 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
+  // ADR 0087: the change lifecycle's stages as loops, and the design bench.
+  if (
+    (group === "change" && (command === "feature" || command === "architecture")) ||
+    (group === "plan" && command === "stories") ||
+    (group === "bench" && command === "design")
+  ) {
+    const handled = await stageCli(root, positionals, values, io);
+    if (handled !== undefined) return handled;
+  }
   if (group === "repo-type" && (command === "detect" || command === "new")) {
     const m = await loadRepoTypeCommands();
     const from = typeof values.from === "string" ? values.from : undefined;
