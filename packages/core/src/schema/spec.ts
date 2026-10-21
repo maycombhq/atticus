@@ -223,3 +223,77 @@ export function specTemplateFor(
 ): SpecTemplate {
   return (repoType && templates.find((t) => t.repoType === repoType)) || DEFAULT_SPEC_TEMPLATE;
 }
+
+// ---------- the estate pass (ADR 0085) ----------
+
+export const ESTATE_JOINS_SCHEMA_VERSION = 1 as const;
+
+/**
+ * How a call-out was matched to the flow its target starts: `interface`, through the catalog's
+ * Interface from the caller's component to the target (and its gateway route); `endpoint`, the
+ * step names the target's Endpoint id itself; `path`, no Interface, so by method and
+ * normalised path on the target component.
+ */
+export const ESTATE_JOIN_HOW = ["interface", "endpoint", "path"] as const;
+
+/**
+ * Why a call-out wasn't joined: `no-target`, the catalog has no component or entry point it
+ * reaches; `no-flow`, it reaches an entry point no flow starts at; `no-citation`, one end
+ * (the caller's step or the callee's trigger) cites no file and line that exists.
+ */
+export const ESTATE_UNMATCHED_REASONS = ["no-target", "no-flow", "no-citation"] as const;
+
+/** A file and line, as `path:line` in the repo named beside it. */
+const Cite = z.string().regex(/^.+:\d+$/, "a citation is path:line");
+
+/** One call-out joined to the flow its target starts. Both ends cite a file and line. */
+export const EstateJoin = z.strictObject({
+  /** The caller: its repo, flow and step (1-based), and the step's citation. */
+  from: z.strictObject({
+    repo: RecordId,
+    flow: RecordId,
+    step: z.number().int().positive(),
+    evidence: Cite,
+  }),
+  /** The callee: its repo, the flow, the Endpoint its trigger is, and the trigger's citation. */
+  to: z.strictObject({
+    repo: RecordId,
+    flow: RecordId,
+    trigger: RecordId,
+    evidence: Cite,
+  }),
+  /** What the step names as its target: `<component> <entry>`. */
+  entry: z.string().min(1),
+  /** The Interface the call goes over, when the catalog has one. */
+  interface: RecordId.optional(),
+  how: z.enum(ESTATE_JOIN_HOW),
+});
+export type EstateJoin = z.infer<typeof EstateJoin>;
+
+/** A call-out that wasn't joined, with why. */
+export const EstateUnmatched = z.strictObject({
+  from: z.strictObject({
+    repo: RecordId,
+    flow: RecordId,
+    step: z.number().int().positive(),
+    evidence: Cite.optional(),
+  }),
+  entry: z.string().min(1),
+  reason: z.enum(ESTATE_UNMATCHED_REASONS),
+  /** The entry point it reached, for `no-flow` and `no-citation`. */
+  trigger: RecordId.optional(),
+  interface: RecordId.optional(),
+  message: z.string().min(1),
+});
+export type EstateUnmatched = z.infer<typeof EstateUnmatched>;
+
+/** specs/estate.yaml: every call-out of the metarepo's specs, joined or not (ADR 0085). */
+export const EstateJoins = z.strictObject({
+  schemaVersion: z.literal(ESTATE_JOINS_SCHEMA_VERSION),
+  joinedAt: IsoDateTime,
+  /** The repos whose specs were read. */
+  repos: z.array(RecordId).default([]),
+  joins: z.array(EstateJoin).default([]),
+  unmatched: z.array(EstateUnmatched).default([]),
+});
+export type EstateJoins = z.infer<typeof EstateJoins>;

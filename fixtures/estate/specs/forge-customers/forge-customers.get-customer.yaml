@@ -1,0 +1,24 @@
+kind: Flow
+schemaVersion: 1
+id: forge-customers.get-customer
+component: forge-customers
+name: A client reads a customer
+template: default@1
+trigger:
+  kind: endpoint
+  ref: forge-customers.get-customer
+  what: GET /customers/{customerId} is called
+  evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 16 }]
+steps:
+  - kind: entry
+    what: CustomerController.get receives the id
+    data: { reads: [customerId] }
+    evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 17 }]
+  - kind: read
+    what: The customer is read by id
+    store: { table: forge-customers-db.customers, columns: [id, full_name, email_address] }
+    evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 18 }]
+  - kind: respond
+    what: The customer is returned
+    data: { returns: [id, fullName, emailAddress] }
+    evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 18 }]

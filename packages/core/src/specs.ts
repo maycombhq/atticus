@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { parseRecord, type RecordOf } from "./catalog.js";
 import { writeFileAtomic } from "./fs.js";
-import { specDirOf, specRelOf } from "./metarepo.js";
-import { SpecFindings, SpecHeader } from "./schema/spec.js";
+import { specDirOf, specRelOf, specsDirOf, specsRelOf } from "./metarepo.js";
+import { EstateJoins, SpecFindings, SpecHeader } from "./schema/spec.js";
 import { serializeRecord, toCanonicalYaml } from "./serialize.js";
 
 /**
@@ -135,6 +135,43 @@ export function specFindingFingerprint(rule: string, target: string, evidence = 
     .update([rule, target, evidence].join("\n"))
     .digest("hex")
     .slice(0, 12);
+}
+
+/** The estate pass's joins (ADR 0085), beside the repo folders: specs/estate.yaml. */
+export const ESTATE_FILE = "estate.yaml";
+
+/** The repos that have a spec folder, sorted. */
+export async function specRepos(root: string): Promise<string[]> {
+  try {
+    return (await readdir(specsDirOf(root), { withFileTypes: true }))
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+/** specs/estate.yaml, or undefined when the estate pass hasn't run (or the file doesn't read). */
+export async function readEstateJoins(root: string): Promise<EstateJoins | undefined> {
+  try {
+    const r = EstateJoins.safeParse(
+      parse(await readFile(join(specsDirOf(root), ESTATE_FILE), "utf8")),
+    );
+    return r.success ? r.data : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Write specs/estate.yaml in canonical YAML. Returns its path relative to the root. */
+export async function writeEstateJoins(root: string, joins: EstateJoins): Promise<string> {
+  const v = EstateJoins.parse(joins);
+  await writeFileAtomic(
+    join(specsDirOf(root), ESTATE_FILE),
+    `# The estate pass (ADR 0085): each call-out of the repos' flows joined to the flow its target starts, or why not. Written by atticus estate join.\n${toCanonicalYaml(v, ["schemaVersion", "joinedAt", "repos"])}`,
+  );
+  return `${specsRelOf(root)}/${ESTATE_FILE}`;
 }
 
 /** Every repo-relative file a flow cites (trigger, steps, errors), sorted. */

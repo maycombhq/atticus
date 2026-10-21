@@ -1,0 +1,24 @@
+kind: Flow
+schemaVersion: 1
+id: forge-web.view-customer
+component: forge-web
+name: A person opens a customer
+template: default@1
+trigger:
+  kind: page
+  what: The customer page loads
+  evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer-view.component.ts, line: 12 }]
+steps:
+  - kind: call-out
+    what: GET /api/customers/{id} for the customer
+    to: { component: forge-customers, entry: "GET /api/customers/{id}" }
+    data: { sends: [id] }
+    evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer.service.ts, line: 14 }]
+  - kind: call-out
+    what: GET /api/customers/{id}/points for the customer's loyalty points
+    to: { component: forge-customers, entry: "GET /api/customers/{id}/points" }
+    data: { sends: [id] }
+    evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer.service.ts, line: 22 }]
+  - kind: respond
+    what: The customer and their points are shown
+    evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer-view.component.ts, line: 13 }]

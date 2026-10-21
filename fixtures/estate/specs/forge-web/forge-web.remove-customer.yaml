@@ -1,0 +1,16 @@
+kind: Flow
+schemaVersion: 1
+id: forge-web.remove-customer
+component: forge-web
+name: A person removes a customer
+template: default@1
+trigger:
+  kind: action
+  what: The Remove button of the customer page is pressed
+  evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer-view.component.ts, line: 17 }]
+steps:
+  - kind: call-out
+    what: DELETE /api/customers/{id}
+    to: { component: forge-customers, entry: "DELETE /api/customers/{id}" }
+    data: { sends: [id] }
+    evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer.service.ts, line: 18 }]

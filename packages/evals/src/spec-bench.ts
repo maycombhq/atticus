@@ -116,6 +116,11 @@ export interface EstateSpecScore {
     tables: Ratio;
     fields: Ratio;
     citations: { checked: number; correct: number };
+    /**
+     * With the estate pass (ADR 0085): the reference flows that cross repos (`want`) and those
+     * reached end to end through the joins (`found`, listed in `reached`).
+     */
+    endToEnd?: Ratio & { reached: string[] };
   };
 }
 
@@ -231,12 +236,84 @@ function segments(f: z.infer<typeof RefFlow>): Segment[] {
   return out;
 }
 
-/** Score the drafted specs of an estate's repos against its reference flows. */
+type Drafted = readonly { repo: string; flows: readonly FlowRecord[] }[];
+
+/**
+ * The estate pass's input to the score (ADR 0085): the specs of the estate's repos scanned
+ * together, that scan's catalog, and the joins `atticus estate join` wrote.
+ */
+export interface EstatePassInput {
+  specs: Drafted;
+  records: readonly CatalogRecord[];
+  joins: readonly { from: { flow: string }; to: { flow: string } }[];
+}
+
+/**
+ * Score the drafted specs of an estate's repos against its reference flows. With the estate
+ * pass, also count the reference flows that cross repos and are reached end to end: the
+ * drafted flow of the trigger's segment reaches, through joins, a drafted flow matching every
+ * later segment.
+ */
 export function scoreSpecs(
   ref: ReferenceFlows,
-  drafted: readonly { repo: string; flows: readonly FlowRecord[] }[],
+  drafted: Drafted,
   records: readonly CatalogRecord[] = [],
+  estate?: EstatePassInput,
 ): EstateSpecScore {
+  const m = matching(drafted, records);
+  const flows = ref.flows.map((rf) => scoreFlow(rf, m));
+  const sum = (f: (x: FlowScore) => number) => flows.reduce((n, x) => n + f(x), 0);
+  let endToEnd: EstateSpecScore["total"]["endToEnd"];
+  if (estate) {
+    const e = matching(estate.specs, estate.records);
+    const next = new Map<string, string[]>();
+    for (const j of estate.joins)
+      next.set(j.from.flow, [...(next.get(j.from.flow) ?? []), j.to.flow]);
+    const reach = (start: string) => {
+      const seen = new Set([start]);
+      const todo = [start];
+      while (todo.length)
+        for (const n of next.get(todo.pop()!) ?? [])
+          if (!seen.has(n)) {
+            seen.add(n);
+            todo.push(n);
+          }
+      return seen;
+    };
+    const crossing = ref.flows.filter((rf) => new Set(segments(rf).map((s) => s.repo)).size > 1);
+    const reached: string[] = [];
+    for (const rf of crossing) {
+      const [first, ...rest] = segments(rf);
+      const start = first && e.matchFlow(first);
+      if (!start) continue;
+      const r = reach(start.id);
+      if (rest.every((seg) => r.has(e.matchFlow(seg)?.id ?? ""))) reached.push(rf.id);
+    }
+    endToEnd = { want: crossing.length, found: reached.length, reached };
+  }
+  return {
+    estate: ref.estate,
+    flows,
+    total: {
+      flows: flows.length,
+      triggersCovered: flows.filter((f) => f.triggerCovered).length,
+      segments: sum((f) => f.segments.length),
+      segmentsCovered: sum((f) => f.segments.filter((s) => s.matched).length),
+      steps: sum((f) => f.steps),
+      stepsMatched: sum((f) => f.stepsMatched),
+      tables: { want: sum((f) => f.tables.want), found: sum((f) => f.tables.found) },
+      fields: { want: sum((f) => f.fields.want), found: sum((f) => f.fields.found) },
+      citations: {
+        checked: sum((f) => f.citations.checked),
+        correct: sum((f) => f.citations.correct),
+      },
+      ...(endToEnd ? { endToEnd } : {}),
+    },
+  };
+}
+
+/** How segments and steps match drafted flows, over one set of specs and its catalog. */
+function matching(drafted: Drafted, records: readonly CatalogRecord[]) {
   const byId = new Map(records.map((r) => [r.id, r]));
   const tableName = (id: string) => {
     const r = byId.get(id);
@@ -311,91 +388,75 @@ export function scoreSpecs(
     }
     return pairs;
   };
+  return { matchFlow, lcs, tableName };
+}
 
-  const flows: FlowScore[] = ref.flows.map((rf) => {
-    const segs = segments(rf);
-    const scored: SegmentScore[] = [];
-    const wantTables = new Set<string>();
-    const gotTables = new Set<string>();
-    const wantFields = new Set<string>();
-    const gotFields = new Set<string>();
-    let checked = 0;
-    let correct = 0;
-    for (const seg of segs) {
-      for (const s of seg.steps) {
-        if (s.store) {
-          wantTables.add(tableKey(s.store.table));
-          for (const x of s.store.fields) wantFields.add(fieldKey(x));
-        }
-        for (const [k, v] of Object.entries(s.data ?? {}))
-          if (k !== "checks") for (const x of v) wantFields.add(fieldKey(x));
+/** One reference flow scored against the drafted flows. */
+function scoreFlow(rf: z.infer<typeof RefFlow>, m: ReturnType<typeof matching>): FlowScore {
+  const { matchFlow, lcs, tableName } = m;
+  const segs = segments(rf);
+  const scored: SegmentScore[] = [];
+  const wantTables = new Set<string>();
+  const gotTables = new Set<string>();
+  const wantFields = new Set<string>();
+  const gotFields = new Set<string>();
+  let checked = 0;
+  let correct = 0;
+  for (const seg of segs) {
+    for (const s of seg.steps) {
+      if (s.store) {
+        wantTables.add(tableKey(s.store.table));
+        for (const x of s.store.fields) wantFields.add(fieldKey(x));
       }
-      const d = matchFlow(seg);
-      if (!d) {
-        scored.push({
-          repo: seg.repo,
-          steps: seg.steps.length,
-          stepsMatched: 0,
-          citationsCorrect: 0,
-        });
-        continue;
-      }
-      for (const s of d.steps) {
-        if (s.store) {
-          gotTables.add(tableName(s.store.table));
-          for (const x of s.store.columns) gotFields.add(fieldKey(x));
-        }
-        for (const [k, v] of Object.entries(s.data ?? {}))
-          if (k !== "checks") for (const x of v ?? []) gotFields.add(fieldKey(x));
-      }
-      const pairs = lcs(seg.steps, d.steps);
-      const right = pairs.filter(([r, x]) => near(r.at, x.evidence)).length;
-      checked += pairs.length;
-      correct += right;
+      for (const [k, v] of Object.entries(s.data ?? {}))
+        if (k !== "checks") for (const x of v) wantFields.add(fieldKey(x));
+    }
+    const d = matchFlow(seg);
+    if (!d) {
       scored.push({
         repo: seg.repo,
-        matched: d.id,
         steps: seg.steps.length,
-        stepsMatched: pairs.length,
-        citationsCorrect: right,
+        stepsMatched: 0,
+        citationsCorrect: 0,
       });
+      continue;
     }
-    const steps = scored.reduce((n, s) => n + s.steps, 0);
-    return {
-      flow: rf.id,
-      triggerCovered: !!scored[0]?.matched,
-      segments: scored,
-      steps,
-      stepsMatched: scored.reduce((n, s) => n + s.stepsMatched, 0),
-      tables: {
-        want: wantTables.size,
-        found: [...wantTables].filter((t) => gotTables.has(t)).length,
-        missed: [...wantTables].filter((t) => !gotTables.has(t)).sort(),
-      },
-      fields: {
-        want: wantFields.size,
-        found: [...wantFields].filter((f) => gotFields.has(f)).length,
-      },
-      citations: { checked, correct },
-    };
-  });
-  const sum = (f: (x: FlowScore) => number) => flows.reduce((n, x) => n + f(x), 0);
+    for (const s of d.steps) {
+      if (s.store) {
+        gotTables.add(tableName(s.store.table));
+        for (const x of s.store.columns) gotFields.add(fieldKey(x));
+      }
+      for (const [k, v] of Object.entries(s.data ?? {}))
+        if (k !== "checks") for (const x of v ?? []) gotFields.add(fieldKey(x));
+    }
+    const pairs = lcs(seg.steps, d.steps);
+    const right = pairs.filter(([r, x]) => near(r.at, x.evidence)).length;
+    checked += pairs.length;
+    correct += right;
+    scored.push({
+      repo: seg.repo,
+      matched: d.id,
+      steps: seg.steps.length,
+      stepsMatched: pairs.length,
+      citationsCorrect: right,
+    });
+  }
+  const steps = scored.reduce((n, s) => n + s.steps, 0);
   return {
-    estate: ref.estate,
-    flows,
-    total: {
-      flows: flows.length,
-      triggersCovered: flows.filter((f) => f.triggerCovered).length,
-      segments: sum((f) => f.segments.length),
-      segmentsCovered: sum((f) => f.segments.filter((s) => s.matched).length),
-      steps: sum((f) => f.steps),
-      stepsMatched: sum((f) => f.stepsMatched),
-      tables: { want: sum((f) => f.tables.want), found: sum((f) => f.tables.found) },
-      fields: { want: sum((f) => f.fields.want), found: sum((f) => f.fields.found) },
-      citations: {
-        checked: sum((f) => f.citations.checked),
-        correct: sum((f) => f.citations.correct),
-      },
+    flow: rf.id,
+    triggerCovered: !!scored[0]?.matched,
+    segments: scored,
+    steps,
+    stepsMatched: scored.reduce((n, s) => n + s.stepsMatched, 0),
+    tables: {
+      want: wantTables.size,
+      found: [...wantTables].filter((t) => gotTables.has(t)).length,
+      missed: [...wantTables].filter((t) => !gotTables.has(t)).sort(),
     },
+    fields: {
+      want: wantFields.size,
+      found: [...wantFields].filter((f) => gotFields.has(f)).length,
+    },
+    citations: { checked, correct },
   };
 }

@@ -1,0 +1,31 @@
+kind: Flow
+schemaVersion: 1
+id: forge-customers.create-customer
+component: forge-customers
+name: A client creates a customer
+template: default@1
+trigger:
+  kind: endpoint
+  ref: forge-customers.post-customer
+  what: POST /customers is called
+  evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 10 }]
+steps:
+  - kind: entry
+    what: CustomerController.create receives the request
+    refs: [forge-customers.post-customer]
+    data: { reads: [name, email, phone] }
+    evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 11 }]
+  - kind: transform
+    what: The request becomes a Customer
+    data: { from: [CustomerRequest.name, CustomerRequest.email], to: [Customer.fullName, Customer.emailAddress] }
+    evidence:
+      - { source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerMapper.java, line: 6 }
+      - { source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerMapper.java, line: 7 }
+  - kind: write
+    what: The customer is inserted
+    store: { table: forge-customers-db.customers, columns: [id, full_name, email_address] }
+    evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 12 }]
+  - kind: respond
+    what: The saved customer is returned
+    data: { returns: [id, fullName, emailAddress] }
+    evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 13 }]

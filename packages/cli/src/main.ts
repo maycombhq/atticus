@@ -344,6 +344,7 @@ const scanSurvey: typeof import("./onboard-commands.js").scanSurvey = (...a) =>
   loadOnboardCommands().then((m) => m.scanSurvey(...a));
 const loadRepoTypeCommands = () => import("./repo-type-commands.js");
 const loadSpecCommands = () => import("./spec-commands.js");
+const loadEstateCommands = () => import("./estate-commands.js");
 const onboardEval: typeof import("./onboard-commands.js").onboardEval = (...a) =>
   loadOnboardCommands().then((m) => m.onboardEval(...a));
 const onboardFramework: typeof import("./onboard-commands.js").onboardFramework = (...a) =>
@@ -369,6 +370,9 @@ Usage:
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept]
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
+  atticus estate join [--json]         Join each repo's call-outs to the flows their targets start; writes specs/estate.yaml
+  atticus estate flow <flow> [--depth 5] [--json]  A flow followed across repos, with the data at each crossing
+  atticus estate lineage <flow> <field> [--depth 5] [--json]  Follow a field along a flow to the column it is stored in, or where it breaks
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
@@ -521,7 +525,7 @@ Usage:
   atticus bench fetch [--repo id] [--batch n] [--cache dir]  Clone the bench's public repos at their pinned commits
   atticus bench survey [--repo id] [--batch n] [--mode m]  Your assistant drafts each bench repo's scan settings; kept for later runs
   atticus bench verify [--repo id] [--batch n] [--mode m]  Your assistant verifies each bench repo's scan; kept for bench run to score
-  atticus bench run [--repo id] [--batch n] [--json] [--specs]  Scan each bench repo and score it against its reference; --specs also scores drafted specs against bench/flows
+  atticus bench run [--repo id] [--batch n] [--estate e] [--json] [--specs]  Scan each bench repo and score it against its reference; --specs also scores drafted specs against bench/flows and scans each estate's repos together
   atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts
   atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>
                                        Check a catalog, org pack, dialect, plugin or executor against the spec
@@ -721,6 +725,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       cache: { type: "string" },
       batch: { type: "string" },
       specs: { type: "boolean" },
+      estate: { type: "string" },
       accept: { type: "boolean" },
       tag: { type: "string" },
       source: { type: "string" },
@@ -833,6 +838,24 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       }
       throw e;
     }
+  }
+  if (group === "estate" && (command === "join" || command === "flow" || command === "lineage")) {
+    const m = await loadEstateCommands();
+    const field = positionals[3];
+    const depth = num(values.depth);
+    const o = { json: values.json === true, ...(depth ? { depth } : {}) };
+    if (command === "join") return m.estateJoin(root, o, io);
+    if (!arg || (command === "lineage" && !field)) {
+      io.err(
+        command === "flow"
+          ? "Usage: atticus estate flow <flow-id> [--depth 5] [--json]"
+          : "Usage: atticus estate lineage <flow-id> <field> [--depth 5] [--json]",
+      );
+      return 2;
+    }
+    return command === "flow"
+      ? m.estateFlowCommand(root, arg, o, io)
+      : m.estateLineage(root, arg, field!, o, io);
   }
   if (group === "spec" && (command === "draft" || command === "check")) {
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);
@@ -1154,6 +1177,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       ...(str(values.cache) ? { cache: str(values.cache)! } : {}),
       ...(str(values.repo) ? { repo: str(values.repo)! } : {}),
       ...(num(values.batch) ? { batch: num(values.batch)! } : {}),
+      ...(str(values.estate) ? { estate: str(values.estate)! } : {}),
       json,
     };
     if (command === "survey")

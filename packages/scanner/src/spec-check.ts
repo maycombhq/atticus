@@ -95,6 +95,26 @@ export function repoComponents(records: readonly CatalogRecord[], repoId: string
   );
 }
 
+const pathSegs = (p: string) => normalizePath(p).toLowerCase().split("/").filter(Boolean);
+
+/**
+ * How well a called path matches an entry point's path: 1000 when they are the same once
+ * parameters are `{}`; else the length of the shorter when it is the other's tail and keeps
+ * at least one plain segment (a base URL or context path in front); else 0. A topic or queue
+ * (no slash) matches only itself, letter case aside. The estate pass joins by it (ADR 0085).
+ */
+export function pathScore(called: string, served: string): number {
+  if (!called.includes("/") || !served.includes("/"))
+    return called.trim().toLowerCase() === served.trim().toLowerCase() ? 1000 : 0;
+  const a = pathSegs(called);
+  const b = pathSegs(served);
+  if (a.join("/") === b.join("/")) return 1000;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (short.length === 0 || !short.some((s) => s !== "{}")) return 0;
+  const tail = long.slice(long.length - short.length);
+  return tail.join("/") === short.join("/") ? short.length : 0;
+}
+
 /** A trigger's resource: its path once trailing parameters are dropped (families by resource). */
 export const resourceKey = (path: string) => {
   let p = normalizePath(path).toLowerCase();
@@ -314,12 +334,14 @@ export async function checkSpec(o: {
     const path = mp?.path ?? entry.trim();
     const norm = normalizePath(path).toLowerCase();
     const sameMethod = (m: string | undefined) => !mp || !m || m.toUpperCase() === mp.method;
+    // A call through a base URL or context path names the entry point's path as its tail,
+    // the same rule the estate pass joins by (ADR 0085).
     const found =
       endpoints.some(
         (e) =>
           e.component === component &&
           sameMethod(e.method) &&
-          normalizePath(e.normalizedPath ?? e.pathOrTopic).toLowerCase() === norm,
+          pathScore(path, e.normalizedPath ?? e.pathOrTopic) > 0,
       ) ||
       interfaces.some(
         (i) =>

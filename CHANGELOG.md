@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The estate pass: flows joined across repos
+
+- `atticus estate join [--json]` (ADR 0085) matches every call-out in the metarepo's repo specs to the flow its target starts: through the catalog's Interface (and its gateway's base path), the Endpoint the step names, or method and path on the target component. A join needs a citation at both ends, checked in the clones. It writes `specs/estate.yaml`: each join and how it was matched, and each call-out not joined with why (no target, no flow, no citation).
+- `atticus estate flow <flow-id> [--depth 5] [--json]` prints a flow followed across repos, the callee's steps inline at each call-out, with what is sent, taken and returned at each crossing. It stops at the depth limit and at a cycle.
+- `atticus estate lineage <flow-id> <field> [--json]` follows a field from the step that sends it through transforms to the column a write stores it in, each step cited, or says where the chain breaks.
+- `atticus spec check` finds a call-out's target through a base URL or context path (`/petclinic/api/owners` reaches `/api/owners`), the same rule the joins use.
+- `atticus bench run --specs [--estate e]` also scans each estate's repos together in one metarepo, joins their specs, and scores the reference flows that cross repos and are reached end to end.
+
 ### Repo specs made of flows
 
 - A new C1 kind, `Flow` (ADR 0079), with its own schema version 1: a trigger, ordered steps (entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry) with the data at each step by field, the table and columns a step reads or writes, where a call-out goes, error paths, a family of near-identical triggers, and a citation and `confirmedBy` (check, AI pass or person) on every step. Flows live in the metarepo at `specs/<repo>/<id>.yaml` with a header in `specs/<repo>/spec.yaml`.
