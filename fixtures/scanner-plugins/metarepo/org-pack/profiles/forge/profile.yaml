@@ -1,0 +1,6 @@
+schemaVersion: 1
+platform: forge
+name: Forge notes, on the Anvil house framework no built-in reader knows
+systems:
+  - { id: notes, name: Notes, boundary: product, owner: team-notes, aliases: [] }
+environments: [dev, prod]

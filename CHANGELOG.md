@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Scanner plugins, pinned and sandboxed
+
+- When a rule file can't say how to read an organisation's code, a scanner plugin can (ADR 0080): `org-pack/plugins/<id>/` holds `plugin.yaml` (what it emits, the repo types or dialects it applies to, its time and memory limits, the sha256 of its entry file), the plain JavaScript code, and golden tests in `test/<case>/`.
+- The scan uses a plugin only when its code matches the pin and its tests pass, and runs it after the built-ins, in a worker thread with its own limits. It reads files only through the scan, and can't import anything, use Node, reach the network, start a process, compile code from strings, or read the clock. A plugin that tries, runs too long or uses too much memory is stopped and reported as a scan problem; the scan goes on.
+- `atticus plugin test <id>` runs a plugin against its golden files; `atticus plugin pin <id>` writes its entry file's sha256 into `plugin.yaml`.
+- Node's `vm` is not a hard security boundary; ADR 0080 lists what is enforced and what an OS-level boundary would add.
+
 ### You are your Git user; approving is the pull request
 
 - Atticus knows you by the metarepo's Git user (`git config user.name` and `user.email`, ADR 0073). The app shows it in the top bar and every command records it; `--by <handle>` is now an optional override everywhere it was required (`change new`, `change handoff`, `finding`, `baseline`, `todo done`, `task run`, `glossary`, `initiative`, `outcome record` and the rest), and `digest --as` likewise. With no Git user, the OS user name stands in with a warning that says how to set it.

@@ -1,0 +1,25 @@
+# Golden output for the notes case (ADR 0080): each record must be produced with these fields,
+# and nothing else. The test repo is named after its case folder.
+expect:
+  - kind: Endpoint
+    id: notes.get-notes
+    method: GET
+    pathOrTopic: /notes
+    normalizedPath: /notes
+  - kind: Endpoint
+    id: notes.get-notes-id
+    method: GET
+    pathOrTopic: /notes/{id}
+    normalizedPath: /notes/{}
+    evidence:
+      - source: code
+        path: src/main/java/forge/notes/NoteRoutes.java
+        line: 14
+        repo: notes
+        commit: "0000000000000000000000000000000000000000"
+        scannedAt: "2026-01-01T00:00:00Z"
+        extractor: plugin-forge-anvil-routes@1.0.0
+  - kind: Endpoint
+    id: notes.post-notes
+    method: POST
+    pathOrTopic: /notes

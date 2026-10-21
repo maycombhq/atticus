@@ -1,0 +1,13 @@
+# A misbehaving plugin for the sandbox tests (ADR 0080). Contract C6.
+schemaVersion: 1
+id: forge-loops
+version: 1.0.0
+description: Never stops.
+emits: [Endpoint]
+appliesTo:
+  repoTypes: [anvil-service]
+entry: index.js
+limits:
+  timeoutMs: 1000
+  memoryMb: 64
+sha256: 3441a959146a9a8c375977c8cdcf1a76eb22dcc0a212aa98292a4aee3dbed621

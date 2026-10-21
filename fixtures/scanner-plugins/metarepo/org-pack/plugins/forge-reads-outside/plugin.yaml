@@ -1,0 +1,13 @@
+# A misbehaving plugin for the sandbox tests (ADR 0080). Contract C6.
+schemaVersion: 1
+id: forge-reads-outside
+version: 1.0.0
+description: Tries to read a file outside the repo.
+emits: [Endpoint]
+appliesTo:
+  repoTypes: [anvil-service]
+entry: index.js
+limits:
+  timeoutMs: 10000
+  memoryMb: 64
+sha256: eec591d4754e033f97aa7a5b8b1c2dd09c666718529fda44dd4addc7b58468e7

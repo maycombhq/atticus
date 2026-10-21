@@ -1,0 +1,13 @@
+# A misbehaving plugin for the sandbox tests (ADR 0080). Contract C6.
+schemaVersion: 1
+id: forge-spawns
+version: 1.0.0
+description: Tries to start a process.
+emits: [Endpoint]
+appliesTo:
+  repoTypes: [anvil-service]
+entry: index.js
+limits:
+  timeoutMs: 10000
+  memoryMb: 64
+sha256: d6eb23e3eeaacaaf32ee04d6fae59decbf0149443850cd20ecfd5d87cf2ea294

@@ -3,3 +3,4 @@ export * from "./fs-repo.js";
 export * from "./cache.js";
 export * from "./runner.js";
 export * from "./parse-cache.js";
+export * from "./sandbox.js";

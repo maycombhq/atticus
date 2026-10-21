@@ -1,0 +1,6 @@
+# Hand-written; matches fixtures/scanner-plugins/repos.
+schemaVersion: 1
+platform: forge
+repos:
+  - { id: forge-anvil-notes, url: https://git.example.com/forge/forge-anvil-notes.git, type: anvil-service, owner: team-notes, component: notes-svc, system: notes }
+  - { id: forge-notes-ui, url: https://git.example.com/forge/forge-notes-ui.git, type: web-app, owner: team-notes, component: notes-ui, system: notes }

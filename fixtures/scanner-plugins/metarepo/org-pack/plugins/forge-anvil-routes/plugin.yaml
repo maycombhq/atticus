@@ -1,0 +1,13 @@
+# A scanner plugin (ADR 0080). Contract C6. Pinned with: atticus plugin pin forge-anvil-routes
+schemaVersion: 1
+id: forge-anvil-routes
+version: 1.0.0
+description: Reads the HTTP entry points of the Forge Anvil house framework.
+emits: [Endpoint]
+appliesTo:
+  repoTypes: [anvil-service]
+entry: index.js
+limits:
+  timeoutMs: 10000
+  memoryMb: 64
+sha256: 7e2f013c1994c36980132dc4bdede549394276b74ab69e45901392924bd60ba8

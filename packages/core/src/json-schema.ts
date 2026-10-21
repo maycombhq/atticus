@@ -12,6 +12,7 @@ import { ChangeLifecycle } from "./schema/change.js";
 import { Dialect } from "./schema/dialect.js";
 import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
+import { ScannerPlugin } from "./schema/plugin.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
 import * as C6 from "./schema/orgpack.js";
 import * as C5 from "./schema/ai.js";
@@ -85,6 +86,7 @@ export function orgPackJsonSchemas(): Record<string, object> {
     IntegrationPattern: C6.IntegrationPattern,
     FrameworkModel,
     ScanSettings,
+    ScannerPlugin,
     Sources: C6.Sources,
     Runtime: C6.Runtime,
     SkillMeta: C6.SkillMeta,
