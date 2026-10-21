@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { MockRuntime } from "@maycombhq/ai";
-import { ScanSettings } from "@maycombhq/core";
+import { answerQuestion, listQuestions, ScanSettings } from "@maycombhq/core";
 import { parse } from "yaml";
 import { scanSurvey } from "../src/onboard-commands.js";
 
@@ -59,6 +59,55 @@ describe("atticus scan survey", () => {
     expect(
       await scanSurvey(root, "forge-notes", { force: true }, { runtime, now: NOW }, io().io),
     ).toBe(0);
+  });
+
+  it("writes the questions the assistant raised, and the rerun reads the answers (ADR 0078)", async () => {
+    const root = await metarepo();
+    const prompts: string[] = [];
+    const runtime = new MockRuntime(
+      (req) => {
+        prompts.push(req.pack.prompt);
+        return `${ANSWER}questions:
+  - question: Is /notes-api also the prefix of the admin endpoints?
+    options:
+      - { label: "Yes", means: one context path for the service, changes: admin endpoints get /notes-api }
+      - { label: "No", means: admin has its own path, changes: admin endpoints are left as they are }
+    evidence: ["src/main/resources/application.properties:3"]
+    scope: repo
+`;
+      },
+      { now: () => NOW },
+    );
+    const t = io();
+    expect(await scanSurvey(root, "forge-notes", {}, { runtime, now: NOW }, t.io)).toBe(0);
+    const open = await listQuestions(root, { state: "open" });
+    expect(open.questions).toHaveLength(1);
+    const q = open.questions[0]!;
+    expect(q).toMatchObject({
+      repo: "forge-notes",
+      askedBy: { step: "scan-survey", command: "atticus scan survey forge-notes" },
+      rerun: "atticus scan survey forge-notes --force",
+      scope: { level: "repo", id: "forge-notes" },
+    });
+    expect(q.askedBy.run).toMatch(/^run-/);
+    expect(t.out).toContain(`1 question for a person, in questions/:`);
+    expect(t.out).toContain(`  ${q.id} Is /notes-api also the prefix of the admin endpoints?`);
+    expect(t.out.at(-1)).toBe(
+      `Answer it with atticus questions answer <id> --option <n>, or on the app's Questions page; then run atticus scan survey forge-notes --force`,
+    );
+    // The scan settings file never holds the questions.
+    const text = await readFile(join(root, "org-pack", "scan", "forge-notes.yaml"), "utf8");
+    expect(text).not.toContain("questions");
+
+    await answerQuestion(root, q.id, { option: 2, by: "priya.nair", at: NOW.toISOString() });
+    const again = io();
+    expect(
+      await scanSurvey(root, "forge-notes", { force: true }, { runtime, now: NOW }, again.io),
+    ).toBe(0);
+    expect(prompts.at(-1)).toContain("Answer (priya.nair): No");
+    // Asked again by the rerun, it's the same question: not written twice, not shown as new.
+    expect((await listQuestions(root)).questions).toHaveLength(1);
+    expect(again.out.join("\n")).not.toContain("question for a person");
   });
 
   it("writes nothing when every attempt fails the checks", async () => {

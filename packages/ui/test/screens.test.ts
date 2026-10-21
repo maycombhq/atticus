@@ -3,9 +3,9 @@ import { GROUPS, SCREENS, screenOf } from "../src/app/screens.js";
 import { SCREEN_COMPONENTS } from "../src/screens/registry.js";
 
 describe("the app's screens", () => {
-  it("has the 27 screens of the design, each in one of the seven menu groups", () => {
-    expect(SCREENS).toHaveLength(27);
-    expect(new Set(SCREENS.map((s) => s.id)).size).toBe(27);
+  it("has the 27 screens of the design and the Questions page (ADR 0078), each in one of the seven menu groups", () => {
+    expect(SCREENS).toHaveLength(28);
+    expect(new Set(SCREENS.map((s) => s.id)).size).toBe(28);
     expect(SCREENS.every((s) => (GROUPS as readonly string[]).includes(s.group))).toBe(true);
   });
 
@@ -16,7 +16,7 @@ describe("the app's screens", () => {
     expect(screenOf("#/nope").id).toBe("home");
   });
 
-  it("builds every one of the 27 screens", () => {
+  it("builds every one of the 28 screens", () => {
     expect(SCREENS.filter((s) => !SCREEN_COMPONENTS[s.id]).map((s) => s.id)).toEqual([]);
   });
 });

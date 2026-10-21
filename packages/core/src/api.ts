@@ -4,6 +4,7 @@ import { RecordId } from "./schema/common.js";
 import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
 import { ChangeArtifact, Phase } from "./schema/orgpack.js";
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
+import { Question, QuestionScopeLevel } from "./schema/question.js";
 import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
 
 /**
@@ -14,8 +15,11 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * per-session token Atticus prints at start-up, so other local programs and web pages
  * can't drive it. See ADR 0015.
  */
-/** 2.0.0 (ADR 0073): PUT /api/me and GET /api/me/approvals are gone; /api/me is the Git user. */
-export const API_VERSION = "2.0.0";
+/**
+ * 2.0.0 (ADR 0073): PUT /api/me and GET /api/me/approvals are gone; /api/me is the Git user.
+ * 2.1.0 (ADR 0078): the questions API, /api/questions.
+ */
+export const API_VERSION = "2.1.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -323,6 +327,29 @@ export const TriageDecideRequest = z.strictObject({
 });
 
 export const ReconcileRequest = z.strictObject({ diagram: z.string().min(1) });
+
+/** ADR 0078: the questions in questions/, and the files that aren't valid questions. */
+export const QuestionList = z.object({
+  questions: z.array(Question),
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+
+/** ADR 0078: answer a question with one of its options or in the person's own words. */
+export const AnswerQuestionRequest = z.strictObject({
+  option: z.number().int().min(1).optional(),
+  text: z.string().trim().min(1).optional(),
+  /** The scope the person confirms; default the one proposed. */
+  scope: QuestionScopeLevel.optional(),
+  /** The repo type, when a repo question is widened to its type. */
+  repoType: RecordId.optional(),
+});
+
+/** ADR 0078: the answered question, the command to run next and, for a repo type, its skill file. */
+export const AnsweredQuestion = z.object({
+  question: Question,
+  rerun: z.string(),
+  skill: z.object({ path: z.string(), written: z.boolean() }).optional(),
+});
 
 // ------------------------------------------------------------------ live events
 
@@ -1321,6 +1348,44 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [404, 422],
     },
   },
+  "/api/questions": {
+    get: {
+      id: "listQuestions",
+      summary: "The questions to people in questions/ (ADR 0078), oldest first",
+      tag: "questions",
+      params: [
+        q(
+          "state",
+          { type: "string", enum: ["open", "answered", "retired"] },
+          "Only questions in this state",
+        ),
+      ],
+      ok: { status: 200, schema: "QuestionList", description: "OK" },
+      errors: [400],
+    },
+  },
+  "/api/questions/{id}": {
+    get: {
+      id: "getQuestion",
+      summary: "One question: its options, evidence, proposed scope and answer",
+      tag: "questions",
+      params: [p("id")],
+      ok: { status: 200, schema: "Question", description: "OK" },
+      errors: [404],
+    },
+  },
+  "/api/questions/{id}/answer": {
+    post: {
+      id: "answerQuestion",
+      summary:
+        "Write the signed-in person's answer to questions/<id>.yaml (and a repo type's skill file); returns the command to run next",
+      tag: "questions",
+      params: [p("id")],
+      body: AnswerQuestionRequest,
+      ok: { status: 200, schema: "AnsweredQuestion", description: "Answered" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/orgpack": {
     get: {
       id: "getOrgPack",
@@ -1364,6 +1429,9 @@ export function openApiDocument(): Record<string, unknown> {
     Finding,
     ChangeRepos,
     LiveEvent,
+    Question,
+    QuestionList,
+    AnsweredQuestion,
   };
   for (const k of RECORD_KINDS) reg.add(RECORD_SCHEMAS[k], { id: k });
   for (const [id, s] of Object.entries(components)) reg.add(s, { id });
@@ -1451,6 +1519,7 @@ export function openApiDocument(): Record<string, unknown> {
       "ai",
       "findings",
       "orgpack",
+      "questions",
     ].map((name) => ({ name })),
     paths,
     components: {

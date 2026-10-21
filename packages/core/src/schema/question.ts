@@ -1,0 +1,128 @@
+import { z } from "zod";
+import { IsoDateTime, RecordId } from "./common.js";
+
+/**
+ * A question to a person (ADR 0078, C6): questions/<id>.yaml in the metarepo. People's and the
+ * AI's words, not generated catalog. A step (atticus scan survey, first) raises one when the
+ * code is ambiguous, with options and the file and line it read; a person answers it, the
+ * answer is written to the same file, and the step's rerun reads it. An answered question is
+ * not asked again.
+ */
+
+export const QUESTION_SCHEMA_VERSION = 1 as const;
+
+/** A question's id: q- and 12 hex characters of the fingerprint of what it asks about. */
+export const QuestionId = z.string().regex(/^q-[0-9a-f]{12}$/, "a question id is q- and 12 hex");
+
+/** Where the question comes from in the repo: path:line. */
+export const QuestionEvidence = z.string().regex(/^[^\s:]+:\d+$/, "evidence is path:line");
+
+export const QuestionState = z.enum(["open", "answered", "retired"]);
+export type QuestionState = z.infer<typeof QuestionState>;
+
+/** Who an answer is for: this repo only, or every repo of a type. */
+export const QuestionScopeLevel = z.enum(["repo", "repo-type"]);
+export type QuestionScopeLevel = z.infer<typeof QuestionScopeLevel>;
+
+export const QuestionScope = z.strictObject({
+  level: QuestionScopeLevel,
+  /** The repo id, or the repo type's id. */
+  id: RecordId,
+});
+
+export const QuestionOption = z.strictObject({
+  /** The option in a few words. */
+  label: z.string().trim().min(1),
+  /** What picking it means. */
+  means: z.string().trim().min(1),
+  /** What it would change in the result. */
+  changes: z.string().trim().min(1),
+});
+export type QuestionOption = z.infer<typeof QuestionOption>;
+
+export const QuestionAnswer = z
+  .strictObject({
+    /** The option picked, counting from 1. */
+    option: z.number().int().min(1).optional(),
+    /** Or the person's own words. */
+    text: z.string().trim().min(1).optional(),
+    /** The Git user who answered. */
+    by: z.string().min(1),
+    at: IsoDateTime,
+    /** The scope the person confirmed. */
+    scope: QuestionScope,
+    /** For a repo-type answer: the type's skill file the answer goes in, relative to the root. */
+    skill: z.string().min(1).optional(),
+  })
+  .refine((a) => (a.option === undefined) !== (a.text === undefined), {
+    message: "an answer is one option or the person's own words, not both or neither",
+  });
+export type QuestionAnswer = z.infer<typeof QuestionAnswer>;
+
+export const Question = z
+  .strictObject({
+    schemaVersion: z.literal(QUESTION_SCHEMA_VERSION),
+    id: QuestionId,
+    askedBy: z.strictObject({
+      /** The step that asked, e.g. scan-survey. */
+      step: RecordId,
+      /** The command that asked, as typed. */
+      command: z.string().min(1),
+      /** The AI run it came from, when there was one. */
+      run: z.string().min(1).optional(),
+      at: IsoDateTime,
+    }),
+    /** The repo the question is about. */
+    repo: RecordId,
+    /** The question in plain words. */
+    question: z.string().trim().min(1),
+    options: z.array(QuestionOption).default([]),
+    /** The files and lines the asker read; each one exists at the scanned commit. */
+    evidence: z.array(QuestionEvidence).min(1),
+    /** The scope the asker proposed. */
+    scope: QuestionScope,
+    state: QuestionState,
+    /** The command to run once it is answered; it reads the answer. */
+    rerun: z.string().min(1),
+    answer: QuestionAnswer.optional(),
+  })
+  .superRefine((q, ctx) => {
+    if (q.state === "answered" && !q.answer)
+      ctx.addIssue({
+        code: "custom",
+        path: ["answer"],
+        message: "an answered question has an answer",
+      });
+    if (q.state === "open" && q.answer)
+      ctx.addIssue({
+        code: "custom",
+        path: ["state"],
+        message: "a question with an answer isn't open",
+      });
+    if (q.answer?.option !== undefined && q.answer.option > q.options.length)
+      ctx.addIssue({
+        code: "custom",
+        path: ["answer", "option"],
+        message: `option ${q.answer.option} isn't one of the ${q.options.length} options`,
+      });
+  });
+export type Question = z.infer<typeof Question>;
+
+/**
+ * A question as an AI step raises it, inside its own YAML answer: Atticus adds the id, who
+ * asked and the rerun command, and checks every evidence line exists before writing it.
+ */
+export const QuestionDraft = z
+  .strictObject({
+    question: z.string().trim().min(1),
+    options: z.array(QuestionOption).default([]),
+    evidence: z.array(QuestionEvidence).min(1),
+    scope: QuestionScopeLevel.default("repo"),
+    /** The repo type the answer would apply to, for scope repo-type. */
+    repoType: RecordId.optional(),
+  })
+  .refine((d) => d.scope !== "repo-type" || d.repoType !== undefined, {
+    path: ["repoType"],
+    message: "a repo-type question names the repo type",
+  });
+export type QuestionDraft = z.infer<typeof QuestionDraft>;

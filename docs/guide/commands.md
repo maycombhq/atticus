@@ -40,6 +40,9 @@ Usage:
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
   atticus questions [--json]           Knowledge gaps and the owner questions that close them
+  atticus questions list [--state open] [--json]   The questions in questions/ a step raised for a person
+  atticus questions answer <id> --option <n> | --text "..."   Write the answer to the file; prints the rerun
+          [--scope repo|repo-type] [--type <repo type>] [--by who]
   atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges

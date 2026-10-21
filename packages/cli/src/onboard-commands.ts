@@ -21,8 +21,11 @@ import {
 import {
   Dialect,
   FrameworkModel,
+  listQuestions,
   loadOrgPack,
   orgPackDirOf,
+  questionsRelOf,
+  raiseQuestions,
   RecordId,
   type OrgPack,
 } from "@maycombhq/core";
@@ -578,11 +581,14 @@ export async function scanSurvey(
     return 1;
   }
   const op = await loadOrgPack(orgPackDirOf(root));
+  // ADR 0078: the questions this survey asked before; the answers go in the prompt.
+  const before = await listQuestions(root, { repo: repo.id, step: "scan-survey" });
   const r = await surveyRepo(fsRepo(repo.id, repo.dir, "0".repeat(40)), {
     repoId: repo.id,
     runtime: deps.runtime,
     orgPack: op,
     maxAttempts: o.attempts ?? 3,
+    questions: before.questions,
     ...(deps.now ? { now: deps.now } : {}),
     ...(o.resume ? { resume: o.resume } : {}),
   });
@@ -615,7 +621,30 @@ export async function scanSurvey(
   for (const e of s.exclude) io.out(`  leave out ${e.path}: ${e.why} (${e.at})`);
   for (const p of s.prefixes)
     io.out(`  ${p.prefix} in front of ${p.paths.join(", ")}: ${p.why} (${p.at})`);
-  io.out(`Next: atticus scan, then review the file in a pull request.`);
+  const rerun = `atticus scan survey ${repo.id} --force`;
+  const { raised, known } = await raiseQuestions(root, r.questions ?? [], {
+    step: "scan-survey",
+    repo: repo.id,
+    command: `atticus scan survey ${repo.id}`,
+    rerun,
+    ...(r.runId ? { run: r.runId } : {}),
+    at: (deps.now ?? new Date()).toISOString(),
+  });
+  const waiting = known.filter((q) => q.state === "open");
+  if (raised.length) {
+    io.out(`${plural(raised.length, "question")} for a person, in ${questionsRelOf(root)}/:`);
+    for (const q of raised) io.out(`  ${q.id} ${q.question}`);
+  }
+  if (waiting.length)
+    io.out(
+      `${plural(waiting.length, "question")} still waiting for an answer: ${waiting.map((q) => q.id).join(", ")}`,
+    );
+  if (raised.length + waiting.length === 0)
+    io.out(`Next: atticus scan, then review the file in a pull request.`);
+  else
+    io.out(
+      `Answer ${raised.length + waiting.length === 1 ? "it" : "them"} with atticus questions answer <id> --option <n>, or on the app's Questions page; then run ${rerun}`,
+    );
   return 0;
 }
 

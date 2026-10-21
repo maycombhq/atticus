@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { Changes } from "./Changes.js";
 import { CommandCenter } from "./CommandCenter.js";
 import { Explore } from "./Explore.js";
+import { Questions } from "./Questions.js";
 import { KNOW_SCREENS } from "./know/index.js";
 import { RUN_SCREENS } from "./run/index.js";
 
@@ -15,6 +16,7 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   home: () => <CommandCenter />,
   changes: Changes,
   explore: Explore,
+  questions: Questions,
   ...KNOW_SCREENS,
   ...RUN_SCREENS,
 };
