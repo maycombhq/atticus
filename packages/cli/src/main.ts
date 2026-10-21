@@ -143,6 +143,7 @@ import {
   onboardAccept,
   onboardCheck,
   onboardDraft,
+  scanReview,
   onboardEval,
   onboardFramework,
   onboardFrameworkAccept,
@@ -160,6 +161,7 @@ Usage:
           [--fix]                      Rewrite files that aren't in canonical form
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
   atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated
+  atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
           [--repos a,b]                Only these repos
           [--full]                     Ignore the scan cache
           [--dry-run]                  Show what would change; write nothing
@@ -381,6 +383,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       fixture: { type: "string" },
       force: { type: "boolean" },
       draft: { type: "boolean" },
+      gaps: { type: "boolean" },
       full: { type: "boolean" },
       "dry-run": { type: "boolean" },
       json: { type: "boolean" },
@@ -513,6 +516,43 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
           .map((s) => s.trim())
           .filter(Boolean)
       : undefined;
+  if (group === "scan" && command === "review") {
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    if (!arg) {
+      io.err(
+        "Usage: atticus scan review <repo> [--gaps] [--name n] [--attempts 3] [--resume run] [--mode m]",
+      );
+      return 2;
+    }
+    const attempts = Number(text(values.attempts) ?? "3");
+    if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) {
+      io.err("--attempts is a whole number from 1 to 10.");
+      return 2;
+    }
+    try {
+      const { runtime } = await runtimeForCli(root, {
+        ...(text(values.mode) ? { mode: text(values.mode)! } : {}),
+      });
+      return await scanReview(
+        root,
+        arg,
+        {
+          gapsOnly: values.gaps === true,
+          attempts,
+          ...(text(values.name) ? { name: text(values.name)! } : {}),
+          ...(text(values.resume) ? { resume: text(values.resume)! } : {}),
+        },
+        { runtime },
+        io,
+      );
+    } catch (e) {
+      if (e instanceof RuntimeConfigError) {
+        io.err(e.message);
+        return 2;
+      }
+      throw e;
+    }
+  }
   if (group === "scan")
     return scanCommand(
       root,

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { SCAN_REVIEW_OUTPUT } from "@maycombhq/assistant-kit";
 import {
   createOpenSpec,
   ORG_FLOW,
@@ -159,13 +160,15 @@ export function completionOf(request: {
   | "glossary"
   | "templates"
   | "story-prose"
-  | "change-draft" {
+  | "change-draft"
+  | "scan-review" {
   if (handUpLensTask(request.outputPath)) return "hand-up";
   if (lensRunOf(request)) return "critic-lens";
   if (request.change === GLOSSARY_CHANGE && request.outputPath === GLOSSARY_OUTPUT)
     return "glossary";
   if (request.outputIn === "run" && request.outputPath === STORY_PROSE_OUTPUT) return "story-prose";
   if (request.outputIn === "run" && request.outputPath === DRAFT_OUTPUT) return "change-draft";
+  if (request.outputIn === "run" && request.outputPath === SCAN_REVIEW_OUTPUT) return "scan-review";
   if (request.change === NAMING_CHANGE && request.outputPath === NAMING_OUTPUT)
     return "feature-names";
   if (request.change === TEMPLATE_PROSE_CHANGE && request.outputPath === TEMPLATE_PROSE_OUTPUT)
@@ -236,6 +239,11 @@ export async function handoffDone(
       io.out(
         `The story prose for ${run.request.change} is valid. Next: atticus plan stories ${run.request.change} --resume ${runId}`,
       );
+      return 0;
+    }
+    if (kind === "scan-review") {
+      const repo = run.request.change.replace(/^review-/, "");
+      io.out(`The review of ${repo} is in. Next: atticus scan review ${repo} --resume ${runId}`);
       return 0;
     }
     if (kind === "change-draft") {

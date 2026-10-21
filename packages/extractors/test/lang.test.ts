@@ -253,4 +253,26 @@ ALTER TABLE entry ADD COLUMN posted_at timestamp;`);
       { table: "account", access: "write" },
     ]);
   });
+
+  it("doesn't read a comparison, a CTE's name or the database's own catalog as a table", () => {
+    // Found by atticus scan review on a real estate (ADR 0072).
+    expect(
+      tablesInQuery(
+        "insert into card_rating (a, b) values (?, ?) on conflict (a) do update set b = excluded.b where card_rating.b is distinct from excluded.b or card_rating.c is not distinct from excluded.c",
+      ),
+    ).toEqual([{ table: "card_rating", access: "write" }]);
+    expect(
+      tablesInQuery(
+        "with mine as (select x from measured where h = ?), pool as (select m.x from measured m join consent c on c.u = m.u) select * from mine join pool on true",
+      ),
+    ).toEqual([
+      { table: "measured", access: "read" },
+      { table: "consent", access: "read" },
+    ]);
+    expect(
+      tablesInQuery(
+        "select table_name from information_schema.columns where column_name = 'user_id' union select relname from pg_catalog.pg_class",
+      ),
+    ).toEqual([]);
+  });
 });

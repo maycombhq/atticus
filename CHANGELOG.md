@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Scan review
+
+- `atticus scan review <repo>` (ADR 0072): the gaps the last scan left (files no rule reads, unresolved calls and data access, modules where it found nothing) go to your assistant, which gives each a verdict (a rule can read it, an Atticus reader misreads it, a vendor, ignore, or a person must say) and writes a dialect for the readable ones. Every verdict and the dialect are checked against the repo before anything is written; a person accepts the dialect and the next scan reads with it. `--gaps` lists the gaps alone.
+- The SQL reader no longer takes `IS DISTINCT FROM`, a CTE's name or `information_schema` tables as tables (found by the first scan review).
+
 ### Domain profiles from the catalog
 
 - `atticus domain profile <system> [--out file]` (ADR 0071): a system's domain profile filled from the catalog: components and repos, interfaces with their consumers, data with who reads and writes it, related domains, features, and an evidence register of every claim. What code can't tell (owners, controls, retention) is Unknown and asked as an open question. An organisation's own layout goes in `org-pack/templates/domain-profile.md`.

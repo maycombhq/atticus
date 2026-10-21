@@ -49,7 +49,7 @@ const MANIFESTS = ["**/*.yaml", "**/*.yml"];
 
 export const dataPipelinesExtractor = defineExtractor({
   id: "data-pipelines",
-  version: "0.1.2",
+  version: "0.1.3",
   claims: [...PY, ...SCALA, ...DBT, ...PROFILES, ...SQL, ...MANIFESTS],
   async *scan(repo, ctx) {
     // Components already emitted: the repo's DAG and its dbt project can be one component.
