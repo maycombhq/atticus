@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import {
-  canvasView,
+  canvasGraph,
+  directionFor,
   keyStep,
+  legibility,
   outlineRows,
   viewKey,
   type Views,
@@ -87,25 +89,110 @@ describe("the outline: the same graph as a tree for keyboards and screen readers
 });
 
 describe("the picture of one open node", () => {
+  const audit = node("system:audit", "system", 1, "estate");
+  const a = node("repo:a", "repo", 2, "system:portal");
+  const b = node("repo:b", "repo", 0, "system:portal");
+  const portalView = view(
+    portal,
+    [a, b],
+    [
+      { id: "ab", from: "repo:a", to: "repo:b", type: "calls", count: 1 },
+      { id: "b-audit", from: "repo:b", to: "system:audit", type: "calls", count: 3 },
+      { id: "a-audit", from: "repo:a", to: "system:audit", type: "publishes", count: 1 },
+      { id: "aa", from: "repo:a", to: "repo:a", type: "calls", count: 2 },
+    ],
+    [audit],
+  );
+  const inner = view(
+    a,
+    [
+      node("component:a.http", "component", 0, "repo:a"),
+      node("component:a.jobs", "component", 0, "repo:a"),
+    ],
+    [
+      { id: "http-jobs", from: "component:a.http", to: "component:a.jobs", type: "calls" },
+      { id: "jobs-audit", from: "component:a.jobs", to: "system:audit", type: "publishes" },
+      { id: "jobs-gone", from: "component:a.jobs", to: "system:elsewhere", type: "calls" },
+    ],
+  );
+  const vs: Views = new Map([
+    ["system:portal", portalView],
+    ["repo:a", inner],
+  ]);
+
   it("draws its children and the nodes outside it that edges reach, edges with their count", () => {
-    const audit = node("system:audit", "system", 1, "estate");
-    const v = view(
-      portal,
-      [node("repo:a", "repo", 0, "system:portal"), node("repo:b", "repo", 0, "system:portal")],
-      [
-        { from: "repo:a", to: "repo:b", type: "calls", count: 1 },
-        { from: "repo:b", to: "system:audit", type: "calls", count: 3 },
-      ],
-      [audit],
-    );
-    const c = canvasView(v, "Portal");
-    expect(c.nodes.map((n) => [n.id, n.kind])).toEqual([
-      ["repo:a", "component"],
-      ["repo:b", "component"],
-      ["system:audit", "box"],
+    const c = canvasGraph(vs, "system:portal", new Set());
+    expect(c.boxes.map((n) => [n.id, n.outside, n.group])).toEqual([
+      ["repo:a", false, false],
+      ["repo:b", false, false],
+      ["system:audit", true, false],
     ]);
-    expect(c.nodes[2]!.label).toBe("audit (outside)");
-    expect(c.edges.map((e) => e.label)).toEqual(["calls", "3 × calls"]);
+    expect(c.links.map((e) => [e.id, e.label, e.async])).toEqual([
+      ["ab", "calls", false],
+      ["b-audit", "3 × calls", false],
+      ["a-audit", "publishes", true],
+    ]);
+    // Calls that start and end on one box are counted on it, not drawn.
+    expect(c.boxes[0]!.inside).toBe(2);
+  });
+
+  it("opens a child in place as a group around its own children", () => {
+    const c = canvasGraph(vs, "system:portal", new Set(["repo:a"]));
+    expect(c.boxes.map((n) => [n.id, n.parent ?? "", n.group])).toEqual([
+      ["repo:a", "", true],
+      ["component:a.http", "repo:a", false],
+      ["component:a.jobs", "repo:a", false],
+      ["repo:b", "", false],
+      ["system:audit", "", false],
+    ]);
+    // The lifted edge from the part is replaced by the sharper one from inside it; an edge to
+    // a box that isn't drawn is left out.
+    expect(c.links.map((e) => e.id)).toEqual(["ab", "b-audit", "http-jobs", "jobs-audit"]);
+  });
+
+  it("in focus draws the node and its neighbours", () => {
+    const c = canvasGraph(vs, "system:portal", new Set(), {
+      lens: "data",
+      node: audit,
+      path: [],
+      neighbours: [b],
+      edges: portalView.edges.filter((e) => e.id === "b-audit"),
+    });
+    expect(c.boxes.map((n) => n.id)).toEqual(["system:audit", "repo:b"]);
+    expect(c.links.map((e) => e.id)).toEqual(["b-audit"]);
+  });
+
+  it("lays context out downwards and flows across", () => {
+    expect(directionFor("architecture")).toBe("DOWN");
+    expect(directionFor("integration")).toBe("RIGHT");
+    expect(directionFor("data")).toBe("RIGHT");
+  });
+});
+
+describe("a picture too big to read", () => {
+  const big = node("repo:big", "repo", 9, "system:portal");
+  const small = node("repo:small", "repo", 2, "system:portal");
+  it("says nothing when the layout is within the limits and the API suggests nothing", () => {
+    expect(legibility([], undefined, new Set(), [big])).toBeUndefined();
+  });
+  it("offers focus when the API suggests it", () => {
+    expect(legibility([], { mode: "focus", id: "table:ledger-db.entry" }, new Set(), [])).toEqual({
+      mode: "focus",
+      id: "table:ledger-db.entry",
+      why: "api",
+    });
+  });
+  it("offers to close parts opened in place, else to open the biggest part", () => {
+    expect(legibility(["nodes"], undefined, new Set(["repo:big"]), [big, small])).toEqual({
+      mode: "collapse",
+      why: "nodes",
+    });
+    expect(legibility(["crossings"], undefined, new Set(), [small, big])).toEqual({
+      mode: "group",
+      id: "repo:big",
+      why: "crossings",
+    });
+    expect(legibility([], { mode: "group" }, new Set(), [])).toEqual({ mode: "group", why: "api" });
   });
 });
 

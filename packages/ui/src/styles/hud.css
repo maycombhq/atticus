@@ -507,3 +507,102 @@ a.btn {
   align-items: center;
   text-decoration: none;
 }
+
+/* The Architecture canvas (React Flow, plan 4.6). A box with something missing carries a
+   triangle and words as well as the amber border, so colour is never the only signal. */
+.arch-canvas {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #070b10;
+}
+.arch-canvas .react-flow {
+  --xy-background-color: #070b10;
+  --xy-node-border-radius: 8px;
+  --xy-minimap-background-color: #0b1016;
+  --xy-controls-button-background-color: #0b1016;
+  --xy-controls-button-color: var(--text);
+  --xy-controls-button-border-color: var(--line-2);
+  --xy-edge-stroke: var(--text-2);
+}
+.arch-box {
+  width: 100%;
+  height: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: #0b1016;
+  color: var(--text);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.arch-box.group {
+  background: rgba(46, 230, 246, 0.04);
+  border-color: var(--accent);
+}
+.arch-box.outside {
+  border-style: dashed;
+  color: var(--text-2);
+}
+.arch-box.gappy {
+  border-color: var(--amber);
+}
+.arch-box.picked {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 2px;
+}
+.arch-box-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.arch-box-label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.arch-box-foot {
+  display: flex;
+  gap: 8px;
+}
+.arch-gap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--amber);
+}
+.arch-link.async {
+  stroke-dasharray: 6 4;
+}
+.arch-link.gappy {
+  stroke: var(--amber);
+}
+.arch-link-label {
+  position: absolute;
+  pointer-events: all;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #0b1016;
+  border: 1px solid var(--line-2);
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.arch-link-label.gappy {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+.arch-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.arch-notice p {
+  margin: 0;
+}
