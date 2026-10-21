@@ -2,156 +2,335 @@ import { parseArgs } from "node:util";
 import { createLog, SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
 import { gitUser } from "@maycombhq/workspace";
 import { basename, join, resolve } from "node:path";
-import { catalogValidate, orgPackValidate, schemaExport, type Output } from "./commands.js";
-import {
-  handoffDone,
-  openspecCheck,
-  openspecSetup,
-  workspaceOpen,
-  workspacePrune,
-  workspaceSync,
-} from "./workspace-commands.js";
-import { catalogDiff, scanCommand } from "./scan-commands.js";
-import { askCommand, impactCommand, indexRebuild, queryCommand } from "./index-commands.js";
-import { guideCommand, siteBuildCommand } from "./site-commands.js";
-import { baselineCommand, setupCommand } from "./baseline-commands.js";
-import { digestCommand } from "./digest-commands.js";
-import { doctorCommand } from "./doctor.js";
-import { supportBundleCommand } from "./support.js";
-import { upgradeCommand } from "./upgrade.js";
-import { aliasCommand, reconcileCommand } from "./reconcile-commands.js";
-import {
-  coverageCommand,
-  patternsScan,
-  questionsCommand,
-  sourcesAdd,
-  sourcesSync,
-} from "./knowledge-commands.js";
-import { diagramLibrary, diagramRender } from "./diagram-commands.js";
-import { stubCheck, stubServe } from "./stub-commands.js";
-import { intakeAdd, intakeList, triageDecide, triageList } from "./intake-commands.js";
-import {
-  assistantFiles,
-  driftCommand,
-  specHandDown,
-  specHandUp,
-  taskHandoff,
-  taskRun,
-} from "./run-commands.js";
-import { featureSuggestNames } from "./feature-commands.js";
-import { domainProfileCommand } from "./domain-commands.js";
-import { isTaskRun } from "@maycombhq/taskrun";
+import { type Output } from "./commands.js";
 import { AiOffError, runtimeForCli, RuntimeConfigError, type AiRuntime } from "@maycombhq/ai";
 import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
-import {
-  adoSync,
-  changeDraft,
-  planStories,
-  snowDraft,
-  snowSubmit,
-  storyBarCommand,
-  templatesDraft,
-} from "./plan-commands.js";
-import { executorsCheck, todoDone, todoList, todoRun, todoShow } from "./todo-commands.js";
-import {
-  absorbCommand,
-  absorbRefreshCommand,
-  sourcesRefreshCommand,
-  adoptCommand,
-  initCommand,
-  reposDiscoverCommand,
-  unadoptCommand,
-  zeroInstallCommand,
-} from "./setup-commands.js";
 import { existsSync } from "node:fs";
-import {
-  ciArchiveGate,
-  ciDrift,
-  ciSnippet,
-  glossaryAlias,
-  glossaryDefine,
-  glossaryLink,
-  glossaryList,
-  glossaryScan,
-  testsGenerate,
-  traceCommand,
-} from "./quality-commands.js";
-import {
-  initiativeCommitment,
-  initiativeNew,
-  initiativePlan,
-  initiativeStatus,
-  requestFromTeam,
-} from "./initiative-commands.js";
-import {
-  explainCommand,
-  learnCheck,
-  learnList,
-  learnStart,
-  sandboxCreate,
-} from "./learn-commands.js";
-import { defencesScan, evalReport, evalRun } from "./eval-commands.js";
-import { conformanceCommand } from "./u1-commands.js";
-import {
-  outcomeList,
-  outcomeRecord,
-  releaseEvidenceCommand,
-  releaseForecastCommand,
-  releaseNotesCommand,
-  releasePlanCommand,
-  releaseSecurityCommand,
-} from "./release-commands.js";
-import { uiCommand } from "./ui-commands.js";
-import { critic, criticStats, findingAction, findings } from "./critic-commands.js";
-import {
-  catalogMigrate,
-  featureLink,
-  featureList,
-  featureMerge,
-  featureName,
-  featureShow,
-  featureSpec,
-  featureSplit,
-  featureSuggestLinks,
-  featureTag,
-} from "./feature-commands.js";
-import {
-  changeArchive,
-  changeConflicts,
-  changeHandoff,
-  changeList,
-  changeNew,
-  changeReturn,
-  changeStatus,
-  changeSync,
-} from "./change-commands.js";
-import {
-  dialectGrade,
-  dialectKit,
-  dialectTree,
-  dialectNew,
-  dialectRun,
-  dialectTest,
-} from "./dialect-commands.js";
-import {
-  frameworksCheck,
-  frameworksDiscover,
-  frameworksKit,
-  frameworksLearn,
-  frameworksSurvey,
-} from "./framework-commands.js";
-import {
-  onboardAccept,
-  onboardCheck,
-  onboardDraft,
-  scanReview,
-  onboardEval,
-  onboardFramework,
-  onboardFrameworkAccept,
-  onboardFrameworkCheck,
-} from "./onboard-commands.js";
 
 import { VERSION } from "./version.js";
+
+/**
+ * Command modules load when their command runs, not at start: loading all of them took most
+ * of the CLI's start time (A2). Each wrapper has the same signature as the function it loads.
+ */
+const loadCommands = () => import("./commands.js");
+const catalogValidate: typeof import("./commands.js").catalogValidate = (...a) =>
+  loadCommands().then((m) => m.catalogValidate(...a));
+const orgPackValidate: typeof import("./commands.js").orgPackValidate = (...a) =>
+  loadCommands().then((m) => m.orgPackValidate(...a));
+const schemaExport: typeof import("./commands.js").schemaExport = (...a) =>
+  loadCommands().then((m) => m.schemaExport(...a));
+const loadWorkspaceCommands = () => import("./workspace-commands.js");
+const handoffDone: typeof import("./workspace-commands.js").handoffDone = (...a) =>
+  loadWorkspaceCommands().then((m) => m.handoffDone(...a));
+const openspecCheck: typeof import("./workspace-commands.js").openspecCheck = (...a) =>
+  loadWorkspaceCommands().then((m) => m.openspecCheck(...a));
+const openspecSetup: typeof import("./workspace-commands.js").openspecSetup = (...a) =>
+  loadWorkspaceCommands().then((m) => m.openspecSetup(...a));
+const workspaceOpen: typeof import("./workspace-commands.js").workspaceOpen = (...a) =>
+  loadWorkspaceCommands().then((m) => m.workspaceOpen(...a));
+const workspacePrune: typeof import("./workspace-commands.js").workspacePrune = (...a) =>
+  loadWorkspaceCommands().then((m) => m.workspacePrune(...a));
+const workspaceSync: typeof import("./workspace-commands.js").workspaceSync = (...a) =>
+  loadWorkspaceCommands().then((m) => m.workspaceSync(...a));
+const loadScanCommands = () => import("./scan-commands.js");
+const catalogDiff: typeof import("./scan-commands.js").catalogDiff = (...a) =>
+  loadScanCommands().then((m) => m.catalogDiff(...a));
+const scanCommand: typeof import("./scan-commands.js").scanCommand = (...a) =>
+  loadScanCommands().then((m) => m.scanCommand(...a));
+const loadIndexCommands = () => import("./index-commands.js");
+const askCommand: typeof import("./index-commands.js").askCommand = (...a) =>
+  loadIndexCommands().then((m) => m.askCommand(...a));
+const impactCommand: typeof import("./index-commands.js").impactCommand = (...a) =>
+  loadIndexCommands().then((m) => m.impactCommand(...a));
+const indexRebuild: typeof import("./index-commands.js").indexRebuild = (...a) =>
+  loadIndexCommands().then((m) => m.indexRebuild(...a));
+const queryCommand: typeof import("./index-commands.js").queryCommand = (...a) =>
+  loadIndexCommands().then((m) => m.queryCommand(...a));
+const loadSiteCommands = () => import("./site-commands.js");
+const guideCommand: typeof import("./site-commands.js").guideCommand = (...a) =>
+  loadSiteCommands().then((m) => m.guideCommand(...a));
+const siteBuildCommand: typeof import("./site-commands.js").siteBuildCommand = (...a) =>
+  loadSiteCommands().then((m) => m.siteBuildCommand(...a));
+const loadBaselineCommands = () => import("./baseline-commands.js");
+const baselineCommand: typeof import("./baseline-commands.js").baselineCommand = (...a) =>
+  loadBaselineCommands().then((m) => m.baselineCommand(...a));
+const setupCommand: typeof import("./baseline-commands.js").setupCommand = (...a) =>
+  loadBaselineCommands().then((m) => m.setupCommand(...a));
+const loadDigestCommands = () => import("./digest-commands.js");
+const digestCommand: typeof import("./digest-commands.js").digestCommand = (...a) =>
+  loadDigestCommands().then((m) => m.digestCommand(...a));
+const loadDoctor = () => import("./doctor.js");
+const doctorCommand: typeof import("./doctor.js").doctorCommand = (...a) =>
+  loadDoctor().then((m) => m.doctorCommand(...a));
+const loadSupport = () => import("./support.js");
+const supportBundleCommand: typeof import("./support.js").supportBundleCommand = (...a) =>
+  loadSupport().then((m) => m.supportBundleCommand(...a));
+const loadUpgrade = () => import("./upgrade.js");
+const upgradeCommand: typeof import("./upgrade.js").upgradeCommand = (...a) =>
+  loadUpgrade().then((m) => m.upgradeCommand(...a));
+const loadReconcileCommands = () => import("./reconcile-commands.js");
+const aliasCommand: typeof import("./reconcile-commands.js").aliasCommand = (...a) =>
+  loadReconcileCommands().then((m) => m.aliasCommand(...a));
+const reconcileCommand: typeof import("./reconcile-commands.js").reconcileCommand = (...a) =>
+  loadReconcileCommands().then((m) => m.reconcileCommand(...a));
+const loadKnowledgeCommands = () => import("./knowledge-commands.js");
+const coverageCommand: typeof import("./knowledge-commands.js").coverageCommand = (...a) =>
+  loadKnowledgeCommands().then((m) => m.coverageCommand(...a));
+const patternsScan: typeof import("./knowledge-commands.js").patternsScan = (...a) =>
+  loadKnowledgeCommands().then((m) => m.patternsScan(...a));
+const questionsCommand: typeof import("./knowledge-commands.js").questionsCommand = (...a) =>
+  loadKnowledgeCommands().then((m) => m.questionsCommand(...a));
+const sourcesAdd: typeof import("./knowledge-commands.js").sourcesAdd = (...a) =>
+  loadKnowledgeCommands().then((m) => m.sourcesAdd(...a));
+const sourcesSync: typeof import("./knowledge-commands.js").sourcesSync = (...a) =>
+  loadKnowledgeCommands().then((m) => m.sourcesSync(...a));
+const loadDiagramCommands = () => import("./diagram-commands.js");
+const diagramLibrary: typeof import("./diagram-commands.js").diagramLibrary = (...a) =>
+  loadDiagramCommands().then((m) => m.diagramLibrary(...a));
+const diagramRender: typeof import("./diagram-commands.js").diagramRender = (...a) =>
+  loadDiagramCommands().then((m) => m.diagramRender(...a));
+const loadStubCommands = () => import("./stub-commands.js");
+const stubCheck: typeof import("./stub-commands.js").stubCheck = (...a) =>
+  loadStubCommands().then((m) => m.stubCheck(...a));
+const stubServe: typeof import("./stub-commands.js").stubServe = (...a) =>
+  loadStubCommands().then((m) => m.stubServe(...a));
+const loadIntakeCommands = () => import("./intake-commands.js");
+const intakeAdd: typeof import("./intake-commands.js").intakeAdd = (...a) =>
+  loadIntakeCommands().then((m) => m.intakeAdd(...a));
+const intakeList: typeof import("./intake-commands.js").intakeList = (...a) =>
+  loadIntakeCommands().then((m) => m.intakeList(...a));
+const triageDecide: typeof import("./intake-commands.js").triageDecide = (...a) =>
+  loadIntakeCommands().then((m) => m.triageDecide(...a));
+const triageList: typeof import("./intake-commands.js").triageList = (...a) =>
+  loadIntakeCommands().then((m) => m.triageList(...a));
+const loadRunCommands = () => import("./run-commands.js");
+const assistantFiles: typeof import("./run-commands.js").assistantFiles = (...a) =>
+  loadRunCommands().then((m) => m.assistantFiles(...a));
+const driftCommand: typeof import("./run-commands.js").driftCommand = (...a) =>
+  loadRunCommands().then((m) => m.driftCommand(...a));
+const specHandDown: typeof import("./run-commands.js").specHandDown = (...a) =>
+  loadRunCommands().then((m) => m.specHandDown(...a));
+const specHandUp: typeof import("./run-commands.js").specHandUp = (...a) =>
+  loadRunCommands().then((m) => m.specHandUp(...a));
+const taskHandoff: typeof import("./run-commands.js").taskHandoff = (...a) =>
+  loadRunCommands().then((m) => m.taskHandoff(...a));
+const taskRun: typeof import("./run-commands.js").taskRun = (...a) =>
+  loadRunCommands().then((m) => m.taskRun(...a));
+const loadFeatureCommands = () => import("./feature-commands.js");
+const featureSuggestNames: typeof import("./feature-commands.js").featureSuggestNames = (...a) =>
+  loadFeatureCommands().then((m) => m.featureSuggestNames(...a));
+const loadDomainCommands = () => import("./domain-commands.js");
+const domainProfileCommand: typeof import("./domain-commands.js").domainProfileCommand = (...a) =>
+  loadDomainCommands().then((m) => m.domainProfileCommand(...a));
+const loadPlanCommands = () => import("./plan-commands.js");
+const adoSync: typeof import("./plan-commands.js").adoSync = (...a) =>
+  loadPlanCommands().then((m) => m.adoSync(...a));
+const changeDraft: typeof import("./plan-commands.js").changeDraft = (...a) =>
+  loadPlanCommands().then((m) => m.changeDraft(...a));
+const planStories: typeof import("./plan-commands.js").planStories = (...a) =>
+  loadPlanCommands().then((m) => m.planStories(...a));
+const snowDraft: typeof import("./plan-commands.js").snowDraft = (...a) =>
+  loadPlanCommands().then((m) => m.snowDraft(...a));
+const snowSubmit: typeof import("./plan-commands.js").snowSubmit = (...a) =>
+  loadPlanCommands().then((m) => m.snowSubmit(...a));
+const storyBarCommand: typeof import("./plan-commands.js").storyBarCommand = (...a) =>
+  loadPlanCommands().then((m) => m.storyBarCommand(...a));
+const templatesDraft: typeof import("./plan-commands.js").templatesDraft = (...a) =>
+  loadPlanCommands().then((m) => m.templatesDraft(...a));
+const loadTodoCommands = () => import("./todo-commands.js");
+const executorsCheck: typeof import("./todo-commands.js").executorsCheck = (...a) =>
+  loadTodoCommands().then((m) => m.executorsCheck(...a));
+const todoDone: typeof import("./todo-commands.js").todoDone = (...a) =>
+  loadTodoCommands().then((m) => m.todoDone(...a));
+const todoList: typeof import("./todo-commands.js").todoList = (...a) =>
+  loadTodoCommands().then((m) => m.todoList(...a));
+const todoRun: typeof import("./todo-commands.js").todoRun = (...a) =>
+  loadTodoCommands().then((m) => m.todoRun(...a));
+const todoShow: typeof import("./todo-commands.js").todoShow = (...a) =>
+  loadTodoCommands().then((m) => m.todoShow(...a));
+const loadSetupCommands = () => import("./setup-commands.js");
+const absorbCommand: typeof import("./setup-commands.js").absorbCommand = (...a) =>
+  loadSetupCommands().then((m) => m.absorbCommand(...a));
+const absorbRefreshCommand: typeof import("./setup-commands.js").absorbRefreshCommand = (...a) =>
+  loadSetupCommands().then((m) => m.absorbRefreshCommand(...a));
+const sourcesRefreshCommand: typeof import("./setup-commands.js").sourcesRefreshCommand = (...a) =>
+  loadSetupCommands().then((m) => m.sourcesRefreshCommand(...a));
+const adoptCommand: typeof import("./setup-commands.js").adoptCommand = (...a) =>
+  loadSetupCommands().then((m) => m.adoptCommand(...a));
+const initCommand: typeof import("./setup-commands.js").initCommand = (...a) =>
+  loadSetupCommands().then((m) => m.initCommand(...a));
+const reposDiscoverCommand: typeof import("./setup-commands.js").reposDiscoverCommand = (...a) =>
+  loadSetupCommands().then((m) => m.reposDiscoverCommand(...a));
+const unadoptCommand: typeof import("./setup-commands.js").unadoptCommand = (...a) =>
+  loadSetupCommands().then((m) => m.unadoptCommand(...a));
+const zeroInstallCommand: typeof import("./setup-commands.js").zeroInstallCommand = (...a) =>
+  loadSetupCommands().then((m) => m.zeroInstallCommand(...a));
+const loadQualityCommands = () => import("./quality-commands.js");
+const ciArchiveGate: typeof import("./quality-commands.js").ciArchiveGate = (...a) =>
+  loadQualityCommands().then((m) => m.ciArchiveGate(...a));
+const ciDrift: typeof import("./quality-commands.js").ciDrift = (...a) =>
+  loadQualityCommands().then((m) => m.ciDrift(...a));
+const ciSnippet: typeof import("./quality-commands.js").ciSnippet = (...a) =>
+  loadQualityCommands().then((m) => m.ciSnippet(...a));
+const glossaryAlias: typeof import("./quality-commands.js").glossaryAlias = (...a) =>
+  loadQualityCommands().then((m) => m.glossaryAlias(...a));
+const glossaryDefine: typeof import("./quality-commands.js").glossaryDefine = (...a) =>
+  loadQualityCommands().then((m) => m.glossaryDefine(...a));
+const glossaryLink: typeof import("./quality-commands.js").glossaryLink = (...a) =>
+  loadQualityCommands().then((m) => m.glossaryLink(...a));
+const glossaryList: typeof import("./quality-commands.js").glossaryList = (...a) =>
+  loadQualityCommands().then((m) => m.glossaryList(...a));
+const glossaryScan: typeof import("./quality-commands.js").glossaryScan = (...a) =>
+  loadQualityCommands().then((m) => m.glossaryScan(...a));
+const testsGenerate: typeof import("./quality-commands.js").testsGenerate = (...a) =>
+  loadQualityCommands().then((m) => m.testsGenerate(...a));
+const traceCommand: typeof import("./quality-commands.js").traceCommand = (...a) =>
+  loadQualityCommands().then((m) => m.traceCommand(...a));
+const loadInitiativeCommands = () => import("./initiative-commands.js");
+const initiativeCommitment: typeof import("./initiative-commands.js").initiativeCommitment = (
+  ...a
+) => loadInitiativeCommands().then((m) => m.initiativeCommitment(...a));
+const initiativeNew: typeof import("./initiative-commands.js").initiativeNew = (...a) =>
+  loadInitiativeCommands().then((m) => m.initiativeNew(...a));
+const initiativePlan: typeof import("./initiative-commands.js").initiativePlan = (...a) =>
+  loadInitiativeCommands().then((m) => m.initiativePlan(...a));
+const initiativeStatus: typeof import("./initiative-commands.js").initiativeStatus = (...a) =>
+  loadInitiativeCommands().then((m) => m.initiativeStatus(...a));
+const requestFromTeam: typeof import("./initiative-commands.js").requestFromTeam = (...a) =>
+  loadInitiativeCommands().then((m) => m.requestFromTeam(...a));
+const loadLearnCommands = () => import("./learn-commands.js");
+const explainCommand: typeof import("./learn-commands.js").explainCommand = (...a) =>
+  loadLearnCommands().then((m) => m.explainCommand(...a));
+const learnCheck: typeof import("./learn-commands.js").learnCheck = (...a) =>
+  loadLearnCommands().then((m) => m.learnCheck(...a));
+const learnList: typeof import("./learn-commands.js").learnList = (...a) =>
+  loadLearnCommands().then((m) => m.learnList(...a));
+const learnStart: typeof import("./learn-commands.js").learnStart = (...a) =>
+  loadLearnCommands().then((m) => m.learnStart(...a));
+const sandboxCreate: typeof import("./learn-commands.js").sandboxCreate = (...a) =>
+  loadLearnCommands().then((m) => m.sandboxCreate(...a));
+const loadEvalCommands = () => import("./eval-commands.js");
+const defencesScan: typeof import("./eval-commands.js").defencesScan = (...a) =>
+  loadEvalCommands().then((m) => m.defencesScan(...a));
+const evalReport: typeof import("./eval-commands.js").evalReport = (...a) =>
+  loadEvalCommands().then((m) => m.evalReport(...a));
+const evalRun: typeof import("./eval-commands.js").evalRun = (...a) =>
+  loadEvalCommands().then((m) => m.evalRun(...a));
+const loadU1Commands = () => import("./u1-commands.js");
+const conformanceCommand: typeof import("./u1-commands.js").conformanceCommand = (...a) =>
+  loadU1Commands().then((m) => m.conformanceCommand(...a));
+const loadReleaseCommands = () => import("./release-commands.js");
+const outcomeList: typeof import("./release-commands.js").outcomeList = (...a) =>
+  loadReleaseCommands().then((m) => m.outcomeList(...a));
+const outcomeRecord: typeof import("./release-commands.js").outcomeRecord = (...a) =>
+  loadReleaseCommands().then((m) => m.outcomeRecord(...a));
+const releaseEvidenceCommand: typeof import("./release-commands.js").releaseEvidenceCommand = (
+  ...a
+) => loadReleaseCommands().then((m) => m.releaseEvidenceCommand(...a));
+const releaseForecastCommand: typeof import("./release-commands.js").releaseForecastCommand = (
+  ...a
+) => loadReleaseCommands().then((m) => m.releaseForecastCommand(...a));
+const releaseNotesCommand: typeof import("./release-commands.js").releaseNotesCommand = (...a) =>
+  loadReleaseCommands().then((m) => m.releaseNotesCommand(...a));
+const releasePlanCommand: typeof import("./release-commands.js").releasePlanCommand = (...a) =>
+  loadReleaseCommands().then((m) => m.releasePlanCommand(...a));
+const releaseSecurityCommand: typeof import("./release-commands.js").releaseSecurityCommand = (
+  ...a
+) => loadReleaseCommands().then((m) => m.releaseSecurityCommand(...a));
+const loadUiCommands = () => import("./ui-commands.js");
+const uiCommand: typeof import("./ui-commands.js").uiCommand = (...a) =>
+  loadUiCommands().then((m) => m.uiCommand(...a));
+const loadCriticCommands = () => import("./critic-commands.js");
+const critic: typeof import("./critic-commands.js").critic = (...a) =>
+  loadCriticCommands().then((m) => m.critic(...a));
+const criticStats: typeof import("./critic-commands.js").criticStats = (...a) =>
+  loadCriticCommands().then((m) => m.criticStats(...a));
+const findingAction: typeof import("./critic-commands.js").findingAction = (...a) =>
+  loadCriticCommands().then((m) => m.findingAction(...a));
+const findings: typeof import("./critic-commands.js").findings = (...a) =>
+  loadCriticCommands().then((m) => m.findings(...a));
+const catalogMigrate: typeof import("./feature-commands.js").catalogMigrate = (...a) =>
+  loadFeatureCommands().then((m) => m.catalogMigrate(...a));
+const featureLink: typeof import("./feature-commands.js").featureLink = (...a) =>
+  loadFeatureCommands().then((m) => m.featureLink(...a));
+const featureList: typeof import("./feature-commands.js").featureList = (...a) =>
+  loadFeatureCommands().then((m) => m.featureList(...a));
+const featureMerge: typeof import("./feature-commands.js").featureMerge = (...a) =>
+  loadFeatureCommands().then((m) => m.featureMerge(...a));
+const featureName: typeof import("./feature-commands.js").featureName = (...a) =>
+  loadFeatureCommands().then((m) => m.featureName(...a));
+const featureShow: typeof import("./feature-commands.js").featureShow = (...a) =>
+  loadFeatureCommands().then((m) => m.featureShow(...a));
+const featureSpec: typeof import("./feature-commands.js").featureSpec = (...a) =>
+  loadFeatureCommands().then((m) => m.featureSpec(...a));
+const featureSplit: typeof import("./feature-commands.js").featureSplit = (...a) =>
+  loadFeatureCommands().then((m) => m.featureSplit(...a));
+const featureSuggestLinks: typeof import("./feature-commands.js").featureSuggestLinks = (...a) =>
+  loadFeatureCommands().then((m) => m.featureSuggestLinks(...a));
+const featureTag: typeof import("./feature-commands.js").featureTag = (...a) =>
+  loadFeatureCommands().then((m) => m.featureTag(...a));
+const loadChangeCommands = () => import("./change-commands.js");
+const changeArchive: typeof import("./change-commands.js").changeArchive = (...a) =>
+  loadChangeCommands().then((m) => m.changeArchive(...a));
+const changeConflicts: typeof import("./change-commands.js").changeConflicts = (...a) =>
+  loadChangeCommands().then((m) => m.changeConflicts(...a));
+const changeHandoff: typeof import("./change-commands.js").changeHandoff = (...a) =>
+  loadChangeCommands().then((m) => m.changeHandoff(...a));
+const changeList: typeof import("./change-commands.js").changeList = (...a) =>
+  loadChangeCommands().then((m) => m.changeList(...a));
+const changeNew: typeof import("./change-commands.js").changeNew = (...a) =>
+  loadChangeCommands().then((m) => m.changeNew(...a));
+const changeReturn: typeof import("./change-commands.js").changeReturn = (...a) =>
+  loadChangeCommands().then((m) => m.changeReturn(...a));
+const changeStatus: typeof import("./change-commands.js").changeStatus = (...a) =>
+  loadChangeCommands().then((m) => m.changeStatus(...a));
+const changeSync: typeof import("./change-commands.js").changeSync = (...a) =>
+  loadChangeCommands().then((m) => m.changeSync(...a));
+const loadDialectCommands = () => import("./dialect-commands.js");
+const dialectGrade: typeof import("./dialect-commands.js").dialectGrade = (...a) =>
+  loadDialectCommands().then((m) => m.dialectGrade(...a));
+const dialectKit: typeof import("./dialect-commands.js").dialectKit = (...a) =>
+  loadDialectCommands().then((m) => m.dialectKit(...a));
+const dialectTree: typeof import("./dialect-commands.js").dialectTree = (...a) =>
+  loadDialectCommands().then((m) => m.dialectTree(...a));
+const dialectNew: typeof import("./dialect-commands.js").dialectNew = (...a) =>
+  loadDialectCommands().then((m) => m.dialectNew(...a));
+const dialectRun: typeof import("./dialect-commands.js").dialectRun = (...a) =>
+  loadDialectCommands().then((m) => m.dialectRun(...a));
+const dialectTest: typeof import("./dialect-commands.js").dialectTest = (...a) =>
+  loadDialectCommands().then((m) => m.dialectTest(...a));
+const loadFrameworkCommands = () => import("./framework-commands.js");
+const frameworksCheck: typeof import("./framework-commands.js").frameworksCheck = (...a) =>
+  loadFrameworkCommands().then((m) => m.frameworksCheck(...a));
+const frameworksDiscover: typeof import("./framework-commands.js").frameworksDiscover = (...a) =>
+  loadFrameworkCommands().then((m) => m.frameworksDiscover(...a));
+const frameworksKit: typeof import("./framework-commands.js").frameworksKit = (...a) =>
+  loadFrameworkCommands().then((m) => m.frameworksKit(...a));
+const frameworksLearn: typeof import("./framework-commands.js").frameworksLearn = (...a) =>
+  loadFrameworkCommands().then((m) => m.frameworksLearn(...a));
+const frameworksSurvey: typeof import("./framework-commands.js").frameworksSurvey = (...a) =>
+  loadFrameworkCommands().then((m) => m.frameworksSurvey(...a));
+const loadOnboardCommands = () => import("./onboard-commands.js");
+const onboardAccept: typeof import("./onboard-commands.js").onboardAccept = (...a) =>
+  loadOnboardCommands().then((m) => m.onboardAccept(...a));
+const onboardCheck: typeof import("./onboard-commands.js").onboardCheck = (...a) =>
+  loadOnboardCommands().then((m) => m.onboardCheck(...a));
+const onboardDraft: typeof import("./onboard-commands.js").onboardDraft = (...a) =>
+  loadOnboardCommands().then((m) => m.onboardDraft(...a));
+const scanReview: typeof import("./onboard-commands.js").scanReview = (...a) =>
+  loadOnboardCommands().then((m) => m.scanReview(...a));
+const onboardEval: typeof import("./onboard-commands.js").onboardEval = (...a) =>
+  loadOnboardCommands().then((m) => m.onboardEval(...a));
+const onboardFramework: typeof import("./onboard-commands.js").onboardFramework = (...a) =>
+  loadOnboardCommands().then((m) => m.onboardFramework(...a));
+const onboardFrameworkAccept: typeof import("./onboard-commands.js").onboardFrameworkAccept = (
+  ...a
+) => loadOnboardCommands().then((m) => m.onboardFrameworkAccept(...a));
+const onboardFrameworkCheck: typeof import("./onboard-commands.js").onboardFrameworkCheck = (
+  ...a
+) => loadOnboardCommands().then((m) => m.onboardFrameworkCheck(...a));
+
 export { VERSION };
 
 const HELP = `atticus ${VERSION} (catalog schema v${SCHEMA_VERSION})
@@ -1726,7 +1905,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       );
       return 2;
     }
-    if (await isTaskRun(root, arg))
+    if (await (await import("@maycombhq/taskrun")).isTaskRun(root, arg))
       return taskHandoff(
         root,
         arg,

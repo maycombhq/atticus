@@ -88,7 +88,8 @@ describe("atticus init", () => {
       await main(["init", `${await temp("trail-meta")}/`, "--platform", "shop"], slash.io),
     ).toBe(0);
     expect(slash.out[0]).toMatch(/^Created the trail-meta metarepo/);
-  });
+    // Two inits, each running the OpenSpec CLI twice (about 2 s each on Windows).
+  }, 60_000);
 });
 
 describe("atticus repos discover", () => {
