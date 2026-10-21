@@ -1,0 +1,23 @@
+summary: Every new order is screened by Northwind Pay before stock is reserved; a rejected order is refused.
+features:
+  - id: cap-ordering
+    why: Placing an order is the feature that gains the screen.
+flows:
+  - id: forge-orders.place-order
+    how: changed
+    why: The screen runs between receiving the order and reserving stock.
+  - id: forge-stock.reserve-stock
+    how: read
+    why: Reserving stock happens only after the screen passes.
+  - id: forge-orders.cancel-order
+    how: read
+    why: A refused order is never saved, so there is nothing to cancel.
+  - id: forge-orders.list-orders
+    how: read
+    why: The list shows the orders the screen let through.
+  - id: forge-stock.release-stock
+    how: read
+    why: A refused order reserves no stock, so nothing is released.
+gaps:
+  - what: No call to Northwind Pay exists yet.
+    why: The estate never talks to the fraud screen today.

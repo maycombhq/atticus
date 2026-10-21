@@ -37,6 +37,12 @@ import {
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
 import {
+  criticFindingKind,
+  criticRuleChecks,
+  stageRuleKind,
+  type FindingKind,
+} from "./finding-kind.js";
+import {
   STAGE_PHASE,
   STAGE_SCHEMA_VERSION,
   StageLoop,
@@ -49,9 +55,11 @@ import {
  * runtime; the stage's own checks and a critic round (its rules, and its AI lenses when the
  * runtime can run them) review the draft; findings go back for another draft, with no cap on
  * model calls. Each finding has a fingerprint of its rule, target and evidence. One that comes
- * back unchanged twice (three drafts in a row), or comes back after it was gone, becomes a
- * question for a person (ADR 0078) and the loop stops there. A stage is done when nothing
- * blocking is open and no question it raised is open; then a person approves its PR.
+ * back unchanged twice (three drafts in a row), or comes back after it was gone, stops the
+ * loop: a finding a person can decide becomes a question (ADR 0078); a drafting finding (the
+ * shape of what the assistant wrote, finding-kind.ts) stops it with a plain message naming
+ * the finding and the file to fix. A stage is done when nothing blocking is open and no
+ * question it raised is open; then a person approves its PR.
  */
 
 /** A problem the stage's checks found in a draft. */
@@ -65,6 +73,8 @@ export interface StageIssue {
   blocking: boolean;
   /** The repo it is about, for the question's repo. */
   repo?: string;
+  /** decision (a person can decide it) or drafting (finding-kind.ts). Left out: by its rule. */
+  kind?: FindingKind;
 }
 
 export const issueFingerprint = (rule: string, target: string, evidence = "") =>
@@ -78,6 +88,11 @@ export interface StageSpec<A> {
   description: string;
   /** The answer's file name in the hand-off run folder. */
   output: string;
+  /**
+   * The change-folder file a person edits to fix a draft the assistant couldn't, e.g.
+   * feature.yaml. A rerun after a stop checks it before drafting again.
+   */
+  source: string;
   /** Atticus's instructions: what to write and how. */
   instructions: string;
   /** The data the assistant reads: the input, the estate index, the knowledge. */
@@ -206,6 +221,10 @@ export async function runStageLoop<A>(
   const runs: RunSummary[] = [];
   let drafts = 0;
 
+  let checks: Map<string, string> | undefined;
+  const kindOf = async (f: { rule: string; kind: "issue" | "knowledge-gap" }) =>
+    criticFindingKind(f, (checks ??= await criticRuleChecks(root).catch(() => new Map())));
+
   const questionsOf = async (ids: string[]) =>
     (await Promise.all(ids.map((id) => readQuestion(root, id).catch(() => undefined)))).filter(
       (q): q is Question => !!q,
@@ -254,6 +273,38 @@ export async function runStageLoop<A>(
       if (issues.length === 0) return result("done", { answer: cur });
       notes.push("The stage's files changed since it was done; drafting again.");
     }
+  }
+
+  // Stopped on a drafting finding: a person may have fixed the stage's file. Check what is on
+  // file (and write what comes from it) before drafting again.
+  if (!o.resume && !o.force && loop.state === "stopped") {
+    const cur = await spec.current();
+    const stopped = loop.findings.filter((f) => f.stoppedAt === loop.iteration);
+    if (cur !== undefined) {
+      issues = (await spec.check(cur)).filter((i) => i.blocking);
+      if (issues.length === 0) {
+        const files = await spec.write(cur);
+        issues = (await criticRound(root, ctx, change, spec.stage, o, loop, notes, kindOf)).filter(
+          (i) => i.blocking,
+        );
+        if (issues.length === 0) {
+          loop.state = "done";
+          loop.updatedAt = at;
+          await writeLoop(dir, loop);
+          return result("done", { files, answer: cur });
+        }
+      }
+    } else
+      issues = stopped.map((f) => ({
+        rule: f.rule,
+        target: f.target,
+        ...(f.evidence ? { evidence: f.evidence } : {}),
+        message: f.message,
+        blocking: true,
+      }));
+    notes.push(
+      `The ${spec.stage} stage stopped last time on what your assistant couldn't fix; drafting again${issues.length ? ` with the ${issues.length === 1 ? "finding" : "findings"} still open` : ""}.`,
+    );
   }
 
   let resume = o.resume;
@@ -338,10 +389,11 @@ export async function runStageLoop<A>(
     }
     // ---- the critic, on every iteration
     if (answer !== undefined)
-      found.push(...(await criticRound(root, ctx, change, spec.stage, o, loop, notes)));
+      found.push(...(await criticRound(root, ctx, change, spec.stage, o, loop, notes, kindOf)));
 
     // ---- fingerprints and the end rule
     const toAsk: { f: LoopFinding; issue: StageIssue }[] = [];
+    const toStop: LoopFinding[] = [];
     const byFp = new Map(loop.findings.map((f) => [f.fingerprint, f]));
     for (const i of found) {
       const fp = issueFingerprint(i.rule, i.target, i.evidence ?? "");
@@ -359,12 +411,16 @@ export async function runStageLoop<A>(
       if (f.seenIn.at(-1) === n) continue; // the same problem twice in one draft
       f.message = i.message;
       f.blocking = i.blocking;
+      f.kind = i.kind ?? (f.source === "critic" ? "decision" : stageRuleKind(i.rule));
       f.seenIn = [...f.seenIn, n];
       byFp.set(fp, f);
-      const repeated =
-        f.seenIn.length >= 3 && f.seenIn.at(-3) === n - 2 && f.seenIn.at(-2) === n - 1;
-      const flipped = f.seenIn.length >= 2 && f.seenIn.at(-2)! < n - 1;
-      if (f.blocking && !f.question && (repeated || flipped)) toAsk.push({ f, issue: i });
+      // Sightings up to a stop a person has since dealt with don't count again.
+      const seen = f.seenIn.filter((x) => x > (f.stoppedAt ?? 0));
+      const repeated = seen.length >= 3 && seen.at(-3) === n - 2 && seen.at(-2) === n - 1;
+      const flipped = seen.length >= 2 && seen.at(-2)! < n - 1;
+      if (!f.blocking || !(repeated || flipped)) continue;
+      if (f.kind === "drafting") toStop.push(f);
+      else if (!f.question) toAsk.push({ f, issue: i });
     }
     loop.findings = [...byFp.values()].sort((a, b) => a.fingerprint.localeCompare(b.fingerprint));
     loop.updatedAt = at;
@@ -410,6 +466,16 @@ export async function runStageLoop<A>(
 
     // ---- stop, or go round again
     const open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
+    if (toStop.length) {
+      for (const f of toStop) f.stoppedAt = n;
+      const stop = stopMessage(spec, rel, n, toStop, rerunOf(spec.stage, change.id));
+      if (open.length) notes.push(stop.message, ...stop.lines);
+      else {
+        loop.state = "stopped";
+        await writeLoop(dir, loop);
+        throw new PlannerError("stopped", [stop.message, ...stop.lines].join("\n"), stop.lines);
+      }
+    }
     const current = loop.findings.filter((f) => f.seenIn.at(-1) === n);
     const answeredNow = new Set(
       (await questionsOf(loop.questions)).filter((q) => q.state === "answered").map((q) => q.id),
@@ -436,6 +502,32 @@ export async function runStageLoop<A>(
       blocking: true,
     }));
   }
+}
+
+/**
+ * The plain message a drafting finding stops the loop with: what came back, where it is, and
+ * the file a person fixes (or tells the assistant how to fix) before running the stage again.
+ */
+export function stopMessage(
+  spec: Pick<StageSpec<unknown>, "stage" | "source">,
+  rel: string,
+  drafts: number,
+  findings: Pick<LoopFinding, "message" | "rule" | "evidence">[],
+  rerun: string,
+): { message: string; lines: string[] } {
+  const source = `${rel}/${spec.source}`;
+  const one = findings.length === 1;
+  const elsewhere = findings.some((f) => f.evidence && !f.evidence.startsWith(source));
+  return {
+    message: `The ${spec.stage} stage stopped after ${drafts} draft${drafts === 1 ? "" : "s"}: your assistant kept getting ${one ? "this" : "these"} wrong, and ${one ? "it isn't a question" : "they aren't questions"} for a person to decide.`,
+    lines: [
+      ...findings.map(
+        (f) =>
+          `  - ${f.message} (rule ${f.rule.replace(/^critic:/, "")}; in ${f.evidence ?? source})`,
+      ),
+      `Fix ${source}${elsewhere ? " (the stage writes the files above from it)" : ""}, or tell your assistant how; then run ${rerun} again. Atticus checks your fix before it drafts again.`,
+    ],
+  };
 }
 
 export function rerunOf(stage: Stage, change: string): string {
@@ -486,6 +578,7 @@ async function criticRound(
   o: StageOptions,
   loop: StageLoop,
   notes: string[],
+  kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
 ): Promise<StageIssue[]> {
   const gate = stageGate(ctx, stage);
   if (!gate) {
@@ -508,15 +601,20 @@ async function criticRound(
     });
     loop.critic = [...loop.critic, { gate, round: r.round }];
     const rel = `${changesRelOf(root)}/${change.id}`;
-    return r.findings
-      .filter((f) => f.finding.state === "open" && f.finding.severity === "blocking")
-      .map((f) => ({
+    const open = r.findings.filter(
+      (f) => f.finding.state === "open" && f.finding.severity === "blocking",
+    );
+    const out: StageIssue[] = [];
+    for (const f of open)
+      out.push({
         rule: `critic:${f.finding.rule}`,
         target: criticFingerprint(f.finding),
         evidence: `${rel}/${f.finding.artifact}${f.finding.locator.line ? `:${f.finding.locator.line}` : ""}`,
         message: `The critic (${f.finding.rule}): ${f.finding.summary}`,
         blocking: true,
-      }));
+        kind: await kindOf(f.finding),
+      });
+    return out;
   } catch (e) {
     notes.push(`The critic didn't run at the ${gate} gate: ${(e as Error).message}`);
     return [];

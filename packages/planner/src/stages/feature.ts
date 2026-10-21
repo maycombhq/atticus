@@ -378,6 +378,7 @@ export async function featureStage(
     description:
       "Places a change against the estate: the features and flows it touches, gaps and questions.",
     output: "feature-answer.yaml",
+    source: "feature.yaml",
     instructions,
     sources,
     parse: (text) => {

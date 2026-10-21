@@ -7,3 +7,4 @@ export * from "./feature.js";
 export * from "./architecture.js";
 export * from "./stories.js";
 export * from "./answer.js";
+export * from "./finding-kind.js";

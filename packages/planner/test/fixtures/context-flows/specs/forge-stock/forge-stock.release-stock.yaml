@@ -1,0 +1,39 @@
+schemaVersion: 1
+kind: Flow
+id: forge-stock.release-stock
+status: current
+confidence: inferred
+component: forge-stock
+errors: []
+evidence: []
+family: []
+name: The stock service releases a reservation
+steps:
+  - data:
+      reads:
+        - reservationId
+    evidence:
+      - source: code
+        repo: forge-stock
+        path: src/main/java/forge/stock/StockController.java
+        line: 20
+    kind: entry
+    refs: []
+    what: StockController.release receives the reservation id
+  - evidence:
+      - source: code
+        repo: forge-stock
+        path: src/main/java/forge/stock/StockController.java
+        line: 22
+    kind: respond
+    refs: []
+    what: 204 No Content
+template: default@1
+trigger:
+  evidence:
+    - source: code
+      repo: forge-stock
+      path: src/main/java/forge/stock/StockController.java
+      line: 20
+  kind: endpoint
+  what: The orders service releases stock it no longer needs

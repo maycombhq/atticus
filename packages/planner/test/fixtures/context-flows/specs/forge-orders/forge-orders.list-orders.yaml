@@ -1,0 +1,42 @@
+schemaVersion: 1
+kind: Flow
+id: forge-orders.list-orders
+status: current
+confidence: inferred
+component: forge-orders
+errors: []
+evidence: []
+family: []
+name: A client lists their orders
+steps:
+  - evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 30
+    kind: entry
+    refs: []
+    what: OrderController.list receives the request
+  - evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 31
+    kind: read
+    refs:
+      - forge-orders-db.orders
+    store:
+      columns:
+        - sku
+        - quantity
+      table: forge-orders-db.orders
+    what: The orders are read, newest first
+template: default@1
+trigger:
+  evidence:
+    - source: code
+      repo: forge-orders
+      path: src/main/java/forge/orders/OrderController.java
+      line: 30
+  kind: endpoint
+  what: A client asks for their orders

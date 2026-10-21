@@ -204,6 +204,14 @@ export const LoopFinding = z.strictObject({
   seenIn: z.array(z.number().int().positive()),
   /** The question it became once it came back unchanged twice or flipped. */
   question: z.string().optional(),
+  /**
+   * decision: a person can decide it (the product, the data, the design), so a repeat or a
+   * flip becomes a question; drafting: the shape of what the assistant wrote, so a repeat or
+   * a flip stops the loop with a message instead (see finding-kind.ts). Left out: decision.
+   */
+  kind: z.enum(["decision", "drafting"]).optional(),
+  /** The iteration a drafting finding stopped the loop in; earlier sightings don't count again. */
+  stoppedAt: z.number().int().positive().optional(),
 });
 export type LoopFinding = z.infer<typeof LoopFinding>;
 
@@ -213,7 +221,8 @@ export const StageLoop = z.strictObject({
   stage: Stage,
   /** Drafts so far. */
   iteration: z.number().int().min(0),
-  state: z.enum(["drafting", "waiting", "questions", "done"]),
+  /** stopped: a drafting finding came back and the loop stopped for a person to fix a file. */
+  state: z.enum(["drafting", "waiting", "questions", "stopped", "done"]),
   updatedAt: z.string(),
   /** The hand-off run being waited for. */
   run: z.string().optional(),

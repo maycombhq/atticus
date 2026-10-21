@@ -11,7 +11,7 @@ import { PlannerError } from "../errors.js";
 import { GENERATED_MARK } from "../render.js";
 import { contentWords, slug } from "../words.js";
 import { parseYamlAs } from "./answer.js";
-import { readDeltas } from "./architecture.js";
+import { isEmptyDelta, readDeltas, TARGET_DIR } from "./architecture.js";
 import { columnsOf, loadEstate, type Estate } from "./estate.js";
 import {
   runStageLoop,
@@ -84,8 +84,12 @@ export interface RequestTask {
 const ev = (repo: string, e: { path?: string; line?: number }[]) =>
   e.filter((x) => x.path).map((x) => `${repo}:${x.path}${x.line ? `:${x.line}` : ""}`);
 
-/** Stories and tasks from the deltas, deterministically. */
-export function storiesFromDeltas(deltas: FlowDelta[], e: Estate): DeltaStory[] {
+/**
+ * Stories and tasks from the deltas, deterministically. A modify delta with no step is
+ * context, not a change, so it gets no story (a story with no task has nothing to accept).
+ */
+export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
+  const deltas = all.filter((d) => !isEmptyDelta(d));
   const repos = [...new Set(deltas.map((d) => d.repo))].sort();
   const stories: DeltaStory[] = [];
   const counter = new Map<string, number>();
@@ -492,9 +496,16 @@ export async function storiesStage(
     });
   const dir = changeFolder(root, change.id);
   const rel = `${changesRelOf(root)}/${change.id}`;
-  const { deltas, problems } = await readDeltas(dir);
-  if (problems.length)
-    throw new PlannerError("refused", `The target flows don't read: ${problems.join("; ")}`);
+  const read = await readDeltas(dir);
+  if (read.problems.length)
+    throw new PlannerError("refused", `The target flows don't read: ${read.problems.join("; ")}`);
+  const empty = read.deltas.filter(isEmptyDelta);
+  const deltas = read.deltas.filter((d) => !isEmptyDelta(d));
+  if (empty.length && !deltas.length)
+    throw new PlannerError(
+      "refused",
+      `${change.id}'s target flows change no step (${empty.map((d) => d.flow).join(", ")} only say modify): run atticus change architecture ${change.id} again.`,
+    );
   if (!deltas.length)
     throw new PlannerError(
       "refused",
@@ -623,6 +634,7 @@ Rules:
     description:
       "Words a change's stories from its target flows and writes each task's acceptance criteria.",
     output: "stories-answer.yaml",
+    source: ANSWER_FILE,
     instructions: [
       "# Story writer",
       "",
@@ -674,6 +686,10 @@ Rules:
     },
   };
   const res = await runStageLoop(root, change.id, spec, o);
+  if (empty.length)
+    res.notes.unshift(
+      `No story for ${empty.map((d) => `${TARGET_DIR}/${d.flow}.yaml`).join(", ")}: ${empty.length === 1 ? "it is marked modify but changes" : "they are marked modify but change"} no step, so ${empty.length === 1 ? "it is" : "they are"} context, not a change.`,
+    );
   if (!change.handoffs.some((h) => h.phase === "design" && h.state === "merged"))
     res.notes.unshift(
       `The architecture PR of ${change.id} isn't merged yet, so these stories rest on target flows a person hasn't approved.`,

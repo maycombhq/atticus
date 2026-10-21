@@ -1,0 +1,44 @@
+schemaVersion: 1
+kind: Flow
+id: forge-orders.cancel-order
+status: current
+confidence: inferred
+component: forge-orders
+errors: []
+evidence: []
+family: []
+name: A client cancels an order
+steps:
+  - data:
+      reads:
+        - id
+    evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 20
+    kind: entry
+    refs: []
+    what: OrderController.cancel receives the order id
+  - evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 22
+    kind: write
+    refs:
+      - forge-orders-db.orders
+    store:
+      columns:
+        - status
+      table: forge-orders-db.orders
+    what: The order is marked cancelled
+template: default@1
+trigger:
+  evidence:
+    - source: code
+      repo: forge-orders
+      path: src/main/java/forge/orders/OrderController.java
+      line: 20
+  kind: endpoint
+  what: A client cancels an order
