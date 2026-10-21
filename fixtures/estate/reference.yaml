@@ -1,0 +1,51 @@
+# Hand-written reference flows for the invented two-repo estate (the shape of bench/flows/),
+# for scoring the estate pass (ADR 0085): which flows are reached end to end, UI into API.
+estate: forge-customers
+repos: [forge-web, forge-customers]
+flows:
+  - id: save-customer
+    name: A person saves a new customer
+    trigger: { kind: action, repo: forge-web, what: The Save button is pressed, at: "src/app/customers/customer-form.component.ts:11" }
+    steps:
+      - kind: call-out
+        repo: forge-web
+        what: POST /api/customers with the form's fields
+        to: { repo: forge-customers, entry: "POST /customers" }
+        data: { sends: [name, email, phone] }
+        at: "src/app/customers/customer.service.ts:10"
+      - kind: entry
+        repo: forge-customers
+        what: CustomerController.create receives the request
+        at: "src/main/java/forge/customers/CustomerController.java:11"
+      - kind: write
+        repo: forge-customers
+        what: The customer is inserted
+        store: { table: customers, fields: [id, full_name, email_address] }
+        at: "src/main/java/forge/customers/CustomerController.java:12"
+  - id: view-customer
+    name: A person opens a customer
+    trigger: { kind: page, repo: forge-web, what: The customer page loads, at: "src/app/customers/customer-view.component.ts:12" }
+    steps:
+      - kind: call-out
+        repo: forge-web
+        what: GET /api/customers/{id}
+        to: { repo: forge-customers, entry: "GET /customers/{customerId}" }
+        at: "src/app/customers/customer.service.ts:14"
+      - kind: entry
+        repo: forge-customers
+        what: CustomerController.get receives the id
+        at: "src/main/java/forge/customers/CustomerController.java:17"
+  # The API's delete has no flow in the specs, so this one isn't reached end to end.
+  - id: remove-customer
+    name: A person removes a customer
+    trigger: { kind: action, repo: forge-web, what: The Remove button is pressed, at: "src/app/customers/customer-view.component.ts:17" }
+    steps:
+      - kind: call-out
+        repo: forge-web
+        what: DELETE /api/customers/{id}
+        to: { repo: forge-customers, entry: "DELETE /customers/{customerId}" }
+        at: "src/app/customers/customer.service.ts:18"
+      - kind: entry
+        repo: forge-customers
+        what: CustomerController.remove deletes the customer
+        at: "src/main/java/forge/customers/CustomerController.java:22"

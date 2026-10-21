@@ -191,4 +191,72 @@ describe("atticus bench", () => {
     expect(await main(["bench", "run", ...args, "--repo", "nope"], none.io)).toBe(2);
     expect(none.err[0]).toBe("nope isn't in the bench.");
   }, 300_000);
+
+  it("scans an estate's repos together, joins their specs and counts flows reached end to end (ADR 0085)", async () => {
+    const ESTATE = join(HERE, "../../../fixtures/estate");
+    const top = await mkdtemp(join(tmpdir(), "atticus-bench-estate-"));
+    const dir = join(top, "bench");
+    const cache = join(top, "cache");
+    const lines = ["schemaVersion: 1", "repos:"];
+    await mkdir(join(dir, "references"), { recursive: true });
+    await mkdir(join(dir, "flows"), { recursive: true });
+    for (const id of ["forge-web", "forge-customers"]) {
+      const origin = join(top, "origin", id);
+      await cp(join(ESTATE, "repos", id), origin, { recursive: true });
+      git(origin, "init", "-q");
+      git(origin, "add", "-A");
+      git(origin, "commit", "-q", "-m", "fixture");
+      git(origin, "config", "uploadpack.allowAnySHA1InWant", "true");
+      const commit = git(origin, "rev-parse", "HEAD");
+      lines.push(
+        `  - id: ${id}`,
+        `    url: ${pathToFileURL(origin).href}`,
+        `    commit: ${commit}`,
+        "    stack: invented",
+        "    batch: 1",
+        "    estate: forge-customers",
+      );
+      await writeFile(
+        join(dir, "references", `${id}.yaml`),
+        id === "forge-customers"
+          ? `repo: ${id}\ncommit: ${commit}\ncovers: [stores]\nstores:\n  - { table: customers, at: "src/main/resources/schema.sql:1" }\n`
+          : `repo: ${id}\ncommit: ${commit}\ncovers: [stores]\nstores: []\n`,
+      );
+      // The specs drafted for each repo, as atticus bench run keeps them in the cache.
+      await cp(join(ESTATE, "specs", id), join(cache, "specs", id), { recursive: true });
+    }
+    await writeFile(join(dir, "repos.yaml"), lines.join("\n") + "\n");
+    await cp(join(ESTATE, "reference.yaml"), join(dir, "flows", "forge-customers.yaml"));
+    const args = ["--bench", dir, "--cache", cache];
+    expect(await main(["bench", "fetch", ...args], io().io)).toBe(0);
+    const r = io();
+    expect(
+      await main(["bench", "run", ...args, "--specs", "--estate", "forge-customers"], r.io),
+    ).toBe(0);
+    const result = JSON.parse(
+      await readFile(join(cache, "results", (await readdir(join(cache, "results")))[0]!), "utf8"),
+    ) as {
+      specs: { total: { endToEnd?: { want: number; found: number; reached: string[] } } }[];
+      estatePasses: { joins: number; callOuts: number; specsFrom: Record<string, string> }[];
+    };
+    expect(result.estatePasses[0]).toMatchObject({
+      callOuts: 4,
+      specsFrom: { "forge-web": "alone", "forge-customers": "alone" },
+    });
+    // The joint scan resolves the API's entry points; the UI's calls join by path to them.
+    expect(result.estatePasses[0]!.joins).toBe(2);
+    expect(result.specs[0]!.total.endToEnd).toEqual({
+      want: 3,
+      found: 2,
+      reached: ["save-customer", "view-customer"],
+    });
+    expect(r.out.join("\n")).toMatch(
+      /Estate pass \(ADR 0085\), forge-customers: forge-web, forge-customers scanned together/,
+    );
+    // The clones are still there after the estate metarepo is made fresh again.
+    expect(
+      await main(["bench", "run", ...args, "--specs", "--estate", "forge-customers"], io().io),
+    ).toBe(0);
+    expect(await readdir(join(cache, "forge-web", "src"))).toEqual(["app"]);
+  }, 300_000);
 });

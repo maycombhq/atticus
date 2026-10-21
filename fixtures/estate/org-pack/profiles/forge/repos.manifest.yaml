@@ -1,0 +1,16 @@
+# The two invented repos of the estate pass tests (ADR 0085): a UI and the API it calls.
+schemaVersion: 1
+platform: forge
+repos:
+  - id: forge-web
+    url: https://git.example.com/forge/forge-web.git
+    type: spa
+    owner: team-web
+    component: forge-web
+    system: forge
+  - id: forge-customers
+    url: https://git.example.com/forge/forge-customers.git
+    type: spring-boot
+    owner: team-customers
+    component: forge-customers
+    system: forge

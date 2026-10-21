@@ -1,9 +1,9 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import { z } from "zod";
 import type { AiRuntime } from "@maycombhq/ai";
 import {
@@ -12,11 +12,13 @@ import {
   scoreRepo,
   scoreSpecs,
   scoreVerifier,
+  type EstatePassInput,
   type EstateSpecScore,
   type RepoScore,
   type VerifierScore,
 } from "@maycombhq/evals";
 import {
+  readEstateJoins,
   readRepoSpec,
   ScanVerifyProposal,
   type CatalogRecord,
@@ -55,8 +57,13 @@ export interface BenchOptions {
   repo?: string;
   batch?: number;
   json?: boolean;
-  /** Also score the drafted specs (ADR 0079) against bench/flows/<estate>.yaml. */
+  /**
+   * Also score the drafted specs (ADR 0079) against bench/flows/<estate>.yaml; the repos of an
+   * estate are also scanned together and joined (the estate pass, ADR 0085).
+   */
   specs?: boolean;
+  /** Only the repos of this estate. */
+  estate?: string;
 }
 
 const defaultCache = () =>
@@ -89,6 +96,11 @@ async function load(o: BenchOptions): Promise<{ dir: string; cache: string; repo
   if (o.repo) {
     repos = repos.filter((r) => r.id === o.repo);
     if (repos.length === 0) throw new BenchError(`${o.repo} isn't in the bench.`);
+  }
+  if (o.estate) {
+    repos = repos.filter((r) => r.estate === o.estate);
+    if (repos.length === 0)
+      throw new BenchError(`No repo of the bench is in the estate ${o.estate}.`);
   }
   if (o.batch) repos = repos.filter((r) => r.batch <= o.batch!);
   return { dir, cache: resolve(o.cache ?? defaultCache()), repos };
@@ -215,6 +227,7 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
     }
     const specScores: EstateSpecScore[] = [];
     const noSpecs: string[] = [];
+    const passes: EstatePassNote[] = [];
     for (const [estate, list] of estates) {
       const text = await readFile(join(dir, "flows", `${estate}.yaml`), "utf8").catch(
         () => undefined,
@@ -224,11 +237,23 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
         noSpecs.push(estate);
         continue;
       }
+      // The estate pass (ADR 0085): the estate's repos scanned together, so Interfaces join.
+      const pass =
+        list.length > 1
+          ? await estatePass(
+              cache,
+              estate,
+              list.map((x) => x.repo),
+              main,
+            )
+          : undefined;
+      if (pass) passes.push(pass.note);
       specScores.push(
         scoreSpecs(
           parseReferenceFlows(text),
           list,
           list.flatMap((x) => x.records),
+          pass?.input,
         ),
       );
     }
@@ -245,7 +270,7 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
       repos: scores,
       total,
       skipped,
-      ...(o.specs ? { specs: specScores } : {}),
+      ...(o.specs ? { specs: specScores, estatePasses: passes } : {}),
     };
     const out = join(cache, "results");
     await mkdir(out, { recursive: true });
@@ -285,7 +310,7 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
       );
     }
     for (const s of skipped) io.out(`Skipped ${s}`);
-    if (o.specs) printSpecScores(specScores, noSpecs, cache, io);
+    if (o.specs) printSpecScores(specScores, noSpecs, passes, cache, io);
     io.out(`Details (what was missed and wrong, per kind): ${file}`);
     return 0;
   } catch (e) {
@@ -295,8 +320,146 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
 
 const share = (a: number, b: number) => `${a}/${b} ${pct(b === 0 ? 1 : a / b)}`.padStart(13);
 
+interface EstatePassNote {
+  estate: string;
+  /** The estate metarepo the repos were scanned together in. */
+  root: string;
+  repos: string[];
+  /** Interfaces the joint scan found between the estate's repos. */
+  interfaces: number;
+  callOuts: number;
+  joins: number;
+  /** Where each repo's specs came from: drafted in the estate metarepo, or alone. */
+  specsFrom: Record<string, "estate" | "alone" | "none">;
+}
+
+/**
+ * The estate pass on the bench (ADR 0085): the estate's repos adopted into one metarepo at
+ * <cache>/estates/<estate>/ (one org pack; each clone linked in at workspace/<id>), with their
+ * saved settings and drafted specs, scanned together so Interfaces join, then joined with
+ * atticus estate join. Specs drafted in that metarepo (atticus spec draft
+ * <cache>/estates/<estate>/workspace/<id> --root <cache>/estates/<estate>) are kept in
+ * <cache>/estate-specs/<estate>/ across runs and used before the ones drafted alone.
+ */
+async function estatePass(
+  cache: string,
+  estate: string,
+  repos: string[],
+  main: typeof import("./main.js").main,
+): Promise<{ input: EstatePassInput; note: EstatePassNote }> {
+  const quiet: Output = { out: () => {}, err: () => {} };
+  const root = join(cache, "estates", estate);
+  const kept = join(cache, "estate-specs", estate);
+  // Specs drafted in the estate metarepo since the last run are kept before it is made fresh.
+  for (const id of repos) {
+    const drafted = join(root, ".atticus", "specs", id);
+    if (!existsSync(drafted)) continue;
+    const same = await readFile(join(drafted, "spec.yaml"), "utf8").catch(() => undefined);
+    const alone = await readFile(join(cache, "specs", id, "spec.yaml"), "utf8").catch(
+      () => undefined,
+    );
+    if (same === undefined || same === alone) continue;
+    await rm(join(kept, id), { recursive: true, force: true });
+    await mkdir(kept, { recursive: true });
+    await cp(drafted, join(kept, id), { recursive: true });
+  }
+  // The links to the clones are removed, never what they point at (rm doesn't follow them).
+  await rm(root, { recursive: true, force: true });
+  await mkdir(root, { recursive: true });
+  if ((await main(["adopt", root], quiet)) !== 0)
+    throw new BenchError(
+      `atticus adopt failed on the ${estate} estate: run it by hand to see why.`,
+    );
+  const profiles = join(root, ".atticus", "org-pack", "profiles");
+  const platform =
+    (await readdir(profiles, { withFileTypes: true }).catch(() => []))
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)[0] ?? "default";
+  const entries: Record<string, unknown>[] = [];
+  const specsFrom: EstatePassNote["specsFrom"] = {};
+  await mkdir(join(root, "workspace"), { recursive: true });
+  for (const id of repos) {
+    const clone = join(cache, id);
+    await symlink(clone, join(root, "workspace", id), "junction");
+    // The repo's own manifest entry (from its adoption in place), read where the link is.
+    const own = join(clone, ".atticus", "org-pack", "profiles");
+    let entry: Record<string, unknown> | undefined;
+    for (const p of await readdir(own).catch(() => [] as string[])) {
+      const m = await readFile(join(own, p, "repos.manifest.yaml"), "utf8").then(
+        (t) => parse(t) as { repos?: Record<string, unknown>[] },
+        () => undefined,
+      );
+      entry = m?.repos?.find((r) => r.id === id) ?? m?.repos?.[0];
+      if (entry) break;
+    }
+    entries.push({
+      ...(entry ?? { type: "unknown", owner: "unassigned", defaultBranch: "main" }),
+      id,
+      url: `./workspace/${id}`,
+    });
+    const saved = await readFile(join(cache, "settings", `${id}.yaml`), "utf8").catch(
+      () => undefined,
+    );
+    if (saved !== undefined) {
+      await mkdir(join(root, ".atticus", "org-pack", "scan"), { recursive: true });
+      await writeFile(join(root, ".atticus", "org-pack", "scan", `${id}.yaml`), saved, "utf8");
+    }
+    const from = existsSync(join(kept, id))
+      ? join(kept, id)
+      : existsSync(join(cache, "specs", id))
+        ? join(cache, "specs", id)
+        : undefined;
+    specsFrom[id] = !from ? "none" : from.startsWith(kept) ? "estate" : "alone";
+    if (from) await cp(from, join(root, ".atticus", "specs", id), { recursive: true });
+  }
+  await mkdir(join(profiles, platform), { recursive: true });
+  await writeFile(
+    join(profiles, platform, "repos.manifest.yaml"),
+    `# The ${estate} estate of the bench, scanned together (ADR 0085). Written by atticus bench run --specs.\n${stringify({ schemaVersion: 1, platform, repos: entries }, { lineWidth: 0 })}`,
+    "utf8",
+  );
+  if ((await main(["scan", "--root", root], quiet, { quiet: true })) === 2)
+    throw new BenchError(
+      `atticus scan failed on the ${estate} estate: run atticus scan --root ${root} to see why.`,
+    );
+  await main(["estate", "join", "--root", root], quiet);
+  const { records } = await readCatalog(join(root, ".atticus", "catalog", "generated"));
+  const specs: { repo: string; flows: FlowRecord[] }[] = [];
+  for (const id of repos) specs.push({ repo: id, flows: (await readRepoSpec(root, id)).flows });
+  const joined = await readEstateJoins(root);
+  const comps = new Map(
+    records
+      .filter((r) => r.kind === "Component")
+      .map((r) => [r.id, r.kind === "Component" ? r.repo : undefined]),
+  );
+  const interfaces = records.filter((r) => {
+    if (r.kind !== "Interface") return false;
+    const a = comps.get(r.from);
+    const b = comps.get(r.to);
+    return !!a && !!b && a !== b && repos.includes(a) && repos.includes(b);
+  }).length;
+  return {
+    input: { specs, records, joins: joined?.joins ?? [] },
+    note: {
+      estate,
+      root,
+      repos,
+      interfaces,
+      callOuts: (joined?.joins.length ?? 0) + (joined?.unmatched.length ?? 0),
+      joins: joined?.joins.length ?? 0,
+      specsFrom,
+    },
+  };
+}
+
 /** The drafted specs' scores against the reference flows, one line per estate. */
-function printSpecScores(scores: EstateSpecScore[], none: string[], cache: string, io: Output) {
+function printSpecScores(
+  scores: EstateSpecScore[],
+  none: string[],
+  passes: EstatePassNote[],
+  cache: string,
+  io: Output,
+) {
   io.out("");
   if (scores.length) {
     io.out(
@@ -311,6 +474,18 @@ function printSpecScores(scores: EstateSpecScore[], none: string[], cache: strin
     io.out(
       "Triggers: reference flows whose trigger has a drafted flow; segments: each repo's part of a flow; steps: matched in order; citations: matched steps within 3 lines of the reference's.",
     );
+  }
+  for (const p of passes) {
+    const e2e = scores.find((s) => s.estate === p.estate)?.total.endToEnd;
+    io.out("");
+    io.out(
+      `Estate pass (ADR 0085), ${p.estate}: ${p.repos.join(", ")} scanned together in ${p.root}; ${p.interfaces} Interfaces between them; ${p.joins} of ${p.callOuts} call-outs joined; ${e2e ? `${e2e.found} of ${e2e.want} reference flows that cross repos reached end to end${e2e.reached.length ? ` (${e2e.reached.join(", ")})` : ""}` : "nothing to score"}.`,
+    );
+    const alone = p.repos.filter((r) => p.specsFrom[r] === "alone");
+    if (p.callOuts === 0 && alone.length)
+      io.out(
+        `  The specs of ${alone.join(", ")} were drafted with each repo scanned alone, so no call-out names another repo. Draft each in the estate, where the other repos are in the catalog: atticus spec draft ${join(p.root, "workspace", "<repo>")} --root ${p.root}, then atticus bench run --specs.`,
+      );
   }
   for (const e of none)
     io.out(

@@ -1,0 +1,21 @@
+kind: Flow
+schemaVersion: 1
+id: forge-web.save-customer
+component: forge-web
+name: A person saves a new customer
+template: default@1
+trigger:
+  kind: action
+  what: The Save button of the customer form is pressed
+  evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer-form.component.ts, line: 11 }]
+steps:
+  - kind: call-out
+    what: POST /api/customers with the form's fields, through the gateway
+    refs: [if-c74e2fa3c8152a13]
+    to: { component: forge-customers, entry: "POST /api/customers" }
+    data: { sends: [name, email, phone], returns: [id] }
+    evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer.service.ts, line: 10 }]
+  - kind: respond
+    what: The saved customer's id is kept on the form
+    data: { reads: [id] }
+    evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer-form.component.ts, line: 12 }]

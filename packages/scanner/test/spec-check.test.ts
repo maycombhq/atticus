@@ -119,6 +119,20 @@ describe("atticus spec check: the critic (ADR 0079)", () => {
     ]);
   });
 
+  it("finds a call-out's target through a base URL or context path, as the estate pass joins (ADR 0085)", async () => {
+    const f = placeOrder();
+    const at = f.steps.findIndex((s) => s.to);
+    const to = (entry: string): FlowRecord => ({
+      ...f,
+      steps: f.steps.map((s, i) => (i === at ? { ...s, to: { ...s.to!, entry } } : s)),
+    });
+    const target = async (entry: string) =>
+      (await run([to(entry)])).findings.filter((x) => x.rule === "call-out-target").length;
+    expect(await target("POST /internal/stock/reservations")).toBe(0);
+    expect(await target("POST /stock")).toBe(1);
+    expect(await target("GET /stock/reservations")).toBe(1);
+  });
+
   it("names routes, fields and resources the way code writes them", () => {
     expect(lineNamesRoute('@RequestMapping("/orders")', "/orders")).toBe(true);
     expect(lineNamesRoute('@GetMapping("/orders/:id")', "/api/orders/{orderId}")).toBe(true);

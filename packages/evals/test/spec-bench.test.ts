@@ -120,4 +120,38 @@ describe("scoring drafted specs against reference flows (ADR 0079)", () => {
     ).toBeCloseTo(0.6);
     expect(whatSimilarity("The order is deleted", "201 with the order")).toBeLessThan(0.5);
   });
+
+  it("counts the flows that cross repos and are reached end to end through the joins (ADR 0085)", () => {
+    const E = join(HERE, "../../../fixtures/estate");
+    const recs = (parse(readFileSync(join(E, "catalog.yaml"), "utf8")) as unknown[]).map((r) => {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      return p.record;
+    });
+    const specs = ["forge-web", "forge-customers"].map((repo) => ({
+      repo,
+      flows: readdirSync(join(E, "specs", repo)).map((n) => {
+        const p = parseRecord(parse(readFileSync(join(E, "specs", repo, n), "utf8")));
+        if (!p.ok || p.record.kind !== "Flow") throw new Error(n);
+        return p.record;
+      }),
+    }));
+    const joins = (
+      parse(readFileSync(join(E, "expected", "estate.yaml"), "utf8")) as {
+        joins: { from: { flow: string }; to: { flow: string } }[];
+      }
+    ).joins;
+    const ref = parseReferenceFlows(readFileSync(join(E, "reference.yaml"), "utf8"));
+    const s = scoreSpecs(ref, specs, recs, { specs, records: recs, joins });
+    expect(s.total.endToEnd).toEqual({
+      want: 3,
+      found: 2,
+      reached: ["save-customer", "view-customer"],
+    });
+    // Without joins, nothing crosses; without the estate pass, nothing is counted.
+    expect(
+      scoreSpecs(ref, specs, recs, { specs, records: recs, joins: [] }).total.endToEnd!.found,
+    ).toBe(0);
+    expect(scoreSpecs(ref, specs, recs).total.endToEnd).toBeUndefined();
+  });
 });

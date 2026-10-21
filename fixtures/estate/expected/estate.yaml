@@ -1,0 +1,34 @@
+# What atticus estate join writes for fixtures/estate (ADR 0085), written by hand before the code.
+schemaVersion: 1
+joinedAt: 2026-10-21T12:00:00.000Z
+repos: [forge-customers, forge-web]
+joins:
+  # Through the catalog's Interface (via the gateway, whose /api base path is dropped).
+  - from: { repo: forge-web, flow: forge-web.save-customer, step: 1, evidence: "src/app/customers/customer.service.ts:10" }
+    to:
+      repo: forge-customers
+      flow: forge-customers.create-customer
+      trigger: forge-customers.post-customer
+      evidence: "src/main/java/forge/customers/CustomerController.java:10"
+    entry: forge-customers POST /api/customers
+    how: interface
+    interface: if-c74e2fa3c8152a13
+  # No Interface: by method and normalised path on the target component.
+  - from: { repo: forge-web, flow: forge-web.view-customer, step: 1, evidence: "src/app/customers/customer.service.ts:14" }
+    to:
+      repo: forge-customers
+      flow: forge-customers.get-customer
+      trigger: forge-customers.get-customer
+      evidence: "src/main/java/forge/customers/CustomerController.java:16"
+    entry: forge-customers GET /api/customers/{id}
+    how: path
+unmatched:
+  - from: { repo: forge-web, flow: forge-web.remove-customer, step: 1, evidence: "src/app/customers/customer.service.ts:18" }
+    entry: forge-customers DELETE /api/customers/{id}
+    reason: no-flow
+    trigger: forge-customers.delete-customer
+    message: "DELETE /api/customers/{id} reaches forge-customers.delete-customer, but no flow of forge-customers starts there"
+  - from: { repo: forge-web, flow: forge-web.view-customer, step: 2, evidence: "src/app/customers/customer.service.ts:22" }
+    entry: forge-customers GET /api/customers/{id}/points
+    reason: no-target
+    message: "forge-customers has no entry point for GET /api/customers/{id}/points, and no Interface from forge-web reaches it"

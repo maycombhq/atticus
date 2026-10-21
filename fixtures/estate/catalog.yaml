@@ -1,0 +1,125 @@
+# The catalog a scan of the invented forge-web (a UI) and forge-customers (an API behind the
+# Forge gateway) would give, written by hand for the estate pass tests (ADR 0085). Lines cite
+# fixtures/estate/repos/.
+- kind: Component
+  schemaVersion: 2
+  id: forge-web
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-web, path: src/app/customers/customer.service.ts, line: 5 }]
+  system: forge
+  repo: forge-web
+  type: spa
+- kind: Component
+  schemaVersion: 2
+  id: forge-customers
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 5 }]
+  system: forge
+  repo: forge-customers
+  type: service
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-customers.post-customer
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 10 }]
+  component: forge-customers
+  endpointType: rest
+  method: POST
+  pathOrTopic: /customers
+  normalizedPath: /customers
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-customers.get-customer
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 16 }]
+  component: forge-customers
+  endpointType: rest
+  method: GET
+  pathOrTopic: /customers/{customerId}
+  normalizedPath: /customers/{}
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-customers.delete-customer
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 21 }]
+  component: forge-customers
+  endpointType: rest
+  method: DELETE
+  pathOrTopic: /customers/{customerId}
+  normalizedPath: /customers/{}
+- kind: GatewayRoute
+  schemaVersion: 2
+  id: forge-gateway.customers
+  status: current
+  confidence: verified
+  evidence: [{ source: gateway, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 6 }]
+  proxy: customers
+  basepath: /api
+  target: http://forge-customers.forge.internal
+# The create call is seen at both ends and goes through the gateway; the get, delete and points
+# calls have no Interface (one end only), so the estate pass falls back to method and path.
+- kind: Interface
+  schemaVersion: 2
+  id: if-c74e2fa3c8152a13
+  status: current
+  confidence: verified
+  evidence:
+    - { source: code, repo: forge-web, path: src/app/customers/customer.service.ts, line: 10 }
+    - { source: code, repo: forge-customers, path: src/main/java/forge/customers/CustomerController.java, line: 10 }
+  from: forge-web
+  to: forge-customers
+  via: gateway
+  route: forge-gateway.customers
+  method: POST
+  normalizedPath: /api/customers
+  sync: sync
+- kind: DataStore
+  schemaVersion: 2
+  id: forge-customers-db
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/resources/schema.sql, line: 1 }]
+  storeType: relational
+  ownerComponent: forge-customers
+- kind: Table
+  schemaVersion: 2
+  id: forge-customers-db.customers
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/resources/schema.sql, line: 1 }]
+  dataStore: forge-customers-db
+  name: customers
+  tableKind: table
+  ownerComponent: forge-customers
+- kind: Column
+  schemaVersion: 2
+  id: forge-customers-db.customers.id
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/resources/schema.sql, line: 2 }]
+  table: forge-customers-db.customers
+  name: id
+  type: VARCHAR(36)
+- kind: Column
+  schemaVersion: 2
+  id: forge-customers-db.customers.full_name
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/resources/schema.sql, line: 3 }]
+  table: forge-customers-db.customers
+  name: full_name
+  type: VARCHAR(120)
+- kind: Column
+  schemaVersion: 2
+  id: forge-customers-db.customers.email_address
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/resources/schema.sql, line: 4 }]
+  table: forge-customers-db.customers
+  name: email_address
+  type: VARCHAR(200)
