@@ -81,6 +81,8 @@ const patternsScan: typeof import("./knowledge-commands.js").patternsScan = (...
   loadKnowledgeCommands().then((m) => m.patternsScan(...a));
 const questionsCommand: typeof import("./knowledge-commands.js").questionsCommand = (...a) =>
   loadKnowledgeCommands().then((m) => m.questionsCommand(...a));
+const questionsFiles: typeof import("./question-commands.js").questionsFiles = (...a) =>
+  import("./question-commands.js").then((m) => m.questionsFiles(...a));
 const sourcesAdd: typeof import("./knowledge-commands.js").sourcesAdd = (...a) =>
   loadKnowledgeCommands().then((m) => m.sourcesAdd(...a));
 const sourcesSync: typeof import("./knowledge-commands.js").sourcesSync = (...a) =>
@@ -379,6 +381,9 @@ Usage:
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
   atticus questions [--json]           Knowledge gaps and the owner questions that close them
+  atticus questions list [--state open] [--json]   The questions in questions/ a step raised for a person
+  atticus questions answer <id> --option <n> | --text "..."   Write the answer to the file; prints the rerun
+          [--scope repo|repo-type] [--type <repo type>] [--by who]
   atticus intake add <files...>        Drop documents, specs and diagrams into inputs/inbox for intake
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
@@ -1957,6 +1962,8 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
   if (group === "coverage") return coverageCommand(root, io, { json: values.json === true });
   if (group === "domain" && command === "profile")
     return domainProfileCommand(root, arg, str(values.out) ? { out: str(values.out)! } : {}, io);
+  if (group === "questions" && (command === "list" || command === "answer"))
+    return questionsFiles(root, argv, io);
   if (group === "questions") return questionsCommand(root, io, { json: values.json === true });
   if (group === "reconcile")
     return reconcileCommand(root, positionals.slice(1), { json: values.json === true }, io);

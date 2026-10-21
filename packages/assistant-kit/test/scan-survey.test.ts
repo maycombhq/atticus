@@ -74,3 +74,104 @@ describe("atticus scan survey (ADR 0075)", () => {
     expect(empty.settings).toMatchObject({ exclude: [], prefixes: [] });
   });
 });
+
+const QUESTIONS = [
+  "schemaVersion: 1",
+  "repo: forge-notes",
+  "questions:",
+  "  - question: Is docs/ a generated playground or part of the product?",
+  "    options:",
+  "      - { label: Generated, means: nobody edits it, changes: the scan leaves docs/ out }",
+  "      - { label: Product, means: it ships, changes: the scan reads docs/ }",
+  '    evidence: ["docs/playground.js:1"]',
+  "    scope: repo",
+].join("\n");
+
+describe("questions the survey raises when it isn't sure (ADR 0078)", () => {
+  it("checks every evidence line exists and returns the questions with the settings", async () => {
+    const ok = await checkSurvey(QUESTIONS, repo(), "forge-notes");
+    expect(ok.problems).toEqual([]);
+    expect(ok.settings).toMatchObject({ exclude: [], prefixes: [] });
+    expect(ok.questions).toHaveLength(1);
+    expect(ok.questions?.[0]).toMatchObject({
+      question: "Is docs/ a generated playground or part of the product?",
+      evidence: ["docs/playground.js:1"],
+      scope: "repo",
+    });
+    const bad = QUESTIONS.replace(
+      '["docs/playground.js:1"]',
+      '["docs/playground.js:400", "docs/gone.js:1"]',
+    );
+    expect((await checkSurvey(bad, repo(), "forge-notes")).problems).toEqual([
+      "questions.0.evidence.0: docs/playground.js has fewer than 400 lines",
+      "questions.0.evidence.1: docs/gone.js isn't in the repo",
+    ]);
+    expect(
+      (
+        await checkSurvey(
+          QUESTIONS.replace("    scope: repo", "    scope: everywhere"),
+          repo(),
+          "forge-notes",
+        )
+      ).problems[0],
+    ).toMatch(/^questions\.0\.scope/);
+  });
+
+  it("puts the answers people gave, and the questions still open, in the rerun's prompt", async () => {
+    const prompts: string[] = [];
+    const runtime = new MockRuntime(
+      (req: AiRequest) => {
+        prompts.push(req.pack.prompt);
+        return "schemaVersion: 1\nrepo: forge-notes\n";
+      },
+      { now: () => NOW },
+    );
+    const asked = {
+      schemaVersion: 1 as const,
+      askedBy: {
+        step: "scan-survey",
+        command: "atticus scan survey forge-notes",
+        at: NOW.toISOString(),
+      },
+      repo: "forge-notes",
+      options: [
+        { label: "Generated", means: "nobody edits it", changes: "the scan leaves docs/ out" },
+        { label: "Product", means: "it ships", changes: "the scan reads docs/" },
+      ],
+      evidence: ["docs/playground.js:1"],
+      scope: { level: "repo" as const, id: "forge-notes" },
+      rerun: "atticus scan survey forge-notes --force",
+    };
+    const r = await surveyRepo(repo(), {
+      repoId: "forge-notes",
+      runtime,
+      now: NOW,
+      questions: [
+        {
+          ...asked,
+          id: "q-aaaaaaaaaaaa",
+          question: "Is docs/ a generated playground?",
+          state: "answered",
+          answer: {
+            option: 1,
+            by: "priya.nair",
+            at: NOW.toISOString(),
+            scope: { level: "repo", id: "forge-notes" },
+          },
+        },
+        {
+          ...asked,
+          id: "q-bbbbbbbbbbbb",
+          question: "Is /notes-api the only prefix?",
+          state: "open",
+        },
+      ],
+    });
+    expect(r.status).toBe("drafted");
+    expect(r.runId).toBeDefined();
+    expect(prompts[0]).toContain("Is docs/ a generated playground?");
+    expect(prompts[0]).toContain("Answer (priya.nair): Generated");
+    expect(prompts[0]).toContain("Is /notes-api the only prefix?");
+    expect(prompts[0]).toMatch(/don't ask (it|them) again/i);
+  });
+});

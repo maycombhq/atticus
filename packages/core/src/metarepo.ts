@@ -60,6 +60,16 @@ export function proposalsDirOf(root: string): string {
   return join(root, ...proposalsRelOf(root).split("/"));
 }
 
+/** Where questions to people live (ADR 0078), relative to the root: `questions`, or `.atticus/questions` when adopted. */
+export function questionsRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/questions" : "questions";
+}
+
+/** The questions folder (ADR 0078). */
+export function questionsDirOf(root: string): string {
+  return join(root, ...questionsRelOf(root).split("/"));
+}
+
 // Change folders resolve through the layout on every call, so the parsed file is kept until
 // sources.yaml changes (size or time).
 const layouts = new Map<string, { key: string; layout: { catalog: string; openspec: string } }>();

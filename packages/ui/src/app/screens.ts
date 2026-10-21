@@ -1,4 +1,6 @@
-/** The 27 screens of the design canvas, in its menu groups. `built` marks the ones done so far. */
+import { COPY } from "../copy.js";
+
+/** The 27 screens of the design canvas and the Questions page (ADR 0078), in the menu groups. */
 
 export interface ScreenDef {
   id: string;
@@ -8,6 +10,7 @@ export interface ScreenDef {
 
 export const SCREENS: ScreenDef[] = [
   { id: "home", label: "Command center", group: "Know" },
+  { id: "questions", label: COPY.questions.title, group: "Know" },
   { id: "explore", label: "Knowledge explorer", group: "Know" },
   { id: "map", label: "Ecosystem map", group: "Know" },
   { id: "impact", label: "Impact explorer", group: "Know" },
