@@ -40,7 +40,12 @@ Usage:
   atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
           [--json]
   atticus sources add <type> <location> Print the sources.yaml entry for a wiki (markdown-folder, ado-wiki, ...)
-  atticus sources sync [--json]        Read the wikis: pages, stale pages, conflicts with code, document-only facts
+  atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
+  atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
+  atticus knowledge scan [--source s] [--mode m] [--resume run]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked
+  atticus knowledge list [--tag t] [--kind k] [--json]  The knowledge items, by tag and kind
+  atticus knowledge ask "<question>" [--mode m] [--resume run]  An answer from the knowledge items only, citing them
+  atticus bench knowledge [--mode m] [--resume run]  Scan the bench's invented wiki, ask its questions, and score both
   atticus sources refresh [--json]     Fetch every absorbed source again and show what changed
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown

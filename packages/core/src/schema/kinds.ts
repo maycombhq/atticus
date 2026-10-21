@@ -351,11 +351,55 @@ export const GlossaryTerm = record("GlossaryTerm", {
   owner: z.string().optional(),
 });
 
+/**
+ * Where a knowledge item was read (ADR 0083): the source, the page inside its dated snapshot,
+ * the heading it sits under and the exact words. The knowledge scan's check confirms the words
+ * are on that page, under that heading, in that snapshot.
+ */
+export const KnowledgeQuote = z.strictObject({
+  /** The source id in sources.yaml. */
+  source: str(),
+  /** The page's path inside the source, "/"-separated. */
+  page: str(),
+  /** The heading the words sit under. */
+  section: str(),
+  /** The exact words. */
+  text: str(),
+  /** The snapshot date the words were read from. */
+  snapshot: IsoDate,
+  /** The 1-based line of the page the words start on. */
+  line: z.number().int().positive().optional(),
+});
+
+/** Knowledge fields shared by the kinds a knowledge scan writes (ADR 0083). */
+const knowledge = {
+  /** When the item applies, in the page's words or close to them. */
+  appliesWhen: z.string().optional(),
+  /** The team that owns or handles it. */
+  handledBy: z.string().optional(),
+  /** The framework it is about (a source tag), when it is about one. */
+  framework: z.string().optional(),
+  /** The source's tags, copied when the item was read, so items filter by tag. */
+  tags: list(str()),
+  quote: KnowledgeQuote.optional(),
+  /** The same item stated on other pages. */
+  alsoOn: list(KnowledgeQuote),
+};
+
+/**
+ * An integration pattern or a standard. A pattern from the org pack has a code and an
+ * interaction; one read from a wiki (ADR 0083) has applies-when, rules and its quote, and a
+ * standard (logging, audit, security, data handling, how a framework's service is built) has
+ * no interaction.
+ */
 export const Pattern = record("Pattern", {
   code: str(),
   name: str(),
-  definition: str(),
-  interaction: z.enum(["sync", "async", "data-access"]),
+  definition: z.string().optional(),
+  interaction: z.enum(["sync", "async", "data-access"]).optional(),
+  /** integration-pattern (the default when left out) or standard. */
+  patternKind: z.enum(["integration-pattern", "standard"]).optional(),
+  rules: list(str()),
   route: z.string().optional(),
   targetType: z.string().optional(),
   controls: list(str()),
@@ -366,12 +410,18 @@ export const Pattern = record("Pattern", {
   sourcePage: z.string().optional(),
   version: z.string().optional(),
   patternStatus: z.enum(["confirmed", "to-review", "deprecated"]),
+  ...knowledge,
 });
 
+/**
+ * A decision. One a person records has a reason, a decider and a date. One read from a wiki
+ * (ADR 0083) is a mandate, a ban or a retirement (`stance`), or a constraint such as a change
+ * freeze, with its quote; the page may state no reason or decider.
+ */
 export const Decision = record("Decision", {
   title: str(),
   decision: str(),
-  reason: str(),
+  reason: z.string().optional(),
   links: z
     .strictObject({
       changes: list(str()),
@@ -379,8 +429,14 @@ export const Decision = record("Decision", {
       systems: list(Ref),
     })
     .default({ changes: [], interfaces: [], systems: [] }),
-  decidedBy: str(),
-  date: IsoDate,
+  decidedBy: z.string().optional(),
+  date: IsoDate.optional(),
+  /** decision (the default when left out) or constraint. */
+  decisionKind: z.enum(["decision", "constraint"]).optional(),
+  stance: z.enum(["mandated", "banned", "retiring"]).optional(),
+  /** Dates the decision names, e.g. { switched-off: 2027-03-31 }. */
+  dates: z.record(z.string(), IsoDate).default({}),
+  ...knowledge,
 });
 
 export const SourceDocument = record("SourceDocument", {
@@ -440,6 +496,31 @@ export const OwnerQuestion = record("OwnerQuestion", {
   channel: z.enum(["ado", "teams", "email"]),
   questionState: z.enum(["sent", "answered", "overdue"]),
   answer: z.string().optional(),
+});
+
+/**
+ * A type of process or request a change can trigger (ADR 0083): a change task, a service
+ * request (a firewall rule, a certificate, a queue, database access, a DNS entry, a service
+ * account), an approval or a board. Read from the organisation's own pages, with when it
+ * applies, the lead time, who handles it, the catalogue item and the inputs it needs. A
+ * ProcessArtifact is one instance of it, suggested or raised for a change.
+ */
+export const ProcessDefinition = record("ProcessDefinition", {
+  title: str(),
+  processKind: z.enum(["process", "request"]),
+  appliesWhen: str(),
+  /** As the page states it, e.g. "10 working days". */
+  leadTime: z.string().optional(),
+  handledBy: z.string().optional(),
+  /** The form or catalogue item a person raises. */
+  catalogueItem: z.string().optional(),
+  inputs: list(str()),
+  steps: list(str()),
+  notes: z.string().optional(),
+  framework: z.string().optional(),
+  tags: list(str()),
+  quote: KnowledgeQuote,
+  alsoOn: list(KnowledgeQuote),
 });
 
 export const ProcessArtifact = record("ProcessArtifact", {
@@ -649,6 +730,7 @@ export const RECORD_SCHEMAS = {
   Initiative,
   Commitment,
   OwnerQuestion,
+  ProcessDefinition,
   ProcessArtifact,
   Capability,
   Flow,
@@ -658,3 +740,36 @@ export const RECORD_SCHEMAS = {
 
 export type RecordKind = keyof typeof RECORD_SCHEMAS;
 export const RECORD_KINDS = Object.keys(RECORD_SCHEMAS) as RecordKind[];
+
+/**
+ * The six kinds of knowledge item a knowledge scan extracts (ADR 0083), and the C1 kind each
+ * is stored as: pattern and standard are Patterns, process and request ProcessDefinitions,
+ * decision and constraint Decisions.
+ */
+export const KNOWLEDGE_KINDS = [
+  "pattern",
+  "standard",
+  "process",
+  "request",
+  "decision",
+  "constraint",
+] as const;
+export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number];
+
+export const KNOWLEDGE_RECORD_KIND = {
+  pattern: "Pattern",
+  standard: "Pattern",
+  process: "ProcessDefinition",
+  request: "ProcessDefinition",
+  decision: "Decision",
+  constraint: "Decision",
+} as const satisfies Record<KnowledgeKind, RecordKind>;
+
+/** The knowledge kind of a record, or undefined for a record that isn't a knowledge kind. */
+export function knowledgeKindOf(r: { kind: string }): KnowledgeKind | undefined {
+  const x = r as Record<string, unknown>;
+  if (r.kind === "Pattern") return x.patternKind === "standard" ? "standard" : "pattern";
+  if (r.kind === "ProcessDefinition") return x.processKind === "request" ? "request" : "process";
+  if (r.kind === "Decision") return x.decisionKind === "constraint" ? "constraint" : "decision";
+  return undefined;
+}

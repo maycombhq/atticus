@@ -142,6 +142,8 @@ export interface KnowledgePage {
   version?: string;
   /** sha-256 of the page text. */
   hash: string;
+  /** The page text as read: a sync copies it to the dated snapshot (ADR 0083). */
+  text?: string;
   /** Systems the page mentions, resolved like diagram names. */
   systems: string[];
   /** The system the page is about, from its title (or front matter `system`). */
@@ -291,6 +293,7 @@ export function readPage(i: ReadPageInput): KnowledgePage {
     classification: fmStr("classification") ?? i.defaultClassification ?? "internal",
     ...(i.version ? { version: i.version } : fmStr("version") ? { version: fmStr("version") } : {}),
     hash: createHash("sha256").update(i.content).digest("hex"),
+    text: i.content,
     systems,
     ...(subject ? { subject } : {}),
     freshness: date ? "fresh" : "unknown",

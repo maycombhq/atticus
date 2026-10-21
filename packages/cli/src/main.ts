@@ -223,6 +223,9 @@ const benchSurvey: typeof import("./bench-commands.js").benchSurvey = (...a) =>
 const benchVerify: typeof import("./bench-commands.js").benchVerify = (...a) =>
   loadBenchCommands().then((m) => m.benchVerify(...a));
 const loadScanVerifyCommands = () => import("./scan-verify-commands.js");
+// ADR 0083: sources tag, knowledge scan|list|ask, bench knowledge.
+const knowledgeCli: typeof import("./knowledge-scan-commands.js").knowledgeCli = (...a) =>
+  import("./knowledge-scan-commands.js").then((m) => m.knowledgeCli(...a));
 const defencesScan: typeof import("./eval-commands.js").defencesScan = (...a) =>
   loadEvalCommands().then((m) => m.defencesScan(...a));
 const evalReport: typeof import("./eval-commands.js").evalReport = (...a) =>
@@ -391,7 +394,12 @@ Usage:
   atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
           [--json]
   atticus sources add <type> <location> Print the sources.yaml entry for a wiki (markdown-folder, ado-wiki, ...)
-  atticus sources sync [--json]        Read the wikis: pages, stale pages, conflicts with code, document-only facts
+  atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
+  atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
+  atticus knowledge scan [--source s] [--mode m] [--resume run]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked
+  atticus knowledge list [--tag t] [--kind k] [--json]  The knowledge items, by tag and kind
+  atticus knowledge ask "<question>" [--mode m] [--resume run]  An answer from the knowledge items only, citing them
+  atticus bench knowledge [--mode m] [--resume run]  Scan the bench's invented wiki, ask its questions, and score both
   atticus sources refresh [--json]     Fetch every absorbed source again and show what changed
   atticus patterns scan [--json]       Find integration patterns in the wikis and compare them with the org pack
   atticus coverage [--json]            What the catalog knows per system and area: verified, document-only, unknown
@@ -714,6 +722,8 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       batch: { type: "string" },
       specs: { type: "boolean" },
       accept: { type: "boolean" },
+      tag: { type: "string" },
+      source: { type: "string" },
     },
     strict: false,
   });
@@ -2075,6 +2085,14 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       return dialectGrade(arg, rest[0], io);
     }
   }
+  if (
+    (group === "sources" && command === "tag") ||
+    group === "knowledge" ||
+    (group === "bench" && command === "knowledge")
+  ) {
+    const handled = await knowledgeCli(root, positionals, values, io);
+    if (handled !== undefined) return handled;
+  }
   if (group === "sources" && command === "add") {
     const [kind, location] = positionals.slice(2);
     if (!kind || !location) {
@@ -2088,7 +2106,10 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
   if (group === "sources" && command === "refresh")
     return sourcesRefreshCommand(root, { json }, io);
   if (group === "sources" && command === "sync")
-    return sourcesSync(root, io, { json: values.json === true });
+    return sourcesSync(root, io, {
+      json: values.json === true,
+      ...(str(values.source) ? { source: str(values.source)! } : {}),
+    });
   if (group === "patterns" && command === "scan")
     return patternsScan(root, io, { json: values.json === true });
   if (group === "coverage") return coverageCommand(root, io, { json: values.json === true });

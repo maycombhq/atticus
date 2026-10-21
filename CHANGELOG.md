@@ -28,6 +28,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - Results go to `proposals/scan/<repo>.yaml` (settings entries to accept, merged across runs, and the confirmed records pinned to their lines), `questions/`, and `proposals/scan/<repo>.findings.md` (what a reader must read differently, in plain words). The catalog isn't changed. `atticus scan verify <repo> --accept` checks the settings entries again and merges them into `org-pack/scan/<repo>.yaml`.
 - `atticus bench verify` runs it on the bench repos and keeps the proposals in the bench cache; `atticus bench run` then says how many of the flagged misses and wrong records the reference agrees with.
 
+### Knowledge sources tagged, snapshot, scanned and queryable
+
+- Sources in `sources.yaml` carry tags (ADR 0083, C6): `tags: { kinds, frameworks }` beside the existing `owner`. `atticus sources tag <source> --kind k,k --framework f,f --owner o` writes them.
+- `atticus sources sync [--source s]` also copies each source to a dated snapshot, `knowledge/snapshots/<source>/<date>/`. The knowledge scan reads only snapshots.
+- `atticus knowledge scan [--source s] [--mode m]`: your assistant reads the snapshots, guided by the tags, into patterns, standards, processes, requests, decisions and constraints. Every quote is checked word for word on its page and under its heading; what fails is handed back. Conflicts between pages and superseded pages are flagged; text that tries to instruct AI tools is cut out, flagged and never followed. Items are written to `knowledge/items/`, flags to `knowledge/scan.yaml`.
+- C1 (ADR 0083): a new `ProcessDefinition` kind; `Pattern` gains `patternKind` (pattern or standard), `rules` and the knowledge fields (applies-when, handled by, framework, tags, quote); `Decision` gains `decisionKind`, `stance` (mandated, banned, retiring), `dates` and the same fields. Existing files read unchanged.
+- `atticus knowledge list [--tag t] [--kind k]` and `atticus knowledge ask "<question>"`: answers come from the items only and cite them; an answer with no valid cite is refused.
+- `atticus bench knowledge [--mode m]` scans the bench's invented wiki, asks its eight questions and scores items, quotes, conflicts, the superseded page, the injection and the answers' citations against `bench/knowledge/reference.yaml`.
+
 ### Repo types, matched by fingerprint
 
 - A new org-pack folder, `repo-types/<id>/type.yaml` (ADR 0077, C6). It holds what a kind of repo looks like (build files, dependencies, framework markers and folders, each with a weight), the scan settings every repo of the kind gets (written as patterns), and the skills for reading it.

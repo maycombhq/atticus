@@ -303,6 +303,26 @@ const RelPath = z
     "a relative path inside the metarepo",
   );
 
+/** Suggested source kinds (ADR 0083). Tags are free text: an organisation adds its own. */
+export const SOURCE_KIND_SUGGESTIONS = [
+  "enterprise-architecture",
+  "integration-patterns",
+  "platform-runbook",
+  "security-standard",
+  "change-process",
+  "framework",
+] as const;
+
+/**
+ * Tags on a knowledge source (ADR 0083): the kinds of knowledge it holds and the frameworks it
+ * is about. The source's owner is its `owner` field. Free text, lowercase slugs.
+ */
+export const SourceTags = z.strictObject({
+  kinds: z.array(RecordId).default([]),
+  frameworks: z.array(RecordId).default([]),
+});
+export type SourceTags = z.infer<typeof SourceTags>;
+
 export const Sources = z
   .strictObject({
     schemaVersion: V,
@@ -325,6 +345,8 @@ export const Sources = z
           location: z.string().min(1),
           spaces: z.array(z.string().min(1)).default([]),
           owner: z.string().optional(),
+          /** What the source is about (ADR 0083), to guide the knowledge scan and filter items. */
+          tags: SourceTags.optional(),
         }),
       )
       .default([]),

@@ -443,6 +443,7 @@
                 "Initiative",
                 "Commitment",
                 "OwnerQuestion",
+                "ProcessDefinition",
                 "ProcessArtifact",
                 "Capability",
                 "Flow",
@@ -570,6 +571,7 @@
                 "Initiative",
                 "Commitment",
                 "OwnerQuestion",
+                "ProcessDefinition",
                 "ProcessArtifact",
                 "Capability",
                 "Flow",
@@ -9441,8 +9443,7 @@
             "minLength": 1
           },
           "definition": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "interaction": {
             "type": "string",
@@ -9451,6 +9452,21 @@
               "async",
               "data-access"
             ]
+          },
+          "patternKind": {
+            "type": "string",
+            "enum": [
+              "integration-pattern",
+              "standard"
+            ]
+          },
+          "rules": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           },
           "route": {
             "type": "string"
@@ -9506,6 +9522,105 @@
               "to-review",
               "deprecated"
             ]
+          },
+          "appliesWhen": {
+            "type": "string"
+          },
+          "handledBy": {
+            "type": "string"
+          },
+          "framework": {
+            "type": "string"
+          },
+          "tags": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "quote": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "page": {
+                "type": "string",
+                "minLength": 1
+              },
+              "section": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "snapshot": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              "line": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "source",
+              "page",
+              "section",
+              "text",
+              "snapshot"
+            ],
+            "additionalProperties": false
+          },
+          "alsoOn": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "page": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "section": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "snapshot": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "source",
+                "page",
+                "section",
+                "text",
+                "snapshot"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -9517,13 +9632,14 @@
           "evidence",
           "code",
           "name",
-          "definition",
-          "interaction",
+          "rules",
           "controls",
           "technology",
           "detection",
           "checklistItems",
-          "patternStatus"
+          "patternStatus",
+          "tags",
+          "alsoOn"
         ],
         "additionalProperties": false
       },
@@ -9654,8 +9770,7 @@
             "minLength": 1
           },
           "reason": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "links": {
             "default": {
@@ -9702,13 +9817,138 @@
             "additionalProperties": false
           },
           "decidedBy": {
-            "type": "string",
-            "minLength": 1
+            "type": "string"
           },
           "date": {
             "type": "string",
             "format": "date",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "decisionKind": {
+            "type": "string",
+            "enum": [
+              "decision",
+              "constraint"
+            ]
+          },
+          "stance": {
+            "type": "string",
+            "enum": [
+              "mandated",
+              "banned",
+              "retiring"
+            ]
+          },
+          "dates": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          "appliesWhen": {
+            "type": "string"
+          },
+          "handledBy": {
+            "type": "string"
+          },
+          "framework": {
+            "type": "string"
+          },
+          "tags": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "quote": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "page": {
+                "type": "string",
+                "minLength": 1
+              },
+              "section": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "snapshot": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              "line": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "source",
+              "page",
+              "section",
+              "text",
+              "snapshot"
+            ],
+            "additionalProperties": false
+          },
+          "alsoOn": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "page": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "section": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "snapshot": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "source",
+                "page",
+                "section",
+                "text",
+                "snapshot"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -9720,10 +9960,10 @@
           "evidence",
           "title",
           "decision",
-          "reason",
           "links",
-          "decidedBy",
-          "date"
+          "dates",
+          "tags",
+          "alsoOn"
         ],
         "additionalProperties": false
       },
@@ -10608,6 +10848,279 @@
           "neededFact",
           "channel",
           "questionState"
+        ],
+        "additionalProperties": false
+      },
+      "ProcessDefinition": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "ProcessDefinition"
+          },
+          "schemaVersion": {
+            "anyOf": [
+              {
+                "type": "number",
+                "const": 1
+              },
+              {
+                "type": "number",
+                "const": 2
+              }
+            ]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "planned-new",
+              "planned-modify",
+              "planned-retire",
+              "retired"
+            ]
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "verified",
+              "inferred",
+              "asserted"
+            ]
+          },
+          "evidence": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "code",
+                    "config",
+                    "spec",
+                    "gateway",
+                    "event-config",
+                    "infrastructure",
+                    "pipeline",
+                    "migration",
+                    "diagram",
+                    "document",
+                    "export",
+                    "manual"
+                  ]
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{7,64}$"
+                },
+                "scannedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "extractor": {
+                  "type": "string"
+                },
+                "dialect": {
+                  "type": "string"
+                },
+                "side": {
+                  "type": "string",
+                  "enum": [
+                    "caller",
+                    "callee",
+                    "gateway",
+                    "definition",
+                    "document"
+                  ]
+                },
+                "by": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "processKind": {
+            "type": "string",
+            "enum": [
+              "process",
+              "request"
+            ]
+          },
+          "appliesWhen": {
+            "type": "string",
+            "minLength": 1
+          },
+          "leadTime": {
+            "type": "string"
+          },
+          "handledBy": {
+            "type": "string"
+          },
+          "catalogueItem": {
+            "type": "string"
+          },
+          "inputs": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "steps": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "framework": {
+            "type": "string"
+          },
+          "tags": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "quote": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "page": {
+                "type": "string",
+                "minLength": 1
+              },
+              "section": {
+                "type": "string",
+                "minLength": 1
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1
+              },
+              "snapshot": {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              "line": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "source",
+              "page",
+              "section",
+              "text",
+              "snapshot"
+            ],
+            "additionalProperties": false
+          },
+          "alsoOn": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "page": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "section": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "snapshot": {
+                  "type": "string",
+                  "format": "date",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "source",
+                "page",
+                "section",
+                "text",
+                "snapshot"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "schemaVersion",
+          "id",
+          "status",
+          "confidence",
+          "evidence",
+          "title",
+          "processKind",
+          "appliesWhen",
+          "inputs",
+          "steps",
+          "tags",
+          "quote",
+          "alsoOn"
         ],
         "additionalProperties": false
       },
@@ -12004,6 +12517,9 @@
             "$ref": "#/components/schemas/OwnerQuestion"
           },
           {
+            "$ref": "#/components/schemas/ProcessDefinition"
+          },
+          {
             "$ref": "#/components/schemas/ProcessArtifact"
           },
           {
@@ -12076,6 +12592,7 @@
               "Initiative",
               "Commitment",
               "OwnerQuestion",
+              "ProcessDefinition",
               "ProcessArtifact",
               "Capability",
               "Flow",
@@ -12144,6 +12661,7 @@
                     "Initiative",
                     "Commitment",
                     "OwnerQuestion",
+                    "ProcessDefinition",
                     "ProcessArtifact",
                     "Capability",
                     "Flow",
@@ -12685,6 +13203,7 @@
                     "Initiative",
                     "Commitment",
                     "OwnerQuestion",
+                    "ProcessDefinition",
                     "ProcessArtifact",
                     "Capability",
                     "Flow",
