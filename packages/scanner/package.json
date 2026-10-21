@@ -28,11 +28,11 @@
     "@maycombhq/ingestors": "workspace:*",
     "@maycombhq/intake": "workspace:*",
     "@maycombhq/sdk": "workspace:*",
-    "@maycombhq/workspace": "workspace:*"
+    "@maycombhq/workspace": "workspace:*",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@maycombhq/index": "workspace:*",
-    "@maycombhq/synth": "workspace:*",
-    "yaml": "^2.9.1"
+    "@maycombhq/synth": "workspace:*"
   }
 }

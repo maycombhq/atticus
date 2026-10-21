@@ -181,13 +181,16 @@ export async function raiseQuestions(
 }
 
 /**
- * The skill file of a repo type, relative to the root, where a repo-type answer goes.
- * TODO(lead, repo types): repo types (plan Phase 2a, I10) are being added in parallel; point
- * this at the type's skill once `repo-types/<id>/` lands. Plan section 5 puts the skills in the
- * existing process/skills/<id>/SKILL.md format, so that is the path used until then.
+ * The skill file of a repo type, relative to the root, where a repo-type answer goes: the
+ * first skill the type lists (repo-types/<id>/type.yaml, ADR 0077), else process/skills/<id>/.
  */
-export function repoTypeSkillRel(root: string, type: string): string {
-  return `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/process/skills/${type}/SKILL.md`;
+export async function repoTypeSkillRel(root: string, type: string): Promise<string> {
+  const pack = isAdopted(root) ? ".atticus/org-pack" : "org-pack";
+  const listed = await readFile(join(root, pack, "repo-types", type, "type.yaml"), "utf8")
+    .then((t) => (parse(t) as { skills?: unknown })?.skills)
+    .catch(() => undefined);
+  const first = Array.isArray(listed) && typeof listed[0] === "string" ? listed[0] : undefined;
+  return `${pack}/${first ?? `process/skills/${type}/SKILL.md`}`;
 }
 
 /** The answer in words: the option's label or the person's own text. */
@@ -270,7 +273,7 @@ export async function answerQuestion(
       );
     scopeId = t;
   }
-  const skill = level === "repo-type" ? repoTypeSkillRel(root, scopeId) : undefined;
+  const skill = level === "repo-type" ? await repoTypeSkillRel(root, scopeId) : undefined;
   const answered = Question.parse({
     ...q,
     state: "answered",

@@ -1,0 +1,7 @@
+# The repo-types fixture's org pack (ADR 0077). Contract C6. Its repo types are matched
+# against fixtures/forge/repos and fixtures/scan-settings/repos.
+schemaVersion: 1
+name: forge-repo-types
+version: 0.1.0
+owner: team-platform
+reviewWindowDays: 90

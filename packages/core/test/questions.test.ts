@@ -194,7 +194,7 @@ describe("questions as files (ADR 0078)", () => {
       asked,
     );
     const id = raised[0]!.id;
-    expect(repoTypeSkillRel(root, "spring-service")).toBe(
+    expect(await repoTypeSkillRel(root, "spring-service")).toBe(
       "org-pack/process/skills/spring-service/SKILL.md",
     );
     // No skill file yet: the path is recorded in the answer and nothing else is written.
@@ -229,10 +229,22 @@ describe("questions as files (ADR 0078)", () => {
     expect((await readFile(skill, "utf8")).split(`question ${id}`).length).toBe(2);
   });
 
+  it("sends a repo-type answer to the first skill the repo type lists (ADR 0077)", async () => {
+    const root = await metarepo();
+    await mkdir(join(root, "org-pack", "repo-types", "forge-spring-service"), { recursive: true });
+    await writeFile(
+      join(root, "org-pack", "repo-types", "forge-spring-service", "type.yaml"),
+      "skills: [process/skills/forge-spring-reading/SKILL.md]\n",
+    );
+    expect(await repoTypeSkillRel(root, "forge-spring-service")).toBe(
+      "org-pack/process/skills/forge-spring-reading/SKILL.md",
+    );
+  });
+
   it("keeps questions in .atticus/questions in a repo adopted in place", async () => {
     const root = await metarepo(true);
     expect(questionsRelOf(root)).toBe(".atticus/questions");
-    expect(repoTypeSkillRel(root, "x")).toBe(".atticus/org-pack/process/skills/x/SKILL.md");
+    expect(await repoTypeSkillRel(root, "x")).toBe(".atticus/org-pack/process/skills/x/SKILL.md");
   });
 
   it("publishes the question file's JSON Schema with the org pack's", () => {

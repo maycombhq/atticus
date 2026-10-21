@@ -3,6 +3,7 @@ import { basename, join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
+import { RepoType } from "./schema/repo-type.js";
 import type { z } from "zod";
 import {
   DEFAULT_CHANGE_TYPES,
@@ -55,6 +56,8 @@ export interface OrgPack {
   frameworks: FrameworkModel[];
   /** Scan settings per repo (ADR 0075), from scan/<repo>.yaml. */
   scanSettings: ScanSettings[];
+  /** Repo types (ADR 0077), from repo-types/<id>/type.yaml. */
+  repoTypes: RepoType[];
   checklists: ChecklistPack[];
   skills: (z.infer<typeof SkillMeta> & { body: string })[];
   serviceRequests: z.infer<typeof ServiceRequestTemplate>[];
@@ -238,6 +241,41 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     skills.push({ ...r.data, body: m[2]! });
   }
 
+  // One folder per type, named after it; every skill it names must be a loaded skill.
+  const repoTypes: RepoType[] = [];
+  const skillFiles = new Set(skills.map((s) => `process/skills/${s.id}/SKILL.md`));
+  let typeDirs: string[] = [];
+  try {
+    typeDirs = (await readdir(join(dir, "repo-types"), { withFileTypes: true }))
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name)
+      .sort();
+  } catch {
+    // no repo types yet
+  }
+  for (const name of typeDirs) {
+    const f = join(dir, "repo-types", name, "type.yaml");
+    if (!(await exists(f))) {
+      problems.push({ file: `repo-types/${name}`, path: "", message: "has no type.yaml" });
+      continue;
+    }
+    const v = await load(f, RepoType);
+    if (!v) continue;
+    if (v.id !== name) {
+      problems.push({
+        file: rel(f),
+        path: "id",
+        message: `is ${v.id}; put it in repo-types/${v.id}/type.yaml`,
+      });
+      continue;
+    }
+    v.skills.forEach((s, i) => {
+      if (!skillFiles.has(s))
+        problems.push({ file: rel(f), path: `skills.${i}`, message: `no skill at ${s}` });
+    });
+    repoTypes.push(v);
+  }
+
   // ---------- cross-file checks
   const roleIds = new Set<string>([...BUILT_IN_ROLES, ...roles.custom.map((c) => c.id)]);
   const typeIds = new Set(changeTypes.types.map((t) => t.id));
@@ -245,7 +283,10 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   const packNames = new Set(checklists.map((c) => c.name));
   const ruleIds = new Set(checklists.flatMap((c) => c.rules.map((r) => r.id)));
   const dialectNames = new Set(dialects.map((d) => d.name));
-  const repoTypes = new Set(profiles.flatMap((p) => p.repos?.repos.map((r) => r.type) ?? []));
+  const knownTypes = new Set([
+    ...profiles.flatMap((p) => p.repos?.repos.map((r) => r.type) ?? []),
+    ...repoTypes.map((t) => t.id),
+  ]);
 
   changeTypes.types.forEach((t) => {
     for (const [phase, rs] of Object.entries(t.approvals)) {
@@ -368,7 +409,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   }
   for (const s of skills) {
     for (const t of s.appliesTo.repoTypes) {
-      if (repoTypes.size > 0 && !repoTypes.has(t))
+      if (knownTypes.size > 0 && !knownTypes.has(t))
         problems.push({
           file: `process/skills/${s.id}/SKILL.md`,
           path: "appliesTo.repoTypes",
@@ -390,6 +431,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     dialects,
     frameworks,
     scanSettings,
+    repoTypes,
     checklists,
     skills,
     serviceRequests,

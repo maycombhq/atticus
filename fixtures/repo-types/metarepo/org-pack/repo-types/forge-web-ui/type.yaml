@@ -1,0 +1,30 @@
+# A Forge browser app (ADR 0077). Contract C6.
+schemaVersion: 1
+id: forge-web-ui
+name: Forge web UI
+description: A Forge browser app built with npm on React, Angular or Vue, calling its back end over HTTP.
+owner: team-platform
+fingerprint:
+  - kind: build-file
+    globs: [package.json]
+    weight: 2
+    required: true
+  - kind: dependency
+    names: [react, react-dom, "@angular/core", vue]
+    in: [package.json]
+    weight: 4
+  - kind: marker
+    pattern: "\\bfetch\\(|from [\"'](react|@angular/core|vue)[\"']"
+    in: ["src/**/*.ts", "src/**/*.tsx", "src/**/*.js", "src/**/*.jsx"]
+    weight: 2
+  - kind: layout
+    globs: ["src/**/*.ts", "src/**/*.tsx", "src/**/*.js", "src/**/*.jsx"]
+    weight: 1
+  - kind: layout
+    globs: [index.html, "public/**", src/index.html]
+    weight: 1
+settings:
+  exclude:
+    - { path: "storybook-static/**", why: a built component gallery }
+skills:
+  - process/skills/read-forge-web-ui/SKILL.md
