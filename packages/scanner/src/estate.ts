@@ -1,5 +1,7 @@
 import {
+  DEFAULT_SPEC_TEMPLATE,
   normalizePath,
+  type SpecTemplate,
   type CatalogRecord,
   type EstateJoin,
   type EstateJoins,
@@ -8,7 +10,7 @@ import {
   type FlowRecord,
   type RecordOf,
 } from "@maycombhq/core";
-import { fieldKey, pathScore, repoComponents } from "./spec-check.js";
+import { familyMismatches, fieldKey, pathScore, repoComponents } from "./spec-check.js";
 
 /**
  * The estate pass (ADR 0085), deterministic: each call-out (or publish) of a repo's flows is
@@ -36,6 +38,11 @@ export interface JoinEstateInput {
    * CLI checks the clones it has).
    */
   cited?: (repo: string, path: string, line: number) => Promise<boolean>;
+  /**
+   * The spec template of each repo's spec, by repo id, for the family rule spec check applies
+   * (ADR 0088). A repo left out uses the default template.
+   */
+  templates?: Readonly<Record<string, SpecTemplate>>;
 }
 
 export interface JoinEstateResult {
@@ -90,10 +97,30 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
     }
     return best?.e;
   };
-  /** The flow that starts at an entry point: its trigger, or a member of its family. */
-  const flowAt = (endpoint: string) =>
-    flows.find((x) => x.flow.trigger.ref === endpoint) ??
-    flows.find((x) => x.flow.family.includes(endpoint));
+  /**
+   * The flow that starts at an entry point: the one whose own trigger it is, else one that
+   * stands for it in its family, where spec check finds that family member right (ADR 0088).
+   * When only wrong families stand for it, the reason is the first one's finding.
+   */
+  const templateOf = (repo: string) => o.templates?.[repo] ?? DEFAULT_SPEC_TEMPLATE;
+  const flowAt = (
+    endpoint: string,
+  ):
+    | { found: { repo: string; flow: FlowRecord } }
+    | { wrong: { repo: string; flow: FlowRecord; finding: string } }
+    | undefined => {
+    const own = flows.find((x) => x.flow.trigger.ref === endpoint);
+    if (own) return { found: own };
+    let wrong: { repo: string; flow: FlowRecord; finding: string } | undefined;
+    for (const x of flows.filter((y) => y.flow.family.includes(endpoint))) {
+      const bad = familyMismatches(x.flow, byId, templateOf(x.repo)).find(
+        (m) => m.member === endpoint,
+      );
+      if (!bad) return { found: x };
+      wrong ??= { ...x, finding: bad.message };
+    }
+    return wrong ? { wrong } : undefined;
+  };
 
   const joins: EstateJoin[] = [];
   const unmatched: EstateUnmatched[] = [];
@@ -170,9 +197,9 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
           continue;
         }
       }
-      const callee = flowAt(target.id);
+      const reached = flowAt(target.id);
       const ifaceId = iface ? { interface: iface.id } : {};
-      if (!callee) {
+      if (!reached) {
         miss({
           reason: "no-flow",
           trigger: target.id,
@@ -181,6 +208,17 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
         });
         continue;
       }
+      if ("wrong" in reached) {
+        const w = reached.wrong;
+        miss({
+          reason: "family-mismatch",
+          trigger: target.id,
+          ...ifaceId,
+          message: `${s.to.entry === target.id ? "The call" : s.to.entry} reaches ${target.id}, which only ${w.flow.id} stands for, in its family, and atticus spec check finds that wrong: ${w.finding}. Redraft it: atticus spec draft ${w.repo}`,
+        });
+        continue;
+      }
+      const callee = reached.found;
       const toEv = callee.flow.trigger.evidence[0];
       const ends = [
         (await cited(repo, s.evidence[0])) ? undefined : `${flow.id} step ${step}`,
@@ -218,8 +256,15 @@ export interface Crossing {
   receives: string[];
   /** The fields the callee's responses return (or, when it has none, the caller's step expects). */
   returns: string[];
-  /** Sent fields no step of the callee names. */
+  /** Sent fields no step of the callee names (an object mapped to fields isn't one). */
   unused: string[];
+  /**
+   * Objects the caller sends whose fields the callee's entry takes (ADR 0088): `owner` sent,
+   * firstName and lastName taken. A sent name is mapped when the callee names fields on it
+   * (`owner.firstName`), or when it is the only sent name the callee doesn't take and the
+   * entry takes fields the caller doesn't send.
+   */
+  objects: { sent: string; fields: string[] }[];
 }
 
 export interface EstateCall {
@@ -262,11 +307,30 @@ function crossing(caller: FlowStep, callee: FlowRecord): Crossing {
     .filter((s) => s.kind === "respond")
     .flatMap((s) => s.data?.returns ?? []);
   const named = new Set(callee.steps.flatMap(stepFields).map(fieldKey));
+  // Objects: a sent name the entry doesn't take, whose fields the entry does.
+  const taken = new Set(receives.map(fieldKey));
+  const sent = new Set(sends.map(fieldKey));
+  const loose = sends.filter((x) => !taken.has(fieldKey(x)));
+  const owner = (r: string) => {
+    const parts = r.split(".");
+    return parts.length > 1 ? fieldKey(parts[parts.length - 2]!) : undefined;
+  };
+  const objects: Crossing["objects"] = [];
+  for (const x of loose) {
+    const on = receives.filter((r) => owner(r) === fieldKey(x));
+    if (on.length) objects.push({ sent: x, fields: on });
+  }
+  if (objects.length === 0 && loose.length === 1) {
+    const fields = receives.filter((r) => !sent.has(fieldKey(r)) && owner(r) === undefined);
+    if (fields.length) objects.push({ sent: loose[0]!, fields });
+  }
+  const mapped = new Set(objects.map((m) => m.sent));
   return {
     sends,
     receives,
     returns: returned.length ? returned : (caller.data?.returns ?? []),
-    unused: sends.filter((f) => !named.has(fieldKey(f))),
+    unused: sends.filter((f) => !named.has(fieldKey(f)) && !mapped.has(f)),
+    objects,
   };
 }
 
@@ -368,19 +432,28 @@ export function fieldLineage(f: EstateFlow, field: string): Lineage {
       ...(ev ? { evidence: `${e!.repo ?? s.repo}:${ev}` } : {}),
     };
   };
-  const start = steps.findIndex((s) =>
-    (s.step.data?.sends ?? []).some((x) => fieldKey(x) === want),
+  // A step sends the field itself, or an object the crossing maps to it (ADR 0088).
+  const inObject = (s: EstateStep) =>
+    s.call?.crossing?.objects.find((m) => m.fields.some((x) => fieldKey(x) === want));
+  const start = steps.findIndex(
+    (s) => (s.step.data?.sends ?? []).some((x) => fieldKey(x) === want) || !!inObject(s),
   );
   if (start < 0) {
     out.breaks = { message: `No step of ${f.flow.id}, or of the flows it calls, sends ${field}.` };
     return out;
   }
   const s0 = steps[start]!;
+  const direct = (s0.step.data?.sends ?? []).find((x) => fieldKey(x) === want);
+  const obj = inObject(s0);
   out.links.push(
     link(
       s0,
       "sent",
-      s0.step.data!.sends!.find((x) => fieldKey(x) === want)!,
+      direct ??
+        `${obj!.sent}.${obj!.fields
+          .find((x) => fieldKey(x) === want)!
+          .split(".")
+          .pop()}`,
     ),
   );
   const tracked = new Set([want]);
@@ -388,8 +461,14 @@ export function fieldLineage(f: EstateFlow, field: string): Lineage {
   let last = s0;
   for (const s of steps.slice(start + 1)) {
     const d = s.step.data ?? {};
+    // A write maps fields to columns as its step says (data.from → data.to), else by name.
+    const mappedTo =
+      s.step.kind === "write" && s.step.store
+        ? d.to?.[d.from?.findIndex((x) => tracked.has(fieldKey(x))) ?? -1]
+        : undefined;
     const col =
-      s.step.kind === "write" && s.step.store?.columns.find((c) => tracked.has(fieldKey(c)));
+      s.step.kind === "write" &&
+      (mappedTo ?? s.step.store?.columns.find((c) => tracked.has(fieldKey(c))));
     if (col) {
       out.links.push(link(s, "stored", `${s.step.store!.table}.${col}`));
       out.stored = { table: s.step.store!.table, column: col };

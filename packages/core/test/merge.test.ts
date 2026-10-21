@@ -335,6 +335,40 @@ describe("mergeCatalog: hosts and gateways (ADR 0053)", () => {
     ]);
   });
 
+  it("tells two services on one host apart by the port a host names (ADR 0088)", () => {
+    const local = [
+      { id: "forge-bff", component: "bff", type: "spring-boot", hosts: [] },
+      // Any port of localhost, unless a host names the port.
+      { id: "forge-api", component: "api", type: "spring-boot", hosts: ["localhost"] },
+      { id: "forge-cards", component: "cards", type: "spring-boot", hosts: ["localhost:9967"] },
+    ];
+    const m = run(
+      [
+        call("bff", "POST http://localhost:9966/transfers"),
+        call("bff", "GET http://localhost:9967/cards/{id}"),
+        call("bff", "GET http://LOCALHOST/health"),
+      ],
+      local,
+    );
+    expect(ifs(m).sort()).toEqual([
+      "bff->api direct GET /health verified",
+      "bff->api direct POST /transfers verified",
+      "bff->cards direct GET /cards/{} verified",
+    ]);
+    // A host with a port takes only that port: :9966 is no repo's, so the call stays loose.
+    const only = run(
+      [call("bff", "POST http://localhost:9966/transfers")],
+      [local[0]!, { ...local[1]!, hosts: ["localhost:8080"] }, local[2]!],
+    );
+    expect(ifs(only)).toEqual([]);
+    // The scheme's port counts when a URL names none.
+    const dflt = run(
+      [call("bff", "GET https://api.forge.example/health")],
+      [local[0]!, { ...local[1]!, hosts: ["api.forge.example:443"] }],
+    );
+    expect(ifs(dflt)).toEqual(["bff->api direct GET /health verified"]);
+  });
+
   it("goes through a gateway only on a host declared for the gateway repo", () => {
     const m = run([
       call("bff", "POST https://gateway.forge.example/ledger/v1/transfers"),

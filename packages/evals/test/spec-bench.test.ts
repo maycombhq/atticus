@@ -65,7 +65,8 @@ describe("scoring drafted specs against reference flows (ADR 0079)", () => {
     const ref = parseReferenceFlows(readFileSync(join(SPECS, "reference.yaml"), "utf8"));
     const s = scoreSpecs(
       ref,
-      [{ repo: "forge-orders", flows: [placeOrder(), getOrder()] }],
+      // place-order without its family, so get-order is the one that stands for the cancel.
+      [{ repo: "forge-orders", flows: [{ ...placeOrder(), family: [] }, getOrder()] }],
       records(),
     );
     const [place, cancel] = s.flows;

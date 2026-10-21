@@ -66,8 +66,8 @@ describe("atticus spec draft and atticus spec check (ADR 0079)", () => {
     expect(await specDraft(root, repo, {}, { runtime, now: T1 }, d1.io)).toBe(0);
     expect(d1.out).toEqual([
       "Wrote 2 flows in specs/forge-orders/ (template default@1):",
-      "  forge-orders.get-order: A client reads an order, or cancels it (3 steps, 2 confirmed by the check, stands for 1 more)",
-      "  forge-orders.place-order: A client places an order (5 steps, 3 confirmed by the check)",
+      "  forge-orders.get-order: A client reads an order (3 steps, 2 confirmed by the check)",
+      "  forge-orders.place-order: A client places an order (5 steps, 3 confirmed by the check, stands for 1 more)",
       expect.stringMatching(/^1 question for a person, in questions\/:$/),
       expect.stringMatching(
         /^ {2}q-[0-9a-f]{12} Does cancelling an order also release the stock it reserved\?$/,

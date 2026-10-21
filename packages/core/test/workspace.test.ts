@@ -6,7 +6,9 @@ import {
   RepoManifest,
   changeBranch,
   handoffBranch,
+  hostMatches,
   parseBranch,
+  urlHostPort,
   taskBranch,
   toCanonicalYaml,
   workspaceJsonSchemas,
@@ -100,6 +102,38 @@ describe("repos.manifest.yaml (RepoManifest)", () => {
       RepoManifest.safeParse({ ...manifest, repos: [{ ...manifest.repos[0], colour: "red" }] })
         .success,
     ).toBe(false);
+  });
+
+  it("takes a host with a port, so two services on one host are told apart (ADR 0088)", () => {
+    const ok = (hosts: string[]) =>
+      RepoManifest.safeParse({ ...manifest, repos: [{ ...manifest.repos[0], hosts }] }).success;
+    expect(ok(["localhost", "localhost:9966", "pay-api-*.apps.bank.internal:8443"])).toBe(true);
+    for (const h of ["localhost:", "localhost:0", "localhost:65536", "localhost:99x", ":9966"])
+      expect(ok([h]), h).toBe(false);
+  });
+});
+
+describe("hostMatches (ADR 0053, 0088)", () => {
+  it("matches a host on any port, or only the port it names", () => {
+    expect(hostMatches("localhost", "localhost", 9966)).toBe(true);
+    expect(hostMatches("localhost:9966", "localhost", 9966)).toBe(true);
+    expect(hostMatches("localhost:9966", "localhost", 8080)).toBe(false);
+    expect(hostMatches("localhost:9966", "localhost")).toBe(false);
+    expect(hostMatches("pay-api-*.apps.bank.internal", "pay-api-eu.apps.bank.internal")).toBe(true);
+    expect(hostMatches("pay-api-*.apps.bank.internal", "pay.apps.bank.internal")).toBe(false);
+  });
+
+  it("splits a URL's host and port, with the scheme's port when it names none", () => {
+    expect(urlHostPort("http://LocalHost:9966/owners")).toEqual({ host: "localhost", port: 9966 });
+    expect(urlHostPort("https://api.forge.example/x")).toEqual({
+      host: "api.forge.example",
+      port: 443,
+    });
+    expect(urlHostPort("http://api.forge.example")).toEqual({
+      host: "api.forge.example",
+      port: 80,
+    });
+    expect(urlHostPort("/owners")).toBeUndefined();
   });
 });
 

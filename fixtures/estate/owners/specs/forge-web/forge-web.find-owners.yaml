@@ -1,0 +1,17 @@
+kind: Flow
+schemaVersion: 1
+id: forge-web.find-owners
+component: forge-web
+name: A person finds owners by last name
+template: default@1
+trigger:
+  kind: action
+  what: The owner search is run
+  evidence: [{ source: code, repo: forge-web, path: src/app/owners/owner.service.ts, line: 13 }]
+steps:
+  # GET /owners has no flow of its own; only add-owner's family lists it (ADR 0088).
+  - kind: call-out
+    what: GET /owners filtered by last name
+    to: { component: forge-customers, entry: "GET /owners" }
+    data: { sends: [lastName] }
+    evidence: [{ source: code, repo: forge-web, path: src/app/owners/owner.service.ts, line: 14 }]

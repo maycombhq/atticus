@@ -4,8 +4,18 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { EstateJoins, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import {
+  EstateJoins,
+  HOSTS_STEP,
+  listQuestions,
+  parseRecord,
+  Question,
+  recordPath,
+  RepoManifest,
+  serializeRecord,
+} from "@maycombhq/core";
 import { estateFlowCommand, estateJoin, estateLineage } from "../src/estate-commands.js";
+import { questionsFiles } from "../src/question-commands.js";
 
 const ESTATE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/estate");
 const T = new Date("2026-10-21T12:00:00Z");
@@ -17,20 +27,24 @@ const io = () => {
 };
 
 /** A metarepo with the fixture catalog, the two repos cloned in workspace/, and their specs. */
-async function setup() {
+async function setup(o: { owners?: boolean } = {}) {
   const root = await mkdtemp(join(tmpdir(), "atticus-estate-cli-"));
-  for (const r of parse(await readFile(join(ESTATE, "catalog.yaml"), "utf8")) as unknown[]) {
-    const p = parseRecord(r);
-    if (!p.ok) throw new Error(JSON.stringify(p.issues));
-    const file = join(root, "catalog", "generated", recordPath(p.record));
-    await mkdir(dirname(file), { recursive: true });
-    await writeFile(file, serializeRecord(p.record));
-  }
+  // With owners, the owners part of the estate (ADR 0088) goes on top of the base.
+  const parts = o.owners ? [ESTATE, join(ESTATE, "owners")] : [ESTATE];
+  for (const part of parts)
+    for (const r of parse(await readFile(join(part, "catalog.yaml"), "utf8")) as unknown[]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      const file = join(root, "catalog", "generated", recordPath(p.record));
+      await mkdir(dirname(file), { recursive: true });
+      await writeFile(file, serializeRecord(p.record));
+    }
   await cp(join(ESTATE, "org-pack"), join(root, "org-pack"), { recursive: true });
-  for (const repo of ["forge-web", "forge-customers"]) {
-    await cp(join(ESTATE, "repos", repo), join(root, "workspace", repo), { recursive: true });
-    await cp(join(ESTATE, "specs", repo), join(root, "specs", repo), { recursive: true });
-  }
+  for (const part of parts)
+    for (const repo of ["forge-web", "forge-customers"]) {
+      await cp(join(part, "repos", repo), join(root, "workspace", repo), { recursive: true });
+      await cp(join(part, "specs", repo), join(root, "specs", repo), { recursive: true });
+    }
   return root;
 }
 
@@ -157,6 +171,89 @@ describe("atticus estate join, flow and lineage (ADR 0085)", () => {
       table: "forge-customers-db.customers",
       column: "email_address",
     });
+  });
+
+  it("refuses a join through a wrong family, asks which repo answers on a host, and follows an object to its column (ADR 0088)", async () => {
+    const root = await setup({ owners: true });
+    const j = io();
+    expect(await estateJoin(root, { now: T }, j.io)).toBe(0);
+    expect(j.err).toEqual([]);
+    expect(j.out[0]).toBe(
+      "Joined 3 of 6 call-outs across 2 repos (forge-customers, forge-web); written to specs/estate.yaml.",
+    );
+    expect(j.out).toContain(
+      "  forge-web.find-owners step 1 (a wrong family): GET /owners reaches forge-customers.get-owners, which only forge-customers.add-owner stands for, in its family, and atticus spec check finds that wrong: forge-customers.add-owner stands for forge-customers.get-owners (GET /owners), a read, but its trigger forge-customers.post-owner (POST /owners) is a write. Redraft it: atticus spec draft forge-customers",
+    );
+    const written = EstateJoins.parse(
+      parse(await readFile(join(root, "specs", "estate.yaml"), "utf8")),
+    );
+    expect(written).toEqual(
+      EstateJoins.parse(
+        parse(await readFile(join(ESTATE, "owners", "expected", "estate.yaml"), "utf8")),
+      ),
+    );
+
+    // The UI's calls to localhost:9966 join no repo: one question, forge-customers first.
+    const asked = (await listQuestions(root, { step: HOSTS_STEP })).questions;
+    expect(asked).toHaveLength(1);
+    const want = Question.parse(
+      parse(await readFile(join(ESTATE, "owners", "expected", "question.yaml"), "utf8")),
+    );
+    expect({
+      ...asked[0]!,
+      id: want.id,
+      askedBy: { ...asked[0]!.askedBy, command: "atticus scan" },
+    }).toEqual(want);
+    expect(asked[0]!.askedBy.command).toBe("atticus estate join");
+    expect(j.out).toContain(
+      `Calls to localhost:9966 join no repo: no repo lists it under hosts. Asked ${asked[0]!.id}: Which repo answers on localhost:9966? Answer it: atticus questions answer ${asked[0]!.id} --option <n> (1 is forge-customers).`,
+    );
+    // Asked once: the next join says it's still open.
+    const again = io();
+    await estateJoin(root, { now: T }, again.io);
+    expect((await listQuestions(root, { step: HOSTS_STEP })).questions).toHaveLength(1);
+    expect(again.out).toContain(
+      `Still open: Which repo answers on localhost:9966? Answer it: atticus questions answer ${asked[0]!.id} --option <n>, then atticus scan.`,
+    );
+
+    // Answering writes the host into forge-customers' hosts and says what to run.
+    const a = io();
+    expect(
+      await questionsFiles(
+        root,
+        ["questions", "answer", asked[0]!.id, "--option", "1", "--by", "priya.nair"],
+        a.io,
+        { now: T },
+      ),
+    ).toBe(0);
+    expect(a.out).toContain(
+      "Wrote localhost:9966 under hosts for forge-customers in org-pack/profiles/forge/repos.manifest.yaml; review it in the same pull request.",
+    );
+    expect(a.out.at(-1)).toBe("Next: atticus scan");
+    const m = RepoManifest.parse(
+      parse(
+        await readFile(join(root, "org-pack", "profiles", "forge", "repos.manifest.yaml"), "utf8"),
+      ),
+    );
+    expect(m.repos.find((r) => r.id === "forge-customers")!.hosts).toEqual(["localhost:9966"]);
+    // With the host listed, nothing is asked.
+    const after = io();
+    await estateJoin(root, { now: T }, after.io);
+    expect(after.out.some((l) => l.includes("localhost:9966"))).toBe(false);
+
+    // The UI sends one owner; firstName reaches owners.first_name in the API.
+    const f = io();
+    expect(await estateFlowCommand(root, "forge-web.add-owner", {}, f.io)).toBe(0);
+    expect(f.out).toContain("    owner carries the callee's firstName, lastName");
+    const l = io();
+    expect(await estateLineage(root, "forge-web.add-owner", "firstName", {}, l.io)).toBe(0);
+    expect(l.out).toEqual([
+      "firstName along forge-web.add-owner:",
+      "  1 call-out, sent owner.firstName: POST /owners with the owner  [forge-web:src/app/owners/owner.service.ts:10]",
+      "  1.1 entry, named firstName: OwnerController.add takes the owner's fields  [forge-customers:src/main/java/forge/customers/OwnerController.java:12]",
+      "  1.2 write, stored forge-customers-db.owners.first_name: The owner is saved  [forge-customers:src/main/java/forge/customers/OwnerController.java:14]",
+      "firstName is stored in forge-customers-db.owners.first_name.",
+    ]);
   });
 
   it("needs repo specs", async () => {

@@ -28,6 +28,7 @@ export type SpecRule =
   | "call-out-target"
   | "write-store"
   | "column-unknown"
+  | "write-unmapped"
   | "template-requires"
   | "field-from-nowhere"
   | "family-mismatch"
@@ -124,6 +125,58 @@ export const resourceKey = (path: string) => {
 
 const endpointLabel = (e: Endpoint) =>
   `${e.method ? `${e.method.toUpperCase()} ` : ""}${e.pathOrTopic}`;
+
+/** Methods that only read; the rest (POST, PUT, PATCH, DELETE) change something. */
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const work = (e: Endpoint) =>
+  !e.method || e.method.toUpperCase() === "ANY"
+    ? undefined
+    : READ_METHODS.has(e.method.toUpperCase())
+      ? "read"
+      : "write";
+
+/**
+ * The members of a flow's family it can't stand for (ADR 0079, 0088): one that isn't an
+ * Endpoint on the same resource of the trigger's component; one that does other work than the
+ * trigger (a read for a write, or a write for a read), since the flow's steps describe one of
+ * them only; or any member when the template has no families. Members the catalog doesn't
+ * have are spec check's `ref-unknown`, not these. The estate pass joins through no member
+ * this finds (ADR 0088).
+ */
+export function familyMismatches(
+  f: FlowRecord,
+  byId: ReadonlyMap<string, CatalogRecord>,
+  template: SpecTemplate,
+): { member: string; message: string }[] {
+  const out: { member: string; message: string }[] = [];
+  const trig = f.trigger.ref ? byId.get(f.trigger.ref) : undefined;
+  const key = trig?.kind === "Endpoint" ? resourceKey(trig.pathOrTopic) : undefined;
+  for (const m of f.family) {
+    const r = byId.get(m);
+    if (!r) continue;
+    if (!template.families.length)
+      out.push({
+        member: m,
+        message: `${f.id} stands for ${m}, but the template ${template.repoType}@${template.version} has no families`,
+      });
+    else if (
+      r.kind !== "Endpoint" ||
+      trig?.kind !== "Endpoint" ||
+      r.component !== trig.component ||
+      resourceKey(r.pathOrTopic) !== key
+    )
+      out.push({
+        member: m,
+        message: `${f.id} stands for ${m}, which isn't on the same resource (${key ?? "its trigger has no path"}) of the same component`,
+      });
+    else if (work(r) && work(trig) && work(r) !== work(trig))
+      out.push({
+        member: m,
+        message: `${f.id} stands for ${m} (${endpointLabel(r)}), a ${work(r)}, but its trigger ${trig.id} (${endpointLabel(trig)}) is a ${work(trig)}`,
+      });
+  }
+  return out;
+}
 
 /** The triggers the template's trigger kinds find in the catalog for the repo's components. */
 export function specTriggers(
@@ -363,29 +416,15 @@ export async function checkSpec(o: {
     if (f.trigger.ref) known(f.trigger.ref, fid, "trigger", at(f.trigger.evidence[0]));
     if (!comps.has(f.component) && comps.size > 0)
       known(f.component, fid, "component", at(f.trigger.evidence[0]));
-    // Families: every member shares the trigger's component and resource.
-    if (f.family.length) {
-      const key = trig?.kind === "Endpoint" ? resourceKey(trig.pathOrTopic) : undefined;
-      for (const m of f.family) {
-        if (!known(m, fid, "family", at(f.trigger.evidence[0]))) continue;
-        const r = byId.get(m)!;
-        if (
-          !o.template.families.length ||
-          r.kind !== "Endpoint" ||
-          trig?.kind !== "Endpoint" ||
-          r.component !== trig.component ||
-          resourceKey(r.pathOrTopic) !== key
-        )
-          add({
-            rule: "family-mismatch",
-            target: `${fid} family ${m}`,
-            message: o.template.families.length
-              ? `${fid} stands for ${m}, which isn't on the same resource (${key ?? "its trigger has no path"}) of the same component`
-              : `${fid} stands for ${m}, but the template ${o.template.repoType}@${o.template.version} has no families`,
-            flow: fid,
-          });
-      }
-    }
+    // Families: every member shares the trigger's component and resource, and its work.
+    for (const m of f.family) known(m, fid, "family", at(f.trigger.evidence[0]));
+    for (const m of familyMismatches(f, byId, o.template))
+      add({
+        rule: "family-mismatch",
+        target: `${fid} family ${m.member}`,
+        message: m.message,
+        flow: fid,
+      });
     for (const [i, e] of f.errors.entries()) await cited(e.evidence, fid, `error ${i + 1}`);
 
     // Fields known before each step: the trigger's words, and every field an earlier step names.
@@ -471,6 +510,36 @@ export async function checkSpec(o: {
           message: `${fid} ${where} is a write that names no ${s.store ? "columns" : "table and columns"}`,
           flow: fid,
         });
+      // A write's fields go to its columns (ADR 0088): by data.from → data.to where the step
+      // maps them, else by name (firstName is first_name), so lineage can end at a column.
+      if (s.kind === "write" && s.store && s.store.columns.length) {
+        const cols = s.store.columns;
+        const colKeys = new Set(cols.map(fieldKey));
+        const from = s.data?.from ?? [];
+        const to = s.data?.to ?? [];
+        const list = cols.join(", ");
+        from.forEach((x, k) => {
+          const c = to[k];
+          if (c !== undefined && !cols.some((y) => y.toLowerCase() === c.toLowerCase()))
+            add({
+              rule: "write-unmapped",
+              target: `${fid} ${where} ${x}`,
+              ...(ev ? { evidence: ev } : {}),
+              message: `${fid} ${where} maps ${x} to ${c}, which isn't one of its columns (${list})`,
+              flow: fid,
+            });
+        });
+        const mapped = new Set(from.filter((_, k) => to[k] !== undefined).map(fieldKey));
+        for (const x of s.data?.sends ?? [])
+          if (!colKeys.has(fieldKey(x)) && !mapped.has(fieldKey(x)))
+            add({
+              rule: "write-unmapped",
+              target: `${fid} ${where} ${x}`,
+              ...(ev ? { evidence: ev } : {}),
+              message: `${fid} ${where} sends ${x}, which none of its columns (${list}) takes; map it to a column with data.from and data.to, or leave it out`,
+              flow: fid,
+            });
+      }
       // A field a step uses appears in an earlier step or the trigger.
       if (i > 0)
         for (const x of [...(s.data?.sends ?? []), ...(s.data?.from ?? [])])

@@ -35,6 +35,34 @@ const specs = (): EstateSpec[] =>
 const expected = () =>
   EstateJoins.parse(parse(readFileSync(join(ESTATE, "expected", "estate.yaml"), "utf8")));
 
+// The owners part of the estate (ADR 0088), on top of the base fixture.
+const OWNERS = join(ESTATE, "owners");
+const withOwners = () => ({
+  records: [
+    ...records(),
+    ...(parse(readFileSync(join(OWNERS, "catalog.yaml"), "utf8")) as unknown[]).map((r) => {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      return p.record;
+    }),
+  ],
+  specs: specs().map((s) => ({
+    ...s,
+    flows: [
+      ...s.flows,
+      ...readdirSync(join(OWNERS, "specs", s.repo))
+        .sort()
+        .map((n) => {
+          const p = parseRecord(parse(readFileSync(join(OWNERS, "specs", s.repo, n), "utf8")));
+          if (!p.ok || p.record.kind !== "Flow") throw new Error(`${n} isn't a flow`);
+          return p.record;
+        }),
+    ],
+  })),
+});
+const expectedOwners = () =>
+  EstateJoins.parse(parse(readFileSync(join(OWNERS, "expected", "estate.yaml"), "utf8")));
+
 describe("pathScore", () => {
   it("matches the same path, or a tail with a plain segment, and topics by name", () => {
     expect(pathScore("/api/customers/{id}", "/api/customers/{customerId}")).toBe(1000);
@@ -114,6 +142,7 @@ describe("estateFlow and fieldLineage (ADR 0085)", () => {
       receives: ["name", "email", "phone"],
       returns: ["id", "fullName", "emailAddress"],
       unused: [],
+      objects: [],
     });
     const view = estateFlow({ flow: "forge-web.view-customer", specs: specs(), joins: joins() })!;
     expect(view.steps[1]!.call).toMatchObject({ unmatched: { reason: "no-target" } });
@@ -214,5 +243,157 @@ describe("estateFlow and fieldLineage (ADR 0085)", () => {
     expect(fieldLineage(f, "colour").breaks).toEqual({
       message: "No step of forge-web.save-customer, or of the flows it calls, sends colour.",
     });
+  });
+});
+
+describe("a family that spec check finds wrong blocks a join (ADR 0088)", () => {
+  it("refuses to join a call-out to a flow that stands for its endpoint through a wrong family", async () => {
+    const r = await joinEstate(withOwners());
+    const want = expectedOwners();
+    expect(r.joins).toEqual(want.joins);
+    expect(r.unmatched).toEqual(want.unmatched);
+  });
+
+  it("prefers the flow whose own trigger is the endpoint over one that stands for it", async () => {
+    const o = withOwners();
+    const api = o.specs.find((s) => s.repo === "forge-customers")!;
+    const add = api.flows.find((f) => f.id === "forge-customers.add-owner")!;
+    const find: FlowRecord = {
+      ...add,
+      id: "forge-customers.find-owners",
+      name: "A client finds owners",
+      trigger: {
+        ...add.trigger,
+        ref: "forge-customers.get-owners",
+        what: "GET /owners is called",
+        evidence: [{ ...add.trigger.evidence[0]!, line: 18 }],
+      },
+      family: [],
+      steps: [{ ...add.steps[0]!, refs: [], data: { reads: ["lastName"] } }],
+    };
+    // A flow sorted first that stands for GET /owners in a right family (a read for a read).
+    const lister: FlowRecord = {
+      ...find,
+      id: "forge-customers.aa-lister",
+      trigger: { ...find.trigger, ref: "forge-customers.get-customer" },
+      family: ["forge-customers.get-owners"],
+    };
+    const r = await joinEstate({
+      ...o,
+      specs: o.specs.map((s) =>
+        s.repo === "forge-customers" ? { ...s, flows: [lister, ...s.flows, find] } : s,
+      ),
+    });
+    expect(r.joins.find((j) => j.from.flow === "forge-web.find-owners")).toMatchObject({
+      to: { flow: "forge-customers.find-owners", trigger: "forge-customers.get-owners" },
+      how: "path",
+    });
+  });
+});
+
+describe("an object sent across a crossing, followed to its fields (ADR 0088)", () => {
+  it("maps the object the caller sends to the fields the callee's entry takes", () => {
+    const o = withOwners();
+    const f = estateFlow({ flow: "forge-web.add-owner", specs: o.specs, joins: expectedOwners() })!;
+    expect(f.steps[0]!.call!.crossing).toEqual({
+      sends: ["owner"],
+      receives: ["firstName", "lastName"],
+      returns: ["id", "firstName", "lastName"],
+      unused: [],
+      objects: [{ sent: "owner", fields: ["firstName", "lastName"] }],
+    });
+  });
+
+  it("follows firstName from the UI's owner into the API, to owners.first_name", () => {
+    const o = withOwners();
+    const f = estateFlow({ flow: "forge-web.add-owner", specs: o.specs, joins: expectedOwners() })!;
+    const l = fieldLineage(f, "firstName");
+    expect(l.stored).toEqual({ table: "forge-customers-db.owners", column: "first_name" });
+    expect(l.links.map((k) => [k.n, k.as, k.field, k.evidence])).toEqual([
+      ["1", "sent", "owner.firstName", "forge-web:src/app/owners/owner.service.ts:10"],
+      [
+        "1.1",
+        "named",
+        "firstName",
+        "forge-customers:src/main/java/forge/customers/OwnerController.java:12",
+      ],
+      [
+        "1.2",
+        "stored",
+        "forge-customers-db.owners.first_name",
+        "forge-customers:src/main/java/forge/customers/OwnerController.java:14",
+      ],
+    ]);
+    // A field the object doesn't carry still isn't sent.
+    expect(fieldLineage(f, "telephone").breaks!.message).toBe(
+      "No step of forge-web.add-owner, or of the flows it calls, sends telephone.",
+    );
+  });
+
+  it("maps a write's fields to its columns as the step says (data.from to data.to)", () => {
+    const o = withOwners();
+    const api = o.specs.find((s) => s.repo === "forge-customers")!;
+    const mapped = api.flows.map((x) =>
+      x.id === "forge-customers.add-owner"
+        ? {
+            ...x,
+            steps: x.steps.map((s) =>
+              s.kind === "write"
+                ? {
+                    ...s,
+                    data: { from: ["firstName", "lastName"], to: ["last_name", "first_name"] },
+                  }
+                : s,
+            ),
+          }
+        : x,
+    );
+    const f = estateFlow({
+      flow: "forge-web.add-owner",
+      specs: o.specs.map((s) => (s.repo === "forge-customers" ? { ...s, flows: mapped } : s)),
+      joins: expectedOwners(),
+    })!;
+    // The step's own mapping wins over a column of the same name.
+    expect(fieldLineage(f, "firstName").stored).toEqual({
+      table: "forge-customers-db.owners",
+      column: "last_name",
+    });
+  });
+
+  it("maps an object only when it is clear which sent name carries the fields", () => {
+    const o = withOwners();
+    const web = o.specs.find((s) => s.repo === "forge-web")!;
+    const two = {
+      ...web,
+      flows: web.flows.map((f) =>
+        f.id === "forge-web.add-owner"
+          ? { ...f, steps: [{ ...f.steps[0]!, data: { sends: ["owner", "audit"] } }] }
+          : f,
+      ),
+    };
+    const specs2 = o.specs.map((s) => (s.repo === "forge-web" ? two : s));
+    const f = estateFlow({ flow: "forge-web.add-owner", specs: specs2, joins: expectedOwners() })!;
+    expect(f.steps[0]!.call!.crossing!.objects).toEqual([]);
+    // Unless the callee names the fields on the object: owner.firstName.
+    const api = specs2.find((s) => s.repo === "forge-customers")!;
+    const named = api.flows.map((x) =>
+      x.id === "forge-customers.add-owner"
+        ? {
+            ...x,
+            steps: [
+              { ...x.steps[0]!, data: { reads: ["owner.firstName", "owner.lastName"] } },
+              ...x.steps.slice(1),
+            ],
+          }
+        : x,
+    );
+    const g = estateFlow({
+      flow: "forge-web.add-owner",
+      specs: specs2.map((s) => (s.repo === "forge-customers" ? { ...s, flows: named } : s)),
+      joins: expectedOwners(),
+    })!;
+    expect(g.steps[0]!.call!.crossing!.objects).toEqual([
+      { sent: "owner", fields: ["owner.firstName", "owner.lastName"] },
+    ]);
   });
 });

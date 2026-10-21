@@ -1,0 +1,24 @@
+# The question atticus scan (or atticus estate join) raises for fixtures/estate with owners/ on
+# top (ADR 0088), written by hand before the code: the UI calls localhost:9966, which no repo
+# lists in its hosts, and forge-customers' config sets that port, so it is the first option.
+schemaVersion: 1
+id: q-000000000000 # the test puts in the fingerprint
+askedBy:
+  step: scan-hosts
+  command: atticus scan
+  at: "2026-10-21T12:00:00.000Z"
+repo: forge-web
+question: Which repo answers on localhost:9966?
+options:
+  - label: forge-customers
+    means: "forge-customers serves HTTP, and its src/main/resources/application.properties:2 sets the port 9966 (server.port=9966)"
+    changes: localhost:9966 goes under hosts for forge-customers in repos.manifest.yaml, and the calls to it join forge-customers on the next scan
+  - label: None of these
+    means: An outside system answers on localhost:9966, not a repo of this estate
+    changes: Nothing is added to the manifest; the calls stay loose ends, and this isn't asked again
+evidence:
+  - src/app/owners/owner.service.ts:10
+  - src/app/owners/owner.service.ts:14
+scope: { level: repo, id: forge-web }
+state: open
+rerun: atticus scan

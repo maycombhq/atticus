@@ -46,16 +46,58 @@ const RelativePosixPath = z
 
 /**
  * A host a component answers on, as calls name it: "ledger-api.apps.bank.internal", or with *
- * for one label or part of one, "pay-api-*.apps.bank.internal". Lower case; a port is ignored.
+ * for one label or part of one, "pay-api-*.apps.bank.internal". Lower case. Without a port it
+ * takes calls on any port; with one ("localhost:9966", ADR 0088) only calls on that port, so
+ * two services on one host are told apart.
  */
 const HostPattern = z
   .string()
   .min(1)
-  .max(253)
+  .max(259)
   .regex(
-    /^[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?(\.[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?)*$/,
-    "a host name, lower case, * for any part of a label",
-  );
+    /^[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?(\.[a-z0-9*]([a-z0-9*-]*[a-z0-9*])?)*(:[1-9][0-9]{0,4})?$/,
+    "a host name, lower case, * for any part of a label, and a port after : when it needs one",
+  )
+  .refine((h) => {
+    const p = /:(\d+)$/.exec(h);
+    return !p || Number(p[1]) <= 65535;
+  }, "a port is 1 to 65535");
+
+/** The port a URL's scheme uses when it names none. */
+const SCHEME_PORTS: Record<string, number> = { http: 80, ws: 80, https: 443, wss: 443 };
+
+/**
+ * A URL's host (lower case) and port (the scheme's when it names none), or undefined for a
+ * path with no host.
+ */
+export function urlHostPort(url: string): { host: string; port?: number } | undefined {
+  const m = /^([a-z][a-z0-9+.-]*):\/\/([^/?#]*)/i.exec(url);
+  if (!m) return undefined;
+  const auth = m[2]!.replace(/^[^@]*@/, "").toLowerCase();
+  const pm = /^(.*):(\d+)$/.exec(auth);
+  const host = pm ? pm[1]! : auth;
+  const port = pm ? Number(pm[2]) : SCHEME_PORTS[m[1]!.toLowerCase()];
+  return { host, ...(port !== undefined ? { port } : {}) };
+}
+
+/**
+ * Whether a host a call names matches a manifest host pattern (ADR 0053, 0088): * is any part
+ * of a label; a pattern with a port matches only a call on that port.
+ */
+export function hostMatches(pattern: string, host: string, port?: number): boolean {
+  const pm = /^(.*):(\d+)$/.exec(pattern);
+  const name = pm ? pm[1]! : pattern;
+  if (pm && Number(pm[2]) !== port) return false;
+  const body = name
+    .toLowerCase()
+    .split("*")
+    .map((x) => x.replace(/[.\\^$+?()[\]{}|]/g, (c) => `\\${c}`))
+    .join("[a-z0-9-]*");
+  return new RegExp(`^${body}$`).test(host.toLowerCase());
+}
+
+/** Whether a host pattern names a port. */
+export const hostHasPort = (pattern: string) => /:\d+$/.test(pattern);
 
 export const ManifestRepo = z.strictObject({
   /** Repo id; also the base clone's folder name under workspace/. */

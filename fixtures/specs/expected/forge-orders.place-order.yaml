@@ -13,7 +13,8 @@ errors:
     then: 400 with the errors
     when: The body fails validation
 evidence: []
-family: []
+family:
+  - forge-orders.delete-orders-orderid
 name: A client places an order
 steps:
   - confirmedBy: check
