@@ -4,6 +4,11 @@ import { accessible, expect, forgeJourney, open, test } from "../support/app.js"
 const app = forgeJourney();
 
 const SCREENS = [
+  "dashboard",
+  "onboarding",
+  "feature-design?change=add-transfer-limit",
+  "stories?change=add-transfer-limit",
+  "task-list?change=add-transfer-limit",
   "home",
   "explore",
   "map",

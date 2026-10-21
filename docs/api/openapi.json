@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -2068,6 +2068,37 @@
                   "items": {
                     "$ref": "#/components/schemas/RepoView"
                   }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/onboarding": {
+      "get": {
+        "operationId": "getOnboarding",
+        "summary": "Each manifest repo with its clone, scan settings and last scan's counts, and the knowledge sources (ADR 0084)",
+        "tags": [
+          "workspace"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingView"
                 }
               }
             }
@@ -12931,6 +12962,262 @@
           "modules",
           "platform",
           "baseClone"
+        ],
+        "additionalProperties": false
+      },
+      "OnboardingView": {
+        "type": "object",
+        "properties": {
+          "manifests": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "platform": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "repos": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "platform",
+                "path",
+                "repos"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "platform": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "owner": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "manifest": {
+                  "type": "string"
+                },
+                "cloned": {
+                  "type": "boolean"
+                },
+                "scanSettings": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "present": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "present"
+                  ],
+                  "additionalProperties": false
+                },
+                "lastScan": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "records": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "kinds": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "commit": {
+                          "type": "string"
+                        },
+                        "scannedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "records",
+                        "kinds"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "platform",
+                "type",
+                "owner",
+                "manifest",
+                "cloned",
+                "scanSettings",
+                "lastScan"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "sources": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "present": {
+                "type": "boolean"
+              },
+              "wikis": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "location": {
+                      "type": "string"
+                    },
+                    "spaces": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "owner": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "type",
+                    "location",
+                    "spaces"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "absorbed": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "format": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "url",
+                    "format",
+                    "mode"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "path",
+              "present",
+              "wikis",
+              "absorbed"
+            ],
+            "additionalProperties": false
+          },
+          "catalog": {
+            "type": "object",
+            "properties": {
+              "records": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "records"
+            ],
+            "additionalProperties": false
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "manifests",
+          "repos",
+          "sources",
+          "catalog",
+          "problems"
         ],
         "additionalProperties": false
       },

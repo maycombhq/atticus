@@ -1,11 +1,13 @@
 import type { ComponentType } from "react";
-import { Architecture } from "./architecture/Architecture.js";
 import { Changes } from "./Changes.js";
 import { CommandCenter } from "./CommandCenter.js";
 import { Explore } from "./Explore.js";
 import { Questions } from "./Questions.js";
 import { KNOW_SCREENS } from "./know/index.js";
 import { RUN_SCREENS } from "./run/index.js";
+import { Dashboard } from "./work/Dashboard.js";
+import { Onboarding } from "./work/Onboarding.js";
+import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work/Stage.js";
 
 /**
  * Screen id (screens.ts) → component. Each screen gets the current hash so it can read its own
@@ -14,8 +16,15 @@ import { RUN_SCREENS } from "./run/index.js";
 export type Screen = ComponentType<{ hash: string }>;
 
 export const SCREEN_COMPONENTS: Record<string, Screen> = {
+  // The six screens that follow the work (plan 4.5).
+  dashboard: () => <Dashboard />,
+  onboarding: () => <Onboarding />,
+  "feature-design": FeatureDesign,
+  architecture: ArchitecturePage,
+  stories: Stories,
+  "task-list": TaskListScreen,
+  // Under More, unchanged.
   home: () => <CommandCenter />,
-  architecture: Architecture,
   changes: Changes,
   explore: Explore,
   questions: Questions,

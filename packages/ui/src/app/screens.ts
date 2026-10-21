@@ -1,14 +1,32 @@
 import { COPY } from "../copy.js";
 
-/** The 27 screens of the design canvas the Questions page (ADR 0078) and the Architecture workspace (ADR 0081), in the menu groups. */
+/**
+ * The app's screens (plan 4.5, B1). Six follow the work and make the menu; every other page,
+ * from the design canvas, the Questions page (ADR 0078) and the rest, stays reachable under
+ * More in its old group, unchanged until it is reviewed. Nothing is removed.
+ */
+
+export const MORE_GROUPS = ["Know", "Define", "Design", "Plan", "Build", "Release", "Run"] as const;
+export type MoreGroup = (typeof MORE_GROUPS)[number];
 
 export interface ScreenDef {
   id: string;
   label: string;
-  group: "Know" | "Define" | "Design" | "Plan" | "Build" | "Release" | "Run";
+  group: "Main" | MoreGroup;
 }
 
-export const SCREENS: ScreenDef[] = [
+const N = COPY.nav;
+
+export const MAIN: ScreenDef[] = [
+  { id: "dashboard", label: N.dashboard, group: "Main" },
+  { id: "onboarding", label: N.onboarding, group: "Main" },
+  { id: "feature-design", label: N.feature, group: "Main" },
+  { id: "architecture", label: N.architecture, group: "Main" },
+  { id: "stories", label: N.stories, group: "Main" },
+  { id: "task-list", label: N.tasks, group: "Main" },
+];
+
+export const MORE: ScreenDef[] = [
   { id: "home", label: "Command center", group: "Know" },
   { id: "questions", label: COPY.questions.title, group: "Know" },
   { id: "explore", label: "Knowledge explorer", group: "Know" },
@@ -22,7 +40,6 @@ export const SCREENS: ScreenDef[] = [
   { id: "ux", label: "Prototypes and UX", group: "Define" },
   { id: "arch-review", label: "Architecture review", group: "Design" },
   { id: "diagrams", label: "Diagrams", group: "Design" },
-  { id: "architecture", label: "Architecture", group: "Design" },
   { id: "reconcile", label: "Reconcile", group: "Design" },
   { id: "contracts", label: "Contracts", group: "Design" },
   { id: "mappings", label: "API mappings", group: "Design" },
@@ -40,9 +57,9 @@ export const SCREENS: ScreenDef[] = [
   { id: "settings", label: "Settings", group: "Run" },
 ];
 
-export const GROUPS = ["Know", "Define", "Design", "Plan", "Build", "Release", "Run"] as const;
+export const SCREENS: ScreenDef[] = [...MAIN, ...MORE];
 
 export function screenOf(hash: string): ScreenDef {
-  const id = hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "home";
-  return SCREENS.find((s) => s.id === id) ?? SCREENS[0]!;
+  const id = hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "dashboard";
+  return SCREENS.find((s) => s.id === id) ?? MAIN[0]!;
 }
