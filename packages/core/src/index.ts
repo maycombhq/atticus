@@ -32,3 +32,5 @@ export * from "./zip-read.js";
 export * from "./tar-read.js";
 export * from "./schema/question.js";
 export * from "./questions.js";
+export * from "./schema/spec.js";
+export * from "./specs.js";

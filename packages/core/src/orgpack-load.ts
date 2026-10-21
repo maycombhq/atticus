@@ -4,6 +4,7 @@ import { parse } from "yaml";
 import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
 import { RepoType } from "./schema/repo-type.js";
+import { SpecTemplate } from "./schema/spec.js";
 import type { z } from "zod";
 import {
   DEFAULT_CHANGE_TYPES,
@@ -58,6 +59,8 @@ export interface OrgPack {
   scanSettings: ScanSettings[];
   /** Repo types (ADR 0077), from repo-types/<id>/type.yaml. */
   repoTypes: RepoType[];
+  /** Spec templates (ADR 0079), from repo-types/<id>/spec-template.yaml; a type may have none. */
+  specTemplates: SpecTemplate[];
   checklists: ChecklistPack[];
   skills: (z.infer<typeof SkillMeta> & { body: string })[];
   serviceRequests: z.infer<typeof ServiceRequestTemplate>[];
@@ -243,6 +246,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
 
   // One folder per type, named after it; every skill it names must be a loaded skill.
   const repoTypes: RepoType[] = [];
+  const specTemplates: SpecTemplate[] = [];
   const skillFiles = new Set(skills.map((s) => `process/skills/${s.id}/SKILL.md`));
   let typeDirs: string[] = [];
   try {
@@ -274,6 +278,19 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
         problems.push({ file: rel(f), path: `skills.${i}`, message: `no skill at ${s}` });
     });
     repoTypes.push(v);
+    const tf = join(dir, "repo-types", name, "spec-template.yaml");
+    if (!(await exists(tf))) continue;
+    const t = await load(tf, SpecTemplate);
+    if (!t) continue;
+    if (t.repoType !== name) {
+      problems.push({
+        file: rel(tf),
+        path: "repoType",
+        message: `is ${t.repoType}; the template in repo-types/${name}/ is for ${name}`,
+      });
+      continue;
+    }
+    specTemplates.push(t);
   }
 
   // ---------- cross-file checks
@@ -432,6 +449,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     frameworks,
     scanSettings,
     repoTypes,
+    specTemplates,
     checklists,
     skills,
     serviceRequests,

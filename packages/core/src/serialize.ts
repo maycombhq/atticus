@@ -41,6 +41,8 @@ export function canonicalize(value: unknown, leading: readonly string[] = LEADIN
  * the current schema version (a record built in memory as version 1 is the same record).
  */
 export function serializeRecord(record: CatalogRecord): string {
+  // A Flow keeps its own schema version (ADR 0079).
+  if (record.kind === "Flow") return toCanonicalYaml(record);
   return toCanonicalYaml({ ...record, schemaVersion: SCHEMA_VERSION });
 }
 

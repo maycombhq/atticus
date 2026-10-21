@@ -562,7 +562,7 @@ export async function onboardFrameworkAccept(
  * org-pack/scan/<repo>.yaml is written. The next scan applies it.
  */
 /** The repo type the repo clearly or partly matches (ADR 0077), said aloud; none on a tie. */
-async function matchedRepoType(
+export async function matchedRepoType(
   repo: ReturnType<typeof fsRepo>,
   id: string,
   op: OrgPack,

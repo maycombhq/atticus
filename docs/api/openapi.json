@@ -445,6 +445,7 @@
                 "OwnerQuestion",
                 "ProcessArtifact",
                 "Capability",
+                "Flow",
                 "Unresolved",
                 "CuratedDecision"
               ]
@@ -571,6 +572,7 @@
                 "OwnerQuestion",
                 "ProcessArtifact",
                 "Capability",
+                "Flow",
                 "Unresolved",
                 "CuratedDecision"
               ]
@@ -10587,6 +10589,577 @@
         ],
         "additionalProperties": false
       },
+      "Flow": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "Flow"
+          },
+          "schemaVersion": {
+            "type": "number",
+            "const": 1
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "status": {
+            "default": "current",
+            "type": "string",
+            "enum": [
+              "current",
+              "planned-new",
+              "planned-modify",
+              "planned-retire",
+              "retired"
+            ]
+          },
+          "confidence": {
+            "default": "inferred",
+            "type": "string",
+            "enum": [
+              "verified",
+              "inferred",
+              "asserted"
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "enum": [
+                    "code",
+                    "config",
+                    "spec",
+                    "gateway",
+                    "event-config",
+                    "infrastructure",
+                    "pipeline",
+                    "migration",
+                    "diagram",
+                    "document",
+                    "export",
+                    "manual"
+                  ]
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "commit": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{7,64}$"
+                },
+                "scannedAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                "extractor": {
+                  "type": "string"
+                },
+                "dialect": {
+                  "type": "string"
+                },
+                "side": {
+                  "type": "string",
+                  "enum": [
+                    "caller",
+                    "callee",
+                    "gateway",
+                    "definition",
+                    "document"
+                  ]
+                },
+                "by": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "component": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "trigger": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "endpoint",
+                  "action",
+                  "page",
+                  "listener",
+                  "job"
+                ]
+              },
+              "ref": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "what": {
+                "type": "string",
+                "minLength": 1
+              },
+              "evidence": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "code",
+                        "config",
+                        "spec",
+                        "gateway",
+                        "event-config",
+                        "infrastructure",
+                        "pipeline",
+                        "migration",
+                        "diagram",
+                        "document",
+                        "export",
+                        "manual"
+                      ]
+                    },
+                    "repo": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "commit": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{7,64}$"
+                    },
+                    "scannedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "extractor": {
+                      "type": "string"
+                    },
+                    "dialect": {
+                      "type": "string"
+                    },
+                    "side": {
+                      "type": "string",
+                      "enum": [
+                        "caller",
+                        "callee",
+                        "gateway",
+                        "definition",
+                        "document"
+                      ]
+                    },
+                    "by": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "source"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "what",
+              "evidence"
+            ],
+            "additionalProperties": false
+          },
+          "steps": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "entry",
+                    "lookup",
+                    "read",
+                    "write",
+                    "call-out",
+                    "publish",
+                    "transform",
+                    "validate",
+                    "branch",
+                    "log",
+                    "respond",
+                    "loop",
+                    "retry"
+                  ]
+                },
+                "what": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "refs": {
+                  "default": [],
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  }
+                },
+                "to": {
+                  "type": "object",
+                  "properties": {
+                    "component": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                    },
+                    "entry": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "component",
+                    "entry"
+                  ],
+                  "additionalProperties": false
+                },
+                "data": {
+                  "type": "object",
+                  "properties": {
+                    "sends": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "returns": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "reads": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "from": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "to": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "store": {
+                  "type": "object",
+                  "properties": {
+                    "table": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                    },
+                    "columns": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  },
+                  "required": [
+                    "table",
+                    "columns"
+                  ],
+                  "additionalProperties": false
+                },
+                "evidence": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "enum": [
+                          "code",
+                          "config",
+                          "spec",
+                          "gateway",
+                          "event-config",
+                          "infrastructure",
+                          "pipeline",
+                          "migration",
+                          "diagram",
+                          "document",
+                          "export",
+                          "manual"
+                        ]
+                      },
+                      "repo": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "line": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "commit": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{7,64}$"
+                      },
+                      "scannedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      "extractor": {
+                        "type": "string"
+                      },
+                      "dialect": {
+                        "type": "string"
+                      },
+                      "side": {
+                        "type": "string",
+                        "enum": [
+                          "caller",
+                          "callee",
+                          "gateway",
+                          "definition",
+                          "document"
+                        ]
+                      },
+                      "by": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "confirmedBy": {
+                  "type": "string",
+                  "enum": [
+                    "check",
+                    "ai",
+                    "person"
+                  ]
+                }
+              },
+              "required": [
+                "kind",
+                "what",
+                "refs",
+                "evidence"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "errors": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "when": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "then": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "evidence": {
+                  "minItems": 1,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string",
+                        "enum": [
+                          "code",
+                          "config",
+                          "spec",
+                          "gateway",
+                          "event-config",
+                          "infrastructure",
+                          "pipeline",
+                          "migration",
+                          "diagram",
+                          "document",
+                          "export",
+                          "manual"
+                        ]
+                      },
+                      "repo": {
+                        "type": "string"
+                      },
+                      "path": {
+                        "type": "string"
+                      },
+                      "line": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "commit": {
+                        "type": "string",
+                        "pattern": "^[0-9a-f]{7,64}$"
+                      },
+                      "scannedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      "extractor": {
+                        "type": "string"
+                      },
+                      "dialect": {
+                        "type": "string"
+                      },
+                      "side": {
+                        "type": "string",
+                        "enum": [
+                          "caller",
+                          "callee",
+                          "gateway",
+                          "definition",
+                          "document"
+                        ]
+                      },
+                      "by": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "source"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "confirmedBy": {
+                  "type": "string",
+                  "enum": [
+                    "check",
+                    "ai",
+                    "person"
+                  ]
+                }
+              },
+              "required": [
+                "when",
+                "then",
+                "evidence"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "family": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            }
+          },
+          "template": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*@\\d+$"
+          }
+        },
+        "required": [
+          "kind",
+          "schemaVersion",
+          "id",
+          "status",
+          "confidence",
+          "evidence",
+          "component",
+          "name",
+          "trigger",
+          "steps",
+          "errors",
+          "family",
+          "template"
+        ],
+        "additionalProperties": false
+      },
       "Unresolved": {
         "type": "object",
         "properties": {
@@ -11043,6 +11616,9 @@
             "$ref": "#/components/schemas/Capability"
           },
           {
+            "$ref": "#/components/schemas/Flow"
+          },
+          {
             "$ref": "#/components/schemas/Unresolved"
           },
           {
@@ -11108,6 +11684,7 @@
               "OwnerQuestion",
               "ProcessArtifact",
               "Capability",
+              "Flow",
               "Unresolved",
               "CuratedDecision"
             ]
@@ -11175,6 +11752,7 @@
                     "OwnerQuestion",
                     "ProcessArtifact",
                     "Capability",
+                    "Flow",
                     "Unresolved",
                     "CuratedDecision"
                   ]
@@ -11308,6 +11886,7 @@
                     "OwnerQuestion",
                     "ProcessArtifact",
                     "Capability",
+                    "Flow",
                     "Unresolved",
                     "CuratedDecision"
                   ]

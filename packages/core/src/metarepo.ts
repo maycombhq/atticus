@@ -70,6 +70,26 @@ export function questionsDirOf(root: string): string {
   return join(root, ...questionsRelOf(root).split("/"));
 }
 
+/** Where repo specs live (ADR 0079), relative to the root: `specs`, or `.atticus/specs` when adopted. */
+export function specsRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/specs" : "specs";
+}
+
+/** The specs folder (ADR 0079), holding one folder per repo. */
+export function specsDirOf(root: string): string {
+  return join(root, ...specsRelOf(root).split("/"));
+}
+
+/** One repo's spec folder, relative to the root: `specs/<repo>` (spec.yaml and one file per flow). */
+export function specRelOf(root: string, repo: string): string {
+  return `${specsRelOf(root)}/${repo}`;
+}
+
+/** One repo's spec folder (ADR 0079). */
+export function specDirOf(root: string, repo: string): string {
+  return join(specsDirOf(root), repo);
+}
+
 // Change folders resolve through the layout on every call, so the parsed file is kept until
 // sources.yaml changes (size or time).
 const layouts = new Map<string, { key: string; layout: { catalog: string; openspec: string } }>();

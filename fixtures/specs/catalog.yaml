@@ -1,0 +1,109 @@
+# The catalog a scan of the invented forge-orders and forge-stock repos would give, written by
+# hand for the spec tests (ADR 0079). Lines cite fixtures/specs/repos/forge-orders.
+- kind: Component
+  schemaVersion: 2
+  id: forge-orders
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 5 }]
+  system: forge
+  repo: forge-orders
+  type: service
+- kind: Component
+  schemaVersion: 2
+  id: forge-stock
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-stock, path: src/main/java/forge/stock/StockController.java, line: 4 }]
+  system: forge
+  repo: forge-stock
+  type: service
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-orders.post-orders
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 9 }]
+  component: forge-orders
+  endpointType: rest
+  method: POST
+  pathOrTopic: /orders
+  normalizedPath: /orders
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-orders.get-orders-orderid
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 17 }]
+  component: forge-orders
+  endpointType: rest
+  method: GET
+  pathOrTopic: /orders/{orderId}
+  normalizedPath: /orders/{}
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-orders.delete-orders-orderid
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 22 }]
+  component: forge-orders
+  endpointType: rest
+  method: DELETE
+  pathOrTopic: /orders/{orderId}
+  normalizedPath: /orders/{}
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-stock.post-stock-reservations
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-stock, path: src/main/java/forge/stock/StockController.java, line: 9 }]
+  component: forge-stock
+  endpointType: rest
+  method: POST
+  pathOrTopic: /stock/reservations
+  normalizedPath: /stock/reservations
+- kind: DataStore
+  schemaVersion: 2
+  id: forge-orders-db
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 1 }]
+  storeType: relational
+  ownerComponent: forge-orders
+- kind: Table
+  schemaVersion: 2
+  id: forge-orders-db.orders
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 1 }]
+  dataStore: forge-orders-db
+  name: orders
+  tableKind: table
+  ownerComponent: forge-orders
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.orders.id
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 2 }]
+  table: forge-orders-db.orders
+  name: id
+  type: BIGINT
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.orders.sku
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 3 }]
+  table: forge-orders-db.orders
+  name: sku
+  type: VARCHAR(40)
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.orders.quantity
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 4 }]
+  table: forge-orders-db.orders
+  name: quantity
+  type: INT

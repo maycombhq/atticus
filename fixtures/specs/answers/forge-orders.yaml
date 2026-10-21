@@ -1,0 +1,66 @@
+# What an assistant answers to atticus spec draft forge-orders (ADR 0079): the mock runtime
+# hands it back in the tests. One flow per trigger, with a family for the order's resource.
+flows:
+  - id: place-order
+    component: forge-orders
+    name: A client places an order
+    trigger:
+      kind: endpoint
+      ref: forge-orders.post-orders
+      what: A client posts a new order
+      at: "src/main/java/forge/orders/OrderController.java:9"
+    steps:
+      - kind: entry
+        what: OrderController.place receives the new order
+        refs: [forge-orders.post-orders]
+        data: { reads: [sku, quantity] }
+        at: ["src/main/java/forge/orders/OrderController.java:4", "src/main/java/forge/orders/OrderController.java:9"]
+      - kind: call-out
+        what: The stock service reserves the quantity
+        to: { component: forge-stock, entry: "POST /stock/reservations" }
+        data: { sends: [sku, quantity] }
+        at: "src/main/java/forge/orders/StockClient.java:7"
+      - kind: transform
+        what: The request becomes an Order entity
+        data: { from: [NewOrder.sku, NewOrder.quantity], to: [Order.sku, Order.quantity] }
+        at: "src/main/java/forge/orders/OrderController.java:12"
+      - kind: write
+        what: The order is inserted
+        refs: [forge-orders-db.orders]
+        store: { table: forge-orders-db.orders, columns: [sku, quantity] }
+        at: "src/main/java/forge/orders/OrderController.java:13"
+      - kind: respond
+        what: 201 Created with the saved order
+        data: { returns: [id, sku, quantity] }
+        at: "src/main/java/forge/orders/OrderController.java:14"
+    errors:
+      - { when: The body fails validation, then: 400 with the errors, at: "src/main/java/forge/orders/OrderController.java:10" }
+  - id: get-order
+    component: forge-orders
+    name: A client reads an order, or cancels it
+    trigger:
+      kind: endpoint
+      ref: forge-orders.get-orders-orderid
+      what: A client asks for an order by its orderId
+      at: "src/main/java/forge/orders/OrderController.java:17"
+    family: [forge-orders.delete-orders-orderid]
+    steps:
+      - kind: entry
+        what: OrderController.get receives the orderId
+        refs: [forge-orders.get-orders-orderid]
+        data: { reads: [orderId] }
+        at: "src/main/java/forge/orders/OrderController.java:17"
+      - kind: lookup
+        what: The order is looked up by id
+        store: { table: forge-orders-db.orders, columns: [id, sku, quantity] }
+        at: "src/main/java/forge/orders/OrderController.java:19"
+      - kind: respond
+        what: 200 with the order
+        data: { returns: [id, sku, quantity] }
+        at: "src/main/java/forge/orders/OrderController.java:19"
+questions:
+  - question: Does cancelling an order also release the stock it reserved?
+    options:
+      - { label: "Yes", means: The stock service is told, changes: The cancel flow gets a call-out }
+      - { label: "No", means: The stock stays reserved, changes: Nothing }
+    evidence: ["src/main/java/forge/orders/OrderController.java:24"]

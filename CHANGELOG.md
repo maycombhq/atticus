@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Repo specs made of flows
+
+- A new C1 kind, `Flow` (ADR 0079), with its own schema version 1: a trigger, ordered steps (entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry) with the data at each step by field, the table and columns a step reads or writes, where a call-out goes, error paths, a family of near-identical triggers, and a citation and `confirmedBy` (check, AI pass or person) on every step. Flows live in the metarepo at `specs/<repo>/<id>.yaml` with a header in `specs/<repo>/spec.yaml`.
+- A repo type can carry a spec template, `repo-types/<id>/spec-template.yaml` (C6): which triggers a repo of the type has and where the catalog lists them, what each step kind must record, and how flows group into families. A built-in default template is used otherwise.
+- `atticus spec draft <repo>` has your assistant write one flow per trigger from the catalog, the template, the repo type's skills and the answered questions. Each flow is checked (schema, every cited line, every catalog id, call-out targets, writes) before it is written; what fails goes back. It asks a person what the code doesn't settle. Later runs draft only what changed or failed.
+- `atticus spec check <repo> [--json]`: the deterministic critic. Every trigger has a flow, every cited line exists, a call-out's target and a write's table and columns are in the catalog, a field doesn't appear from nowhere, and a step's claim is on its cited line (which marks the step confirmed by the check). A finding that comes back unchanged after a redraft becomes a question.
+- `atticus bench run --specs` also scores drafted specs against the bench's reference flows (`bench/flows/`): triggers covered, steps matched in order, tables and fields named, citations correct.
+
 ### Repo types, matched by fingerprint
 
 - A new org-pack folder, `repo-types/<id>/type.yaml` (ADR 0077, C6). It holds what a kind of repo looks like (build files, dependencies, framework markers and folders, each with a weight), the scan settings every repo of the kind gets (written as patterns), and the skills for reading it.

@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { SCHEMA_VERSION } from "./schema/common.js";
-import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
+import {
+  FLOW_SCHEMA_VERSION,
+  RECORD_KINDS,
+  RECORD_SCHEMAS,
+  type RecordKind,
+} from "./schema/kinds.js";
 import {
   CatalogBaseline,
   ChangeOutcomes,
@@ -14,6 +19,7 @@ import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
 import { Question } from "./schema/question.js";
 import { RepoType } from "./schema/repo-type.js";
+import { SpecTemplate } from "./schema/spec.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
 import * as C6 from "./schema/orgpack.js";
 import * as C5 from "./schema/ai.js";
@@ -27,7 +33,11 @@ export function catalogJsonSchemas(): Record<RecordKind, object> {
   for (const kind of RECORD_KINDS) {
     const schema = z.toJSONSchema(RECORD_SCHEMAS[kind], { io: "input", unrepresentable: "any" });
     out[kind] = {
-      $id: `https://maycombhq.github.io/atticus/schema/catalog/v${SCHEMA_VERSION}/${kind}.json`,
+      // A Flow has its own schema version (ADR 0079).
+      $id:
+        kind === "Flow"
+          ? `https://maycombhq.github.io/atticus/schema/flow/v${FLOW_SCHEMA_VERSION}/${kind}.json`
+          : `https://maycombhq.github.io/atticus/schema/catalog/v${SCHEMA_VERSION}/${kind}.json`,
       title: kind,
       ...schema,
     };
@@ -89,6 +99,7 @@ export function orgPackJsonSchemas(): Record<string, object> {
     ScanSettings,
     Question,
     RepoType,
+    SpecTemplate,
     Sources: C6.Sources,
     Runtime: C6.Runtime,
     SkillMeta: C6.SkillMeta,
