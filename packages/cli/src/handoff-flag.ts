@@ -19,6 +19,9 @@ const STEPS = new Set([
   "scan verify",
   "spec draft",
   "knowledge scan",
+  // ADR 0087: the feature and architecture stages (plan stories already takes it).
+  "change feature",
+  "change architecture",
   "change draft",
   "plan stories",
 ]);

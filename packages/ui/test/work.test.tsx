@@ -109,7 +109,7 @@ describe("what to run next (plan 4.5)", () => {
     expect(stageOf("build")).toBe("tasks");
     expect(stageOf("released")).toBe("done");
     expect(stageStep("feature", change("add-limit", "define")).command).toBe(
-      "atticus change draft add-limit",
+      "atticus change feature add-limit",
     );
     expect(stageStep("feature", change("add-limit", "define")).slash?.command).toBe(
       "/atticus-feature add-limit",
@@ -423,7 +423,7 @@ describe("Feature design, Stories and Tasks", () => {
     );
     expect(out).toContain("openspec/changes/add-limit/brief.md");
     expect(out).not.toContain("openspec/changes/add-limit/tasks.md");
-    expect(out).toContain("atticus change draft add-limit");
+    expect(out).toContain("atticus change feature add-limit");
     expect(out).toContain('<label for="pick-feature-design"');
   });
 

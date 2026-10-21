@@ -112,16 +112,17 @@ export function changeStep(c: ChangeRow, tasks?: TaskRow[]): Step {
   switch (stage) {
     case "feature":
       return {
-        command: `atticus change draft ${c.id}`,
+        command: `atticus change feature ${c.id}`,
         why: W.why.feature,
         slash: metarepo(`/atticus-feature ${c.id}`),
-        after: [critic(c.id), handoff(c.id)],
+        after: [handoff(c.id)],
       };
     case "architecture":
       return {
-        command: `atticus change status ${c.id}`,
+        command: `atticus change architecture ${c.id}`,
         why: W.why.architecture,
-        after: [critic(c.id), handoff(c.id)],
+        slash: metarepo(`/atticus-architecture ${c.id}`),
+        after: [handoff(c.id)],
       };
     case "stories":
       return {

@@ -169,10 +169,10 @@ function changeSteps(c: NextState["changes"][number]): NextStep[] {
       return [
         {
           step: "feature",
-          command: `atticus change draft ${id}`,
+          command: `atticus change feature ${id}`,
           slash: `/atticus-feature ${id}`,
           where: METAREPO,
-          why: `${id} is at the feature stage: your assistant drafts its proposal, spec and interfaces from the brief, and Atticus checks the draft.`,
+          why: `${id} is at the feature stage: your assistant places it on the estate's flows and features, and Atticus checks and criticises every draft until nothing blocks (ADR 0087).`,
           change: id,
         },
       ];
@@ -180,10 +180,10 @@ function changeSteps(c: NextState["changes"][number]): NextStep[] {
       return [
         {
           step: "architecture",
-          command: `atticus change status ${id}`,
+          command: `atticus change architecture ${id}`,
+          slash: `/atticus-architecture ${id}`,
           where: METAREPO,
-          why: `${id} is at the architecture stage. The design is written and reviewed by a person; the status says what still blocks it.`,
-          person: true,
+          why: `${id} is at the architecture stage: your assistant writes its target flows, and Atticus checks and criticises every draft until nothing blocks (ADR 0087).`,
           change: id,
         },
       ];

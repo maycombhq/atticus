@@ -108,7 +108,13 @@ export const COPY = {
         name: "/atticus-feature",
         args: "<change>",
         where: "metarepo",
-        what: "Drafts a change's proposal, spec and interfaces from its brief.",
+        what: "Places a change on the estate's flows and features, looping with the checks and critic.",
+      },
+      {
+        name: "/atticus-architecture",
+        args: "<change>",
+        where: "metarepo",
+        what: "Writes a change's target flows from its feature, looping with the checks and critic.",
       },
       {
         name: "/atticus-stories",
@@ -267,9 +273,9 @@ export const COPY = {
       change: (id: string, stage: string) => `${id} is at the ${stage} stage.`,
       newChange: "Everything is onboarded and no change is in flight. Start one.",
       feature:
-        "Your assistant drafts the proposal, spec and interfaces from the brief and the catalog.",
+        "Your assistant places the change on the estate's flows and features; Atticus checks and criticises every draft until nothing blocks.",
       architecture:
-        "The design stage: the status says what is missing, what blocks it and the PR to merge.",
+        "Your assistant writes the target flows; Atticus checks and criticises every draft until nothing blocks.",
       stories: "Writes the stories, stories.md and tasks.md from the approved design.",
       task: (task: string, repo: string) => `Task ${task} in ${repo} is the next open one.`,
       later: "The change is past this stage; its status says what it needs now.",

@@ -125,25 +125,43 @@ export function stepCommands(): CommandDef[] {
     ),
     step(
       "atticus-feature",
-      "Draft a change's proposal, spec and interfaces from its brief; Atticus checks the draft.",
+      "Place a change on the estate's flows and features, looping with Atticus's checks and critic until it is done.",
       "[change]",
       body(
-        "Draft the feature stage of the change {{ARGS}}: its proposal, spec and interfaces, from the brief and the catalog. Atticus checks the draft and writes the files into the change folder.",
+        "Run the feature stage of the change {{ARGS}}: place it against the estate, from its brief, its existing stories, or a design. You pick, by meaning, the features and flows it touches, the new flows it needs, the gaps and the questions; Atticus checks every id, finds the other changes in flight, runs the critic on every draft and writes feature.yaml. Loop until the stage is done.",
         [
-          ...handoff("atticus change draft {{ARGS}}"),
-          "Run `atticus change status {{ARGS}}` and tell the person what blocks the stage. The critic (`/atticus-critic {{ARGS}}`) and a person's approval of the hand-off pull request come next.",
+          ...handoff("atticus change feature {{ARGS}}", {
+            note: " (add `--from-figma <file.json>` the first time when the change starts from an exported Figma design)",
+          }),
+          "Every draft is checked and criticised. A finding that comes back unchanged twice, or comes back after it was fixed, becomes a question for a person, and the loop stops there.",
+          "When it says the stage is done, tell the person the pull request command it printed. A person opens and approves that pull request; never open or merge it yourself.",
+        ],
+      ),
+    ),
+    step(
+      "atticus-architecture",
+      "Write a change's target flows from its feature, looping with Atticus's checks and critic until it is done.",
+      "[change]",
+      body(
+        "Run the architecture stage of the change {{ARGS}}: from its feature, write the target flows. For every flow it touches, the steps added, changed or removed, with their fields; and the new flows. Atticus checks every flow, step, component and table against the specs and the catalog, reads the interface and data changes off the flows, runs the critic on every draft and writes target-flows/ and design.md. Loop until the stage is done.",
+        [
+          ...handoff("atticus change architecture {{ARGS}}"),
+          "If the first command says the change has no feature yet, stop and say so: run `/atticus-feature {{ARGS}}` first.",
+          "When it says the stage is done, tell the person the pull request command it printed. A person opens and approves that pull request; never open or merge it yourself.",
         ],
       ),
     ),
     step(
       "atticus-stories",
-      "Write a change's stories and tasks from its approved design; Atticus checks them.",
+      "Write a change's stories and tasks from its target flows, looping with Atticus's checks and critic until it is done.",
       "[change]",
       body(
-        "Write the stories of the change {{ARGS}} from its approved design: each story with its acceptance criteria, and the tasks per repo. Atticus writes stories.md and tasks.md and checks them; you write the stories' prose.",
+        "Run the stories stage of the change {{ARGS}}. Atticus derives the stories per repo from the target flows, a task per changed step with its fields, evidence and prompt, and the change tasks and service requests the knowledge items call for, each citing its item and step. You word the stories and write each task's acceptance criteria. Atticus checks them and runs the critic on every draft. Loop until the stage is done.",
         [
           ...handoff("atticus plan stories {{ARGS}}"),
-          "If the first command says the design isn't approved yet, stop and say so: a person approves the design's hand-off pull request first.",
+          "If the first command says the design isn't approved yet, or that the change has no target flows, stop and say so: a person approves the architecture first.",
+          "Never raise a suggested request yourself: they are in requests.md for a person to raise.",
+          "When it says the stage is done, tell the person the pull request command it printed. A person opens and approves that pull request; never open or merge it yourself.",
         ],
       ),
     ),

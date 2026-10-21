@@ -244,8 +244,8 @@ describe("nextSteps (pure)", () => {
       ],
     });
     expect(commands(steps)).toEqual([
-      ["atticus change draft add-limit", "/atticus-feature add-limit"],
-      ["atticus change status move-ledger", null],
+      ["atticus change feature add-limit", "/atticus-feature add-limit"],
+      ["atticus change architecture move-ledger", "/atticus-architecture move-ledger"],
       ["atticus task run split-fees 1.2", "/atticus-task 1.2"],
     ]);
     expect(steps[2]!.where).toBe("forge-ledger");
