@@ -53,7 +53,7 @@ describe("atticus initiative", () => {
       ).toBe(0);
       expect(c.out).toEqual([
         "Started northwind-pay-v3-migration (vendor-api-change). Wrote catalog/curated/initiative/northwind-pay-v3-migration.yaml.",
-        "Plan it: atticus initiative plan northwind-pay-v3-migration --target <system> --release YYYY-MM-DD --by tia",
+        "Plan it: atticus initiative plan northwind-pay-v3-migration --target <system> --release YYYY-MM-DD",
       ]);
       c = capture();
       expect(
@@ -80,7 +80,7 @@ describe("atticus initiative", () => {
         "Northwind Pay v3 migration: 9 items from northwind-pay back to 2027-03-01 (vendor-api-change journey, built-in).",
       );
       expect(c.out).toContain(
-        '  atticus change new "Northwind Pay v3 migration: Ledger" --type feature --id northwind-pay-v3-migration-ledger --system ledger --by tia',
+        '  atticus change new "Northwind Pay v3 migration: Ledger" --type feature --id northwind-pay-v3-migration-ledger --system ledger',
       );
       c = capture();
       expect(

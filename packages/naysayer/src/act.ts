@@ -37,8 +37,6 @@ export interface ActResult {
   message: string;
 }
 
-const bare = (h: string) => h.replace(/^@/, "").toLowerCase();
-
 /**
  * Find a finding by id in the newest round of a gate. A problem several gates raised under one
  * id is taken from the gate that ran most recently (the later gate in gates.yaml when they ran
@@ -80,9 +78,12 @@ async function locate(root: string, change: string, id: string, gate?: string) {
 
 /**
  * Act on a finding: Apply, Edit and apply, Not relevant (with a reason), Waive (blocking only,
- * stage owner only, never a constitution finding) or Ask. The rules of C3 are checked before
+ * with a reason, never a constitution finding) or Ask. The rules of C3 are checked before
  * anything is written; Apply and Edit and apply run the finding's patch (or the edited one)
  * against its artifact, which refuses if the artifact changed since the finding was written.
+ * Whatever is decided is a change to the finding's file in the metarepo, recorded with the
+ * person (`by`); it reaches main through the gate's hand-off PR, whose reviewers see it there
+ * (ADR 0073). Nobody's role is checked.
  */
 export async function act(
   root: string,
@@ -139,15 +140,6 @@ export async function act(
     if (!f.waivable)
       throw new CriticError("refused", `Rule ${f.rule} says its findings can't be waived. Fix it.`);
     if (!o.reason?.trim()) throw new CriticError("invalid", "Waive needs a reason (--reason).");
-    const lifecycle = await loadChangeContext(root);
-    const gate = lifecycle.orgPack.gates.gates.find((g) => g.id === f.gate);
-    const roles = gate?.approvers ?? [];
-    const owners = roles.flatMap((r) => change.owners[r] ?? []).map(bare);
-    if (!owners.includes(bare(o.by)))
-      throw new CriticError(
-        "refused",
-        `Only the ${f.gate} stage owner can waive: ${roles.join(", ") || "no role"} on this change (${owners.join(", ") || "nobody is named in change.yaml"}). ${o.by} is not.`,
-      );
   }
   const askedOf = act === "ask" ? o.askedOf?.trim() || f.question?.owner : undefined;
   if (act === "ask" && !askedOf)
@@ -215,7 +207,7 @@ export async function act(
   else if (act === "ask")
     message = `Asked ${askedOf}. The gap stops blocking while the question is open.`;
   else if (act === "waive")
-    message = `Waived ${f.id}. The waiver and its reason are recorded on the finding.`;
+    message = `Waived ${f.id}. The waiver, its reason and your name are recorded on the finding; it reaches main with the ${f.gate} hand-off PR, where reviewers see it.`;
   else message = `Dismissed ${f.id} as not relevant.`;
 
   await writeFinding(root, next.data);

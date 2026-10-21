@@ -72,7 +72,7 @@ scripts/bundle/      the offline install bundle, SBOM and licence check
 
 - **Install:** [docs/guide/install.md](docs/guide/install.md). One offline zip and one script; Node.js 22.13 or later and Git 2.30 or later.
 - **Set it up for a team:** [docs/guide/admin.md](docs/guide/admin.md).
-- **Your role:** [docs/guide/roles.md](docs/guide/roles.md).
+- **By kind of work:** [docs/guide/roles.md](docs/guide/roles.md).
 - **Every command:** [docs/guide/commands.md](docs/guide/commands.md).
 - **Security:** [docs/security/threat-model.md](docs/security/threat-model.md).
 

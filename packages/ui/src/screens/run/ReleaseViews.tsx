@@ -337,8 +337,6 @@ interface Security {
   secrets: { what: string; source: string }[];
   findings: { id: string; severity: string; summary: string; path: string }[];
   signOff: {
-    role: string;
-    people: string[];
     how: string;
     gates: { gate: string; handoff?: { state: string; pr: string } }[];
   };
@@ -358,11 +356,7 @@ export function SecurityPanel({ id, tick }: { id: string; tick: number }) {
                 <span className="hud" style={{ marginRight: 8 }}>
                   Signs off
                 </span>
-                {r.signOff.role}
-                {r.signOff.people.length
-                  ? ` (${r.signOff.people.join(", ")})`
-                  : " (no one named on the change yet)"}
-                . {r.signOff.how}
+                {r.signOff.how}
               </p>
               <CopyButton text={r.markdown} label="Copy the security review draft" />
             </div>

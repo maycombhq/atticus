@@ -178,7 +178,7 @@ function questionsFor(entry: ManifestRepo, det: Detection): OwnerQuestion[] {
     q.push({
       repo: entry.id,
       field: "owner",
-      question: `Which team owns ${entry.id}? Set owner in repos.manifest.yaml (a team id from roles.yaml).`,
+      question: `Which team owns ${entry.id}? Set owner in repos.manifest.yaml (a team id).`,
     });
   if (!entry.system)
     q.push({

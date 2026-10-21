@@ -30,7 +30,7 @@ steps:
       file in `catalog/curated/`: commit it and every later reconcile uses it.
     do: [[alias, Ledger Platform, ledger-api, --by, ari]]
     check: { type: curated-decision, action: alias, target: ledger-api, includes: Ledger Platform }
-    hint: atticus alias "Ledger Platform" ledger-api --by <you>
+    hint: atticus alias "Ledger Platform" ledger-api
   - id: critic
     title: Let the critic read the change
     body: |

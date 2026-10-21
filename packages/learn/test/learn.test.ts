@@ -236,7 +236,7 @@ describe("the practice sandbox", () => {
     const cmd = await explain(sb.root, "atticus change handoff");
     expect(cmd.kind).toBe("command");
     expect(cmd.lines).toContain(
-      "It writes to a shared system, so it needs your approval each time (--by you).",
+      "It writes to a shared system, so it needs your approval each time (--approve; it shows what it would do first).",
     );
     expect((await explain(sb.root, "scan")).kind).toBe("command");
 

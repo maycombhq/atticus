@@ -1,11 +1,10 @@
-import { accessible, expect, forgeJourney, open, test, workAs } from "../support/app.js";
+import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
 
-/** Architect: reviews the design against the code, settles diagram names, and approves. */
+/** Architect: reviews the design against the code and settles diagram names; approving is the hand-off PR. */
 const app = forgeJourney();
 
 test("reviews the design with its patterns and drift", async ({ page }) => {
   await open(page, app(), "home");
-  await workAs(page, "architect");
   await open(page, app(), "arch-review?change=add-transfer-limit");
   await expect(page.getByRole("heading", { level: 2, name: "Architecture review" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Integration patterns" })).toBeVisible();

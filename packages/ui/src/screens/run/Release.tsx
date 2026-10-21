@@ -49,12 +49,11 @@ interface ReleaseDetail {
     phase?: string;
     nextStep: string;
     risk: { level: string; score: number };
-    required: { roles: string[]; min: number; label: string }[];
     blockers: Reason[];
     reasons: Reason[];
   };
-  releaseApprovers?: { roles: string[]; min: number };
-  handoff?: { state: string; pr: string; approvals: { by: string; roles: string[] }[] };
+  /** The release hand-off PR: merging it is the go (ADR 0073). */
+  handoff?: { state: string; pr: string; approvals: { by: string }[] };
   openFindings: { blocking: number; gap: number; risk: number; idea: number };
   requests: { total: number; filed: number; toFile: number; list: Request[] };
   repos: RepoRow[];
@@ -151,8 +150,7 @@ function Detail({ id }: { id: string }) {
         <View of={d}>
           {(r) => {
             const blockingFindings = r.openFindings.blocking + r.openFindings.gap;
-            const approvals = r.handoff?.approvals.length ?? 0;
-            const min = r.releaseApprovers?.min ?? 1;
+            const approvers = r.handoff?.approvals.map((a) => a.by) ?? [];
             return (
               <div className="stack" style={{ gap: 12 }}>
                 <p style={{ margin: 0, fontSize: 14 }}>
@@ -196,20 +194,24 @@ function Detail({ id }: { id: string }) {
                     detail={`${r.openFindings.blocking} blocking, ${plural(r.openFindings.gap, "knowledge gap")}.`}
                   />
                   <Gate
-                    label="Approvals"
+                    label="Go / no-go PR"
                     value={
                       r.handoff
-                        ? `${approvals} OF ${min}`
+                        ? r.handoff.state === "merged"
+                          ? "MERGED"
+                          : approvers.length
+                            ? "APPROVED, NOT MERGED"
+                            : r.handoff.state.toUpperCase()
                         : r.change.state === "release-ready"
                           ? "NOT RAISED"
                           : "LATER"
                     }
-                    ok={approvals >= min}
+                    ok={r.handoff?.state === "merged"}
                     warn={!r.handoff}
                     detail={
-                      r.releaseApprovers
-                        ? `Go / no-go needs ${min} of: ${r.releaseApprovers.roles.join(", ")}.`
-                        : "No release gate in gates.yaml."
+                      r.handoff
+                        ? `Merging ${r.handoff.pr} is the go${approvers.length ? `; approved by ${approvers.join(", ")}` : ""}.`
+                        : "Go / no-go is the release hand-off PR: merging it is the go."
                     }
                   />
                   <Gate
@@ -221,8 +223,8 @@ function Detail({ id }: { id: string }) {
                   />
                 </ul>
                 <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  A person approves every gate. The approver of go / no-go can't be someone who
-                  wrote the plan or its tests.
+                  A person approves every gate by merging its hand-off PR; the Git host decides who
+                  may approve, and the person who raised a PR can't be its only approver.
                 </p>
                 <div className="row" style={{ flexWrap: "wrap" }}>
                   <button
@@ -242,7 +244,7 @@ function Detail({ id }: { id: string }) {
                       post(
                         `/api/changes/${id}/handoff`,
                         {},
-                        "Go / no-go PR opened. The release approvers can decide now.",
+                        "Go / no-go PR opened. Reviewers decide on the Git host; merging it is the go.",
                       )
                     }
                   >
@@ -252,9 +254,10 @@ function Detail({ id }: { id: string }) {
                     type="button"
                     className="btn"
                     disabled={act.busy || !r.handoff}
+                    title="Reads the PR; merges it as you once it is approved and the Git host's checks pass"
                     onClick={() => post(`/api/changes/${id}/sync`, {}, "Synced with the Git host.")}
                   >
-                    Sync approvals
+                    Sync and merge when approved
                   </button>
                   <button
                     type="button"

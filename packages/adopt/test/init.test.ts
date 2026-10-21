@@ -25,7 +25,6 @@ describe("init", () => {
       "README.md",
       ".gitignore",
       "org-pack/pack.yaml",
-      "org-pack/roles.yaml",
       "org-pack/change-types.yaml",
       "org-pack/gates.yaml",
       "org-pack/runtime.yaml",
@@ -40,6 +39,8 @@ describe("init", () => {
       "catalog/curated/README.md",
     ])
       expect(r.created, f).toContain(f);
+    // roles.yaml is deprecated (ADR 0073): a new metarepo doesn't get one.
+    expect(r.created).not.toContain("org-pack/roles.yaml");
     expect(parse(await readFile(join(root, "org-pack/pack.yaml"), "utf8"))).toEqual({
       schemaVersion: 1,
       name: "shop",

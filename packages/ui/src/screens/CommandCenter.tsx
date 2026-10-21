@@ -2,8 +2,8 @@ import { useState } from "react";
 import { api, ApiError, useApi, useLiveEvents } from "../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../app/flow.js";
 import type { Graph } from "../app/graph.js";
-import { ACTION_LABEL, useMe, ViewPicker } from "../app/me.js";
-import { baseRole, inboxFor, type InboxData } from "../app/roles.js";
+import { useMe } from "../app/me.js";
+import { inboxOf, type InboxData } from "../app/inbox.js";
 import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
 
 interface ChangeSummary {
@@ -76,7 +76,10 @@ function SetupChecklist() {
   const accept = async () => {
     try {
       await api("/api/baseline", { method: "POST", body: {} });
-      setNote({ ok: true, text: "The catalog is accepted as the baseline." });
+      setNote({
+        ok: true,
+        text: "The catalog is accepted as the baseline, with your name, in catalog/baseline.yaml. Commit it and open a pull request: merging it makes it the baseline on main.",
+      });
       setup.reload();
     } catch (e) {
       setNote({
@@ -129,7 +132,8 @@ function SetupChecklist() {
             </button>
             <span className="muted" style={{ fontSize: 12 }}>
               After walking the ecosystem map with the architect. Every later scan, document and
-              change is compared with it.
+              change is compared with it. It is a file in the metarepo, so it reaches main through a
+              pull request.
             </span>
           </div>
         )}
@@ -204,18 +208,14 @@ export function CommandCenter() {
   const qs = useApi<{ data: { questions?: InboxData["questions"] } | null }>("/api/view/questions");
   const triage = useApi<{ data: { items?: InboxData["triage"] } | null }>("/api/view/triage");
   const todo = useApi<{ steps: InboxData["steps"] }>("/api/todo");
-  const approvals = useApi<NonNullable<InboxData["approvals"]>>("/api/me/approvals");
   const { me } = useMe();
-  const role = baseRole(me?.view ?? null, me?.roles ?? []);
-  const roleName = me?.roles.find((r) => r.id === me.view)?.name;
-  // Approvals follow ownership, so they show even before a view is picked.
-  const inbox = inboxFor(role ?? "", {
+  // The same list for everyone: there are no roles (ADR 0073).
+  const inbox = inboxOf({
     changes: changes.state === "ready" ? changes.data : [],
     findings: findings.state === "ready" ? findings.data : [],
     questions: qs.state === "ready" ? (qs.data.data?.questions ?? []) : [],
     triage: triage.state === "ready" ? (triage.data.data?.items ?? []) : [],
     steps: todo.state === "ready" ? todo.data.steps : [],
-    approvals: approvals.state === "ready" ? approvals.data : [],
   });
   const graph = useApi<Graph>("/api/graph");
   // The map is the estate's context view; with one system, that system's components and links.
@@ -243,7 +243,6 @@ export function CommandCenter() {
       map.reload();
       changes.reload();
       findings.reload();
-      approvals.reload();
     }
     if (e.type === "run.changed") findings.reload();
   });
@@ -270,50 +269,14 @@ export function CommandCenter() {
             : "Nothing is blocked right now."}
         </p>
         <span className="hud">
-          {me?.view
-            ? `${roleName ?? me.view} view · ${me.source === "group" ? `from ${me.sourceGroup}` : "chosen by you"}`
-            : "Live from your metarepo"}
+          {me ? `Live from your metarepo · you are ${me.user}` : "Live from your metarepo"}
         </span>
       </div>
-      {me && !me.view && (
-        <div className="bento">
-          <Panel title="Welcome to Atticus" kind="hero" span="1 / -1">
-            <div className="row" style={{ gap: 24, flexWrap: "wrap", alignItems: "flex-end" }}>
-              <p style={{ margin: 0, maxWidth: 620, lineHeight: 1.6 }}>
-                Pick the view you work in. It decides your home and the screens in your sidebar;
-                every screen stays under All screens. What you can approve never comes from the
-                view: it comes from ownership (CODEOWNERS and the org pack).
-              </p>
-              <div style={{ minWidth: 260 }}>
-                <ViewPicker id="first-view" />
-              </div>
-            </div>
-          </Panel>
-        </div>
-      )}
       <SetupChecklist />
-      {me && me.view && (
-        <div className="row" style={{ flexWrap: "wrap", gap: 6 }} aria-label="Approvals you hold">
-          <span className="hud" style={{ fontSize: 10 }}>
-            You approve
-          </span>
-          {me.approvals.length === 0 && me.owns.length === 0 ? (
-            <span className="muted" style={{ fontSize: 12 }}>
-              nothing outside your own PRs yet
-            </span>
-          ) : null}
-          {me.approvals.map((a) => (
-            <span key={a.action} className="chip done" title={a.because}>
-              {(ACTION_LABEL[a.action] ?? a.action).toUpperCase()}
-            </span>
-          ))}
-          {me.owns.map((o) => (
-            <span key={o} className="chip dim" title="CODEOWNERS">
-              {o}
-            </span>
-          ))}
-        </div>
-      )}
+      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+        Approving is the pull request: each phase ends with a hand-off PR, and merging it approves
+        the gate. Your Git host decides who may approve.
+      </p>
 
       <div className="bento" role="list" aria-label="Key numbers">
         {[
@@ -415,33 +378,18 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        {role && !["architect", "data-architect", "security-reviewer"].includes(role) ? (
-          <Panel title="Your phase" kind="dark" span="span 3">
-            <div className="stack">
-              <span className="big">{inbox.filter((x) => x.kind === "phase").length}</span>
-              <span className="hud" style={{ fontSize: 10 }}>
-                Changes waiting on {roleName ?? "you"}
-              </span>
-              <span className="muted" style={{ fontSize: 12 }}>
-                {inbox.length - inbox.filter((x) => x.kind === "phase").length} other items in your
-                inbox
-              </span>
-            </div>
-          </Panel>
-        ) : (
-          <Panel title="Interfaces" kind="dark" span="span 3">
-            <View of={kinds}>
-              {() => (
-                <div className="stack">
-                  <span className="big">{interfaces}</span>
-                  <span className="hud" style={{ fontSize: 10 }}>
-                    Interfaces in the catalog
-                  </span>
-                </div>
-              )}
-            </View>
-          </Panel>
-        )}
+        <Panel title="Interfaces" kind="dark" span="span 3">
+          <View of={kinds}>
+            {() => (
+              <div className="stack">
+                <span className="big">{interfaces}</span>
+                <span className="hud" style={{ fontSize: 10 }}>
+                  Interfaces in the catalog
+                </span>
+              </div>
+            )}
+          </View>
+        </Panel>
 
         <Panel
           title="System map"
@@ -467,15 +415,18 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel
-          title="Waiting on you"
-          span="span 4"
-          meta={role || inbox.length ? inbox.length : undefined}
-        >
-          {!role && inbox.length === 0 ? (
-            <div className="state">Pick a view to see what waits on you.</div>
+        <Panel title="Needs a person" span="span 4" meta={inbox.length || undefined}>
+          {changes.state === "loading" || findings.state === "loading" ? (
+            <div className="state" role="status">
+              Loading…
+            </div>
+          ) : changes.state === "error" || findings.state === "error" ? (
+            <div className="state" role="alert">
+              Couldn't load what needs a person. Check that atticus ui is still running, then
+              reload.
+            </div>
           ) : inbox.length === 0 ? (
-            <div className="state">Nothing waiting on you.</div>
+            <div className="state">Nothing needs a person right now.</div>
           ) : (
             <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {inbox.slice(0, 5).map((x, k) => (
@@ -494,7 +445,7 @@ export function CommandCenter() {
                       </span>
                     </span>
                     <span
-                      className={`chip ${x.kind === "finding" ? "blocking" : x.kind === "phase" ? "" : x.kind === "approval" ? "done" : "warn"}`}
+                      className={`chip ${x.kind === "finding" ? "blocking" : x.kind === "phase" ? "" : "warn"}`}
                     >
                       {x.kind.toUpperCase()}
                     </span>

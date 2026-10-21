@@ -480,7 +480,7 @@ async function decide(
   }
 }
 
-/** atticus glossary define <term> <definition> --by <handle> [--owner <team>] */
+/** atticus glossary define <term> <definition> [--by <handle>] [--owner <team>] */
 export async function glossaryDefine(
   root: string,
   term: string | undefined,
@@ -489,7 +489,7 @@ export async function glossaryDefine(
   io: Output,
 ): Promise<number> {
   if (!term || !definition || !o.by) {
-    io.err('Usage: atticus glossary define <term> "<definition>" --by <handle> [--owner <team>]');
+    io.err('Usage: atticus glossary define <term> "<definition>" [--by <handle>] [--owner <team>]');
     return 2;
   }
   return decide(
@@ -509,7 +509,7 @@ export async function glossaryDefine(
   );
 }
 
-/** atticus glossary link <term> <record-id | schema#field | feature> --by <handle> */
+/** atticus glossary link <term> <record-id | schema#field | feature> [--by <handle>] */
 export async function glossaryLink(
   root: string,
   term: string | undefined,
@@ -518,7 +518,7 @@ export async function glossaryLink(
   io: Output,
 ): Promise<number> {
   if (!term || !recordId || !o.by) {
-    io.err("Usage: atticus glossary link <term> <record-id | schema#field> --by <handle>");
+    io.err("Usage: atticus glossary link <term> <record-id | schema#field> [--by <handle>]");
     return 2;
   }
   return decide(
@@ -538,7 +538,7 @@ export async function glossaryLink(
   );
 }
 
-/** atticus glossary alias <term> <other name>... --by <handle> */
+/** atticus glossary alias <term> <other name>... [--by <handle>] */
 export async function glossaryAlias(
   root: string,
   term: string | undefined,
@@ -547,7 +547,7 @@ export async function glossaryAlias(
   io: Output,
 ): Promise<number> {
   if (!term || !names.length || !o.by) {
-    io.err('Usage: atticus glossary alias <term> "<other name>"... --by <handle>');
+    io.err('Usage: atticus glossary alias <term> "<other name>"... [--by <handle>]');
     return 2;
   }
   return decide(

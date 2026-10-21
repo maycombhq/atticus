@@ -49,7 +49,7 @@ function flags(args: string[]): { pos: string[]; f: Record<string, string[]> } {
 /**
  * Run a lesson command the way a learner types it. Commands this track adds (initiative,
  * defences, explain, learn) go to their functions, as main.ts will once they are wired; the
- * hand-off goes through one shared mock Git host on which the product owner approves (in a
+ * hand-off goes through one shared mock Git host on which the architect approves (in a
  * sandbox with a manual Git host this is the step a person records with atticus todo done).
  */
 async function atticus(root: string, argv: string[], io: Output, gh: MockGitHost): Promise<number> {
@@ -83,21 +83,22 @@ async function atticus(root: string, argv: string[], io: Output, gh: MockGitHost
   if (a === "defences" && b === "scan") return defencesScan(root, pos[0], {}, io);
   if (a === "explain") return explainCommand(root, [b, ...rest].join(" "), {}, io);
   if (a === "change" && b === "handoff") {
-    const code = await changeHandoff(root, pos[0]!, { by: one("by")!, repo: REPO }, io, {
+    const approve = "approve" in f;
+    const code = await changeHandoff(root, pos[0]!, { by: one("by")!, approve, repo: REPO }, io, {
       gitHost: gh,
       now: "2026-12-14T10:00:00Z",
     });
-    if (code === 0)
+    if (code === 0 && approve)
       gh.review(
         REPO,
         gh.journal.filter((j) => j.method === "createPullRequest").length,
-        "pat",
+        "ari",
         "approved",
       );
     return code;
   }
   if (a === "change" && b === "sync")
-    return changeSync(root, pos[0]!, { by: one("by")!, repo: REPO }, io, {
+    return changeSync(root, pos[0]!, { by: one("by")!, approve: "approve" in f, repo: REPO }, io, {
       gitHost: gh,
       now: "2026-12-14T11:00:00Z",
     });
@@ -201,7 +202,7 @@ describe("atticus learn, sandbox and explain", () => {
       "interface-approved-pattern-interfaces-l6 is a critic finding on change add-transfer-limit at the plan gate (round 1).",
     );
     expect(c.out).toContain(
-      "  It is blocking: it stops the hand-off until it is fixed or, where allowed, waived by the stage owner.",
+      "  It is blocking: it stops the hand-off until it is fixed or, where allowed, waived with a reason.",
     );
     expect(c.out.some((l) => l.includes("It is open.") && l.includes("it can't be waived"))).toBe(
       true,
@@ -255,7 +256,7 @@ async function withoutGlobalGit<T>(fn: () => Promise<T>): Promise<T> {
 const RECORDED: Record<string, string> = {
   url: "https://git.example.com/forge/forge-meta/pull/1",
   number: "1",
-  approvers: "pat",
+  approvers: "ari",
   checksPassing: "yes",
   mergedBy: "pat",
 };
@@ -323,7 +324,14 @@ describe("the practice sandbox works like a real metarepo", () => {
             const done = await run(args);
             expect(done.code, `atticus ${args.join(" ")}: ${done.text}`).toBe(0);
           }
-          const sync = await run(["change", "sync", "show-transfer-history", "--by", "pat"]);
+          const sync = await run([
+            "change",
+            "sync",
+            "show-transfer-history",
+            "--approve",
+            "--by",
+            "pat",
+          ]);
           expect([0, 1], sync.text).toContain(sync.code);
         }
         const c = capture();

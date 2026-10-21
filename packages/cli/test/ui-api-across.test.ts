@@ -10,7 +10,7 @@ import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiAcrossRoutes } from "../src/ui-api-across.js";
 import { uiMeRoutes } from "../src/ui-api-me.js";
-import { digestCommand, handleIsMine } from "../src/digest-commands.js";
+import { digestCommand } from "../src/digest-commands.js";
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures");
 const CHANGE = "add-transfer-limit";
@@ -61,7 +61,7 @@ beforeAll(async () => {
     confidence: "asserted",
     evidence: [{ source: "manual", by: "ari" }],
   });
-  // The plan hand-off is open, waiting on bao and the delivery group.
+  // The plan hand-off is open, raised by bao, with the delivery group asked to review.
   const file = join(root, "openspec/changes", CHANGE, "change.yaml");
   const c = parse(await readFile(file, "utf8")) as { handoffs: unknown[] };
   c.handoffs.push({
@@ -76,6 +76,7 @@ beforeAll(async () => {
     reviewers: ["forge/delivery", "tia"],
   });
   await writeFile(file, stringify(c));
+  // Left from ADR 0044: groups and a view, which nothing reads any more.
   await mkdir(join(root, ".atticus"), { recursive: true });
   await writeFile(
     join(root, ".atticus/me.yaml"),
@@ -182,28 +183,15 @@ describe("the field-mapping grid", () => {
   });
 });
 
-describe("approvals waiting and the digest", () => {
-  it("matches handles to the person and their groups", () => {
-    expect(handleIsMine("forge/delivery", "dana", ["Forge Delivery"])).toBe("Forge Delivery");
-    expect(handleIsMine("@dana", "dana", [])).toBe("you");
-    expect(handleIsMine("forge/platform", "dana", ["Forge Delivery"])).toBeUndefined();
+describe("the digest (ADR 0048, 0073)", () => {
+  it("lists no approvals waiting: reviews are the Git host's, and there are no groups", async () => {
+    expect((await call("GET", "/api/me/approvals")).status).toBe(404);
+    const d = await call("POST", "/api/me/digest", {});
+    expect(d.body.title).toBe("Atticus: nothing waits on you");
+    expect(d.body).not.toHaveProperty("waiting");
   });
 
-  it("lists the open hand-off that waits on one of the person's groups, with the PR to open", async () => {
-    const r = await call("GET", "/api/me/approvals");
-    expect(r.status).toBe(200);
-    expect(r.body).toEqual([
-      expect.objectContaining({
-        change: CHANGE,
-        phase: "plan",
-        kind: "review",
-        pr: "https://git.example.com/forge/forge-metarepo/pull/3",
-        because: "Forge Delivery is a reviewer",
-      }),
-    ]);
-  });
-
-  it("saves digest settings in the person's own file, keeping their groups and view", async () => {
+  it("saves digest settings in the person's own file, dropping the old groups and view", async () => {
     const r = await call("PUT", "/api/me/notify", { digest: "daily", channel: "#dana-updates" });
     expect(r.status).toBe(200);
     expect(r.body.notify).toEqual({ digest: "daily", channel: "#dana-updates" });
@@ -211,21 +199,29 @@ describe("approvals waiting and the digest", () => {
       string,
       unknown
     >;
-    expect(saved).toEqual({
-      groups: ["Forge Delivery"],
-      view: "delivery-lead",
-      notify: { digest: "daily", channel: "#dana-updates" },
-    });
+    expect(saved).toEqual({ notify: { digest: "daily", channel: "#dana-updates" } });
     expect((await call("PUT", "/api/me/notify", { digest: "hourly" })).status).toBe(400);
-    // Changing the view keeps the notify settings.
-    await call("PUT", "/api/me", { view: "delivery-lead" });
-    expect(parse(await readFile(join(root, ".atticus/me.yaml"), "utf8")).notify).toBeDefined();
   });
 
-  it("shows the digest, and sends it only when asked, with the person as the approver", async () => {
+  it("shows your hand-offs to revise, and sends the digest only when asked, with you as the approver", async () => {
+    // Changes were requested on a hand-off dana raised.
+    const file = join(root, "openspec/changes", CHANGE, "change.yaml");
+    const was = await readFile(file, "utf8");
+    const c = parse(was) as { handoffs: { phase: string; by: string; state: string }[] };
+    const plan = c.handoffs.find((h) => h.phase === "plan")!;
+    plan.by = "dana";
+    plan.state = "changes-requested";
+    await writeFile(file, stringify(c));
     const seen = await call("POST", "/api/me/digest", {});
     expect(seen.status).toBe(200);
     expect(seen.body.title).toBe("Atticus: 1 thing waits on you");
+    expect(seen.body.revise).toEqual([
+      expect.objectContaining({
+        change: CHANGE,
+        phase: "plan",
+        pr: "https://git.example.com/forge/forge-metarepo/pull/3",
+      }),
+    ]);
     expect(seen.body.sent).toBeUndefined();
     expect(notifier.sent).toHaveLength(0);
 
@@ -234,6 +230,7 @@ describe("approvals waiting and the digest", () => {
     expect(notifier.sent[0]).toMatchObject({ channel: "#dana-updates", mentions: ["dana"] });
     expect(notifier.sent[0]!.body).toMatch(/pull\/3/);
     expect(notifier.journal.at(-1)?.approval).toMatchObject({ by: "dana", ref: "digest:dana" });
+    await writeFile(file, was);
   });
 
   it("says why it wasn't sent when no notify adapter is connected, or it is manual", async () => {
@@ -244,7 +241,7 @@ describe("approvals waiting and the digest", () => {
     const err: string[] = [];
     const code = await digestCommand(
       root,
-      { as: "dana", groups: ["Forge Delivery"], send: true },
+      { as: "dana", send: true },
       { out: (l) => out.push(l), err: (l) => err.push(l) },
     );
     expect(code).toBe(1);

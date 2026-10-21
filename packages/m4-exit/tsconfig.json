@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "..", "types": ["node"], "noEmit": true },
-  "include": ["test", "../ui/src/app/roles.ts"]
+  "include": ["test", "../ui/src/app/inbox.ts"]
 }

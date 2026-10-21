@@ -22,11 +22,11 @@ Usage:
   atticus impact <id>                  What a change to a record reaches, with owners and open questions
   atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
-  atticus baseline --by <you>          Accept the as-is catalog as the baseline [--note text] [--site dir]
+  atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant
-  atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first) [--by you]
+  atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first)
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
-  atticus digest --as <you>            What waits on you [--group g]... [--channel c] [--send] [--json]
+  atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
   atticus guide <system> [--json]      A system's guide, generated from the catalog: parts, calls, data, runtime, decisions
   atticus site build <dir> [--title t] The read-only catalog site as static files (only systems open to everyone)
           [--depth n] [--json]
@@ -43,7 +43,7 @@ Usage:
   atticus intake list [--json]         What intake read from inputs/: kinds, systems, duplicates, versions
   atticus triage [--json]              What needs a person: unknown names, conflicts with code, image edges
   atticus triage decide <item> <n>     Choose option n for a triage item; writes a curated decision
-          [--by handle] [--reason text]
+          [--reason text]
   atticus diagram render <view|file>   Draw a view (context, container, data, event, sequence) or a .drawio file
           [--focus id] [--format mermaid|drawio] [--out file]
   atticus diagram library <file>       Write the draw.io shape library
@@ -70,49 +70,50 @@ Usage:
   atticus frameworks check [name]      Run each framework model's own tests; a failing model isn't used
   atticus frameworks survey [--package <prefix>[,...]]   How the repos use house frameworks, any language [--json]
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
-  atticus change new "<title>"         Start a change from a template: --type <type> --by <you>
+  atticus change new "<title>"         Start a change from a template: --type <type>
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
-  atticus change status <id> [--json]  State, next step, what blocks it, risk, approvals and test kinds
-  atticus change handoff <id> --by <you>  Open the phase's hand-off PR for approval [--repo]
-  atticus change sync <id> [--by <you>]   Merge an approved hand-off and advance the state [--repo]
-  atticus change return <id> --by <you> --reason "<why>"  Return the change to the product owner
-  atticus change archive <id> --by <you> [--no-rescan]  Archive a released change and rescan its repos
+  atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
+  atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
+                                       (without --approve: say what it would open, send nothing)
+  atticus change sync <id> [--approve]   Read the hand-off PR; a merged PR moves the change on (--approve merges a ready one)
+  atticus change return <id> --reason "<why>" --approve  Close the hand-off PR and return the change to the product owner
+  atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
   atticus change list [--json]         Every change and its state
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
   atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
   atticus findings <change> [--json]   The change's findings by gate and round
-  atticus finding <change> <id> <action> --by <you>  apply | edit-and-apply | not-relevant | waive | ask
+  atticus finding <change> <id> <action>  apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR)
           [--gate g] [--reason text] [--asked-of who] [--edit patch-file]
   atticus feature list [--json]        Features found in code, named by people or proposed by AI
   atticus feature show <id> [--json]   A feature's entry points, flow, owner, links and gaps
-  atticus feature name <id> "<name>"   Confirm or correct a feature's name [--description] [--owner] [--by]
-  atticus feature tag <id> <tags...>   Tag a feature [--by]
-  atticus feature merge <into> <from...>  Merge features [--by]
-  atticus feature split <id> <entry-points...>  Split entry points into another feature [--name] [--into] [--by]
-  atticus feature link <id> <ref>      Link a work item or page, e.g. ado:1234 [--title] [--by]
+  atticus feature name <id> "<name>"   Confirm or correct a feature's name [--description] [--owner]
+  atticus feature tag <id> <tags...>   Tag a feature
+  atticus feature merge <into> <from...>  Merge features
+  atticus feature split <id> <entry-points...>  Split entry points into another feature [--name] [--into]
+  atticus feature link <id> <ref>      Link a work item or page, e.g. ado:1234 [--title]
   atticus feature suggest-links [--json]  Suggest links between features and work items
   atticus feature spec <id>            Draft an OpenSpec capability spec from a confirmed feature
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
-  atticus task run <change> <task> --by <you>  Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]
+  atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]
   atticus spec hand-down <change> <task>  Create the task's Spec Kit feature in its repo [--force]
-  atticus spec hand-up <change> <task> --by <you>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
+  atticus spec hand-up <change> <task>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
   atticus drift <change> [--json]      Compare design, repo plans and code
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
   atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]
   atticus plan snow <change>           Draft service-desk requests the change needs [--force]
   atticus plan bar <change>            Measure the story bar [--eval file]
-  atticus plan submit <change>         File the drafted requests [--dry-run] [--approve --by you]
-  atticus ado sync <change>            Create or update work items [--dry-run] [--approve --by you] [--epic id]
+  atticus plan submit <change>         File the drafted requests (a dry run until you add --approve)
+  atticus ado sync <change>            Create or update work items (a dry run until you add --approve) [--epic id]
   atticus templates draft              Draft request and work-item templates from wikis, uploads and past tickets [--no-ai]
   atticus todo [--change id] [--all]   Manual steps waiting for a person
   atticus todo show <step> [--export text|csv|import]
-  atticus todo done <step> --by <you>  Record a manual step's result [--result k=v]... [--skip --note why]
-  atticus todo run <step> --with <executor>  Run a step with a team's own tool [--approve --by you --inputs sha] [--fill-only]
+  atticus todo done <step>             Record a manual step's result [--result k=v]... [--skip --note why]
+  atticus todo run <step> --with <executor>  Run a step with a team's own tool [--approve --inputs sha] [--fill-only]
   atticus executors check              Ping configured executors and show what each covers
   atticus init <folder> --platform <p>  Create a new metarepo named after the folder [--from pack] [--owner who]
   atticus adopt <path>                 Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]
@@ -129,20 +130,20 @@ Usage:
   atticus release notes <change> [--audience business|technical] [--json]  Release notes from the brief, interfaces and data
   atticus release security <change> [--json]  Security review draft: auth, classifications, boundaries, vendors, secrets
   atticus outcome list [--change id] [--json]  The brief's success measures and the values recorded after release
-  atticus outcome record <change> <measure> --value <v> --by <you>  Record a measured outcome [--note text]
+  atticus outcome record <change> <measure> --value <v>  Record a measured outcome [--note text]
   atticus ci drift [repo] --catalog <path>  In a repo's pipeline: compare the repo with the committed catalog
           [--repo id] [--json [file]] [--junit file] [--summary file] [--warn-only]
   atticus ci snippet <github|azure|gitlab|jenkins> [--write dir]  Pipeline template for the drift check
   atticus ci archive-gate <change> [--drift file]...  Whether a change may be archived
   atticus glossary list|scan [--json]  Business terms from wikis, code and people
-  atticus glossary define <term> "<definition>" --by <you> [--owner team]
-  atticus glossary link <term> <record-id|schema#field> --by <you>
-  atticus glossary alias <term> <name>... --by <you>
-  atticus initiative new "<title>" --journey <j> --by <you>  Start an initiative [--id] [--release YYYY-MM-DD] [--epic]
-  atticus initiative plan <id> --target <system> --by <you>  Plan its changes and commitments [--release d] [--system s]... [--dry-run]
+  atticus glossary define <term> "<definition>" [--owner team]
+  atticus glossary link <term> <record-id|schema#field>
+  atticus glossary alias <term> <name>...
+  atticus initiative new "<title>" --journey <j>  Start an initiative [--id] [--release YYYY-MM-DD] [--epic]
+  atticus initiative plan <id> --target <system>  Plan its changes and commitments [--release d] [--system s]... [--dry-run]
   atticus initiative status <id>       Critical path, at-risk and slipped commitments
-  atticus initiative request <id> <party> --by <you>  Send a team a system card and track the reply [--system s]...
-  atticus initiative commit <commitment> <open|at-risk|done|slipped> --by <you>
+  atticus initiative request <id> <party>  Send a team a system card and track the reply [--system s]...
+  atticus initiative commit <commitment> <open|at-risk|done|slipped>
   atticus learn [list] | learn start <role|lesson> | learn check [--answer a] [--lesson l] [--step s]
   atticus sandbox create <dir>         A throwaway practice metarepo
   atticus explain <id|command>         Explain a record, finding, change or command in plain words
@@ -152,7 +153,7 @@ Usage:
   atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>
                                        Check a catalog, org pack, dialect, plugin or executor against the spec
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
-          [--by handle] [--reason text]
+          [--reason text]
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
@@ -165,6 +166,7 @@ Usage:
           [--all] [--force]            All worktrees; also those with uncommitted work
 
   --root <dir>                         The metarepo (default: the current folder)
+  --by <handle>                        Who is acting (default: the metarepo's Git user, git config user.email)
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
   atticus --version                    Print the version
   atticus --help                       Show this help

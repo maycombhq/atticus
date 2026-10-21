@@ -10,12 +10,14 @@ import { ChangeArtifact, Phase, RecordId } from "@maycombhq/core";
  * optional and a section a team writes replaces the built-in one, field by field.
  *
  * - `artifactPhases`: the phase in which each artifact is written and handed off.
- * - `privacy`: the role that approves changes touching personal data, which catalog
- *   classifications count as personal, and the phase whose hand-off needs that approval.
- * - `risk`: weights for the deterministic risk score, the score at which a change becomes
- *   medium or high risk, and extra approvals per risk level and phase.
- * - `selfApproval`: where a person may approve a hand-off of artifacts they wrote. Never
- *   at release: that is a safety rule and the loader refuses it.
+ * - `privacy`: which catalog classifications count as personal, and the phase whose hand-off
+ *   PR says so.
+ * - `risk`: weights for the deterministic risk score and the score at which a change becomes
+ *   medium or high risk.
+ *
+ * Deprecated (ADR 0073), still validated and not read: `privacy.role`, `risk.approvals` and
+ * `selfApproval`. A gate is approved when its hand-off PR merges; the Git host decides who may
+ * approve, and the person who raised a PR is never its only approver.
  */
 export const CHANGE_POLICY_FILE = "process/change-policy.yaml";
 

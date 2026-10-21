@@ -262,7 +262,11 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           nextStep: rep.nextStep,
           risk: rep.risk,
           tests: rep.tests,
-          required: rep.required,
+          ...(rep.handoff
+            ? {
+                handoff: { pr: rep.handoff.pr, state: rep.handoff.state, phase: rep.handoff.phase },
+              }
+            : {}),
           blockers: rep.blockers,
           reasons: rep.reasons,
         },
@@ -334,12 +338,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     .add("POST", "/api/changes/{changeId}/handoff", async ({ params, body }) => {
       await readChange(root, params.changeId!);
       // The phase defaults to the change's current one; repo names the metarepo (ADR 0043).
+      // The person's click is the approval to open the PR (ADR 0073).
       const b = parseBody(Api.HandoffRequest, body);
       const res = await run((io) =>
         changeHandoff(
           root,
           params.changeId!,
-          { by: user, ...(b.repo ? { repo: b.repo } : {}) },
+          { by: user, approve: true, ...(b.repo ? { repo: b.repo } : {}) },
           io,
           changeDeps,
         ),
@@ -350,11 +355,12 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
     .add("POST", "/api/changes/{changeId}/sync", async ({ params, body }) => {
       await readChange(root, params.changeId!);
       const b = parseBody(Api.SyncRequest, body);
+      // Sync and merge: the person's click is the approval to merge a PR that is ready.
       const res = await run((io) =>
         changeSync(
           root,
           params.changeId!,
-          { by: user, ...(b.repo ? { repo: b.repo } : {}) },
+          { by: user, approve: true, ...(b.repo ? { repo: b.repo } : {}) },
           io,
           changeDeps,
         ),

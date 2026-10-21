@@ -113,7 +113,7 @@ export async function todoList(
   ))
     io.out(line);
   io.out(
-    "Show a step with atticus todo show <step>; record it with atticus todo done <step> --result name=value --by <you>.",
+    "Show a step with atticus todo show <step>; record it with atticus todo done <step> --result name=value.",
   );
   return 0;
 }
@@ -162,7 +162,7 @@ function results(
   return out;
 }
 
-/** atticus todo done <step> --by <you> [--result name=value]… [--skip --note <why>] */
+/** atticus todo done <step> [--by <you>] [--result name=value]… [--skip --note <why>] */
 export async function todoDone(
   root: string,
   stepRef: string | undefined,
@@ -172,7 +172,7 @@ export async function todoDone(
 ): Promise<number> {
   if (!stepRef || !o.by) {
     io.err(
-      "Usage: atticus todo done <step> --by <you> [--result name=value]… [--skip --note <why>]",
+      "Usage: atticus todo done <step> [--by <you>] [--result name=value]… [--skip --note <why>]",
     );
     return 2;
   }

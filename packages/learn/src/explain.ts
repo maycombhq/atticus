@@ -73,7 +73,7 @@ const CONFIDENCE: Record<string, string> = {
 
 const SEVERITY: Record<string, string> = {
   blocking:
-    "blocking: it stops the hand-off until it is fixed or, where allowed, waived by the stage owner",
+    "blocking: it stops the hand-off until it is fixed or, where allowed, waived with a reason",
   gap: "a knowledge gap: a fact only a person can give; it needs an answer or a recorded reason",
   risk: "a risk: worth knowing, never blocks",
   idea: "an idea: a suggestion, never blocks",
@@ -81,7 +81,7 @@ const SEVERITY: Record<string, string> = {
 
 const ACTIONS: Record<string, string> = {
   issue:
-    "apply the fix, edit and apply, mark not relevant with a reason, or (if blocking and waivable) waive it as the stage owner",
+    "apply the fix, edit and apply, mark not relevant with a reason, or (if blocking and waivable) waive it with a reason",
   "knowledge-gap": "ask the owner the question, or edit and apply the answer",
 };
 
@@ -332,10 +332,7 @@ export async function explain(
             ? `It is open. You can ${ACTIONS[x.kind]}${x.waivable ? "" : "; it can't be waived"}.`
             : `It is ${x.state}${x.resolution ? ` (by ${x.resolution.by})` : ""}.`,
         ],
-        seeAlso: [
-          `atticus finding ${x.change} ${x.id} <action> --by <you>`,
-          `atticus explain ${x.rule}`,
-        ],
+        seeAlso: [`atticus finding ${x.change} ${x.id} <action>`, `atticus explain ${x.rule}`],
       };
     }
   }
@@ -370,7 +367,9 @@ function commandExplanation(
       `Usually run by: ${c.who.join(", ")}.`,
       c.changes === "nothing" ? "It only reads; it changes nothing." : `It changes: ${c.changes}.`,
       ...(c.approval
-        ? ["It writes to a shared system, so it needs your approval each time (--by you)."]
+        ? [
+            "It writes to a shared system, so it needs your approval each time (--approve; it shows what it would do first).",
+          ]
         : []),
     ],
     seeAlso: (c.related ?? []).map((r) => `atticus explain ${r}`),

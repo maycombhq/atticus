@@ -43,7 +43,8 @@ export interface Status {
   next?: string;
   nextStep: string;
   risk: { level: string; score: number };
-  required: { roles: string[]; min: number; label: string }[];
+  /** The open hand-off PR: merging it approves the gate (ADR 0073). */
+  handoff?: { pr: { number: number; url: string }; state: string; phase: string };
   blockers: Reason[];
   reasons: Reason[];
 }
@@ -490,11 +491,7 @@ function Detail({ id }: { id: string }) {
                       >
                         RISK {s.risk.level.toUpperCase()}
                       </span>
-                      {s.required.map((r) => (
-                        <span key={r.label} className="chip ai" title={r.label}>
-                          NEEDS {r.roles.join(" OR ").toUpperCase()}
-                        </span>
-                      ))}
+
                       {d.handoff && (
                         <span className="chip">
                           {d.handoff.phase.toUpperCase()} HAND-OFF · {d.handoff.state.toUpperCase()}
@@ -528,7 +525,7 @@ function Detail({ id }: { id: string }) {
                               api(`/api/changes/${id}/handoff`, { method: "POST", body: {} }).then(
                                 reloadAll,
                               ),
-                            "Hand-off PR opened. The approvers can review it now.",
+                            "Hand-off PR opened. Reviewers approve it on the Git host; merging it approves the gate.",
                           )
                         }
                       >
@@ -548,7 +545,7 @@ function Detail({ id }: { id: string }) {
                           )
                         }
                       >
-                        Sync approvals
+                        Sync and merge when approved
                       </button>
                       <button
                         type="button"

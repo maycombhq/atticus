@@ -1,6 +1,6 @@
 # Security review draft: Add a daily transfer limit
 
-Change `add-transfer-limit`, generated 2026-10-21 from the catalog and the change folder. A draft for the architect: every line says where it came from, and anything Atticus couldn't find is listed as a gap.
+Change `add-transfer-limit`, generated 2026-10-21 from the catalog and the change folder. A draft for the reviewers of the hand-off PRs: every line says where it came from, and anything Atticus couldn't find is listed as a gap.
 
 ## New or changed interfaces
 
@@ -74,9 +74,9 @@ _No critic round has run yet, so there are no findings to show._
 
 ## Sign-off
 
-- Who: architect (ari, avery). roles.yaml doesn't enable the security-reviewer role, so the architect signs off.
-- How: An architect approves the design hand-off PR on the Git host; atticus change sync reads the approval. There is no separate security approval.
-- design gate: hand-off PR https://git.example.com/forge/forge-metarepo/pull/2 is merged, approved by avery (architect) 2026-10-19.
+- How: Reviewers approve the design and release hand-off PRs on the Git host with this draft in hand; merging a PR is its sign-off, and atticus change sync records it. The Git host's rules (branch protection, CODEOWNERS) decide who may approve. There is no separate security approval.
+- design gate: hand-off PR https://git.example.com/forge/forge-metarepo/pull/2 is merged, approved by avery 2026-10-19.
+- release gate: no hand-off PR yet.
 
 ## Gaps
 

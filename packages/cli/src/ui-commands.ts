@@ -50,19 +50,20 @@ function openBrowser(url: string): void {
 }
 
 /**
- * atticus ui [--port n] [--open]: serve the app on 127.0.0.1 until Ctrl+C. The session token
+ * atticus ui [--port n] [--open] [--by handle]: serve the app on 127.0.0.1 until Ctrl+C. The session token
  * is new each start and is handed to the app inside its page, so only this machine's browser,
  * on a page from this server, can drive the API.
  */
 export async function uiCommand(
   root: string,
-  o: { port?: number; open?: boolean; version?: string },
+  o: { port?: number; open?: boolean; version?: string; user?: string },
   io: Output,
 ): Promise<number> {
   let srv: RunningServer;
   try {
     srv = await startUi(root, {
       ...(o.port !== undefined ? { port: o.port } : {}),
+      ...(o.user ? { user: o.user } : {}),
       ...(o.version ? { version: o.version } : {}),
     });
   } catch (e) {
@@ -76,6 +77,13 @@ export async function uiCommand(
   }
   io.out(`Atticus is running at ${srv.url} (Ctrl+C stops it).`);
   io.out(`For assistants and scripts, the session token is ${srv.token}`);
+  const p = srv.person;
+  io.out(
+    p.source === "git"
+      ? `You are ${p.handle}${p.name ? ` (${p.name})` : ""}, from your Git user.`
+      : `You are ${p.handle}.`,
+  );
+  if (p.warning) io.err(p.warning);
   if (o.open) openBrowser(srv.url);
   await new Promise<void>((resolve) => {
     const stop = () => resolve();

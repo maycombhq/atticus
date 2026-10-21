@@ -10,14 +10,14 @@ Six contracts make up the specification. The contract pages are generated from t
 
 ## Contracts
 
-| Contract | Covers                                                                                                         | Page                                                                                                   |
-| -------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| C1       | The catalog: one YAML record per file, thirty kinds, evidence on every fact.                                   | [C1: Catalog records](contracts/c1-catalog-records.md)                                                 |
-| C2       | Rule files that teach the scanner a house framework without code.                                              | [C2: Dialects](contracts/c2-dialects.md)                                                               |
-| C3       | Checklist packs the critic applies, and the findings it records.                                               | [C3: Rules and findings](contracts/c3-rules-and-findings.md)                                           |
-| C4       | Extractor and ingestor plugins, adapters, the workspace and change files, step executors and the local API.    | [C4: Plugins, workspace files, executors and the local API](contracts/c4-plugins-workspace-and-api.md) |
-| C5       | Agent definitions, context packs, run summaries and recordings.                                                | [C5: AI runtime](contracts/c5-ai-runtime.md)                                                           |
-| C6       | An organisation's configuration: roles, change types, gates, patterns, sources, runtime, procedures, profiles. | [C6: The org pack](contracts/c6-org-pack.md)                                                           |
+| Contract | Covers                                                                                                      | Page                                                                                                   |
+| -------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| C1       | The catalog: one YAML record per file, thirty kinds, evidence on every fact.                                | [C1: Catalog records](contracts/c1-catalog-records.md)                                                 |
+| C2       | Rule files that teach the scanner a house framework without code.                                           | [C2: Dialects](contracts/c2-dialects.md)                                                               |
+| C3       | Checklist packs the critic applies, and the findings it records.                                            | [C3: Rules and findings](contracts/c3-rules-and-findings.md)                                           |
+| C4       | Extractor and ingestor plugins, adapters, the workspace and change files, step executors and the local API. | [C4: Plugins, workspace files, executors and the local API](contracts/c4-plugins-workspace-and-api.md) |
+| C5       | Agent definitions, context packs, run summaries and recordings.                                             | [C5: AI runtime](contracts/c5-ai-runtime.md)                                                           |
+| C6       | An organisation's configuration: change types, gates, patterns, sources, runtime, procedures, profiles.     | [C6: The org pack](contracts/c6-org-pack.md)                                                           |
 
 ## Concepts
 

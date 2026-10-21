@@ -79,7 +79,7 @@ export function describeRun(root: string, r: TaskRunRecord, io: Output): number 
   return r.state === "failed" || r.state === "needs-person" ? 1 : 0;
 }
 
-/** atticus task run <change> <task> [--level plan|draft|pr] [--mode <mode>] --by <you> [--approve] [--json] */
+/** atticus task run <change> <task> [--level plan|draft|pr] [--mode <mode>] [--by <you>] [--approve] [--json] */
 export async function taskRun(
   root: string,
   changeId: string | undefined,
@@ -90,12 +90,14 @@ export async function taskRun(
 ): Promise<number> {
   if (!changeId || !taskId) {
     io.err(
-      "Usage: atticus task run <change> <task> --by <you> [--level plan|draft|pr] [--mode hand-off|model|headless-claude-code] [--approve]",
+      "Usage: atticus task run <change> <task> [--by <you>] [--level plan|draft|pr] [--mode hand-off|model|headless-claude-code] [--approve]",
     );
     return 2;
   }
   if (!o.by) {
-    io.err("Say who is running the task: --by <you>");
+    io.err(
+      "Say who is running the task: set your Git user (git config user.name), or pass --by <you>.",
+    );
     return 2;
   }
   if (o.level !== undefined && !RunLevel.safeParse(o.level).success) {
@@ -225,7 +227,7 @@ export async function specHandDown(
   }
 }
 
-/** atticus spec hand-up <change> <task> --by <you> [--pr <n> --pr-url <url>] [--json] */
+/** atticus spec hand-up <change> <task> [--by <you>] [--pr <n> --pr-url <url>] [--json] */
 export async function specHandUp(
   root: string,
   changeId: string | undefined,
@@ -235,11 +237,15 @@ export async function specHandUp(
   deps: RunDeps = {},
 ): Promise<number> {
   if (!changeId || !taskId) {
-    io.err("Usage: atticus spec hand-up <change> <task> --by <you> [--pr <number> --pr-url <url>]");
+    io.err(
+      "Usage: atticus spec hand-up <change> <task> [--by <you>] [--pr <number> --pr-url <url>]",
+    );
     return 2;
   }
   if (!o.by) {
-    io.err("Say who is handing the task up: --by <you>");
+    io.err(
+      "Say who is handing the task up: set your Git user (git config user.name), or pass --by <you>.",
+    );
     return 2;
   }
   if ((o.pr === undefined) !== (o.prUrl === undefined)) {

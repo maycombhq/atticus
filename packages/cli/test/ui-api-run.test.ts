@@ -273,7 +273,9 @@ describe("release plan", () => {
     expect(d.status).toBe(200);
     expect(d.body.change).toMatchObject({ id: ID, title: "Add a daily transfer limit" });
     expect(typeof d.body.status.nextStep).toBe("string");
-    expect(d.body.releaseApprovers).toEqual({ roles: ["delivery-lead", "sre"], min: 2 });
+    // Go / no-go is the release hand-off PR (ADR 0073): no approver roles are listed.
+    expect(d.body).not.toHaveProperty("releaseApprovers");
+    expect(d.body.status).not.toHaveProperty("required");
     expect(d.body.requests).toMatchObject({ total: 1, filed: 1, toFile: 0 });
     expect(d.body.repos).toEqual([]);
     expect(d.body.rollout.heading).toBe("Rollout and rollback");
@@ -293,7 +295,7 @@ describe("release plan", () => {
 });
 
 describe("governance", () => {
-  it("shows conformance, the rule layers, waivers, override rates and separation of duties", async () => {
+  it("shows conformance, the rule layers, waivers and override rates", async () => {
     const g = await call("/api/governance");
     expect(g.status).toBe(200);
     expect(g.body.conformance.kind).toBe("org-pack");
@@ -302,7 +304,7 @@ describe("governance", () => {
     expect(g.body.rules.org).toBeGreaterThan(0);
     expect(g.body.waivers).toEqual([]);
     expect(g.body.overrides).toMatchObject({ rules: [], suggestions: [] });
-    expect(Array.isArray(g.body.separation)).toBe(true);
+    expect(g.body).not.toHaveProperty("separation");
   });
 });
 

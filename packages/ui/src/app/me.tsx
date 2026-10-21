@@ -1,106 +1,43 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { api, useApi } from "../api/client.js";
-import type { RoleDef } from "./roles.js";
 
+/** Who is using the app: the metarepo's Git user (ADR 0073). There are no roles or views. */
 export interface Me {
+  /** The handle Atticus records as `by`. */
   user: string;
+  /** git config user.name and user.email, when set. */
+  name?: string;
+  email?: string;
+  /** git: from git config; os: Git has no user, so the OS user stands in; given: named at start. */
+  source: "git" | "os" | "given";
+  /** Set when the OS user stood in: how to set the Git user. */
+  warning?: string;
   /** What AI may do here (runtime.yaml ai, ADR 0046). */
   ai: "on" | "text-only" | "off";
-  groups: string[];
-  view: string | null;
-  source: "chosen" | "group" | "pick";
-  sourceGroup?: string;
-  roles: RoleDef[];
-  approvals: { action: string; because: string }[];
-  owns: string[];
   /** The person's digest settings (.atticus/me.yaml, ADR 0048). */
   notify?: { digest: "off" | "daily" | "weekly"; channel?: string };
 }
 
 interface MeState {
   me?: Me;
-  setView: (view: string) => Promise<void>;
   /** Save digest settings; throws the API's words when refused. */
   saveNotify: (n: { digest: string; channel?: string }) => Promise<void>;
-  error?: string;
 }
 
-const Ctx = createContext<MeState>({
-  setView: async () => undefined,
-  saveNotify: async () => undefined,
-});
+const Ctx = createContext<MeState>({ saveNotify: async () => undefined });
 
-/** Who is signed in and the view they work in, shared by the sidebar and every home. */
+/** Who is using the app, shared by the top bar, Home and Settings. */
 export function MeProvider({ children }: { children: ReactNode }) {
   const loaded = useApi<Me>("/api/me");
   const [saved, setSaved] = useState<Me | undefined>();
-  const [error, setError] = useState<string | undefined>();
   const me = saved ?? (loaded.state === "ready" ? loaded.data : undefined);
-  const setView = async (view: string) => {
-    try {
-      setSaved(await api<Me>("/api/me", { method: "PUT", body: { view } }));
-      setError(undefined);
-    } catch (e) {
-      setError(String(e));
-    }
-  };
   const saveNotify = async (n: { digest: string; channel?: string }) => {
     setSaved(await api<Me>("/api/me/notify", { method: "PUT", body: n }));
   };
-  return (
-    <Ctx.Provider
-      value={{ ...(me ? { me } : {}), setView, saveNotify, ...(error ? { error } : {}) }}
-    >
-      {children}
-    </Ctx.Provider>
-  );
+  return <Ctx.Provider value={{ ...(me ? { me } : {}), saveNotify }}>{children}</Ctx.Provider>;
 }
 
 export const useMe = () => useContext(Ctx);
-
-/** Plain words for the approvals that happen outside Git. */
-export const ACTION_LABEL: Record<string, string> = {
-  "release-go-no-go": "Release go / no-go",
-  waiver: "Waivers",
-  "snow-submission": "Service-request submission",
-  "org-pack-change": "Org-pack changes",
-  "catalog-assert": "Catalog decisions",
-};
-
-/** The role picker: a labelled select, used in the sidebar and on a first launch. */
-export function ViewPicker({ id, compact }: { id: string; compact?: boolean }) {
-  const { me, setView } = useMe();
-  if (!me) return null;
-  return (
-    <div className="stack" style={{ gap: 4 }}>
-      <label htmlFor={id} className="hud" style={{ fontSize: compact ? 9.5 : 10 }}>
-        {compact ? "View" : "Pick the view you work in"}
-      </label>
-      <select
-        id={id}
-        value={me.view ?? ""}
-        onChange={(e) => void setView(e.target.value)}
-        style={{
-          height: 32,
-          background: "#0B1016",
-          color: "var(--text)",
-          border: "1px solid var(--line-2)",
-          borderRadius: 7,
-          padding: "0 8px",
-          font: "inherit",
-          fontSize: 13,
-        }}
-      >
-        {!me.view && <option value="">Choose…</option>}
-        {me.roles.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.name}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
 
 /** True when AI steps may start here; false when the org pack turns AI off. */
 export const useAiOn = () => useMe().me?.ai !== "off";

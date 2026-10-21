@@ -105,7 +105,7 @@ steps:
         id: northwind-pay-v3-migration,
         where: { journey: vendor-api-change },
       }
-    hint: atticus initiative new "Northwind Pay v3 migration" --journey vendor-api-change --release 2027-03-01 --by <you>
+    hint: atticus initiative new "Northwind Pay v3 migration" --journey vendor-api-change --release 2027-03-01
   - id: plan
     title: Plan it back from the release
     body: |
@@ -140,7 +140,7 @@ steps:
           }
         - { type: record, kind: Commitment, id: northwind-pay-v3-migration.request.northwind-pay }
         - { type: steps, action: send-notification, state: open }
-    hint: atticus initiative request northwind-pay-v3-migration party.northwind-pay --by <you>
+    hint: atticus initiative request northwind-pay-v3-migration party.northwind-pay
 outro: |
   Run atticus initiative status northwind-pay-v3-migration any day to see the critical path and
   which commitments slipped or are at risk.

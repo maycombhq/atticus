@@ -118,13 +118,6 @@ export async function setupSteps(
       fix: "Run atticus scan (or Scan now on the Scans screen). It reads files only: no network, no AI.",
     },
     {
-      id: "roles",
-      label: "Groups are mapped to roles",
-      done: op.roles.mappings.length > 0,
-      detail: `${op.roles.mappings.length} group mapping${op.roles.mappings.length === 1 ? "" : "s"}`,
-      fix: "Map your directory or team groups to views in org-pack/roles.yaml (mappings), so each person starts in the right view.",
-    },
-    {
       id: "knowledge",
       label: "Existing knowledge is added",
       done: inputs > 0 || wikis > 0,
@@ -139,7 +132,7 @@ export async function setupSteps(
       detail: baseline
         ? `accepted by ${baseline.acceptedBy} on ${baseline.acceptedAt.slice(0, 10)}`
         : "not yet",
-      fix: "Walk the ecosystem map with the architect, then accept it: atticus baseline --by <you> (or Accept the catalog on Home).",
+      fix: "Walk the ecosystem map with the architect, then accept it: atticus baseline (or Accept the catalog on Home), and commit catalog/baseline.yaml through a pull request.",
     },
   ];
   return { steps, baselined: !!baseline };
@@ -168,14 +161,18 @@ export async function setupCommand(
   return open.length ? 1 : 0;
 }
 
-/** atticus baseline --by <you> [--note text] [--site dir]: accept the as-is catalog. */
+/**
+ * atticus baseline [--by <you>] [--note text] [--site dir]: accept the as-is catalog. It writes
+ * catalog/baseline.yaml with the person (the Git user unless --by names someone); the file
+ * reaches main through a pull request like anything else (ADR 0073).
+ */
 export async function baselineCommand(
   root: string,
   o: { by?: string; note?: string; site?: string; now?: string },
   io: Output,
 ): Promise<number> {
   if (!o.by) {
-    io.err("Usage: atticus baseline --by <you> [--note <text>] [--site <dir>]");
+    io.err("Usage: atticus baseline [--by <you>] [--note <text>] [--site <dir>]");
     return 2;
   }
   const records = await catalogRecords(root, io);
@@ -199,7 +196,7 @@ export async function baselineCommand(
   });
   await writeFile(join(catalogDirOf(root), BASELINE_FILE), stringify(b), "utf8");
   io.out(
-    `Accepted the catalog as the baseline: ${records.length} records in ${Object.keys(kinds).length} kinds, ${systems.length} systems. Wrote catalog/${BASELINE_FILE}; commit it with the catalog.`,
+    `Accepted the catalog as the baseline as ${o.by}: ${records.length} records in ${Object.keys(kinds).length} kinds, ${systems.length} systems. Wrote catalog/${BASELINE_FILE}; commit it with the catalog and open a pull request, whose merge makes it the baseline on main.`,
   );
   if (o.site) {
     const dir = resolve(o.site);

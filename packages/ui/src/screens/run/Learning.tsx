@@ -237,7 +237,7 @@ export function Learning() {
           </View>
         </Panel>
 
-        <Panel title="Progress by role" meta="lessons done" span="span 8">
+        <Panel title="Progress by kind of work" meta="lessons done" span="span 8">
           <View of={l} empty={() => roles.length === 0} emptyText="No lessons are installed.">
             {() => (
               <div
@@ -283,16 +283,20 @@ export function Learning() {
         <Panel title="Lessons" span="span 12">
           <div style={{ marginBottom: 10 }}>
             <Choice
-              label="Role"
+              label="Written for"
               value={role}
               onChange={setRole}
               options={[
-                { value: "all", label: "All roles" },
+                { value: "all", label: "Everyone" },
                 ...roles.map((r) => ({ value: r.role, label: r.role })),
               ]}
             />
           </div>
-          <View of={l} empty={() => lessons.length === 0} emptyText="No lessons for this role.">
+          <View
+            of={l}
+            empty={() => lessons.length === 0}
+            emptyText="No lessons written for this kind of work."
+          >
             {(d) => (
               <div className="stack" style={{ gap: 0 }}>
                 {lessons.map((x) => (

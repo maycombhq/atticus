@@ -218,7 +218,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
           "gitHost: { type: manual, settings: { metarepo: forge/forge-metarepo } }",
         ),
       );
-      const r = await atticus(root, "change", "handoff", CHANGE, "--by", "pat");
+      const r = await atticus(root, "change", "handoff", CHANGE, "--approve", "--by", "pat");
       expect(r.code).toBe(0);
       expect((await atticus(root, "todo", "--change", CHANGE)).text).toMatch(/pull request/i);
     },
@@ -226,18 +226,22 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   );
 
   it(
-    "Send to architecture: the hand-off opens a PR and merges on the product owner's approval",
+    "Send to architecture: without --approve nothing is sent; the hand-off PR merges once someone else approves it",
     async () => {
-      const h = await run("change", "handoff", CHANGE, "--by", "pat");
+      const dry = await run("change", "handoff", CHANGE, "--by", "pat");
+      expect(dry.code).toBe(0);
+      expect(dry.out[1]).toMatch(/^Nothing was sent\./);
+      expect(gh.journal.filter((j) => j.method === "createPullRequest")).toHaveLength(0);
+      const h = await run("change", "handoff", CHANGE, "--approve", "--by", "pat");
       expect(h.code).toBe(0);
       expect(h.out[0]).toBe(
         "Hand-off PR #1 (handoff/add-transfer-limit/define) is open: https://git.example.com/forge/forge-metarepo/pull/1",
       );
-      const early = await run("change", "sync", CHANGE, "--by", "pat");
+      const early = await run("change", "sync", CHANGE, "--approve", "--by", "pat");
       expect(early.code).toBe(1);
-      expect(early.text).toMatch(/Needs approval from product-owner/);
-      gh.review(METAREPO, 1, "pat", "approved");
-      const s = await run("change", "sync", CHANGE, "--by", "pat");
+      expect(early.text).toMatch(/PR #1 isn't approved yet/);
+      gh.review(METAREPO, 1, "ari", "approved");
+      const s = await run("change", "sync", CHANGE, "--approve", "--by", "pat");
       expect(s.out).toEqual(["PR #1 merged. add-transfer-limit is now design."]);
     },
     T,
@@ -285,7 +289,7 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
         [],
       );
       // A blocking finding stops the hand-off.
-      const h = await run("change", "handoff", CHANGE, "--by", "ari");
+      const h = await run("change", "handoff", CHANGE, "--approve", "--by", "ari");
       expect(h.code).toBe(1);
       expect(h.err[0]).toBe('add-transfer-limit isn\'t ready for "Approve design".');
       expect(h.text).toMatch(/Blocking finding data-retention-stated-data-l8 on the design gate/);
@@ -318,21 +322,20 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   );
 
   it(
-    "Approve design: the author's approval doesn't count (separation of duties); the other architect's does",
+    "Approve design: the approval of the person who raised the PR doesn't count; the other architect's does",
     async () => {
-      const h = await run("change", "handoff", CHANGE, "--by", "ari");
+      const h = await run("change", "handoff", CHANGE, "--approve", "--by", "ari");
       expect(h.code).toBe(0);
-      expect(h.out[1]).toBe("Reviewers: @avery, @forge/platform");
+      expect(h.out[1]).toBe("Reviewers: @forge/platform");
       gh.review(METAREPO, 2, "ari", "approved");
-      const own = await run("change", "sync", CHANGE, "--by", "ari");
+      const own = await run("change", "sync", CHANGE, "--approve", "--by", "ari");
       expect(own.code).toBe(1);
       expect(own.err).toEqual([
         "PR #2 can't merge yet:",
-        "  - Needs approval from architect (change type feature, gate design).",
-        "  - ari wrote data.md, design.md, interfaces.md, mappings.md, ux.md and can't approve the design hand-off.",
+        "  - PR #2 is approved only by ari, who raised it; it needs someone else's approval.",
       ]);
       gh.review(METAREPO, 2, "avery", "approved");
-      expect((await run("change", "sync", CHANGE, "--by", "avery")).out).toEqual([
+      expect((await run("change", "sync", CHANGE, "--approve", "--by", "avery")).out).toEqual([
         "PR #2 merged. add-transfer-limit is now plan.",
       ]);
     },
@@ -470,9 +473,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   it(
     "Plan ready: the BA raises it and the team lead approves",
     async () => {
-      expect((await run("change", "handoff", CHANGE, "--by", "bao")).code).toBe(0);
+      expect((await run("change", "handoff", CHANGE, "--approve", "--by", "bao")).code).toBe(0);
       gh.review(METAREPO, 3, "tia", "approved");
-      expect((await run("change", "sync", CHANGE, "--by", "tia")).out).toEqual([
+      expect((await run("change", "sync", CHANGE, "--approve", "--by", "tia")).out).toEqual([
         "PR #3 merged. add-transfer-limit is now build.",
       ]);
     },
@@ -626,9 +629,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   it(
     "Raise PR: the developer raises it and the other developer approves",
     async () => {
-      expect((await run("change", "handoff", CHANGE, "--by", "dev")).code).toBe(0);
+      expect((await run("change", "handoff", CHANGE, "--approve", "--by", "dev")).code).toBe(0);
       gh.review(METAREPO, 4, "dee", "approved");
-      expect((await run("change", "sync", CHANGE, "--by", "dee")).out).toEqual([
+      expect((await run("change", "sync", CHANGE, "--approve", "--by", "dee")).out).toEqual([
         "PR #4 merged. add-transfer-limit is now qa.",
       ]);
     },
@@ -639,9 +642,9 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   it(
     "QA sign-off: QA approves",
     async () => {
-      expect((await run("change", "handoff", CHANGE, "--by", "tia")).code).toBe(0);
+      expect((await run("change", "handoff", CHANGE, "--approve", "--by", "tia")).code).toBe(0);
       gh.review(METAREPO, 5, "quinn", "approved");
-      expect((await run("change", "sync", CHANGE, "--by", "quinn")).out).toEqual([
+      expect((await run("change", "sync", CHANGE, "--approve", "--by", "quinn")).out).toEqual([
         "PR #5 merged. add-transfer-limit is now release-ready.",
       ]);
     },
@@ -649,30 +652,31 @@ describe("M3 exit step 2: the seeded feature from Define to Release", () => {
   );
 
   it(
-    "Go/no-go: nobody who wrote an artifact counts at release; delivery lead, SRE and an architect who wrote nothing approve, then it is released",
+    "Go/no-go: the release hand-off PR is go / no-go; it merges once someone other than its raiser approves, then it is released",
     async () => {
       const st = await run("change", "status", CHANGE);
       expect(st.out).toContain(
-        "Approvals needed: delivery-lead (change type feature); 2 of delivery-lead, sre (gate release); architect (high risk)",
+        "Hand-off: no PR yet; atticus change handoff add-transfer-limit --approve opens it, and merging it approves the release gate.",
       );
+      expect(st.text).not.toMatch(/Approvals needed/);
       // The release gate is mandatory on the Forge platform: the critic reviews it first.
       const c = await run("critic", CHANGE, "--gate", "release");
       expect(c.text).toMatch(/Critic round 1 of 2 at the release gate/);
       expect(c.code, c.text).toBe(0);
-      expect((await run("change", "handoff", CHANGE, "--by", "tia")).code).toBe(0);
-      gh.review(METAREPO, 6, "dana", "approved");
-      gh.review(METAREPO, 6, "ari", "approved");
-      const early = await run("change", "sync", CHANGE, "--by", "dana");
+      expect((await run("change", "handoff", CHANGE, "--approve", "--by", "tia")).code).toBe(0);
+      gh.review(METAREPO, 6, "tia", "approved");
+      const early = await run("change", "sync", CHANGE, "--approve", "--by", "tia");
       expect(early.code).toBe(1);
       expect(early.err).toEqual([
         "PR #6 can't merge yet:",
-        "  - Needs approval from 2 of delivery-lead, sre (gate release) (1 so far).",
-        "  - Needs approval from architect (high risk).",
-        "  - ari wrote data.md, design.md, interfaces.md, mappings.md, ux.md; nobody approves their own change at release.",
+        "  - PR #6 is approved only by tia, who raised it; it needs someone else's approval.",
       ]);
-      gh.review(METAREPO, 6, "sam", "approved");
-      gh.review(METAREPO, 6, "avery", "approved");
-      expect((await run("change", "sync", CHANGE, "--by", "dana")).out).toEqual([
+      gh.review(METAREPO, 6, "dana", "approved");
+      // Approved, but merging writes to the Git host: without --approve it is only reported.
+      const ready = await run("change", "sync", CHANGE, "--by", "dana");
+      expect(ready.code).toBe(1);
+      expect(ready.out[0]).toMatch(/^PR #6 is approved and the Git host's rules are met\./);
+      expect((await run("change", "sync", CHANGE, "--approve", "--by", "dana")).out).toEqual([
         "PR #6 merged. add-transfer-limit is now released.",
       ]);
     },

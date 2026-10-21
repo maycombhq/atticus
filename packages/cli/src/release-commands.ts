@@ -256,7 +256,7 @@ export async function outcomeList(
   }
 }
 
-/** atticus outcome record <change> <measure> --value <v> --by <you> [--note text] */
+/** atticus outcome record <change> <measure> --value <v> [--by <you>] [--note text] */
 export async function outcomeRecord(
   root: string,
   id: string | undefined,
@@ -267,7 +267,7 @@ export async function outcomeRecord(
 ): Promise<number> {
   if (!id || !measure || !o.value?.trim() || !o.by) {
     io.err(
-      'Usage: atticus outcome record <change> <measure id or number> --value "<what you measured>" --by <you> [--note "<how>"]',
+      'Usage: atticus outcome record <change> <measure id or number> --value "<what you measured>" [--by <you>] [--note "<how>"]',
     );
     return 2;
   }

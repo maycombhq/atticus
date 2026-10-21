@@ -1,27 +1,31 @@
-import { accessible, expect, forgeJourney, open, test, workAs } from "../support/app.js";
+import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
 
 /** Product owner: writes the feature in plain words, sees what the critic asks, and hands it to architecture. */
 const app = forgeJourney();
 
-test("starts from a home made for the product owner", async ({ page }) => {
+test("starts from the same home as everyone, as their Git user (ADR 0073)", async ({ page }) => {
   await open(page, app(), "home");
-  await workAs(page, "product-owner", { keepTour: true });
-  // The first-run tour: three steps, skippable, and it replays from Help.
+  // The top bar names the metarepo's Git user; no sign-in, no role.
+  await expect(page.getByText(/Priya Nair \(priya\)/).first()).toBeVisible();
+  // The first-run tour: one for everyone, skippable, and it replays from Help.
+  await page.getByRole("button", { name: "Help" }).click();
   const tour = page.getByRole("dialog", { name: "Your home" });
   await expect(tour).toBeVisible();
   await accessible(page, "first-run tour");
   await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByRole("dialog", { name: "Write the brief" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Ask in plain words" })).toBeVisible();
   await page.getByRole("button", { name: "Next" }).click();
+  await expect(page.getByRole("dialog", { name: "Approving is the pull request" })).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByRole("dialog", { name: /Your home|Write the brief/ })).toHaveCount(0);
-  await page.getByRole("button", { name: "Help" }).click();
-  await expect(page.getByRole("dialog", { name: "Your home" })).toBeVisible();
-  await page.getByRole("button", { name: "Skip the tour" }).click();
-  await expect(page.getByText("Product owner view · chosen by you")).toBeVisible();
-  const nav = page.getByRole("group", { name: "Your screens" });
-  await expect(nav.getByRole("link", { name: "Feature brief" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Waiting on you" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // No view to pick: one navigation, every screen in its group.
+  await expect(page.getByLabel("View", { exact: true })).toHaveCount(0);
+  const define = page.getByRole("navigation", { name: "Main" }).getByRole("group", {
+    name: "Define",
+  });
+  await expect(define.getByRole("link", { name: "Feature brief" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Needs a person" })).toBeVisible();
+  await expect(page.getByText(/Approving is the pull request/).first()).toBeVisible();
   await accessible(page, "home");
 });
 

@@ -188,7 +188,7 @@ export async function evidencePack(ctx: ReleaseContext): Promise<EvidencePack> {
   if (!c.handoffs.length) md.push("_No hand-off PR yet._");
   for (const hf of c.handoffs) {
     md.push(
-      `- ${hf.phase}: PR #${hf.pr.number} ${hf.pr.url}, ${hf.state}, raised by ${hf.by} ${day(hf.openedAt)}; ${hf.approvals.length ? `approved by ${hf.approvals.map((a) => `${a.by} as ${a.roles.join(", ")} (${a.at})`).join("; ")}` : "no approvals yet"}.`,
+      `- ${hf.phase}: PR #${hf.pr.number} ${hf.pr.url}, ${hf.state}, raised by ${hf.by} ${day(hf.openedAt)}; ${hf.approvals.length ? `approved by ${hf.approvals.map((a) => `${a.by}${a.roles?.length ? ` as ${a.roles.join(", ")}` : ""} (${a.at})`).join("; ")}` : "no approvals yet"}.`,
     );
   }
   if (c.handoffs.length) md.push("", "Source: change.yaml handoffs");

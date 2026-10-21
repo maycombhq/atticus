@@ -76,7 +76,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "alias",
-    usage: 'atticus alias "<name>" <id> [--by you] [--reason text]',
+    usage: 'atticus alias "<name>" <id> [--reason text]',
     what: "Records that a name used on diagrams or in documents means a catalog id, so they line up from now on.",
     who: ["architect"],
     changes: "a curated decision in catalog/curated",
@@ -141,7 +141,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "triage decide",
-    usage: "atticus triage decide <item> <n> [--by you] [--reason text]",
+    usage: "atticus triage decide <item> <n> [--reason text]",
     what: "Chooses an option for a triage item and records it as a curated decision.",
     who: ["architect"],
     changes: "a curated decision in catalog/curated",
@@ -204,7 +204,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "change new",
-    usage: 'atticus change new "<title>" --type <type> --by <you>',
+    usage: 'atticus change new "<title>" --type <type>',
     what: "Starts a change from its type's template; it begins in define with a brief to write.",
     who: ["product-owner"],
     changes: "openspec/changes/<id>/",
@@ -212,29 +212,29 @@ export const COMMANDS: readonly CommandHelp[] = [
   {
     name: "change status",
     usage: "atticus change status <id> [--json]",
-    what: "Where a change is, what it needs next, what blocks it, its risk, the approvals and the tests it needs.",
+    what: "Where a change is, what it needs next, what blocks it, its risk, the hand-off PR to merge and the tests it needs.",
     who: ["product-owner", "team-lead", "delivery-lead"],
     changes: "nothing",
   },
   {
     name: "change handoff",
-    usage: "atticus change handoff <id> --by <you>",
-    what: "Opens the hand-off pull request for the phase (Send to architecture, Approve design, Plan ready, ...). Refused while blocking findings are open.",
+    usage: "atticus change handoff <id> --approve",
+    what: "Opens the hand-off pull request for the phase (Send to architecture, Approve design, Plan ready, ...); merging it approves the gate. Without --approve it says what it would open. Refused while blocking findings are open.",
     who: ["product-owner", "architect", "team-lead"],
     changes: "a hand-off PR on the Git host and change.yaml",
     approval: true,
   },
   {
     name: "change sync",
-    usage: "atticus change sync <id> [--by <you>]",
-    what: "Reads the hand-off PR; when its approvals are in, merges it and moves the change to the next phase.",
+    usage: "atticus change sync <id> [--approve]",
+    what: "Reads the hand-off PR; once it is merged the change moves to the next phase. With --approve it merges a PR that is approved and meets the Git host's rules.",
     who: ["product-owner", "architect", "team-lead"],
     changes: "the PR (merge) and change.yaml",
     approval: true,
   },
   {
     name: "change return",
-    usage: 'atticus change return <id> --by <you> --reason "<why>"',
+    usage: 'atticus change return <id> --reason "<why>" --approve',
     what: "Sends a change back to the product owner.",
     who: ["architect", "team-lead"],
     changes: "change.yaml and the hand-off PR",
@@ -242,7 +242,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "change archive",
-    usage: "atticus change archive <id> --by <you>",
+    usage: "atticus change archive <id>",
     what: "Archives a released change after the archive gate passes.",
     who: ["delivery-lead"],
     changes: "the change folder",
@@ -284,8 +284,8 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "finding",
-    usage: "atticus finding <change> <id> <action> --by <you>",
-    what: "Acts on a finding: apply its fix, edit and apply, not relevant (with a reason), waive (blocking only, stage owner) or ask its owner.",
+    usage: "atticus finding <change> <id> <action>",
+    what: "Acts on a finding: apply its fix, edit and apply, not relevant (with a reason), waive (blocking only, with a reason) or ask its owner. It is recorded with you and reaches main with the hand-off PR.",
     who: ["architect", "business-analyst"],
     changes: "the finding file and, for apply, the artifact",
   },
@@ -305,7 +305,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "feature name",
-    usage: 'atticus feature name <id> "<name>" [--by you]',
+    usage: 'atticus feature name <id> "<name>"',
     what: "Confirms or corrects a feature's name in the words its users use.",
     who: ["product-owner", "designer"],
     changes: "a curated decision in catalog/curated",
@@ -368,7 +368,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "task run",
-    usage: "atticus task run <change> <task> --by <you> [--level plan|draft|pr]",
+    usage: "atticus task run <change> <task> [--level plan|draft|pr] [--approve]",
     what: "Runs a task with AI: a plan only, a draft in the worktree, or a pull request. AI never pushes to protected branches or deploys.",
     who: ["developer"],
     changes: "the task's worktree or a task branch",
@@ -383,7 +383,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "spec hand-up",
-    usage: "atticus spec hand-up <change> <task> --by <you>",
+    usage: "atticus spec hand-up <change> <task>",
     what: "Reads the Spec Kit feature back at the pull request and compares it with the design.",
     who: ["developer", "architect"],
     changes: "the change's drift record",
@@ -425,7 +425,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "plan submit",
-    usage: "atticus plan submit <change> [--approve --by you]",
+    usage: "atticus plan submit <change> [--approve]",
     what: "Files the drafted service-desk requests.",
     who: ["team-lead"],
     changes: "the service desk (or manual steps)",
@@ -433,7 +433,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "ado sync",
-    usage: "atticus ado sync <change> [--approve --by you]",
+    usage: "atticus ado sync <change> [--approve]",
     what: "Creates or updates work items for the stories and tasks.",
     who: ["team-lead", "business-analyst"],
     changes: "the work tracker (or manual steps)",
@@ -463,7 +463,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "todo done",
-    usage: "atticus todo done <step> --by <you> [--result k=v]...",
+    usage: "atticus todo done <step> [--result k=v]...",
     what: "Records a manual step's result (the new id, the PR URL) so the workflow carries on.",
     who: ["team-lead", "delivery-lead", "developer"],
     changes: "the step file",
@@ -562,7 +562,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "glossary define",
-    usage: 'atticus glossary define <term> "<definition>" --by <you>',
+    usage: 'atticus glossary define <term> "<definition>"',
     what: "Defines a business term.",
     who: ["business-analyst", "product-owner"],
     changes: "a curated decision",
@@ -611,14 +611,14 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "initiative new",
-    usage: 'atticus initiative new "<title>" --journey <journey> --by <you>',
+    usage: 'atticus initiative new "<title>" --journey <journey>',
     what: "Starts an initiative: changes across teams and vendors toward one outcome, on a guided journey.",
     who: ["product-owner", "team-lead", "delivery-lead"],
     changes: "an Initiative record in catalog/curated",
   },
   {
     name: "initiative plan",
-    usage: "atticus initiative plan <id> --target <system> [--release YYYY-MM-DD] --by <you>",
+    usage: "atticus initiative plan <id> --target <system> [--release YYYY-MM-DD]",
     what: "Plans the journey back from the target release: the changes each system needs and the commitments of other teams and vendors, with dates from their lead times.",
     who: ["team-lead", "delivery-lead"],
     changes: "the plan and Commitment records",
@@ -632,7 +632,7 @@ export const COMMANDS: readonly CommandHelp[] = [
   },
   {
     name: "initiative request",
-    usage: "atticus initiative request <id> <party> --by <you>",
+    usage: "atticus initiative request <id> <party>",
     what: "Sends a team or vendor a one-page system card to correct and answer; the reply goes into intake and is tracked as a commitment.",
     who: ["team-lead", "architect"],
     changes: "the card, a Commitment and a manual step to send it",

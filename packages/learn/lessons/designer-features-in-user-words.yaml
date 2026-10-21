@@ -33,7 +33,7 @@ steps:
         target: feature.transfers,
         includes: Money transfers,
       }
-    hint: atticus feature name feature.transfers "Money transfers" --by <you>
+    hint: atticus feature name feature.transfers "Money transfers"
   - id: diagram
     title: Draw the context view
     body: |

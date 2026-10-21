@@ -1,11 +1,10 @@
-import { accessible, expect, forgeJourney, open, test, workAs } from "../support/app.js";
+import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
 
 /** Platform lead: repos and scans, intake, the org pack, governance and settings. */
 const app = forgeJourney();
 
 test("follows the setup checklist and accepts the catalog", async ({ page }) => {
   await open(page, app(), "home");
-  await workAs(page, "platform-lead");
   await expect(page.getByRole("heading", { level: 2, name: "Set up Atticus" })).toBeVisible();
   await expect(page.getByText(/Repos are cloned here/)).toBeVisible();
   await accessible(page, "setup checklist");

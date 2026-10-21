@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### You are your Git user; approving is the pull request
+
+- Atticus knows you by the metarepo's Git user (`git config user.name` and `user.email`, ADR 0073). The app shows it in the top bar and every command records it; `--by <handle>` is now an optional override everywhere it was required (`change new`, `change handoff`, `finding`, `baseline`, `todo done`, `task run`, `glossary`, `initiative`, `outcome record` and the rest), and `digest --as` likewise. With no Git user, the OS user name stands in with a warning that says how to set it.
+- No roles in the app: one sidebar and one Home for everyone, one tour. The view picker, role homes, role navigation and tours, and Settings' group-to-role mapping are gone, and so is "Groups are mapped to roles" in the setup checklist. `.atticus/me.yaml` keeps only your digest settings.
+- No in-app approvals: a gate is approved when its hand-off PR merges, and the Git host's rules decide who may approve. `atticus change status` names the PR to merge instead of "Approvals needed"; `change handoff`, `change sync` and `change return` are a dry run until you add `--approve`. Approve buttons, "approvals waiting on you" and the role checks on waivers and on accepting the baseline are gone; a waiver, the baseline and release go / no-go are files recorded with your name that reach main through a pull request, and each command says so.
+- Every write to the Git host, work tracker, service desk or notifications still needs your explicit `--approve` (or a button that says what it sends).
+- Local API 2.0.0: `PUT /api/me` and `GET /api/me/approvals` are removed; `GET /api/me` returns your Git user (`user`, `name`, `email`, `source`, `warning`).
+- `roles.yaml` is deprecated (C6): it still loads and validates, nothing reads it, and `atticus init` no longer writes it; nor are gate `approvers`, change-type `approvals` or the change policy's `privacy.role`, `risk.approvals` and `selfApproval` read. Move those rules to branch protection and CODEOWNERS.
+
 ### Scan review
 
 - `atticus scan review <repo>` (ADR 0072): the gaps the last scan left (files no rule reads, unresolved calls and data access, modules where it found nothing) go to your assistant, which gives each a verdict (a rule can read it, an Atticus reader misreads it, a vendor, ignore, or a person must say) and writes a dialect for the readable ones. Every verdict and the dialect are checked against the repo before anything is written; a person accepts the dialect and the next scan reads with it. `--gaps` lists the gaps alone.

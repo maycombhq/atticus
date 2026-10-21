@@ -8,7 +8,8 @@ setup: []
 intro: |
   Every change starts in Define with you. Atticus gives you a brief to fill in from your change
   type's template, tells you what still blocks the hand-off, and opens the hand-off pull
-  request when you are ready. Approving that PR is the approval: nothing moves without it.
+  request when you are ready. Merging that PR is the approval: nothing moves without it.
+  Atticus records you by your Git user; --by names someone else.
 steps:
   - id: new
     title: Start the change
@@ -34,7 +35,7 @@ steps:
           ledger,
         ]
     check: { type: change-state, change: show-transfer-history, atLeast: define }
-    hint: atticus change new "Show transfer history" --type feature --by <you> --owner product-owner=<you>
+    hint: atticus change new "Show transfer history" --type feature --owner product-owner=<you>
   - id: write
     title: Write the brief, proposal and spec
     body: |
@@ -139,27 +140,28 @@ steps:
   - id: status
     title: What does the hand-off need?
     body: |
-      Ask for the change's status. It shows the next step, what still blocks it and who must
-      approve the hand-off.
+      Ask for the change's status. It shows the next step, what still blocks it and the
+      hand-off pull request whose merge approves the phase's gate.
     do: [[change, status, show-transfer-history]]
-    solution: { answer: product-owner }
+    solution: { answer: define }
     check:
       type: answer
-      question: Which role must approve the hand-off to architecture?
-      truth: { from: fixed, values: [product-owner] }
-    hint: Read the "Approvals needed" line.
+      question: Which gate does merging the hand-off pull request approve?
+      truth: { from: fixed, values: [define] }
+    hint: Read the "Hand-off" line.
   - id: handoff
     title: Send it to architecture
     body: |
-      Raise "Send to architecture": Atticus opens the hand-off pull request (when it can't reach
-      the Git host, `atticus todo` shows you the step to open it by hand and record its URL).
-      When the product owner has approved the PR, sync the change: Atticus merges the PR and the
-      change moves to Design.
+      Raise "Send to architecture": with --approve, Atticus opens the hand-off pull request
+      (without it, it says what it would open and sends nothing; when it can't reach the Git
+      host, `atticus todo` shows you the step to open it by hand and record its URL). When a
+      reviewer has approved the PR, merge it on the Git host, or sync with --approve and Atticus
+      merges it as you. The change moves to Design.
     do:
-      - [change, handoff, show-transfer-history, --by, pat]
-      - [change, sync, show-transfer-history, --by, pat]
+      - [change, handoff, show-transfer-history, --approve, --by, pat]
+      - [change, sync, show-transfer-history, --approve, --by, pat]
     check: { type: change-state, change: show-transfer-history, atLeast: design }
-    hint: Hand off, get the product owner's approval on the PR, then run atticus change sync.
+    hint: Hand off with --approve, get a reviewer's approval on the PR, then run atticus change sync --approve.
 outro: |
   Your change is with the architect. From here the critic reviews each phase's work, and each
-  hand-off is a PR the right people approve.
+  hand-off is a PR: merging it approves the gate, and your Git host decides who may approve.

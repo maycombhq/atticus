@@ -164,7 +164,7 @@ describe("atticus critic", () => {
       "release lens skipped: no AI rule of this lens has an artifact that passed layer 1",
     );
     expect(c.out.at(-1)).toBe(
-      "The plan gate is closed: 14 blocking, 13 open gaps. Act on each with atticus finding <id> <action> --by <you>.",
+      "The plan gate is closed: 14 blocking, 13 open gaps. Act on each with atticus finding <id> <action>.",
     );
 
     c = capture();

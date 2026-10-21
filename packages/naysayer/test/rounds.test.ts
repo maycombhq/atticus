@@ -54,22 +54,20 @@ describe("rounds, gates and actions", () => {
     await expect(act(root, CHANGE, rollback, "waive", { by: "tia", reason: "x" })).rejects.toThrow(
       /Only blocking findings can be waived/,
     );
-    // Only the stage owner (the plan gate's approver role, team-lead: tia) can waive.
+    // Anyone may waive (ADR 0073): no role is checked. The waiver is a change to the finding's
+    // file, recorded with the person, and reaches main through the hand-off PR.
     const race = await idOf(root, "design-concurrency-handled");
-    await expect(
-      act(root, CHANGE, race, "waive", { by: "ari", reason: "Handled in the ledger library" }),
-    ).rejects.toThrow(
-      /Only the plan stage owner can waive: team-lead on this change \(tia\)\. ari is not\./,
-    );
-    await expect(act(root, CHANGE, race, "waive", { by: "tia" })).rejects.toThrow(
+    await expect(act(root, CHANGE, race, "waive", { by: "ari" })).rejects.toThrow(
       /Waive needs a reason/,
     );
     const waived = await act(root, CHANGE, race, "waive", {
-      by: "@tia",
+      by: "ari",
       reason: "The ledger library serialises transfers per account.",
       now: LATER,
     });
     expect(waived.finding.state).toBe("waived");
+    expect(waived.finding.resolution).toMatchObject({ action: "waive", by: "ari" });
+    expect(waived.message).toContain("reaches main with the plan hand-off PR");
 
     // Not relevant needs a reason; a knowledge gap can't be dismissed, only asked or answered.
     await expect(act(root, CHANGE, rollback, "not-relevant", { by: "dana" })).rejects.toThrow(

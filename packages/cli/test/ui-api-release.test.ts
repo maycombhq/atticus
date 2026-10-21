@@ -166,7 +166,9 @@ describe("release views over the API", () => {
     async () => {
       const s = await call(`/api/release/${ID}/security`);
       expect(s.status).toBe(200);
-      expect(s.body.signOff).toMatchObject({ role: "architect", people: ["ari", "avery"] });
+      // ADR 0073: the sign-off is approving and merging the hand-off PRs; no role is named.
+      expect(s.body.signOff).not.toHaveProperty("role");
+      expect(String((s.body.signOff as { how: string }).how)).toMatch(/merging a PR/);
       expect(s.body.markdown).toContain("## Data crossing a boundary");
     },
     T,
