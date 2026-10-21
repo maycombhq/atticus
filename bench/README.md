@@ -65,3 +65,15 @@ What the misses and wrong facts come from, biggest first:
 10. **SOAP operations and GraphQL fields** (spring-soap, spring-realworld) not read.
 
 These are the kinds of gap ADR 0074 expects: each needs a reader change today. Phase 2a's AI-first scan is measured against this table.
+
+## With the AI's scan settings (Phase 2a, first step)
+
+`atticus bench survey` has the assistant read each repo and draft its scan settings (ADR 0075): the path prefixes the readers can't see and the folders that aren't the product, every entry checked against the code. `atticus bench run` then scans with them. First three repos, surveyed with headless Claude Code (one run each, about 30 seconds):
+
+| Repo                  | Before    | After      | What the assistant found                                                                                                 |
+| --------------------- | --------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| spring-petclinic-rest | 17% / 17% | 98% / 98%  | `/petclinic` from `server.servlet.context-path`, `/api` from the controllers' class-level mapping; test folders left out |
+| fastapi-realworld     | 0% / 0%   | 100% / 70% | `/api` from `api_prefix` in the app settings                                                                             |
+| node-realworld        | 21% / 19% | 100% / 89% | `/api` from the router mount                                                                                             |
+
+(Precision / recall.) The rest of the bench is surveyed next; the remaining misses on these three are other gaps (a JPA join table, a few routes).

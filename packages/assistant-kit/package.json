@@ -26,6 +26,7 @@
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/extractors": "workspace:*",
+    "@maycombhq/scanner": "workspace:*",
     "@maycombhq/sdk": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"

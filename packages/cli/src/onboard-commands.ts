@@ -10,6 +10,7 @@ import {
   evalOnboarding,
   findGaps,
   reviewRepo,
+  surveyRepo,
   formatEval,
   learnFrameworkFrom,
   loadEvalCases,
@@ -546,6 +547,75 @@ export async function onboardFrameworkAccept(
   io.out(
     `Accepted: org-pack/frameworks/${name}.yaml. Scans read every repo that imports ${model.packages.join(", ")} through it. Commit the org pack for review, as with any change to it.`,
   );
+  return 0;
+}
+
+/**
+ * atticus scan survey <repo> [--attempts 3] [--resume run] [--force] (ADR 0075): the assistant
+ * reads the repo and drafts its scan settings (folders that aren't the product, path prefixes
+ * the readers can't see); every entry is checked against the code before
+ * org-pack/scan/<repo>.yaml is written. The next scan applies it.
+ */
+export async function scanSurvey(
+  root: string,
+  target: string,
+  o: { attempts?: number; resume?: string; force?: boolean },
+  deps: OnboardDeps,
+  io: Output,
+): Promise<number> {
+  const repo = await repoFor(root, target);
+  if (!repo) {
+    io.err(
+      `${target} isn't a cloned repo of the manifest or a folder; clone it with atticus workspace sync, or give its folder.`,
+    );
+    return 2;
+  }
+  const file = join(orgPackDirOf(root), "scan", `${repo.id}.yaml`);
+  if (!o.force && !o.resume && (await stat(file).catch(() => undefined))) {
+    io.err(
+      `${repo.id} already has scan settings (org-pack/scan/${repo.id}.yaml). Re-run with --force to draft them again.`,
+    );
+    return 1;
+  }
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const r = await surveyRepo(fsRepo(repo.id, repo.dir, "0".repeat(40)), {
+    repoId: repo.id,
+    runtime: deps.runtime,
+    orgPack: op,
+    maxAttempts: o.attempts ?? 3,
+    ...(deps.now ? { now: deps.now } : {}),
+    ...(o.resume ? { resume: o.resume } : {}),
+  });
+  if (r.status === "waiting") {
+    io.out(
+      `Handed the survey to your assistant (run ${r.runId}). When it is done: atticus handoff done ${r.runId}, then atticus scan survey ${repo.id} --resume ${r.runId}`,
+    );
+    return 0;
+  }
+  for (const a of r.attempts.filter((x) => x.problems.length > 0)) {
+    io.out(`Attempt ${a.attempt}: ${plural(a.problems.length, "problem")}, handed back:`);
+    for (const p of a.problems) io.out(`  - ${p}`);
+  }
+  if (r.status !== "drafted" || !r.settings) {
+    io.out(
+      `The survey still had problems after ${plural(r.attempts.length, "attempt")}; nothing was written.`,
+    );
+    return 1;
+  }
+  await mkdir(join(orgPackDirOf(root), "scan"), { recursive: true });
+  await writeFile(
+    file,
+    `# Drafted by atticus scan survey on ${(deps.now ?? new Date()).toISOString().slice(0, 10)}; every entry was checked against the code (ADR 0075). Review it like any org-pack change.\n${r.yaml}`,
+    "utf8",
+  );
+  const s = r.settings;
+  io.out(
+    `Wrote org-pack/scan/${repo.id}.yaml: ${plural(s.exclude.length, "folder")} left out, ${plural(s.prefixes.length, "prefix", "prefixes")}.`,
+  );
+  for (const e of s.exclude) io.out(`  leave out ${e.path}: ${e.why} (${e.at})`);
+  for (const p of s.prefixes)
+    io.out(`  ${p.prefix} in front of ${p.paths.join(", ")}: ${p.why} (${p.at})`);
+  io.out(`Next: atticus scan, then review the file in a pull request.`);
   return 0;
 }
 

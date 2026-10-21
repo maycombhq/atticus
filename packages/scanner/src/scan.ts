@@ -45,6 +45,7 @@ import { scanInputs, type ScanInputsResult } from "@maycombhq/intake";
 import { baseClonePath, checkoutState } from "@maycombhq/workspace";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
+import { applyPrefixes, checkScanSettings, withExcludes } from "./scan-settings.js";
 
 export interface ScanOptions {
   /** The metarepo root (holds org-pack/, catalog/, workspace/). */
@@ -424,10 +425,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     // parse, and everything it holds (syntax trees too) is freed when the repo is done.
     const parsed = createParseCache();
     // .atticus/ is Atticus's own folder (an adopted repo scans itself): never read as code.
-    const handle = withParseCache(
-      fsRepo(r.id, dir, state.commit, { ignore: [...DEFAULT_IGNORES, ".atticus"] }),
-      parsed,
-    );
+    const files = fsRepo(r.id, dir, state.commit, { ignore: [...DEFAULT_IGNORES, ".atticus"] });
+    // Scan settings (ADR 0075): every entry checked against the code before it applies.
+    const settingsFor = op.scanSettings.find((s) => s.repo === r.id);
+    const settings = settingsFor
+      ? await checkScanSettings(settingsFor, files)
+      : { exclude: [], prefixes: [], problems: [] };
+    for (const message of settings.problems)
+      problems.push({ repo: r.id, source: `org-pack/scan/${r.id}.yaml`, message });
+    const handle = withParseCache(withExcludes(files, settings.exclude), parsed);
     let scan: RepoScan;
     try {
       const modules = r.modules.length
@@ -480,7 +486,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         source: rej.extractor,
         message: `invalid record: ${rej.issues.map((i) => `${i.path}: ${i.message}`).join("; ")}`,
       });
-    results.push(scan);
+    results.push({ ...scan, records: applyPrefixes(scan.records, settings.prefixes) });
     o.onProgress?.(++done, repos.length, r.id);
   }
 

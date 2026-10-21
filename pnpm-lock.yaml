@@ -117,6 +117,9 @@ importers:
       '@maycombhq/extractors':
         specifier: workspace:*
         version: link:../extractors
+      '@maycombhq/scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@maycombhq/sdk':
         specifier: workspace:*
         version: link:../sdk

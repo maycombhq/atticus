@@ -130,7 +130,7 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
     const { dir, cache, repos } = await load(o);
     const { main } = await import("./main.js");
     const quiet: Output = { out: () => {}, err: () => {} };
-    const scores: RepoScore[] = [];
+    const scores: (RepoScore & { settings: boolean })[] = [];
     const skipped: string[] = [];
     for (const r of repos) {
       const path = join(cache, r.id);
@@ -154,10 +154,18 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
       await rm(join(path, ".atticus"), { recursive: true, force: true });
       if ((await main(["adopt", path], quiet)) !== 0)
         throw new BenchError(`atticus adopt failed on ${r.id}: run it by hand to see why.`);
+      // Settings atticus bench survey drafted for this repo (ADR 0075) are put back each run.
+      const saved = await readFile(join(cache, "settings", `${r.id}.yaml`), "utf8").catch(
+        () => undefined,
+      );
+      if (saved !== undefined) {
+        await mkdir(join(path, ".atticus", "org-pack", "scan"), { recursive: true });
+        await writeFile(join(path, ".atticus", "org-pack", "scan", `${r.id}.yaml`), saved, "utf8");
+      }
       if ((await main(["scan", "--root", path], quiet, { quiet: true })) === 2)
         throw new BenchError(`atticus scan failed on ${r.id}: run it by hand to see why.`);
       const { records } = await readCatalog(join(path, ".atticus", "catalog", "generated"));
-      scores.push(scoreRepo(ref, records));
+      scores.push({ ...scoreRepo(ref, records), settings: saved !== undefined });
     }
     const total = scores.reduce(
       (t, s) => ({
@@ -179,15 +187,72 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
     io.out("REPO                       FOUND  MISSED  WRONG  PRECISION  RECALL");
     for (const s of scores)
       io.out(
-        `${s.repo.padEnd(26)} ${String(s.total.found).padStart(5)}  ${String(s.total.missed).padStart(6)}  ${String(s.total.wrong).padStart(5)}  ${pct(s.total.precision).padStart(9)}  ${pct(s.total.recall).padStart(6)}`,
+        `${(s.repo + (s.settings ? " *" : "")).padEnd(26)} ${String(s.total.found).padStart(5)}  ${String(s.total.missed).padStart(6)}  ${String(s.total.wrong).padStart(5)}  ${pct(s.total.precision).padStart(9)}  ${pct(s.total.recall).padStart(6)}`,
       );
     const p = total.found / Math.max(1, total.found + total.wrong);
     const rc = total.found / Math.max(1, total.found + total.missed);
     io.out(
       `${"all".padEnd(26)} ${String(total.found).padStart(5)}  ${String(total.missed).padStart(6)}  ${String(total.wrong).padStart(5)}  ${pct(p).padStart(9)}  ${pct(rc).padStart(6)}`,
     );
+    if (scores.some((s) => s.settings))
+      io.out("* scanned with the scan settings atticus bench survey drafted");
     for (const s of skipped) io.out(`Skipped ${s}`);
     io.out(`Details (what was missed and wrong, per kind): ${file}`);
+    return 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/**
+ * atticus bench survey [--repo id] [--batch n] [--mode m]: have the assistant draft each repo's
+ * scan settings (atticus scan survey, ADR 0075) and keep them in <cache>/settings/, so every
+ * later bench run scans with them. Each repo is one assistant run (or up to three attempts).
+ */
+export async function benchSurvey(
+  o: BenchOptions & { mode?: string },
+  io: Output,
+): Promise<number> {
+  try {
+    const { cache, repos } = await load(o);
+    const { main } = await import("./main.js");
+    const quiet: Output = { out: () => {}, err: () => {} };
+    await mkdir(join(cache, "settings"), { recursive: true });
+    for (const r of repos) {
+      const path = join(cache, r.id);
+      if ((await cloneCommit(path)) !== r.commit) {
+        io.out(`${r.id}: not fetched at ${r.commit.slice(0, 12)} (run atticus bench fetch)`);
+        continue;
+      }
+      await rm(join(path, ".atticus"), { recursive: true, force: true });
+      if ((await main(["adopt", path], quiet)) !== 0)
+        throw new BenchError(`atticus adopt failed on ${r.id}: run it by hand to see why.`);
+      // The adopted org pack allows hand-off only; the bench may run the assistant headless.
+      if (o.mode) {
+        const rt = join(path, ".atticus", "org-pack", "runtime.yaml");
+        const text = await readFile(rt, "utf8");
+        if (!text.includes(`- ${o.mode}`))
+          await writeFile(
+            rt,
+            text.replace(/^(\s+)- hand-off$/m, `$1- hand-off\n$1- ${o.mode}`),
+            "utf8",
+          );
+      }
+      const lines: string[] = [];
+      const code = await main(
+        ["scan", "survey", path, "--root", path, ...(o.mode ? ["--mode", o.mode] : [])],
+        { out: (l) => lines.push(l), err: (l) => lines.push(l) },
+      );
+      const drafted = join(path, ".atticus", "org-pack", "scan", `${r.id}.yaml`);
+      const text = code === 0 ? await readFile(drafted, "utf8").catch(() => undefined) : undefined;
+      if (text === undefined) {
+        io.out(`${r.id}: no settings (${lines.at(-1) ?? "the survey didn't finish"})`);
+        continue;
+      }
+      await writeFile(join(cache, "settings", `${r.id}.yaml`), text, "utf8");
+      io.out(`${r.id}: ${lines[0] ?? "settings drafted"}`);
+    }
+    io.out(`Settings are in ${join(cache, "settings")}. Next: atticus bench run`);
     return 0;
   } catch (e) {
     return fail(io, e);

@@ -1,0 +1,11 @@
+# Drafted the way atticus scan survey would; every entry cites its line (ADR 0075).
+schemaVersion: 1
+repo: forge-notes
+exclude:
+  - { path: "docs/**", why: a playground the documentation tool generated, at: "docs/playground.js:1" }
+prefixes:
+  - paths: ["src/main/java/**"]
+    prefix: /notes-api
+    why: server.servlet.context-path
+    at: "src/main/resources/application.properties:3"
+    value: /notes-api

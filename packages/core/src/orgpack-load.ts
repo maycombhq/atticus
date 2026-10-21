@@ -1,7 +1,8 @@
 import { readdir, readFile } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { FrameworkModel } from "./schema/frameworks.js";
+import { ScanSettings } from "./schema/scan-settings.js";
 import type { z } from "zod";
 import {
   DEFAULT_CHANGE_TYPES,
@@ -52,6 +53,8 @@ export interface OrgPack {
   dialects: Dialect[];
   /** Framework models (ADR 0054), from frameworks/. */
   frameworks: FrameworkModel[];
+  /** Scan settings per repo (ADR 0075), from scan/<repo>.yaml. */
+  scanSettings: ScanSettings[];
   checklists: ChecklistPack[];
   skills: (z.infer<typeof SkillMeta> & { body: string })[];
   serviceRequests: z.infer<typeof ServiceRequestTemplate>[];
@@ -189,6 +192,20 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
   const patterns = await many("patterns", /\.ya?ml$/, IntegrationPattern);
   const dialects = await many("dialects", /\.ya?ml$/, Dialect);
   const frameworks = await many("frameworks", /\.ya?ml$/, FrameworkModel);
+  // One file per repo, named after it: a file whose repo doesn't match its name is refused.
+  const scanSettings: ScanSettings[] = [];
+  for (const f of await listFiles(join(dir, "scan"), /\.ya?ml$/)) {
+    const v = await load(f, ScanSettings);
+    if (!v) continue;
+    const name = basename(f).replace(/\.ya?ml$/, "");
+    if (v.repo !== name)
+      problems.push({
+        file: rel(f),
+        path: "repo",
+        message: `is for ${v.repo}; name it scan/${v.repo}.yaml`,
+      });
+    else scanSettings.push(v);
+  }
   const checklists = await many("checklists", /\.ya?ml$/, ChecklistPack);
   const serviceRequests = await many("process/snow", /\.ya?ml$/, ServiceRequestTemplate);
   const procedures = await many("process/procedures", /\.ya?ml$/, Procedure);
@@ -372,6 +389,7 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     patterns,
     dialects,
     frameworks,
+    scanSettings,
     checklists,
     skills,
     serviceRequests,

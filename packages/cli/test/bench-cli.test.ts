@@ -99,6 +99,30 @@ describe("atticus bench", () => {
     expect(table.out[1]).toMatch(/^forge-ledger\s+2\s+1\s+0\s+100%\s+67%$/);
   }, 300_000);
 
+  it("scans with a repo's saved scan settings (atticus bench survey keeps them in the cache)", async () => {
+    const b = await bench();
+    const args = ["--bench", b.dir, "--cache", b.cache];
+    expect(await main(["bench", "fetch", ...args], io().io)).toBe(0);
+    // A setting that leaves out the migrations folder: the scan then finds no tables.
+    await mkdir(join(b.cache, "settings"), { recursive: true });
+    await writeFile(
+      join(b.cache, "settings", "forge-ledger.yaml"),
+      [
+        "schemaVersion: 1",
+        "repo: forge-ledger",
+        "exclude:",
+        '  - { path: "src/main/resources/db/**", why: test, at: "src/main/resources/db/migration/V1__create_account.sql:1" }',
+        "",
+      ].join("\n"),
+    );
+    const r = io();
+    expect(await main(["bench", "run", ...args, "--json"], r.io), r.err.join("\n")).toBe(0);
+    const result = JSON.parse(r.out.join("\n")) as {
+      repos: { repo: string; settings: boolean; kinds: { stores: { found: number } } }[];
+    };
+    expect(result.repos[0]).toMatchObject({ settings: true, kinds: { stores: { found: 0 } } });
+  }, 300_000);
+
   it("skips a repo with no reference or no clone, and refuses a reference for another commit", async () => {
     const b = await bench();
     const args = ["--bench", b.dir, "--cache", b.cache];

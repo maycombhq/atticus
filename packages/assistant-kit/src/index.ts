@@ -12,3 +12,4 @@ export * from "./onboard-eval.js";
 export * from "./onboard-framework.js";
 export * from "./record-signature.js";
 export * from "./review.js";
+export * from "./scan-survey.js";

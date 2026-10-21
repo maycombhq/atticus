@@ -1,0 +1,6 @@
+schemaVersion: 1
+platform: forge
+name: Forge notes, with a context path the readers can't see
+systems:
+  - { id: notes, name: Notes, boundary: product, owner: team-notes, aliases: [] }
+environments: [dev, prod]

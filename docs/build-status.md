@@ -105,6 +105,8 @@ Every open item, in the order to take them. Check work by running the real flow 
 - [x] **P1.4 Knowledge bench:** `bench/knowledge/`: 17 invented Forge wiki pages, 37 reference items, 2 conflicts, 1 superseded page, 1 hidden injection, 8 questions. Scored once Phase 3's knowledge scan exists.
 - [x] **P1.5 Design bench:** `bench/design/`: an invented Vaccination records feature for petclinic as a Figma file export, 5 screens, 33 fields (16 existing, 12 new, 5 unbacked), 12 gaps and 6 traps. Scored once Phase 5 reads designs.
 - [ ] **P1.6 Diagram spike:** measured: ELK.js chosen (dagre fails on nested graphs), focus mode and transitive reduction make the dense views legible, limits set (`docs/plan/diagram-spike.md`). Still to do: try the interaction in a browser (a spike page is published for the product owner), and swimlanes for the reference flows (P1.3).
+- [x] **P2a.1 Scan settings per repo, drafted by the AI** (ADR 0075): `org-pack/scan/<repo>.yaml` (folders to leave out, path prefixes), every entry checked against its cited line; the scanner applies it; `atticus scan survey <repo>` has the assistant draft it; `atticus bench survey` keeps settings for bench runs. Live on three bench repos: spring-petclinic-rest 17% to 98%, fastapi-realworld 0% to 100% precision and 70% recall, node-realworld 21% to 100% and 89%.
+- [ ] **P2a.2 Survey the rest of the bench** and record the new totals; then client base URLs and the AI verify step (compare the scan with the assistant's own reading).
 
 ### I. The AI reads the code; a thin deterministic layer verifies (direction change, decided by the product owner)
 
