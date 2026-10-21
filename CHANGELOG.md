@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The estate as one graph, opened a level at a time
+
+- Local API (ADR 0081): `GET /api/graph/node/{id}` gives one node of the estate (estate, system, repo, component, endpoint, topic, client, store, table, deployment) with its children, its breadcrumbs and its edges, merged with a count and each with its evidence as `path:line` and its gaps; `?lens=` picks architecture, repo, data, integration or infrastructure; "uses" edges are the transitive reduction unless `?all=1`. `GET /api/graph/focus/{id}` gives a node and its neighbours. `GET` and `PUT /api/graph/layout/{view-key}` read and keep a view's arrangement in `diagrams/layouts/<view-key>.yaml` (C6, a new metarepo file).
+- The app's new Architecture screen opens the estate through it: a lens switcher, breadcrumbs, the picture of the open node, an outline for the keyboard and screen readers (Tab, Enter to open, Escape to close), and a details panel with the evidence and the command for the next step. The picture is today's read-only canvas: dragging, zoom, the minimap and "keep this arrangement" come with the new canvas.
+- `scoreLayout` and `LAYOUT_LIMITS` in `@maycombhq/diagrams` measure a laid-out view against the diagram spike's limits.
+
 ### You are your Git user; approving is the pull request
 
 - Atticus knows you by the metarepo's Git user (`git config user.name` and `user.email`, ADR 0073). The app shows it in the top bar and every command records it; `--by <handle>` is now an optional override everywhere it was required (`change new`, `change handoff`, `finding`, `baseline`, `todo done`, `task run`, `glossary`, `initiative`, `outcome record` and the rest), and `digest --as` likewise. With no Git user, the OS user name stands in with a warning that says how to set it.

@@ -12,6 +12,7 @@ import { ChangeLifecycle } from "./schema/change.js";
 import { Dialect } from "./schema/dialect.js";
 import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
+import { DiagramLayout } from "./schema/layout.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
 import * as C6 from "./schema/orgpack.js";
 import * as C5 from "./schema/ai.js";
@@ -35,7 +36,8 @@ export function catalogJsonSchemas(): Record<RecordKind, object> {
 
 /**
  * JSON Schema for the workspace files: repos.manifest.yaml, and a change's repos.yaml,
- * change.yaml (its lifecycle state) and review/outcomes.yaml (ADR 0045).
+ * change.yaml (its lifecycle state) and review/outcomes.yaml (ADR 0045), and a view's kept
+ * arrangement, diagrams/layouts/<view-key>.yaml (ADR 0081).
  */
 export function workspaceJsonSchemas(): Record<
   | "RepoManifest"
@@ -43,7 +45,8 @@ export function workspaceJsonSchemas(): Record<
   | "ChangeLifecycle"
   | "ChangeOutcomes"
   | "CatalogBaseline"
-  | "MetarepoStamp",
+  | "MetarepoStamp"
+  | "DiagramLayout",
   object
 > {
   const gen = (name: string, schema: z.ZodType) => ({
@@ -58,6 +61,7 @@ export function workspaceJsonSchemas(): Record<
     ChangeOutcomes: gen("ChangeOutcomes", ChangeOutcomes),
     CatalogBaseline: gen("CatalogBaseline", CatalogBaseline),
     MetarepoStamp: gen("MetarepoStamp", MetarepoStamp),
+    DiagramLayout: gen("DiagramLayout", DiagramLayout),
   };
 }
 

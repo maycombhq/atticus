@@ -56,7 +56,7 @@ describe("atticus CLI", () => {
     const c = capture();
     expect(await main(["schema", "export", dir], c.io)).toBe(0);
     expect(await readdir(join(dir, "catalog"))).toHaveLength(30);
-    expect(await readdir(join(dir, "orgpack"))).toHaveLength(14); // FrameworkModel since ADR 0054
+    expect(await readdir(join(dir, "orgpack"))).toHaveLength(15); // FrameworkModel since ADR 0054, ScanSettings since ADR 0075
     expect(JSON.parse(await readFile(join(dir, "api", "openapi.json"), "utf8")).openapi).toBe(
       "3.1.0",
     );
@@ -75,6 +75,7 @@ describe("atticus CLI", () => {
       "ChangeLifecycle.json",
       "ChangeOutcomes.json",
       "ChangeRepos.json",
+      "DiagramLayout.json",
       "MetarepoStamp.json",
       "RepoManifest.json",
     ]);

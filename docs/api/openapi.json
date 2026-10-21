@@ -1418,6 +1418,369 @@
         }
       }
     },
+    "/api/graph/node/{id}": {
+      "get": {
+        "operationId": "getGraphNode",
+        "summary": "A node of the estate hierarchy with its children (one level, lazy) and its edges to siblings and outside; the root is estate (ADR 0081)",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "estate, or <kind>:<record id>, e.g. system:ledger"
+          },
+          {
+            "name": "lens",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "architecture",
+                "repo",
+                "data",
+                "integration",
+                "infrastructure"
+              ]
+            },
+            "description": "Which part of the model to show (default architecture)",
+            "required": false
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            "description": "Levels of children (default 1)",
+            "required": false
+          },
+          {
+            "name": "all",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ]
+            },
+            "description": "Every 'uses' edge, not the transitive reduction",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphNodeView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/graph/focus/{id}": {
+      "get": {
+        "operationId": "getGraphFocus",
+        "summary": "A node and its direct neighbours, with the edges between them (ADR 0081)",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "lens",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "architecture",
+                "repo",
+                "data",
+                "integration",
+                "infrastructure"
+              ]
+            },
+            "description": "Default data",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphFocusView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/graph/layout/{viewKey}": {
+      "get": {
+        "operationId": "getViewLayout",
+        "summary": "A view's kept arrangement (diagrams/layouts/<view-key>.yaml); saved is false when there is none",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "viewKey",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "description": "<lens>.<node>, e.g. architecture.system-ledger"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewLayoutResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "operationId": "putViewLayout",
+        "summary": "Keep this arrangement: writes diagrams/layouts/<view-key>.yaml in the metarepo, as the signed-in person",
+        "tags": [
+          "views"
+        ],
+        "parameters": [
+          {
+            "name": "viewKey",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lens": {
+                    "type": "string",
+                    "enum": [
+                      "architecture",
+                      "repo",
+                      "data",
+                      "integration",
+                      "infrastructure"
+                    ]
+                  },
+                  "node": {
+                    "type": "string",
+                    "pattern": "^(estate|[a-z]+:[a-z0-9][a-z0-9._-]*)$"
+                  },
+                  "positions": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "pattern": "^(estate|[a-z]+:[a-z0-9][a-z0-9._-]*)$"
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "x": {
+                          "type": "number"
+                        },
+                        "y": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "x",
+                        "y"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "lens",
+                  "node",
+                  "positions"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ViewLayoutResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/ask": {
       "get": {
         "operationId": "ask",
@@ -11037,6 +11400,413 @@
         "required": [
           "nodes",
           "edges"
+        ],
+        "additionalProperties": false
+      },
+      "HierNode": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(estate|[a-z]+:[a-z0-9][a-z0-9._-]*)$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "estate",
+              "system",
+              "repo",
+              "component",
+              "endpoint",
+              "topic",
+              "client",
+              "store",
+              "table",
+              "deployment",
+              "environment",
+              "unknown"
+            ]
+          },
+          "label": {
+            "type": "string"
+          },
+          "parent": {
+            "type": "string",
+            "pattern": "^(estate|[a-z]+:[a-z0-9][a-z0-9._-]*)$"
+          },
+          "childCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "current",
+              "new",
+              "changed",
+              "retired"
+            ]
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "at"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "properties": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ]
+            }
+          },
+          "record": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              }
+            },
+            "required": [
+              "kind",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "next": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command",
+              "why"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "label",
+          "childCount",
+          "state",
+          "gaps",
+          "evidence",
+          "properties"
+        ],
+        "additionalProperties": false
+      },
+      "HierEdge": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "pattern": "^(estate|[a-z]+:[a-z0-9][a-z0-9._-]*)$"
+          },
+          "to": {
+            "type": "string",
+            "pattern": "^(estate|[a-z]+:[a-z0-9][a-z0-9._-]*)$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "calls",
+              "publishes",
+              "subscribes",
+              "uses",
+              "reads",
+              "writes",
+              "references",
+              "deployed-to"
+            ]
+          },
+          "sync": {
+            "type": "string",
+            "enum": [
+              "sync",
+              "async",
+              "mixed"
+            ]
+          },
+          "via": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "current",
+              "new",
+              "changed",
+              "retired"
+            ]
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "at"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to",
+          "type",
+          "count",
+          "state",
+          "gaps",
+          "evidence"
+        ],
+        "additionalProperties": false
+      },
+      "GraphNodeView": {
+        "type": "object",
+        "properties": {
+          "lens": {
+            "type": "string",
+            "enum": [
+              "architecture",
+              "repo",
+              "data",
+              "integration",
+              "infrastructure"
+            ]
+          },
+          "node": {
+            "$ref": "#/components/schemas/HierNode"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HierNode"
+            }
+          },
+          "children": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HierNode"
+            }
+          },
+          "outside": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HierNode"
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HierEdge"
+            }
+          },
+          "reduced": {
+            "type": "boolean"
+          },
+          "hiddenEdges": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "suggest": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "focus",
+                  "group"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^(estate|[a-z]+:[a-z0-9][a-z0-9._-]*)$"
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "lens",
+          "node",
+          "path",
+          "children",
+          "outside",
+          "edges",
+          "reduced",
+          "hiddenEdges"
+        ],
+        "additionalProperties": false
+      },
+      "GraphFocusView": {
+        "type": "object",
+        "properties": {
+          "lens": {
+            "type": "string",
+            "enum": [
+              "architecture",
+              "repo",
+              "data",
+              "integration",
+              "infrastructure"
+            ]
+          },
+          "node": {
+            "$ref": "#/components/schemas/HierNode"
+          },
+          "path": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HierNode"
+            }
+          },
+          "neighbours": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HierNode"
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HierEdge"
+            }
+          }
+        },
+        "required": [
+          "lens",
+          "node",
+          "path",
+          "neighbours",
+          "edges"
+        ],
+        "additionalProperties": false
+      },
+      "ViewLayoutResult": {
+        "type": "object",
+        "properties": {
+          "view": {
+            "type": "string"
+          },
+          "saved": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "positions": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "view",
+          "saved",
+          "path",
+          "positions"
         ],
         "additionalProperties": false
       },
