@@ -109,6 +109,14 @@ Why: on the first real repo almost every reader needed a fix, each found only by
 - [ ] **I6. Corrections stay at the organisation.** A person's correction, or a rule scan review proposes, applies there at once; built-in readers become overridable by rules (today an org can't correct a reader's misread).
 - [ ] **I7. Coverage, measured.** A citation check proves a line says what's claimed, not that nothing was missed: measure coverage on the bench and per repo (files read, gaps left).
 - [ ] **I8. Costs and approval.** A bank-approved model (ADR 0065 providers); model time on an estate's first scan; budgets and a per-repo cost estimate before a scan starts.
+- [ ] **I9. Every scan is AI → deterministic → AI** (the product owner's design; refines I3–I4):
+  1. **AI first:** survey the repo and classify its type (for example a Spring Boot REST service on a house starter, a React SPA with its own HTTP client, a Terraform module repo), and decide whether the deterministic scanner needs customising to read everything a repo of that type holds.
+  2. **If it does, the AI customises the scanner** by writing its configuration (rules, dialects, framework models, overrides of built-in readers), as files in the metarepo a PR approves. Not Atticus's source code: AI-written code running in the scanner is the plugin trust question of Phase 4 (G5).
+  3. **Deterministic:** run the scanner with that configuration.
+  4. **AI last:** verify the result against its own reading of the code (every fact's citation confirmed, every difference explained); what fails goes back to step 2. Stop when a pass adds no new facts, every gap has a verdict and every citation checks out, within a time and cost budget, not at "perfect".
+- [ ] **I10. A scanner profile per repo type, reused.** What step 2 writes is kept as the profile for that type of repo; the next repo of the same type starts from it and only adds what is new, so the second repo costs less than the first. Profiles carry their own tests from the repos that made them.
+- [ ] **I11. A spec per repo.** Every onboarded repo gets a spec of what it is today: its entry points and exits (endpoints, events, jobs, screens; the calls, messages and files it sends), the logic between them, field-level mappings (request → DTO → entity → column), database reads and writes, configuration and deployment, each statement with its evidence. N repos give N specs, regenerated on every scan, the current-state baseline that changes are drafted against. Needs D4 and D11.
+- [ ] **I12. The estate pass: connect the dots.** After the repos, the AI iterates over the whole estate: joins calls across repos, discovers the UI's pages and what each calls, and builds the end-to-end picture; detects features within one repo and end to end across repos; iterates with the same stopping test as I9. Every join it makes cites both ends.
 
 ### B. The core loop: scan → change → stories (what the product is for)
 
@@ -169,6 +177,13 @@ Facts stay deterministic: from code, or from a decision a person recorded. The m
 
 - [ ] **F1. One-system context view as text:** the Mermaid and draw.io output still lists calls inside the system as `system --> system`; changing it means reconcile must treat calls inside one drawn box as inside it.
 - [ ] **F2. Very large graphs:** the layered canvas wraps columns at 16; check readability at bank scale (hundreds of components).
+- [ ] **F3. The diagram page: one interactive, full-page diagram that is also where people correct** (the product owner's design; Architecture screen of B1):
+  1. **Full page, zoomable into the inside:** estate → system → repo → component → its internals (handlers, services, entities, fields); double-click to go in, breadcrumbs to come out.
+  2. **Switchable views:** context, container, data flow, deployment, sequence.
+  3. **Rearrangeable:** drag nodes; the layout is saved per view.
+  4. **Current state and feature views:** the current view, and a view per feature that emphasises what has to change against the current state, or against another feature's target or starting state.
+  5. **Gaps in red:** nodes and edges a feature needs but that are missing or unproven (no field mapping, no logic, no endpoint) show in red; zoomed inside a repo, the view lists exactly what is missing for the feature (the field mapping or the logic needed).
+  6. **Correct in place:** fix a wrong node, edge or mapping on the diagram; the correction is recorded (I6, H1) and shown with the command to commit it, since the app runs nothing itself (B1).
 
 ### G. For a person, and later phases
 
