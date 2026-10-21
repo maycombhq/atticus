@@ -197,9 +197,9 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
           continue;
         }
       }
-      const at_ = flowAt(target.id);
+      const reached = flowAt(target.id);
       const ifaceId = iface ? { interface: iface.id } : {};
-      if (!at_) {
+      if (!reached) {
         miss({
           reason: "no-flow",
           trigger: target.id,
@@ -208,8 +208,8 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
         });
         continue;
       }
-      if ("wrong" in at_) {
-        const w = at_.wrong;
+      if ("wrong" in reached) {
+        const w = reached.wrong;
         miss({
           reason: "family-mismatch",
           trigger: target.id,
@@ -218,7 +218,7 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
         });
         continue;
       }
-      const callee = at_.found;
+      const callee = reached.found;
       const toEv = callee.flow.trigger.evidence[0];
       const ends = [
         (await cited(repo, s.evidence[0])) ? undefined : `${flow.id} step ${step}`,
