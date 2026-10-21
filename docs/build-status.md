@@ -147,7 +147,7 @@ Every open item, in the order to take them. Check work by running the real flow 
 
 ### Done this round (for the record)
 
-Model providers (ADR 0065); onboarding for framework models (0066); the shared parse cache and the worker-crash fix (0067); diagrams draw the chosen view, `Component.uses`, JPQL and upsert fixes (0068); the reader follows a repo's own HTTP helpers, modules take their own type (0069); `change draft` and `plan stories --draft` (0070); `domain profile` and the ASP.NET Core Async fix (0071); `scan review` and three SQL reader fixes it found (0072); discover reads a clone's subfolders as modules; every graph on the layered canvas; the Changes screen fix for AI runs.
+Model providers (ADR 0065); onboarding for framework models (0066); the shared parse cache and the worker-crash fix (0067); diagrams draw the chosen view, `Component.uses`, JPQL and upsert fixes (0068); the reader follows a repo's own HTTP helpers, modules take their own type (0069); `change draft` and `plan stories --draft` (0070); `domain profile` and the ASP.NET Core Async fix (0071); `scan review` and three SQL reader fixes it found (0072); discover reads a clone's subfolders as modules; every graph on the layered canvas; the Changes screen fix for AI runs. Roles and in-app approvals removed: the person is the Git user and a gate is approved when its hand-off PR merges; `roles.yaml` deprecated (0073).
 
 ## How to work
 

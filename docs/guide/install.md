@@ -33,6 +33,15 @@ git config --global core.longpaths true
 
 Change worktrees nest deeply, and Windows paths stop at 260 characters without it.
 
+Atticus knows you by your Git user (ADR 0073): there is no sign-in and no role to pick. If Git doesn't know you yet, set it once:
+
+```bash
+git config --global user.name "Your Name"
+git config --global user.email you@example.com
+```
+
+Every command and the app record you by it (the email's part before the `@`); `--by <handle>` names someone else. Without it, Atticus uses your OS user name and warns each time.
+
 ## Install from source
 
 For contributors, or where the bundle can't be used:
@@ -96,4 +105,4 @@ The app's Home shows the setup checklist until the catalog is accepted. The same
 
 ## Uninstall
 
-Delete the version folder (`%LOCALAPPDATA%\Programs\Atticus\<version>`, or `~/.local/share/atticus/<version>`) and the `atticus` command (`...\Atticus\bin\atticus.cmd`, or `~/.local/bin/atticus`). Atticus keeps nothing else outside your metarepos. In a metarepo, `.atticus/logs/`, `.atticus/locks/`, `.atticus/backups/` and `.atticus/me.yaml` are this machine's own files and are never committed.
+Delete the version folder (`%LOCALAPPDATA%\Programs\Atticus\<version>`, or `~/.local/share/atticus/<version>`) and the `atticus` command (`...\Atticus\bin\atticus.cmd`, or `~/.local/bin/atticus`). Atticus keeps nothing else outside your metarepos. In a metarepo, `.atticus/logs/`, `.atticus/locks/`, `.atticus/backups/` and `.atticus/me.yaml` (your digest settings) are this machine's own files and are never committed.

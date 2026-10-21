@@ -7,9 +7,11 @@ is configuration, a rule file or a plugin; nothing needs a code change.
 ## What it holds
 
 - `pack.yaml`: the pack's name, version, owner, review window and classification levels;
-- `roles.yaml`: the roles and who plays them;
-- `change-types.yaml`: kinds of change, their phases, artifacts and approvals;
-- `gates.yaml`: a gate per phase: approvers, checklist packs and measurable checks;
+- `roles.yaml`: deprecated (ADR 0073); still validated, read by nothing. The person is the
+  metarepo's Git user and a gate is approved when its hand-off PR merges;
+- `change-types.yaml`: kinds of change, their phases, artifacts and lenses;
+- `gates.yaml`: a gate per phase: checklist packs and measurable checks (its `approvers` are
+  deprecated, ADR 0073);
 - `patterns/`: integration patterns and how to detect them on an interaction;
 - `sources.yaml`: knowledge sources and the folder layout;
 - `runtime.yaml`: which adapter serves each external system type, and the AI runtime;

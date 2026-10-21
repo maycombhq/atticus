@@ -206,14 +206,15 @@ const CONTRACTS: Contract[] = [
     file: "c6-org-pack.md",
     title: "C6: The org pack",
     summary:
-      "An organisation's configuration: roles, change types, gates, patterns, sources, runtime, procedures, profiles.",
+      "An organisation's configuration: change types, gates, patterns, sources, runtime, procedures, profiles.",
     intro: [
-      "The org pack is everything an organisation configures, as files: who plays which role, the kinds of change and their flows, the gates and what they check, integration patterns, knowledge sources, the runtime (adapters and AI), procedures with their steps, test strategies and ecosystem profiles. A pack is validated file by file and across files; files it leaves out fall back to built-in defaults.",
+      "The org pack is everything an organisation configures, as files: the kinds of change and their flows, the gates and what they check, integration patterns, knowledge sources, the runtime (adapters and AI), procedures with their steps, test strategies and ecosystem profiles. A pack is validated file by file and across files; files it leaves out fall back to built-in defaults.",
+      "`roles.yaml`, and the role-based approval fields in `gates.yaml`, `change-types.yaml` and the change policy, are deprecated (ADR 0073): they still load and validate, and nothing reads them. The person is the metarepo's Git user, and a gate is approved when its hand-off PR merges.",
     ],
     versions: [["Schema version", core.ORGPACK_SCHEMA_VERSION]],
     sections: [
       { name: "PackManifest", where: "org-pack/pack.yaml" },
-      { name: "Roles", where: "org-pack/roles.yaml" },
+      { name: "Roles", where: "org-pack/roles.yaml (deprecated, ADR 0073)" },
       { name: "ChangeTypes", where: "org-pack/change-types.yaml" },
       { name: "Gates", where: "org-pack/gates.yaml" },
       { name: "IntegrationPattern", where: "org-pack/patterns/<code>.yaml" },

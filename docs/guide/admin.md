@@ -11,9 +11,8 @@ Home shows it until the catalog is accepted; `atticus setup` prints it. Each ste
 3. **Repos are listed** (`atticus repos discover <folder>`, then add the proposals to `repos.manifest.yaml`). Give each repo the `hosts` its component answers on, and the gateway repo its gateway's hosts (`hosts: [api-gw.example.internal]`, `*` for any part of a label): calls join components and go through gateways only on hosts listed here (ADR 0053). A scan note names each undeclared host that looks like a gateway. A repo that builds several deployables lists them under `modules` (`- { path: accounts-api, component: accounts-api, hosts: [accounts.example.internal] }`), each with its own component and hosts; a repo with two or more Spring Boot apps gets one per app without it, named after each app (ADR 0057). A call to a vendor joins the vendor's system when a label of its host is the vendor's id, name or one of its `aliases` in the profile, written without spaces or dashes (`api.northwindpay.example` → Northwind Pay); give vendors the aliases their hosts use.
 4. **Repos are cloned here** (`atticus workspace sync`, or _Sync repos_ on the Scans screen).
 5. **The first scan is done** (`atticus scan`, or _Scan now_). Scans read files only: no network, no AI.
-6. **Groups are mapped to roles** (`org-pack/roles.yaml`, below).
-7. **Existing knowledge is added** (optional): diagrams, partner specs and exports in `inputs/` (`atticus intake add <files>`), wikis in `sources.yaml` (`atticus sources add`).
-8. **The catalog is accepted**: walk the ecosystem map with the architect, then `atticus baseline --by <you>` or _Accept the catalog_ on Home. Every later scan, document and change is compared with this baseline.
+6. **Existing knowledge is added** (optional): diagrams, partner specs and exports in `inputs/` (`atticus intake add <files>`), wikis in `sources.yaml` (`atticus sources add`).
+7. **The catalog is accepted**: walk the ecosystem map with the architect, then `atticus baseline` or _Accept the catalog_ on Home. It writes `catalog/baseline.yaml` with your name (your Git user); commit it and open a pull request, whose merge makes it the baseline on main. Every later scan, document and change is compared with this baseline.
 
 ### Helm charts and Kustomize overlays
 
@@ -32,9 +31,8 @@ Everything a team might want to change is in `org-pack/`: configuration and rule
 | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pack.yaml`                               | Name, version, owner, review window, how long facts stay fresh                                                                                                                            |
 | `runtime.yaml`                            | What AI may do, assistants and editors, run modes, autonomy, budgets, outside systems                                                                                                     |
-| `roles.yaml`                              | Optional roles, directory groups mapped to roles, who approves what, separation of duties                                                                                                 |
 | `sources.yaml`                            | Wikis Atticus reads (read-only)                                                                                                                                                           |
-| `gates.yaml`                              | The gate at each phase, its approvers and checklists                                                                                                                                      |
+| `gates.yaml`                              | The gate at each phase and its checklists                                                                                                                                                 |
 | `change-types.yaml`, `test-strategy.yaml` | Change types and the tests each needs (built-in defaults until written)                                                                                                                   |
 | `profiles/<platform>/`                    | The platform profile and `repos.manifest.yaml`                                                                                                                                            |
 | `dialects/`                               | Rules that teach the scanner a house framework (`atticus dialect new`)                                                                                                                    |
@@ -147,21 +145,15 @@ An organisation with its own client can register a provider in code (`registerMo
 
 `runtime.yaml` `adapters` names the work tracker, service desk, Git host, wiki, notifications and design tool. Each can be a live adapter (a plugin), `manual` (Atticus writes a step a person does, with every field ready to copy, and records the result) or left out. A live adapter that can't be reached falls back to manual steps on its own (ADR 0032). Every write to a shared system needs a person's approval, whatever the adapter.
 
-### Roles, views and approvals
+### Who you are and how approving works
 
-```yaml
-enabledOptional: [data-architect, sre]
-mappings:
-  - { group: "Forge Architects", role: architect }
-approvals:
-  waiver: { roles: [architect], groups: ["Forge Architects"] }
-  catalog-assert: { people: [ari] }
-separation:
-  - actions: ["author:design", "approve:design"]
-    reason: The author of a design can't approve it.
-```
+Atticus has no roles, views or sign-in (ADR 0073). Each person is the metarepo's **Git user** (`git config user.name` and `user.email`), which the app shows in the top bar and every command records as `by`; `--by <handle>` names someone else. With no Git user set, Atticus uses the OS user name and warns until it is set.
 
-A person's **view** (the role their home and sidebar follow) comes from a group mapping, or they pick one. Views change what a person sees, never what they may approve. **Approvals** come only from ownership: people, groups or roles named here, and CODEOWNERS for the files in a hand-off PR. Each person's groups and chosen view live in `.atticus/me.yaml` on their own machine.
+**A gate is approved when its hand-off PR merges.** Who may approve is the Git host's business: put the rules on the metarepo with branch protection, required reviews and CODEOWNERS (Atticus names the CODEOWNERS of a phase's files as the PR's reviewers). The person who raised a PR is never its only approver. Waiving a finding, accepting the catalog baseline and release go / no-go are files in the metarepo recorded with the person's name, and reach main through a pull request like everything else.
+
+Every write to a shared outside system (the Git host, the work tracker, the service desk, notifications) still needs the person's explicit confirmation: the command is a dry run until they add `--approve`, and the app's buttons say exactly what they send. This can't be configured away.
+
+`roles.yaml` is deprecated. A pack that has one still loads and validates, but nothing reads it: not its `mappings`, `approvals` or `separation`, nor the `approvers` and `minApprovals` in `gates.yaml`, the `approvals` in `change-types.yaml`, or `privacy.role`, `risk.approvals` and `selfApproval` in `process/change-policy.yaml`. `atticus init` no longer writes it. Move what it said to branch protection and CODEOWNERS, then delete it.
 
 ## Day to day
 
