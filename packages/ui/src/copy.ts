@@ -63,10 +63,59 @@ export const COPY = {
     slash: "Or type this in Copilot Chat:",
     slashIn: (where: string) => `Or type this in Copilot Chat in ${where}:`,
     noSlash: "No slash command does this step yet. Run the command in a terminal.",
+    whatNext: "Not sure what comes next? Type /atticus-next in Copilot Chat, or run atticus next.",
     after: "After that",
     install: "atticus assistant-files writes the slash commands into the metarepo.",
     /** The slash commands `atticus assistant-files` writes today, and what each does. */
     commands: [
+      {
+        name: "/atticus-next",
+        args: "[--all]",
+        where: "metarepo",
+        what: "Says the next step to take, its command and why.",
+      },
+      {
+        name: "/atticus-survey",
+        args: "<repo>",
+        where: "metarepo",
+        what: "Drafts a repo's scan settings; Atticus checks them against the code.",
+      },
+      {
+        name: "/atticus-verify",
+        args: "<repo>",
+        where: "metarepo",
+        what: "Compares a repo's code with its last scan; Atticus checks every item.",
+      },
+      {
+        name: "/atticus-spec",
+        args: "<repo>",
+        where: "metarepo",
+        what: "Writes a repo's spec of flows and loops until the spec check passes.",
+      },
+      {
+        name: "/atticus-answer",
+        args: "[question]",
+        where: "metarepo",
+        what: "Explains the open questions; the person chooses each answer.",
+      },
+      {
+        name: "/atticus-knowledge",
+        args: "<source>",
+        where: "metarepo",
+        what: "Reads a knowledge source into items; Atticus checks every quote.",
+      },
+      {
+        name: "/atticus-feature",
+        args: "<change>",
+        where: "metarepo",
+        what: "Drafts a change's proposal, spec and interfaces from its brief.",
+      },
+      {
+        name: "/atticus-stories",
+        args: "<change>",
+        where: "metarepo",
+        what: "Writes a change's stories and tasks from its approved design.",
+      },
       {
         name: "/atticus-ask",
         args: "<question>",
@@ -135,7 +184,7 @@ export const COPY = {
     allQuestions: (n: number) => `See all ${n} on the Questions page`,
     slashTitle: "Slash commands in Copilot Chat",
     slashIntro:
-      "These are the slash commands atticus assistant-files writes today. Commands for the other steps aren't written yet; use the terminal command each page shows.",
+      "These are the slash commands atticus assistant-files writes. In each AI step, Copilot does the model work and Atticus checks it. The architecture stage has no slash command yet; use the terminal command its page shows.",
     slashWhere: { metarepo: "the metarepo", repo: "a code repo" },
     // Onboarding
     onbIntro:

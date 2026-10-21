@@ -161,7 +161,8 @@ export function completionOf(request: {
   | "templates"
   | "story-prose"
   | "change-draft"
-  | "scan-review" {
+  | "scan-review"
+  | "step-answer" {
   if (handUpLensTask(request.outputPath)) return "hand-up";
   if (lensRunOf(request)) return "critic-lens";
   if (request.change === GLOSSARY_CHANGE && request.outputPath === GLOSSARY_OUTPUT)
@@ -173,6 +174,9 @@ export function completionOf(request: {
     return "feature-names";
   if (request.change === TEMPLATE_PROSE_CHANGE && request.outputPath === TEMPLATE_PROSE_OUTPUT)
     return "templates";
+  // Any other answer in the run's own folder (scan survey, scan verify, spec draft, knowledge
+  // scan and ask, onboard) is read back and checked in full by the step's --resume (ADR 0086).
+  if (request.outputIn === "run") return "step-answer";
   return "artifact";
 }
 
@@ -204,6 +208,12 @@ export async function handoffDone(
           ? []
           : ['The draft has no "=== proposal.md" file; start each file with a line "=== <path>".'];
       }
+      if (completionOf(request) === "step-answer")
+        return /\.ya?ml$/.test(request.outputPath)
+          ? yamlAnswerProblems(_file, request)
+          : (await readFile(_file, "utf8").catch(() => "")).trim()
+            ? []
+            : [`${request.outputPath} is empty`];
       if (completionOf(request) !== "artifact") return yamlAnswerProblems(_file, request);
       const report = await os.validate({ item: request.change, type: "change" });
       return report.items.flatMap((i) =>
@@ -249,6 +259,12 @@ export async function handoffDone(
     if (kind === "change-draft") {
       io.out(
         `The draft for ${run.request.change} is in. Next: atticus change draft ${run.request.change} --resume ${runId}`,
+      );
+      return 0;
+    }
+    if (kind === "step-answer") {
+      io.out(
+        `The answer for ${run.request.change} is in. Run the step again with --resume ${runId}: it checks the answer and writes the result.`,
       );
       return 0;
     }

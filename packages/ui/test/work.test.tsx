@@ -87,10 +87,18 @@ describe("what to run next (plan 4.5)", () => {
         0,
       ).command,
     ).toBe("atticus scan survey b");
+    // ADR 0086: the AI steps have their slash commands now.
+    expect(
+      onboardingStep(
+        view([repo("a"), repo("b", { scanSettings: { path: "x", present: false } })]),
+        0,
+      ).slash?.command,
+    ).toBe("/atticus-survey b");
     expect(onboardingStep(view([repo("a", { lastScan: null })]), 0).command).toBe("atticus scan");
     expect(onboardingStep(view([repo("a")], 0), 0).command).toBe("atticus scan");
     const answer = onboardingStep(done, 2);
     expect(answer.link?.href).toBe("#/questions");
+    expect(answer.slash?.command).toBe("/atticus-answer");
     expect(onboardingStep(done, 0).command).toBe("atticus scan review forge-ledger");
   });
 
@@ -103,9 +111,12 @@ describe("what to run next (plan 4.5)", () => {
     expect(stageStep("feature", change("add-limit", "define")).command).toBe(
       "atticus change draft add-limit",
     );
+    expect(stageStep("feature", change("add-limit", "define")).slash?.command).toBe(
+      "/atticus-feature add-limit",
+    );
     const stories = stageStep("stories", change("add-limit", "plan"));
     expect(stories.command).toBe("atticus plan stories add-limit");
-    expect(stories.slash?.command).toBe("/atticus-plan add-limit");
+    expect(stories.slash?.command).toBe("/atticus-stories add-limit");
     const task = stageStep("tasks", change("add-limit", "build"), tasks);
     expect(task.command).toBe("atticus task run add-limit 1.2");
     expect(task.slash).toEqual({ command: "/atticus-task 1.2", where: "forge-ledger" });

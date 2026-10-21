@@ -42,6 +42,7 @@ export function RunNextPanel({ step }: { step: Step }) {
       <p className="work-say">{R.terminal}</p>
       <Command text={step.command} label={R.copy} />
       {step.slash ? <SlashLine slash={step.slash} /> : <p className="work-say">{R.noSlash}</p>}
+      <p className="work-say">{R.whatNext}</p>
       {step.link && (
         <p style={{ margin: "8px 0 0" }}>
           <a href={step.link.href}>{step.link.label}</a>

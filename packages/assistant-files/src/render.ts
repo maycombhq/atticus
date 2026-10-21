@@ -8,6 +8,7 @@ import {
 } from "./commands.js";
 import type { CommentStyle } from "./header.js";
 import { specifyFiles } from "./specify.js";
+import { stepCommands } from "./steps.js";
 
 /**
  * One skill source, two assistants. From the org pack's skills (`process/skills/*`, C6
@@ -157,7 +158,10 @@ export function renderAssistantFiles(input: RenderInput): RenderedFile[] {
 
   const commands: CommandDef[] = [];
   if (p.kind === "metarepo")
-    commands.push(...zeroInstallCommands({ catalog: l.catalog, openspec: l.openspec }));
+    commands.push(
+      ...zeroInstallCommands({ catalog: l.catalog, openspec: l.openspec }),
+      ...stepCommands(),
+    );
   else if (p.engine === "speckit") commands.push(...specKitCommands());
   else commands.push(atticusTaskCommand());
   for (const c of [...input.commands].sort((a, b) => a.id.localeCompare(b.id)))

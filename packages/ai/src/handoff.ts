@@ -57,13 +57,27 @@ export class HandoffRuntime implements AiRuntime {
     return run;
   }
 
+  /** Where a run's prompt is, relative to the root (`atticus <step> --handoff` prints it). */
+  static promptRel(run: Pick<Run, "runId" | "request">, runsRel = ".runs"): string {
+    return `${runsRel}/${run.request.change}/${run.runId}/prompt.md`;
+  }
+
+  /** Where the assistant writes a run's result, relative to the root. */
+  static outputRel(
+    run: Pick<Run, "runId" | "request">,
+    changesRel = "openspec/changes",
+    runsRel = ".runs",
+  ): string {
+    const { outputPath, change } = run.request;
+    return run.request.outputIn === "run"
+      ? `${runsRel}/${change}/${run.runId}/${outputPath}`
+      : `${changesRel}/${change}/${outputPath}`;
+  }
+
   /** The prompt the person's assistant gets. It ends with the completion command. */
   static promptFor(run: Run, changesRel = "openspec/changes", runsRel = ".runs"): string {
     const { agent, pack, outputPath, change } = run.request;
-    const where =
-      run.request.outputIn === "run"
-        ? `${runsRel}/${change}/${run.runId}/${outputPath}`
-        : `${changesRel}/${change}/${outputPath}`;
+    const where = HandoffRuntime.outputRel(run, changesRel, runsRel);
     return [
       `# ${agent.id}: write ${outputPath} for change ${change}`,
       "",
