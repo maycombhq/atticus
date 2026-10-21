@@ -207,6 +207,37 @@ describe("catalog files and diff", () => {
     expect(d.evidenceOnly).toEqual([{ kind: a[2]!.kind, id: a[2]!.id }]);
     expect(diffIsEmpty(diffCatalogs(a, a))).toBe(true);
   });
+
+  it("doesn't count a different key order as a change (a record read back from its file)", () => {
+    const scanned = {
+      schemaVersion: 2,
+      kind: "QualityAsset",
+      id: "forge-ledger.pipeline.ci",
+      status: "current",
+      confidence: "verified",
+      component: "forge-ledger",
+      assetKind: "pipeline",
+      details: { tool: "github-actions", name: "CI", stages: ["build"], nested: { b: 1, a: 2 } },
+      evidence: [{ source: "pipeline", path: ".github/workflows/ci.yml" }],
+    } as unknown as CatalogRecord;
+    // The same record as its canonical file reads back: keys sorted at every level.
+    const fromFile = {
+      ...scanned,
+      details: { name: "CI", nested: { a: 2, b: 1 }, stages: ["build"], tool: "github-actions" },
+    } as unknown as CatalogRecord;
+    expect(diffIsEmpty(diffCatalogs([fromFile], [scanned]))).toBe(true);
+    // Array order is still a change.
+    const reordered = {
+      ...scanned,
+      details: {
+        ...(scanned as unknown as { details: object }).details,
+        stages: ["test", "build"],
+      },
+    } as unknown as CatalogRecord;
+    expect(diffCatalogs([scanned], [reordered]).changed).toEqual([
+      { kind: "QualityAsset", id: "forge-ledger.pipeline.ci", fields: ["details"] },
+    ]);
+  });
 });
 
 describe("endpoint identity", () => {

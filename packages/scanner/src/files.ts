@@ -106,6 +106,23 @@ export interface CatalogDiff {
   evidenceOnly: { kind: string; id: string }[];
 }
 
+/**
+ * JSON with object keys sorted at every level, so a record compares equal to the same record
+ * read back from its canonical file (which sorts free-form keys such as `details`). Array
+ * order still counts.
+ */
+function canonical(v: unknown): string {
+  return JSON.stringify(v, (_k, x: unknown) =>
+    x && typeof x === "object" && !Array.isArray(x)
+      ? Object.fromEntries(
+          Object.entries(x as Record<string, unknown>).sort(([a], [b]) =>
+            a < b ? -1 : a > b ? 1 : 0,
+          ),
+        )
+      : x,
+  );
+}
+
 /** Compare two catalogs record by record. */
 export function diffCatalogs(before: CatalogRecord[], after: CatalogRecord[]): CatalogDiff {
   const key = (r: CatalogRecord) => `${r.kind}|${r.id}`;
@@ -122,12 +139,12 @@ export function diffCatalogs(before: CatalogRecord[], after: CatalogRecord[]): C
       .filter(
         (f) =>
           f !== "evidence" &&
-          JSON.stringify((old as Record<string, unknown>)[f]) !==
-            JSON.stringify((r as Record<string, unknown>)[f]),
+          canonical((old as Record<string, unknown>)[f]) !==
+            canonical((r as Record<string, unknown>)[f]),
       )
       .sort();
     if (fields.length > 0) diff.changed.push({ kind: r.kind, id: r.id, fields });
-    else if (JSON.stringify(old.evidence) !== JSON.stringify(r.evidence))
+    else if (canonical(old.evidence) !== canonical(r.evidence))
       diff.evidenceOnly.push({ kind: r.kind, id: r.id });
   }
   for (const [k, r] of a) if (!b.has(k)) diff.removed.push({ kind: r.kind, id: r.id });
