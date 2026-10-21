@@ -9,6 +9,7 @@ flows:
       kind: endpoint
       ref: forge-orders.post-orders
       what: A client posts a new order
+      caller: { who: the Forge shop web app, via: direct }
       at: "src/main/java/forge/orders/OrderController.java:9"
     family: [forge-orders.delete-orders-orderid]
     steps:
@@ -44,6 +45,7 @@ flows:
       kind: endpoint
       ref: forge-orders.get-orders-orderid
       what: A client asks for an order by its orderId
+      caller: { who: the Forge shop web app, via: direct }
       at: "src/main/java/forge/orders/OrderController.java:17"
     steps:
       - kind: entry

@@ -1,0 +1,30 @@
+# A coarse answer to atticus spec draft forge-payments (ADR 0089): no caller, no validation
+# layers, no transforms, so the ledger call sends accountId from nowhere. The critic says who
+# calls is unknown and points the field at a missing transform; it never asks for a UI.
+flows:
+  - id: settle
+    component: forge-payments
+    name: Settle a payment
+    trigger:
+      kind: endpoint
+      ref: forge-payments.post-payments-settlements
+      what: A settlement is posted
+      at: "src/main/java/forge/payments/SettlementController.java:11"
+    steps:
+      - kind: entry
+        what: SettlementController.settle receives the settlement
+        refs: [forge-payments.post-payments-settlements]
+        data: { reads: [body] }
+        at: "src/main/java/forge/payments/SettlementController.java:11"
+      - kind: lookup
+        what: The merchant is looked up
+        store: { table: forge-payments-db.merchants, columns: [merchant_ref] }
+        at: "src/main/java/forge/payments/SettlementController.java:13"
+      - kind: call-out
+        what: The ledger records the entry
+        to: { component: forge-ledger, entry: "POST /ledger/entries" }
+        data: { sends: [accountId] }
+        at: "src/main/java/forge/payments/LedgerClient.java:7"
+      - kind: respond
+        what: 202 Accepted
+        at: "src/main/java/forge/payments/SettlementController.java:18"

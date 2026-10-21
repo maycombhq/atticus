@@ -11,6 +11,7 @@ import {
   proposalsRelOf,
   questionsRelOf,
   raiseQuestions,
+  reusedLine,
   SCAN_VERIFY_SCHEMA_VERSION,
   ScanSettings,
   ScanVerifyProposal,
@@ -239,7 +240,7 @@ export async function scanVerify(
   const drafts = [...a.missed, ...a.wrong].flatMap((x) =>
     "question" in x.fix ? [x.fix.question] : [],
   );
-  const { raised, known } = await raiseQuestions(root, drafts, {
+  const { raised, known, reused } = await raiseQuestions(root, drafts, {
     step: "scan-verify",
     repo: repo.id,
     command: `atticus scan verify ${repo.id}`,
@@ -316,6 +317,7 @@ export async function scanVerify(
     io.out(`${plural(raised.length, "question")} for a person, in ${questionsRelOf(root)}/:`);
     for (const q of raised) io.out(`  ${q.id} ${q.question}`);
   }
+  for (const q of reused) io.out(reusedLine(q));
   if (waiting.length)
     io.out(
       `${plural(waiting.length, "question")} still waiting for an answer: ${waiting.map((q) => q.id).join(", ")}`,

@@ -602,6 +602,32 @@ export const NEVER_CHECKED_STEPS = ["transform", "branch", "validate"] as const;
 /** Field names as the code names them. */
 const fields = () => z.array(str()).optional();
 
+/**
+ * Plain text an assistant may write as a bare YAML number or boolean (`then: 404`), read as
+ * the text it is (ADR 0089). Nothing else is loosened: an empty string, a list or an object
+ * is still refused.
+ */
+const text = () =>
+  z
+    .union([str(), z.number(), z.boolean()])
+    .transform((v) => (typeof v === "string" ? v : String(v)));
+
+/**
+ * Who calls an entry point and how the call arrives (ADR 0089): the caller (an external system
+ * or vendor, or another repo's component) and the route in (the gateway, or direct). A flow
+ * started by an endpoint or listener records it; when the code doesn't say, it is a question.
+ */
+export const FlowCaller = z.strictObject({
+  /** Who calls, in plain words: a vendor, another organisation's service, a scheduler, a component. */
+  who: text(),
+  /** The calling Component or System, when the catalog has it. */
+  ref: Ref.optional(),
+  /** The route in: the gateway it comes through, or "direct". */
+  via: text().optional(),
+  /** Where the code or config says so. */
+  evidence: list(Evidence),
+});
+
 export const FlowData = z.strictObject({
   /** Fields a call-out or publish sends. */
   sends: fields(),
@@ -622,14 +648,16 @@ export const FlowTrigger = z.strictObject({
   /** The catalog record the trigger is, when it is one (an Endpoint for an endpoint or listener). */
   ref: Ref.optional(),
   /** What happens, in plain words. */
-  what: str(),
+  what: text(),
+  /** For an endpoint, listener or job: who calls it and the route in (ADR 0089). */
+  caller: FlowCaller.optional(),
   evidence: z.array(Evidence).min(1, "a trigger cites where it is"),
 });
 
 export const FlowStep = z.strictObject({
   kind: z.enum(FLOW_STEP_KINDS),
   /** One plain sentence. */
-  what: str(),
+  what: text(),
   /** Catalog records the step touches: Endpoint, Interface, Table, Column, a topic's Endpoint. */
   refs: list(Ref),
   /** Where a call-out or publish goes: the component and its entry point (an Endpoint id, or "METHOD /path", or a topic). */
@@ -642,8 +670,8 @@ export const FlowStep = z.strictObject({
 });
 
 export const FlowError = z.strictObject({
-  when: str(),
-  then: str(),
+  when: text(),
+  then: text(),
   evidence: z.array(Evidence).min(1, "an error path cites the code it is read from"),
   confirmedBy: ConfirmedBy.optional(),
 });

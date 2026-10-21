@@ -1,0 +1,14 @@
+<div class="container">
+  <h2>New Order</h2>
+  @if (errorMessage()) {
+    <div class="alert alert-danger">{{ errorMessage() }}</div>
+  }
+  <form (ngSubmit)="onSubmit(orderForm.value)" #orderForm="ngForm" novalidate>
+    <input type="hidden" id="id" name="id" [(ngModel)]="order.id" />
+    <label for="sku">Item</label>
+    <input id="sku" name="sku" [(ngModel)]="order.sku" required pattern="[A-Z0-9-]+" maxlength="40" />
+    <label for="quantity">Quantity</label>
+    <input id="quantity" name="quantity" type="number" [(ngModel)]="order.quantity" required min="1" />
+    <button type="submit" [disabled]="orderForm.invalid">Place Order</button>
+  </form>
+</div>

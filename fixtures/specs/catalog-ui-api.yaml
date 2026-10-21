@@ -1,0 +1,109 @@
+# More of the invented catalog for the spec tests (ADR 0089), read beside catalog.yaml: the
+# forge-shop-ui web app (its order form calls forge-orders) and forge-payments, an orchestration
+# API that the vendor Northwind Pay calls through the external gateway, and that calls
+# forge-ledger and forge-notify downstream. Lines cite fixtures/specs/repos/.
+- kind: Component
+  schemaVersion: 2
+  id: forge-shop-ui
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-shop-ui, path: src/app/orders/order.service.ts, line: 12 }]
+  system: forge
+  repo: forge-shop-ui
+  type: spa
+- kind: Component
+  schemaVersion: 2
+  id: forge-payments
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-payments, path: src/main/java/forge/payments/SettlementController.java, line: 5 }]
+  system: forge
+  repo: forge-payments
+  type: service
+- kind: Component
+  schemaVersion: 2
+  id: forge-ledger
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-ledger, path: src/main/java/forge/ledger/EntryController.java, line: 4 }]
+  system: forge
+  repo: forge-ledger
+  type: service
+- kind: Component
+  schemaVersion: 2
+  id: forge-notify
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-notify, path: src/main/java/forge/notify/NoticeController.java, line: 4 }]
+  system: forge
+  repo: forge-notify
+  type: service
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-payments.post-payments-settlements
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-payments, path: src/main/java/forge/payments/SettlementController.java, line: 11 }]
+  component: forge-payments
+  endpointType: rest
+  method: POST
+  pathOrTopic: /payments/settlements
+  normalizedPath: /payments/settlements
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-ledger.post-ledger-entries
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-ledger, path: src/main/java/forge/ledger/EntryController.java, line: 8 }]
+  component: forge-ledger
+  endpointType: rest
+  method: POST
+  pathOrTopic: /ledger/entries
+  normalizedPath: /ledger/entries
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-notify.post-notifications
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-notify, path: src/main/java/forge/notify/NoticeController.java, line: 8 }]
+  component: forge-notify
+  endpointType: rest
+  method: POST
+  pathOrTopic: /notifications
+  normalizedPath: /notifications
+- kind: DataStore
+  schemaVersion: 2
+  id: forge-payments-db
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 1 }]
+  storeType: relational
+  ownerComponent: forge-payments
+- kind: Table
+  schemaVersion: 2
+  id: forge-payments-db.merchants
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 1 }]
+  dataStore: forge-payments-db
+  name: merchants
+  tableKind: table
+  ownerComponent: forge-payments
+- kind: Table
+  schemaVersion: 2
+  id: forge-payments-db.settlements
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 7 }]
+  dataStore: forge-payments-db
+  name: settlements
+  tableKind: table
+  ownerComponent: forge-payments
+- { kind: Column, schemaVersion: 2, id: forge-payments-db.merchants.id, status: current, confidence: verified, evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 2 }], table: forge-payments-db.merchants, name: id, type: BIGINT }
+- { kind: Column, schemaVersion: 2, id: forge-payments-db.merchants.merchant_ref, status: current, confidence: verified, evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 3 }], table: forge-payments-db.merchants, name: merchant_ref, type: VARCHAR(20) }
+- { kind: Column, schemaVersion: 2, id: forge-payments-db.merchants.account_id, status: current, confidence: verified, evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 4 }], table: forge-payments-db.merchants, name: account_id, type: VARCHAR(34) }
+- { kind: Column, schemaVersion: 2, id: forge-payments-db.merchants.contact_email, status: current, confidence: verified, evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 5 }], table: forge-payments-db.merchants, name: contact_email, type: VARCHAR(120) }
+- { kind: Column, schemaVersion: 2, id: forge-payments-db.settlements.id, status: current, confidence: verified, evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 8 }], table: forge-payments-db.settlements, name: id, type: BIGINT }
+- { kind: Column, schemaVersion: 2, id: forge-payments-db.settlements.merchant_id, status: current, confidence: verified, evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 9 }], table: forge-payments-db.settlements, name: merchant_id, type: BIGINT }
+- { kind: Column, schemaVersion: 2, id: forge-payments-db.settlements.amount, status: current, confidence: verified, evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 10 }], table: forge-payments-db.settlements, name: amount, type: BIGINT }
+- { kind: Column, schemaVersion: 2, id: forge-payments-db.settlements.currency, status: current, confidence: verified, evidence: [{ source: code, repo: forge-payments, path: src/main/resources/schema.sql, line: 11 }], table: forge-payments-db.settlements, name: currency, type: CHAR(3) }

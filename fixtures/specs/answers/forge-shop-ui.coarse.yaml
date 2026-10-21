@@ -1,0 +1,26 @@
+# A coarse answer to atticus spec draft forge-shop-ui (ADR 0089), shaped like what the live
+# petclinic run drafted for add-owner: it starts at the service that makes the call, not the
+# form, and ends with "the result goes back", not what the screen does next. The critic flags
+# both; the form's checks and the id-to-null transform are missing.
+flows:
+  - id: place-order
+    component: forge-shop-ui
+    name: Place an order
+    trigger:
+      kind: action
+      what: Saving a new order sends it to the orders API
+      at: "src/app/orders/order.service.ts:16"
+    steps:
+      - kind: entry
+        what: The order screen hands the order it built to the order service
+        data: { reads: [order] }
+        at: "src/app/orders/order.service.ts:16"
+      - kind: call-out
+        what: POST the order to the orders API
+        to: { component: forge-orders, entry: "POST /api/orders" }
+        data: { sends: [order], returns: [Order] }
+        at: "src/app/orders/order.service.ts:18"
+      - kind: respond
+        what: The saved order goes back to the screen
+        data: { returns: [Order] }
+        at: "src/app/orders/order.service.ts:17"
