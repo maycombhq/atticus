@@ -334,7 +334,7 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 ## 10. Decisions needed from the product owner
 
 1. Done: rule 4, ADR 0074 and this plan adopted (2026-10-21).
-2. The diagram stack after the Phase 1 spike, and its licences against the bank's policy.
+2. Done (2026-10-21): ELK.js (EPL-2.0) is allowed and the canvas is built on React Flow and ELK; the bank's licence policy is confirmed before the pilot, and dagre replaces ELK behind the layout interface if it is refused.
 3. Done: at the bank, Copilot in IntelliJ IDEA and VS Code; headless Claude Code for development only.
 4. The bench's repo list (public repos only), including two of one type and the five with reference flows.
 5. Drop Atticus's own "author can't approve" check, leaving it to the Git host.

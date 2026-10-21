@@ -21,6 +21,9 @@ export const ALLOWED = new Set([
   "CC0-1.0",
   "Unlicense",
   "Python-2.0",
+  // ELK.js, the diagram workspace's layout engine (decided by the product owner 2026-10-21;
+  // the bank's licence policy is confirmed before the pilot, dagre replaces it if refused).
+  "EPL-2.0",
 ]);
 
 /** An SPDX expression is allowed when one side of every OR, and both sides of every AND, are. */
