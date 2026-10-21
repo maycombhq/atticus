@@ -37,7 +37,9 @@ describe("atticus task run", () => {
       expect(await taskRun(root, CHANGE, undefined, { by: "dev" }, c.io)).toBe(2);
       c = capture();
       expect(await taskRun(root, CHANGE, "1.2", {}, c.io)).toBe(2);
-      expect(c.err).toEqual(["Say who is running the task: --by <you>"]);
+      expect(c.err).toEqual([
+        "Say who is running the task: set your Git user (git config user.name), or pass --by <you>.",
+      ]);
       c = capture();
       expect(await taskRun(root, CHANGE, "1.2", { by: "dev", level: "ship-it" }, c.io)).toBe(2);
       expect(c.err).toEqual(["Unknown level ship-it. Use one of: plan, draft, pr."]);
