@@ -80,6 +80,13 @@ describe("atticus spec draft (ADR 0079)", () => {
     expect(prompts[0]).toContain("Table forge-orders-db.orders: orders");
     expect(prompts[0]).toContain("Endpoint forge-stock.post-stock-reservations on forge-stock");
     expect(prompts[0]).toContain("13:     Order saved = orders.save(order);");
+    // A write names its columns, mapping fields to them as the code shows (ADR 0088).
+    expect(prompts[0]).toContain(
+      "A write names its table and every column it writes, in store.columns, as the database names them.",
+    );
+    expect(prompts[0]).toContain("@Column(name = ...)");
+    // A family holds triggers that do the same work (ADR 0088).
+    expect(prompts[0]).toContain("reads with reads, writes with writes");
     // The second is told what was kept and what failed.
     expect(prompts[1]).toContain("Kept: forge-orders.place-order. Don't write these again.");
     expect(prompts[1]).toContain("has 26 lines");
@@ -111,6 +118,18 @@ describe("atticus spec draft (ADR 0079)", () => {
     expect((await checkSpecDraft("flows: [", o())).problems[0]).toMatch(/isn't YAML/);
   });
 
+  it("reports a write's field no column takes, and keeps the flow (ADR 0088)", async () => {
+    const unmapped = answer.replace(
+      "store: { table: forge-orders-db.orders, columns: [sku, quantity] }",
+      "store: { table: forge-orders-db.orders, columns: [sku, quantity] }\n        data: { sends: [sku, quantity, price] }",
+    );
+    const c = await checkSpecDraft(unmapped, o());
+    expect(c.passed.map((f) => f.id)).toContain("forge-orders.place-order");
+    expect(c.advisory.filter((a) => a.rule === "write-unmapped").map((a) => a.message)).toEqual([
+      "forge-orders.place-order step 4 (write) sends price, which none of its columns (sku, quantity) takes; map it to a column with data.from and data.to, or leave it out",
+    ]);
+  });
+
   it("asks only for the triggers that have no flow yet", async () => {
     const prompts: string[] = [];
     const runtime = new MockRuntime(
@@ -123,11 +142,10 @@ describe("atticus spec draft (ADR 0079)", () => {
     const keep = [expected()];
     const r = await draftSpec(repo(), { ...o(), runtime, now: NOW, keep, maxAttempts: 1 });
     expect(r.status).toBe("failed");
-    expect(r.uncovered.map((t) => t.id)).toEqual([
-      "forge-orders.delete-orders-orderid",
-      "forge-orders.get-orders-orderid",
-    ]);
+    // place-order stands for the DELETE in its family.
+    expect(r.uncovered.map((t) => t.id)).toEqual(["forge-orders.get-orders-orderid"]);
     expect(prompts[0]).not.toContain("- endpoint forge-orders.post-orders:");
+    expect(prompts[0]).not.toContain("- endpoint forge-orders.delete-orders-orderid:");
     expect(prompts[0]).toContain("which you don't write again: forge-orders.place-order");
   });
 });

@@ -1,0 +1,30 @@
+kind: Flow
+schemaVersion: 1
+id: forge-customers.add-owner
+component: forge-customers
+name: A client adds an owner
+template: default@1
+trigger:
+  kind: endpoint
+  ref: forge-customers.post-owner
+  what: POST /owners is called
+  evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/OwnerController.java, line: 11 }]
+# Wrong on purpose: a write's flow standing for a read on the same resource (ADR 0088).
+family: [forge-customers.get-owners]
+steps:
+  - kind: entry
+    what: OwnerController.add takes the owner's fields
+    refs: [forge-customers.post-owner]
+    data: { reads: [firstName, lastName] }
+    evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/OwnerController.java, line: 12 }]
+  - kind: write
+    what: The owner is saved
+    data: { sends: [firstName, lastName] }
+    store: { table: forge-customers-db.owners, columns: [first_name, last_name] }
+    evidence:
+      - { source: code, repo: forge-customers, path: src/main/java/forge/customers/OwnerController.java, line: 14 }
+      - { source: code, repo: forge-customers, path: src/main/java/forge/customers/Owner.java, line: 10 }
+  - kind: respond
+    what: The saved owner is returned
+    data: { returns: [id, firstName, lastName] }
+    evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/OwnerController.java, line: 15 }]

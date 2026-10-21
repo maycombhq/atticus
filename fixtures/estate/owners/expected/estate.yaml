@@ -1,0 +1,47 @@
+# What atticus estate join writes for fixtures/estate with owners/ on top (ADR 0088), written
+# by hand before the code: the base joins, add-owner joined by path, and find-owners refused
+# because the only flow that stands for GET /owners does so through a wrong family.
+schemaVersion: 1
+joinedAt: 2026-10-21T12:00:00.000Z
+repos: [forge-customers, forge-web]
+joins:
+  - from: { repo: forge-web, flow: forge-web.add-owner, step: 1, evidence: "src/app/owners/owner.service.ts:10" }
+    to:
+      repo: forge-customers
+      flow: forge-customers.add-owner
+      trigger: forge-customers.post-owner
+      evidence: "src/main/java/forge/customers/OwnerController.java:11"
+    entry: forge-customers POST /owners
+    how: path
+  - from: { repo: forge-web, flow: forge-web.save-customer, step: 1, evidence: "src/app/customers/customer.service.ts:10" }
+    to:
+      repo: forge-customers
+      flow: forge-customers.create-customer
+      trigger: forge-customers.post-customer
+      evidence: "src/main/java/forge/customers/CustomerController.java:10"
+    entry: forge-customers POST /api/customers
+    how: interface
+    interface: if-c74e2fa3c8152a13
+  - from: { repo: forge-web, flow: forge-web.view-customer, step: 1, evidence: "src/app/customers/customer.service.ts:14" }
+    to:
+      repo: forge-customers
+      flow: forge-customers.get-customer
+      trigger: forge-customers.get-customer
+      evidence: "src/main/java/forge/customers/CustomerController.java:16"
+    entry: forge-customers GET /api/customers/{id}
+    how: path
+unmatched:
+  - from: { repo: forge-web, flow: forge-web.find-owners, step: 1, evidence: "src/app/owners/owner.service.ts:14" }
+    entry: forge-customers GET /owners
+    reason: family-mismatch
+    trigger: forge-customers.get-owners
+    message: "GET /owners reaches forge-customers.get-owners, which only forge-customers.add-owner stands for, in its family, and atticus spec check finds that wrong: forge-customers.add-owner stands for forge-customers.get-owners (GET /owners), a read, but its trigger forge-customers.post-owner (POST /owners) is a write. Redraft it: atticus spec draft forge-customers"
+  - from: { repo: forge-web, flow: forge-web.remove-customer, step: 1, evidence: "src/app/customers/customer.service.ts:18" }
+    entry: forge-customers DELETE /api/customers/{id}
+    reason: no-flow
+    trigger: forge-customers.delete-customer
+    message: "DELETE /api/customers/{id} reaches forge-customers.delete-customer, but no flow of forge-customers starts there"
+  - from: { repo: forge-web, flow: forge-web.view-customer, step: 2, evidence: "src/app/customers/customer.service.ts:22" }
+    entry: forge-customers GET /api/customers/{id}/points
+    reason: no-target
+    message: "forge-customers has no entry point for GET /api/customers/{id}/points, and no Interface from forge-web reaches it"

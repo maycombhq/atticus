@@ -11,6 +11,7 @@ import {
   type CatalogDiff,
 } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
+import { askHosts } from "./host-questions.js";
 
 /** The lines a person reads for a catalog diff: + added, - removed, ~ changed (fields). */
 export function diffLines(d: CatalogDiff): string[] {
@@ -97,6 +98,10 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
   const write = o.dryRun ? undefined : await writeCatalog(out, scan.records);
   // The drift check reads the catalog just written, so it runs only when one was.
   const drift = write && !o.noDrift ? await driftAfterScan(root) : [];
+  // Calls to a host no repo lists join nothing: ask which repo answers on it (ADR 0088).
+  const hosts = write
+    ? await askHosts(root, scan.records, { command: "atticus scan" })
+    : { raised: [], open: [], lines: [] };
   const problems = [
     ...before.problems.map((p) => ({ source: `catalog/generated/${p.file}`, message: p.message })),
     ...scan.problems,
@@ -128,6 +133,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
           written: write !== undefined,
           files: write ?? null,
           drift,
+          questions: [...hosts.raised, ...hosts.open].map((q) => q.id),
         },
         null,
         2,
@@ -185,6 +191,7 @@ async function scanLocked(root: string, o: ScanCommandOptions, io: Output): Prom
       );
     else io.out("Dry run: nothing written.");
     for (const d of drift) io.out(driftLine(d));
+    for (const l of hosts.lines) io.out(l);
     for (const n of scan.notes) io.out(`note: ${n}`);
     if (o.warnings)
       for (const w of warnings)

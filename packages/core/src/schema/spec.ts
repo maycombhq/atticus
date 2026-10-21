@@ -239,9 +239,16 @@ export const ESTATE_JOIN_HOW = ["interface", "endpoint", "path"] as const;
 /**
  * Why a call-out wasn't joined: `no-target`, the catalog has no component or entry point it
  * reaches; `no-flow`, it reaches an entry point no flow starts at; `no-citation`, one end
- * (the caller's step or the callee's trigger) cites no file and line that exists.
+ * (the caller's step or the callee's trigger) cites no file and line that exists;
+ * `family-mismatch` (ADR 0088), no flow starts at the entry point it reaches, and the only ones
+ * that stand for it do so through a family member spec check finds wrong.
  */
-export const ESTATE_UNMATCHED_REASONS = ["no-target", "no-flow", "no-citation"] as const;
+export const ESTATE_UNMATCHED_REASONS = [
+  "no-target",
+  "no-flow",
+  "no-citation",
+  "family-mismatch",
+] as const;
 
 /** A file and line, as `path:line` in the repo named beside it. */
 const Cite = z.string().regex(/^.+:\d+$/, "a citation is path:line");

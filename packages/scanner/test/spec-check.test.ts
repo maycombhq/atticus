@@ -72,9 +72,8 @@ describe("atticus spec check: the critic (ADR 0079)", () => {
     ]);
     expect(r.flows[0]).toEqual(placeOrder());
     expect(r.confirmed).toBe(3);
-    // GET and DELETE have no flow yet.
+    // GET has no flow yet (place-order stands for DELETE in its family).
     expect(r.findings.map((f) => [f.rule, f.target, f.evidence])).toEqual([
-      ["no-flow", "trigger forge-orders.delete-orders-orderid", `${C}:22`],
       ["no-flow", "trigger forge-orders.get-orders-orderid", `${C}:17`],
     ]);
     expect(r.findings[0]!.fingerprint).toMatch(/^[0-9a-f]{12}$/);
@@ -115,7 +114,6 @@ describe("atticus spec check: the critic (ADR 0079)", () => {
       `forge-orders.get-order step 2 (write) cites ${C}:40: ${C} has 26 lines`,
       "forge-orders.get-order step 2 (write): the template default@1 asks a write for store.columns",
       "forge-orders.get-order step 2 (write) is a write that names no columns",
-      "The endpoint DELETE /orders/{orderId} (forge-orders.delete-orders-orderid) has no flow",
     ]);
   });
 
@@ -131,6 +129,43 @@ describe("atticus spec check: the critic (ADR 0079)", () => {
     expect(await target("POST /internal/stock/reservations")).toBe(0);
     expect(await target("POST /stock")).toBe(1);
     expect(await target("GET /stock/reservations")).toBe(1);
+  });
+
+  it("finds a family that stands for other work: a read for a write, a write for a read (ADR 0088)", async () => {
+    const f = placeOrder();
+    // POST /orders stands for GET /orders/{orderId}: same resource, but a read.
+    const r = await run([{ ...f, family: ["forge-orders.get-orders-orderid"] }]);
+    expect(r.findings.filter((x) => x.rule === "family-mismatch").map((x) => x.message)).toEqual([
+      "forge-orders.place-order stands for forge-orders.get-orders-orderid (GET /orders/{orderId}), a read, but its trigger forge-orders.post-orders (POST /orders) is a write",
+    ]);
+    // DELETE for POST is a write for a write: no finding.
+    const w = await run([{ ...f, family: ["forge-orders.delete-orders-orderid"] }]);
+    expect(w.findings.filter((x) => x.rule === "family-mismatch")).toEqual([]);
+  });
+
+  it("finds a write whose fields no column takes, and a mapping to a column it doesn't name (ADR 0088)", async () => {
+    const f = placeOrder();
+    const w = f.steps.findIndex((s) => s.kind === "write");
+    const write = (data: FlowRecord["steps"][number]["data"]) =>
+      run([{ ...f, steps: f.steps.map((s, i) => (i === w ? { ...s, data } : s)) }]);
+    // sku and quantity are columns; price isn't, and nothing maps it.
+    const r = await write({ sends: ["sku", "quantity", "price"] });
+    expect(r.findings.filter((x) => x.rule === "write-unmapped").map((x) => x.message)).toEqual([
+      "forge-orders.place-order step 4 (write) sends price, which none of its columns (sku, quantity) takes; map it to a column with data.from and data.to, or leave it out",
+    ]);
+    // Mapped with from and to: no finding, unless the column isn't one the write names.
+    expect(
+      (await write({ sends: ["sku", "count"], from: ["count"], to: ["quantity"] })).findings.filter(
+        (x) => x.rule === "write-unmapped",
+      ),
+    ).toEqual([]);
+    expect(
+      (await write({ from: ["count"], to: ["amount"] })).findings
+        .filter((x) => x.rule === "write-unmapped")
+        .map((x) => x.message),
+    ).toEqual([
+      "forge-orders.place-order step 4 (write) maps count to amount, which isn't one of its columns (sku, quantity)",
+    ]);
   });
 
   it("names routes, fields and resources the way code writes them", () => {

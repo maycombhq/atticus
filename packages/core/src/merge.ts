@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { parseRecord, type CatalogRecord, type RecordIssue } from "./catalog.js";
 import { interfaceId, normalizePath } from "./identity.js";
 import { COMPONENT_TYPES } from "./schema/kinds.js";
+import { hostHasPort, hostMatches, urlHostPort } from "./schema/workspace.js";
 
 /**
  * Merge and identity: turns the records every repo's scan produced into one catalog.
@@ -325,12 +326,15 @@ export function mergeCatalog(input: MergeInput): MergeResult {
   );
   const declaredHosts = input.repos.flatMap((r) =>
     (r.hosts ?? []).map((h) => ({
-      re: hostPattern(h),
+      pattern: h,
       repo: r,
       gateway: routeRepos.has(r.id) || r.type === "gateway",
     })),
   );
-  const declaredFor = (host: string) => declaredHosts.find((d) => d.re.test(host));
+  // A host that names the call's port says more than one that takes any port (ADR 0088).
+  const declaredFor = (host: string, port?: number) =>
+    declaredHosts.find((d) => hostHasPort(d.pattern) && hostMatches(d.pattern, host, port)) ??
+    declaredHosts.find((d) => !hostHasPort(d.pattern) && hostMatches(d.pattern, host, port));
   /** Components that list their hosts are reached through them only, not by a host's first label. */
   const hostedComponents = new Set(
     input.repos.filter((r) => (r.hosts ?? []).length > 0).map((r) => r.component ?? r.id),
@@ -386,7 +390,7 @@ export function mergeCatalog(input: MergeInput): MergeResult {
     let route: Rec | undefined;
     let calleePath = path;
 
-    const declared = host ? declaredFor(host) : undefined;
+    const declared = host ? declaredFor(host, urlHostPort(url)?.port) : undefined;
     const hostComponent = host ? host.split(".")[0]! : undefined;
     const hostKnown = hostComponent
       ? components.has(hostComponent) || systemsById.has(hostComponent)
@@ -771,16 +775,6 @@ export function mergeCatalog(input: MergeInput): MergeResult {
           `Calls to ${h} start with a gateway route's basepath, but no gateway repo lists that host; if it is a gateway, add it under hosts: for the gateway repo in repos.manifest.yaml (until then those calls stay loose ends).`,
       ),
   };
-}
-
-/** "pay-api-*.apps.bank.internal" → a RegExp matching whole host names; * is any part of a label. */
-function hostPattern(p: string): RegExp {
-  const body = p
-    .toLowerCase()
-    .split("*")
-    .map((x) => x.replace(/[.\\^$+?()[\]{}|]/g, (c) => `\\${c}`))
-    .join("[a-z0-9-]*");
-  return new RegExp(`^${body}$`);
 }
 
 /** Loose-end kinds merge tries to join; it keeps the ones it can't. Every other kind passes through. */

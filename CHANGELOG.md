@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Hosts asked, wrong families block joins, and lineage across a crossing
+
+- `atticus scan` and `atticus estate join` ask which repo answers on each host the calls name that no repo lists under `hosts` (ADR 0088): one question per host, the repos that serve HTTP as options, and first the repo whose config sets the port (`server.port=9966`). Answering with `atticus questions answer` writes the host into that repo's `hosts` in `repos.manifest.yaml`.
+- A manifest host can name a port (`localhost:9966`), so two services on one host are told apart. A host without a port still takes any port.
+- `atticus spec check` finds a family that stands for other work (a read for a write, or a write for a read). `atticus estate join` won't join a call through such a family; the call-out is reported with the reason `family-mismatch`. A flow whose own trigger is the reached entry point always comes first.
+- At a crossing, an object the caller sends (`owner`) is mapped to the fields the callee's entry takes. `atticus estate lineage` follows `firstName` from the UI's `owner` into the API, to its column.
+- A write maps fields to columns with `data.from` and `data.to`. `atticus spec check` reports a written field no column takes (`write-unmapped`). The spec drafter is asked for every column a write writes, and how fields map to them.
+
 ### Every step as a slash command in Copilot Chat, and `atticus next`
 
 - `atticus assistant-files` writes eight more slash commands (ADR 0086), for Copilot (`.github/prompts/`) and Claude Code (`.claude/commands/`): `/atticus-survey`, `/atticus-verify`, `/atticus-spec`, `/atticus-answer`, `/atticus-knowledge`, `/atticus-feature`, `/atticus-stories` and `/atticus-next`. Copilot's own model does the AI work; the command has it run `atticus` for everything else. `/atticus-spec` loops until the spec check passes. Every command stops at a question for a person.

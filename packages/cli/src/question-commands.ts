@@ -139,6 +139,12 @@ export async function questionsFiles(
             ? `Also wrote it under Answers in ${r.skill.path}; review it in the same pull request.`
             : `${r.skill.path} isn't there yet, so the answer is kept in the question file, with that path.`,
         );
+      if (r.hosts)
+        io.out(
+          r.hosts.added
+            ? `Wrote ${r.hosts.host} under hosts for ${r.hosts.repo} in ${r.hosts.manifest}; review it in the same pull request.`
+            : `${r.hosts.repo} already lists ${r.hosts.host} under hosts in ${r.hosts.manifest}.`,
+        );
       io.out(`Next: ${q.rerun}`);
       return 0;
     } catch (e) {

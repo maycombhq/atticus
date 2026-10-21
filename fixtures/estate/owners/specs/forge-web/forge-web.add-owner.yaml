@@ -1,0 +1,17 @@
+kind: Flow
+schemaVersion: 1
+id: forge-web.add-owner
+component: forge-web
+name: A person adds an owner
+template: default@1
+trigger:
+  kind: action
+  what: The Add Owner form is saved
+  evidence: [{ source: code, repo: forge-web, path: src/app/owners/owner.service.ts, line: 9 }]
+steps:
+  # The UI sends one owner object; the API's entry takes its fields (ADR 0088).
+  - kind: call-out
+    what: POST /owners with the owner
+    to: { component: forge-customers, entry: "POST /owners" }
+    data: { sends: [owner], returns: [id] }
+    evidence: [{ source: code, repo: forge-web, path: src/app/owners/owner.service.ts, line: 10 }]

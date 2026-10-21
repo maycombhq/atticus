@@ -1,10 +1,14 @@
 import {
+  loadOrgPack,
+  orgPackDirOf,
   readEstateJoins,
   readRepoSpec,
   specRepos,
   specsRelOf,
+  templateRef,
   writeEstateJoins,
   type EstateJoins,
+  type SpecTemplate,
 } from "@maycombhq/core";
 import {
   estateFlow as followFlow,
@@ -17,6 +21,7 @@ import {
 import { fsRepo } from "@maycombhq/sdk";
 import type { Output } from "./commands.js";
 import { loadCatalog } from "./diagram-commands.js";
+import { askHosts } from "./host-questions.js";
 import { repoFor } from "./onboard-commands.js";
 
 /**
@@ -35,15 +40,35 @@ const REASON: Record<string, string> = {
   "no-target": "no target",
   "no-flow": "no flow",
   "no-citation": "no citation",
+  "family-mismatch": "a wrong family",
 };
 
 /** Every repo's spec in the metarepo; files that don't read go to io.err. */
-async function readSpecs(root: string, io: Output): Promise<EstateSpec[]> {
+async function readSpecs(
+  root: string,
+  io: Output,
+  templates?: Record<string, string>,
+): Promise<EstateSpec[]> {
   const out: EstateSpec[] = [];
   for (const repo of await specRepos(root)) {
     const s = await readRepoSpec(root, repo);
     for (const p of s.problems) io.err(`${p.file}: ${p.message}`);
     if (s.flows.length) out.push({ repo, flows: s.flows });
+    if (templates && s.header?.template) templates[repo] = s.header.template;
+  }
+  return out;
+}
+
+/** The spec template each repo's spec was drafted against, for spec check's family rule. */
+async function specTemplates(
+  root: string,
+  refs: Record<string, string>,
+): Promise<Record<string, SpecTemplate>> {
+  const op = await loadOrgPack(orgPackDirOf(root)).catch(() => undefined);
+  const out: Record<string, SpecTemplate> = {};
+  for (const [repo, ref] of Object.entries(refs)) {
+    const t = op?.specTemplates.find((x) => templateRef(x) === ref);
+    if (t) out[repo] = t;
   }
   return out;
 }
@@ -54,7 +79,8 @@ export async function estateJoin(
   o: { json?: boolean; now?: Date },
   io: Output,
 ): Promise<number> {
-  const specs = await readSpecs(root, io);
+  const refs: Record<string, string> = {};
+  const specs = await readSpecs(root, io, refs);
   if (specs.length === 0) {
     io.err(
       `There are no repo specs in ${specsRelOf(root)}/ yet. Draft them first: atticus spec draft <repo>.`,
@@ -62,6 +88,7 @@ export async function estateJoin(
     return 2;
   }
   const { records } = await loadCatalog(root, { out: () => {}, err: (l) => io.err(l) });
+  const templates = await specTemplates(root, refs);
   // A cited line must exist in the repo's clone; repos without a clone aren't checked.
   const clones = new Map<string, { dir: string; lines: Map<string, number> } | null>();
   const unchecked = new Set<string>();
@@ -84,7 +111,7 @@ export async function estateJoin(
     }
     return line >= 1 && line <= c.lines.get(path)!;
   };
-  const r = await joinEstate({ specs, records, cited });
+  const r = await joinEstate({ specs, records, cited, templates });
   const file: EstateJoins = {
     schemaVersion: 1,
     joinedAt: (o.now ?? new Date()).toISOString(),
@@ -93,8 +120,24 @@ export async function estateJoin(
     unmatched: r.unmatched,
   };
   const rel = await writeEstateJoins(root, file);
+  // Calls to a host no repo lists join nothing: ask which repo answers on it (ADR 0088).
+  const hosts = await askHosts(root, records, {
+    command: "atticus estate join",
+    ...(o.now ? { now: o.now } : {}),
+  });
   if (o.json) {
-    io.out(JSON.stringify({ ...file, file: rel, unchecked: [...unchecked].sort() }, null, 2));
+    io.out(
+      JSON.stringify(
+        {
+          ...file,
+          file: rel,
+          unchecked: [...unchecked].sort(),
+          questions: [...hosts.raised, ...hosts.open].map((q) => q.id),
+        },
+        null,
+        2,
+      ),
+    );
     return 0;
   }
   const total = r.joins.length + r.unmatched.length;
@@ -116,6 +159,7 @@ export async function estateJoin(
     io.out(
       `Cited lines of ${[...unchecked].sort().join(", ")} weren't checked: there is no clone of ${unchecked.size === 1 ? "it" : "them"} here.`,
     );
+  for (const l of hosts.lines) io.out(l);
   io.out("Next: atticus estate flow <flow-id> follows a flow across repos.");
   return 0;
 }
@@ -167,6 +211,8 @@ function render(f: EstateFlow, indent: string, out: string[]) {
       out.push(
         `${pad}  sends ${list(x.sends)}; the callee takes ${list(x.receives)}; returns ${list(x.returns)}`,
       );
+      for (const m of x.objects)
+        out.push(`${pad}  ${m.sent} carries the callee's ${m.fields.join(", ")}`);
       if (x.unused.length)
         out.push(`${pad}  sent but not used by the callee: ${x.unused.join(", ")}`);
       if (c.callee) render(c.callee, pad, out);

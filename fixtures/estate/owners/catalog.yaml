@@ -1,0 +1,80 @@
+# The owners part of the invented two-repo estate (ADR 0088), on top of ../catalog.yaml: the
+# API's owners resource, and the UI's two calls to it straight to localhost:9966, which no
+# repo lists in its hosts yet, so they are loose ends. Lines cite owners/repos/.
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-customers.post-owner
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/OwnerController.java, line: 11 }]
+  component: forge-customers
+  endpointType: rest
+  method: POST
+  pathOrTopic: /owners
+  normalizedPath: /owners
+- kind: Endpoint
+  schemaVersion: 2
+  id: forge-customers.get-owners
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/java/forge/customers/OwnerController.java, line: 18 }]
+  component: forge-customers
+  endpointType: rest
+  method: GET
+  pathOrTopic: /owners
+  normalizedPath: /owners
+- kind: Table
+  schemaVersion: 2
+  id: forge-customers-db.owners
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/resources/owners.sql, line: 1 }]
+  dataStore: forge-customers-db
+  name: owners
+  tableKind: table
+  ownerComponent: forge-customers
+- kind: Column
+  schemaVersion: 2
+  id: forge-customers-db.owners.id
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/resources/owners.sql, line: 2 }]
+  table: forge-customers-db.owners
+  name: id
+  type: BIGINT
+- kind: Column
+  schemaVersion: 2
+  id: forge-customers-db.owners.first_name
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/resources/owners.sql, line: 3 }]
+  table: forge-customers-db.owners
+  name: first_name
+  type: VARCHAR(30)
+- kind: Column
+  schemaVersion: 2
+  id: forge-customers-db.owners.last_name
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-customers, path: src/main/resources/owners.sql, line: 4 }]
+  table: forge-customers-db.owners
+  name: last_name
+  type: VARCHAR(30)
+- kind: Unresolved
+  schemaVersion: 2
+  id: forge-web.http-call.0a1b2c3d4e
+  status: current
+  confidence: inferred
+  evidence: [{ source: code, repo: forge-web, path: src/app/owners/owner.service.ts, line: 10, side: caller }]
+  owner: forge-web
+  raw: POST http://localhost:9966/owners
+  unresolvedKind: http-call
+- kind: Unresolved
+  schemaVersion: 2
+  id: forge-web.http-call.5f6a7b8c9d
+  status: current
+  confidence: inferred
+  evidence: [{ source: code, repo: forge-web, path: src/app/owners/owner.service.ts, line: 14, side: caller }]
+  owner: forge-web
+  raw: GET http://localhost:9966/owners
+  unresolvedKind: http-call

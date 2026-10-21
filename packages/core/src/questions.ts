@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { writeFileAtomic } from "./fs.js";
+import { addManifestHost, hostOfQuestion, HOSTS_NONE, HOSTS_STEP } from "./host-questions.js";
 import { isAdopted, questionsDirOf, questionsRelOf } from "./metarepo.js";
 import {
   Question,
@@ -243,7 +244,12 @@ export async function answerQuestion(
   root: string,
   id: string,
   a: AnswerInput,
-): Promise<{ question: Question; skill?: { path: string; written: boolean } }> {
+): Promise<{
+  question: Question;
+  skill?: { path: string; written: boolean };
+  /** For a hosts question answered with a repo (ADR 0088): the host written to the manifest. */
+  hosts?: { repo: string; host: string; manifest: string; added: boolean };
+}> {
   const q = await readQuestion(root, id);
   if (!q) throw new QuestionError("not-found", `There is no question ${id}.`);
   if (q.state === "retired")
@@ -285,8 +291,20 @@ export async function answerQuestion(
       ...(skill ? { skill } : {}),
     },
   });
+  // A hosts question answered with a repo: the host goes under that repo's hosts first, so a
+  // manifest that refuses it leaves the question open.
+  const label = a.option !== undefined ? q.options[a.option - 1]?.label : undefined;
+  const host = q.askedBy.step === HOSTS_STEP ? hostOfQuestion(q) : undefined;
+  let hosts: { repo: string; host: string; manifest: string; added: boolean } | undefined;
+  if (host && label && label !== HOSTS_NONE) {
+    try {
+      hosts = { repo: label, host, ...(await addManifestHost(root, label, host)) };
+    } catch (e) {
+      throw new QuestionError("bad-answer", (e as Error).message.split("\n")[0]!);
+    }
+  }
   await write(root, answered);
-  if (!skill) return { question: answered };
+  if (!skill) return { question: answered, ...(hosts ? { hosts } : {}) };
   const file = join(root, ...skill.split("/"));
   let body: string | undefined;
   try {

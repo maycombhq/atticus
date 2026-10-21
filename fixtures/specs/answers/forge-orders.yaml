@@ -1,5 +1,6 @@
 # What an assistant answers to atticus spec draft forge-orders (ADR 0079): the mock runtime
-# hands it back in the tests. One flow per trigger, with a family for the order's resource.
+# hands it back in the tests. One flow per trigger, with a family for the order's resource:
+# place-order stands for the cancel, a write for a write (a read can't stand for one, ADR 0088).
 flows:
   - id: place-order
     component: forge-orders
@@ -9,6 +10,7 @@ flows:
       ref: forge-orders.post-orders
       what: A client posts a new order
       at: "src/main/java/forge/orders/OrderController.java:9"
+    family: [forge-orders.delete-orders-orderid]
     steps:
       - kind: entry
         what: OrderController.place receives the new order
@@ -37,13 +39,12 @@ flows:
       - { when: The body fails validation, then: 400 with the errors, at: "src/main/java/forge/orders/OrderController.java:10" }
   - id: get-order
     component: forge-orders
-    name: A client reads an order, or cancels it
+    name: A client reads an order
     trigger:
       kind: endpoint
       ref: forge-orders.get-orders-orderid
       what: A client asks for an order by its orderId
       at: "src/main/java/forge/orders/OrderController.java:17"
-    family: [forge-orders.delete-orders-orderid]
     steps:
       - kind: entry
         what: OrderController.get receives the orderId
