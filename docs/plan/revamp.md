@@ -69,7 +69,7 @@ Atticus gives a team's AI assistants an accurate, evidence-backed picture of the
 5. **Everything is a file.** Answers, decisions, tags, repo types, templates, specs, layouts and approvals are files in the metarepo, reviewed through pull requests. The app reads and writes files and shows commands; it never runs scans, AI, git or calls to external systems. Anything that needs the network (listing the Git host's repos, syncing a wiki) is a command whose output is a file.
 6. **Ingested content is data.** Code, wikis, documents and vendor docs are never instructions to the AI; prompts quote them as data, and the critic flags text that tries to instruct.
 7. **Suggest, never act on shared systems.** Atticus suggests the change tasks and service requests a change needs; a person raises them.
-8. **At the bank, Copilot is the AI.** The bank allows GitHub Copilot in IntelliJ IDEA and VS Code, and no model API a tool could call by itself. So every AI step (the scan loop, repo specs, knowledge, the three stages) runs as a hand-off the person starts in Copilot's agent mode: Atticus writes the prompt and the instructions, Copilot reads the repo, runs the `atticus` commands that do the deterministic work, and writes the files. The commands, not the agent, decide what comes next and when a loop ends, so the result doesn't depend on which assistant ran it. Headless Claude Code runs the same prompts during development, on public repos and the author's own repo only.
+8. **Everything is an `atticus` command; at the bank, Copilot is the AI.** Every step a person takes (onboard, scan, answer, spec, stage, task) is an `atticus` command, and the app only shows which one to run. When a step needs AI, the command writes the prompt and the context and then either runs it through an assistant the organisation allows to run headless, or prints the one line to give Copilot (for example `Follow .runs/<change>/<run>/prompt.md`), after which `atticus handoff done <run>` checks and takes the result. The bank allows GitHub Copilot in IntelliJ IDEA and VS Code and no model API a tool could call by itself, so there it is the hand-off to Copilot (or the Copilot command line, if allowed). The commands, not the agent, hold the loop's state, run the checks and decide what comes next and when a loop ends, so the result doesn't depend on which assistant ran it. Headless Claude Code runs the same prompts during development, on public repos and the author's own repo only.
 9. **The organisation's data stays at the organisation.** Repo types, skills, answers, specs and learning examples created at an organisation live in its metarepo only, never in the Atticus repo. Atticus ships generic, invented examples.
 
 ## 4. Target state
@@ -197,16 +197,16 @@ Typed edges: calls (sync, async), through a gateway, builds on, reads, writes, p
 
 Every correction is captured as drafted vs merged: a scan answer, a spec edit, a stage answer, a diagram correction. Corrections are fed back as examples in later drafts, measured as a correction rate per stage and per repo type, and proposed as rules (dialects, template entries, critic rules, skills) when they repeat; each proposal is a change a person approves. All of it stays in the organisation's metarepo (principle 9).
 
-### 4.8 Atticus in Copilot
+### 4.8 Atticus with Copilot
 
-Copilot in IntelliJ IDEA and VS Code is how the work runs at the bank (principle 8). In order of what needs no permission first:
+Everything runs from `atticus` commands (principle 8). Copilot is where the AI part of a command runs at the bank, in this order of what needs no permission first:
 
-1. **Prompt files and instructions** in the metarepo (Copilot's repository instructions and reusable prompt files), one per loop: onboard a repo, write its spec, run a stage, implement a task. The person opens one in agent mode; it tells Copilot which `atticus` commands to run, which files to read and write, and to stop at a question.
-2. **The `atticus` commands as the agent's tools:** each step's command prints what it found and the next step in a form the agent follows (`atticus next` says what the loop needs now), so the loop's state lives in files and commands, not in the chat.
+1. **Hand-off from the command.** The command writes the prompt and context into the run folder and prints the line to give Copilot in agent mode, in either editor. Copilot reads the repo, may run further `atticus` commands the prompt names, writes the result file and stops at a question. `atticus handoff done <run>` checks the result; `atticus next` says what the loop needs now. Nothing is maintained by hand: any prompt files or Copilot instructions the metarepo needs are written by `atticus` commands.
+2. **The Copilot command line**, if the bank allows it (not known yet): a headless runtime like headless Claude Code, so `atticus` runs the prompt itself and a person only answers questions.
 3. **An MCP server**, if the bank allows MCP in Copilot (not known yet): the specs, flows, catalog and knowledge queried directly instead of through commands.
 4. **A thin extension** (`@atticus` in Copilot Chat), if the bank allows installing one (not known yet).
 
-The app shows, on every page, the prompt to open in Copilot as well as the command.
+The app shows, on every page, the command to run, and for a hand-off the line to give Copilot.
 
 ### 4.9 Later, not now
 
@@ -259,7 +259,7 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 - The scan loop of 4.1 (I9), the plugin loader and sandbox (I13), repo types with fingerprints and reuse (I10), questions with scope and answers as files, finding fingerprints and the end rule, the citation check, per-commit results and changed-file invalidation (I5), reader overrides (I6), coverage (I7).
 - A minimal Questions page in the app (list, options, answer written to a file, rerun command), folded into Onboarding in Phase 4.
 - Prototype on NadiEngine, compared with today's catalog (I3); then the code bench.
-- **Exit (proposed):** on the code bench's catalog facts, wrong at most 5% and below today's readers, missed below today's; the second repo of a type needs fewer questions than the first; on NadiEngine, a short list of real questions, each answered in the app and picked up by the rerun; the scan of one public repo also run start to finish from Copilot agent mode in VS Code and in IntelliJ IDEA, from the prompt file alone, with the same catalog as the headless run; at least one bench repo needs an AI-written plugin, which lands as a reviewed PR with golden tests; a plugin that tries to write files, reach the network or overrun its time or memory is blocked (tested).
+- **Exit (proposed):** on the code bench's catalog facts, wrong at most 5% and below today's readers, missed below today's; the second repo of a type needs fewer questions than the first; on NadiEngine, a short list of real questions, each answered in the app and picked up by the rerun; the scan of one public repo also run start to finish with `atticus` commands and their hand-offs to Copilot agent mode, in VS Code and in IntelliJ IDEA, with the same catalog as the headless run; at least one bench repo needs an AI-written plugin, which lands as a reviewed PR with golden tests; a plugin that tries to write files, reach the network or overrun its time or memory is blocked (tested).
 
 ### Phase 2b: repo specs of flows
 
@@ -287,8 +287,8 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 ### Phase 6: learning and the assistant
 
 - Corrections captured, fed back, measured and proposed as rules (4.7, H1–H4).
-- The prompt files and `atticus next` for every loop, in both editors (4.8, H5); the MCP server and the extension only if the bank allows them.
-- **Exit (proposed):** across five changes listed before the phase starts, on the connected estate and corrected by the author, the correction rate per stage (corrected lines over drafted lines) falls by at least a third from the first to the last; the stories stage runs from Copilot agent mode in VS Code and IntelliJ IDEA with the prompt file alone.
+- `atticus next` and hand-offs to Copilot for every loop, in both editors (4.8, H5); a Copilot command-line runtime, the MCP server and the extension only if the bank allows them.
+- **Exit (proposed):** across five changes listed before the phase starts, on the connected estate and corrected by the author, the correction rate per stage (corrected lines over drafted lines) falls by at least a third from the first to the last; the stories stage runs from `atticus` commands with hand-offs to Copilot agent mode in VS Code and IntelliJ IDEA.
 
 ### Phase 7: on-site pilot
 
@@ -297,7 +297,7 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 
 ### Phase 8: bank readiness
 
-- Packaging and signing, dependency scanning, local server hardening (G5); the ADO workflow (G6); published to the bank's internal npm registry with Node 22 on laptops (or a packaged runtime if not); the prompt files checked in both editors; the security review; guides.
+- Packaging and signing, dependency scanning, local server hardening (G5); the ADO workflow (G6); published to the bank's internal npm registry with Node 22 on laptops (or a packaged runtime if not); the hand-offs checked in both editors; the security review; guides.
 - **Exit:** installed on a target laptop; `atticus doctor` green; the security review's questions answered.
 
 ## 7. Not in scope
@@ -327,7 +327,7 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 | AI-written plugins misbehave                                                                          | Reviewed changes with golden tests, sandboxed, pinned, re-tested before each use                                                                                  |
 | Everything runs through a person in Copilot, so a whole estate's first scan needs many agent sessions | One prompt covers a repo's whole loop; repo types and templates cut later repos' work; the bench measures sessions and time per repo                              |
 | Copilot's agent mode differs between VS Code and IntelliJ IDEA, or between model versions             | The commands hold the loop's state and checks (principle 8); the Phase 2a exit runs in both editors                                                               |
-| MCP or an extension isn't allowed                                                                     | Neither is needed: prompt files and commands work without them                                                                                                    |
+| MCP, an extension or the Copilot command line isn't allowed                                           | None is needed: the commands and their hand-offs work without them                                                                                                |
 | Diagram libraries fail the licence policy or the quality bar                                          | Phase 1 spike; dagre as the layout fallback; judged by users with layout scores                                                                                   |
 | Accuracy shown on repos unlike the bank's                                                             | The bench weighted to a bank's stacks with a connected estate; the on-site pilot before readiness                                                                 |
 | Loops that never finish                                                                               | Finding fingerprints and the end rule (principle 4)                                                                                                               |
