@@ -145,12 +145,7 @@ function TopBar({ health }: { health?: Health }) {
         </button>
       </form>
       <AiChip />
-      <button
-        type="button"
-        className="btn"
-        onClick={replayTour}
-        title="Replay the tour"
-      >
+      <button type="button" className="btn" onClick={replayTour} title="Replay the tour">
         Help
       </button>
       <span className="hud" style={{ fontSize: 9.5, whiteSpace: "nowrap" }} aria-hidden="true">

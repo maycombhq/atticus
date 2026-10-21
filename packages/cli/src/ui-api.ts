@@ -263,7 +263,9 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           risk: rep.risk,
           tests: rep.tests,
           ...(rep.handoff
-            ? { handoff: { pr: rep.handoff.pr, state: rep.handoff.state, phase: rep.handoff.phase } }
+            ? {
+                handoff: { pr: rep.handoff.pr, state: rep.handoff.state, phase: rep.handoff.phase },
+              }
             : {}),
           blockers: rep.blockers,
           reasons: rep.reasons,

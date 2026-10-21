@@ -132,8 +132,8 @@ function SetupChecklist() {
             </button>
             <span className="muted" style={{ fontSize: 12 }}>
               After walking the ecosystem map with the architect. Every later scan, document and
-              change is compared with it. It is a file in the metarepo, so it reaches main through
-              a pull request.
+              change is compared with it. It is a file in the metarepo, so it reaches main through a
+              pull request.
             </span>
           </div>
         )}

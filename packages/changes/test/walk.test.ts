@@ -99,7 +99,9 @@ describe("a Forge feature from Define to Release against the mock Git host", () 
       now: "2026-10-19T10:45:00Z",
     });
     expect(own.merged).toBe(false);
-    expect(own.reasons).toEqual([expect.objectContaining({ code: "self-approval", person: "pat" })]);
+    expect(own.reasons).toEqual([
+      expect.objectContaining({ code: "self-approval", person: "pat" }),
+    ]);
     gh.review(REPO, 1, "ari", "approved");
     const s1 = await syncHandoff(root, ID, {
       ...base,

@@ -332,10 +332,7 @@ export async function explain(
             ? `It is open. You can ${ACTIONS[x.kind]}${x.waivable ? "" : "; it can't be waived"}.`
             : `It is ${x.state}${x.resolution ? ` (by ${x.resolution.by})` : ""}.`,
         ],
-        seeAlso: [
-          `atticus finding ${x.change} ${x.id} <action>`,
-          `atticus explain ${x.rule}`,
-        ],
+        seeAlso: [`atticus finding ${x.change} ${x.id} <action>`, `atticus explain ${x.rule}`],
       };
     }
   }

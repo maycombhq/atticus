@@ -214,7 +214,6 @@ export function Governance() {
           </View>
         </Panel>
 
-
         <Panel title="How often rules are overridden" span="span 7">
           <View
             of={g}

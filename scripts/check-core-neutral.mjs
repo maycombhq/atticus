@@ -234,6 +234,7 @@ export const ALLOW = [
   { file: "packages/features/src/naming.ts", names: ["claude"], reason: CLAUDE_RUNTIME },
   { file: "packages/glossary/src/proposals.ts", names: ["claude"], reason: CLAUDE_RUNTIME },
   { file: "packages/planner/src/prose.ts", names: ["claude"], reason: CLAUDE_RUNTIME },
+  { file: "packages/planner/src/draft.ts", names: ["claude"], reason: CLAUDE_RUNTIME },
   { file: "packages/testgen/src/names.ts", names: ["claude"], reason: CLAUDE_RUNTIME },
   // --- work-item references (C1 ExternalRef adapter types)
   {

@@ -292,7 +292,11 @@ export function Learning() {
               ]}
             />
           </div>
-          <View of={l} empty={() => lessons.length === 0} emptyText="No lessons written for this kind of work.">
+          <View
+            of={l}
+            empty={() => lessons.length === 0}
+            emptyText="No lessons written for this kind of work."
+          >
             {(d) => (
               <div className="stack" style={{ gap: 0 }}>
                 {lessons.map((x) => (

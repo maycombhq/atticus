@@ -84,13 +84,10 @@ async function atticus(root: string, argv: string[], io: Output, gh: MockGitHost
   if (a === "explain") return explainCommand(root, [b, ...rest].join(" "), {}, io);
   if (a === "change" && b === "handoff") {
     const approve = "approve" in f;
-    const code = await changeHandoff(
-      root,
-      pos[0]!,
-      { by: one("by")!, approve, repo: REPO },
-      io,
-      { gitHost: gh, now: "2026-12-14T10:00:00Z" },
-    );
+    const code = await changeHandoff(root, pos[0]!, { by: one("by")!, approve, repo: REPO }, io, {
+      gitHost: gh,
+      now: "2026-12-14T10:00:00Z",
+    });
     if (code === 0 && approve)
       gh.review(
         REPO,

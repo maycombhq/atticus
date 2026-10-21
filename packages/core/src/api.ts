@@ -307,7 +307,6 @@ export const BaselineRequest = z.strictObject({ note: z.string().trim().min(1).o
 /** ADR 0046: run the critic at a gate (the change's current one by default). */
 export const RunCriticRequest = z.strictObject({ gate: z.string().min(1).optional() });
 
-
 /** ADR 0048: how often the person wants their digest, and where it goes. */
 export const SaveNotifyRequest = z.strictObject({
   digest: z.enum(["off", "daily", "weekly"]),
@@ -1138,8 +1137,7 @@ const OPS: Record<string, Record<string, Op>> = {
   "/api/governance": {
     get: {
       id: "getGovernance",
-      summary:
-        "Org-pack conformance, rule layers, waivers and override rates",
+      summary: "Org-pack conformance, rule layers, waivers and override rates",
       tag: "run",
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
     },

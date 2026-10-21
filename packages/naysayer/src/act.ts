@@ -37,7 +37,6 @@ export interface ActResult {
   message: string;
 }
 
-
 /**
  * Find a finding by id in the newest round of a gate. A problem several gates raised under one
  * id is taken from the gate that ran most recently (the later gate in gates.yaml when they ran

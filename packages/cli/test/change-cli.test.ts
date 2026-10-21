@@ -344,10 +344,7 @@ describe("change commands through main", () => {
     execFileSync("git", ["-C", root, "config", "user.email", "pat.doe@forge.example"]);
     const io = { out: () => undefined, err: () => undefined };
     expect(
-      await main(
-        ["change", "new", "Add transfer limit", "--type", "feature", "--root", root],
-        io,
-      ),
+      await main(["change", "new", "Add transfer limit", "--type", "feature", "--root", root], io),
     ).toBe(0);
     const made = parse(
       await readFile(join(root, "openspec/changes/add-transfer-limit/change.yaml"), "utf8"),
