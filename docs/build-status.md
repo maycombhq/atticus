@@ -113,6 +113,15 @@ Every open item, in the order to take them. Check work by running the real flow 
 - [x] **P2a.6 Scanner plugins, sandboxed** (ADR 0080): `org-pack/plugins/<id>/`, pinned and tested before each scan, run in a worker with no imports, no network and limits. Node's vm isn't a security boundary: a stronger one needs a separate process (in the ADR).
 - [x] **P2b.1 The Flow record and repo specs** (ADR 0079): `atticus spec draft` and `atticus spec check`, spec templates per repo type, scoring against the bench's reference flows. Not yet run on a real repo.
 - [x] **P4.1 The graph API** (ADR 0081): the estate as one graph opened a level at a time, lenses, focus, kept arrangements, layout scores; an Architecture screen on today's canvas. React Flow and ELK.js not yet in (licence decision).
+- [x] **P2a.7 The AI verify step** (ADR 0082): `atticus scan verify` (missed, wrong, a fix for each, every citation checked), proposals in `proposals/scan/`, `--accept`; `atticus bench verify` scores the verifier. Tested with the mock runtime only.
+- [x] **P2b.2 First live spec drafts:** spring-petclinic-rest (13 flows covering all 38 triggers, 4 questions, 6 findings from `spec check`) and spring-petclinic-angular. Petclinic estate against the reference flows: 4 of 8 triggers, 24% of steps in order, 73% of fields, 95% of citations. Capped by each repo being scanned alone: the estate pass (P3.1) is next.
+- [x] **P3.2 Knowledge sources** (ADR 0083): tags, dated snapshots, `atticus knowledge scan` (quotes checked word for word, conflicts, superseded pages, injected text cut out), `knowledge list` and `ask`, `atticus bench knowledge`. New kind ProcessDefinition; Pattern and Decision extended (catalog schema stays at 2: additive). Scored with hand-written answers, not yet a live model.
+- [x] **P4.2 The six screens and More** (ADR 0084): Dashboard, Onboarding, Feature design, Architecture, Stories, Tasks, everything else under More, Run next with a copy button on each; `GET /api/onboarding`.
+- [x] **P4.3 The canvas:** React Flow with ELK.js in a web worker on the Architecture screen: nested groups, pan and zoom, minimap, drag, Keep this arrangement, Tidy up, Reset, the too-big notice. ELK.js allowed by the product owner (EPL-2.0). Not yet tried in a real browser.
+- [ ] **P3.1 The estate pass** (ADR 0085): flows joined across repos, end-to-end flows, field lineage. In progress.
+- [ ] **P6.1 Slash commands for every step and `atticus next`** (ADR 0086). In progress.
+- [ ] **P5 The stage loops** (feature, architecture, stories with the critic every iteration; target flows; entry from Figma). Next.
+- [ ] **Checks still owed:** CI on the hosted runners; the whole CLI suite (runs out of memory on this laptop); the canvas and Questions page in a real browser; live-model runs of verify and the knowledge scan.
 
 ### I. The AI reads the code; a thin deterministic layer verifies (direction change, decided by the product owner)
 
