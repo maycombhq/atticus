@@ -19,7 +19,7 @@ Atticus gives a team's AI assistants an accurate, evidence-backed picture of the
 | Measure                               | Value                                                                                             |
 | ------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | Packages / CLI commands / app screens | 45 / 136 / 27                                                                                     |
-| ADRs                                  | 74 (0074 written, not committed)                                                                  |
+| ADRs                                  | 74 (0074 accepted)                                                                                |
 | Built-in readers                      | 34 extractors and 9 shipped dialects                                                              |
 | Record kinds (C1)                     | 29                                                                                                |
 | Real repos scanned end to end         | 1 (NadiEngine, the author's own)                                                                  |
@@ -231,9 +231,9 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 ### Phase 0: stabilise, decide, get a model
 
 - Fix the CLI test hang, the performance budgets and the always-changed rescan (A1–A3); full test run (A4); push (A5); CI checked on the hosted runners.
-- Commit the CLAUDE.md rule 4 change (reworded per principle 3), ADR 0074 and this plan once approved.
+- Done: the CLAUDE.md rule 4 change, ADR 0074 and this plan committed (74aa779).
 - A development model: the author's own Claude Code and API key, on public repos, invented fixtures and the author's own repo only. The first direct call through the AI runtime.
-- Ask the bank early: model approval and where code may be sent, Copilot extension and MCP policy, the licence policy for the diagram libraries. Phase 7 depends on the answers.
+- Ask the bank early: model approval and where code may be sent, Copilot extension and MCP policy, the licence policy for the diagram libraries. Phases 7 and 8 depend on the answers.
 - Freeze new features outside this plan.
 - **Exit:** green locally and on CI, pushed; a direct model call made through the runtime; the bank questions sent.
 
@@ -325,7 +325,7 @@ Each exit is checked by running the real flow on real repos, not by tests alone,
 
 ## 10. Decisions needed from the product owner
 
-1. Keep the CLAUDE.md rule 4 change and ADR 0074 (reworded per principles 2 and 3, section 5), and adopt this plan.
+1. Done: rule 4, ADR 0074 and this plan adopted (2026-10-21).
 2. The diagram stack after the Phase 1 spike, and its licences against the bank's policy.
 3. The models: the development model now; for the bank, an approved provider for bulk scanning, the assistant's model for interactive work, or both.
 4. The bench's repo list (public repos only), including two of one type and the five with reference flows.
