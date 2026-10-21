@@ -156,4 +156,26 @@ describe("hand-off runtime on an adopted repo", () => {
     const q = await plain.prepare({ ...request(), outputPath: "notes.md" });
     expect((await plain.run(q.runId)).output).toBe("inline answer");
   });
+
+  it("never reuses a run id another process made in the same second (the counter starts again in each)", async () => {
+    const root = await adoptedRoot();
+    // Two runtimes stand for two atticus processes, with the clock on the same second.
+    const first = await new HandoffRuntime({
+      root,
+      validate: async () => [],
+      now: () => now,
+    }).prepare(request());
+    const second = await new HandoffRuntime({
+      root,
+      validate: async () => [],
+      now: () => now,
+    }).prepare(request());
+    expect(second.runId).not.toBe(first.runId);
+    expect(existsSync(join(root, ".atticus/.runs/add-note-tags", first.runId, "prompt.md"))).toBe(
+      true,
+    );
+    expect(existsSync(join(root, ".atticus/.runs/add-note-tags", second.runId, "prompt.md"))).toBe(
+      true,
+    );
+  });
 });

@@ -100,8 +100,13 @@ export class HandoffRuntime implements AiRuntime {
       );
     }
     const now = this.now();
+    // Each process counts from 1, so a run another process made in the same second may
+    // already have this id: skip any id whose run folder is on disk.
+    let runId = makeRunId(now, ++this.seq);
+    while (await stat(this.runDir(request.change, runId)).catch(() => undefined))
+      runId = makeRunId(now, ++this.seq);
     const run: Run = {
-      runId: makeRunId(now, ++this.seq),
+      runId,
       request,
       runtime: this.kind,
       state: "prepared",
