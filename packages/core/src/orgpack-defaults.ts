@@ -114,7 +114,8 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
 });
 
 export const DEFAULT_GATES = Gates.parse({
-  schemaVersion: 1,
+  // Version 2 (ADR 0087): no gate sets a round limit, so the critic's rounds are unlimited.
+  schemaVersion: 2,
   gates: [
     {
       id: "define",

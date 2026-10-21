@@ -1,0 +1,105 @@
+schemaVersion: 1
+kind: Flow
+id: forge-orders.place-order
+status: current
+confidence: inferred
+component: forge-orders
+errors:
+  - evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 10
+    then: 400 with the errors
+    when: The body fails validation
+evidence: []
+family: []
+name: A client places an order
+steps:
+  - confirmedBy: check
+    data:
+      reads:
+        - sku
+        - quantity
+    evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 4
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 9
+    kind: entry
+    refs:
+      - forge-orders.post-orders
+    what: OrderController.place receives the new order
+  - confirmedBy: check
+    data:
+      sends:
+        - sku
+        - quantity
+    evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/StockClient.java
+        line: 7
+    kind: call-out
+    refs: []
+    to:
+      component: forge-stock
+      entry: POST /stock/reservations
+    what: The stock service reserves the quantity
+  - data:
+      from:
+        - NewOrder.sku
+        - NewOrder.quantity
+      to:
+        - Order.sku
+        - Order.quantity
+    evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 12
+    kind: transform
+    refs: []
+    what: The request becomes an Order entity
+  - confirmedBy: check
+    evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 13
+    kind: write
+    refs:
+      - forge-orders-db.orders
+    store:
+      columns:
+        - sku
+        - quantity
+      table: forge-orders-db.orders
+    what: The order is inserted
+  - data:
+      returns:
+        - id
+        - sku
+        - quantity
+    evidence:
+      - source: code
+        repo: forge-orders
+        path: src/main/java/forge/orders/OrderController.java
+        line: 14
+    kind: respond
+    refs: []
+    what: 201 Created with the saved order
+template: default@1
+trigger:
+  evidence:
+    - source: code
+      repo: forge-orders
+      path: src/main/java/forge/orders/OrderController.java
+      line: 9
+  kind: endpoint
+  ref: forge-orders.post-orders
+  what: A client posts a new order

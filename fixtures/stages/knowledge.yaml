@@ -1,0 +1,70 @@
+# Knowledge items for the stage tests (ADR 0083 records), as a knowledge scan of the invented
+# Forge wiki would write them. Written into knowledge/items/ by the test helper.
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: firewall-rule-request
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/service-desk-catalogue.md, line: 14, side: document }]
+  title: Network firewall rule
+  processKind: request
+  appliesWhen: A workload needs to reach a host or port it cannot reach today, including every new vendor host.
+  leadTime: 10 working days
+  handledBy: Network team
+  catalogueItem: Network firewall rule
+  inputs: [source workload, destination host, port, protocol, environment]
+  steps: []
+  tags: [network]
+  quote:
+    source: forge-wiki
+    page: service-desk-catalogue.md
+    section: Network firewall rule
+    text: "Handled by: Network team. Lead time: 10 working days."
+    snapshot: 2026-10-01
+    line: 14
+  alsoOn: []
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: broker-topic-request
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/service-desk-catalogue.md, line: 30, side: document }]
+  title: Broker topic
+  processKind: request
+  appliesWhen: A service will publish to or consume from a topic that does not exist yet.
+  leadTime: 5 working days
+  handledBy: Messaging team
+  catalogueItem: Broker topic
+  inputs: [topic name, schema, retention]
+  steps: []
+  tags: [messaging]
+  quote:
+    source: forge-wiki
+    page: service-desk-catalogue.md
+    section: Broker topic
+    text: "Handled by: Messaging team. Lead time: 5 working days."
+    snapshot: 2026-10-01
+    line: 30
+  alsoOn: []
+- kind: ProcessDefinition
+  schemaVersion: 2
+  id: vendor-onboarding
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/vendor-onboarding.md, line: 3, side: document }]
+  title: Vendor onboarding
+  processKind: process
+  appliesWhen: Before a service sends any data to a vendor for the first time.
+  leadTime: 20 working days
+  handledBy: Procurement and Security
+  inputs: [vendor name, data sent, contract reference]
+  steps: [security questionnaire, data processing agreement, approval]
+  tags: [vendor]
+  quote:
+    source: forge-wiki
+    page: vendor-onboarding.md
+    section: When it applies
+    text: "Every vendor that receives our data is onboarded before the first call."
+    snapshot: 2026-10-01
+    line: 3
+  alsoOn: []

@@ -11,3 +11,4 @@ export * from "./sync.js";
 export * from "./templates.js";
 export * from "./adapters.js";
 export * from "./draft.js";
+export * from "./stages/index.js";

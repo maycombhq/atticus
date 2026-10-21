@@ -10,6 +10,7 @@ import {
 } from "@maycombhq/adapters";
 import {
   Api,
+  gateRoundLimit,
   inputsDirOf,
   loadOrgPack,
   orgPackDirOf,
@@ -1100,7 +1101,8 @@ export function uiRunRoutes(r: Router, ctx: ServerContext, deps: RunDeps = {}): 
               phase: g.phase,
               checklists: g.checklists,
               checks: g.checks.map((c) => c.check),
-              maxAuthorRounds: g.maxAuthorRounds,
+              // ADR 0087: null when the gate has no round limit.
+              maxAuthorRounds: gateRoundLimit(op.gates, g.id) ?? null,
             })),
           },
         };

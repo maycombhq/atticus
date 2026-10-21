@@ -1,0 +1,29 @@
+# Added to ../specs/catalog.yaml for the stage tests (ADR 0087): the two systems, the invented
+# vendor Northwind Pay and the ordering feature. Invented, written by hand.
+- kind: System
+  schemaVersion: 2
+  id: forge
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 1 }]
+  name: Forge
+  boundary: product
+  repos: [forge-orders, forge-stock]
+- kind: System
+  schemaVersion: 2
+  id: northwind-pay
+  status: current
+  confidence: asserted
+  evidence: [{ source: manual, by: forge-architecture }]
+  name: Northwind Pay
+  boundary: vendor
+- kind: Capability
+  schemaVersion: 2
+  id: cap-ordering
+  status: current
+  confidence: inferred
+  evidence: [{ source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderController.java, line: 9 }]
+  name: Place an order
+  entryPoints: [forge-orders.post-orders]
+  records: [forge-orders, forge-stock, forge-orders-db.orders]
+  namedBy: person

@@ -41,7 +41,8 @@ interface Settings {
     phase: string;
     checklists: string[];
     checks: string[];
-    maxAuthorRounds: number;
+    /** null: no round limit (ADR 0087). */
+    maxAuthorRounds: number | null;
   }[];
 }
 interface Check {
@@ -434,7 +435,7 @@ export function Settings() {
                         <td>{g.phase}</td>
                         <td>{g.checklists.join(", ") || "-"}</td>
                         <td>{g.checks.join(", ") || "-"}</td>
-                        <td>{g.maxAuthorRounds}</td>
+                        <td>{g.maxAuthorRounds ?? "no limit"}</td>
                       </tr>
                     ))}
                   </tbody>

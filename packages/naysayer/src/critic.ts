@@ -60,8 +60,9 @@ export interface CriticResult {
 /**
  * Run the critic on a change at a gate: layer 1 (deterministic checks and needs), then layer 2
  * (AI lenses on what passed layer 1), and write round N's findings to
- * `review/<gate>/<N>/<id>.yaml`. At most the gate's `maxAuthorRounds` rounds (default two);
- * after that a person decides and a further run is refused.
+ * `review/<gate>/<N>/<id>.yaml`. When the gate sets `maxAuthorRounds`, at most that many
+ * rounds; after that a person decides and a further run is refused. A version 2 gates.yaml
+ * with no limit has none (ADR 0087).
  */
 export async function runCritic(
   root: string,
@@ -72,7 +73,7 @@ export async function runCritic(
   const rounds = await roundsOf(root, change.id, gate.id);
   const round = (rounds.at(-1) ?? 0) + 1;
   const max = maxRoundsOf(lifecycle, gate.id);
-  if (round > max)
+  if (max !== undefined && round > max)
     throw new CriticError(
       "round-limit",
       `The ${gate.id} gate has had ${max} critic round${max > 1 ? "s" : ""}, the most it allows. A person decides now: fix and dismiss, waive (stage owner), or return the change.`,

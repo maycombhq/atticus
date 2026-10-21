@@ -237,13 +237,37 @@ export const Gate = z.strictObject({
       z.strictObject({ check: RecordId, params: z.record(z.string(), z.unknown()).default({}) }),
     )
     .default([]),
-  /** Rounds a blocking finding may go back to the author agent before a person decides. */
-  maxAuthorRounds: z.number().int().min(0).max(5).default(2),
+  /**
+   * Critic rounds at this gate before a person decides: a number, or "unlimited". Left out, it
+   * is unlimited in a version 2 file (ADR 0087) and two in a version 1 file (as before).
+   */
+  maxAuthorRounds: z.union([z.number().int().min(0), z.literal("unlimited")]).optional(),
 });
 
+/**
+ * gates.yaml's own schema version (ADR 0087). Version 2 makes a gate with no maxAuthorRounds
+ * unlimited (plan principle 4: loops end by the fingerprint rule, not by a count). Version 1
+ * files still read, with their old default of two rounds; `atticus upgrade` migrates them.
+ */
+export const GATES_SCHEMA_VERSION = 2 as const;
+
 export const Gates = z
-  .strictObject({ schemaVersion: V, gates: z.array(Gate).min(1) })
+  .strictObject({
+    schemaVersion: z.union([V, z.literal(GATES_SCHEMA_VERSION)]),
+    gates: z.array(Gate).min(1),
+  })
   .superRefine((g, ctx) => unique(g.gates, (x) => x.id, ctx, "gates"));
+
+/** A gate's critic round limit, or undefined when there is none (ADR 0087). */
+export function gateRoundLimit(
+  gates: { schemaVersion: number; gates: { id: string; maxAuthorRounds?: number | "unlimited" }[] },
+  gate: string,
+): number | undefined {
+  const m = gates.gates.find((g) => g.id === gate)?.maxAuthorRounds;
+  if (m === "unlimited") return undefined;
+  if (m !== undefined) return Math.max(1, m);
+  return gates.schemaVersion === 1 ? 2 : undefined;
+}
 
 // ------------------------------------------------------------------ patterns/<code>.yaml
 

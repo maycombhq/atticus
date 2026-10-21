@@ -1,0 +1,14 @@
+# The feature placed against the estate (ADR 0087).
+schemaVersion: 1
+change: bulk-orders
+entry: brief
+summary: A buyer places many orders at once from a file.
+features: []
+flows:
+  - id: forge-orders.place-order
+    why: Each line of the file becomes an order.
+    how: changed
+newFlows: []
+gaps: []
+conflicts: []
+questions: []
