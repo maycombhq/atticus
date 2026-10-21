@@ -1,11 +1,19 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
-import { parseReference, scoreRepo, type RepoScore } from "@maycombhq/evals";
+import {
+  parseReference,
+  parseReferenceFlows,
+  scoreRepo,
+  scoreSpecs,
+  type EstateSpecScore,
+  type RepoScore,
+} from "@maycombhq/evals";
+import { readRepoSpec, type CatalogRecord, type FlowRecord } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 
@@ -39,6 +47,8 @@ export interface BenchOptions {
   repo?: string;
   batch?: number;
   json?: boolean;
+  /** Also score the drafted specs (ADR 0079) against bench/flows/<estate>.yaml. */
+  specs?: boolean;
 }
 
 const defaultCache = () =>
@@ -132,6 +142,11 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
     const quiet: Output = { out: () => {}, err: () => {} };
     const scores: (RepoScore & { settings: boolean })[] = [];
     const skipped: string[] = [];
+    // For --specs: each repo's catalog and drafted flows, by estate.
+    const estates = new Map<
+      string,
+      { repo: string; flows: FlowRecord[]; records: CatalogRecord[] }[]
+    >();
     for (const r of repos) {
       const path = join(cache, r.id);
       const refText = await readFile(join(dir, "references", `${r.id}.yaml`), "utf8").catch(
@@ -150,6 +165,14 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
         throw new BenchError(
           `references/${r.id}.yaml is for ${ref.commit}, the bench pins ${r.commit}.`,
         );
+      // A spec drafted in the clone (atticus spec draft <clone> --root <clone>) is kept in
+      // <cache>/specs/<repo>/ before the clone's .atticus/ is made fresh.
+      const drafted = join(path, ".atticus", "specs", r.id);
+      if (existsSync(drafted)) {
+        await rm(join(cache, "specs", r.id), { recursive: true, force: true });
+        await mkdir(join(cache, "specs"), { recursive: true });
+        await cp(drafted, join(cache, "specs", r.id), { recursive: true });
+      }
       // Atticus's own files are made fresh each run, so the score is of this build.
       await rm(join(path, ".atticus"), { recursive: true, force: true });
       if ((await main(["adopt", path], quiet)) !== 0)
@@ -166,6 +189,31 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
         throw new BenchError(`atticus scan failed on ${r.id}: run it by hand to see why.`);
       const { records } = await readCatalog(join(path, ".atticus", "catalog", "generated"));
       scores.push({ ...scoreRepo(ref, records), settings: saved !== undefined });
+      if (o.specs && r.estate) {
+        const spec = await readRepoSpec(cache, r.id);
+        const list = estates.get(r.estate) ?? [];
+        list.push({ repo: r.id, flows: spec.flows, records });
+        estates.set(r.estate, list);
+      }
+    }
+    const specScores: EstateSpecScore[] = [];
+    const noSpecs: string[] = [];
+    for (const [estate, list] of estates) {
+      const text = await readFile(join(dir, "flows", `${estate}.yaml`), "utf8").catch(
+        () => undefined,
+      );
+      if (text === undefined) continue;
+      if (list.every((x) => x.flows.length === 0)) {
+        noSpecs.push(estate);
+        continue;
+      }
+      specScores.push(
+        scoreSpecs(
+          parseReferenceFlows(text),
+          list,
+          list.flatMap((x) => x.records),
+        ),
+      );
     }
     const total = scores.reduce(
       (t, s) => ({
@@ -175,7 +223,13 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
       }),
       { found: 0, missed: 0, wrong: 0 },
     );
-    const result = { at: new Date().toISOString(), repos: scores, total, skipped };
+    const result = {
+      at: new Date().toISOString(),
+      repos: scores,
+      total,
+      skipped,
+      ...(o.specs ? { specs: specScores } : {}),
+    };
     const out = join(cache, "results");
     await mkdir(out, { recursive: true });
     const file = join(out, `${result.at.replace(/[:.]/g, "-")}.json`);
@@ -197,11 +251,37 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
     if (scores.some((s) => s.settings))
       io.out("* scanned with the scan settings atticus bench survey drafted");
     for (const s of skipped) io.out(`Skipped ${s}`);
+    if (o.specs) printSpecScores(specScores, noSpecs, cache, io);
     io.out(`Details (what was missed and wrong, per kind): ${file}`);
     return 0;
   } catch (e) {
     return fail(io, e);
   }
+}
+
+const share = (a: number, b: number) => `${a}/${b} ${pct(b === 0 ? 1 : a / b)}`.padStart(13);
+
+/** The drafted specs' scores against the reference flows, one line per estate. */
+function printSpecScores(scores: EstateSpecScore[], none: string[], cache: string, io: Output) {
+  io.out("");
+  if (scores.length) {
+    io.out(
+      "SPECS (ADR 0079)        TRIGGERS     SEGMENTS        STEPS       TABLES       FIELDS    CITATIONS",
+    );
+    for (const s of scores) {
+      const t = s.total;
+      io.out(
+        `${s.estate.padEnd(20)} ${share(t.triggersCovered, t.flows)} ${share(t.segmentsCovered, t.segments)} ${share(t.stepsMatched, t.steps)} ${share(t.tables.found, t.tables.want)} ${share(t.fields.found, t.fields.want)} ${share(t.citations.correct, t.citations.checked)}`,
+      );
+    }
+    io.out(
+      "Triggers: reference flows whose trigger has a drafted flow; segments: each repo's part of a flow; steps: matched in order; citations: matched steps within 3 lines of the reference's.",
+    );
+  }
+  for (const e of none)
+    io.out(
+      `No drafted specs for ${e} yet: run atticus spec draft <clone> --root <clone> for its repos (clones in ${cache}), then atticus bench run --specs.`,
+    );
 }
 
 /**

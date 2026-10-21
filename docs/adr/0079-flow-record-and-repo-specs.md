@@ -40,7 +40,7 @@ template: <repo type id>@<version> # the spec template it was written against
 
 ### Where flows live
 
-Flows are drafted, not scanned, so they are not in `catalog/generated`. They live in the metarepo at `specs/<repo>/<flow-id>.yaml`, one record per file in canonical YAML, with `specs/<repo>/spec.yaml` holding the repo's spec header (repo, commit read, template, open questions). They are stored per commit: a rescan that changes a file a step cites marks that step stale, and the next `atticus spec draft` redoes only the stale flows.
+Flows are drafted, not scanned, so they are not in `catalog/generated`. They live in the metarepo at `specs/<repo>/<id>.yaml` (the whole id, see below), one record per file in canonical YAML, with `specs/<repo>/spec.yaml` holding the repo's spec header (repo, commit read, template, open questions). They are stored per commit: a rescan that changes a file a step cites marks that step stale, and the next `atticus spec draft` redoes only the stale flows.
 
 ### The spec template (C6)
 
@@ -51,6 +51,17 @@ A repo type (ADR 0077) carries `repo-types/<id>/spec-template.yaml`: which trigg
 - `atticus spec draft <repo>`: the assistant writes one flow (or family) per trigger the template asks for, through the AI runtime (a hand-off to Copilot at the bank).
 - `atticus spec check <repo>`: the deterministic critic. Every trigger in the catalog has a flow; every step cites a line that exists; a call-out names a target that is in the catalog; a field a step uses appears in an earlier step or the trigger; a write names a table and columns the catalog has; each `check` claim holds. Findings carry a fingerprint (rule, target, evidence); a finding that comes back unchanged twice becomes a question (ADR 0078).
 - The estate pass (plan Phase 3) joins one repo's call-out to the flow its target starts, through the catalog's Interfaces.
+
+### Settled while building it
+
+- **File names.** A flow's file is named by its whole id, `specs/<repo>/<component>.<flow>.yaml`, not `<flow-id>.yaml`: a repo that builds two components could otherwise have two flows in one file name. It follows the catalog's rule of one file per record named by its id. Beside them: `spec.yaml` (the header) and `findings.yaml` (the critic's last findings). In a repo adopted in place the folder is `.atticus/specs/<repo>/`.
+- **Common fields.** A Flow also has `status` (default `current`), `confidence` (default `inferred`), `evidence` (default empty: citations live on the trigger, steps and errors) and `flags`, so it is a `CatalogRecord` like the others; its `schemaVersion` is its own (`FLOW_SCHEMA_VERSION`, 1), which `serializeRecord` and `migrateCatalog` keep.
+- **confirmedBy** is left out until something confirms a step. The citation check can't confirm a transform, branch or validation (plan principle 2 lists validation with them), nor an error path. A person's review outranks the check, and the check outranks the AI pass. The drafter never sets it.
+- **The header** holds the commit read, the template, `templateReviewed` (true for the built-in default template; for a repo type's template a person sets it once its PR merges), the last draft (`at`, `run`), the flow ids, a hash of each cited file and the open questions. A cited file whose hash changed marks its flows stale: `atticus spec check` reports them, and `atticus spec draft` drafts only them, the triggers with no flow and the flows the last check found problems in (or everything with `--force`).
+- **The template** (`SpecTemplate`, schema version 1) has `triggers` (kind, and `from`: every Endpoint of some endpoint types, or every Interface over some vias and directions; no `from` for pages and buttons, which the catalog can't list), `steps` (kind and `requires`: `to`, `store.table`, `store.columns`, `data.<list>`) and `families` (`by: resource`: one component's triggers on one path once trailing parameters are dropped). `DEFAULT_SPEC_TEMPLATE` (`default@1`) is used when a repo has no type or its type has no template.
+- **The drafter** keeps every flow that passes the schema, the cited lines, the catalog ids, the call-out targets and the write rules, and hands back the rest with what failed; the template's `requires`, fields from nowhere and family rules are reported by `atticus spec check` and handed back on the next draft. A finding counts as unchanged when its fingerprint is in the last check and a draft happened in between; the second time, it becomes a question (ADR 0078) and is no longer handed back.
+- **A `check` claim**: an entry names its trigger's route (the path, or its tail once a class-level prefix is dropped, with at least one plain segment) or topic; a call-out or publish names its target's route or topic; a read, lookup or write names its table; any other step names every field it lists (letter case, `_` and `-` aside). The claim must be on one of the step's cited lines.
+- **Reach.** Registering the kind adds `Flow` to every enum that lists record kinds: the local API's OpenAPI document (C4) and the kind lists in C2 and C3. Nothing a scan or dialect produces is a Flow.
 
 ## Consequences
 

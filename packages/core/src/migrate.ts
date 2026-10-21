@@ -3,7 +3,7 @@ import { join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { parseRecord } from "./catalog.js";
 import { SCHEMA_VERSION } from "./schema/common.js";
-import { RECORD_KINDS } from "./schema/kinds.js";
+import { FLOW_SCHEMA_VERSION, RECORD_KINDS } from "./schema/kinds.js";
 import { serializeRecord } from "./serialize.js";
 import { writeFileAtomic } from "./fs.js";
 
@@ -67,7 +67,9 @@ export async function migrateCatalog(
     )
       continue;
     const version = (data as { schemaVersion?: unknown }).schemaVersion;
-    if (version === SCHEMA_VERSION) {
+    const kind = (data as { kind?: unknown }).kind;
+    // A Flow has its own schema version (ADR 0079); version 1 is current.
+    if (version === (kind === "Flow" ? FLOW_SCHEMA_VERSION : SCHEMA_VERSION)) {
       res.current.push(file);
       continue;
     }

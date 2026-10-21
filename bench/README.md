@@ -75,6 +75,16 @@ These are the kinds of gap ADR 0074 expects: each needs a reader change today. P
 | Built-in readers alone      |   269 |    563 |   195 |       58% |    32% |
 | With the AI's scan settings |   378 |    454 |    81 |       82% |    45% |
 
-Biggest gains: spring-petclinic-rest 17% to 98% (precision and recall), fastapi-realworld 0% to 100% precision and 70% recall, node-realworld 21% to 100% and 89%, fastapi-template 0% to 100% and 53%, piggymetrics 31% to 100% and 14% to 52%; the Angular repo's generated `docs/` is no longer read (7 wrong calls gone).
+### With client base URLs too (ADR 0076)
+
+The front ends re-surveyed with client bases (calls built from a configured base URL), 21 repos (eShopModernizing's clone was removed to free disk; its scores are unchanged by this step):
+
+|                                         | Found | Missed | Wrong | Precision | Recall |
+| --------------------------------------- | ----: | -----: | ----: | --------: | -----: |
+| With prefixes, folders and client bases |   451 |    326 |    76 |       86% |    58% |
+
+The four front ends that found no calls before: spring-petclinic-angular 30 of 30, bulletproof-react 32 of 32, angular-realworld 18 of 19 (all 0 wrong); fastapi-template's front end uses a generated client and is still missed.
+
+Biggest gains of the first step: spring-petclinic-rest 17% to 98% (precision and recall), fastapi-realworld 0% to 100% precision and 70% recall, node-realworld 21% to 100% and 89%, fastapi-template 0% to 100% and 53%, piggymetrics 31% to 100% and 14% to 52%; the Angular repo's generated `docs/` is no longer read (7 wrong calls gone).
 
 Still missed: front-end calls (none found in four UI repos: client base URLs come next), events and gRPC clients, conventional and legacy .NET routes, convention-named tables, some platforms. Wrong: spring-realworld and eshop-on-web route conventions the settings can't express yet.

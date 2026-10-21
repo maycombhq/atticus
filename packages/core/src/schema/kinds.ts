@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { commonFields, IsoDate, IsoDateTime, Ref } from "./common.js";
+import {
+  commonFields,
+  Confidence,
+  Evidence,
+  IsoDate,
+  IsoDateTime,
+  RecordId,
+  Ref,
+  Status,
+} from "./common.js";
 
 /**
  * Contract C1: catalog record kinds. One authoritative list.
@@ -467,6 +476,126 @@ export const Capability = record("Capability", {
   namedBy: z.enum(["detected", "ai", "person"]),
 });
 
+// ---------- behaviour: flows (ADR 0079) ----------
+
+/**
+ * The Flow kind's own schema version (ADR 0079). Flows are drafted, not scanned, and live in
+ * the metarepo's specs/<repo>/ folder, so their version moves on its own, not with the
+ * catalog's SCHEMA_VERSION.
+ */
+export const FLOW_SCHEMA_VERSION = 1 as const;
+
+/** What starts a flow: an entry point, a button or form, a page load, a listener, a job. */
+export const FLOW_TRIGGER_KINDS = ["endpoint", "action", "page", "listener", "job"] as const;
+
+/**
+ * What a step does. lookup is a read to decide something; log is a log line or an audit
+ * entry; loop and retry wrap the steps after them.
+ */
+export const FLOW_STEP_KINDS = [
+  "entry",
+  "lookup",
+  "read",
+  "write",
+  "call-out",
+  "publish",
+  "transform",
+  "validate",
+  "branch",
+  "log",
+  "respond",
+  "loop",
+  "retry",
+] as const;
+
+/**
+ * Who confirmed a step (plan principle 2): `check` when the citation check found what the
+ * step names (an endpoint path, a table, a topic, a field) on the cited line; `ai` when the
+ * AI's verification pass did; `person` when a person's review did. Left out until one has.
+ */
+export const ConfirmedBy = z.enum(["check", "ai", "person"]);
+
+/** Step kinds the citation check can never confirm: it can only show their lines exist. */
+export const NEVER_CHECKED_STEPS = ["transform", "branch", "validate"] as const;
+
+/** Field names as the code names them. */
+const fields = () => z.array(str()).optional();
+
+export const FlowData = z.strictObject({
+  /** Fields a call-out or publish sends. */
+  sends: fields(),
+  /** Fields a step returns or a response carries. */
+  returns: fields(),
+  /** Fields a step looks at. */
+  reads: fields(),
+  /** The rules a validation applies. */
+  checks: fields(),
+  /** A transform's source fields, in the same order as `to`. */
+  from: fields(),
+  /** A transform's target fields. */
+  to: fields(),
+});
+
+export const FlowTrigger = z.strictObject({
+  kind: z.enum(FLOW_TRIGGER_KINDS),
+  /** The catalog record the trigger is, when it is one (an Endpoint for an endpoint or listener). */
+  ref: Ref.optional(),
+  /** What happens, in plain words. */
+  what: str(),
+  evidence: z.array(Evidence).min(1, "a trigger cites where it is"),
+});
+
+export const FlowStep = z.strictObject({
+  kind: z.enum(FLOW_STEP_KINDS),
+  /** One plain sentence. */
+  what: str(),
+  /** Catalog records the step touches: Endpoint, Interface, Table, Column, a topic's Endpoint. */
+  refs: list(Ref),
+  /** Where a call-out or publish goes: the component and its entry point (an Endpoint id, or "METHOD /path", or a topic). */
+  to: z.strictObject({ component: Ref, entry: str() }).optional(),
+  data: FlowData.optional(),
+  /** The table (a Table id) and columns a read, lookup or write touches, as the database names them. */
+  store: z.strictObject({ table: Ref, columns: list(str()) }).optional(),
+  evidence: z.array(Evidence).min(1, "every step cites the code it is read from"),
+  confirmedBy: ConfirmedBy.optional(),
+});
+
+export const FlowError = z.strictObject({
+  when: str(),
+  then: str(),
+  evidence: z.array(Evidence).min(1, "an error path cites the code it is read from"),
+  confirmedBy: ConfirmedBy.optional(),
+});
+
+/**
+ * A flow (ADR 0079): what happens, in order, when something enters a repo, with the data at
+ * each step and a citation on every step. One file per flow at specs/<repo>/<id>.yaml in the
+ * metarepo. The id is `<component>.<flow>`.
+ */
+export const Flow = z.strictObject({
+  kind: z.literal("Flow"),
+  schemaVersion: z.literal(FLOW_SCHEMA_VERSION, {
+    error: `a Flow's schemaVersion is ${FLOW_SCHEMA_VERSION} (ADR 0079)`,
+  }),
+  id: RecordId,
+  status: Status.default("current"),
+  confidence: Confidence.default("inferred"),
+  /** Citations for the flow as a whole beyond its trigger and steps; usually none. */
+  evidence: z.array(Evidence).default([]),
+  flags: z.array(z.string()).optional(),
+  /** The component the flow starts in. */
+  component: Ref,
+  /** What a person would call it, in plain words. */
+  name: str(),
+  trigger: FlowTrigger,
+  steps: z.array(FlowStep).min(1, "a flow has at least one step"),
+  errors: list(FlowError),
+  /** The other triggers this flow stands for (a family of near-identical ones), by catalog id. */
+  family: list(Ref),
+  /** The spec template it was written against: <repo type id>@<version>. */
+  template: z.string().regex(/^[a-z0-9][a-z0-9._-]*@\d+$/, "template is <repo type id>@<version>"),
+});
+
 // ---------- housekeeping ----------
 
 export const Unresolved = record("Unresolved", {
@@ -522,6 +651,7 @@ export const RECORD_SCHEMAS = {
   OwnerQuestion,
   ProcessArtifact,
   Capability,
+  Flow,
   Unresolved,
   CuratedDecision,
 } as const;

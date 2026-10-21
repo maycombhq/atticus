@@ -79,3 +79,4 @@ export const BUILT_IN_EXTRACTORS: readonly Extractor[] = [
   ...SPECKIT_EXTRACTORS,
   ...VOCAB_EXTRACTORS,
 ];
+export * from "./prefix-conventions.js";

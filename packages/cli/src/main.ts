@@ -337,6 +337,7 @@ const scanReview: typeof import("./onboard-commands.js").scanReview = (...a) =>
 const scanSurvey: typeof import("./onboard-commands.js").scanSurvey = (...a) =>
   loadOnboardCommands().then((m) => m.scanSurvey(...a));
 const loadRepoTypeCommands = () => import("./repo-type-commands.js");
+const loadSpecCommands = () => import("./spec-commands.js");
 const onboardEval: typeof import("./onboard-commands.js").onboardEval = (...a) =>
   loadOnboardCommands().then((m) => m.onboardEval(...a));
 const onboardFramework: typeof import("./onboard-commands.js").onboardFramework = (...a) =>
@@ -359,6 +360,8 @@ Usage:
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
   atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force]
+  atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m]
+  atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
@@ -505,7 +508,7 @@ Usage:
   atticus eval report                  The latest eval results and AI quality
   atticus bench fetch [--repo id] [--batch n] [--cache dir]  Clone the bench's public repos at their pinned commits
   atticus bench survey [--repo id] [--batch n] [--mode m]  Your assistant drafts each bench repo's scan settings; kept for later runs
-  atticus bench run [--repo id] [--batch n] [--json]  Scan each bench repo and score it against its reference
+  atticus bench run [--repo id] [--batch n] [--json] [--specs]  Scan each bench repo and score it against its reference; --specs also scores drafted specs against bench/flows
   atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts
   atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>
                                        Check a catalog, org pack, dialect, plugin or executor against the spec
@@ -704,6 +707,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       bench: { type: "string" },
       cache: { type: "string" },
       batch: { type: "string" },
+      specs: { type: "boolean" },
     },
     strict: false,
   });
@@ -796,6 +800,46 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
         ...(text(values.mode) ? { mode: text(values.mode)! } : {}),
       });
       return await scanSurvey(
+        root,
+        arg,
+        {
+          attempts,
+          force: values.force === true,
+          ...(text(values.resume) ? { resume: text(values.resume)! } : {}),
+        },
+        { runtime },
+        io,
+      );
+    } catch (e) {
+      if (e instanceof RuntimeConfigError) {
+        io.err(e.message);
+        return 2;
+      }
+      throw e;
+    }
+  }
+  if (group === "spec" && (command === "draft" || command === "check")) {
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    const m = await loadSpecCommands();
+    if (!arg) {
+      io.err(
+        command === "draft"
+          ? "Usage: atticus spec draft <repo> [--attempts 3] [--resume run] [--force] [--mode m]"
+          : "Usage: atticus spec check <repo> [--json]",
+      );
+      return 2;
+    }
+    if (command === "check") return m.specCheck(root, arg, { json: values.json === true }, io);
+    const attempts = Number(text(values.attempts) ?? "3");
+    if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) {
+      io.err("--attempts is a whole number from 1 to 10.");
+      return 2;
+    }
+    try {
+      const { runtime } = await runtimeForCli(root, {
+        ...(text(values.mode) ? { mode: text(values.mode)! } : {}),
+      });
+      return await m.specDraft(
         root,
         arg,
         {
@@ -1054,7 +1098,9 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     };
     if (command === "survey")
       return benchSurvey({ ...b, ...(str(values.mode) ? { mode: str(values.mode)! } : {}) }, io);
-    return command === "fetch" ? benchFetch(b, io) : benchRun(b, io);
+    return command === "fetch"
+      ? benchFetch(b, io)
+      : benchRun({ ...b, ...(values.specs === true ? { specs: true } : {}) }, io);
   }
   if (group === "ui")
     return uiCommand(

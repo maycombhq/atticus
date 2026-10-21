@@ -6,3 +6,4 @@ export * from "./datasets.js";
 export * from "./report.js";
 export * from "./run.js";
 export * from "./bench.js";
+export * from "./spec-bench.js";

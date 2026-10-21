@@ -107,6 +107,12 @@ Every open item, in the order to take them. Check work by running the real flow 
 - [ ] **P1.6 Diagram spike:** measured: ELK.js chosen (dagre fails on nested graphs), focus mode and transitive reduction make the dense views legible, limits set (`docs/plan/diagram-spike.md`). Still to do: try the interaction in a browser (a spike page is published for the product owner), and swimlanes for the reference flows (P1.3).
 - [x] **P2a.1 Scan settings per repo, drafted by the AI** (ADR 0075): `org-pack/scan/<repo>.yaml` (folders to leave out, path prefixes), every entry checked against its cited line; the scanner applies it; `atticus scan survey <repo>` has the assistant draft it; `atticus bench survey` keeps settings for bench runs. Live on three bench repos: spring-petclinic-rest 17% to 98%, fastapi-realworld 0% to 100% precision and 70% recall, node-realworld 21% to 100% and 89%.
 - [x] **P2a.2 The whole bench surveyed:** with the AI's scan settings, 82% precision (from 58%) and 45% recall (from 32%); wrong facts 195 to 81 (`bench/README.md`).
+- [x] **P2a.3 Client base URLs** (ADR 0076): calls built from a configured base now join their endpoints; front ends found nothing before and now 30/30, 32/32 and 18/19. Bench (21 repos): 86% precision, 58% recall.
+- [x] **P2a.4 Repo types** (ADR 0077): `repo-types/<id>/type.yaml`, matched by fingerprint (`atticus repo-type detect`), drafted from a repo (`atticus repo-type new`), their template and skills given to the survey.
+- [x] **P2a.5 Questions as files** (ADR 0078): `questions/<id>.yaml`, `atticus questions list|answer`, a questions API and a Questions page; the survey raises and reads them.
+- [x] **P2a.6 Scanner plugins, sandboxed** (ADR 0080): `org-pack/plugins/<id>/`, pinned and tested before each scan, run in a worker with no imports, no network and limits. Node's vm isn't a security boundary: a stronger one needs a separate process (in the ADR).
+- [x] **P2b.1 The Flow record and repo specs** (ADR 0079): `atticus spec draft` and `atticus spec check`, spec templates per repo type, scoring against the bench's reference flows. Not yet run on a real repo.
+- [x] **P4.1 The graph API** (ADR 0081): the estate as one graph opened a level at a time, lenses, focus, kept arrangements, layout scores; an Architecture screen on today's canvas. React Flow and ELK.js not yet in (licence decision).
 
 ### I. The AI reads the code; a thin deterministic layer verifies (direction change, decided by the product owner)
 

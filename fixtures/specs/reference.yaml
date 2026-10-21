@@ -1,0 +1,53 @@
+# Hand-written reference flows for an invented estate (the shape of bench/flows/), for the
+# spec scoring tests (ADR 0079). forge-shop-ui has no drafted spec in the tests.
+estate: forge-shop
+repos: [forge-shop-ui, forge-orders]
+flows:
+  - id: place-order
+    name: A shopper places an order
+    trigger: { kind: action, repo: forge-shop-ui, what: The Buy button is clicked, at: "src/buy.js:3" }
+    steps:
+      - kind: call-out
+        repo: forge-shop-ui
+        what: POST /orders with the basket line
+        to: { repo: forge-orders, entry: "POST /orders" }
+        data: { sends: [sku, quantity] }
+        at: "src/buy.js:5"
+      - kind: entry
+        repo: forge-orders
+        what: OrderController.place receives the new order
+        at: "src/main/java/forge/orders/OrderController.java:10"
+      - kind: call-out
+        repo: forge-orders
+        what: The stock service reserves the quantity
+        to: { repo: forge-stock, entry: "POST /stock/reservations" }
+        data: { sends: [sku, quantity] }
+        at: "src/main/java/forge/orders/StockClient.java:7"
+      - kind: validate
+        repo: forge-orders
+        what: The body is validated
+        data: { checks: [sku is required] }
+        at: "src/main/java/forge/orders/OrderController.java:10"
+      - kind: write
+        repo: forge-orders
+        what: The order row is saved
+        store: { table: orders, fields: [id, sku, quantity] }
+        at: "src/main/java/forge/orders/OrderController.java:13"
+      - kind: respond
+        repo: forge-orders
+        what: 201 Created with the order
+        data: { returns: [id, sku, quantity] }
+        at: "src/main/java/forge/orders/OrderController.java:14"
+  - id: cancel-order
+    name: A client cancels an order
+    trigger: { kind: endpoint, repo: forge-orders, what: "DELETE /orders/{orderId}", at: "src/main/java/forge/orders/OrderController.java:22" }
+    steps:
+      - kind: entry
+        repo: forge-orders
+        what: OrderController.cancel receives the orderId
+        at: "src/main/java/forge/orders/OrderController.java:23"
+      - kind: write
+        repo: forge-orders
+        what: The order is deleted
+        store: { table: orders, fields: [id] }
+        at: "src/main/java/forge/orders/OrderController.java:24"

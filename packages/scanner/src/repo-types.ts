@@ -7,6 +7,7 @@ import {
   type RepoType,
   type ScanSettings,
 } from "@maycombhq/core";
+import { PREFIX_CONVENTIONS } from "@maycombhq/extractors";
 import { globToRegExp, type RepoHandle } from "@maycombhq/sdk";
 
 /**
@@ -435,7 +436,7 @@ const LAYOUTS = [
 /**
  * Draft a repo type from one repo, for a person to edit: its build files, the dependencies
  * they declare, the framework markers its code carries and its folder layout as the
- * fingerprint, and the usual context-path rule when it has Spring-style config. Undefined
+ * fingerprint, and the prefix rules of the conventions it shows (PREFIX_CONVENTIONS). Undefined
  * when the repo shows nothing to fingerprint.
  */
 export async function draftRepoType(repo: RepoHandle, id: string): Promise<RepoType | undefined> {
@@ -485,29 +486,22 @@ export async function draftRepoType(repo: RepoHandle, id: string): Promise<RepoT
 
   if (fingerprint.length === 0) return undefined;
 
+  // Prefix rules from the conventions the extractors know (ADR 0035 keeps them out of here).
   const prefixes: PrefixRule[] = [];
-  const springConfig = [
-    "**/application*.properties",
-    "**/application*.yml",
-    "**/application*.yaml",
-  ];
-  if ((await files.matching(springConfig)).length) {
-    const src = ["src/main/java/**", "src/main/kotlin/**"].filter((g) => layouts.includes(g));
+  for (const c of PREFIX_CONVENTIONS) {
+    const seen = c.lineIncludes
+      ? (await files.lineHits(c.files, (l) => l.includes(c.lineIncludes!), 1)).length > 0
+      : (await files.matching(c.files)).length > 0;
+    if (!seen) continue;
+    const src = c.paths.filter((g) => layouts.includes(g));
     prefixes.push({
-      key: "server.servlet.context-path",
-      files: springConfig,
+      ...(c.rule.key ? { key: c.rule.key } : {}),
+      ...(c.rule.pattern ? { pattern: c.rule.pattern } : {}),
+      files: c.files,
       paths: src.length ? src : ["**"],
-      why: "server.servlet.context-path",
-    });
+      why: c.rule.why,
+    } as PrefixRule);
   }
-  const startUp = ["**/main.ts"];
-  if ((await files.lineHits(startUp, (l) => l.includes("setGlobalPrefix"), 1)).length)
-    prefixes.push({
-      pattern: "setGlobalPrefix\\(\\s*[\"']([^\"']+)[\"']",
-      files: startUp,
-      paths: ["**"],
-      why: "the global prefix set at start-up",
-    });
 
   return {
     schemaVersion: REPO_TYPE_SCHEMA_VERSION,
