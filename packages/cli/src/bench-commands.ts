@@ -5,15 +5,23 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parse } from "yaml";
 import { z } from "zod";
+import type { AiRuntime } from "@maycombhq/ai";
 import {
   parseReference,
   parseReferenceFlows,
   scoreRepo,
   scoreSpecs,
+  scoreVerifier,
   type EstateSpecScore,
   type RepoScore,
+  type VerifierScore,
 } from "@maycombhq/evals";
-import { readRepoSpec, type CatalogRecord, type FlowRecord } from "@maycombhq/core";
+import {
+  readRepoSpec,
+  ScanVerifyProposal,
+  type CatalogRecord,
+  type FlowRecord,
+} from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
 import type { Output } from "./commands.js";
 
@@ -140,7 +148,7 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
     const { dir, cache, repos } = await load(o);
     const { main } = await import("./main.js");
     const quiet: Output = { out: () => {}, err: () => {} };
-    const scores: (RepoScore & { settings: boolean })[] = [];
+    const scores: (RepoScore & { settings: boolean; verifier?: VerifierScore })[] = [];
     const skipped: string[] = [];
     // For --specs: each repo's catalog and drafted flows, by estate.
     const estates = new Map<
@@ -188,7 +196,16 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
       if ((await main(["scan", "--root", path], quiet, { quiet: true })) === 2)
         throw new BenchError(`atticus scan failed on ${r.id}: run it by hand to see why.`);
       const { records } = await readCatalog(join(path, ".atticus", "catalog", "generated"));
-      scores.push({ ...scoreRepo(ref, records), settings: saved !== undefined });
+      // What atticus bench verify flagged on this repo (ADR 0082), judged by the reference.
+      const flagged = await readFile(join(cache, "verify", `${r.id}.yaml`), "utf8").then(
+        (t) => ScanVerifyProposal.parse(parse(t)),
+        () => undefined,
+      );
+      scores.push({
+        ...scoreRepo(ref, records),
+        settings: saved !== undefined,
+        ...(flagged ? { verifier: scoreVerifier(ref, flagged) } : {}),
+      });
       if (o.specs && r.estate) {
         const spec = await readRepoSpec(cache, r.id);
         const list = estates.get(r.estate) ?? [];
@@ -250,6 +267,23 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
     );
     if (scores.some((s) => s.settings))
       io.out("* scanned with the scan settings atticus bench survey drafted");
+    const judged = scores.filter((s) => s.verifier);
+    if (judged.length) {
+      io.out("");
+      io.out("What atticus bench verify flagged, and how much of it the reference agrees with:");
+      io.out("REPO                       MISSED (AGREED)  WRONG (AGREED)  PRECISION");
+      const cell = (x: { scored: number; agreed: number }) =>
+        `${x.scored} (${x.agreed})`.padStart(15);
+      for (const s of judged) {
+        const v = s.verifier!;
+        io.out(
+          `${s.repo.padEnd(26)} ${cell(v.missed)} ${cell(v.wrong)}  ${pct(v.precision).padStart(9)}`,
+        );
+      }
+      io.out(
+        "Counted only where the reference covers the kind; MISSED and WRONG are the items the reference can judge.",
+      );
+    }
     for (const s of skipped) io.out(`Skipped ${s}`);
     if (o.specs) printSpecScores(specScores, noSpecs, cache, io);
     io.out(`Details (what was missed and wrong, per kind): ${file}`);
@@ -333,6 +367,89 @@ export async function benchSurvey(
       io.out(`${r.id}: ${lines[0] ?? "settings drafted"}`);
     }
     io.out(`Settings are in ${join(cache, "settings")}. Next: atticus bench run`);
+    return 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/** The adopted org pack allows hand-off only; the bench may run the assistant headless. */
+async function allowMode(path: string, mode: string): Promise<void> {
+  const rt = join(path, ".atticus", "org-pack", "runtime.yaml");
+  const text = await readFile(rt, "utf8");
+  if (!text.includes(`- ${mode}`))
+    await writeFile(rt, text.replace(/^(\s+)- hand-off$/m, `$1- hand-off\n$1- ${mode}`), "utf8");
+}
+
+/**
+ * atticus bench verify [--repo id] [--batch n] [--mode m] (ADR 0082): scan each repo (with its
+ * saved settings), have the assistant verify the scan (atticus scan verify), and keep the
+ * proposal and findings in <cache>/verify/, so atticus bench run can say how often the
+ * reference agrees with what the verifier flagged. `deps.runtime` stands in for the assistant
+ * in tests.
+ */
+export async function benchVerify(
+  o: BenchOptions & { mode?: string },
+  io: Output,
+  deps: { runtime?: AiRuntime; now?: Date } = {},
+): Promise<number> {
+  try {
+    const { cache, repos } = await load(o);
+    const { main } = await import("./main.js");
+    const quiet: Output = { out: () => {}, err: () => {} };
+    await mkdir(join(cache, "verify"), { recursive: true });
+    for (const r of repos) {
+      const path = join(cache, r.id);
+      if ((await cloneCommit(path)) !== r.commit) {
+        io.out(`${r.id}: not fetched at ${r.commit.slice(0, 12)} (run atticus bench fetch)`);
+        continue;
+      }
+      await rm(join(path, ".atticus"), { recursive: true, force: true });
+      if ((await main(["adopt", path], quiet)) !== 0)
+        throw new BenchError(`atticus adopt failed on ${r.id}: run it by hand to see why.`);
+      const saved = await readFile(join(cache, "settings", `${r.id}.yaml`), "utf8").catch(
+        () => undefined,
+      );
+      if (saved !== undefined) {
+        await mkdir(join(path, ".atticus", "org-pack", "scan"), { recursive: true });
+        await writeFile(join(path, ".atticus", "org-pack", "scan", `${r.id}.yaml`), saved, "utf8");
+      }
+      if (o.mode) await allowMode(path, o.mode);
+      if ((await main(["scan", "--root", path], quiet, { quiet: true })) === 2)
+        throw new BenchError(`atticus scan failed on ${r.id}: run it by hand to see why.`);
+      const lines: string[] = [];
+      const capture: Output = { out: (l) => lines.push(l), err: (l) => lines.push(l) };
+      let code: number;
+      if (deps.runtime) {
+        const { scanVerify } = await import("./scan-verify-commands.js");
+        code = await scanVerify(
+          path,
+          path,
+          {},
+          { runtime: deps.runtime, ...(deps.now ? { now: deps.now } : {}) },
+          capture,
+        );
+      } else
+        code = await main(
+          ["scan", "verify", path, "--root", path, ...(o.mode ? ["--mode", o.mode] : [])],
+          capture,
+        );
+      const dir = join(path, ".atticus", "proposals", "scan");
+      const proposal =
+        code === 0
+          ? await readFile(join(dir, `${r.id}.yaml`), "utf8").catch(() => undefined)
+          : undefined;
+      if (proposal === undefined) {
+        io.out(`${r.id}: no proposal (${lines.at(-1) ?? "the check didn't finish"})`);
+        continue;
+      }
+      await writeFile(join(cache, "verify", `${r.id}.yaml`), proposal, "utf8");
+      const md = await readFile(join(dir, `${r.id}.findings.md`), "utf8").catch(() => undefined);
+      if (md !== undefined)
+        await writeFile(join(cache, "verify", `${r.id}.findings.md`), md, "utf8");
+      io.out(`${r.id}: ${lines[0] ?? "checked"}`);
+    }
+    io.out(`Proposals are in ${join(cache, "verify")}. Next: atticus bench run`);
     return 0;
   } catch (e) {
     return fail(io, e);

@@ -1,0 +1,5 @@
+# Hand-written; matches fixtures/scan-verify/repos.
+schemaVersion: 1
+platform: forge
+repos:
+  - { id: forge-tasks, url: https://git.example.com/forge/forge-tasks.git, type: spring-boot, owner: team-tasks, component: tasks-svc, system: tasks, hosts: [tasks.forge.internal] }

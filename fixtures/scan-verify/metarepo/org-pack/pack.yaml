@@ -1,0 +1,6 @@
+# The scan-verify fixture's org pack (ADR 0082). Contract C6.
+schemaVersion: 1
+name: forge-scan-verify
+version: 0.1.0
+owner: team-platform
+reviewWindowDays: 90

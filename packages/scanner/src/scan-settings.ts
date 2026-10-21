@@ -32,8 +32,8 @@ export const NO_SETTINGS: CheckedSettings = {
 
 const HTTP_ENTRY = new Set(["rest", "webhook", "websocket", "sse"]);
 
-/** The cited line's text, or undefined when the file or the line isn't there. */
-async function citedLine(repo: RepoHandle, at: string): Promise<string | undefined> {
+/** The cited line's text (at is path:line), or undefined when the file or the line isn't there. */
+export async function citedLine(repo: RepoHandle, at: string): Promise<string | undefined> {
   const i = at.lastIndexOf(":");
   const path = at.slice(0, i);
   const n = Number(at.slice(i + 1));

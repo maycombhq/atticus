@@ -123,7 +123,7 @@ export interface SurveyResult {
   runId?: string;
 }
 
-const unfence = (s: string) =>
+export const unfence = (s: string) =>
   s
     .trim()
     .replace(/^```[a-z]*\s*\n/i, "")
@@ -195,8 +195,8 @@ export async function checkSurvey(
   return problems.length ? { problems } : { problems, settings: r.data, questions: qs.data };
 }
 
-/** The questions this survey asked before, for the prompt: follow the answers, ask none again. */
-function askedBefore(questions: Question[]): SourceInput[] {
+/** The questions a step asked before, for the prompt: follow the answers, ask none again. */
+export function askedBefore(questions: Question[]): SourceInput[] {
   const answered = questions.filter((q) => q.state === "answered");
   const open = questions.filter((q) => q.state === "open");
   if (answered.length + open.length === 0) return [];
@@ -227,19 +227,38 @@ function askedBefore(questions: Question[]): SourceInput[] {
   ];
 }
 
-/** What the assistant starts from: the folders, the entry points found, the config files. */
-async function surveySources(repo: RepoHandle): Promise<SourceInput[]> {
+/** The repo's files (build output and dependencies aside), sorted. */
+async function repoFiles(repo: RepoHandle): Promise<string[]> {
   const all: string[] = [];
   for await (const p of repo.listFiles(["**/*"])) if (!SKIP.test(p)) all.push(p);
-  all.sort();
+  return all.sort();
+}
+
+/** The repo's folders, three levels deep, with how many files each holds, for a prompt. */
+export async function folderSource(repo: RepoHandle, files?: string[]): Promise<SourceInput> {
   const folders = new Map<string, number>();
-  for (const p of all) {
+  for (const p of files ?? (await repoFiles(repo))) {
     const parts = p.split("/");
     for (let d = 1; d <= Math.min(3, parts.length - 1); d++) {
       const f = parts.slice(0, d).join("/");
       folders.set(f, (folders.get(f) ?? 0) + 1);
     }
   }
+  return {
+    id: "3-folders",
+    kind: "code",
+    origin: `${repo.name} (folders)`,
+    text: `Folders of ${repo.name} (files in each):\n${[...folders]
+      .map(([f, n]) => `${f}/ ${n}`)
+      .join("\n")}`,
+    classification: "internal",
+    priority: 30,
+  };
+}
+
+/** What the assistant starts from: the folders, the entry points found, the config files. */
+async function surveySources(repo: RepoHandle): Promise<SourceInput[]> {
+  const all = await repoFiles(repo);
   const scan = await scanRepo({ repo, extractors: BUILT_IN_EXTRACTORS });
   const endpoints = scan.records
     .filter((r) => r.kind === "Endpoint")
@@ -263,16 +282,7 @@ async function surveySources(repo: RepoHandle): Promise<SourceInput[]> {
     .slice(0, 200);
   const config = CONFIG.map(globToRegExp);
   const out: SourceInput[] = [
-    {
-      id: "3-folders",
-      kind: "code",
-      origin: `${repo.name} (folders)`,
-      text: `Folders of ${repo.name} (files in each):\n${[...folders]
-        .map(([f, n]) => `${f}/ ${n}`)
-        .join("\n")}`,
-      classification: "internal",
-      priority: 30,
-    },
+    await folderSource(repo, all),
     {
       id: "4-endpoints",
       kind: "code",
