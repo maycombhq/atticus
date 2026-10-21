@@ -15,6 +15,7 @@ import {
   scanPatterns,
   syncSources,
   toApiCoverage,
+  writeSnapshots,
   type PatternDraft,
 } from "@maycombhq/knowledge";
 import { readCatalog } from "@maycombhq/scanner";
@@ -125,13 +126,25 @@ export async function sourcesAdd(
   return 0;
 }
 
-async function syncAll(root: string, io: Output) {
-  const { op, orgPackDir, records } = await load(root, io);
+async function syncAll(root: string, io: Output, only?: string) {
+  const loaded = await load(root, io);
+  const { orgPackDir, records } = loaded;
+  let op = loaded.op;
   if (op.sources.wikis.length === 0) {
     io.err(
       "No wikis in org-pack/sources.yaml. Add one with: atticus sources add <type> <location>",
     );
     return undefined;
+  }
+  if (only) {
+    const wikis = op.sources.wikis.filter((w) => w.id === only);
+    if (!wikis.length) {
+      io.err(
+        `There is no source ${only} in org-pack/sources.yaml (there is ${op.sources.wikis.map((w) => w.id).join(", ")}).`,
+      );
+      return undefined;
+    }
+    op = { ...op, sources: { ...op.sources, wikis } };
   }
   const sync = await syncSources({ root, orgPack: op, orgPackDir, records, now: now() });
   const facts = mapFacts({ pages: sync.pages, records, systems: systemsOf(op) });
@@ -146,17 +159,22 @@ async function syncAll(root: string, io: Output) {
 export async function sourcesSync(
   root: string,
   io: Output,
-  o: { json?: boolean },
+  o: { json?: boolean; source?: string; now?: string },
 ): Promise<number> {
-  const r = await syncAll(root, io);
+  const r = await syncAll(root, io, o.source);
   if (!r) return 2;
   const { sync, facts } = r;
+  // ADR 0083: every page read is copied to a dated snapshot; the knowledge scan reads only those.
+  const snapshots = await writeSnapshots({ root, orgPack: r.op, sync, takenAt: o.now ?? now() });
   if (o.json) {
     io.out(
       JSON.stringify(
         {
+          snapshots,
           classificationLimit: sync.classificationLimit,
-          pages: sync.pages.map(({ doc: _doc, sections: _s, frontMatter: _f, ...p }) => p),
+          pages: sync.pages.map(
+            ({ doc: _doc, sections: _s, frontMatter: _f, text: _t, ...p }) => p,
+          ),
           documents: sync.documents,
           skipped: sync.skipped,
           problems: sync.problems,
@@ -174,6 +192,8 @@ export async function sourcesSync(
       const skipped = sync.skipped.filter((p) => p.source === w.id).length;
       io.out(`${w.id}: ${read} page${read === 1 ? "" : "s"} read, ${skipped} skipped`);
       for (const p of sync.problems.filter((x) => x.source === w.id)) io.out(`  ! ${p.message}`);
+      const s = snapshots.find((x) => x.source === w.id);
+      if (s) io.out(`  Snapshot: ${s.dir}/ (the knowledge scan reads this copy)`);
     }
     for (const s of sync.skipped) io.out(`Skipped ${s.path}: ${s.reason}`);
     // High-risk pages are problems (printed above); medium risk stays data, marked for a person.

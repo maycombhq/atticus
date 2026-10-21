@@ -11,8 +11,8 @@ import {
 import { EXAMPLES } from "./examples.js";
 
 describe("C1 record kinds", () => {
-  it("has exactly the 30 kinds in the contract (29 plus Capability, ADR 0031)", () => {
-    expect(RECORD_KINDS).toHaveLength(30);
+  it("has exactly the 31 kinds in the contract (29, Capability in ADR 0031, ProcessDefinition in ADR 0083)", () => {
+    expect(RECORD_KINDS).toHaveLength(31);
     expect(Object.keys(EXAMPLES).sort()).toEqual([...RECORD_KINDS].sort());
   });
 
@@ -108,7 +108,7 @@ describe("identity", () => {
 describe("JSON Schema export", () => {
   it("produces one schema per kind with a stable id", () => {
     const schemas = catalogJsonSchemas();
-    expect(Object.keys(schemas)).toHaveLength(30);
+    expect(Object.keys(schemas)).toHaveLength(31);
     for (const kind of RECORD_KINDS) {
       const s = schemas[kind] as { $id: string; title: string; type: string };
       expect(s.$id).toContain(`/${kind}.json`);

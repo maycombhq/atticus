@@ -1,0 +1,546 @@
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+import {
+  KNOWLEDGE_KINDS,
+  knowledgeKindOf,
+  knowledgeRelOf,
+  loadOrgPack,
+  orgPackDirOf,
+  type KnowledgeKind,
+} from "@maycombhq/core";
+import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
+import {
+  askKnowledge,
+  filterItems,
+  itemTitle,
+  readKnowledge,
+  readSnapshot,
+  scanKnowledge,
+  setSourceTags,
+  snapshotSources,
+  tagList,
+  writeKnowledge,
+  type KnowledgeRecord,
+  type Snapshot,
+} from "@maycombhq/knowledge";
+import { prepareKnowledgeBench, runKnowledgeBench, type KnowledgeScore } from "@maycombhq/evals";
+import type { Output } from "./commands.js";
+import { table } from "./index-commands.js";
+
+/**
+ * Knowledge sources tagged, snapshot, scanned and queried (ADR 0083, revamp plan 4.3):
+ * `atticus sources tag`, `atticus knowledge scan|list|ask` and `atticus bench knowledge`.
+ */
+
+export interface KnowledgeDeps {
+  /** The runtime to read with; the CLI builds it from runtime.yaml (or --mode). */
+  runtime: AiRuntime;
+  now?: Date;
+}
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const stamp = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+
+/**
+ * atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]: write the source's
+ * tags into org-pack/sources.yaml. The change is a file: commit it through a pull request.
+ */
+export async function sourcesTag(
+  root: string,
+  source: string,
+  o: { kinds?: string[]; frameworks?: string[]; owner?: string },
+  io: Output,
+): Promise<number> {
+  if (!o.kinds && !o.frameworks && o.owner === undefined) {
+    io.err(
+      'Say what to tag, for example: atticus sources tag forge-wiki --kind integration-patterns,security-standard --framework anvil --owner "Enterprise Architecture"',
+    );
+    return 2;
+  }
+  const file = join(orgPackDirOf(root), "sources.yaml");
+  const text = await readFile(file, "utf8").catch(() => undefined);
+  if (text === undefined) {
+    io.err(
+      "There is no org-pack/sources.yaml. Add a source first: atticus sources add <type> <location>",
+    );
+    return 2;
+  }
+  const r = setSourceTags(text, source, {
+    ...(o.kinds ? { kinds: o.kinds } : {}),
+    ...(o.frameworks ? { frameworks: o.frameworks } : {}),
+    ...(o.owner !== undefined ? { owner: o.owner } : {}),
+  });
+  if (!r.ok) {
+    io.err(r.error);
+    return 1;
+  }
+  await writeFile(file, r.text, "utf8");
+  io.out(
+    `Tagged ${source}: kinds ${r.tags.kinds.join(", ") || "none"}; frameworks ${r.tags.frameworks.join(", ") || "none"}; owner ${r.tags.owner ?? "none"}.`,
+  );
+  if (r.unusualKinds.length)
+    io.out(
+      `${r.unusualKinds.join(", ")} ${r.unusualKinds.length === 1 ? "isn't a suggested kind" : "aren't suggested kinds"} (enterprise-architecture, integration-patterns, platform-runbook, security-standard, change-process, framework). Your own kinds are fine; check for a typo.`,
+    );
+  io.out(
+    "org-pack/sources.yaml changed: commit it through a pull request. The next knowledge scan uses the tags.",
+  );
+  return 0;
+}
+
+async function snapshotsFor(
+  root: string,
+  source: string | undefined,
+  io: Output,
+): Promise<Snapshot[] | undefined> {
+  const ids = source ? [source] : await snapshotSources(root);
+  const out: Snapshot[] = [];
+  for (const id of ids) {
+    const s = await readSnapshot(root, id);
+    if (s) out.push(s);
+  }
+  if (!out.length) {
+    io.err(
+      source
+        ? `There is no snapshot of ${source} yet. Run atticus sources sync --source ${source} first.`
+        : "There is no snapshot yet. Run atticus sources sync first: the knowledge scan reads only snapshots.",
+    );
+    return undefined;
+  }
+  // A snapshot taken before the source was tagged reads with the tags it has now.
+  const op = await loadOrgPack(orgPackDirOf(root));
+  for (const s of out) {
+    const w = op.sources.wikis.find((x) => x.id === s.manifest.source);
+    if (w?.tags) s.manifest.tags = { kinds: w.tags.kinds, frameworks: w.tags.frameworks };
+    if (w?.owner) s.manifest.owner = w.owner;
+  }
+  return out;
+}
+
+/**
+ * atticus knowledge scan [--source s] [--mode m] [--attempts 3] [--resume run] [--json]: the AI
+ * reads the newest snapshot of each source and every item it writes is checked against the
+ * page. Exit 0 when every item passed, 1 when some still fail, 2 when there is nothing to read.
+ */
+export async function knowledgeScan(
+  root: string,
+  o: { source?: string; attempts?: number; resume?: string; json?: boolean },
+  deps: KnowledgeDeps,
+  io: Output,
+): Promise<number> {
+  const snapshots = await snapshotsFor(root, o.source, io);
+  if (!snapshots) return 2;
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const now = deps.now ?? new Date();
+  const r = await scanKnowledge(snapshots, {
+    runtime: deps.runtime,
+    orgPack: op,
+    now,
+    maxAttempts: o.attempts ?? 3,
+    ...(o.resume ? { resume: o.resume } : {}),
+  });
+  if (r.status === "waiting") {
+    io.out(
+      `Handed the knowledge scan to your assistant (run ${r.runId}). When it is done: atticus handoff done ${r.runId}, then atticus knowledge scan${o.source ? ` --source ${o.source}` : ""} --resume ${r.runId}`,
+    );
+    return 0;
+  }
+  if (r.status === "failed") {
+    io.err(
+      `The knowledge scan got no answer it could read after ${plural(r.attempts.length, "attempt")}: ${r.attempts.at(-1)?.problems.join("; ") ?? "no run"}. Nothing was written.`,
+    );
+    return 1;
+  }
+  await writeKnowledge(root, r, stamp(now));
+  if (o.json) {
+    io.out(JSON.stringify(r, null, 2));
+    return r.failed.length ? 1 : 0;
+  }
+  for (const s of r.snapshots)
+    io.out(`Read ${plural(s.pages, "page")} of ${s.source} (snapshot ${s.date}).`);
+  const count = (k: KnowledgeKind) => r.items.filter((i) => knowledgeKindOf(i) === k).length;
+  io.out(
+    `Kept ${plural(r.items.length, "item")}, each quote checked on its page: ${KNOWLEDGE_KINDS.map((k) => `${count(k)} ${k}`).join(", ")}.`,
+  );
+  io.out(`Written to ${knowledgeRelOf(root)}/items/ and ${knowledgeRelOf(root)}/scan.yaml.`);
+  if (r.conflicts.length) {
+    io.out(
+      `${plural(r.conflicts.length, "conflict")} between pages (both kept, for an owner to settle):`,
+    );
+    for (const c of r.conflicts)
+      io.out(
+        `  ${c.about.join(", ")}: ${c.pages.map((p, k) => `${p.page} says "${c.says[k]}"`).join("; ")}`,
+      );
+  }
+  for (const s of r.superseded)
+    io.out(
+      `Superseded: ${s.old.page} is replaced by ${s.new.page}; nothing on it was kept as a current rule.`,
+    );
+  if (r.injections.length) {
+    io.out(
+      `${plural(r.injections.length, "passage")} that tr${r.injections.length === 1 ? "ies" : "y"} to instruct AI tools (data, never followed; a person should review the page):`,
+    );
+    for (const i of r.injections)
+      io.out(
+        `  ${i.source}/${i.page}:${i.line}${i.section ? ` (${i.section})` : ""}${i.hidden ? ", hidden from readers" : ""}: "${i.text}"`,
+      );
+  }
+  if (r.failed.length) {
+    io.out(
+      `${plural(r.failed.length, "item")} still fail${r.failed.length === 1 ? "s" : ""} the checks and ${r.failed.length === 1 ? "was" : "were"} not kept:`,
+    );
+    for (const f of r.failed) io.out(`  ${f.kind} ${f.id}: ${f.problems.join("; ")}`);
+    return 1;
+  }
+  return 0;
+}
+
+const where = (r: KnowledgeRecord) =>
+  r.quote
+    ? `${r.quote.source}/${r.quote.page}${r.quote.section ? ` (${r.quote.section})` : ""}`
+    : "";
+
+/** atticus knowledge list [--tag t] [--kind k] [--json]: the knowledge items, filtered. */
+export async function knowledgeList(
+  root: string,
+  o: { tag?: string; kind?: string; json?: boolean },
+  io: Output,
+): Promise<number> {
+  if (o.kind && !(KNOWLEDGE_KINDS as readonly string[]).includes(o.kind)) {
+    io.err(`There is no knowledge kind ${o.kind}. Use one of: ${KNOWLEDGE_KINDS.join(", ")}.`);
+    return 2;
+  }
+  const k = await readKnowledge(root);
+  for (const p of k.problems) io.err(`${knowledgeRelOf(root)}/items/${p.file}: ${p.message}`);
+  if (!k.items.length) {
+    io.err(
+      "There are no knowledge items yet. Run atticus sources sync, then atticus knowledge scan.",
+    );
+    return 2;
+  }
+  const items = filterItems(k.items, {
+    ...(o.tag ? { tag: o.tag } : {}),
+    ...(o.kind ? { kind: o.kind as KnowledgeKind } : {}),
+  });
+  if (o.json) {
+    io.out(JSON.stringify(items, null, 2));
+    return 0;
+  }
+  if (!items.length) {
+    io.out("No item matches.");
+    return 0;
+  }
+  for (const l of table(
+    ["KIND", "ID", "TITLE", "FROM"],
+    items.map((r) => [
+      knowledgeKindOf(r) ?? r.kind,
+      r.id + (r.flags?.some((f) => f.startsWith("conflict:")) ? " !" : ""),
+      itemTitle(r),
+      where(r),
+    ]),
+  ))
+    io.out(l);
+  if (items.some((r) => r.flags?.some((f) => f.startsWith("conflict:"))))
+    io.out("! another page disagrees: see atticus knowledge ask, or knowledge/scan.yaml");
+  return 0;
+}
+
+/**
+ * atticus knowledge ask "<question>" [--mode m] [--resume run] [--json]: an answer from the
+ * knowledge items only, citing them. Exit 0 answered, 1 refused, 2 nothing to ask.
+ */
+export async function knowledgeAsk(
+  root: string,
+  question: string,
+  o: { resume?: string; json?: boolean },
+  deps: KnowledgeDeps,
+  io: Output,
+): Promise<number> {
+  const k = await readKnowledge(root);
+  if (!k.items.length) {
+    io.err(
+      "There are no knowledge items yet. Run atticus sources sync, then atticus knowledge scan.",
+    );
+    return 2;
+  }
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const r = await askKnowledge([question], {
+    items: k.items,
+    conflicts: k.report?.conflicts ?? [],
+    runtime: deps.runtime,
+    orgPack: op,
+    ...(deps.now ? { now: deps.now } : {}),
+    ...(o.resume ? { resume: o.resume } : {}),
+  });
+  if (r.status === "waiting") {
+    io.out(
+      `Handed the question to your assistant (run ${r.runId}). When it is done: atticus handoff done ${r.runId}, then atticus knowledge ask ${JSON.stringify(question)} --resume ${r.runId}`,
+    );
+    return 0;
+  }
+  const a = r.answers[0]!;
+  if (o.json) {
+    io.out(JSON.stringify(a, null, 2));
+    return a.status === "answered" ? 0 : 1;
+  }
+  if (a.status !== "answered") {
+    io.out(`Atticus can't answer that from the knowledge items: ${a.problems.join(" ")}`);
+    return 1;
+  }
+  io.out(a.answer!);
+  io.out("");
+  io.out("From:");
+  const byId = new Map(k.items.map((i) => [i.id, i]));
+  for (const id of a.cites) {
+    const item = byId.get(id)!;
+    io.out(
+      `  ${id}: ${itemTitle(item)}, ${where(item)}${item.quote ? `: "${item.quote.text}"` : ""}`,
+    );
+  }
+  return 0;
+}
+
+// ------------------------------------------------------------------ the knowledge bench
+
+const defaultCache = () =>
+  process.env.LOCALAPPDATA
+    ? join(process.env.LOCALAPPDATA, "atticus", "bench")
+    : join(homedir(), ".cache", "atticus", "bench");
+
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+
+export function printKnowledgeScore(s: KnowledgeScore, io: Output): void {
+  const i = s.items;
+  io.out(
+    `Items: ${i.found} found, ${i.missed} missed, ${i.wrong} wrong (precision ${pct(i.precision)}, recall ${pct(i.recall)})`,
+  );
+  io.out(
+    `  ${Object.entries(i.byKind)
+      .map(
+        ([k, v]) => `${k} ${v.found}/${v.found + v.missed}${v.wrong ? ` (+${v.wrong} wrong)` : ""}`,
+      )
+      .join(", ")}`,
+  );
+  if (i.missedIds.length) io.out(`  Missed: ${i.missedIds.join(", ")}`);
+  if (i.wrongIds.length) io.out(`  Wrong: ${i.wrongIds.join(", ")}`);
+  io.out(
+    `Quotes: ${s.quotes.correct} of ${s.quotes.of} on the right page and heading, word for word`,
+  );
+  if (s.quotes.wrongIds.length) io.out(`  Wrong: ${s.quotes.wrongIds.join(", ")}`);
+  io.out(
+    `Conflicts: ${s.conflicts.flagged} of ${s.conflicts.of} flagged${s.conflicts.missed.length ? ` (missed: ${s.conflicts.missed.join(", ")})` : ""}`,
+  );
+  io.out(
+    `Superseded pages: ${s.superseded.flagged} of ${s.superseded.of} flagged; ${s.superseded.itemsFromOldPages.length ? `items from an old page: ${s.superseded.itemsFromOldPages.join(", ")}` : "no item from an old page"}`,
+  );
+  io.out(
+    `Injections: ${s.injections.flagged} of ${s.injections.of} flagged; ${s.injections.followed.length ? `FOLLOWED by ${s.injections.followed.join(", ")}` : "not followed"}`,
+  );
+  io.out(`Questions: ${s.questions.correct} of ${s.questions.of} answered citing the right items`);
+  for (const q of s.questions.results.filter((x) => !x.correct))
+    io.out(`  "${q.ask}": ${q.refused ? "refused" : `missing ${q.missing.join(", ")}`}`);
+  io.out(
+    "Not scored here: whether each answer's words agree with the expected answer. Read them in the results file.",
+  );
+}
+
+/**
+ * atticus bench knowledge [--mode m] [--resume run] [--bench dir] [--cache dir] [--json]: snapshot
+ * the bench's invented wiki, scan it, ask the reference's questions, and print the score.
+ */
+export async function benchKnowledge(
+  root: string,
+  o: { bench?: string; cache?: string; resume?: string; json?: boolean },
+  deps: { runtime?: AiRuntime; mode?: string; now?: Date },
+  io: Output,
+): Promise<number> {
+  const bench = resolve(o.bench ?? join("bench", "knowledge"));
+  const cache = resolve(o.cache ?? defaultCache());
+  const work = join(cache, "knowledge");
+  const stateFile = join(work, "bench-state.json");
+  let resumeScan: string | undefined;
+  let resumeAsk: string | undefined;
+  if (o.resume) {
+    const state = JSON.parse((await readFile(stateFile, "utf8").catch(() => "{}")) || "{}") as {
+      step?: string;
+      runId?: string;
+    };
+    if (state.runId !== o.resume) {
+      io.err(
+        `${o.resume} isn't the run the knowledge bench is waiting for${state.runId ? ` (it waits for ${state.runId})` : ""}.`,
+      );
+      return 2;
+    }
+    if (state.step === "ask") resumeAsk = o.resume;
+    else resumeScan = o.resume;
+  } else {
+    try {
+      await prepareKnowledgeBench(bench, work);
+    } catch (e) {
+      io.err(`There is no knowledge bench at ${bench}: ${(e as Error).message}`);
+      return 2;
+    }
+    // The bench runs AI the way this metarepo's runtime.yaml says.
+    await copyFile(
+      join(orgPackDirOf(root), "runtime.yaml"),
+      join(work, "org-pack", "runtime.yaml"),
+    ).catch(() => {});
+  }
+  let runtime = deps.runtime;
+  if (!runtime) {
+    try {
+      runtime = (await runtimeForCli(work, deps.mode ? { mode: deps.mode } : {})).runtime;
+    } catch (e) {
+      if (e instanceof RuntimeConfigError) {
+        io.err(e.message);
+        return 2;
+      }
+      throw e;
+    }
+  }
+  const now = deps.now ?? new Date();
+  const r = await runKnowledgeBench({
+    bench,
+    work,
+    runtime,
+    now,
+    ...(resumeScan ? { resumeScan } : {}),
+    ...(resumeAsk ? { resumeAsk } : {}),
+  });
+  if (r.status === "waiting") {
+    await mkdir(work, { recursive: true });
+    await writeFile(stateFile, JSON.stringify({ step: r.step, runId: r.runId }) + "\n", "utf8");
+    io.out(
+      `Handed the ${r.step === "scan" ? "knowledge scan" : "bench questions"} to your assistant (run ${r.runId}, in ${work}). When it is done: atticus handoff done ${r.runId} --root ${JSON.stringify(work)}, then atticus bench knowledge --resume ${r.runId}`,
+    );
+    return 0;
+  }
+  const results = join(cache, "knowledge-results");
+  await mkdir(results, { recursive: true });
+  const file = join(results, `${stamp(now).replace(/[:.]/g, "-")}.json`);
+  await writeFile(file, JSON.stringify({ at: stamp(now), ...r }, null, 2) + "\n", "utf8");
+  await writeFile(stateFile, "{}\n", "utf8");
+  if (o.json) {
+    io.out(JSON.stringify(r.score, null, 2));
+    return 0;
+  }
+  io.out(`Knowledge bench: ${bench}`);
+  printKnowledgeScore(r.score, io);
+  if (r.scanProblems.length)
+    io.out(
+      `The scan's last attempt still had ${plural(r.scanProblems.length, "problem")}; they are in the results file.`,
+    );
+  io.out(`Details: ${file}`);
+  return 0;
+}
+
+/** The CLI's knowledge commands (ADR 0083); undefined when the arguments aren't one of them. */
+export async function knowledgeCli(
+  root: string,
+  positionals: string[],
+  values: Record<string, unknown>,
+  io: Output,
+): Promise<number | undefined> {
+  const [group, command, arg] = positionals;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
+  const list = (v: unknown) =>
+    Array.isArray(v) ? tagList(v.map(String)) : typeof v === "string" ? tagList([v]) : undefined;
+  const json = values.json === true;
+  const attempts = Number(str(values.attempts) ?? "3");
+  const runtime = async () => {
+    try {
+      return (await runtimeForCli(root, str(values.mode) ? { mode: str(values.mode)! } : {}))
+        .runtime;
+    } catch (e) {
+      if (e instanceof RuntimeConfigError) {
+        io.err(e.message);
+        return undefined;
+      }
+      throw e;
+    }
+  };
+  if (group === "sources" && command === "tag") {
+    if (!arg) {
+      io.err("Usage: atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]");
+      return 2;
+    }
+    const owner = Array.isArray(values.owner)
+      ? values.owner.map(String).join(" ")
+      : str(values.owner);
+    const kinds = list(values.kind);
+    const frameworks = list(values.framework);
+    return sourcesTag(
+      root,
+      arg,
+      {
+        ...(kinds ? { kinds } : {}),
+        ...(frameworks ? { frameworks } : {}),
+        ...(owner !== undefined ? { owner } : {}),
+      },
+      io,
+    );
+  }
+  if (group === "knowledge" && command === "scan") {
+    if (!Number.isInteger(attempts) || attempts < 1 || attempts > 10) {
+      io.err("--attempts is a whole number from 1 to 10.");
+      return 2;
+    }
+    const rt = await runtime();
+    if (!rt) return 2;
+    return knowledgeScan(
+      root,
+      {
+        attempts,
+        json,
+        ...(str(values.source) ? { source: str(values.source)! } : {}),
+        ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
+      },
+      { runtime: rt },
+      io,
+    );
+  }
+  if (group === "knowledge" && command === "list")
+    return knowledgeList(
+      root,
+      {
+        json,
+        ...(str(values.tag) ? { tag: str(values.tag)! } : {}),
+        ...(str(values.kind) ? { kind: str(values.kind)! } : {}),
+      },
+      io,
+    );
+  if (group === "knowledge" && command === "ask") {
+    const question = positionals.slice(2).join(" ").trim();
+    if (!question) {
+      io.err('Usage: atticus knowledge ask "<question>" [--mode m] [--resume run] [--json]');
+      return 2;
+    }
+    const rt = await runtime();
+    if (!rt) return 2;
+    return knowledgeAsk(
+      root,
+      question,
+      { json, ...(str(values.resume) ? { resume: str(values.resume)! } : {}) },
+      { runtime: rt },
+      io,
+    );
+  }
+  if (group === "bench" && command === "knowledge")
+    return benchKnowledge(
+      root,
+      {
+        json,
+        ...(str(values.bench) ? { bench: str(values.bench)! } : {}),
+        ...(str(values.cache) ? { cache: str(values.cache)! } : {}),
+        ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
+      },
+      str(values.mode) ? { mode: str(values.mode)! } : {},
+      io,
+    );
+  if (group === "knowledge") {
+    io.err("Usage: atticus knowledge scan|list|ask. See atticus --help.");
+    return 2;
+  }
+  return undefined;
+}

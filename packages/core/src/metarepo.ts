@@ -70,6 +70,20 @@ export function questionsDirOf(root: string): string {
   return join(root, ...questionsRelOf(root).split("/"));
 }
 
+/**
+ * Where knowledge lives (ADR 0083), relative to the root: `knowledge`, or `.atticus/knowledge`
+ * when adopted. It holds `snapshots/<source>/<date>/` (what a sync copied) and `items/` (what
+ * the knowledge scan read from a snapshot).
+ */
+export function knowledgeRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/knowledge" : "knowledge";
+}
+
+/** The knowledge folder (ADR 0083). */
+export function knowledgeDirOf(root: string): string {
+  return join(root, ...knowledgeRelOf(root).split("/"));
+}
+
 // Change folders resolve through the layout on every call, so the parsed file is kept until
 // sources.yaml changes (size or time).
 const layouts = new Map<string, { key: string; layout: { catalog: string; openspec: string } }>();

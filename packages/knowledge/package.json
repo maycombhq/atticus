@@ -25,6 +25,7 @@
     "@maycombhq/core": "workspace:*",
     "@maycombhq/features": "workspace:*",
     "@maycombhq/reconcile": "workspace:*",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "zod": "^4.6.0"
   }
 }
