@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { appendFile, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
@@ -53,22 +53,47 @@ export function findFixtures(start = dirname(fileURLToPath(import.meta.url))): s
   }
 }
 
-function git(cwd: string, args: string[]) {
-  execFileSync(
-    "git",
-    [
-      "-c",
-      "user.name=Atticus sandbox",
-      "-c",
-      "user.email=sandbox@example.com",
-      "-c",
-      "init.defaultBranch=main",
-      "-c",
-      "core.autocrlf=false",
-      ...args,
-    ],
-    { cwd, stdio: "pipe" },
-  );
+/** How long one git step may take before the sandbox gives up on it. */
+const GIT_TIMEOUT_MS = 120_000;
+
+/**
+ * Run one git step. Asynchronous, so a git process that hangs (seen under heavy load) can't
+ * block the whole process, and stopped after `timeoutMs`. It never runs the person's own hooks
+ * (hooks point at a folder that doesn't exist) and never prompts.
+ */
+function git(cwd: string, args: string[], timeoutMs: number, noHooks: string): Promise<void> {
+  return new Promise((done, fail) => {
+    execFile(
+      "git",
+      [
+        "-c",
+        "user.name=Atticus sandbox",
+        "-c",
+        "user.email=sandbox@example.com",
+        "-c",
+        "init.defaultBranch=main",
+        "-c",
+        "core.autocrlf=false",
+        "-c",
+        `core.hooksPath=${noHooks}`,
+        "-c",
+        "commit.gpgsign=false",
+        ...args,
+      ],
+      {
+        cwd,
+        timeout: timeoutMs,
+        windowsHide: true,
+        env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+      },
+      (e, _out, err) => {
+        if (!e) return done();
+        if ((e as { killed?: boolean }).killed)
+          return fail(new Error(`git took longer than ${timeoutMs / 1000} s (git ${args[0]})`));
+        fail(new Error(`${e.message.split("\n")[0]}${err ? `: ${err.trim()}` : ""}`));
+      },
+    ).stdin?.end();
+  });
 }
 
 const isEmptyDir = async (d: string) => {
@@ -86,7 +111,7 @@ const isEmptyDir = async (d: string) => {
  */
 export async function createSandbox(
   dir: string,
-  o: { fixtures?: string; now?: Date } = {},
+  o: { fixtures?: string; now?: Date; gitTimeoutMs?: number } = {},
 ): Promise<SandboxInfo> {
   const fixtures = o.fixtures ?? findFixtures();
   if (!fixtures || !existsSync(join(fixtures, "forge")))
@@ -127,11 +152,15 @@ export async function createSandbox(
     "utf8",
   );
   const repos = (await readdir(join(target, "repos"))).sort();
+  const timeout = o.gitTimeoutMs ?? GIT_TIMEOUT_MS;
+  // A hooks folder that doesn't exist: git runs no hooks at all.
+  const noHooks = join(target, ".no-git-hooks").split("\\").join("/");
+  const run = (cwd: string, args: string[]) => git(cwd, args, timeout, noHooks);
   for (const id of repos) {
     const base = join(root, "workspace", id);
     await cp(join(target, "repos", id), base, { recursive: true });
     try {
-      git(base, ["init", "-q"]);
+      await run(base, ["init", "-q"]);
       // Commands that commit here (spec hand-down, task runs) work on a machine with no Git
       // identity, and never ask for a signing key or run the person's own hooks.
       // Written straight into .git/config: one git process per setting is slow on Windows.
@@ -141,16 +170,16 @@ export async function createSandbox(
           "[commit]\n\tgpgsign = false\n[tag]\n\tgpgsign = false\n",
         "utf8",
       );
-      git(base, ["add", "-A"]);
-      git(base, ["commit", "-q", "-m", "Forge fixture"]);
+      await run(base, ["add", "-A"]);
+      await run(base, ["commit", "-q", "-m", "Forge fixture"]);
       // A local bare repository stands in for the Git host, so the base clone has an origin
       // and workspace sync, worktrees and task branches work with no network.
       const remote = join(target, "remotes", `${id}.git`);
       await mkdir(dirname(remote), { recursive: true });
-      git(target, ["clone", "-q", "--bare", base, remote]);
-      git(base, ["remote", "add", "origin", remote]);
-      git(base, ["fetch", "-q", "origin"]);
-      git(base, ["branch", "-q", "--set-upstream-to=origin/main", "main"]);
+      await run(target, ["clone", "-q", "--bare", base, remote]);
+      await run(base, ["remote", "add", "origin", remote]);
+      await run(base, ["fetch", "-q", "origin"]);
+      await run(base, ["branch", "-q", "--set-upstream-to=origin/main", "main"]);
     } catch (e) {
       await rm(join(base, ".git"), { recursive: true, force: true });
       throw new SandboxError(

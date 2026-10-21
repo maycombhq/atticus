@@ -189,42 +189,50 @@ describe("atticus learn, sandbox and explain", () => {
     expect(await sandboxCreate(undefined, {}, u.io)).toBe(2);
   });
 
-  it("explains a finding the critic wrote, in plain words", async () => {
-    const root = await sandbox();
-    const gh = new MockGitHost([{ repo: REPO }]);
-    await atticus(root, ["scan"], capture().io, gh);
-    await atticus(root, ["critic", "add-transfer-limit"], capture().io, gh);
-    const c = capture();
-    expect(await explainCommand(root, "interface-approved-pattern-interfaces-l6", {}, c.io)).toBe(
-      0,
-    );
-    expect(c.out[0]).toBe(
-      "interface-approved-pattern-interfaces-l6 is a critic finding on change add-transfer-limit at the plan gate (round 1).",
-    );
-    expect(c.out).toContain(
-      "  It is blocking: it stops the hand-off until it is fixed or, where allowed, waived with a reason.",
-    );
-    expect(c.out.some((l) => l.includes("It is open.") && l.includes("it can't be waived"))).toBe(
-      true,
-    );
-    const none = capture();
-    expect(await explainCommand(root, "nothing-here", {}, none.io)).toBe(1);
-    expect(await explainCommand(root, " ", {}, none.io)).toBe(2);
-  });
+  it(
+    "explains a finding the critic wrote, in plain words",
+    async () => {
+      const root = await sandbox();
+      const gh = new MockGitHost([{ repo: REPO }]);
+      await atticus(root, ["scan"], capture().io, gh);
+      await atticus(root, ["critic", "add-transfer-limit"], capture().io, gh);
+      const c = capture();
+      expect(await explainCommand(root, "interface-approved-pattern-interfaces-l6", {}, c.io)).toBe(
+        0,
+      );
+      expect(c.out[0]).toBe(
+        "interface-approved-pattern-interfaces-l6 is a critic finding on change add-transfer-limit at the plan gate (round 1).",
+      );
+      expect(c.out).toContain(
+        "  It is blocking: it stops the hand-off until it is fixed or, where allowed, waived with a reason.",
+      );
+      expect(c.out.some((l) => l.includes("It is open.") && l.includes("it can't be waived"))).toBe(
+        true,
+      );
+      const none = capture();
+      expect(await explainCommand(root, "nothing-here", {}, none.io)).toBe(1);
+      expect(await explainCommand(root, " ", {}, none.io)).toBe(2);
+    },
+    T,
+  );
 
-  it("defences scan: reports hidden instructions in a document dropped into intake", async () => {
-    const root = await sandbox();
-    const platform = lessons.find((l) => l.id === "platform-lead-coverage-and-defences")!;
-    await writeSolution(root, platform.steps[1]!.solution!.files);
-    let c = capture();
-    expect(await defencesScan(root, undefined, {}, c.io)).toBe(1);
-    expect(c.out.find((l) => l.startsWith("high"))).toMatch(
-      /^high\s+inputs\/inbox\/vendor-notes\.md\s+quarantined: left out of every AI step/,
-    );
-    expect(c.out.at(-1)).toMatch(/^Scanned \d+ files: 1 high, 0 medium\.$/);
-    c = capture();
-    expect(await defencesScan(root, "nowhere", {}, c.io)).toBe(2);
-  });
+  it(
+    "defences scan: reports hidden instructions in a document dropped into intake",
+    async () => {
+      const root = await sandbox();
+      const platform = lessons.find((l) => l.id === "platform-lead-coverage-and-defences")!;
+      await writeSolution(root, platform.steps[1]!.solution!.files);
+      let c = capture();
+      expect(await defencesScan(root, undefined, {}, c.io)).toBe(1);
+      expect(c.out.find((l) => l.startsWith("high"))).toMatch(
+        /^high\s+inputs\/inbox\/vendor-notes\.md\s+quarantined: left out of every AI step/,
+      );
+      expect(c.out.at(-1)).toMatch(/^Scanned \d+ files: 1 high, 0 medium\.$/);
+      c = capture();
+      expect(await defencesScan(root, "nowhere", {}, c.io)).toBe(2);
+    },
+    T,
+  );
 });
 
 /**

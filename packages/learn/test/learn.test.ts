@@ -125,6 +125,32 @@ describe("the practice sandbox", () => {
     await expect(createSandbox(sb.dir)).rejects.toThrow(/isn't empty/);
   });
 
+  it("never runs the person's own Git hooks or settings, and never waits on git forever", async () => {
+    // A machine whose global Git config runs a pre-commit hook that fails: the sandbox's commits
+    // must not run it (and the old synchronous git calls left the test runner unable to time
+    // out when one hung under load).
+    const home = await mkdtemp(join(tmpdir(), "atticus-hostile-git-"));
+    await mkdir(join(home, "hooks"));
+    await writeFile(join(home, "hooks", "pre-commit"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+    await writeFile(
+      join(home, "gitconfig"),
+      `[core]\n\thooksPath = ${join(home, "hooks").split("\\").join("/")}\n`,
+      "utf8",
+    );
+    const saved = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = join(home, "gitconfig");
+    try {
+      const made = await createSandbox(join(home, "sb"));
+      expect(existsSync(join(made.root, "workspace/forge-ledger/.git"))).toBe(true);
+      await expect(createSandbox(join(home, "slow"), { gitTimeoutMs: 1 })).rejects.toThrow(
+        /git took longer than 0\.001 s/,
+      );
+    } finally {
+      if (saved === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = saved;
+    }
+  }, 120_000);
+
   it("refuses lessons outside a sandbox", async () => {
     const other = await mkdtemp(join(tmpdir(), "atticus-not-sandbox-"));
     await expect(startLesson(other, "developer")).rejects.toThrow(/isn't a practice sandbox/);

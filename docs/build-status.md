@@ -91,7 +91,7 @@ Every open item, in the order to take them. Check work by running the real flow 
 
 ### A. Fix before pushing (main has unpushed local commits)
 
-- [ ] **A1. CLI test hang under full load.** `packages/cli/test/learn-cli.test.ts` "defences scan" hung for 89 minutes in a full parallel `pnpm test`; two sandbox tests in the same file exited 1. It passes alone. Reproduce under load and fix the cause.
+- [x] **A1. CLI test hang under full load.** `packages/cli/test/learn-cli.test.ts` "defences scan" hung for 89 minutes in a full parallel `pnpm test`; two sandbox tests in the same file exited 1. It passes alone. Fixed: the sandbox ran git synchronously, so a git step stuck under load blocked the process and no test timeout could fire. Git is now asynchronous with a 120 s limit per step, runs no hooks and never prompts; the two sandbox tests have the file's 180 s limit. Passes with the scanner suite running alongside.
 - [ ] **A2. Performance budgets (m5-exit).** Under full load `/api/setup` took 6.06 s (budget 6 s) and CLI start 3.1 s (budget 2 s). Measure on a quiet machine; check whether the tree-sitter baseline-only flag (ADR 0067) costs start time.
 - [ ] **A3. A pipeline record changes on every rescan.** `QualityAsset/<repo>.pipeline.ci` reports `(details)` changed on each scan with identical files (seen on a real repo). Find the unstable field (likely from the pipeline-model pass, ADR 0062) and make it deterministic.
 - [ ] **A4. Full `pnpm test`** on the 7 GB machine once A1–A3 are fixed; confirm the worker crashes and 5 s timeouts are gone. Regenerate the spec, API and command docs.
