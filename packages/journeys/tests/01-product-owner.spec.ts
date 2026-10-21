@@ -5,6 +5,8 @@ const app = forgeJourney();
 
 test("starts from the same home as everyone, as their Git user (ADR 0073)", async ({ page }) => {
   await open(page, app(), "home");
+  // The top bar names the metarepo's Git user; no sign-in, no role.
+  await expect(page.getByText(/Priya Nair \(priya\)/).first()).toBeVisible();
   // The first-run tour: one for everyone, skippable, and it replays from Help.
   await page.getByRole("button", { name: "Help" }).click();
   const tour = page.getByRole("dialog", { name: "Your home" });

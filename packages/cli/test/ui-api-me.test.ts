@@ -69,4 +69,18 @@ describe("who is using the app (ADR 0073)", () => {
       notify: { digest: "daily" },
     });
   });
+
+  it("hands the person to whoever started the server, and --by still names someone", async () => {
+    expect(srv.person).toMatchObject({ handle: "priya.nair", source: "git" });
+    const other = await startServer({ root, port: 0, user: "ari" });
+    try {
+      expect(other.person).toEqual({ handle: "ari", source: "given" });
+      const h = await fetch(other.url + "/api/health", {
+        headers: { "X-Atticus-Token": other.token },
+      });
+      expect(((await h.json()) as { user: string }).user).toBe("ari");
+    } finally {
+      await other.close();
+    }
+  });
 });

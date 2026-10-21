@@ -795,6 +795,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
             : {}),
         open: values.open === true,
         version: VERSION,
+        ...(given ? { user: given } : {}),
       },
       io,
     );

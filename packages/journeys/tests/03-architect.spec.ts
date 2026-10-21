@@ -1,6 +1,6 @@
 import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
 
-/** Architect: reviews the design against the code, settles diagram names, and approves. */
+/** Architect: reviews the design against the code and settles diagram names; approving is the hand-off PR. */
 const app = forgeJourney();
 
 test("reviews the design with its patterns and drift", async ({ page }) => {

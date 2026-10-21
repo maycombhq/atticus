@@ -1,5 +1,4 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import type { Duplex } from "node:stream";
@@ -77,11 +76,12 @@ export interface RunningServer {
   token: string;
   events: EventHub;
   jobs: JobManager;
+  /** Who the app records as `by`: the Git user, or who `user` named (ADR 0073). */
+  person: GitUser;
   close(): Promise<void>;
 }
 
 const MAX_BODY = 4 * 1024 * 1024;
-
 
 function sameToken(a: string, b: string): boolean {
   const x = Buffer.from(a);
@@ -261,6 +261,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     token,
     events,
     jobs,
+    person,
     close: () =>
       new Promise<void>((resolve) => {
         events.closeAll();

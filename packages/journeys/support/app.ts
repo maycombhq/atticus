@@ -68,6 +68,9 @@ export async function forgeMetarepo(): Promise<string> {
   );
   const git = (...a: string[]) => spawnSync("git", a, { cwd: root, encoding: "utf8" });
   git("init", "-q", "-b", "main");
+  // The person using the app is the metarepo's Git user (ADR 0073).
+  git("config", "user.name", "Priya Nair");
+  git("config", "user.email", "priya@forge.example");
   git("-c", "user.name=Forge", "-c", "user.email=forge@example.com", "add", "-A");
   git(
     "-c",
@@ -91,7 +94,6 @@ export interface App {
 export async function startApp(root: string): Promise<App> {
   const server = spawn(process.execPath, [BIN, "ui", "--port", "0", "--root", root], {
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, USER: "priya" },
   });
   const url = await new Promise<string>((resolve, reject) => {
     let out = "";
@@ -130,24 +132,10 @@ export async function open(page: Page, app: App, route: string): Promise<void> {
   await skipTour(page);
 }
 
-/** Each test is a fresh browser, so the first-run tour of the saved view opens again: skip it. */
+/** Each test is a fresh browser, so the first-run tour opens again: skip it. */
 async function skipTour(page: Page): Promise<void> {
   const skip = page.getByRole("button", { name: "Skip the tour" });
   if (await skip.isVisible().catch(() => false)) await skip.click();
-}
-
-/** Work in a role's view, through the View switch in the sidebar. */
-export async function workAs(
-  page: Page,
-  role: string,
-  o: { keepTour?: boolean } = {},
-): Promise<void> {
-  const picker = page.getByLabel("View", { exact: true });
-  await picker.selectOption(role);
-  await expect(picker).toHaveValue(role);
-  await page.waitForLoadState("networkidle");
-  // The first-run tour opens for a new view; journeys that aren't about it skip it.
-  if (!o.keepTour) await skipTour(page);
 }
 
 /** WCAG 2.1 AA: no serious or critical axe violation on the page as it is now. */
