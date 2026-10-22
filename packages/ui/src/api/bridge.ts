@@ -63,6 +63,33 @@ export function makeBridge(post: (m: Msg) => void, on: (f: (m: unknown) => void)
   };
 }
 
+interface ClickLike {
+  button: number;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  composedPath(): unknown[];
+}
+
+/**
+ * VS Code's panel cancels every click on a `#…` link (it only scrolls to an element with that id),
+ * so the app's own links (#/architecture) did nothing there. Inside a panel the app follows a
+ * plain click on a link to one of its screens itself, after VS Code's handler has run.
+ */
+export function linkFollower(go: (hash: string) => void): (e: ClickLike) => void {
+  return (e) => {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    for (const n of e.composedPath()) {
+      const el = n as { tagName?: string; getAttribute?: (a: string) => string | null };
+      if (el.tagName?.toLowerCase() !== "a") continue;
+      const href = el.getAttribute?.("href");
+      if (href && SCREEN_HASH.test(href)) go(href);
+      return;
+    }
+  };
+}
+
 interface VsCodeApi {
   postMessage(m: unknown): void;
 }
@@ -85,5 +112,12 @@ export function hostBridge(): Bridge | undefined {
   shared.onNavigate((hash) => {
     if (location.hash !== hash) location.hash = hash;
   });
+  // After VS Code's own click handler on the window, which cancels #… links.
+  window.addEventListener(
+    "click",
+    linkFollower((hash) => {
+      if (location.hash !== hash) location.hash = hash;
+    }),
+  );
   return shared;
 }

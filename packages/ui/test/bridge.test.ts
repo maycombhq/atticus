@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { makeBridge } from "../src/api/bridge.js";
+import { linkFollower, makeBridge } from "../src/api/bridge.js";
 import { usableWorkerUrl } from "../src/app/layout/worker-url.js";
 
 /**
@@ -95,5 +95,50 @@ describe("the layout worker, wherever the page comes from", () => {
       "https://file+.vscode-resource.vscode-cdn.net/ext/media/app/assets/elk-worker.js",
     ]);
     expect(url).toBe("blob:copy-of-26");
+  });
+});
+
+describe("the app's own links inside a VS Code panel (ADR 0098)", () => {
+  /** VS Code's panel cancels every click on a #… link; the app follows its own screens itself. */
+  const click = (
+    href: string | null,
+    o: Partial<{
+      button: number;
+      ctrlKey: boolean;
+      metaKey: boolean;
+      shiftKey: boolean;
+      altKey: boolean;
+    }> = {},
+  ) => ({
+    button: 0,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    altKey: false,
+    ...o,
+    composedPath: () => [
+      { tagName: "SPAN" },
+      { tagName: "A", getAttribute: (n: string) => (n === "href" ? href : null) },
+      { tagName: "LI" },
+    ],
+  });
+
+  it("goes to the screen a link names, though VS Code cancelled the click", () => {
+    const went: string[] = [];
+    const follow = linkFollower((h) => went.push(h));
+    follow(click("#/architecture"));
+    follow(click("#/flows?repo=forge-web&flow=forge-web.save-customer"));
+    expect(went).toEqual(["#/architecture", "#/flows?repo=forge-web&flow=forge-web.save-customer"]);
+  });
+
+  it("leaves alone a link elsewhere, a modified or other-button click, and a click on no link", () => {
+    const went: string[] = [];
+    const follow = linkFollower((h) => went.push(h));
+    follow(click("https://example.com"));
+    follow(click("#top"));
+    follow(click("#/architecture", { ctrlKey: true }));
+    follow(click("#/architecture", { button: 1 }));
+    follow({ ...click(null), composedPath: () => [{ tagName: "DIV" }] });
+    expect(went).toEqual([]);
   });
 });
