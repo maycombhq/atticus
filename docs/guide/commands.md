@@ -185,7 +185,7 @@ Usage:
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
-  atticus <step> --handoff             On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change draft and plan stories: print only the prompt, the result file and the commands that finish it
+  atticus <step> --handoff [--json]    On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change draft and plan stories: print only the prompt, the result file and the commands that finish it
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
   atticus workspace open <change>      Create the change's worktrees, repos.yaml and editor workspaces

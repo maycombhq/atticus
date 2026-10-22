@@ -152,3 +152,130 @@ describe("atticus spec draft --handoff", () => {
     expect(resumed.out[0]).toBe("Wrote 2 flows in specs/forge-orders/ (template default@1):");
   });
 });
+
+describe("atticus <step> --handoff --json", () => {
+  const SETTINGS = `schemaVersion: 1
+repo: forge-notes
+exclude:
+  - { path: "docs/**", why: a generated playground, at: "docs/playground.js:1" }
+prefixes:
+  - paths: ["src/main/java/**"]
+    prefix: /notes-api
+    why: server.servlet.context-path
+    at: "src/main/resources/application.properties:3"
+    value: /notes-api
+`;
+
+  async function setup(withSettings = false) {
+    const root = await mkdtemp(join(tmpdir(), "atticus-handoff-json-"));
+    await cp(join(FIXTURES, "scan-settings/metarepo"), root, { recursive: true });
+    if (!withSettings) await rm(join(root, "org-pack", "scan"), { recursive: true, force: true });
+    await cp(join(FIXTURES, "scan-settings/repos"), join(root, "workspace"), { recursive: true });
+    return root;
+  }
+
+  /** The one JSON object the command prints. */
+  const json = (out: string[]) => JSON.parse(out.join("\n")) as Record<string, unknown>;
+
+  it("prints the hand-off as one object, and the finished step's state once resumed", async () => {
+    const root = await setup();
+    const first = await run([
+      "scan",
+      "survey",
+      "forge-notes",
+      "--handoff",
+      "--json",
+      "--root",
+      root,
+    ]);
+    expect(first.code, first.err.join("\n")).toBe(0);
+    const h = json(first.out);
+    expect(h.state).toBe("handoff");
+    const runId = h.runId as string;
+    expect(runId).toMatch(/^run-[0-9a-z-]+$/);
+    expect(h.root).toBe(root);
+    expect(h.promptFile).toBe(`.runs/survey-forge-notes/${runId}/prompt.md`);
+    expect(h.resultFile).toBe(`.runs/survey-forge-notes/${runId}/scan-settings.yaml`);
+    expect(h.doneCommand).toBe(`atticus handoff done ${runId} --root "${root}"`);
+    expect(h.doneArgs).toEqual(["handoff", "done", runId, "--root", root]);
+    expect(h.resumeCommand).toBe(
+      `atticus scan survey forge-notes --root "${root}" --handoff --json --resume ${runId}`,
+    );
+    expect(h.resumeArgs).toEqual([
+      "scan",
+      "survey",
+      "forge-notes",
+      "--root",
+      root,
+      "--handoff",
+      "--json",
+      "--resume",
+      runId,
+    ]);
+    expect(await readFile(join(root, h.promptFile as string), "utf8")).toContain(
+      `Write the result to ${h.resultFile as string}.`,
+    );
+
+    // Resumed before the result is written: the same run, said to be still waiting.
+    const early = json((await run(h.resumeArgs as string[])).out);
+    expect(early).toMatchObject({ state: "handoff", runId, stillWaiting: true });
+
+    await writeFile(join(root, h.resultFile as string), SETTINGS);
+    expect((await run(h.doneArgs as string[])).code).toBe(0);
+    const resumed = await run(h.resumeArgs as string[]);
+    expect(resumed.code, resumed.err.join("\n")).toBe(0);
+    const d = json(resumed.out);
+    expect(d.state).toBe("done");
+    expect(d.exitCode).toBe(0);
+    expect((d.messages as string[])[0]).toBe(
+      "Wrote org-pack/scan/forge-notes.yaml: 1 folder left out, 1 prefix.",
+    );
+    expect(d.questions).toEqual([]);
+  });
+
+  it("says question, with the question and its options, when the step raised one", async () => {
+    const root = await setup();
+    const h = json(
+      (await run(["scan", "survey", "forge-notes", "--handoff", "--json", "--root", root])).out,
+    );
+    await writeFile(
+      join(root, h.resultFile as string),
+      `${SETTINGS}questions:
+  - question: Is the playground under docs part of the product?
+    options:
+      - { label: "Yes", means: "the playground ships", changes: "docs/** is scanned" }
+      - { label: "No", means: "it is only a demo", changes: "docs/** stays left out" }
+    evidence: ["docs/playground.js:1"]
+    scope: repo
+`,
+    );
+    await run(h.doneArgs as string[]);
+    const r = await run(h.resumeArgs as string[]);
+    const q = json(r.out);
+    expect(q.state).toBe("question");
+    const questions = q.questions as { id: string; question: string; options: unknown[] }[];
+    expect(questions).toHaveLength(1);
+    expect(questions[0]!.id).toMatch(/^q-[0-9a-f]{12}$/);
+    expect(questions[0]!.question).toBe("Is the playground under docs part of the product?");
+    expect(questions[0]!.options).toHaveLength(2);
+  });
+
+  it("says stopped when the step ends without finishing, with its messages", async () => {
+    const root = await setup(true);
+    const r = await run(["scan", "survey", "forge-notes", "--handoff", "--json", "--root", root]);
+    expect(r.code).toBe(1);
+    const s = json(r.out);
+    expect(s.state).toBe("stopped");
+    expect(s.exitCode).toBe(1);
+    expect((s.errors as string[])[0]).toMatch(/already has scan settings/);
+  });
+
+  it("says failed when the step can't run", async () => {
+    const root = await setup();
+    const r = await run(["scan", "survey", "no-such-repo", "--handoff", "--json", "--root", root]);
+    expect(r.code).toBe(2);
+    const f = json(r.out);
+    expect(f.state).toBe("failed");
+    expect((f.errors as string[])[0]).toMatch(/isn't a cloned repo/);
+  });
+});

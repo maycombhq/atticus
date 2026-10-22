@@ -1,0 +1,214 @@
+{
+  "name": "atticus",
+  "displayName": "Atticus",
+  "version": "0.1.0",
+  "description": "Run Atticus's AI steps with Copilot's own model, in VS Code. Atticus's command line does all the checking.",
+  "license": "Apache-2.0",
+  "publisher": "maycombhq",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maycombhq/atticus.git",
+    "directory": "packages/vscode"
+  },
+  "type": "commonjs",
+  "main": "./dist/extension.js",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "workspaceContains:org-pack/**",
+    "workspaceContains:.atticus/org-pack/**"
+  ],
+  "files": [
+    "dist",
+    "media",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=60000 --hookTimeout=60000",
+    "package": "tsc -p tsconfig.build.json && vsce package --no-dependencies"
+  },
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "atticus.chat",
+        "name": "atticus",
+        "fullName": "Atticus",
+        "description": "Run the next Atticus step with Copilot's model",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "next",
+            "description": "The next step, and a button to run it"
+          },
+          {
+            "name": "survey",
+            "description": "Draft a repo's scan settings: /survey <repo>"
+          },
+          {
+            "name": "verify",
+            "description": "Compare a repo's code with its last scan: /verify <repo>"
+          },
+          {
+            "name": "spec",
+            "description": "Draft a repo's spec, then check it: /spec <repo>"
+          },
+          {
+            "name": "feature",
+            "description": "Run a change's feature stage: /feature <change>"
+          },
+          {
+            "name": "architecture",
+            "description": "Run a change's architecture stage: /architecture <change>"
+          },
+          {
+            "name": "stories",
+            "description": "Write a change's stories and tasks: /stories <change>"
+          },
+          {
+            "name": "answer",
+            "description": "The open questions, with a button for each answer"
+          },
+          {
+            "name": "ask",
+            "description": "Ask the catalog a plain question: /ask <question>"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "atticus.next",
+        "title": "Show the next step",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.runNext",
+        "title": "Run the next step",
+        "category": "Atticus",
+        "icon": "$(play)"
+      },
+      {
+        "command": "atticus.survey",
+        "title": "Survey a repo (draft its scan settings)",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.verify",
+        "title": "Verify a repo's last scan",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.spec",
+        "title": "Draft and check a repo's spec",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.feature",
+        "title": "Run a change's feature stage",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.architecture",
+        "title": "Run a change's architecture stage",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.stories",
+        "title": "Write a change's stories",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.answer",
+        "title": "Answer an open question",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.ask",
+        "title": "Ask the catalog a question",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.openApp",
+        "title": "Open the app",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.refresh",
+        "title": "Refresh",
+        "category": "Atticus",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "atticus.showLog",
+        "title": "Show the commands run",
+        "category": "Atticus"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "atticus",
+          "title": "Atticus",
+          "icon": "media/atticus.svg"
+        }
+      ]
+    },
+    "views": {
+      "atticus": [
+        {
+          "id": "atticus.view",
+          "name": "Atticus"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "atticus.refresh",
+          "when": "view == atticus.view",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "atticus.runNext",
+          "when": "view == atticus.view && viewItem == atticus.next",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Atticus",
+      "properties": {
+        "atticus.path": {
+          "type": "string",
+          "default": "atticus",
+          "markdownDescription": "The `atticus` command line: a command on your PATH (default `atticus`), or the full path to it or to its `bin.js`."
+        },
+        "atticus.model": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The Copilot model family to use (for example `gpt-4o`). Empty: the model picked in Copilot Chat, or else the first Copilot model available."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@maycombhq/cli": "workspace:*",
+    "@types/vscode": "1.95.0",
+    "@vscode/vsce": "4.0.0"
+  }
+}

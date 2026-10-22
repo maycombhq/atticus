@@ -214,6 +214,43 @@ export const ALLOW = [
   { file: "packages/planner/src/index.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/planner/src/plan.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/planner/src/snow.ts", names: ["snow"], reason: SNOW_ARTIFACT },
+  {
+    file: "packages/planner/src/stages/schema.ts",
+    names: ["figma"],
+    reason:
+      "a feature can start from a Figma file export (plan 4.4, ADR 0087): the design entry names the format it reads",
+  },
+  {
+    file: "packages/planner/src/stages/stories.ts",
+    names: ["copilot", "claude"],
+    reason:
+      "each task carries the prompt to implement it in Copilot or Claude Code (plan 4.4, ADR 0087): the words a person reads name the assistants",
+  },
+  ...[
+    "packages/planner/src/stages/index.ts",
+    "packages/planner/src/stages/figma.ts",
+    "packages/planner/src/stages/feature.ts",
+    "packages/planner/src/stages/design-check.ts",
+  ].map((file) => ({
+    file,
+    names: ["figma"],
+    reason:
+      "the feature stage reads a Figma file export and checks the design against it (plan 4.4, ADR 0087): the reader names the format it reads",
+  })),
+  ...["packages/planner/src/stages/loop.ts", "packages/knowledge/src/knowledge-scan.ts"].map(
+    (file) => ({
+      file,
+      names: ["claude"],
+      reason:
+        "the agent lists the runtimes it may use; headless-claude-code is a runtime kind in the C5 contract (ADR 0014)",
+    }),
+  ),
+  {
+    file: "packages/planner/src/stages/finding-kind.ts",
+    names: ["teams"],
+    reason:
+      "org-pack/teams/<team>/checklists is the org pack's own folder of team checklists, not the chat product",
+  },
   { file: "packages/planner/src/sync.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   { file: "packages/release/src/context.ts", names: ["snow"], reason: SNOW_ARTIFACT },
   {

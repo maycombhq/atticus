@@ -1,7 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { HandoffRuntime, type Run } from "@maycombhq/ai";
-import { changesRelOf, runsDirOf, runsRelOf } from "@maycombhq/core";
+import { changesRelOf, listQuestions, runsDirOf, runsRelOf, type Question } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 
 /**
@@ -11,6 +11,11 @@ import type { Output } from "./commands.js";
  * HandoffRuntime's (prompt.md, run.json, `atticus handoff done`); nothing here prepares a run.
  * When the step hands nothing off (it finished, or failed before a prompt), its own output is
  * printed as it is.
+ *
+ * With --json (ADR 0090) it prints one JSON object instead, for a tool that runs the loop (the
+ * VS Code extension): the hand-off (state "handoff", the run, both files, both commands as text
+ * and as argv), or the step's end: "done" (exit 0), "question" (it raised or re-asked an open
+ * question), "stopped" (exit 1) or "failed" (exit 2 or more, or it threw), with its messages.
  */
 
 /** The AI steps that take --handoff. */
@@ -49,12 +54,12 @@ async function runStates(root: string): Promise<Map<string, { key: string; run: 
   return out;
 }
 
-/** argv without --handoff, --mode and --resume (with their values). */
+/** argv without --handoff, --json, --mode and --resume (with their values). */
 function stepArgs(argv: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
-    if (a === "--handoff") continue;
+    if (a === "--handoff" || a === "--json") continue;
     if (a === "--mode" || a === "--resume") {
       i++;
       continue;
@@ -84,13 +89,22 @@ export async function handoffStep(
       : argv[resumeAt]!.includes("=")
         ? [argv[resumeAt]!]
         : argv.slice(resumeAt, resumeAt + 2);
+  const json = argv.includes("--json");
   const before = await runStates(root);
+  const asked = json ? await openQuestions(root) : new Map<string, string>();
   const out: string[] = [];
   const err: string[] = [];
-  const code = await dispatch([...args, ...resume, "--mode", "hand-off"], {
-    out: (l) => out.push(l),
-    err: (l) => err.push(l),
-  });
+  let code: number;
+  try {
+    code = await dispatch([...args, ...resume, "--mode", "hand-off"], {
+      out: (l) => out.push(l),
+      err: (l) => err.push(l),
+    });
+  } catch (e) {
+    if (!json) throw e;
+    err.push((e as Error).message.split("\n")[0]!);
+    code = 3;
+  }
   const after = await runStates(root);
   const waiting = [...after]
     .filter(([path, s]) => s.run.state === "waiting" && before.get(path)?.key !== s.key)
@@ -102,6 +116,14 @@ export async function handoffStep(
     (s) => s.run.runId === resumed && s.run.state === "waiting",
   )?.run;
   const run = waiting.at(-1) ?? still;
+  if (json)
+    return printJson(
+      root,
+      argv,
+      args,
+      { run, still: !!run && run === still, code, out, err, asked },
+      io,
+    );
   if (run && run === still) io.out(`Run ${run.runId} is still waiting for its result file.`);
   if (!run) {
     for (const l of out) io.out(l);
@@ -115,6 +137,107 @@ export async function handoffStep(
   io.out(`  atticus handoff done ${run.runId}${rootArg(argv)}`);
   io.out(`  atticus ${[...args, "--handoff", "--resume", run.runId].map(shell).join(" ")}`);
   return 0;
+}
+
+/** Open questions by id, with what changes when a step asks one again. */
+async function openQuestions(root: string): Promise<Map<string, string>> {
+  const r = await listQuestions(root, { state: "open" });
+  return new Map(
+    r.questions.map((q) => [q.id, `${q.askedBy.at}:${q.alsoAskedBy?.length ?? 0}:${q.rerun}`]),
+  );
+}
+
+/** The parts of a question a tool shows a person to answer it. */
+const questionOut = (q: Question) => ({
+  id: q.id,
+  repo: q.repo,
+  question: q.question,
+  options: q.options,
+  evidence: q.evidence,
+  answer: `atticus questions answer ${q.id}`,
+});
+
+async function printJson(
+  root: string,
+  argv: string[],
+  args: string[],
+  s: {
+    run: Run | undefined;
+    still: boolean;
+    code: number;
+    out: string[];
+    err: string[];
+    asked: Map<string, string>;
+  },
+  io: Output,
+): Promise<number> {
+  const { run } = s;
+  if (run) {
+    const runsRel = runsRelOf(root);
+    const doneArgs = ["handoff", "done", run.runId, ...rootArgv(argv)];
+    const resumeArgs = [...args, "--handoff", "--json", "--resume", run.runId];
+    io.out(
+      JSON.stringify(
+        {
+          state: "handoff",
+          runId: run.runId,
+          root,
+          ...(s.still ? { stillWaiting: true } : {}),
+          promptFile: HandoffRuntime.promptRel(run, runsRel),
+          resultFile: HandoffRuntime.outputRel(run, changesRelOf(root), runsRel),
+          doneCommand: `atticus ${doneArgs.map(shell).join(" ")}`,
+          doneArgs,
+          resumeCommand: `atticus ${resumeArgs.map(shell).join(" ")}`,
+          resumeArgs,
+          messages: s.out,
+        },
+        null,
+        2,
+      ),
+    );
+    return 0;
+  }
+  // A question is the step's when it is new, asked again, or named in what the step printed.
+  const text = [...s.out, ...s.err].join("\n");
+  const open = (await listQuestions(root, { state: "open" })).questions;
+  const questions = open.filter((q) => {
+    const was = s.asked.get(q.id);
+    return (
+      was === undefined ||
+      was !== `${q.askedBy.at}:${q.alsoAskedBy?.length ?? 0}:${q.rerun}` ||
+      text.includes(q.id)
+    );
+  });
+  const state = questions.length
+    ? "question"
+    : s.code === 0
+      ? "done"
+      : s.code === 1
+        ? "stopped"
+        : "failed";
+  io.out(
+    JSON.stringify(
+      {
+        state,
+        exitCode: s.code,
+        root,
+        messages: s.out,
+        errors: s.err,
+        questions: questions.map(questionOut),
+      },
+      null,
+      2,
+    ),
+  );
+  return s.code;
+}
+
+/** The --root argument as argv, when the step was given one. */
+function rootArgv(argv: string[]): string[] {
+  const i = argv.indexOf("--root");
+  if (i >= 0 && argv[i + 1]) return ["--root", argv[i + 1]!];
+  const eq = argv.find((a) => a.startsWith("--root="));
+  return eq ? [eq] : [];
 }
 
 /** " --root <dir>" when the step was given one, so `handoff done` finds the same metarepo. */

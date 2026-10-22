@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A VS Code extension runs the AI steps with Copilot
+
+- `packages/vscode` (ADR 0090): an `@atticus` chat participant and a side view. `@atticus /next` reads `atticus next`, sends each AI step's prompt to the Copilot model the person picked, writes the result file and runs the step's finishing command. Atticus's command line still does every check; the extension only carries prompts and files. It stops at a question for a person and says what it is.
+- `atticus <step> --handoff --json` prints the prompt, the result file and the finishing commands as one JSON object, for the extension.
+- Not built yet: IntelliJ, and a Marketplace listing. The extension is installed from its `.vsix`.
+
 ### Spec flows draw the steps a person draws
 
 - `atticus spec draft` and `atticus spec check` (ADR 0089): a UI flow starts at the person's action (the form, the button; a page's route) and ends with what the screen does after the response. Two new findings say when it doesn't: `ui-start-not-action` and `ui-end-missing`, for action and page triggers only.

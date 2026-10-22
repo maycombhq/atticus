@@ -22,7 +22,10 @@ for (const p of pkgs) {
   } catch {
     continue;
   }
+  // An editor extension imports `vscode` from the editor itself, never from npm.
+  const editorProvided = pkg.engines?.vscode ? ["vscode"] : [];
   const declared = new Set([
+    ...editorProvided,
     pkg.name,
     ...Object.keys(pkg.dependencies ?? {}),
     ...Object.keys(pkg.peerDependencies ?? {}),
