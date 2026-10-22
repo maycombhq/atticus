@@ -15,12 +15,20 @@ import { uiOnboardingRoutes } from "./ui-api-onboarding.js";
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export function startUi(
   root: string,
-  o: { port?: number; user?: string; version?: string; staticDir?: string } = {},
+  o: {
+    port?: number;
+    user?: string;
+    version?: string;
+    staticDir?: string;
+    /** Let a VS Code panel frame the app (ADR 0091). */
+    embed?: "vscode";
+  } = {},
   deps: UiDeps = {},
 ): Promise<RunningServer> {
   return startServer({
     root,
     port: o.port ?? DEFAULT_PORT,
+    ...(o.embed ? { embed: o.embed } : {}),
     staticDir: o.staticDir ?? uiDistDir(),
     ...(o.user ? { user: o.user } : {}),
     ...(o.version ? { version: o.version } : {}),
@@ -68,7 +76,7 @@ function openBrowser(url: string): void {
  */
 export async function uiCommand(
   root: string,
-  o: { port?: number; open?: boolean; version?: string; user?: string },
+  o: { port?: number; open?: boolean; version?: string; user?: string; embed?: "vscode" },
   io: Output,
 ): Promise<number> {
   let srv: RunningServer;
@@ -77,6 +85,7 @@ export async function uiCommand(
       ...(o.port !== undefined ? { port: o.port } : {}),
       ...(o.user ? { user: o.user } : {}),
       ...(o.version ? { version: o.version } : {}),
+      ...(o.embed ? { embed: o.embed } : {}),
     });
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;

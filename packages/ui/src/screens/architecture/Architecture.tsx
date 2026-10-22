@@ -11,6 +11,7 @@ import {
   directionFor,
   keyStep,
   legibility,
+  openAt,
   outlineRows,
   viewKey,
   type Views,
@@ -55,6 +56,8 @@ export function Architecture({ hash }: { hash: string }) {
   const lens: Lens = (LENSES as readonly string[]).includes(lensParam ?? "")
     ? (lensParam as Lens)
     : "architecture";
+  // A link to one node (#/architecture?node=<id>, ADR 0091), e.g. from @atticus /diagram.
+  const nodeParam = queryParam(hash, "node");
   const [views, setViews] = useState<Views>(new Map());
   const [status, setStatus] = useState<Status>({ state: "loading" });
   const [current, setCurrent] = useState("estate");
@@ -77,7 +80,7 @@ export function Architecture({ hash }: { hash: string }) {
     [lens],
   );
 
-  // A new lens starts again from the estate.
+  // A new lens starts again from the estate, or from the node a link names.
   useEffect(() => {
     let live = true;
     setStatus({ state: "loading" });
@@ -87,7 +90,22 @@ export function Architecture({ hash }: { hash: string }) {
     setFocus(undefined);
     setInPlace(new Set());
     load("estate", new Map()).then(
-      () => live && setStatus({ state: "ready" }),
+      async () => {
+        // A node the estate doesn't have leaves the picture on the estate.
+        const v =
+          nodeParam && nodeParam !== "estate"
+            ? await load(nodeParam).catch(() => undefined)
+            : undefined;
+        if (v && live) {
+          const at = openAt(v);
+          for (const id of at.expanded)
+            if (id !== "estate" && id !== v.node.id) await load(id).catch(() => undefined);
+          setExpanded(new Set(at.expanded));
+          setCurrent(at.current);
+          setSelected(at.selected);
+        }
+        if (live) setStatus({ state: "ready" });
+      },
       (e: unknown) =>
         live &&
         setStatus({
@@ -99,7 +117,7 @@ export function Architecture({ hash }: { hash: string }) {
     return () => {
       live = false;
     };
-  }, [load]);
+  }, [load, nodeParam]);
 
   // A rescan or a kept arrangement changes files: load the open views again.
   useLiveEvents((e) => {

@@ -54,6 +54,11 @@ export interface ServerOptions {
   extend?: (r: Router, ctx: ServerContext) => void;
   /** The built app to hand out at / (the UI package's dist folder). */
   staticDir?: string;
+  /**
+   * Let an editor panel frame the app's page (ADR 0091). "vscode": only a VS Code webview may
+   * (frame-ancestors vscode-webview:). The API keeps every header; default: nothing may frame.
+   */
+  embed?: "vscode";
   /** Told about every API call when it ends: method, path (no query), status and time. */
   onRequest?: (r: {
     method: string;
@@ -200,11 +205,12 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
         if (!o.staticDir || (req.method !== "GET" && req.method !== "HEAD"))
           throw new HttpError(404, "Not found", `Nothing is served at ${url.pathname}.`);
         const f = await staticFile(o.staticDir, url.pathname, token);
+        const { "X-Frame-Options": deny, ...rest } = HARDENING;
         res.writeHead(f.status, {
-          ...HARDENING,
+          ...(o.embed ? rest : { ...rest, "X-Frame-Options": deny }),
           "Content-Type": f.type,
           "Cache-Control": f.cache,
-          "Content-Security-Policy": appCsp(port),
+          "Content-Security-Policy": appCsp(port, o.embed),
         });
         res.end(req.method === "HEAD" ? undefined : f.body);
         return;

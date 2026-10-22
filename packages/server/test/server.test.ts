@@ -452,6 +452,37 @@ describe("the app's files", () => {
       await s.close();
     }
   });
+
+  it("lets only a VS Code panel frame the app, and only when started for one (ADR 0091)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "atticus-ui-dist-"));
+    await writeFile(
+      join(dir, "index.html"),
+      '<!doctype html><html><head><meta name="atticus-token" content="" /></head><body></body></html>',
+    );
+    const plain = await startServer({ root, port: 0, staticDir: dir });
+    try {
+      const html = await fetch(plain.url + "/");
+      expect(html.headers.get("x-frame-options")).toBe("DENY");
+      expect(html.headers.get("content-security-policy")).toMatch(/frame-ancestors 'none'/);
+    } finally {
+      await plain.close();
+    }
+    const embedded = await startServer({ root, port: 0, staticDir: dir, embed: "vscode" });
+    try {
+      const html = await fetch(embedded.url + "/");
+      expect(html.status).toBe(200);
+      expect(html.headers.get("x-frame-options")).toBeNull();
+      const csp = html.headers.get("content-security-policy") ?? "";
+      expect(csp).toMatch(/frame-ancestors vscode-webview:(;|$)/);
+      expect(csp).not.toMatch(/frame-ancestors[^;]*(\*|https?:)/);
+      // The API keeps every other header: nothing but the app's own page reads it.
+      const api = await fetch(embedded.url + "/api/health");
+      expect(api.headers.get("x-frame-options")).toBe("DENY");
+      expect(api.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+    } finally {
+      await embedded.close();
+    }
+  });
 });
 
 describe("the index on a fresh metarepo", () => {

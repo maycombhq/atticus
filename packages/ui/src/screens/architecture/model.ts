@@ -216,3 +216,18 @@ export function legibility(
 export function viewKey(lens: string, node: string, mode: "node" | "focus" = "node"): string {
   return [lens, ...(mode === "focus" ? ["focus"] : []), node.replace(/:/g, "-")].join(".");
 }
+
+/**
+ * Where a link to one node opens (#/architecture?node=<id>, ADR 0091): the node itself when it
+ * has parts, else its parent with the node picked; its ancestors open in the outline.
+ */
+export function openAt(v: Api.GraphNodeViewT): {
+  current: string;
+  expanded: string[];
+  selected: string;
+} {
+  const up = v.path.map((n) => n.id);
+  const opens = v.node.childCount > 0 || up.length === 0;
+  const expanded = opens ? [...up, v.node.id] : up;
+  return { current: expanded[expanded.length - 1]!, expanded, selected: v.node.id };
+}

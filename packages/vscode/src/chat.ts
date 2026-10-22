@@ -127,11 +127,22 @@ export function chatHandler(svc: Service): vscode.ChatRequestHandler {
     if (!cmd || cmd === "next") {
       if (!cmd && request.prompt.trim())
         stream.markdown(
-          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /answer or /ask <question>.\n\n",
+          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /answer, /diagram [repo] or /ask <question>.\n\n",
         );
       return next(svc, root, stream, token);
     }
     if (cmd === "answer") return answer(svc, root, stream, token);
+    if (cmd === "diagram") {
+      const t = request.prompt.trim();
+      await vscode.commands.executeCommand("atticus.diagram", t);
+      stream.markdown(
+        t
+          ? `Opened ${inline(t)} on the Architecture canvas, in the Atticus tab. Drag boxes to rearrange them; Keep saves the arrangement.`
+          : "Opened the estate on the Architecture canvas, in the Atticus tab.",
+      );
+      stream.button({ command: "atticus.diagram", arguments: [t], title: "Open it again" });
+      return;
+    }
     if (cmd === "ask") {
       const question = request.prompt.trim();
       if (!question) {

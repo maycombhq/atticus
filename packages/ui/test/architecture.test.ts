@@ -5,6 +5,7 @@ import {
   directionFor,
   keyStep,
   legibility,
+  openAt,
   outlineRows,
   viewKey,
   type Views,
@@ -202,5 +203,35 @@ describe("a view's layout file name", () => {
     expect(viewKey("data", "table:ledger-db.entry", "focus")).toBe(
       "data.focus.table-ledger-db.entry",
     );
+  });
+});
+
+describe("a link to one node (#/architecture?node=<id>, ADR 0091)", () => {
+  const comp = node("component:ledger-api", "component", 3, "repo:forge-ledger");
+  const table = node("table:ledger.entries", "table", 0, "component:ledger-api");
+  const withPath = (v: Api.GraphNodeViewT, path: Api.HierNodeT[]) => ({ ...v, path });
+
+  it("opens a node that has parts, with its ancestors open in the outline", () => {
+    expect(openAt(withPath(view(comp, [table]), [estate, ledger, repo]))).toEqual({
+      current: "component:ledger-api",
+      expanded: ["estate", "system:ledger", "repo:forge-ledger", "component:ledger-api"],
+      selected: "component:ledger-api",
+    });
+  });
+
+  it("opens the parent of a node that has none, with the node picked", () => {
+    expect(openAt(withPath(view(table, []), [estate, ledger, repo, comp]))).toEqual({
+      current: "component:ledger-api",
+      expanded: ["estate", "system:ledger", "repo:forge-ledger", "component:ledger-api"],
+      selected: "table:ledger.entries",
+    });
+  });
+
+  it("opens the estate for the estate itself", () => {
+    expect(openAt(view(estate, [ledger, portal]))).toEqual({
+      current: "estate",
+      expanded: ["estate"],
+      selected: "estate",
+    });
   });
 });

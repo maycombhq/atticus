@@ -82,6 +82,10 @@
             "description": "The open questions, with a button for each answer"
           },
           {
+            "name": "diagram",
+            "description": "Open a repo on the Architecture canvas, in a VS Code tab: /diagram [repo]"
+          },
+          {
             "name": "ask",
             "description": "Ask the catalog a plain question: /ask <question>"
           }
@@ -141,8 +145,18 @@
         "category": "Atticus"
       },
       {
-        "command": "atticus.openApp",
+        "command": "atticus.showApp",
         "title": "Open the app",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.diagram",
+        "title": "Open a repo on the Architecture canvas",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.openApp",
+        "title": "Open the app in the browser",
         "category": "Atticus"
       },
       {

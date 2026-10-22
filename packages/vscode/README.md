@@ -40,13 +40,16 @@ To build the file from the source: `pnpm --filter atticus package` (it writes `p
 | `@atticus /architecture <change>` | The change's architecture stage (`atticus change architecture`)                          |
 | `@atticus /stories <change>`      | The change's stories and tasks (`atticus plan stories`)                                  |
 | `@atticus /answer`                | Each open question with its options as buttons; a click runs `atticus questions answer`  |
+| `@atticus /diagram [repo]`        | The repo on the Architecture canvas, in the Atticus tab; the estate when none is named   |
 | `@atticus /ask <question>`        | A plain question to the catalog (`atticus ask`); no model is used                        |
 
 Without a repo or change, a step command takes the one `atticus next` names for that step.
 
 ## The side view
 
-The Atticus icon in the activity bar opens a view with the next step (click it or its Run button), the open questions (click one to answer: pick an option or write your own words), and **Open the app** (starts `atticus ui` in a terminal and opens it in your browser).
+The Atticus icon in the activity bar opens a view with the next step (click it or its Run button), the open questions (click one to answer: pick an option or write your own words), and **Open the app**: the Atticus app, with its diagrams, in a VS Code tab (ADR 0091). The extension starts `atticus ui --embed vscode` for it, and stops it when the window closes. **Atticus: Open the app in the browser** opens it there instead.
+
+`@atticus /diagram <repo>` (or **Atticus: Open a repo on the Architecture canvas**) opens the tab on that repo's part of the estate. Drag boxes to rearrange them; Keep saves the arrangement in the metarepo. With no repo named it opens the whole estate. Spec flows have no diagram yet.
 
 The same actions are in the Command Palette under **Atticus:**. Every `atticus` command the extension runs, with its exit code, is in the **Atticus** output.
 

@@ -554,6 +554,7 @@ Usage:
   --root <dir>                         The metarepo (default: the current folder)
   --by <handle>                        Who is acting (default: the metarepo's Git user, git config user.email)
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
+          [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
   atticus --version                    Print the version
   atticus --help                       Show this help
 
@@ -660,6 +661,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       out: { type: "string" },
       port: { type: "string" },
       open: { type: "boolean" },
+      embed: { type: "string" },
       host: { type: "string" },
       catalog: { type: "string" },
       "from-catalog": { type: "boolean" },
@@ -1218,7 +1220,11 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       ? benchFetch(b, io)
       : benchRun({ ...b, ...(values.specs === true ? { specs: true } : {}) }, io);
   }
-  if (group === "ui")
+  if (group === "ui") {
+    if (values.embed !== undefined && values.embed !== "vscode") {
+      io.err(`--embed takes vscode (the app in a VS Code panel), not ${values.embed}.`);
+      return 2;
+    }
     return uiCommand(
       root,
       {
@@ -1229,11 +1235,13 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
             ? { port: num(values.port)! }
             : {}),
         open: values.open === true,
+        ...(values.embed === "vscode" ? { embed: "vscode" as const } : {}),
         version: VERSION,
         ...(given ? { user: given } : {}),
       },
       io,
     );
+  }
   if (group === "conformance") {
     if (!command) {
       io.err(

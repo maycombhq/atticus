@@ -9,6 +9,7 @@ import {
   STEP_COMMANDS,
   type StepCommand,
 } from "./atticus";
+import { diagramHash, panelHtml, startApp, type RunningApp } from "./app-panel";
 import { chatHandler } from "./chat";
 import { commandText } from "./cli";
 import { describeEnd } from "./describe";
@@ -259,6 +260,71 @@ export function activate(context: vscode.ExtensionContext) {
     const r = await svc.cli(root)(["ask", question.trim(), "--root", root]);
     svc.log.appendLine(r.stdout.trimEnd());
     svc.log.show(true);
+  });
+
+  // The app in a VS Code tab (ADR 0091): one atticus ui per window, started for the panel.
+  let app: Promise<RunningApp> | undefined;
+  let panel: vscode.WebviewPanel | undefined;
+  context.subscriptions.push({
+    dispose: () =>
+      void app?.then(
+        (a) => a.stop(),
+        () => undefined,
+      ),
+  });
+  const ensureApp = (root: string) => {
+    if (!app) {
+      const started = startApp(svc.cliOptions(root));
+      app = started;
+      started.then(
+        (a) => a.onExit(() => (app === started ? (app = undefined) : undefined)),
+        () => (app === started ? (app = undefined) : undefined),
+      );
+    }
+    return app;
+  };
+  reg("atticus.showApp", async (hash?: string) => {
+    const root = needRoot();
+    if (!root) return;
+    let a: RunningApp;
+    try {
+      a = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "Starting the Atticus app..." },
+        () => ensureApp(root),
+      );
+    } catch (e) {
+      const pick = await vscode.window.showErrorMessage(
+        `The Atticus app didn't start: ${(e as Error).message}`,
+        "Show details",
+      );
+      if (pick) svc.log.show(true);
+      return;
+    }
+    const external = (await vscode.env.asExternalUri(vscode.Uri.parse(a.url))).toString(true);
+    const src = `${external.replace(/\/$/, "")}/${hash ?? ""}`;
+    if (!panel) {
+      panel = vscode.window.createWebviewPanel(
+        "atticus.app",
+        "Atticus",
+        vscode.ViewColumn.Active,
+        // The app runs in the frame; the panel's own page has no script (its CSP allows none).
+        { enableScripts: true, retainContextWhenHidden: true },
+      );
+      panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "atticus.svg");
+      panel.onDidDispose(() => (panel = undefined));
+    }
+    panel.webview.html = panelHtml(src);
+    panel.reveal();
+  });
+  reg("atticus.diagram", async (target?: string) => {
+    const t =
+      target ??
+      (await vscode.window.showInputBox({
+        prompt: "Which repo? Its name, or a node id such as system:payments. Empty: the estate.",
+        ignoreFocusOut: true,
+      }));
+    if (t === undefined) return;
+    await vscode.commands.executeCommand("atticus.showApp", diagramHash(t));
   });
 
   reg("atticus.openApp", async () => {

@@ -23,4 +23,19 @@ describe("atticus ui", () => {
       await srv.close();
     }
   });
+
+  it("--embed vscode lets a VS Code panel frame the app (ADR 0091)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-cmd-"));
+    await cp(join(FORGE, "metarepo"), root, { recursive: true });
+    const srv = await startUi(root, { port: 0, user: "pat", embed: "vscode" });
+    try {
+      const page = await fetch(srv.url + "/");
+      expect(page.headers.get("content-security-policy")).toMatch(
+        /frame-ancestors vscode-webview:/,
+      );
+      expect(page.headers.get("x-frame-options")).toBeNull();
+    } finally {
+      await srv.close();
+    }
+  });
 });

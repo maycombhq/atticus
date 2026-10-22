@@ -110,8 +110,10 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
         });
       case "app":
         return item("Open the app", {
-          iconPath: new vscode.ThemeIcon("link-external"),
-          command: { command: "atticus.openApp", title: "Open the app" },
+          iconPath: new vscode.ThemeIcon("type-hierarchy"),
+          tooltip:
+            "The app with its diagrams, in a VS Code tab. Atticus: Open the app in the browser opens it there instead.",
+          command: { command: "atticus.showApp", title: "Open the app" },
         });
     }
   }

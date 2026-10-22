@@ -81,7 +81,7 @@ export function resolveCommand(o: CliOptions): Command {
 }
 
 /** Characters cmd.exe reads as its own; an argument with one can't go through a shell safely. */
-const SHELL_UNSAFE = /["%^&|<>!\r\n]/;
+export const SHELL_UNSAFE = /["%^&|<>!\r\n]/;
 
 /** An argument as a person types it in a terminal: bare when plain, else in double quotes. */
 export const quoteArg = (a: string) =>

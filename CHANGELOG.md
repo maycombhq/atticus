@@ -8,7 +8,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - `packages/vscode` (ADR 0090): an `@atticus` chat participant and a side view. `@atticus /next` reads `atticus next`, sends each AI step's prompt to the Copilot model the person picked, writes the result file and runs the step's finishing command. Atticus's command line still does every check; the extension only carries prompts and files. It stops at a question for a person and says what it is.
 - `atticus <step> --handoff --json` prints the prompt, the result file and the finishing commands as one JSON object, for the extension.
-- Not built yet: IntelliJ, and a Marketplace listing. The extension is installed from its `.vsix`.
+- The app in a VS Code tab (ADR 0091): Open the app shows the app, its diagrams included, beside the code; `@atticus /diagram <repo>` opens the Architecture canvas on that repo. `atticus ui --embed vscode` lets only a VS Code panel frame the app, and the API keeps every header. `#/architecture?node=<id>` opens the canvas on one node.
+- Not built yet: IntelliJ, a Marketplace listing, and a diagram of a spec's flows. The extension is installed from its `.vsix`.
 
 ### Spec flows draw the steps a person draws
 

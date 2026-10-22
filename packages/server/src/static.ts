@@ -28,8 +28,11 @@ export interface StaticFile {
   cache: string;
 }
 
-/** Content-Security-Policy for the app: everything from this server, nothing from elsewhere. */
-export function appCsp(port: number): string {
+/**
+ * Content-Security-Policy for the app: everything from this server, nothing from elsewhere.
+ * Started for a VS Code panel (ADR 0091), a VS Code webview may frame it, and nothing else may.
+ */
+export function appCsp(port: number, embed?: "vscode"): string {
   return [
     "default-src 'self'",
     `connect-src 'self' ws://127.0.0.1:${port} ws://localhost:${port}`,
@@ -39,7 +42,7 @@ export function appCsp(port: number): string {
     "script-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",
-    "frame-ancestors 'none'",
+    embed === "vscode" ? "frame-ancestors vscode-webview:" : "frame-ancestors 'none'",
     "form-action 'self'",
   ].join("; ");
 }
