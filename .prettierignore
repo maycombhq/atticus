@@ -1,4 +1,5 @@
 dist/
+packages/vscode/media/app/
 coverage/
 pnpm-lock.yaml
 packages/core/schema/

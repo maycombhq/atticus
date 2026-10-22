@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The diagrams inside VS Code, from the extension's own files
+
+- The Atticus tab loads the app from the extension's own files (ADR 0097), with a strict policy. Its calls go through the extension to the local API, so nothing on 127.0.0.1 is framed. It works where framing a local page is blocked, and over SSH or in a container.
+- What it shows: the Architecture canvas, flows, target flows and every other screen. A file change refreshes the open view. Going to another view keeps the person's arrangement.
+- The layout worker starts from a same-origin copy of its script.
+- `atticus.appIn: frame` keeps the framed page.
+
 ### Every command in VS Code
 
 - `atticus commands [--json]` (ADR 0096): every command as data. It records each command's arguments and what they refer to, its options, its area, and how it runs (with an assistant, as a shared write that needs approval, as a server, or locally). It is built from the help text, and a test fails if a command has no area.

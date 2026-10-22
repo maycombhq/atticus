@@ -7,6 +7,7 @@ import {
 import type { ElkNode } from "elkjs/lib/elk-api.js";
 import { absolute, fromElk, toElk } from "./elk-graph.js";
 import { applyPinned } from "./pinned.js";
+import { usableWorkerUrl } from "./worker-url.js";
 import type {
   LayoutEdge,
   LayoutEngine,
@@ -46,7 +47,10 @@ export function workerEngine(): Promise<LayoutEngine> {
   shared ??= Promise.all([
     import("elkjs/lib/elk-api.js"),
     import("elkjs/lib/elk-worker.min.js?url"),
-  ]).then(([api, url]) => elkEngine(new api.default({ workerUrl: url.default })));
+  ]).then(async ([api, url]) =>
+    // In a VS Code panel the worker script is on another origin: use a same-origin copy.
+    elkEngine(new api.default({ workerUrl: await usableWorkerUrl(url.default) })),
+  );
   return shared;
 }
 

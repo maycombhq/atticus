@@ -38,7 +38,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=60000 --hookTimeout=60000",
-    "package": "tsc -p tsconfig.build.json && vsce package --no-dependencies"
+    "package": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce package --no-dependencies"
   },
   "contributes": {
     "chatParticipants": [
@@ -501,6 +501,15 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "With `atticus.codeLens` on, also show which catalog records (endpoints, tables, interfaces…) were read from a line."
+        },
+        "atticus.appIn": {
+          "type": "string",
+          "enum": [
+            "panel",
+            "frame"
+          ],
+          "default": "panel",
+          "markdownDescription": "How the Atticus tab shows the app. `panel`: from the extension's own files, its calls answered through the local API (works where framing a local page is blocked, and over SSH or in a container). `frame`: the page `atticus ui` serves on 127.0.0.1, framed."
         }
       }
     }

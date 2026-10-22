@@ -1,4 +1,7 @@
+import { randomBytes } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { request } from "node:http";
+import { join } from "node:path";
 import * as vscode from "vscode";
 import {
   actionFor,
@@ -9,6 +12,7 @@ import {
   STEP_COMMANDS,
   type StepCommand,
 } from "./atticus";
+import { answerApp, bundledHtml } from "./app-bundle";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { chatHandler } from "./chat";
 import { CommandUi } from "./command-ui";
@@ -483,6 +487,29 @@ ${view.next.why}`
 
   // The app in a VS Code tab (ADR 0091): the one atticus ui the service runs for this window.
   let panel: vscode.WebviewPanel | undefined;
+  // The app in a tab. ADR 0097: from the extension's own files (media/app), its calls answered
+  // through the local API, so nothing on 127.0.0.1 is framed; ADR 0091's framed page when the
+  // files aren't there or the setting atticus.appIn says "frame".
+  let panelMode: "bundled" | "frame" | undefined;
+  const appDir = vscode.Uri.joinPath(context.extensionUri, "media", "app");
+  const bundled = () =>
+    vscode.workspace.getConfiguration("atticus").get<string>("appIn", "panel") !== "frame" &&
+    existsSync(join(appDir.fsPath, "index.html"));
+  /** Tell an open bundled app that files changed, so its views read again. */
+  const toApp = (event: { type: string; path?: string }) => {
+    if (panel && panelMode === "bundled") void panel.webview.postMessage({ type: "event", event });
+  };
+  context.subscriptions.push(
+    files.onDidChange((u) =>
+      toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u) }),
+    ),
+    files.onDidCreate((u) =>
+      toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u) }),
+    ),
+    files.onDidDelete((u) =>
+      toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u) }),
+    ),
+  );
   reg("atticus.showApp", async (hash?: string, o?: { beside?: boolean }) => {
     const root = needRoot();
     if (!root) return;
@@ -500,22 +527,55 @@ ${view.next.why}`
       if (pick) svc.log.show(true);
       return;
     }
-    const external = (await vscode.env.asExternalUri(vscode.Uri.parse(a.url))).toString(true);
-    const src = `${external.replace(/\/$/, "")}/${hash ?? ""}`;
     // Beside the code when asked from it (a CodeLens, a step), so both are read together.
     const column = o?.beside ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active;
+    const mode = bundled() ? "bundled" : "frame";
+    if (panel && panelMode !== mode) panel.dispose();
+    if (panel && mode === "bundled") {
+      // Already open: go to the view, keeping what the person arranged.
+      void panel.webview.postMessage({ type: "navigate", hash: hash || "#/dashboard" });
+      panel.reveal(undefined, !!o?.beside);
+      return;
+    }
     if (!panel) {
       panel = vscode.window.createWebviewPanel(
         "atticus.app",
         "Atticus",
         { viewColumn: column, preserveFocus: !!o?.beside },
-        // The app runs in the frame; the panel's own page has no script (its CSP allows none).
-        { enableScripts: true, retainContextWhenHidden: true },
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true,
+          ...(mode === "bundled" ? { localResourceRoots: [appDir] } : {}),
+        },
       );
+      panelMode = mode;
       panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "atticus.svg");
-      panel.onDidDispose(() => (panel = undefined));
+      panel.onDidDispose(() => {
+        panel = undefined;
+        panelMode = undefined;
+      });
+      if (mode === "bundled") {
+        const web = panel.webview;
+        web.onDidReceiveMessage(async (m: unknown) => {
+          const api = await svc.api(root);
+          const reply = await answerApp(m, (method, path, body) => api.request(method, path, body));
+          if (reply) void web.postMessage(reply);
+        });
+      }
     }
-    panel.webview.html = panelHtml(src);
+    if (mode === "bundled") {
+      const web = panel.webview;
+      const index = readFileSync(join(appDir.fsPath, "index.html"), "utf8");
+      web.html = bundledHtml(index, {
+        base: `${web.asWebviewUri(appDir).toString()}/`,
+        cspSource: web.cspSource,
+        nonce: randomBytes(16).toString("base64url"),
+        hash: hash || "#/dashboard",
+      });
+    } else {
+      const external = (await vscode.env.asExternalUri(vscode.Uri.parse(a.url))).toString(true);
+      panel.webview.html = panelHtml(`${external.replace(/\/$/, "")}/${hash ?? ""}`);
+    }
     panel.reveal(undefined, !!o?.beside);
   });
   reg("atticus.diagram", async (target?: string) => {

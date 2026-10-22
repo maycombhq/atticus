@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { hostBridge } from "./bridge.js";
 
 /**
  * The app's side of the local API (ADR 0015). The server puts the session token in the page's
- * <meta name="atticus-token">; every call sends it back. Errors are RFC 9457 problems.
+ * <meta name="atticus-token">; every call sends it back. Errors are RFC 9457 problems. In a VS Code
+ * panel (ADR 0097) the calls go to the extension instead, which holds the token.
  */
 
 export interface Problem {
@@ -30,6 +32,23 @@ export async function api<T>(
   path: string,
   o: { method?: string; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
+  const bridge = hostBridge();
+  if (bridge) {
+    const r = await bridge.call(path, {
+      method: o.method ?? "GET",
+      ...(o.body !== undefined ? { body: o.body } : {}),
+    });
+    if (o.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    if (r.status < 200 || r.status >= 300) {
+      const p = (r.body as Problem | undefined) ?? {
+        type: "about:blank",
+        title: "Request failed",
+        status: r.status,
+      };
+      throw new ApiError(p);
+    }
+    return r.body as T;
+  }
   const r = await fetch(path, {
     method: o.method ?? "GET",
     headers: {
@@ -88,6 +107,9 @@ export function useLiveEvents(onEvent: (e: LiveEvent) => void): void {
   const handler = useRef(onEvent);
   handler.current = onEvent;
   useEffect(() => {
+    // In a VS Code panel the extension sends the events (ADR 0097).
+    const bridge = hostBridge();
+    if (bridge) return bridge.onEvent((e) => handler.current(e));
     let ws: WebSocket | undefined;
     let stop = false;
     let wait = 500;

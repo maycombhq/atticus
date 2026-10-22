@@ -19,7 +19,7 @@ The extension isn't on the Marketplace. Install it from the `.vsix` file:
 
 Or in a terminal: `code --install-extension atticus-<version>.vsix`.
 
-To build the file from the source: `pnpm --filter atticus package` (it writes `packages/vscode/atticus-<version>.vsix`).
+To build the file from the source: build the app (`pnpm --filter @maycombhq/ui build`), then `pnpm --filter atticus package`. It copies the app into `media/app` and writes `packages/vscode/atticus-<version>.vsix`.
 
 ## Try it
 
@@ -77,7 +77,7 @@ The sections read the app's local API on 127.0.0.1, which the extension starts f
 
 **The status bar** shows the open questions and the next step; click it to open the sidebar.
 
-**Open the app** shows the Atticus app, with its diagrams, in a VS Code tab (ADR 0091). The extension starts `atticus ui --embed vscode` for it and for the sidebar, and stops it when the window closes. **Atticus: Open the app in the browser** opens it there instead.
+**Open the app** shows the Atticus app, with its diagrams, in a VS Code tab. The app comes from the extension's own files (ADR 0097): it isn't a page on 127.0.0.1 framed in the tab, so it works where framing a local page is blocked, and over SSH or in a container. Its calls go through the extension to the local API, which the extension starts for the tab and the sidebar (`atticus ui`) and stops when the window closes. The setting `atticus.appIn` set to `frame` uses the framed page instead (ADR 0091). **Atticus: Open the app in the browser** opens it in a browser.
 
 `@atticus /diagram <repo>` (or **Atticus: Open a repo on the Architecture canvas**) opens the tab on that repo's part of the estate. Drag boxes to rearrange them; Keep saves the arrangement in the metarepo. With no repo named it opens the whole estate. `@atticus /diagram <repo> <flow id>` opens one of the repo's flows as a sequence of steps (ADR 0092), and `@atticus /diagram <repo> <words>` lists the flows that match.
 
@@ -91,6 +91,7 @@ The same actions are in the Command Palette under **Atticus:**. Every `atticus` 
 | `atticus.model`            | empty     | A Copilot model family, for example `gpt-4o`. Empty: the model picked in Copilot Chat, else the first Copilot model.                                                                                                                  |
 | `atticus.codeLens`         | on        | Above each line of code a spec flow cites, show which flow and step cite it.                                                                                                                                                          |
 | `atticus.codeLens.records` | on        | With `atticus.codeLens` on, also show which catalog records were read from a line.                                                                                                                                                    |
+| `atticus.appIn`            | `panel`   | `panel`: the app from the extension's own files. `frame`: the page `atticus ui` serves, framed.                                                                                                                                       |
 
 ## What is sent where
 

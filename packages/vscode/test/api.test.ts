@@ -62,6 +62,18 @@ describe("the app's API, as the sidebar reads it (ADR 0093)", () => {
     expect((e as Error).message).toBe("Not found: forge-ledger has no spec.");
   });
 
+  it("hands back any status and body as they came, for the app in a panel (ADR 0097)", async () => {
+    const api = new AtticusApi(url, "tok-1");
+    expect(await api.request("GET", "/api/specs/forge-ledger")).toEqual({
+      status: 404,
+      body: { title: "Not found", status: 404, detail: "forge-ledger has no spec." },
+    });
+    expect(await api.request("POST", "/api/x", { a: 1 })).toEqual({
+      status: 200,
+      body: { got: { a: 1 }, type: "application/json" },
+    });
+  });
+
   it("says so when nothing answers", async () => {
     const api = new AtticusApi("http://127.0.0.1:1", "tok-1");
     await expect(api.get("/api/specs")).rejects.toThrow(/didn't answer/);
