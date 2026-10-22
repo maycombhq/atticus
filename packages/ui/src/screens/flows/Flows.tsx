@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Api } from "@maycombhq/core";
 import { useApi, useLiveEvents } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
@@ -45,7 +45,12 @@ function Confirmed({ by }: { by: string | undefined }) {
   );
 }
 
-function Step({ r, lanes }: { r: Row; lanes: Lane[] }) {
+function Step({ r, lanes, now }: { r: Row; lanes: Lane[]; now: boolean }) {
+  // The step a link points at is scrolled to and marked.
+  const ref = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (now) ref.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [now]);
   const col = (id: string) => lanes.findIndex((l) => l.id === id) + 1;
   const from = col(r.from);
   const to = col(r.to);
@@ -56,7 +61,11 @@ function Step({ r, lanes }: { r: Row; lanes: Lane[] }) {
   const span = hi - lo + 1;
   const toLane = lanes[to - 1]!;
   return (
-    <li className="seq-row">
+    <li
+      ref={ref}
+      className={`seq-row${now ? " seq-now" : ""}`}
+      {...(now ? { "aria-current": "step" as const } : {})}
+    >
       {lanes.map((l, i) => (
         <span key={l.id} className="seq-life" style={{ gridColumn: i + 1 }} aria-hidden="true" />
       ))}
@@ -105,7 +114,16 @@ function Step({ r, lanes }: { r: Row; lanes: Lane[] }) {
   );
 }
 
-export function SequenceDiagram({ seq, name }: { seq: Sequence; name?: string }) {
+export function SequenceDiagram({
+  seq,
+  name,
+  current,
+}: {
+  seq: Sequence;
+  name?: string;
+  /** The step a link points at (?step=), 0 for the start. */
+  current?: number;
+}) {
   const cols = { "--lanes": seq.lanes.length } as CSSProperties;
   return (
     <div className="seq-wrap">
@@ -120,7 +138,7 @@ export function SequenceDiagram({ seq, name }: { seq: Sequence; name?: string })
         </div>
         <ol className="seq-steps" aria-label={C.diagram(name ?? "this flow")}>
           {seq.rows.map((r) => (
-            <Step key={r.n} r={r} lanes={seq.lanes} />
+            <Step key={r.n} r={r} lanes={seq.lanes} now={r.n === current} />
           ))}
         </ol>
       </div>
@@ -188,7 +206,7 @@ export function FlowList(p: { spec: Api.SpecViewT; filter: string; current: stri
   );
 }
 
-function FlowDetail({ repo, flow }: { repo: string; flow: string }) {
+function FlowDetail({ repo, flow, step }: { repo: string; flow: string; step?: number }) {
   const v = useApi<Api.FlowViewT>(
     `/api/specs/${encodeURIComponent(repo)}/flows/${encodeURIComponent(flow)}`,
   );
@@ -225,7 +243,11 @@ function FlowDetail({ repo, flow }: { repo: string; flow: string }) {
                 {g}
               </p>
             ))}
-            <SequenceDiagram seq={seq} name={d.flow.name} />
+            <SequenceDiagram
+              seq={seq}
+              name={d.flow.name}
+              {...(step !== undefined ? { current: step } : {})}
+            />
           </div>
         );
       }}
@@ -233,7 +255,12 @@ function FlowDetail({ repo, flow }: { repo: string; flow: string }) {
   );
 }
 
-function RepoFlows(p: { repo: string; flow: string | undefined; q: string | undefined }) {
+function RepoFlows(p: {
+  repo: string;
+  flow: string | undefined;
+  q: string | undefined;
+  step: number | undefined;
+}) {
   const { repo, flow } = p;
   const spec = useApi<Api.SpecViewT>(`/api/specs/${encodeURIComponent(repo)}`);
   // ?q= (from @atticus /diagram <repo> <words>) starts the search.
@@ -254,7 +281,11 @@ function RepoFlows(p: { repo: string; flow: string | undefined; q: string | unde
         <View of={spec}>{(d) => <FlowList spec={d} filter={filter} current={flow} />}</View>
       </Panel>
       <Panel>
-        {flow ? <FlowDetail repo={repo} flow={flow} /> : <div className="state">{C.pick}</div>}
+        {flow ? (
+          <FlowDetail repo={repo} flow={flow} {...(p.step !== undefined ? { step: p.step } : {})} />
+        ) : (
+          <div className="state">{C.pick}</div>
+        )}
       </Panel>
     </div>
   );
@@ -265,6 +296,8 @@ export function Flows({ hash }: { hash: string }) {
   const wanted = queryParam(hash, "repo");
   const flow = queryParam(hash, "flow");
   const q = queryParam(hash, "q");
+  const stepParam = Number(queryParam(hash, "step"));
+  const step = Number.isInteger(stepParam) && stepParam >= 0 ? stepParam : undefined;
   return (
     <div className="stack">
       <Panel title={C.title}>
@@ -298,6 +331,7 @@ export function Flows({ hash }: { hash: string }) {
           repo={wanted ?? list.data.repos[0]!.repo}
           flow={flow}
           q={q}
+          step={step}
           key={`${wanted}?${q}`}
         />
       )}

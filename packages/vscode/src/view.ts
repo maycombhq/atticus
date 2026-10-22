@@ -29,6 +29,8 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
 
   /** The next step last read, for Run. */
   next: NextStep | undefined;
+  /** How many questions were open when last read, for the status bar. */
+  openQuestions: number | undefined;
 
   refresh(): Promise<void> {
     this.nodes = [{ kind: "loading" }];
@@ -53,6 +55,7 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
     else if (n.value.next) nodes.push({ kind: "next", step: n.value.next });
     else nodes.push({ kind: "no-next" });
     this.next = n.ok ? n.value.next : undefined;
+    this.openQuestions = q.ok ? q.value.length : undefined;
     if (!q.ok) nodes.push({ kind: "error", message: `Couldn't read the questions: ${q.message}` });
     else nodes.push({ kind: "questions", questions: q.value });
     nodes.push({ kind: "app" });

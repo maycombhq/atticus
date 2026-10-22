@@ -169,6 +169,23 @@
         "command": "atticus.showLog",
         "title": "Show the commands run",
         "category": "Atticus"
+      },
+      {
+        "command": "atticus.openItem",
+        "title": "Open",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.showStep",
+        "title": "Show in the diagram",
+        "category": "Atticus",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "atticus.showFlow",
+        "title": "Open the flow's diagram",
+        "category": "Atticus",
+        "icon": "$(type-hierarchy)"
       }
     ],
     "viewsContainers": {
@@ -184,7 +201,20 @@
       "atticus": [
         {
           "id": "atticus.view",
-          "name": "Atticus"
+          "name": "Next"
+        },
+        {
+          "id": "atticus.repos",
+          "name": "Repos"
+        },
+        {
+          "id": "atticus.changes",
+          "name": "Changes"
+        },
+        {
+          "id": "atticus.catalog",
+          "name": "Catalog",
+          "visibility": "collapsed"
         }
       ]
     },
@@ -192,7 +222,7 @@
       "view/title": [
         {
           "command": "atticus.refresh",
-          "when": "view == atticus.view",
+          "when": "view =~ /^atticus.(view|repos|changes|catalog)$/",
           "group": "navigation"
         }
       ],
@@ -201,6 +231,30 @@
           "command": "atticus.runNext",
           "when": "view == atticus.view && viewItem == atticus.next",
           "group": "inline"
+        },
+        {
+          "command": "atticus.showStep",
+          "when": "view == atticus.repos && viewItem == atticus.step",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.showFlow",
+          "when": "view == atticus.repos && viewItem == atticus.flow",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "atticus.openItem",
+          "when": "false"
+        },
+        {
+          "command": "atticus.showStep",
+          "when": "false"
+        },
+        {
+          "command": "atticus.showFlow",
+          "when": "false"
         }
       ]
     },
@@ -216,6 +270,11 @@
           "type": "string",
           "default": "",
           "markdownDescription": "The Copilot model family to use (for example `gpt-4o`). Empty: the model picked in Copilot Chat, or else the first Copilot model available."
+        },
+        "atticus.codeLens": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show, above each line of code a spec flow cites, which flow and step cite it. Click one to open the flow."
         }
       }
     }

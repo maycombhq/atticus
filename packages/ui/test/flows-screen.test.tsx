@@ -101,6 +101,13 @@ describe("the flow's sequence diagram (ADR 0092)", () => {
     expect(out).toContain(esc(C.opens("A client creates a customer", "forge-customers")));
   });
 
+  it("marks the step a link points at (&step=, from the code or the sidebar)", () => {
+    const marked = renderToStaticMarkup(<SequenceDiagram seq={sequence(view)} current={1} />);
+    expect(marked.match(/aria-current="step"/g)).toHaveLength(1);
+    expect(marked).toContain("seq-row seq-now");
+    expect(out).not.toContain('aria-current="step"');
+  });
+
   it("lists the error paths with their citations", () => {
     expect(out).toContain(esc(C.errorsTitle));
     expect(out).toContain("the email is taken");

@@ -43,6 +43,11 @@ export function appUrlFrom(stdout: string): string | undefined {
   return /Atticus is running at (http:\/\/127\.0\.0\.1:\d+)/.exec(stdout)?.[1];
 }
 
+/** The session token `atticus ui` prints, for the sidebar's calls to the API (ADR 0093). */
+export function appTokenFrom(stdout: string): string | undefined {
+  return /the session token is (\S+)/.exec(stdout)?.[1];
+}
+
 const attr = (s: string) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
 /** The panel's page: the app in a frame, from 127.0.0.1 only. The page runs no script. */
@@ -64,6 +69,8 @@ export function panelHtml(src: string): string {
 export interface RunningApp {
   /** http://127.0.0.1:<port>, no trailing slash. */
   url: string;
+  /** The session token, for the API. */
+  token: string;
   stop(): void;
   onExit(f: (code: number | null) => void): void;
 }
@@ -102,13 +109,18 @@ export function startApp(o: CliOptions): Promise<RunningApp> {
       for (const l of d.split("\n").filter((x) => x.trim())) log(l.trimEnd());
       if (url) return;
       out += d;
-      url = appUrlFrom(out);
-      if (url)
+      const at = appUrlFrom(out);
+      const token = appTokenFrom(out);
+      // Both lines are printed one after the other; wait for the token too.
+      if (at && token) {
+        url = at;
         resolve({
           url,
+          token,
           stop: () => child.kill(),
           onExit: (f) => exits.push(f),
         });
+      }
     });
     child.stderr?.setEncoding("utf8").on("data", (d: string) => {
       err += d;

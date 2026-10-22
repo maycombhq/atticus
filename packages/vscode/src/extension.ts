@@ -9,8 +9,11 @@ import {
   STEP_COMMANDS,
   type StepCommand,
 } from "./atticus";
-import { diagramHash, panelHtml, startApp, type RunningApp } from "./app-panel";
+import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { chatHandler } from "./chat";
+import { FlowLenses } from "./codelens";
+import { SectionTree, type Section } from "./sidebar";
+import { stepOf, flowHash, type Item, type Open } from "./sidebar-data";
 import { commandText } from "./cli";
 import { describeEnd } from "./describe";
 import type { StepEnd } from "./runner";
@@ -52,17 +55,70 @@ export function activate(context: vscode.ExtensionContext) {
     view,
     vscode.window.registerTreeDataProvider("atticus.view", view),
   );
-  context.subscriptions.push(svc.onChanged(() => void view.refresh()));
+  // The sections that read the app's API (ADR 0093): Repos, Changes and Catalog.
+  const sections = (["repos", "changes", "catalog"] as Section[]).map((name) => {
+    const tree = new SectionTree(svc, name);
+    context.subscriptions.push(
+      tree,
+      vscode.window.registerTreeDataProvider(`atticus.${name}`, tree),
+    );
+    return tree;
+  });
+  const lenses = new FlowLenses(svc);
+  context.subscriptions.push(
+    lenses,
+    vscode.languages.registerCodeLensProvider(
+      { scheme: "file" },
+      {
+        onDidChangeCodeLenses: lenses.onDidChangeCodeLenses,
+        provideCodeLenses: (doc) =>
+          vscode.workspace.getConfiguration("atticus").get<boolean>("codeLens", true)
+            ? lenses.provideCodeLenses(doc)
+            : [],
+      },
+    ),
+  );
+  const refreshAll = () => {
+    void view.refresh().then(updateStatus);
+    for (const t of sections) t.refresh();
+    lenses.refresh();
+  };
+
+  // The open questions and the next step at a glance.
+  const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
+  status.command = "workbench.view.extension.atticus";
+  context.subscriptions.push(status);
+  const updateStatus = () => {
+    if (!svc.root) return status.hide();
+    const q = view.openQuestions;
+    const parts = [q === undefined ? "" : `${q} question${q === 1 ? "" : "s"}`];
+    if (view.next)
+      parts.push(view.next.person ? "next: a person's step" : `next: ${view.next.step}`);
+    status.text = `$(shield) Atticus${parts.some(Boolean) ? `: ${parts.filter(Boolean).join(" · ")}` : ""}`;
+    status.tooltip = view.next
+      ? `Next: ${view.next.command}
+${view.next.why}`
+      : "Open the Atticus sidebar";
+    status.show();
+  };
+
+  context.subscriptions.push(svc.onChanged(refreshAll));
+  // Specs, changes, the catalog and questions are files: follow them when they change.
+  const files = vscode.workspace.createFileSystemWatcher(
+    "**/{specs,catalog,openspec,questions}/**/*.{yaml,md}",
+  );
+  let pending: ReturnType<typeof setTimeout> | undefined;
+  const soon = () => {
+    clearTimeout(pending);
+    pending = setTimeout(refreshAll, 1500);
+  };
+  for (const ev of [files.onDidCreate, files.onDidChange, files.onDidDelete])
+    context.subscriptions.push(ev(soon));
+  context.subscriptions.push(files, { dispose: () => clearTimeout(pending) });
 
   const participant = vscode.chat.createChatParticipant("atticus.chat", chatHandler(svc));
   participant.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "atticus.svg");
   context.subscriptions.push(participant);
-
-  // The view follows the questions people answer in the app or the terminal.
-  const watcher = vscode.workspace.createFileSystemWatcher("**/questions/*.yaml");
-  for (const ev of [watcher.onDidCreate, watcher.onDidChange, watcher.onDidDelete])
-    context.subscriptions.push(ev(() => void view.refresh()));
-  context.subscriptions.push(watcher);
 
   const needRoot = (): string | undefined => {
     const root = svc.root;
@@ -126,7 +182,34 @@ export function activate(context: vscode.ExtensionContext) {
     return t;
   };
 
-  reg("atticus.refresh", () => view.refresh());
+  reg("atticus.refresh", refreshAll);
+  reg("atticus.openItem", async (o: Open) => {
+    if (o.kind === "app") return vscode.commands.executeCommand("atticus.showApp", o.hash);
+    if (o.kind === "missing") return void vscode.window.showWarningMessage(o.message);
+    try {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(o.path));
+      const line = Math.max(0, Math.min((o.line ?? 1) - 1, doc.lineCount - 1));
+      const range = new vscode.Range(line, 0, line, 0);
+      await vscode.window.showTextDocument(doc, {
+        preview: true,
+        selection: range,
+        viewColumn: vscode.ViewColumn.One,
+      });
+    } catch {
+      void vscode.window.showWarningMessage(`${o.path} isn't there. Scan or sync again.`);
+    }
+  });
+  reg("atticus.showStep", (item: Item) => {
+    const s = stepOf(item.id);
+    if (s)
+      void vscode.commands.executeCommand("atticus.showApp", flowHash(s.repo, s.flow, s.n), {
+        beside: true,
+      });
+  });
+  reg("atticus.showFlow", (item: Item) => {
+    if (item.open?.kind === "app")
+      void vscode.commands.executeCommand("atticus.showApp", item.open.hash);
+  });
   reg("atticus.showLog", () => svc.log.show());
   reg("atticus.next", async () => {
     const root = needRoot();
@@ -262,35 +345,16 @@ export function activate(context: vscode.ExtensionContext) {
     svc.log.show(true);
   });
 
-  // The app in a VS Code tab (ADR 0091): one atticus ui per window, started for the panel.
-  let app: Promise<RunningApp> | undefined;
+  // The app in a VS Code tab (ADR 0091): the one atticus ui the service runs for this window.
   let panel: vscode.WebviewPanel | undefined;
-  context.subscriptions.push({
-    dispose: () =>
-      void app?.then(
-        (a) => a.stop(),
-        () => undefined,
-      ),
-  });
-  const ensureApp = (root: string) => {
-    if (!app) {
-      const started = startApp(svc.cliOptions(root));
-      app = started;
-      started.then(
-        (a) => a.onExit(() => (app === started ? (app = undefined) : undefined)),
-        () => (app === started ? (app = undefined) : undefined),
-      );
-    }
-    return app;
-  };
-  reg("atticus.showApp", async (hash?: string) => {
+  reg("atticus.showApp", async (hash?: string, o?: { beside?: boolean }) => {
     const root = needRoot();
     if (!root) return;
     let a: RunningApp;
     try {
       a = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Starting the Atticus app..." },
-        () => ensureApp(root),
+        () => svc.runningApp(root),
       );
     } catch (e) {
       const pick = await vscode.window.showErrorMessage(
@@ -302,11 +366,13 @@ export function activate(context: vscode.ExtensionContext) {
     }
     const external = (await vscode.env.asExternalUri(vscode.Uri.parse(a.url))).toString(true);
     const src = `${external.replace(/\/$/, "")}/${hash ?? ""}`;
+    // Beside the code when asked from it (a CodeLens, a step), so both are read together.
+    const column = o?.beside ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active;
     if (!panel) {
       panel = vscode.window.createWebviewPanel(
         "atticus.app",
         "Atticus",
-        vscode.ViewColumn.Active,
+        { viewColumn: column, preserveFocus: !!o?.beside },
         // The app runs in the frame; the panel's own page has no script (its CSP allows none).
         { enableScripts: true, retainContextWhenHidden: true },
       );
@@ -314,7 +380,7 @@ export function activate(context: vscode.ExtensionContext) {
       panel.onDidDispose(() => (panel = undefined));
     }
     panel.webview.html = panelHtml(src);
-    panel.reveal();
+    panel.reveal(undefined, !!o?.beside);
   });
   reg("atticus.diagram", async (target?: string) => {
     const t =
@@ -355,7 +421,7 @@ export function activate(context: vscode.ExtensionContext) {
     );
   });
 
-  void view.refresh();
+  void view.refresh().then(updateStatus);
 }
 
 export function deactivate() {

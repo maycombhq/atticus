@@ -4,6 +4,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The VS Code extension shows Atticus's data beside the code
+
+- A sidebar with Next, Repos, Changes and Catalog (ADR 0093):
+  - **Repos:** each repo's flows, down to every step. A step opens the code at the line it cites.
+  - **Changes:** each change's files and findings; a click opens the file.
+  - **Catalog:** each kind's records; a click opens the record's YAML or the code it was read from.
+- CodeLens in the code: above each line a flow cites, which flow and step cite it and whether a check confirmed it; a click opens the flow beside the code with the step marked (`atticus.codeLens` turns them off).
+- A status bar item with the open questions and the next step.
+- The Flows screen marks and scrolls to `&step=N`.
+
 ### Flows drawn as sequence diagrams
 
 - The Flows screen (ADR 0092, under More → Know): a repo's spec flows, and the picked one drawn as a sequence of steps across lanes. The lanes are who starts it, the gateway, the component, and each component, table and topic it reaches. Each step shows its data, its file and line, and who confirmed it. A call another repo's flow answers links to that flow, and the error paths are listed with their citations.

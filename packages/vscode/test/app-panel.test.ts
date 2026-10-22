@@ -67,12 +67,14 @@ describe("starting the app for the panel", { timeout: 60_000 }, () => {
   it("starts atticus ui on a free port for a VS Code panel, gives its address, and stops it", async () => {
     const bin = await fakeAtticus(
       `console.log("Atticus is running at http://127.0.0.1:4999 (Ctrl+C stops it).");
+       console.log("For assistants and scripts, the session token is tok-9");
        console.log("args " + JSON.stringify(process.argv.slice(2)));
        setInterval(() => {}, 1000);`,
     );
     const lines: string[] = [];
     const app = await startApp({ atticusPath: bin, cwd: tmpdir(), log: (l) => lines.push(l) });
     expect(app.url).toBe("http://127.0.0.1:4999");
+    expect(app.token).toBe("tok-9");
     expect(lines[0]).toBe(
       `> ${commandText(["ui", "--port", "0", "--embed", "vscode", "--root", tmpdir()])}`,
     );

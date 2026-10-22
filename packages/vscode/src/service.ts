@@ -1,7 +1,10 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
+import { AtticusApi } from "./api";
+import { startApp, type RunningApp } from "./app-panel";
 import { cliRunner, resolveCommand, type CliOptions } from "./cli";
+import { codeRootFor, type Paths } from "./sidebar-data";
 import { runSpec, runStep, type RunnerDeps, type StepEnd } from "./runner";
 import type { Cancel, Cli } from "./types";
 import { pickModel } from "./vscode-model";
@@ -51,6 +54,44 @@ export class Service {
     this.changed.fire();
   }
 
+  private app: Promise<RunningApp> | undefined;
+
+  /**
+   * The app, `atticus ui --embed vscode` on a free port, started once per window for the tab and
+   * the sidebar (ADR 0091, 0093), and again if it stops.
+   */
+  runningApp(root: string): Promise<RunningApp> {
+    if (!this.app) {
+      const started = startApp(this.cliOptions(root));
+      this.app = started;
+      const drop = () => {
+        if (this.app === started) this.app = undefined;
+      };
+      started.then((a) => a.onExit(drop), drop);
+    }
+    return this.app;
+  }
+
+  /** The app's API, starting the app if it isn't running. */
+  async api(root: string): Promise<AtticusApi> {
+    const a = await this.runningApp(root);
+    return new AtticusApi(a.url, a.token);
+  }
+
+  /** Where the metarepo and the repos' code are, for the sidebar's links. */
+  paths(root: string): Paths {
+    const folders = (vscode.workspace.workspaceFolders ?? []).map((f) => ({
+      name: f.name,
+      path: f.uri.fsPath,
+    }));
+    return {
+      root,
+      codeRoot: (repo) => codeRootFor(repo, root, folders, existsSync),
+      catalogRel: existsSync(join(root, ".atticus", "catalog")) ? ".atticus/catalog" : "catalog",
+      exists: existsSync,
+    };
+  }
+
   /** Run an AI step (or /spec's draft-and-check loop) with Copilot's model. */
   async run(
     root: string,
@@ -76,6 +117,10 @@ export class Service {
   }
 
   dispose() {
+    void this.app?.then(
+      (a) => a.stop(),
+      () => undefined,
+    );
     this.changed.dispose();
     this.log.dispose();
   }

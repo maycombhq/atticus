@@ -1,0 +1,408 @@
+import { join } from "node:path";
+import { diagramHash } from "./app-panel";
+import type * as Api from "./api-types";
+
+/**
+ * What the Atticus sidebar shows (ADR 0093), as plain data: each section's items, what a click
+ * opens and what expands underneath. No `vscode` here, so it is tested outside the editor;
+ * sidebar.ts turns these into tree items.
+ */
+
+/** What clicking an item does. */
+export type Open =
+  | { kind: "file"; path: string; line?: number }
+  | { kind: "app"; hash: string }
+  | { kind: "missing"; message: string };
+
+/** What an item holds underneath, loaded when it is opened. */
+export type Expand =
+  | { kind: "repo"; repo: string }
+  | { kind: "flows"; repo: string }
+  | { kind: "flow"; repo: string; flow: string }
+  | { kind: "change"; change: string }
+  | { kind: "findings"; change: string }
+  | { kind: "kind"; recordKind: string }
+  | { kind: "evidence"; repo?: string; evidence: Api.Evidence[] };
+
+export interface Item {
+  id: string;
+  label: string;
+  description?: string;
+  tooltip?: string;
+  /** A codicon id. */
+  icon?: string;
+  expand?: Expand;
+  open?: Open;
+  /** For the view's inline actions (package.json menus). */
+  context?: string;
+}
+
+export interface Paths {
+  root: string;
+  /** Where a repo's code is on this machine, if it is. */
+  codeRoot: (repo: string) => string | undefined;
+  /** The catalog folder relative to the root: catalog, or .atticus/catalog when adopted. */
+  catalogRel: string;
+  /** Whether a file is there; a change's files that aren't written yet say so. Default: yes. */
+  exists?: (path: string) => boolean;
+}
+
+const num = (n: number) => n.toLocaleString("en-US");
+const plural = (n: number, w: string) => `${num(n)} ${w}${n === 1 ? "" : "s"}`;
+const base = (p: string) => p.split("/").pop() ?? p;
+const at = (e: Api.Evidence | undefined) =>
+  e?.path ? `${base(e.path)}${e.line !== undefined ? `:${e.line}` : ""}` : undefined;
+
+const CONFIRMED: Record<string, string> = {
+  check: "Confirmed by the check",
+  ai: "Confirmed by the AI",
+  person: "Confirmed by a person",
+};
+
+/** An open folder named for the repo, else the base clone at workspace/<repo>. */
+export function codeRootFor(
+  repo: string,
+  root: string,
+  folders: { name: string; path: string }[],
+  exists: (p: string) => boolean,
+): string | undefined {
+  const open = folders.find((f) => f.name === repo);
+  if (open) return open.path;
+  const clone = join(root, "workspace", repo);
+  return exists(clone) ? clone : undefined;
+}
+
+/** Where a citation is: the file in the repo's code at its line, or why it can't be opened. */
+export function codeOpen(e: Api.Evidence, fallbackRepo: string | undefined, p: Paths): Open {
+  const repo = e.repo ?? fallbackRepo;
+  if (!e.path || !repo) return { kind: "missing", message: "This citation names no file." };
+  const dir = p.codeRoot(repo);
+  if (!dir)
+    return {
+      kind: "missing",
+      message: `${repo} isn't cloned here. Run atticus workspace sync, or open the repo's folder in this window.`,
+    };
+  return {
+    kind: "file",
+    path: join(dir, e.path),
+    ...(e.line !== undefined ? { line: e.line } : {}),
+  };
+}
+
+const file = (p: Paths, rel: string): Open => ({ kind: "file", path: join(p.root, rel) });
+
+// ------------------------------------------------------------------ repos and flows
+
+export function repoItems(v: Api.OnboardingView): Item[] {
+  return v.repos.map((r) => ({
+    id: `repo:${r.id}`,
+    label: r.id,
+    description: r.lastScan
+      ? `scanned · ${plural(r.lastScan.records, "record")}`
+      : r.cloned
+        ? "not scanned"
+        : "not cloned",
+    tooltip: `${r.id}: ${r.type}, owned by ${r.owner}. Listed in ${r.manifest}.${r.lastScan?.commit ? ` Last scan at ${r.lastScan.commit.slice(0, 7)}.` : ""}`,
+    icon: "repo",
+    expand: { kind: "repo", repo: r.id },
+  }));
+}
+
+export function repoChildren(r: Api.OnboardingRepo, flows: number, p: Paths): Item[] {
+  return [
+    flows > 0
+      ? {
+          id: `flows:${r.id}`,
+          label: `Flows (${num(flows)})`,
+          icon: "list-ordered",
+          expand: { kind: "flows", repo: r.id },
+        }
+      : {
+          id: `flows:${r.id}`,
+          label: "No flows yet",
+          description: `atticus spec draft ${r.id}`,
+          tooltip: `Draft the repo's spec: atticus spec draft ${r.id}, or /atticus-spec in Copilot Chat.`,
+          icon: "info",
+        },
+    {
+      id: `settings:${r.id}`,
+      label: "Scan settings",
+      description: r.scanSettings.present ? r.scanSettings.path : "none yet",
+      icon: "settings-gear",
+      ...(r.scanSettings.present
+        ? { open: file(p, r.scanSettings.path) }
+        : { tooltip: `Draft them with atticus scan survey ${r.id}.` }),
+    },
+    {
+      id: `canvas:${r.id}`,
+      label: "On the canvas",
+      icon: "type-hierarchy",
+      open: { kind: "app", hash: diagramHash(r.id) },
+    },
+  ];
+}
+
+const flowHash = (repo: string, flow: string, step?: number) =>
+  `#/flows?repo=${encodeURIComponent(repo)}&flow=${encodeURIComponent(flow)}${step !== undefined ? `&step=${step}` : ""}`;
+
+export function flowItems(v: Api.SpecView): Item[] {
+  return v.flows.map((f) => ({
+    id: `flow:${v.repo}:${f.id}`,
+    label: f.name,
+    description: `${plural(f.steps, "step")} · ${num(f.confirmed)} confirmed`,
+    tooltip: `${f.id}\n${f.trigger.kind}: ${f.trigger.what}${f.errors ? `\n${plural(f.errors, "error path")}` : ""}${f.calls ? `\nCalls ${plural(f.calls, "flow")} in other repos` : ""}`,
+    icon: "git-commit",
+    expand: { kind: "flow", repo: v.repo, flow: f.id },
+    open: { kind: "app", hash: flowHash(v.repo, f.id) },
+    context: "atticus.flow",
+  }));
+}
+
+function fieldLines(s: Api.FlowStep): string[] {
+  const d = s.data ?? {};
+  const out: string[] = [];
+  for (const k of ["sends", "returns", "reads", "checks"] as const)
+    if (d[k]?.length) out.push(`${k}: ${d[k].join(", ")}`);
+  if (d.from?.length || d.to?.length)
+    out.push(`maps: ${(d.from ?? []).join(", ")} → ${(d.to ?? []).join(", ")}`);
+  if (s.to) out.push(`to: ${s.to.component} ${s.to.entry}`);
+  if (s.store) out.push(`table: ${s.store.table} (${s.store.columns.join(", ")})`);
+  return out;
+}
+
+export function stepItems(v: Api.FlowView, p: Paths): Item[] {
+  const t = v.flow.trigger;
+  const start: Item = {
+    id: `step:${v.repo}:${v.flow.id}:0`,
+    label: `Start: ${t.what}`,
+    ...(at(t.evidence[0]) ? { description: `${t.kind} · ${at(t.evidence[0])}` } : {}),
+    icon: "debug-start",
+    ...(t.evidence[0] ? { open: codeOpen(t.evidence[0], v.repo, p) } : {}),
+    context: "atticus.step",
+  };
+  return [
+    start,
+    ...v.flow.steps.map((s, i) => {
+      const n = i + 1;
+      const where = at(s.evidence[0]);
+      return {
+        id: `step:${v.repo}:${v.flow.id}:${n}`,
+        label: `${n}. ${s.what}`,
+        description: `${s.kind}${where ? ` · ${where}` : ""}${s.confirmedBy ? " ✓" : ""}`,
+        tooltip: [
+          `${s.kind}: ${s.what}`,
+          ...fieldLines(s),
+          s.confirmedBy ? (CONFIRMED[s.confirmedBy] ?? s.confirmedBy) : "Not confirmed yet",
+          ...s.evidence.map((e) => `${e.path ?? ""}${e.line !== undefined ? `:${e.line}` : ""}`),
+        ].join("\n"),
+        icon: s.confirmedBy ? "pass" : "circle-large-outline",
+        ...(s.evidence[0] ? { open: codeOpen(s.evidence[0], v.repo, p) } : {}),
+        context: "atticus.step",
+      } satisfies Item;
+    }),
+  ];
+}
+
+/** The repo, flow and step number in an item id from stepItems (for Show in the diagram). */
+export const stepOf = (id: string) => {
+  const m = /^step:([^:]+):([^:]+):(\d+)$/.exec(id);
+  return m ? { repo: m[1]!, flow: m[2]!, n: Number(m[3]) } : undefined;
+};
+
+export { flowHash };
+
+// ------------------------------------------------------------------ changes
+
+export function changeItems(cs: Api.ChangeSummary[]): Item[] {
+  return cs.map((c) => ({
+    id: `change:${c.id}`,
+    label: c.title,
+    description: `${c.state}${c.openFindings.blocking ? ` · ${num(c.openFindings.blocking)} blocking` : ""}`,
+    tooltip: `${c.id} (${c.type}), updated ${c.updatedAt.slice(0, 10)}`,
+    icon: "git-pull-request",
+    expand: { kind: "change", change: c.id },
+  }));
+}
+
+const STATUS_ICON: Record<string, string> = {
+  done: "pass",
+  ready: "circle-large-outline",
+  blocked: "lock",
+  "not-required": "dash",
+};
+
+export function artifactItems(c: Api.ChangeDetail, p: Paths): Item[] {
+  const f = c.openFindings;
+  const counts = [
+    f.blocking ? `${num(f.blocking)} blocking` : "",
+    f.gap ? plural(f.gap, "gap") : "",
+    f.risk ? plural(f.risk, "risk") : "",
+    f.idea ? plural(f.idea, "idea") : "",
+  ].filter(Boolean);
+  return [
+    ...c.artifacts.map((a) => ({
+      id: `artifact:${c.id}:${a.artifact}`,
+      label: a.artifact,
+      description: `${a.status}${a.openFindings ? ` · ${plural(a.openFindings, "finding")}` : ""}`,
+      tooltip: a.path,
+      icon: STATUS_ICON[a.status] ?? "file",
+      open: (p.exists ?? (() => true))(join(p.root, a.path))
+        ? file(p, a.path)
+        : {
+            kind: "missing" as const,
+            message:
+              a.status === "blocked"
+                ? `${a.artifact} isn't written yet: it is blocked until the steps before it are done.`
+                : `${a.artifact} isn't written yet.`,
+          },
+    })),
+    {
+      id: `findings:${c.id}`,
+      label: "Findings",
+      description: counts.join(", ") || "none open",
+      icon: f.blocking ? "warning" : "checklist",
+      ...(counts.length ? { expand: { kind: "findings" as const, change: c.id } } : {}),
+    },
+    {
+      id: `app:${c.id}`,
+      label: "In the app",
+      icon: "link-external",
+      open: { kind: "app", hash: `#/changes/${encodeURIComponent(c.id)}` },
+    },
+  ];
+}
+
+/** The change's folder relative to the root, read from its artifacts' paths. */
+const changeDirOf = (c: Api.ChangeDetail) => {
+  const mark = `/changes/${c.id}/`;
+  const a = c.artifacts.find((x) => x.path.includes(mark));
+  return a ? a.path.slice(0, a.path.indexOf(mark) + mark.length - 1) : `openspec/changes/${c.id}`;
+};
+
+const SEVERITY_ICON: Record<string, string> = {
+  blocking: "error",
+  gap: "question",
+  risk: "warning",
+  idea: "lightbulb",
+};
+
+export function findingItems(fs: Api.Finding[], c: Api.ChangeDetail, p: Paths): Item[] {
+  const dir = changeDirOf(c);
+  return fs
+    .filter((f) => (f.state ?? "open") === "open")
+    .map((f) => ({
+      id: `finding:${f.change}:${f.id}`,
+      label: f.summary,
+      description: `${f.severity} · ${f.artifact}`,
+      tooltip: `${f.summary}\n\nWhy: ${f.why}\n\nFix: ${f.fix.text}`,
+      icon: SEVERITY_ICON[f.severity] ?? "circle-small",
+      ...(f.artifact !== "catalog" ? { open: file(p, `${dir}/${f.artifact}`) } : {}),
+    }));
+}
+
+// ------------------------------------------------------------------ catalog
+
+export function kindItems(ks: Api.KindCount[]): Item[] {
+  return ks.map((k) => ({
+    id: `kind:${k.kind}`,
+    label: k.kind,
+    description: `${num(k.count)}${k.stale ? ` · ${num(k.stale)} stale` : ""}`,
+    icon: "symbol-class",
+    expand: { kind: "kind", recordKind: k.kind },
+  }));
+}
+
+export function recordItems(page: Api.RecordPage, p: Paths): Item[] {
+  const items: Item[] = page.items.map((r) => {
+    const repo = r.evidence.find((e) => e.repo)?.repo;
+    return {
+      id: `record:${r.kind}:${r.id}`,
+      label: r.name ?? r.id,
+      description: `${r.name && r.name !== r.id ? `${r.id} · ` : ""}${r.confidence}`,
+      tooltip: `${r.kind} ${r.id}: ${r.status}, ${r.confidence}. ${plural(r.evidence.length, "citation")}.`,
+      icon: "symbol-field",
+      open: {
+        kind: "file",
+        path: join(p.root, p.catalogRel, "generated", r.kind.toLowerCase(), `${r.id}.yaml`),
+      },
+      ...(r.evidence.some((e) => e.path)
+        ? { expand: { kind: "evidence" as const, ...(repo ? { repo } : {}), evidence: r.evidence } }
+        : {}),
+    };
+  });
+  const more = page.total - page.items.length;
+  if (more > 0 && page.items[0])
+    items.push({
+      id: `more:${page.items[0].kind}`,
+      label: `${num(more)} more in the app`,
+      icon: "ellipsis",
+      open: { kind: "app", hash: `#/explore?q=${encodeURIComponent(page.items[0].kind)}` },
+    });
+  return items;
+}
+
+export function evidenceItems(x: Extract<Expand, { kind: "evidence" }>, p: Paths): Item[] {
+  return x.evidence
+    .filter((e) => e.path)
+    .map((e, i) => ({
+      id: `ev:${i}:${e.repo ?? ""}:${e.path}:${e.line ?? ""}`,
+      label: `${e.path}${e.line !== undefined ? `:${e.line}` : ""}`,
+      description: e.source,
+      icon: "go-to-file",
+      open: codeOpen(e, x.repo, p),
+    }));
+}
+
+// ------------------------------------------------------------------ flow steps in the code
+
+export interface Cite {
+  line: number;
+  /** 0 for what starts the flow, else the step number. */
+  n: number;
+  kind: string;
+  repo: string;
+  flow: string;
+  name: string;
+  confirmedBy?: string;
+}
+
+/** Every cited line, by the code's repo and its file path in that repo. */
+export function citesOf(views: Api.FlowView[]): Map<string, Map<string, Cite[]>> {
+  const out = new Map<string, Map<string, Cite[]>>();
+  const add = (
+    v: Api.FlowView,
+    e: Api.Evidence,
+    c: Omit<Cite, "line" | "repo" | "flow" | "name">,
+  ) => {
+    const repo = e.repo ?? v.repo;
+    if (!e.path || e.line === undefined) return;
+    const files = out.get(repo) ?? new Map<string, Cite[]>();
+    out.set(repo, files);
+    const list = files.get(e.path) ?? [];
+    files.set(e.path, list);
+    if (!list.some((x) => x.line === e.line && x.flow === v.flow.id && x.n === c.n))
+      list.push({ ...c, line: e.line, repo: v.repo, flow: v.flow.id, name: v.flow.name });
+  };
+  for (const v of views) {
+    for (const e of v.flow.trigger.evidence) add(v, e, { n: 0, kind: v.flow.trigger.kind });
+    v.flow.steps.forEach((s, i) => {
+      for (const e of s.evidence)
+        add(v, e, {
+          n: i + 1,
+          kind: s.kind,
+          ...(s.confirmedBy ? { confirmedBy: s.confirmedBy } : {}),
+        });
+    });
+  }
+  for (const files of out.values())
+    for (const list of files.values()) list.sort((a, b) => a.line - b.line || a.n - b.n);
+  return out;
+}
+
+export function lensText(c: Cite): string {
+  if (c.n === 0) return `Atticus: ${c.name} · start (${c.kind})`;
+  const who = c.confirmedBy
+    ? (CONFIRMED[c.confirmedBy] ?? c.confirmedBy).toLowerCase()
+    : "not confirmed yet";
+  return `Atticus: ${c.name} · step ${c.n}, ${c.kind} · ${who}`;
+}
