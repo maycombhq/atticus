@@ -163,14 +163,8 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
 
   async getChildren(node?: Node): Promise<Node[]> {
     const root = this.svc.root;
-    if (!root)
-      return [
-        {
-          id: "no-root",
-          state: "empty",
-          message: "Open the metarepo folder (the one with org-pack/).",
-        },
-      ];
+    // No metarepo or no command line: empty, so the view's welcome says what to do first.
+    if (!root || !this.svc.cliOk) return [];
     if (node && (!isItem(node) || !node.expand)) return [];
     try {
       const items = node ? await this.below(root, node as Item) : await this.top(root);

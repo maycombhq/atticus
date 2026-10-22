@@ -4,6 +4,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The VS Code extension for a first-time user
+
+- Fixed: clicking the app's menu in the Atticus tab did nothing (ADR 0098).
+- Start from nothing: with no metarepo open, the sidebar offers Open, Create (`atticus init`), Use Atticus in this repo (`atticus adopt`) and a practice metarepo. A missing command line or Copilot Chat is said, with how to fix it.
+- A Get started walkthrough, from installing the command line to a first change.
+- Add repos (the Repos section's +): found in a folder of clones or a Git host organisation, shown with their types, added when you say yes.
+- Plain words: the next step says what it does, and Run a command leads with what each command does. The developers' own commands are hidden (`atticus.showDeveloperCommands`).
+- A Questions section, by repo.
+- Shortcut keys: Ctrl+Alt+Shift+A (run a command), N (next step), D (the app).
+- `pnpm --filter atticus test:vscode` runs the extension's checks inside a real VS Code.
+
 ### Ready for the Marketplace
 
 - The VS Code extension has what a Marketplace listing needs:

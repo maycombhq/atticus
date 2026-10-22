@@ -1,3 +1,5 @@
+import { commandTitle } from "./words";
+
 /**
  * Every Atticus command in the editor (ADR 0096), from `atticus commands --json`: the command
  * line's own catalogue, built from its help text, so a new command is offered as soon as the
@@ -130,22 +132,30 @@ const HOW: Record<CatalogCommand["runs"], string> = {
   local: "",
 };
 
-/** Every command, by area, for a quick pick. */
-export function pickList(c: Catalog): PickItem[] {
+/**
+ * Every command, by area, for a quick pick: what it does first, the command and how it runs beside
+ * it (ADR 0098). The commands only Atticus's own developers use are left out unless asked for.
+ */
+export function pickList(c: Catalog, o: { developer?: boolean } = {}): PickItem[] {
   const out: PickItem[] = [];
-  const areas = [...c.areas, { id: "", title: "Other" }];
+  const areas = [
+    ...c.areas.filter((a) => o.developer || a.id !== "developer"),
+    { id: "", title: "Other" },
+  ];
   const seen = new Set(c.areas.map((a) => a.id));
   for (const a of areas) {
     const these = c.commands.filter((x) => (a.id ? x.area === a.id : !seen.has(x.area)));
     if (!these.length && a.id) continue;
     out.push({ label: a.title, separator: true });
-    for (const x of these)
+    for (const x of these) {
+      const usage = x.usage.replace(/^atticus /, "");
       out.push({
-        label: x.usage.replace(/^atticus /, ""),
+        label: commandTitle(x.summary) || usage,
         id: x.id,
-        ...(HOW[x.runs] ? { description: HOW[x.runs] } : {}),
+        description: HOW[x.runs] ? `${usage} · ${HOW[x.runs]}` : usage,
         detail: x.summary,
       });
+    }
   }
   return out;
 }

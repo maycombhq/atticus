@@ -47,7 +47,8 @@
   ],
   "activationEvents": [
     "workspaceContains:org-pack/**",
-    "workspaceContains:.atticus/org-pack/**"
+    "workspaceContains:.atticus/org-pack/**",
+    "onStartupFinished"
   ],
   "files": [
     "dist",
@@ -62,7 +63,8 @@
     "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=60000 --hookTimeout=60000",
     "package": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce package --no-dependencies",
     "marketplace": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce publish --no-dependencies",
-    "marketplace:pre-release": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce publish --pre-release --no-dependencies"
+    "marketplace:pre-release": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce publish --pre-release --no-dependencies",
+    "test:vscode": "tsc -p tsconfig.build.json && node scripts/copy-app.mjs && node scripts/test-in-vscode.mjs"
   },
   "contributes": {
     "chatParticipants": [
@@ -316,6 +318,44 @@
         "command": "atticus.runApproved",
         "title": "Approve and run",
         "category": "Atticus"
+      },
+      {
+        "command": "atticus.createMetarepo",
+        "title": "Create a metarepo",
+        "category": "Atticus",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "atticus.adoptRepo",
+        "title": "Use Atticus in this repo",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.practiceSandbox",
+        "title": "Try a practice metarepo",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.addRepos",
+        "title": "Add repos",
+        "category": "Atticus",
+        "icon": "$(add)"
+      },
+      {
+        "command": "atticus.draftSpec",
+        "title": "Draft a repo's spec with Copilot",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.answerRepo",
+        "title": "Answer this repo's questions",
+        "category": "Atticus",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "atticus.installCopilot",
+        "title": "Install GitHub Copilot Chat",
+        "category": "Atticus"
       }
     ],
     "viewsContainers": {
@@ -332,6 +372,10 @@
         {
           "id": "atticus.view",
           "name": "Next"
+        },
+        {
+          "id": "atticus.questions",
+          "name": "Questions"
         },
         {
           "id": "atticus.repos",
@@ -357,7 +401,7 @@
       "view/title": [
         {
           "command": "atticus.refresh",
-          "when": "view =~ /^atticus.(view|repos|changes|knowledge|catalog)$/",
+          "when": "view =~ /^atticus.(view|questions|repos|changes|knowledge|catalog)$/",
           "group": "navigation@9"
         },
         {
@@ -419,6 +463,11 @@
           "command": "atticus.knowledgeAsk",
           "when": "view == atticus.knowledge",
           "group": "navigation@3"
+        },
+        {
+          "command": "atticus.addRepos",
+          "when": "view == atticus.repos",
+          "group": "navigation@0"
         }
       ],
       "view/item/context": [
@@ -466,6 +515,11 @@
           "command": "atticus.runTask",
           "when": "view == atticus.changes && viewItem == atticus.task",
           "group": "inline"
+        },
+        {
+          "command": "atticus.answerRepo",
+          "when": "view == atticus.questions && viewItem == atticus.questionRepo",
+          "group": "inline"
         }
       ],
       "commandPalette": [
@@ -499,6 +553,10 @@
         },
         {
           "command": "atticus.runTask",
+          "when": "false"
+        },
+        {
+          "command": "atticus.answerRepo",
           "when": "false"
         }
       ]
@@ -534,9 +592,157 @@
           ],
           "default": "panel",
           "markdownDescription": "How the Atticus tab shows the app. `panel`: from the extension's own files, its calls answered through the local API (works where framing a local page is blocked, and over SSH or in a container). `frame`: the page `atticus ui` serves on 127.0.0.1, framed."
+        },
+        "atticus.showDeveloperCommands": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show, in Run a command, the commands only Atticus's own developers use (bench, eval, plugin test, conformance)."
         }
       }
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "atticus.view",
+        "when": "atticus.cliMissing",
+        "contents": "Atticus needs its command line, `atticus`, on this machine.\n[How to install it](https://github.com/maycombhq/atticus/blob/main/docs/guide/install.md)\n[Set its path](command:workbench.action.openSettings?%5B%22atticus.path%22%5D)\n[Check again](command:atticus.checkHealth)"
+      },
+      {
+        "view": "atticus.view",
+        "when": "!atticus.cliMissing && !atticus.hasMetarepo",
+        "contents": "No Atticus metarepo is open in this window. A metarepo holds what Atticus knows about your systems and changes.\n[Open a metarepo](command:vscode.openFolder)\n[Create a metarepo](command:atticus.createMetarepo)\n[Use Atticus in this repo](command:atticus.adoptRepo)\n[Try a practice metarepo](command:atticus.practiceSandbox)\nNew to Atticus? [Get started](command:workbench.action.openWalkthrough?%22maycombhq.atticus%23atticus.start%22)."
+      },
+      {
+        "view": "atticus.questions",
+        "when": "atticus.cliMissing || !atticus.hasMetarepo",
+        "contents": "Open or create a metarepo first: the Next section says how."
+      },
+      {
+        "view": "atticus.repos",
+        "when": "atticus.cliMissing || !atticus.hasMetarepo",
+        "contents": "Open or create a metarepo first: the Next section says how."
+      },
+      {
+        "view": "atticus.changes",
+        "when": "atticus.cliMissing || !atticus.hasMetarepo",
+        "contents": "Open or create a metarepo first: the Next section says how."
+      },
+      {
+        "view": "atticus.knowledge",
+        "when": "atticus.cliMissing || !atticus.hasMetarepo",
+        "contents": "Open or create a metarepo first: the Next section says how."
+      },
+      {
+        "view": "atticus.catalog",
+        "when": "atticus.cliMissing || !atticus.hasMetarepo",
+        "contents": "Open or create a metarepo first: the Next section says how."
+      }
+    ],
+    "walkthroughs": [
+      {
+        "id": "atticus.start",
+        "title": "Get started with Atticus",
+        "description": "From an empty machine to a change planned on your own flows.",
+        "steps": [
+          {
+            "id": "cli",
+            "title": "Install the command line",
+            "description": "Atticus's work happens in `atticus`; the extension runs it.\n[Check again](command:atticus.checkHealth)",
+            "media": {
+              "markdown": "media/walkthrough/1-cli.md"
+            },
+            "completionEvents": [
+              "onContext:!atticus.cliMissing"
+            ]
+          },
+          {
+            "id": "copilot",
+            "title": "Install GitHub Copilot Chat",
+            "description": "The AI steps run with Copilot's model.\n[Install Copilot Chat](command:atticus.installCopilot)",
+            "media": {
+              "markdown": "media/walkthrough/2-copilot.md"
+            },
+            "completionEvents": [
+              "onContext:atticus.copilotOk"
+            ]
+          },
+          {
+            "id": "metarepo",
+            "title": "Open or create a metarepo",
+            "description": "Where Atticus keeps what it knows.\n[Open a metarepo](command:vscode.openFolder)\n[Create a metarepo](command:atticus.createMetarepo)\n[Try a practice metarepo](command:atticus.practiceSandbox)",
+            "media": {
+              "markdown": "media/walkthrough/3-metarepo.md"
+            },
+            "completionEvents": [
+              "onContext:atticus.hasMetarepo"
+            ]
+          },
+          {
+            "id": "repos",
+            "title": "Add your repos",
+            "description": "Find them in a folder of clones or a Git host organisation.\n[Add repos](command:atticus.addRepos)\n[Clone or update them](command:atticus.workspaceSync)",
+            "media": {
+              "markdown": "media/walkthrough/4-repos.md"
+            },
+            "completionEvents": [
+              "onCommand:atticus.addRepos",
+              "onCommand:atticus.workspaceSync"
+            ]
+          },
+          {
+            "id": "scan",
+            "title": "Scan the repos",
+            "description": "Read the code into the catalog.\n[Scan every repo](command:atticus.scanAll)",
+            "media": {
+              "markdown": "media/walkthrough/5-scan.md"
+            },
+            "completionEvents": [
+              "onCommand:atticus.scanAll"
+            ]
+          },
+          {
+            "id": "specs",
+            "title": "Draft the specs",
+            "description": "Each repo's flows, step by step, with Copilot.\n[Draft a spec](command:atticus.draftSpec)\n[See the diagrams](command:atticus.showApp)",
+            "media": {
+              "markdown": "media/walkthrough/6-specs.md"
+            },
+            "completionEvents": [
+              "onCommand:atticus.draftSpec"
+            ]
+          },
+          {
+            "id": "change",
+            "title": "Start a change",
+            "description": "Plan it on the flows, with the critic at every stage.\n[New change](command:atticus.newChange)",
+            "media": {
+              "markdown": "media/walkthrough/7-change.md"
+            },
+            "completionEvents": [
+              "onCommand:atticus.newChange"
+            ]
+          }
+        ]
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "atticus.runCommand",
+        "key": "ctrl+alt+shift+a",
+        "mac": "cmd+alt+shift+a"
+      },
+      {
+        "command": "atticus.runNext",
+        "key": "ctrl+alt+shift+n",
+        "mac": "cmd+alt+shift+n",
+        "when": "atticus.hasMetarepo"
+      },
+      {
+        "command": "atticus.showApp",
+        "key": "ctrl+alt+shift+d",
+        "mac": "cmd+alt+shift+d",
+        "when": "atticus.hasMetarepo"
+      }
+    ]
   },
   "devDependencies": {
     "@maycombhq/cli": "workspace:*",

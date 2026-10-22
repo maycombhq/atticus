@@ -31,17 +31,21 @@ describe("the app's page in a panel (ADR 0097)", () => {
   });
 
   it("loads the app's files from the extension, under a strict policy", () => {
+    // No <base>: with one, the app's own links (#/architecture) would leave the page, and a
+    // panel refuses that, so clicking them did nothing. The files get their full address instead.
+    expect(html).not.toContain("<base");
     expect(html).toContain(
-      '<base href="https://file+.vscode-resource.vscode-cdn.net/ext/media/app/">',
+      'src="https://file+.vscode-resource.vscode-cdn.net/ext/media/app/assets/index-DV4tVQje.js"',
+    );
+    expect(html).toContain(
+      'href="https://file+.vscode-resource.vscode-cdn.net/ext/media/app/assets/index-JG0xtGK8.css"',
     );
     const csp = /http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(html)![1]!;
     expect(csp).toContain("default-src 'none'");
     expect(csp).toContain("script-src 'nonce-n0nce' https://file+.vscode-resource.vscode-cdn.net");
     expect(csp).toContain("worker-src blob:");
     expect(csp).not.toMatch(/127\.0\.0\.1|unsafe-eval|connect-src [^;]*\*/);
-    expect(html).toContain(
-      '<script nonce="n0nce" type="module" crossorigin src="./assets/index-DV4tVQje.js">',
-    );
+    expect(html).toContain('<script nonce="n0nce" type="module" crossorigin src="https://');
   });
 
   it("opens on the view asked for, and holds no session token", () => {

@@ -23,11 +23,15 @@ export function bundledHtml(
     `connect-src ${o.cspSource}`,
     "worker-src blob:",
   ].join("; ");
+  // The files get their full address, never a <base>: under a <base> the app's own links
+  // (#/architecture) point at another page, which a panel refuses, so clicking them did nothing.
+  // The scripts load from there, so what they import or start resolves next to them.
   return index
     .replace(/\s*<meta name="atticus-token"[^>]*>/, "")
+    .replace(/\b(src|href)="\.\//g, `$1="${o.base}`)
     .replace(
       /<head>/,
-      `<head>\n    <base href="${o.base}">\n    <meta http-equiv="Content-Security-Policy" content="${csp}">\n    <script nonce="${o.nonce}">location.hash = ${JSON.stringify(hash)};</script>`,
+      `<head>\n    <meta http-equiv="Content-Security-Policy" content="${csp}">\n    <script nonce="${o.nonce}">location.hash = ${JSON.stringify(hash)};</script>`,
     )
     .replace(/<script (?!nonce)/g, `<script nonce="${o.nonce}" `);
 }

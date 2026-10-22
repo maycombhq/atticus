@@ -21,6 +21,12 @@ Or in a terminal: `code --install-extension atticus-<version>.vsix`.
 
 To build the file from the source: build the app (`pnpm --filter @maycombhq/ui build`), then `pnpm --filter atticus package`. It copies the app into `media/app` and writes `packages/vscode/atticus-<version>.vsix`.
 
+## New to Atticus?
+
+Open **Get started with Atticus** (Help → Welcome, or the link in the Atticus sidebar). It takes you from installing the command line to your first change, with a button at each step. With no metarepo open, the sidebar offers to open one, create one, use Atticus in the repo you have open, or make a practice one with invented repos.
+
+**Shortcut keys:** Ctrl+Alt+Shift+A runs any command, Ctrl+Alt+Shift+N the next step, and Ctrl+Alt+Shift+D opens the app (Cmd on macOS).
+
 ## Try it
 
 1. Open the metarepo folder.
@@ -65,8 +71,9 @@ Without a repo or change, a step command takes the one `atticus next` names for 
 
 The Atticus icon in the activity bar opens a sidebar with a section for each part of Atticus (ADR 0093, 0096):
 
-- **Next**: the next step (click it or its Run button), the open questions (click one to answer: pick an option or write your own words), and **Open the app**.
-- **Repos**: each repo with its last scan. Under it, its flows, then each flow's steps. Click a step to open the code at the line it cites, or use its diagram button to see it in the flow. Click a flow to open its diagram. The repo's scan settings and its place on the canvas are there too.
+- **Next**: the next step in plain words (click it or its Run button; its command is in the tooltip), the steps after it, and **Open the app**.
+- **Questions**: the open questions by repo. Click one to answer it: pick an option or write your own words. A repo's button answers its questions one after another.
+- **Repos**: each repo with its last scan. The + button adds repos from a folder of clones or a Git host organisation: it shows what it found and adds them when you say yes. Under it, its flows, then each flow's steps. Click a step to open the code at the line it cites, or use its diagram button to see it in the flow. Click a flow to open its diagram. The repo's scan settings and its place on the canvas are there too.
 - **Changes**: each change with its state and blocking findings. Under it, each of its files with its state, its tasks (each with Run the task) (click to open; one not written yet says so), its target flows (each flow the change adds, changes or removes; click to see it beside today's, with each step marked Added, Changed or Removed, ADR 0095), its findings (click to open the file a finding is about; the why and the fix are in the tooltip; its check button acts on it, ADR 0094: Apply the fix, I fixed it by hand, Not relevant, Waive it or Ask someone, offering only what the critic allows, and showing a patch before applying it) and a link to the change in the app.
 - **Knowledge**: the sources in `sources.yaml` and the knowledge items read from them (click one to open its file). Its title bar syncs the sources, scans them and asks the knowledge.
 - **Catalog**: each kind of record with its count. Under it, its records (click to open the record's YAML), and under each record, the code it was read from.

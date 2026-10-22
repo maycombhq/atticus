@@ -42,6 +42,29 @@ describe("the extension's manifest and its code", () => {
     expect(inMenus.filter((c) => !declared.has(c))).toEqual([]);
   });
 
+  it("links only to commands that exist, from the welcome views and the walkthrough (ADR 0098)", () => {
+    const c = pkg.contributes as unknown as {
+      viewsWelcome: { contents: string }[];
+      walkthroughs: { steps: { description: string; media: { markdown: string } }[] }[];
+    };
+    const text = [
+      ...c.viewsWelcome.map((v) => v.contents),
+      ...c.walkthroughs.flatMap((w) => w.steps.map((s) => s.description)),
+    ].join("\n");
+    const linked = [...text.matchAll(/\(command:([A-Za-z.]+)/g)].map((m) => m[1]!);
+    const builtIn = [
+      "vscode.openFolder",
+      "workbench.action.openSettings",
+      "workbench.action.openWalkthrough",
+    ];
+    expect(linked.filter((x) => !declared.has(x) && !builtIn.includes(x))).toEqual([]);
+    for (const w of c.walkthroughs)
+      for (const s of w.steps)
+        expect(readdirSync(join(HERE, "..", "media", "walkthrough"))).toContain(
+          s.media.markdown.split("/").pop(),
+        );
+  });
+
   it("draws every view it declares", () => {
     const views = pkg.contributes.views.atticus!.map((v) => v.id);
     expect(

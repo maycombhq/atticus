@@ -585,3 +585,12 @@ export function lensText(c: Cite): string {
     : "not confirmed yet";
   return `Atticus: ${c.name} · step ${c.n}, ${c.kind} · ${who}`;
 }
+
+/** The open questions by repo (ADR 0098), the repos in order, each repo's in the order asked. */
+export function questionGroups<Q extends { repo: string }>(
+  qs: Q[],
+): { repo: string; questions: Q[] }[] {
+  const by = new Map<string, Q[]>();
+  for (const q of qs) by.set(q.repo, [...(by.get(q.repo) ?? []), q]);
+  return [...by.keys()].sort().map((repo) => ({ repo, questions: by.get(repo)! }));
+}

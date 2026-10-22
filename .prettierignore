@@ -1,4 +1,5 @@
 dist/
+dist-test/
 packages/vscode/media/app/
 coverage/
 pnpm-lock.yaml

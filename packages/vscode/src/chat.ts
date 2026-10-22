@@ -10,6 +10,7 @@ import {
 import type { CommandUi } from "./command-ui";
 import { answersFrom, buildArgv, howToRun, matchCommand } from "./commands";
 import { block, describeEnd } from "./describe";
+import { stepTitle } from "./words";
 import type { Service } from "./service";
 import type { NextStep, OpenQuestion } from "./types";
 
@@ -81,7 +82,7 @@ async function next(
     stream.markdown("Atticus has no next step to suggest.");
     return;
   }
-  stream.markdown(`**Next:** ${inline(n.command)}${block([n.why])}`);
+  stream.markdown(`**Next: ${stepTitle(n)}** (${inline(n.command)})${block([n.why])}`);
   const q = chatQuery(n);
   if (q)
     stream.button({

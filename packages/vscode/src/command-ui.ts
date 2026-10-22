@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
 import { readOpenQuestions } from "./atticus";
@@ -21,6 +21,7 @@ import {
 } from "./commands";
 import type { Service } from "./service";
 import { healthProblems } from "./sidebar-data";
+import { discoveredFrom, isMetarepoName } from "./start";
 
 /**
  * Every Atticus command in VS Code (ADR 0096). The list comes from `atticus commands --json`, so
@@ -73,7 +74,10 @@ export class CommandUi {
   ): Promise<CatalogCommand | undefined> {
     const cat = await this.load(root);
     const list = only ? { ...cat, commands: only } : cat;
-    const items = pickList(list).map((i) =>
+    const developer = vscode.workspace
+      .getConfiguration("atticus")
+      .get<boolean>("showDeveloperCommands", false);
+    const items = pickList(list, { developer }).map((i) =>
       i.separator
         ? { label: i.label, kind: vscode.QuickPickItemKind.Separator }
         : {
@@ -454,6 +458,212 @@ export class CommandUi {
       "Run the feature stage",
     );
     if (pick) await this.d.runAi(["change", "feature", id]);
+  }
+
+  // ------------------------------------------------------------------ starting from nothing (ADR 0098)
+
+  /** Run in a folder that isn't a metarepo yet (init, adopt, sandbox): no --root. */
+  private async plain(cwd: string, argv: string[]): Promise<Printed> {
+    const r = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Atticus: ${commandText(argv)}` },
+      () => this.svc.cli(cwd)(argv),
+    );
+    const lines = [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(
+      Boolean,
+    );
+    this.svc.log.appendLine(`--- ${commandText(argv)} (exit ${r.code})`);
+    for (const l of lines) this.svc.log.appendLine(l);
+    return { code: r.code, lines };
+  }
+
+  private async openWhenDone(p: Printed, folder: string, what: string) {
+    if (p.code !== 0) {
+      const pick = await vscode.window.showErrorMessage(
+        `${what} didn't work: ${p.lines.at(-1) ?? `exit ${p.code}`}`,
+        "Show the output",
+      );
+      if (pick) this.svc.log.show(true);
+      return;
+    }
+    const pick = await vscode.window.showInformationMessage(
+      `${what}: ${folder}. Open it in this window?`,
+      "Open it",
+    );
+    if (pick)
+      await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(folder), false);
+  }
+
+  private async pickParent(title: string): Promise<string | undefined> {
+    const here = this.svc.folder;
+    const picked = await vscode.window.showOpenDialog({
+      title,
+      canSelectFolders: true,
+      canSelectFiles: false,
+      openLabel: "Put it here",
+      ...(here ? { defaultUri: vscode.Uri.file(join(here, "..")) } : {}),
+    });
+    return picked?.[0]?.fsPath;
+  }
+
+  /** A new metarepo: where, its name and its platform; then open it. */
+  async createMetarepo() {
+    const parent = await this.pickParent(
+      "Where should the new metarepo go? (the folder it goes in)",
+    );
+    if (!parent) return;
+    const name = await vscode.window.showInputBox({
+      title: "Atticus: the metarepo's name",
+      prompt: "Its folder's name: lowercase letters, digits and dashes (for example payments-meta)",
+      validateInput: (v) =>
+        isMetarepoName(v.trim())
+          ? undefined
+          : "Lowercase letters, digits, dots, dashes and underscores",
+      ignoreFocusOut: true,
+    });
+    if (!name) return;
+    const platform = await vscode.window.showInputBox({
+      title: "Atticus: the platform",
+      prompt:
+        "The platform its repos belong to, in a word (for example payments). More can be added later.",
+      validateInput: (v) =>
+        isMetarepoName(v.trim()) ? undefined : "A word: lowercase letters, digits and dashes",
+      ignoreFocusOut: true,
+    });
+    if (!platform) return;
+    const folder = join(parent, name.trim());
+    const p = await this.plain(parent, ["init", folder, "--platform", platform.trim()]);
+    await this.openWhenDone(p, folder, "Made the metarepo");
+  }
+
+  /** Atticus in the open repo: it writes only .atticus/. */
+  async adoptRepo() {
+    const folder =
+      this.svc.folder ??
+      (
+        await vscode.window.showOpenDialog({
+          canSelectFolders: true,
+          canSelectFiles: false,
+          title: "Which repo?",
+        })
+      )?.[0]?.fsPath;
+    if (!folder) return;
+    const ok = await vscode.window.showInformationMessage(
+      `Use Atticus in ${folder}? It writes only a .atticus/ folder there.`,
+      { modal: true },
+      "Use Atticus here",
+    );
+    if (ok !== "Use Atticus here") return;
+    const p = await this.plain(folder, ["adopt", folder]);
+    if (p.code === 0) {
+      void vscode.window.showInformationMessage(p.lines[0] ?? "Atticus is set up in this repo.");
+      this.d.refreshAll();
+    } else await this.showPrinted(["adopt"], p);
+  }
+
+  /** A practice metarepo with the invented Forge repos, to try Atticus on. */
+  async practiceSandbox() {
+    const parent = await this.pickParent("Where should the practice metarepo go?");
+    if (!parent) return;
+    const dir = join(parent, "atticus-practice");
+    const p = await this.plain(parent, ["sandbox", "create", dir]);
+    await this.openWhenDone(p, join(dir, "metarepo"), "Made the practice metarepo");
+  }
+
+  /** The platforms of the org pack (its profiles), for the manifest repos go into. */
+  private platforms(root: string): string[] {
+    for (const d of [
+      join(root, "org-pack", "profiles"),
+      join(root, ".atticus", "org-pack", "profiles"),
+    ])
+      if (existsSync(d))
+        return readdirSync(d, { withFileTypes: true })
+          .filter((e) => e.isDirectory())
+          .map((e) => e.name)
+          .sort();
+    return [];
+  }
+
+  /** Repos into the manifest: found in a folder of clones or a Git host organisation, after a dry run. */
+  async addRepos(root: string) {
+    const how = await vscode.window.showQuickPick(
+      [
+        {
+          label: "From a folder that holds the repos' clones",
+          detail: "Atticus looks at each folder in it and says what kind of repo it is",
+          id: "folder",
+        },
+        {
+          label: "From a Git host organisation",
+          detail: "The organisation or group the repos are in",
+          id: "org",
+        },
+        {
+          label: "Edit the manifest by hand",
+          detail: "org-pack/profiles/<platform>/repos.manifest.yaml",
+          id: "edit",
+        },
+      ],
+      { title: "Atticus: add repos", ignoreFocusOut: true },
+    );
+    if (!how) return;
+    const platforms = this.platforms(root);
+    const platform =
+      platforms.length === 1
+        ? platforms[0]
+        : await this.quick(
+            "Which platform are they in?",
+            platforms.map((x) => ({ label: x, value: x })),
+            "The org pack has no platform yet: org-pack/profiles/<platform>/.",
+          );
+    if (!platform) return;
+    if (how.id === "edit") {
+      const rel = existsSync(join(root, "org-pack")) ? "org-pack" : join(".atticus", "org-pack");
+      const doc = await vscode.workspace.openTextDocument(
+        vscode.Uri.file(join(root, rel, "profiles", platform, "repos.manifest.yaml")),
+      );
+      await vscode.window.showTextDocument(doc);
+      return;
+    }
+    let target: string[];
+    if (how.id === "folder") {
+      const picked = await vscode.window.showOpenDialog({
+        title: "The folder that holds the repos' clones",
+        canSelectFolders: true,
+        canSelectFiles: false,
+      });
+      if (!picked?.[0]) return;
+      target = [picked[0].fsPath];
+    } else {
+      const org = await vscode.window.showInputBox({
+        title: "The Git host organisation",
+        prompt: "Its name as the Git host has it",
+        ignoreFocusOut: true,
+      });
+      if (!org?.trim()) return;
+      target = ["--org", org.trim()];
+    }
+    const argv = ["repos", "discover", ...target, "--platform", platform];
+    const dry = await this.captured(root, [...argv, "--dry-run"]);
+    const found = discoveredFrom(dry.lines.join("\n"));
+    if (dry.code !== 0 || !found.repos.length) return this.showPrinted(argv, dry);
+    const ok = await vscode.window.showInformationMessage(
+      `Add ${found.repos.length} repo${found.repos.length === 1 ? "" : "s"} to the ${platform} manifest?`,
+      {
+        modal: true,
+        detail:
+          found.repos
+            .map((r) => `${r.id}: ${r.type}${r.evidence ? ` (${r.evidence})` : ""}`)
+            .join("\n") +
+          (found.questions
+            ? `\n\n${found.questions} questions will need a person (the Questions section).`
+            : ""),
+      },
+      "Add them",
+    );
+    if (ok !== "Add them") return;
+    const p = await this.captured(root, argv);
+    await this.showPrinted(argv, p);
+    this.d.refreshAll();
   }
 
   /** Doctor and the upgrade check, when the window opens: say what needs a look. */

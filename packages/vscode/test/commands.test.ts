@@ -157,11 +157,12 @@ describe("every command, from the command line's own catalogue (ADR 0096)", () =
       "Other",
     ]);
     expect(list.find((i) => i.id === "spec draft")).toMatchObject({
-      label: "spec draft <repo>",
-      description: "with Copilot",
-      detail: "Your assistant writes the repo's flows",
+      label: "Your assistant writes the repo's flows",
+      description: "spec draft <repo> · with Copilot",
     });
-    expect(list.find((i) => i.id === "ado sync")!.description).toBe("asks you before it writes");
+    expect(list.find((i) => i.id === "ado sync")!.description).toBe(
+      "ado sync <change> · asks you before it writes",
+    );
   });
 
   it("offers the commands that take a repo, or a change, for that item", () => {
@@ -242,5 +243,35 @@ describe("a required switch", () => {
       answers: { args: ["add-note-tags"], flags: { "--resume": true } },
       missing: [],
     });
+  });
+});
+
+describe("the command list, friendlier (ADR 0098)", () => {
+  it("leads with what a command does and keeps the command beside it", () => {
+    const item = pickList(catalog).find((i) => i.id === "spec draft")!;
+    expect(item).toMatchObject({
+      label: "Your assistant writes the repo's flows",
+      description: "spec draft <repo> · with Copilot",
+    });
+  });
+
+  it("leaves out the commands only Atticus's own developers use, unless asked", () => {
+    const withDev: Catalog = {
+      ...catalog,
+      areas: [...catalog.areas, { id: "developer", title: "For Atticus's own quality" }],
+      commands: [
+        ...catalog.commands,
+        {
+          ...cmd("ui"),
+          id: "bench run",
+          words: ["bench", "run"],
+          usage: "atticus bench run",
+          area: "developer",
+          runs: "local",
+        },
+      ],
+    };
+    expect(pickList(withDev).some((i) => i.id === "bench run")).toBe(false);
+    expect(pickList(withDev, { developer: true }).some((i) => i.id === "bench run")).toBe(true);
   });
 });

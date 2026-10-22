@@ -5,6 +5,7 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/**",
+      "**/dist-test/**",
       // The app's build, copied into the VS Code extension when it is packaged (ADR 0097).
       "packages/vscode/media/app/**",
       "**/coverage/**",

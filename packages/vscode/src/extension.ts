@@ -23,7 +23,7 @@ import { commandText } from "./cli";
 import { describeEnd } from "./describe";
 import type { StepEnd } from "./runner";
 import { Service } from "./service";
-import { AtticusView } from "./view";
+import { AtticusView, QuestionsView } from "./view";
 
 /**
  * The Atticus extension (ADR 0090, plan 4.8): a thin runner of Atticus's AI steps with
@@ -48,7 +48,16 @@ const answers = (url: string) =>
     r.end();
   });
 
-export function activate(context: vscode.ExtensionContext) {
+/** What the extension's own tests in VS Code look at (scripts/test-in-vscode.mjs). */
+export interface AtticusHandles {
+  ready: Promise<void>;
+  view: AtticusView;
+  sections: Record<string, SectionTree>;
+  panel: () => vscode.WebviewPanel | undefined;
+  service: Service;
+}
+
+export function activate(context: vscode.ExtensionContext): AtticusHandles {
   const svc = new Service();
   const view = new AtticusView(svc);
   const reg = (id: string, f: (...a: never[]) => unknown) =>
@@ -59,9 +68,11 @@ export function activate(context: vscode.ExtensionContext) {
     svc,
     view,
     vscode.window.registerTreeDataProvider("atticus.view", view),
+    vscode.window.registerTreeDataProvider("atticus.questions", new QuestionsView(view)),
   );
   // The sections that read the app's API (ADR 0093): Repos, Changes and Catalog.
-  const sections = (["repos", "changes", "knowledge", "catalog"] as Section[]).map((name) => {
+  const SECTIONS: Section[] = ["repos", "changes", "knowledge", "catalog"];
+  const sections = SECTIONS.map((name) => {
     const tree = new SectionTree(svc, name);
     context.subscriptions.push(
       tree,
@@ -238,9 +249,60 @@ ${view.next.why}`
     if (root && item?.task)
       void commands.pickAndRun(root, "task run", { args: [item.task.change, item.task.id] });
   });
+  // ADR 0098: what is set up, as context keys the welcome views and the walkthrough read.
+  const updateContext = async () => {
+    const at = svc.root ?? svc.folder ?? context.extensionPath;
+    const v = await svc.cli(at)(["--version"]);
+    svc.cliOk = v.code === 0;
+    void vscode.commands.executeCommand("setContext", "atticus.cliMissing", !svc.cliOk);
+    void vscode.commands.executeCommand("setContext", "atticus.hasMetarepo", !!svc.root);
+    void vscode.commands.executeCommand(
+      "setContext",
+      "atticus.copilotOk",
+      !!vscode.extensions.getExtension("GitHub.copilot-chat"),
+    );
+  };
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(() => void updateContext().then(refreshAll)),
+    vscode.extensions.onDidChange(() => void updateContext()),
+  );
+  reg("atticus.checkHealth", async () => {
+    await updateContext();
+    refreshAll();
+    if (!svc.cliOk) {
+      const pick = await vscode.window.showWarningMessage(
+        "Atticus can't run its command line (atticus). Install it, or set its path in the setting atticus.path.",
+        "How to install",
+        "Set the path",
+      );
+      if (pick === "How to install")
+        void vscode.env.openExternal(
+          vscode.Uri.parse("https://github.com/maycombhq/atticus/blob/main/docs/guide/install.md"),
+        );
+      else if (pick === "Set the path")
+        void vscode.commands.executeCommand("workbench.action.openSettings", "atticus.path");
+      return;
+    }
+    const root = svc.root;
+    if (root) await commands.checkHealth(root, false);
+    else
+      void vscode.window.showInformationMessage(
+        "Atticus's command line is ready. Open or create a metarepo next.",
+      );
+  });
+  reg("atticus.createMetarepo", () => commands.createMetarepo());
+  reg("atticus.adoptRepo", () => commands.adoptRepo());
+  reg("atticus.practiceSandbox", () => commands.practiceSandbox());
   reg(
-    "atticus.checkHealth",
-    withRoot((root) => commands.checkHealth(root, false)),
+    "atticus.addRepos",
+    withRoot((root) => commands.addRepos(root)),
+  );
+  reg(
+    "atticus.draftSpec",
+    withRoot((root) => commands.pickAndRun(root, "spec draft")),
+  );
+  reg("atticus.installCopilot", () =>
+    vscode.commands.executeCommand("workbench.extensions.installExtension", "GitHub.copilot-chat"),
   );
   // The everyday ones, one click from the sidebar's title bars.
   const shortcut: [string, string][] = [
@@ -471,6 +533,15 @@ ${view.next.why}`
         .then((p) => p && svc.log.show(true));
   });
   reg("atticus.answer", () => vscode.commands.executeCommand("atticus.answerQuestion"));
+  // A repo's questions one after another, until the person stops.
+  reg("atticus.answerRepo", async (node?: { questions?: { id: string }[] }) => {
+    for (const q of node?.questions ?? []) {
+      const before = view.openQuestions;
+      await vscode.commands.executeCommand("atticus.answerQuestion", q.id);
+      await view.refresh();
+      if (view.openQuestions === before) break;
+    }
+  });
 
   reg("atticus.ask", async () => {
     const root = needRoot();
@@ -618,8 +689,26 @@ ${view.next.why}`
   });
 
   void view.refresh().then(updateStatus);
-  // When the window opens: is the metarepo up to date, and is this machine ready?
-  if (svc.root) void commands.checkHealth(svc.root, true).catch(() => undefined);
+  // When the window opens: what is set up; is the metarepo up to date, and is this machine ready?
+  const ready = updateContext().then(() => {
+    refreshAll();
+    // Only where Atticus is in use: the extension also starts in other windows, for the walkthrough.
+    if (svc.root && !vscode.extensions.getExtension("GitHub.copilot-chat"))
+      void vscode.window
+        .showWarningMessage(
+          "Atticus's AI steps run with GitHub Copilot Chat, which isn't installed.",
+          "Install Copilot Chat",
+        )
+        .then((p) => p && vscode.commands.executeCommand("atticus.installCopilot"));
+    if (svc.root && svc.cliOk) void commands.checkHealth(svc.root, true).catch(() => undefined);
+  });
+  return {
+    ready,
+    view,
+    sections: Object.fromEntries(sections.map((t, i) => [SECTIONS[i]!, t])),
+    panel: () => panel,
+    service: svc,
+  };
 }
 
 export function deactivate() {

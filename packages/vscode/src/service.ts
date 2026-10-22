@@ -26,14 +26,26 @@ export class Service {
   }
 
   /** The workspace folder holding org-pack/ (or .atticus/org-pack/), else the first folder. */
+  /**
+   * The metarepo: the workspace folder holding org-pack/ (or .atticus/org-pack/ when a repo adopted
+   * Atticus). Undefined when none is open (ADR 0098): the sidebar then offers to create, adopt or
+   * open one, rather than running commands in a folder that isn't one.
+   */
   get root(): string | undefined {
     const folders = vscode.workspace.workspaceFolders ?? [];
-    const meta = folders.find(
+    return folders.find(
       (f) =>
         existsSync(join(f.uri.fsPath, "org-pack")) ||
         existsSync(join(f.uri.fsPath, ".atticus", "org-pack")),
-    );
-    return (meta ?? folders[0])?.uri.fsPath;
+    )?.uri.fsPath;
+  }
+
+  /** False once `atticus --version` failed to run: the sidebar then says how to install it. */
+  cliOk = true;
+
+  /** The first folder open in the window, metarepo or not: where a new metarepo or adoption goes. */
+  get folder(): string | undefined {
+    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   }
 
   cliOptions(root: string): CliOptions {

@@ -20,6 +20,7 @@ import {
   knowledgeItems,
   sourceItems,
   healthProblems,
+  questionGroups,
   type Paths,
 } from "../src/sidebar-data";
 
@@ -588,5 +589,25 @@ describe("the rest of Atticus in the sidebar (ADR 0096)", () => {
         ],
       }),
     ).toEqual(["Proxy: No proxy set. Set HTTPS_PROXY", "Disk: 200 MB free. Free some space"]);
+  });
+});
+
+describe("the Questions section (ADR 0098)", () => {
+  it("groups the open questions by repo, the repos in order", () => {
+    const q = (id: string, repo: string) => ({
+      id,
+      repo,
+      question: `Q ${id}?`,
+      options: [],
+      evidence: [],
+    });
+    expect(
+      questionGroups([q("q1", "nadiengine"), q("q2", "forge-web"), q("q3", "nadiengine")]).map(
+        (g) => [g.repo, g.questions.map((x) => x.id)],
+      ),
+    ).toEqual([
+      ["forge-web", ["q2"]],
+      ["nadiengine", ["q1", "q3"]],
+    ]);
   });
 });
