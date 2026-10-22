@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A change's target flows, before and after, and loops and retries as frames
+
+- The Flows screen draws a change's target flows (ADR 0095) as one sequence. Each step says Added, Changed (with what it did before) or Removed, and shows the delta's reason. Components and tables the change adds are lanes marked new. Pick the change in the Flows screen's Change list, or follow the link on the Architecture page or the Target flows item in the VS Code sidebar.
+- `GET /api/changes/{id}/target-flows` and `.../target-flows/{flow}` (API 2.5.0) give the steps merged and marked.
+- Flow schema version 2: a loop or retry names the steps it repeats in `repeats: { from, to }`. They may come before it (a retry of a save) or after it (a loop over the next steps). The screen draws them as a frame. Version-1 flows still read. Run `atticus upgrade` to rewrite them.
+- `atticus spec check` asks every loop and retry for `repeats` (`template-requires`), and `atticus spec draft` tells the drafter to write it.
+
 ### Cited lines in one call, record lenses, and acting on findings in VS Code
 
 - `GET /api/cites?repo=&path=` (ADR 0094, API 2.4.0): each line of one file that a flow step or a catalog record cites. It uses an index the app builds at start-up and again when specs or the catalog change.

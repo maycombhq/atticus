@@ -23,6 +23,7 @@ export type Expand =
   | { kind: "flow"; repo: string; flow: string }
   | { kind: "change"; change: string }
   | { kind: "findings"; change: string }
+  | { kind: "targets"; change: string }
   | { kind: "kind"; recordKind: string }
   | { kind: "evidence"; repo?: string; evidence: Api.Evidence[] };
 
@@ -261,6 +262,13 @@ export function artifactItems(c: Api.ChangeDetail, p: Paths): Item[] {
           },
     })),
     {
+      id: `targets:${c.id}`,
+      label: "Target flows",
+      tooltip: "The flows this change adds, changes or removes, each beside today's (ADR 0095).",
+      icon: "git-compare",
+      expand: { kind: "targets" as const, change: c.id },
+    },
+    {
       id: `findings:${c.id}`,
       label: "Findings",
       description: counts.join(", ") || "none open",
@@ -335,6 +343,42 @@ export function findingActions(f: Api.Finding): FindingChoice[] {
     out.push({ action: "waive", label: "Waive it", needs: "reason" });
   out.push({ action: "ask", label: "Ask someone", needs: "askedOf" });
   return out;
+}
+
+const DELTA_ICON: Record<string, string> = {
+  new: "diff-added",
+  modify: "diff-modified",
+  remove: "diff-removed",
+};
+const DELTA_WORD: Record<string, string> = { new: "new", modify: "changed", remove: "removed" };
+
+/** A change's target flows (ADR 0095): each opens beside today's flow in the Atticus tab. */
+export function targetItems(v: Api.TargetFlowList): Item[] {
+  return v.flows.map((f) => {
+    const counts =
+      f.change === "new"
+        ? plural(f.added, "step")
+        : f.change === "remove"
+          ? plural(f.removed, "step")
+          : [
+              f.added ? `${num(f.added)} added` : "",
+              f.changed ? `${num(f.changed)} changed` : "",
+              f.removed ? `${num(f.removed)} removed` : "",
+            ]
+              .filter(Boolean)
+              .join(", ") || "no step changes";
+    return {
+      id: `target:${v.change}:${f.flow}`,
+      label: f.name,
+      description: `${DELTA_WORD[f.change] ?? f.change} · ${counts}`,
+      tooltip: `${f.flow} (${f.repo})\n${f.why}`,
+      icon: DELTA_ICON[f.change] ?? "git-compare",
+      open: {
+        kind: "app",
+        hash: `#/flows?change=${encodeURIComponent(v.change)}&flow=${encodeURIComponent(f.flow)}`,
+      },
+    };
+  });
 }
 
 // ------------------------------------------------------------------ catalog

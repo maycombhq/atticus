@@ -1,23 +1,28 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { Api } from "@maycombhq/core";
-import { useApi, useLiveEvents } from "../../api/client.js";
+import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam } from "../know/common.js";
 import { CopyButton } from "../run/shared.js";
-import { sequence, type Lane, type Row, type Sequence } from "./model.js";
+import { sequence, targetSequence, type Lane, type Row, type Sequence } from "./model.js";
 import "./flows.css";
 
 /**
  * The Flows screen (ADR 0092): a repo's spec flows (ADR 0079), and the picked one drawn as a
  * sequence of steps across lanes. It reads the specs API only; it changes nothing. A call that
- * the estate pass joined links to the flow it starts, in whichever repo that is.
+ * the estate pass joined links to the flow it starts, in whichever repo that is. Loops and
+ * retries are frames around the steps they repeat, and a change's target flows are drawn with
+ * each step marked added, changed or removed (ADR 0095).
  */
 
 const C = COPY.flows;
 
 export const flowHref = (repo: string, flow?: string) =>
   `#/flows?repo=${encodeURIComponent(repo)}${flow ? `&flow=${encodeURIComponent(flow)}` : ""}`;
+
+export const targetHref = (change: string, flow?: string) =>
+  `#/flows?change=${encodeURIComponent(change)}${flow ? `&flow=${encodeURIComponent(flow)}` : ""}`;
 
 const kindWord = (k: string) => C.kinds[k] ?? k;
 
@@ -66,6 +71,18 @@ function Step({ r, lanes, now }: { r: Row; lanes: Lane[]; now: boolean }) {
       className={`seq-row${now ? " seq-now" : ""}`}
       {...(now ? { "aria-current": "step" as const } : {})}
     >
+      {r.frames.map((f) => (
+        <span
+          key={f.depth}
+          className={`seq-frame ${f.kind}${f.first ? " first" : ""}${f.last ? " last" : ""}`}
+          style={{ "--depth": f.depth } as CSSProperties}
+          aria-hidden="true"
+        >
+          {f.first && (
+            <span className="seq-frame-label">{C.frame(f.kind, f.repeats.from, f.repeats.to)}</span>
+          )}
+        </span>
+      ))}
       {lanes.map((l, i) => (
         <span key={l.id} className="seq-life" style={{ gridColumn: i + 1 }} aria-hidden="true" />
       ))}
@@ -78,12 +95,18 @@ function Step({ r, lanes, now }: { r: Row; lanes: Lane[]; now: boolean }) {
           {r.label && <em>{r.label}</em>}
         </span>
       )}
-      <div className={`seq-box k-${r.kind}`} style={{ gridColumn: box }}>
+      <div
+        className={`seq-box k-${r.kind}${r.mark ? ` m-${r.mark}` : ""}`}
+        style={{ gridColumn: box }}
+      >
         <div className="seq-top">
-          <span className="seq-n">{r.n === 0 ? C.start : r.n}</span>
+          <span className="seq-n">{r.shown}</span>
           <span className="seq-kind">{kindWord(r.kind)}</span>
+          {r.mark && <span className={`seq-mark m-${r.mark}`}>{C.marks[r.mark]}</span>}
         </div>
         <p className="seq-what">{r.what}</p>
+        {r.was && <p className="seq-was">{C.was(r.was)}</p>}
+        {r.why && <p className="seq-why">{r.why}</p>}
         {from !== to && (
           <p className="sr">
             {r.back ? C.backTo(toLane.label) : C.goesTo(r.label ?? toLane.label, toLane.label)}
@@ -102,7 +125,7 @@ function Step({ r, lanes, now }: { r: Row; lanes: Lane[]; now: boolean }) {
             {r.more > 0 && <span> {C.more(r.more)}</span>}
           </p>
         )}
-        {r.n > 0 && <Confirmed by={r.confirmedBy} />}
+        {r.n > 0 && r.mark !== "added" && <Confirmed by={r.confirmedBy} />}
         {r.opens && (
           <a className="seq-opens" href={flowHref(r.opens.repo, r.opens.flow)}>
             {C.opens(r.opens.name ?? r.opens.flow, r.opens.repo)}
@@ -118,21 +141,39 @@ export function SequenceDiagram({
   seq,
   name,
   current,
+  hideErrors,
 }: {
   seq: Sequence;
   name?: string;
+  /** A target flow lists no error paths of its own. */
+  hideErrors?: boolean;
   /** The step a link points at (?step=), 0 for the start. */
   current?: number;
 }) {
-  const cols = { "--lanes": seq.lanes.length } as CSSProperties;
+  const depth = seq.frames.reduce((m, f) => Math.max(m, f.depth + 1), 0);
+  const cols = { "--lanes": seq.lanes.length, "--frames": depth } as CSSProperties;
   return (
     <div className="seq-wrap">
-      <div className="seq" style={cols}>
+      {/* A wide flow scrolls sideways: a keyboard reaches and scrolls it too (WCAG 2.1.1). */}
+      <div
+        className="seq"
+        style={cols}
+        tabIndex={0}
+        role="region"
+        aria-label={C.diagram(name ?? "this flow")}
+      >
         <div className="seq-row seq-head" aria-hidden="true">
           {seq.lanes.map((l, i) => (
-            <div key={l.id} className={`seq-lane ${l.kind}`} style={{ gridColumn: i + 1 }}>
+            <div
+              key={l.id}
+              className={`seq-lane ${l.kind}${l.isNew ? " new" : ""}`}
+              style={{ gridColumn: i + 1 }}
+            >
               <strong>{l.label}</strong>
-              <small>{C.lanes[l.kind]}</small>
+              <small>
+                {C.lanes[l.kind]}
+                {l.isNew ? ` · ${C.newLane}` : ""}
+              </small>
             </div>
           ))}
         </div>
@@ -142,8 +183,8 @@ export function SequenceDiagram({
           ))}
         </ol>
       </div>
-      <h3 className="h seq-h">{C.errorsTitle}</h3>
-      {seq.errors.length ? (
+      {!hideErrors && <h3 className="h seq-h">{C.errorsTitle}</h3>}
+      {hideErrors ? null : seq.errors.length ? (
         <ul className="seq-errors">
           {seq.errors.map((e, i) => (
             <li key={i}>
@@ -291,8 +332,136 @@ function RepoFlows(p: {
   );
 }
 
+export function TargetList(p: { list: Api.TargetFlowListT; current: string | undefined }) {
+  return (
+    <div className="stack">
+      {p.list.flows.length === 0 ? (
+        <div className="state">{C.noTargets(p.list.change)}</div>
+      ) : (
+        <ul className="flow-list">
+          {p.list.flows.map((f) => (
+            <li key={f.flow}>
+              <a
+                href={targetHref(p.list.change, f.flow)}
+                aria-current={f.flow === p.current ? "true" : undefined}
+              >
+                <span className="flow-name">{f.name}</span>
+                <span className="flow-trigger">
+                  <span className={`seq-kind d-${f.change}`}>{C.deltaKinds[f.change]}</span>{" "}
+                  {f.repo}
+                </span>
+                <span className="flow-counts">{C.targetCounts(f.added, f.changed, f.removed)}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+      {p.list.problems.length > 0 && (
+        <div className="state error">
+          {C.unreadable}
+          <ul>
+            {p.list.problems.map((x) => (
+              <li key={x}>
+                <code>{x}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TargetDetail({ change, flow }: { change: string; flow: string }) {
+  const v = useApi<Api.TargetFlowViewT>(
+    `/api/changes/${encodeURIComponent(change)}/target-flows/${encodeURIComponent(flow)}`,
+  );
+  useLiveEvents((e) => {
+    if (e.type === "file.changed" && typeof e.path === "string" && e.path.includes("changes"))
+      v.reload();
+  });
+  return (
+    <View of={v}>
+      {(d) => {
+        const seq = targetSequence(d);
+        return (
+          <div className="stack">
+            <h2 className="h">{d.name}</h2>
+            <p>
+              <span className={`seq-kind d-${d.delta}`}>{C.deltaKinds[d.delta]}</span>{" "}
+              {C.targetCounts(d.counts.added, d.counts.changed, d.counts.removed)}.{" "}
+              {d.delta !== "new" && <a href={flowHref(d.repo, d.flow)}>{d.flow}</a>}
+            </p>
+            <p>
+              <span className="hud">{C.whyChange}</span> {d.why}
+            </p>
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <span className="hud">{C.file}</span>
+              <code>{d.file}</code>
+              <CopyButton text={d.file} label={C.copyFile} />
+            </div>
+            {[...d.problems, ...seq.gaps].map((g) => (
+              <p key={g} className="seq-unjoined">
+                {g}
+              </p>
+            ))}
+            <SequenceDiagram seq={seq} name={d.name} hideErrors />
+          </div>
+        );
+      }}
+    </View>
+  );
+}
+
+function ChangeFlows({ change, flow }: { change: string; flow: string | undefined }) {
+  const list = useApi<Api.TargetFlowListT>(
+    `/api/changes/${encodeURIComponent(change)}/target-flows`,
+  );
+  return (
+    <div className="flows-grid">
+      <Panel title={C.targetsTitle}>
+        <p className="muted" style={{ marginTop: 0 }}>
+          {C.changeIntro}
+        </p>
+        <View of={list}>{(d) => <TargetList list={d} current={flow} />}</View>
+      </Panel>
+      <Panel>
+        {flow ? (
+          <TargetDetail change={change} flow={flow} />
+        ) : (
+          <div className="state">{C.pick}</div>
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+/** The changes, for the picker: a change shows its target flows instead of a repo's flows. */
+function ChangePicker(p: { list: Loaded<{ id: string; title: string }[]>; change?: string }) {
+  if (p.list.state !== "ready" || p.list.data.length === 0) return null;
+  return (
+    <label className="row" style={{ gap: 8 }}>
+      <span className="hud">{C.change}</span>
+      <select
+        id="flow-change"
+        value={p.change ?? ""}
+        onChange={(e) => (location.hash = e.target.value ? targetHref(e.target.value) : "#/flows")}
+      >
+        <option value="">{C.pickRepo}</option>
+        {p.list.data.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.title}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function Flows({ hash }: { hash: string }) {
   const list = useApi<Api.SpecListT>("/api/specs");
+  const changes = useApi<{ id: string; title: string }[]>("/api/changes");
+  const change = queryParam(hash, "change");
   const wanted = queryParam(hash, "repo");
   const flow = queryParam(hash, "flow");
   const q = queryParam(hash, "q");
@@ -304,29 +473,35 @@ export function Flows({ hash }: { hash: string }) {
         <p className="muted" style={{ marginTop: 0 }}>
           {C.intro}
         </p>
-        <View of={list} empty={(d) => d.repos.length === 0} emptyText={C.noSpecs}>
-          {(d) => {
-            const repo = wanted ?? d.repos[0]!.repo;
-            return (
-              <label className="row" style={{ gap: 8 }}>
-                <span className="hud">{C.repo}</span>
-                <select
-                  id="flow-repo"
-                  value={repo}
-                  onChange={(e) => (location.hash = flowHref(e.target.value))}
-                >
-                  {d.repos.map((r) => (
-                    <option key={r.repo} value={r.repo}>
-                      {r.repo} ({r.flows})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            );
-          }}
-        </View>
+        <div className="row" style={{ gap: 16, flexWrap: "wrap" }}>
+          <ChangePicker list={changes} {...(change ? { change } : {})} />
+          {!change && (
+            <View of={list} empty={(d) => d.repos.length === 0} emptyText={C.noSpecs}>
+              {(d) => {
+                const repo = wanted ?? d.repos[0]!.repo;
+                return (
+                  <label className="row" style={{ gap: 8 }}>
+                    <span className="hud">{C.repo}</span>
+                    <select
+                      id="flow-repo"
+                      value={repo}
+                      onChange={(e) => (location.hash = flowHref(e.target.value))}
+                    >
+                      {d.repos.map((r) => (
+                        <option key={r.repo} value={r.repo}>
+                          {r.repo} ({r.flows})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                );
+              }}
+            </View>
+          )}
+        </div>
       </Panel>
-      {list.state === "ready" && list.data.repos.length > 0 && (
+      {change && <ChangeFlows change={change} flow={flow} key={change} />}
+      {!change && list.state === "ready" && list.data.repos.length > 0 && (
         <RepoFlows
           repo={wanted ?? list.data.repos[0]!.repo}
           flow={flow}

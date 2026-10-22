@@ -241,7 +241,22 @@ export function ArchitectureStep({ list }: { list: Loaded<ChangeRow[]> }) {
       <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
         {W.architectureIntro}
       </p>
-      <View of={list}>{(l) => <RunNextPanel step={architectureStep(l)} />}</View>
+      <View of={list}>
+        {(l) => (
+          <>
+            <RunNextPanel step={architectureStep(l)} />
+            {l.length > 0 && (
+              <p className="row" style={{ gap: 12, flexWrap: "wrap", margin: "8px 0 0" }}>
+                {l.map((c) => (
+                  <a key={c.id} href={`#/flows?change=${encodeURIComponent(c.id)}`}>
+                    {COPY.flows.openTargets}: {c.title}
+                  </a>
+                ))}
+              </p>
+            )}
+          </>
+        )}
+      </View>
     </>
   );
 }

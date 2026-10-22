@@ -33,14 +33,41 @@ const flow = () => {
 };
 
 describe("the Flow record (ADR 0079)", () => {
-  it("keeps its own schema version when written and read back", () => {
+  it("keeps its own schema version when written and read back; version 1 reads as 2 (ADR 0095)", () => {
     const text = serializeRecord(flow());
-    expect(text.startsWith("schemaVersion: 1\nkind: Flow\n")).toBe(true);
+    expect(text.startsWith("schemaVersion: 2\nkind: Flow\n")).toBe(true);
     const back = deserializeRecord(text);
     expect(back.ok && back.record).toEqual(flow());
-    expect(parseRecord({ ...EXAMPLES.Flow, schemaVersion: 2 }).ok).toBe(false);
+    const v1 = parseRecord({ ...EXAMPLES.Flow, schemaVersion: 1 });
+    expect(v1.ok && v1.record.schemaVersion).toBe(2);
+    expect(parseRecord({ ...EXAMPLES.Flow, schemaVersion: 3 }).ok).toBe(false);
     const s = catalogJsonSchemas().Flow as { $id: string };
-    expect(s.$id).toContain("/schema/flow/v1/Flow.json");
+    expect(s.$id).toContain("/schema/flow/v2/Flow.json");
+  });
+
+  it("says which steps a loop or retry repeats, and only a loop or retry says it (ADR 0095)", () => {
+    const f = EXAMPLES.Flow as { steps: Record<string, unknown>[] };
+    const withStep = (extra: Record<string, unknown>) =>
+      parseRecord({ ...EXAMPLES.Flow, steps: [...f.steps, extra] });
+    const retry = {
+      kind: "retry",
+      what: "The conversion runs again once when the rates service times out",
+      refs: [],
+      repeats: { from: 3, to: 3 },
+      evidence: f.steps[0]!.evidence,
+    };
+    const ok = withStep(retry);
+    expect(ok.ok && ok.record.kind === "Flow" && ok.record.steps.at(-1)!.repeats).toEqual({
+      from: 3,
+      to: 3,
+    });
+    const issues = (r: ReturnType<typeof parseRecord>) => (r.ok ? [] : r.issues.map((i) => i.path));
+    const last = `steps.${f.steps.length}.repeats`;
+    expect(issues(withStep({ ...retry, repeats: { from: 3, to: 2 } }))).toEqual([last]);
+    expect(issues(withStep({ ...retry, repeats: { from: 1, to: 99 } }))).toEqual([last]);
+    expect(issues(withStep({ ...retry, kind: "log" }))).toEqual([last]);
+    // A loop that doesn't say which steps is still a record; spec check makes it a finding.
+    expect(withStep({ ...retry, kind: "loop", repeats: undefined }).ok).toBe(true);
   });
 
   it("checks the rules across its fields", () => {

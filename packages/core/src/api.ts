@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { RunState, RunSummary, RuntimeKind } from "./schema/ai.js";
-import { RecordId } from "./schema/common.js";
-import { Flow, RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
+import { Evidence, RecordId } from "./schema/common.js";
+import {
+  Flow,
+  FlowCaller,
+  FlowData,
+  RECORD_KINDS,
+  RECORD_SCHEMAS,
+  type RecordKind,
+} from "./schema/kinds.js";
 import { ChangeArtifact, Phase } from "./schema/orgpack.js";
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
 import { Question, QuestionScopeLevel } from "./schema/question.js";
@@ -21,8 +28,9 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.2.0 (ADR 0084): GET /api/onboarding, for the Onboarding and Dashboard screens.
  * 2.3.0 (ADR 0092): the specs API, /api/specs, for the Flows screen.
  * 2.4.0 (ADR 0094): GET /api/cites, the flow steps and records that cite each line of one file.
+ * 2.5.0 (ADR 0095): a change's target flows beside today's, /api/changes/{id}/target-flows.
  */
-export const API_VERSION = "2.4.0";
+export const API_VERSION = "2.5.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -495,6 +503,73 @@ export const CiteList = z.object({
   ),
 });
 export type CiteListT = z.infer<typeof CiteList>;
+/**
+ * ADR 0095: a change's target flows (target-flows/<flow>.yaml, ADR 0087) beside today's flows
+ * in the specs: each step marked same, changed, added or removed, with its number in today's
+ * flow and in the target flow (repeats are target numbers).
+ */
+export const TargetFlowSummary = z.object({
+  flow: RecordId,
+  repo: RecordId,
+  change: z.enum(["modify", "new", "remove"]),
+  name: z.string(),
+  why: z.string(),
+  added: z.number().int(),
+  changed: z.number().int(),
+  removed: z.number().int(),
+});
+
+export const TargetFlowList = z.object({
+  change: RecordId,
+  flows: z.array(TargetFlowSummary),
+  /** Target-flow files that don't read, with why. */
+  problems: z.array(z.string()),
+});
+
+export const MergedStep = z.object({
+  mark: z.enum(["same", "changed", "added", "removed"]),
+  today: z.number().int().positive().optional(),
+  target: z.number().int().positive().optional(),
+  kind: z.string(),
+  what: z.string(),
+  to: z
+    .object({ component: z.string(), entry: z.string(), new: z.boolean().optional() })
+    .optional(),
+  store: z
+    .object({ table: z.string(), columns: z.array(z.string()), new: z.boolean().optional() })
+    .optional(),
+  data: FlowData.optional(),
+  repeats: z.object({ from: z.number().int(), to: z.number().int() }).optional(),
+  evidence: z.array(Evidence),
+  confirmedBy: z.string().optional(),
+  was: z.object({ kind: z.string(), what: z.string() }).optional(),
+  why: z.string().optional(),
+});
+
+export const TargetFlowView = z.object({
+  change: RecordId,
+  /** The target-flow file, relative to the metarepo. */
+  file: z.string(),
+  flow: RecordId,
+  repo: RecordId,
+  delta: z.enum(["modify", "new", "remove"]),
+  name: z.string(),
+  why: z.string(),
+  component: z.string(),
+  trigger: z.object({ kind: z.string(), what: z.string(), caller: FlowCaller.optional() }),
+  triggerEvidence: z.array(Evidence),
+  steps: z.array(MergedStep),
+  counts: z.object({
+    added: z.number().int(),
+    changed: z.number().int(),
+    removed: z.number().int(),
+  }),
+  /** Why some of it can't be shown (today's flow isn't in the spec). */
+  problems: z.array(z.string()),
+});
+export type TargetFlowListT = z.infer<typeof TargetFlowList>;
+export type TargetFlowViewT = z.infer<typeof TargetFlowView>;
+
 export type SpecListT = z.infer<typeof SpecList>;
 export type SpecViewT = z.infer<typeof SpecView>;
 export type FlowViewT = z.infer<typeof FlowView>;
@@ -1173,6 +1248,28 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/changes/{changeId}/target-flows": {
+    get: {
+      id: "listTargetFlows",
+      summary:
+        "The change's target flows: each flow it adds, changes or removes, with counts (ADR 0095)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "TargetFlowList", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/changes/{changeId}/target-flows/{flowId}": {
+    get: {
+      id: "getTargetFlow",
+      summary:
+        "One target flow beside today's: each step marked same, changed, added or removed (ADR 0095)",
+      tag: "changes",
+      params: [p("changeId"), p("flowId")],
+      ok: { status: 200, schema: "TargetFlowView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
   "/api/cites": {
     get: {
       id: "getCites",
@@ -1843,6 +1940,8 @@ export function openApiDocument(): Record<string, unknown> {
     SpecView,
     FlowView,
     CiteList,
+    TargetFlowList,
+    TargetFlowView,
     OrgPackView,
     Health,
     Finding,

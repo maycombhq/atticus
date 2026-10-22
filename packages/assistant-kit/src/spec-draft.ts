@@ -99,6 +99,7 @@ flows:
         to: { component: <catalog Component id>, entry: "<an Endpoint id, or METHOD /path, or the topic>" }   # call-out and publish only
         data: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..] }   # field names as the code names them; only the lists that apply
         store: { table: <catalog Table id>, columns: [<column names as the database names them>] }   # read, lookup and write only
+        repeats: { from: <step number>, to: <step number> }   # loop and retry only: the steps it repeats, counting from 1; they may come before it
         at: "<file>:<line>"   # or a list of them
     errors:
       - { when: <the condition>, then: <what happens>, at: "<file>:<line>" }
@@ -111,6 +112,7 @@ The steps a person draws, in every flow:
 - Every validation layer is its own validate step, with its rules in data.checks: the form's checks, the request schema, the entity's constraints, a database constraint the code relies on.
 - A transform step wherever data crosses types: a form value to the request, a request to a DTO, a DTO to an entity, an entity to a DTO, a request to an event, or one API's request to the next API's request. Name the fields in data.from and data.to, in the same order.
 - Name the fields in data at each step (reads, checks, sends, returns, from, to), so a field's origin is named before a later step uses it.
+- A loop or retry is its own step, citing the line that loops or retries, and names in repeats the steps it repeats by their numbers in the flow: a loop over the next steps (repeats: { from: 4, to: 6 }), or a retry of a save above it (repeats: { from: 2, to: 3 }).
 - Keep it to the steps a person would draw: usually 4 to 15. A family stands for near-identical triggers, so their shared steps are written once.
 
 Rules:

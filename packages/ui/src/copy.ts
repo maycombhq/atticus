@@ -70,6 +70,33 @@ export const COPY = {
       retry: "Retry",
     } as Record<string, string>,
     openFlows: "Flows of this repo",
+    // ADR 0095: loops and retries, and a change's target flows.
+    frame: (kind: string, from: number, to: number) =>
+      `${kind === "retry" ? "Retry" : "Loop"}: steps ${from} to ${to} again`,
+    marks: { added: "Added", changed: "Changed", removed: "Removed" } as Record<string, string>,
+    was: (what: string) => `Before: ${what}`,
+    newLane: "new",
+    change: "Change",
+    pickRepo: "A repo's flows",
+    changeIntro:
+      "The flows this change adds, changes or removes, each drawn beside today's: added steps say Added, changed ones say Changed with what they did before, removed ones say Removed and are struck through.",
+    noTargets: (change: string) =>
+      `${change} has no target flows yet. Run atticus change architecture ${change}, or /atticus-architecture in Copilot Chat.`,
+    targetsTitle: "Target flows",
+    targetCounts: (added: number, changed: number, removed: number) =>
+      [
+        added ? `${added} added` : "",
+        changed ? `${changed} changed` : "",
+        removed ? `${removed} removed` : "",
+      ]
+        .filter(Boolean)
+        .join(", ") || "no step changes",
+    deltaKinds: { new: "New flow", modify: "Changed flow", remove: "Removed flow" } as Record<
+      string,
+      string
+    >,
+    whyChange: "Why",
+    openTargets: "Its target flows",
   },
   questions: {
     title: "Questions",

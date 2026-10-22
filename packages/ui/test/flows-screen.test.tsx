@@ -2,8 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
-import { FlowList, Flows, SequenceDiagram } from "../src/screens/flows/Flows.js";
-import { sequence } from "../src/screens/flows/model.js";
+import { FlowList, Flows, SequenceDiagram, TargetList } from "../src/screens/flows/Flows.js";
+import { sequence, targetSequence } from "../src/screens/flows/model.js";
+import { ArchitectureStep } from "../src/screens/work/Stage.js";
 
 const C = COPY.flows;
 const esc = (s: string) =>
@@ -108,6 +109,10 @@ describe("the flow's sequence diagram (ADR 0092)", () => {
     expect(out).not.toContain('aria-current="step"');
   });
 
+  it("lets a keyboard reach and scroll a wide flow", () => {
+    expect(out).toMatch(/<div class="seq"[^>]*tabindex="0"[^>]*role="region"/);
+  });
+
   it("lists the error paths with their citations", () => {
     expect(out).toContain(esc(C.errorsTitle));
     expect(out).toContain("the email is taken");
@@ -170,5 +175,133 @@ describe("the Flows screen's states", () => {
     const out = renderToStaticMarkup(<Flows hash="#/flows" />);
     expect(out).toContain('aria-busy="true"');
     expect(out).toContain(esc(C.title));
+  });
+});
+
+describe("loops, retries and a change's marks, drawn (ADR 0095)", () => {
+  const withRetry: Api.FlowViewT = {
+    ...view,
+    flow: {
+      ...view.flow,
+      steps: [
+        ...view.flow.steps,
+        {
+          kind: "retry",
+          what: "The save runs again on a timeout",
+          refs: [],
+          repeats: { from: 1, to: 1 },
+          evidence: [ev("src/app/customers/customer.service.ts", 11)],
+        },
+      ],
+    },
+  };
+
+  it("draws a frame around the steps a retry repeats, and says it in words", () => {
+    const out = renderToStaticMarkup(<SequenceDiagram seq={sequence(withRetry)} />);
+    // Steps 1 to 3 are inside the frame: a bar on each, the label on the first.
+    expect(out.match(/class="seq-frame /g)).toHaveLength(3);
+    expect(out).toContain(esc(C.frame("retry", 1, 1)));
+    expect(out).toContain("repeats steps 1 to 1");
+  });
+
+  it("marks what a change adds, changes and removes, in words as well as colour", () => {
+    const target: Api.TargetFlowViewT = {
+      change: "add-fraud-check",
+      file: "openspec/changes/add-fraud-check/target-flows/forge-web.save-customer.yaml",
+      flow: "forge-web.save-customer",
+      repo: "forge-web",
+      delta: "modify",
+      name: "A person saves a new customer",
+      why: "The customer is screened first.",
+      component: "forge-web",
+      trigger: { kind: "action", what: "Save is pressed" },
+      triggerEvidence: [],
+      steps: [
+        {
+          mark: "added",
+          target: 1,
+          kind: "call-out",
+          what: "The customer is screened",
+          to: { component: "northwind-pay", entry: "POST /v1/screenings", new: true },
+          evidence: [],
+        },
+        {
+          mark: "changed",
+          today: 1,
+          target: 2,
+          kind: "call-out",
+          what: "POST /api/customers with the verdict",
+          was: { kind: "call-out", what: "POST /api/customers" },
+          to: { component: "forge-customers", entry: "POST /api/customers" },
+          evidence: [],
+        },
+        {
+          mark: "removed",
+          today: 2,
+          kind: "respond",
+          what: "The id is kept on the form",
+          evidence: [],
+        },
+      ],
+      counts: { added: 1, changed: 1, removed: 1 },
+      problems: [],
+    };
+    const out = renderToStaticMarkup(<SequenceDiagram seq={targetSequence(target)} />);
+    for (const w of [C.marks.added!, C.marks.changed!, C.marks.removed!])
+      expect(out).toContain(esc(w));
+    expect(out).toContain(esc(C.was("POST /api/customers")));
+    expect(out).toContain("was 2");
+    expect(out).toContain(`northwind-pay`);
+    expect(out).toContain(esc(C.newLane));
+    expect(out).toContain("seq-box k-respond m-removed");
+  });
+
+  it("lists a change's target flows with what each does", () => {
+    const out = renderToStaticMarkup(
+      <TargetList
+        list={{
+          change: "add-fraud-check",
+          flows: [
+            {
+              flow: "forge-orders.place-order",
+              repo: "forge-orders",
+              change: "modify",
+              name: "A client places an order",
+              why: "Screened first.",
+              added: 2,
+              changed: 1,
+              removed: 0,
+            },
+          ],
+          problems: [],
+        }}
+        current="forge-orders.place-order"
+      />,
+    );
+    expect(out).toContain("A client places an order");
+    expect(out).toContain(esc(C.deltaKinds.modify!));
+    expect(out).toContain(esc(C.targetCounts(2, 1, 0)));
+    expect(out).toContain(
+      'href="#/flows?change=add-fraud-check&amp;flow=forge-orders.place-order"',
+    );
+    const none = renderToStaticMarkup(
+      <TargetList list={{ change: "x", flows: [], problems: [] }} current={undefined} />,
+    );
+    expect(none).toContain(esc(C.noTargets("x")));
+  });
+});
+
+describe("the Architecture page links each change's target flows (ADR 0095)", () => {
+  it("names the change and opens its target flows", () => {
+    const out = renderToStaticMarkup(
+      <ArchitectureStep
+        list={{
+          state: "ready",
+          data: [{ id: "add-fraud-check", title: "Screen orders for fraud", state: "design" }],
+        }}
+      />,
+    );
+    expect(out).toContain('href="#/flows?change=add-fraud-check"');
+    expect(out).toContain(esc(`${C.openTargets}: Screen orders for fraud`));
   });
 });

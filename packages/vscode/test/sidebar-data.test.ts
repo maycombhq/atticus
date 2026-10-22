@@ -15,6 +15,7 @@ import {
   repoChildren,
   repoItems,
   stepItems,
+  targetItems,
   type Paths,
 } from "../src/sidebar-data";
 
@@ -215,6 +216,7 @@ describe("the Changes section", () => {
       ["brief", "done", "pass"],
       ["interfaces", "ready · 2 findings", "circle-large-outline"],
       ["data", "blocked", "lock"],
+      ["Target flows", undefined, "git-compare"],
       ["Findings", "2 blocking, 1 gap", "warning"],
       ["In the app", undefined, "link-external"],
     ]);
@@ -222,7 +224,7 @@ describe("the Changes section", () => {
       kind: "file",
       path: join(root, "openspec/changes/add-note-tags/brief.md"),
     });
-    expect(items[3]!.expand).toEqual({ kind: "findings", change: "add-note-tags" });
+    expect(items[4]!.expand).toEqual({ kind: "findings", change: "add-note-tags" });
     // A file the change hasn't reached yet says so, rather than failing to open.
     const notYet = artifactItems(change, {
       ...paths,
@@ -411,5 +413,62 @@ describe("one file's cited lines, as lenses", () => {
       { records: false },
     );
     expect(only).toEqual([]);
+  });
+});
+
+describe("a change's target flows in the sidebar (ADR 0095)", () => {
+  it("lists each flow the change adds, changes or removes, opening it beside today's", () => {
+    const items = targetItems({
+      change: "add-fraud-check",
+      flows: [
+        {
+          flow: "forge-orders.place-order",
+          repo: "forge-orders",
+          change: "modify",
+          name: "A client places an order",
+          why: "Screened first.",
+          added: 2,
+          changed: 1,
+          removed: 0,
+        },
+        {
+          flow: "forge-orders.screen-order",
+          repo: "forge-orders",
+          change: "new",
+          name: "An order is screened",
+          why: "Held orders are screened again.",
+          added: 3,
+          changed: 0,
+          removed: 0,
+        },
+      ],
+      problems: [],
+    });
+    expect(items.map((i) => [i.label, i.description, i.icon])).toEqual([
+      ["A client places an order", "changed · 2 added, 1 changed", "diff-modified"],
+      ["An order is screened", "new · 3 steps", "diff-added"],
+    ]);
+    expect(items[0]!.open).toEqual({
+      kind: "app",
+      hash: "#/flows?change=add-fraud-check&flow=forge-orders.place-order",
+    });
+    expect(items[0]!.tooltip).toContain("Screened first.");
+  });
+
+  it("puts Target flows under a change, beside its files", () => {
+    const change = {
+      id: "add-fraud-check",
+      title: "Screen orders for fraud",
+      type: "feature",
+      state: "design",
+      repos: [],
+      openFindings: { blocking: 0, gap: 0, risk: 0, idea: 0 },
+      updatedAt: "2026-10-21T09:00:00Z",
+      artifacts: [],
+    };
+    const items = artifactItems(change, paths);
+    expect(items.find((i) => i.label === "Target flows")).toMatchObject({
+      expand: { kind: "targets", change: "add-fraud-check" },
+    });
   });
 });

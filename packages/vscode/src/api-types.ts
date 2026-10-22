@@ -144,3 +144,18 @@ export interface CiteList {
     records: { kind: string; id: string; name?: string; source: string }[];
   }[];
 }
+
+export interface TargetFlowList {
+  change: string;
+  flows: {
+    flow: string;
+    repo: string;
+    change: string;
+    name: string;
+    why: string;
+    added: number;
+    changed: number;
+    removed: number;
+  }[];
+  problems: string[];
+}

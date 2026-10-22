@@ -166,6 +166,10 @@ export const DeltaStep = z.strictObject({
     })
     .optional(),
   fields: DeltaFields.optional(),
+  /** loop and retry: the steps it repeats, by their numbers in the target flow (ADR 0095). */
+  repeats: z
+    .strictObject({ from: z.number().int().positive(), to: z.number().int().positive() })
+    .optional(),
   why: z.string().optional(),
 });
 export type DeltaStep = z.infer<typeof DeltaStep>;

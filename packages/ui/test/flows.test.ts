@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
-import { sequence } from "../src/screens/flows/model.js";
+import { sequence, targetSequence } from "../src/screens/flows/model.js";
 
 type Flow = Api.FlowViewT["flow"];
 const ev = (path: string, line?: number) => ({
@@ -222,5 +222,154 @@ describe("a flow as a sequence of steps across lanes (ADR 0092)", () => {
     expect(s.lanes[0]!.label).toBe("A schedule");
     expect(s.rows[1]!.fields).toEqual(["returns: a, b, c, d, e, f and 2 more"]);
     expect(s.rows[1]!.to).toBe("self");
+  });
+});
+
+describe("loops and retries as frames (ADR 0095)", () => {
+  const step = (kind: string, what: string, extra: Record<string, unknown> = {}) => ({
+    kind,
+    what,
+    refs: [],
+    evidence: [ev("src/Chart.java", 10)],
+    ...extra,
+  });
+  const chart = (steps: ReturnType<typeof step>[]): Flow => ({
+    ...base,
+    id: "charts.save",
+    component: "charts",
+    name: "Save a chart",
+    trigger: { kind: "endpoint", what: "POST /charts", evidence: [ev("src/Chart.java", 1)] },
+    steps: steps as Flow["steps"],
+  });
+
+  it("frames a retry around the steps it runs again, which come before it", () => {
+    const s = sequence(
+      view(
+        chart([
+          step("entry", "The chart arrives"),
+          step("lookup", "The saved chart is found"),
+          step("write", "The chart is saved"),
+          step("retry", "On a clash the save runs again", { repeats: { from: 2, to: 3 } }),
+          step("respond", "The chart goes back"),
+        ]),
+      ),
+    );
+    expect(s.frames).toEqual([
+      { kind: "retry", step: 4, from: 2, to: 4, depth: 0, repeats: { from: 2, to: 3 } },
+    ]);
+    // Rows are numbered by step (0 is the start); steps 2 to 4 are inside the frame.
+    expect(s.rows.map((r) => r.frames.map((f) => [f.depth, f.first, f.last]))).toEqual([
+      [],
+      [],
+      [[0, true, false]],
+      [[0, false, false]],
+      [[0, false, true]],
+      [],
+    ]);
+    expect(s.rows[4]!.fields).toContain("repeats steps 2 to 3");
+  });
+
+  it("frames a loop over the steps after it, and nests a retry inside it", () => {
+    const s = sequence(
+      view(
+        chart([
+          step("read", "The held charts are read"),
+          step("loop", "Each held chart is checked", { repeats: { from: 3, to: 5 } }),
+          step("call-out", "The chart is checked", {
+            to: { component: "checker", entry: "POST /check" },
+          }),
+          step("retry", "A timed-out check runs once more", { repeats: { from: 3, to: 3 } }),
+          step("write", "The result is saved"),
+        ]),
+      ),
+    );
+    expect(s.frames.map((f) => [f.kind, f.from, f.to, f.depth])).toEqual([
+      ["loop", 2, 5, 0],
+      ["retry", 3, 4, 1],
+    ]);
+    expect(s.rows[3]!.frames.map((f) => f.depth)).toEqual([0, 1]);
+  });
+
+  it("says when a loop doesn't say which steps it repeats", () => {
+    const s = sequence(view(chart([step("entry", "In"), step("loop", "Each line is read")])));
+    expect(s.frames).toEqual([]);
+    expect(s.gaps).toContain("Step 2 is a loop that doesn't say which steps it repeats yet.");
+  });
+});
+
+describe("a change's target flow, before and after at once (ADR 0095)", () => {
+  const target: Api.TargetFlowViewT = {
+    change: "add-fraud-check",
+    file: "openspec/changes/add-fraud-check/target-flows/forge-orders.place-order.yaml",
+    flow: "forge-orders.place-order",
+    repo: "forge-orders",
+    delta: "modify",
+    name: "A client places an order",
+    why: "The order is screened before stock is reserved.",
+    component: "forge-orders",
+    trigger: { kind: "endpoint", what: "POST /orders is called" },
+    triggerEvidence: [ev("src/OrderController.java", 4)],
+    steps: [
+      {
+        mark: "same",
+        today: 1,
+        target: 1,
+        kind: "entry",
+        what: "The order arrives",
+        evidence: [ev("src/OrderController.java", 9)],
+      },
+      {
+        mark: "added",
+        target: 2,
+        kind: "call-out",
+        what: "Northwind Pay screens the order",
+        to: { component: "northwind-pay", entry: "POST /v1/screenings", new: true },
+        evidence: [],
+        why: "Fraud is screened first.",
+      },
+      {
+        mark: "removed",
+        today: 2,
+        kind: "call-out",
+        what: "Stock is reserved",
+        to: { component: "forge-stock", entry: "POST /reservations" },
+        evidence: [ev("src/StockClient.java", 7)],
+      },
+      {
+        mark: "changed",
+        today: 3,
+        target: 3,
+        kind: "write",
+        what: "The order is inserted with the verdict",
+        store: { table: "forge-orders-db.orders", columns: ["sku", "fraud_verdict"] },
+        was: { kind: "write", what: "The order is inserted" },
+        evidence: [ev("src/OrderController.java", 12)],
+      },
+    ],
+    counts: { added: 1, changed: 1, removed: 1 },
+    problems: [],
+  };
+
+  it("marks each step, names new parts as new, and numbers by the target flow", () => {
+    const s = targetSequence(target);
+    expect(s.lanes.map((l) => [l.label, l.kind, l.isNew ?? false])).toEqual([
+      ["Caller not known", "caller", false],
+      ["forge-orders", "self", false],
+      ["northwind-pay", "component", true],
+      ["forge-stock", "component", false],
+      ["forge-orders-db.orders", "store", false],
+    ]);
+    expect(s.rows.map((r) => [r.label ?? r.kind, r.mark, r.shown])).toEqual([
+      ["endpoint", undefined, "Start"],
+      ["entry", undefined, "1"],
+      ["POST /v1/screenings", "added", "2"],
+      ["POST /reservations", "removed", "was 2"],
+      ["write", "changed", "3"],
+    ]);
+    expect(s.rows[4]!.was).toBe("The order is inserted");
+    expect(s.rows[2]!.why).toBe("Fraud is screened first.");
+    // A step this change adds has no citation yet.
+    expect(s.rows[2]!.cite).toBeUndefined();
+    expect(s.rows[4]!.cite).toBe("src/OrderController.java:12");
   });
 });

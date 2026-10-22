@@ -32,6 +32,12 @@ async function oldMetarepo(): Promise<string> {
     ].join("\n"),
   );
   await writeFile(join(root, ".gitignore"), "/workspace/\n");
+  // A flow at schema version 1 (ADR 0095).
+  await mkdir(join(root, "specs/forge-web"), { recursive: true });
+  await cp(
+    join(FIXTURES, "estate/specs/forge-web/forge-web.save-customer.yaml"),
+    join(root, "specs/forge-web/forge-web.save-customer.yaml"),
+  );
   return root;
 }
 
@@ -52,10 +58,11 @@ describe("atticus upgrade", () => {
       ["state-folders-ignored", [".gitignore"]],
       // ADR 0087: the Forge pack's gates.yaml is at version 1.
       ["gates-v2", ["org-pack/gates.yaml"]],
+      ["flow-schema-v2", ["specs/forge-web/forge-web.save-customer.yaml"]],
     ]);
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
-    expect(r.out[0]).toMatch(/4 upgrade steps to run/);
+    expect(r.out[0]).toMatch(/5 upgrade steps to run/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
     expect(await upgradeCommand(root, { dryRun: true }, io().io, "1.0.0")).toBe(0);
@@ -93,7 +100,11 @@ describe("atticus upgrade", () => {
       "local-files-ignored",
       "state-folders-ignored",
       "gates-v2",
+      "flow-schema-v2",
     ]);
+    expect(
+      await readFile(join(root, "specs/forge-web/forge-web.save-customer.yaml"), "utf8"),
+    ).toMatch(/^schemaVersion: 2\r?\nkind: Flow/);
     // Each gate keeps the two rounds version 1 gave it; deleting the line makes it unlimited.
     const gates = parse(await readFile(join(root, "org-pack/gates.yaml"), "utf8"));
     expect(gates.schemaVersion).toBe(2);

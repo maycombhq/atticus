@@ -564,14 +564,26 @@ export const Capability = record("Capability", {
  * the metarepo's specs/<repo>/ folder, so their version moves on its own, not with the
  * catalog's SCHEMA_VERSION.
  */
-export const FLOW_SCHEMA_VERSION = 1 as const;
+export const FLOW_SCHEMA_VERSION = 2 as const;
+
+/**
+ * A Flow's schema version (ADR 0095). Version 2 adds `repeats` on loop and retry steps, an
+ * optional field, so version-1 files are read as they are and come back as version 2 in memory;
+ * writers write version 2, and `atticus upgrade` rewrites old files.
+ */
+export const FlowSchemaVersion = z
+  .union([z.literal(1), z.literal(2)], {
+    error:
+      "a Flow's schemaVersion is 1 or 2 (version 1 files are read as version 2; ADR 0079, 0095)",
+  })
+  .overwrite((): 1 | 2 => FLOW_SCHEMA_VERSION);
 
 /** What starts a flow: an entry point, a button or form, a page load, a listener, a job. */
 export const FLOW_TRIGGER_KINDS = ["endpoint", "action", "page", "listener", "job"] as const;
 
 /**
  * What a step does. lookup is a read to decide something; log is a log line or an audit
- * entry; loop and retry wrap the steps after them.
+ * entry; loop and retry repeat other steps of the flow, which they name in `repeats` (ADR 0095).
  */
 export const FLOW_STEP_KINDS = [
   "entry",
@@ -669,6 +681,14 @@ export const FlowStep = z.strictObject({
   store: z.strictObject({ table: Ref, columns: list(str()) }).optional(),
   evidence: z.array(Evidence).min(1, "every step cites the code it is read from"),
   confirmedBy: ConfirmedBy.optional(),
+  /**
+   * A loop or retry: the steps it repeats, by their numbers in this flow (from 1), first to last
+   * (ADR 0095). They may come before it (a retry of the save above) or after it (a loop over
+   * the next steps).
+   */
+  repeats: z
+    .strictObject({ from: z.number().int().positive(), to: z.number().int().positive() })
+    .optional(),
 });
 
 export const FlowError = z.strictObject({
@@ -685,9 +705,7 @@ export const FlowError = z.strictObject({
  */
 export const Flow = z.strictObject({
   kind: z.literal("Flow"),
-  schemaVersion: z.literal(FLOW_SCHEMA_VERSION, {
-    error: `a Flow's schemaVersion is ${FLOW_SCHEMA_VERSION} (ADR 0079)`,
-  }),
+  schemaVersion: FlowSchemaVersion,
   id: RecordId,
   status: Status.default("current"),
   confidence: Confidence.default("inferred"),

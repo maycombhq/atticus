@@ -1,4 +1,8 @@
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import {
+  changesDirOf,
+  changesRelOf,
   readEstateJoins,
   readRepoSpec,
   RecordId,
@@ -8,6 +12,7 @@ import {
   type EstateJoins,
   type FlowRecord,
 } from "@maycombhq/core";
+import { mergeDelta, readDeltas, TARGET_DIR } from "@maycombhq/planner";
 import { badRequest, notFound, type Router, type ServerContext } from "@maycombhq/server";
 
 /**
@@ -121,6 +126,53 @@ export function uiSpecRoutes(r: Router, ctx: ServerContext): Router {
         reason: u.reason,
         message: u.message,
       })),
+    };
+    return { status: 200, body };
+  });
+
+  // ADR 0095: a change's target flows beside today's flows in the specs.
+  const deltasOf = async (change: string) => {
+    const dir = join(changesDirOf(root), change);
+    if (!(await stat(join(dir, "change.yaml")).catch(() => undefined)))
+      throw notFound(`There is no change ${change}.`);
+    return readDeltas(dir);
+  };
+  const todayOf = async (repo: string, flow: string) =>
+    (await specRepos(root)).includes(repo)
+      ? (await readRepoSpec(root, repo)).flows.find((f) => f.id === flow)
+      : undefined;
+
+  r.add("GET", "/api/changes/{changeId}/target-flows", async ({ params }) => {
+    const change = idOf(params.changeId!, "change");
+    const { deltas, problems } = await deltasOf(change);
+    const flows: Api.TargetFlowListT["flows"] = [];
+    for (const d of deltas) {
+      const m = mergeDelta(d, await todayOf(d.repo, d.flow));
+      flows.push({
+        flow: d.flow,
+        repo: d.repo,
+        change: d.change,
+        name: m.name,
+        why: d.why,
+        ...m.counts,
+      });
+    }
+    return { status: 200, body: { change, flows, problems } satisfies Api.TargetFlowListT };
+  });
+
+  r.add("GET", "/api/changes/{changeId}/target-flows/{flowId}", async ({ params }) => {
+    const change = idOf(params.changeId!, "change");
+    const flow = idOf(params.flowId!, "flow");
+    const d = (await deltasOf(change)).deltas.find((x) => x.flow === flow);
+    if (!d) throw notFound(`Change ${change} has no target flow ${flow}.`);
+    const { flow: _f, repo: _r, change: delta, ...m } = mergeDelta(d, await todayOf(d.repo, flow));
+    const body: Api.TargetFlowViewT = {
+      change,
+      file: `${changesRelOf(root)}/${change}/${TARGET_DIR}/${flow}.yaml`,
+      flow,
+      repo: d.repo,
+      delta,
+      ...m,
     };
     return { status: 200, body };
   });

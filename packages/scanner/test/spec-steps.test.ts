@@ -245,3 +245,46 @@ describe("the critic on a flow an external system starts (ADR 0089)", () => {
     expect(rules(r)).toEqual(["line-missing", "ref-unknown"]);
   });
 });
+
+describe("the critic on a loop or retry (ADR 0095)", () => {
+  /** forge-payments' settle flow, with a retry of the ledger call (step 5) added at its end. */
+  const withRetry = (repeats?: { from: number; to: number }) => {
+    const [f] = flowsOf("forge-payments.yaml", "forge-payments");
+    const at = f!.steps[4]!.evidence;
+    return {
+      ...f!,
+      steps: [
+        ...f!.steps,
+        {
+          kind: "retry" as const,
+          what: "The ledger call is made again once when it times out",
+          refs: [],
+          evidence: at,
+          ...(repeats ? { repeats } : {}),
+        },
+      ],
+    };
+  };
+  const run = (flow: FlowRecord) =>
+    checkSpec({
+      repo: fsRepo("forge-payments", join(SPECS, "repos", "forge-payments"), "0".repeat(40)),
+      repoId: "forge-payments",
+      flows: [flow],
+      records: records(),
+      template: DEFAULT_SPEC_TEMPLATE,
+    });
+
+  it("asks a loop or retry which steps it repeats", async () => {
+    const r = await run(withRetry());
+    expect(r.findings.map((f) => [f.rule, f.message])).toEqual([
+      [
+        "template-requires",
+        "forge-payments.settle step 11 (retry): the template default@1 asks a retry for repeats",
+      ],
+    ]);
+  });
+
+  it("passes a retry that names the steps it repeats", async () => {
+    expect((await run(withRetry({ from: 5, to: 5 }))).findings).toEqual([]);
+  });
+});

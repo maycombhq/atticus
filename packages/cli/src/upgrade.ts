@@ -9,6 +9,8 @@ import {
   MetarepoStamp,
   migrateCatalog,
   migrateGatesText,
+  specsDirOf,
+  specsRelOf,
   WORKSPACE_SCHEMA_VERSION,
   writeFileAtomic,
 } from "@maycombhq/core";
@@ -103,6 +105,19 @@ export const MIGRATIONS: Migration[] = [
       if (!r.changed) return [];
       await writeFileAtomic(join(root, rel), r.text);
       return [rel];
+    },
+  },
+  {
+    id: "flow-schema-v2",
+    summary:
+      "Spec flows at schema version 2: loops and retries can say which steps they repeat (ADR 0095)",
+    async pending(root) {
+      const r = await migrateCatalog(specsDirOf(root), { dryRun: true });
+      return rel(specsRelOf(root), r.migrated);
+    },
+    async apply(root) {
+      const r = await migrateCatalog(specsDirOf(root));
+      return rel(specsRelOf(root), r.migrated);
     },
   },
 ];

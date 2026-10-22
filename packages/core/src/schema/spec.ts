@@ -24,6 +24,7 @@ export const STEP_REQUIREMENTS = [
   "data.checks",
   "data.from",
   "data.to",
+  "repeats",
 ] as const;
 export type StepRequirement = (typeof STEP_REQUIREMENTS)[number];
 
@@ -236,8 +237,16 @@ export const DEFAULT_SPEC_TEMPLATE: SpecTemplate = SpecTemplate.parse({
     { kind: "branch" },
     { kind: "log" },
     { kind: "respond" },
-    { kind: "loop" },
-    { kind: "retry" },
+    {
+      kind: "loop",
+      requires: ["repeats"],
+      why: "A loop names the steps it repeats, by their numbers in the flow (ADR 0095).",
+    },
+    {
+      kind: "retry",
+      requires: ["repeats"],
+      why: "A retry names the steps it runs again, by their numbers in the flow; they may come before it (ADR 0095).",
+    },
   ],
   families: [
     {

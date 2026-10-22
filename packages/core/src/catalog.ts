@@ -82,6 +82,17 @@ function flowIssues(f: RecordOf<"Flow">): RecordIssue[] {
         path: `steps.${i}.store`,
         message: "only a read, lookup or write touches a store",
       });
+    // ADR 0095: a loop or retry says which steps it repeats, by their numbers in the flow.
+    if (s.repeats && s.kind !== "loop" && s.kind !== "retry")
+      issues.push({
+        path: `steps.${i}.repeats`,
+        message: "only a loop or retry repeats steps",
+      });
+    else if (s.repeats && (s.repeats.from > s.repeats.to || s.repeats.to > f.steps.length))
+      issues.push({
+        path: `steps.${i}.repeats`,
+        message: `repeats names steps from 1 to ${f.steps.length}, the first no later than the last`,
+      });
     if (s.confirmedBy === "check" && (NEVER_CHECKED_STEPS as readonly string[]).includes(s.kind))
       issues.push({
         path: `steps.${i}.confirmedBy`,

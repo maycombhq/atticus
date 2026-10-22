@@ -458,6 +458,8 @@ export async function checkSpec(o: {
         return !!s.store?.table;
       case "store.columns":
         return (s.store?.columns.length ?? 0) > 0;
+      case "repeats":
+        return !!s.repeats;
       default: {
         const k = req.slice(5) as keyof NonNullable<typeof s.data>;
         return (s.data?.[k]?.length ?? 0) > 0;

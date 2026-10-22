@@ -31,7 +31,6 @@ describe("the specs API (ADR 0092)", () => {
       paths: Record<string, Record<string, { operationId: string }>>;
       components: { schemas: Record<string, unknown> };
     };
-    expect(API_VERSION).toBe("2.4.0");
     expect(doc.paths["/api/specs"]!.get!.operationId).toBe("listSpecs");
     expect(doc.paths["/api/specs/{repo}"]!.get!.operationId).toBe("getSpec");
     expect(doc.paths["/api/specs/{repo}/flows/{flowId}"]!.get!.operationId).toBe("getFlow");
@@ -86,12 +85,11 @@ describe("the specs API (ADR 0092)", () => {
 });
 
 describe("the cited lines of one file (ADR 0094)", () => {
-  it("is in the OpenAPI document, as API 2.4.0", () => {
+  it("is in the OpenAPI document", () => {
     const doc = openApiDocument() as {
       paths: Record<string, Record<string, { operationId: string }>>;
       components: { schemas: Record<string, unknown> };
     };
-    expect(API_VERSION).toBe("2.4.0");
     expect(doc.paths["/api/cites"]!.get!.operationId).toBe("getCites");
     expect(doc.components.schemas).toHaveProperty("CiteList");
   });
@@ -118,5 +116,71 @@ describe("the cited lines of one file (ADR 0094)", () => {
       ],
     });
     expect(v.lines[0]!.flows[0]!.step).toBe(1);
+  });
+});
+
+describe("a change's target flows (ADR 0095)", () => {
+  it("is in the OpenAPI document, as API 2.5.0", () => {
+    const doc = openApiDocument() as {
+      paths: Record<string, Record<string, { operationId: string }>>;
+      components: { schemas: Record<string, unknown> };
+    };
+    expect(API_VERSION).toBe("2.5.0");
+    expect(doc.paths["/api/changes/{changeId}/target-flows"]!.get!.operationId).toBe(
+      "listTargetFlows",
+    );
+    expect(doc.paths["/api/changes/{changeId}/target-flows/{flowId}"]!.get!.operationId).toBe(
+      "getTargetFlow",
+    );
+    for (const s of ["TargetFlowList", "TargetFlowView"])
+      expect(doc.components.schemas).toHaveProperty(s);
+  });
+
+  it("gives each step marked, numbered in today's flow and the target flow", () => {
+    const v = Api.TargetFlowView.parse({
+      change: "add-fraud-check",
+      file: "openspec/changes/add-fraud-check/target-flows/forge-orders.place-order.yaml",
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      delta: "modify",
+      name: "A customer places an order",
+      why: "The order is screened first.",
+      component: "forge-orders",
+      trigger: { kind: "endpoint", what: "POST /orders is called" },
+      triggerEvidence: [],
+      steps: [
+        {
+          mark: "same",
+          today: 1,
+          target: 1,
+          kind: "entry",
+          what: "The order arrives",
+          evidence: [],
+        },
+        {
+          mark: "added",
+          target: 2,
+          kind: "call-out",
+          what: "Northwind Pay screens the order",
+          to: { component: "northwind-pay", entry: "POST /v1/screenings", new: true },
+          evidence: [],
+        },
+        {
+          mark: "changed",
+          today: 2,
+          target: 3,
+          kind: "write",
+          what: "The order is inserted with the verdict",
+          was: { kind: "write", what: "The order is inserted" },
+          evidence: [],
+        },
+      ],
+      counts: { added: 1, changed: 1, removed: 0 },
+      problems: [],
+    });
+    expect(v.steps[1]!.to?.new).toBe(true);
+    expect(() =>
+      Api.TargetFlowView.parse({ ...v, steps: [{ ...v.steps[0], mark: "moved" }] }),
+    ).toThrow();
   });
 });

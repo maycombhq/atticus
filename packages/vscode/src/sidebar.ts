@@ -12,6 +12,7 @@ import {
   repoChildren,
   repoItems,
   stepItems,
+  targetItems,
   type Item,
 } from "./sidebar-data";
 
@@ -102,6 +103,10 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
           paths,
         );
       }
+      case "targets":
+        return targetItems(
+          await api.get<Api.TargetFlowList>(`/api/changes/${enc(x.change)}/target-flows`),
+        );
       case "kind":
         return recordItems(
           await api.get<Api.RecordPage>(`/api/catalog/${enc(x.recordKind)}?limit=200`),
