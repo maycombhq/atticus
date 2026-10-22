@@ -34,6 +34,68 @@ This ADR is built in stages. Each section says whether it is built.
 - **`atticus sources add git <url|path>`** takes `--id`, `--path`, `--ref`, `--submodule`, `--kind`, `--framework` and `--owner`. **`--save`** (for any type of wiki) writes the entry into `sources.yaml`, keeping its comments, as `sources tag` does: the change is a file, committed through a pull request, and merging it is the approval. Without `--save` it prints the entry, as before.
 - **Confluence and SharePoint** still need their API adapter wired to the command line (as ADR 0083 says); an ADO wiki can be read as `git`.
 
+### 2. People review what the scan read (built)
+
+The scan's items are the AI's own, and each scan replaces them. A person's verdict is their own file, `knowledge/reviews/<item>.yaml`, committed with the metarepo, so it survives every rescan. The file holds:
+
+- the verdict;
+- who gave it, named as git names them;
+- when;
+- a note;
+- the fields corrected;
+- `checked`: a hash of what the item meant when it was checked. This leaves out its evidence and where its quotes were read, since those move when a page is copied again.
+
+The verdicts are:
+
+- **`atticus knowledge verify <item>`**: the item is right as read.
+- **`atticus knowledge correct <item> --set field=value`**: right once corrected. A list field takes `a|b|c`. The fields a person may correct are given per kind:
+  - for a request or process: title, applies when, lead time, handled by, catalogue item (a CTASK's form), inputs, steps and notes;
+  - for patterns, decisions, teams and products: their own descriptive fields.
+
+  What the page quoted can never be corrected: a quote is checked word for word.
+
+- **`atticus knowledge reject <item> --note why`**: the item is wrong. The reason is required.
+
+Reading the knowledge applies the reviews, so everything that reads items sees the same thing: the stages, `knowledge ask`, `knowledge list`, the plugin and the app.
+
+- A corrected item is read with its corrections. The scan's own record on disk stays as the scan read it.
+- A rejected item is left out of what plans and answers read. It is still listed, marked, with its reason.
+- When a rescan changes what a reviewed item means, the review is **stale**. Lists show "check again" instead of the tick until a person reviews it again.
+
+`knowledge list` shows "✓ <who>" for verified, "✓ corrected by <who>", "✗ rejected by <who>" and "check again". Its `--json` carries each item's review.
+
+### 3. Rescans (built)
+
+`knowledge/scan.yaml` keeps each page's sha-256 with its snapshot. `atticus knowledge scan` then reads only the pages that changed or are new since the last scan:
+
+- The items of unchanged pages stay as they were.
+- The items of a page that is gone are dropped.
+- The items read last time from a changed page go to the AI with the page, so an item still there keeps its id. A change to it then shows as a change, not as one item gone and another added.
+- The scan says what changed (new, changed, gone, by id), keeps it in `scan.yaml` (`changes`), and names the reviews to check again.
+- When nothing changed, nothing is sent to the AI.
+- `--full` reads every page again.
+
+A first scan reads everything, so a single scan gives the same organised result as a series of rescans: snapshots, `knowledge/items/<kind>/`, reviews and the report.
+
+### 4. Teams, vendors, products and projects (built)
+
+The scan also reads who and what the pages name. It has four more knowledge kinds:
+
+- **team** and **vendor** are `Party` records (C1, which already had `internal-team` and `vendor`), with new optional fields:
+  - `responsibilities`;
+  - `owns`: for a team, its products and projects; for a vendor, what it provides;
+  - `uses`: the vendors and products it uses;
+  - `tags`, `quote` and `alsoOn`.
+
+  A Party is a knowledge item only when a page was read for it; the catalog's own Parties are not.
+
+- **product** and **project** are the new `Product` kind (C1, additive). It has its name, what it is, the team that owns it, the teams that use it, its vendor, the systems it is, and its quote.
+
+These four kinds need no "applies when". The catalog's Systems still come from code and are unchanged. The local API (C4) lists the new kind: API 2.6.0, additive.
+
 ## Consequences
 
 - An organisation's wikis and docs repos are read straight from git, pinned when it wants them pinned, with the commit each snapshot read.
+- What the pages say is checked by people where it matters. A correction is what everyone reads from then on, and a tick lasts until the page under it changes.
+- A rescan costs only the pages that changed.
+- C1 now has 33 kinds. As in ADR 0083, every existing record file reads unchanged, so the catalog schema version stays 2 and no migration is needed.

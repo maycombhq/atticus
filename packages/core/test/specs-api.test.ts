@@ -120,12 +120,13 @@ describe("the cited lines of one file (ADR 0094)", () => {
 });
 
 describe("a change's target flows (ADR 0095)", () => {
-  it("is in the OpenAPI document, as API 2.5.0", () => {
+  it("is in the OpenAPI document, from API 2.5.0", () => {
     const doc = openApiDocument() as {
       paths: Record<string, Record<string, { operationId: string }>>;
       components: { schemas: Record<string, unknown> };
     };
-    expect(API_VERSION).toBe("2.5.0");
+    const [major, minor] = API_VERSION.split(".").map(Number);
+    expect(major === 2 && minor! >= 5).toBe(true);
     expect(doc.paths["/api/changes/{changeId}/target-flows"]!.get!.operationId).toBe(
       "listTargetFlows",
     );

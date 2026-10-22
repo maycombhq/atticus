@@ -60,6 +60,7 @@ describe("datasets", () => {
     for (const c of cases) expect(c.reference, `${c.id} has a mock answer`).toBeDefined();
   });
 
+  // Each runs every dataset case end to end: seconds, not the 5 s a unit test gets.
   it("pass in mock mode: the parsers keep the hand-written answers and the graders agree", async () => {
     const r = await runEvals({ cases, mode: "mock", repoRoot: REPO, now: clock });
     const failed = r.results
@@ -78,7 +79,7 @@ describe("datasets", () => {
     expect(r.skipped).toEqual([]);
     expect(r.results).toHaveLength(cases.length);
     expect(r.agents.every((a) => a.passRate === 1)).toBe(true);
-  });
+  }, 60_000);
 
   it("pass in replay mode: every recording still matches the exact prompt its agent sends", async () => {
     const r = await runEvals({ cases, mode: "replay", repoRoot: REPO, now: clock });
@@ -103,7 +104,7 @@ describe("datasets", () => {
       "glossary-definer-obeys-injection",
     ]);
     for (const x of r.results) expect(x.promptSha256, x.case).toMatch(/^[0-9a-f]{64}$/);
-  });
+  }, 60_000);
 
   it("red team: an agent that obeys injected instructions is rejected by the evidence-bounded parsers", async () => {
     const red = cases.filter((c) => c.tags.includes("red-team"));

@@ -459,6 +459,35 @@ export const Party = record("Party", {
   systems: list(Ref),
   /** Typical lead time per request type, e.g. { "firewall-rule": "10d" }. */
   typicalLeadTimes: z.record(z.string(), z.string()).default({}),
+  // A team or vendor a knowledge scan read from a page (ADR 0101): what the page says about it.
+  /** What a team is responsible for, in the page's words. */
+  responsibilities: list(str()),
+  /** Products and projects a team owns; the products a vendor offers. By name. */
+  owns: list(str()),
+  /** Vendors and products it uses, by name. */
+  uses: list(str()),
+  tags: list(str()),
+  quote: KnowledgeQuote.optional(),
+  alsoOn: list(KnowledgeQuote),
+});
+
+/**
+ * A product or project the organisation's pages describe (ADR 0101): what it is, the team that
+ * owns it, the teams that use it, the vendor that makes it, the catalog systems it is (by id or
+ * name, as the page names them). Read from a page and quoted; the catalog's Systems come from
+ * code and stay as they are.
+ */
+export const Product = record("Product", {
+  name: str(),
+  productKind: z.enum(["product", "project"]),
+  description: z.string().optional(),
+  ownedBy: z.string().optional(),
+  usedBy: list(str()),
+  vendor: z.string().optional(),
+  systems: list(str()),
+  tags: list(str()),
+  quote: KnowledgeQuote,
+  alsoOn: list(KnowledgeQuote),
 });
 
 export const Initiative = record("Initiative", {
@@ -780,6 +809,7 @@ export const RECORD_SCHEMAS = {
   OwnerQuestion,
   ProcessDefinition,
   ProcessArtifact,
+  Product,
   Capability,
   Flow,
   Unresolved,
@@ -790,9 +820,9 @@ export type RecordKind = keyof typeof RECORD_SCHEMAS;
 export const RECORD_KINDS = Object.keys(RECORD_SCHEMAS) as RecordKind[];
 
 /**
- * The six kinds of knowledge item a knowledge scan extracts (ADR 0083), and the C1 kind each
+ * The kinds of knowledge item a knowledge scan extracts (ADR 0083, 0101), and the C1 kind each
  * is stored as: pattern and standard are Patterns, process and request ProcessDefinitions,
- * decision and constraint Decisions.
+ * decision and constraint Decisions, team and vendor Parties, product and project Products.
  */
 export const KNOWLEDGE_KINDS = [
   "pattern",
@@ -801,6 +831,10 @@ export const KNOWLEDGE_KINDS = [
   "request",
   "decision",
   "constraint",
+  "team",
+  "vendor",
+  "product",
+  "project",
 ] as const;
 export type KnowledgeKind = (typeof KNOWLEDGE_KINDS)[number];
 
@@ -811,6 +845,10 @@ export const KNOWLEDGE_RECORD_KIND = {
   request: "ProcessDefinition",
   decision: "Decision",
   constraint: "Decision",
+  team: "Party",
+  vendor: "Party",
+  product: "Product",
+  project: "Product",
 } as const satisfies Record<KnowledgeKind, RecordKind>;
 
 /** The knowledge kind of a record, or undefined for a record that isn't a knowledge kind. */
@@ -819,5 +857,8 @@ export function knowledgeKindOf(r: { kind: string }): KnowledgeKind | undefined 
   if (r.kind === "Pattern") return x.patternKind === "standard" ? "standard" : "pattern";
   if (r.kind === "ProcessDefinition") return x.processKind === "request" ? "request" : "process";
   if (r.kind === "Decision") return x.decisionKind === "constraint" ? "constraint" : "decision";
+  // A Party is knowledge only when a page was read for it; the catalog's own are not.
+  if (r.kind === "Party" && x.quote) return x.partyKind === "vendor" ? "vendor" : "team";
+  if (r.kind === "Product") return x.productKind === "project" ? "project" : "product";
   return undefined;
 }

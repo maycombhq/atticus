@@ -36,8 +36,17 @@ export const termsOf = (s: string) =>
     .filter((w) => w && !STOP.has(w))
     .map(stem);
 
+/** "applies when" and "handled by", for the kinds that have them. */
+const appliesOf = (r: KnowledgeRecord) =>
+  r.kind === "Party" || r.kind === "Product" ? undefined : r.appliesWhen;
+const handlerOf = (r: KnowledgeRecord) =>
+  r.kind === "Party" ? r.owner : r.kind === "Product" ? r.ownedBy : r.handledBy;
+
 function itemText(r: KnowledgeRecord): string {
-  const parts: string[] = [itemTitle(r), r.appliesWhen ?? "", r.handledBy ?? "", ...r.tags];
+  const parts: string[] = [itemTitle(r), appliesOf(r) ?? "", handlerOf(r) ?? "", ...r.tags];
+  if (r.kind === "Party") parts.push(...r.responsibilities, ...r.owns, ...r.uses);
+  if (r.kind === "Product")
+    parts.push(r.description ?? "", ...r.usedBy, r.vendor ?? "", ...r.systems);
   if (r.kind === "Pattern") parts.push(...r.rules, r.definition ?? "");
   if (r.kind === "ProcessDefinition")
     parts.push(r.leadTime ?? "", r.catalogueItem ?? "", ...r.inputs, ...r.steps, r.notes ?? "");
@@ -68,9 +77,24 @@ export function itemForAi(r: KnowledgeRecord, conflicts: KnowledgeConflict[]): s
     id: r.id,
     kind: knowledgeKindOf(r),
     title: itemTitle(r),
-    ...(r.appliesWhen ? { applies_when: r.appliesWhen } : {}),
-    ...(r.handledBy ? { handled_by: r.handledBy } : {}),
+    ...(appliesOf(r) ? { applies_when: appliesOf(r) } : {}),
+    ...(handlerOf(r)
+      ? { [r.kind === "Party" || r.kind === "Product" ? "owned_by" : "handled_by"]: handlerOf(r) }
+      : {}),
   };
+  if (r.kind === "Party") {
+    if (r.responsibilities.length) base.responsibilities = r.responsibilities;
+    if (r.owns.length) base.owns = r.owns;
+    if (r.uses.length) base.uses = r.uses;
+    if (r.channel) base.channel = r.channel;
+    if (r.contacts.length) base.contacts = r.contacts;
+  }
+  if (r.kind === "Product") {
+    if (r.description) base.description = r.description;
+    if (r.usedBy.length) base.used_by = r.usedBy;
+    if (r.vendor) base.vendor = r.vendor;
+    if (r.systems.length) base.systems = r.systems;
+  }
   if (r.kind === "Pattern" && r.rules.length) base.rules = r.rules;
   if (r.kind === "ProcessDefinition") {
     if (r.leadTime) base.lead_time = r.leadTime;

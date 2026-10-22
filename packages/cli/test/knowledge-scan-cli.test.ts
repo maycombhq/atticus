@@ -11,6 +11,7 @@ import {
   benchKnowledge,
   knowledgeAsk,
   knowledgeList,
+  knowledgeReview,
   knowledgeScan,
   sourcesTag,
 } from "../src/knowledge-scan-commands.js";
@@ -126,9 +127,7 @@ describe("atticus knowledge scan, list and ask", () => {
     expect(await knowledgeScan(root, {}, { runtime, now: NOW }, c.io)).toBe(0);
     const text = c.out.join("\n");
     expect(text).toContain("Read 17 pages of forge-wiki (snapshot 2026-10-21).");
-    expect(text).toContain(
-      "Kept 2 items, each quote checked on its page: 0 pattern, 0 standard, 0 process, 1 request, 1 decision, 0 constraint.",
-    );
+    expect(text).toContain("Kept 2 items, each quote checked on its page: 1 request, 1 decision.");
     expect(text).toMatch(/1 conflict between pages/);
     expect(text).toContain(
       "Superseded: anvil-logging-2023.md is replaced by anvil-service-standard.md; nothing on it was kept as a current rule.",
@@ -144,7 +143,7 @@ describe("atticus knowledge scan, list and ask", () => {
   it("lists items by kind and tag", async () => {
     const c = capture();
     expect(await knowledgeList(root, { kind: "request" }, c.io)).toBe(0);
-    expect(c.out[0]).toMatch(/^KIND\s+ID\s+TITLE\s+FROM$/);
+    expect(c.out[0]).toMatch(/^KIND\s+ID\s+TITLE\s+REVIEW\s+FROM$/);
     expect(c.out[1]).toMatch(
       /^request\s+firewall-rule-request !\s+Network firewall rule\s+forge-wiki\/service-desk-catalogue.md \(Network firewall rule\)$/,
     );
@@ -226,5 +225,98 @@ describe("atticus bench knowledge", () => {
     expect(text).toContain("Injections: 1 of 1 flagged; not followed");
     expect(text).toContain("Questions: 1 of 8 answered citing the right items");
     expect(existsSync(join(base, "cache", "knowledge-results"))).toBe(true);
+  });
+});
+
+describe("people's reviews and rescans (ADR 0101)", () => {
+  it("a rescan of an unchanged snapshot reads nothing and says so", async () => {
+    const c = capture();
+    const runtime = new MockRuntime(() => {
+      throw new Error("nothing should be read");
+    });
+    expect(await knowledgeScan(root, {}, { runtime, now: NOW }, c.io)).toBe(0);
+    expect(c.out[0]).toMatch(
+      /^Nothing changed in forge-wiki since the last scan \(snapshot 2026-10-21, 17 pages\)/,
+    );
+  });
+
+  it("verifies, corrects and rejects items; the list shows a tick, the correction and the rejection", async () => {
+    const at = new Date("2026-10-22T10:00:00Z");
+    const v = capture();
+    expect(
+      await knowledgeReview(
+        root,
+        "verified",
+        "no-cross-service-database",
+        { by: "tom", now: at },
+        v.io,
+      ),
+    ).toBe(0);
+    expect(v.out[0]).toBe("Verified no-cross-service-database, by tom.");
+    const fix = capture();
+    expect(
+      await knowledgeReview(
+        root,
+        "corrected",
+        "firewall-rule-request",
+        {
+          by: "tom",
+          now: at,
+          set: ["catalogueItem=CTASK: Firewall rule", "inputs=source|destination|port"],
+        },
+        fix.io,
+      ),
+    ).toBe(0);
+    expect(fix.out[0]).toBe("Corrected firewall-rule-request (catalogueItem, inputs), by tom.");
+    expect(existsSync(join(root, "knowledge/reviews/firewall-rule-request.yaml"))).toBe(true);
+    const list = capture();
+    expect(await knowledgeList(root, {}, list.io)).toBe(0);
+    const rows = list.out.join("\n");
+    expect(rows).toMatch(/firewall-rule-request\s.*✓ corrected by tom/);
+    expect(rows).toMatch(/no-cross-service-database\s.*✓ tom/);
+    const json = capture();
+    await knowledgeList(root, { json: true }, json.io);
+    const items = JSON.parse(json.out.join("\n")) as {
+      id: string;
+      catalogueItem?: string;
+      inputs?: string[];
+      review?: { state: string };
+    }[];
+    expect(items.find((i) => i.id === "firewall-rule-request")).toMatchObject({
+      catalogueItem: "CTASK: Firewall rule",
+      inputs: ["source", "destination", "port"],
+      review: { state: "corrected" },
+    });
+
+    const bad = capture();
+    expect(
+      await knowledgeReview(
+        root,
+        "rejected",
+        "firewall-rule-request",
+        { by: "tom", now: at },
+        bad.io,
+      ),
+    ).toBe(2);
+    expect(bad.err[0]).toMatch(/Say why/);
+    const rej = capture();
+    expect(
+      await knowledgeReview(
+        root,
+        "rejected",
+        "firewall-rule-request",
+        { by: "tom", now: at, note: "Moved to the network portal." },
+        rej.io,
+      ),
+    ).toBe(0);
+    const after = capture();
+    await knowledgeList(root, {}, after.io);
+    expect(after.out.join("\n")).toMatch(/firewall-rule-request\s.*✗ rejected by tom/);
+  });
+
+  it("says which item there is none of", async () => {
+    const c = capture();
+    expect(await knowledgeReview(root, "verified", "no-such-item", { by: "tom" }, c.io)).toBe(1);
+    expect(c.err[0]).toMatch(/There is no knowledge item no-such-item/);
   });
 });

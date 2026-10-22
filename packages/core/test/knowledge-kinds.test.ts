@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseRecord, Sources, KNOWLEDGE_KINDS, knowledgeKindOf } from "../src/index.js";
+import {
+  parseRecord,
+  Sources,
+  KNOWLEDGE_KINDS,
+  KNOWLEDGE_RECORD_KIND,
+  knowledgeKindOf,
+} from "../src/index.js";
 
 // ADR 0083: knowledge items in the extended C1 kinds, and tags on knowledge sources (C6).
 
@@ -127,6 +133,10 @@ describe("knowledge kinds", () => {
       "request",
       "decision",
       "constraint",
+      "team",
+      "vendor",
+      "product",
+      "project",
     ]);
     expect(knowledgeKindOf({ kind: "Pattern", patternKind: "standard" } as never)).toBe("standard");
     expect(knowledgeKindOf({ kind: "Pattern" } as never)).toBe("pattern");
@@ -209,5 +219,26 @@ describe("a wiki kept in git (ADR 0101)", () => {
     expect(bad({ type: "confluence", checkout: "submodule" })).toBe(false);
     expect(bad({ type: "git", path: "../outside" })).toBe(false);
     expect(bad({ type: "git", path: "docs/how-to" })).toBe(true);
+  });
+});
+
+describe("teams, vendors, products and projects read from pages (ADR 0101)", () => {
+  it("a Party read from a page is a team or vendor item; the catalog's own Parties are not", () => {
+    const quote = {
+      source: "w",
+      page: "teams.md",
+      section: "Teams",
+      text: "x",
+      snapshot: "2026-10-21",
+    };
+    expect(knowledgeKindOf({ kind: "Party", partyKind: "internal-team", quote } as never)).toBe(
+      "team",
+    );
+    expect(knowledgeKindOf({ kind: "Party", partyKind: "vendor", quote } as never)).toBe("vendor");
+    expect(knowledgeKindOf({ kind: "Party", partyKind: "vendor" } as never)).toBeUndefined();
+    expect(knowledgeKindOf({ kind: "Product", productKind: "project" } as never)).toBe("project");
+    expect(knowledgeKindOf({ kind: "Product", productKind: "product" } as never)).toBe("product");
+    expect(KNOWLEDGE_RECORD_KIND.team).toBe("Party");
+    expect(KNOWLEDGE_RECORD_KIND.project).toBe("Product");
   });
 });

@@ -30,7 +30,7 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.4.0 (ADR 0094): GET /api/cites, the flow steps and records that cite each line of one file.
  * 2.5.0 (ADR 0095): a change's target flows beside today's, /api/changes/{id}/target-flows.
  */
-export const API_VERSION = "2.5.0";
+export const API_VERSION = "2.6.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes

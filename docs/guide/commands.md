@@ -46,9 +46,12 @@ Usage:
           [--id id] [--path folder] [--ref branch] [--submodule] [--kind k,k] [--framework f,f] [--owner o] [--save]
   atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
   atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
-  atticus knowledge scan [--source s] [--mode m] [--resume run]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked
+  atticus knowledge scan [--source s] [--mode m] [--resume run] [--full]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run]  An answer from the knowledge items only, citing them
+  atticus knowledge verify <item>      Mark a knowledge item right as read: a green tick wherever it shows [--note text]
+  atticus knowledge correct <item> --set field=value  Correct an item's details (a list takes a|b|c); the corrected item is what plans read [--note text]
+  atticus knowledge reject <item> --note why  Mark an item wrong: plans and answers leave it out
   atticus bench knowledge [--mode m] [--resume run]  Scan the bench's invented wiki, ask its questions, and score both
   atticus bench design [--mode m] [--resume run]  Read the bench's Figma export, map it against the petclinic estate, and score it
   atticus sources refresh [--json]     Fetch every absorbed source again and show what changed

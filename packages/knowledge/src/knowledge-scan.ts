@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   AgentDefinition,
   KNOWLEDGE_KINDS,
+  knowledgeKindOf,
   KNOWLEDGE_RECORD_KIND,
   parseRecord,
   RecordId,
@@ -45,7 +46,11 @@ export const KNOWLEDGE_READER = "knowledge-reader";
 export const KNOWLEDGE_SCAN_OUTPUT = "knowledge-items.yaml";
 
 export type KnowledgeRecord =
-  RecordOf<"Pattern"> | RecordOf<"ProcessDefinition"> | RecordOf<"Decision">;
+  | RecordOf<"Pattern">
+  | RecordOf<"ProcessDefinition">
+  | RecordOf<"Decision">
+  | RecordOf<"Party">
+  | RecordOf<"Product">;
 
 export function knowledgeReaderAgent(
   orgPack?: Pick<OrgPack, "agents" | "runtime">,
@@ -76,25 +81,43 @@ const text = () => z.union([z.string(), z.number()]).transform(String);
 const dateText = z
   .union([z.string(), z.date()])
   .transform((d) => (d instanceof Date ? d.toISOString().slice(0, 10) : d));
-const ItemIn = z.object({
-  kind: z.enum(KNOWLEDGE_KINDS),
-  id: RecordId,
-  title: z.string().min(1),
-  applies_when: z.string().min(1, "applies_when is empty"),
-  rules: z.array(text()).default([]),
-  lead_time: text().optional(),
-  handled_by: z.string().optional(),
-  catalogue_item: z.string().optional(),
-  inputs: z.array(text()).default([]),
-  steps: z.array(text()).default([]),
-  notes: z.string().optional(),
-  status: z.enum(["mandated", "banned", "retiring"]).optional(),
-  dates: z.record(z.string(), dateText).optional(),
-  framework: z.string().optional(),
-  reason: z.string().optional(),
-  source: QuoteIn,
-  also_on: z.array(QuoteIn).default([]),
-});
+/** Kinds about who and what (ADR 0101): no "applies when". */
+const ABOUT_WHO = new Set(["team", "vendor", "product", "project"]);
+const ItemIn = z
+  .object({
+    kind: z.enum(KNOWLEDGE_KINDS),
+    id: RecordId,
+    title: z.string().min(1),
+    applies_when: z.string().optional(),
+    // teams, vendors, products and projects (ADR 0101)
+    description: z.string().optional(),
+    responsibilities: z.array(text()).default([]),
+    owns: z.array(text()).default([]),
+    uses: z.array(text()).default([]),
+    contacts: z.array(text()).default([]),
+    channel: z.string().optional(),
+    owned_by: z.string().optional(),
+    used_by: z.array(text()).default([]),
+    vendor: z.string().optional(),
+    systems: z.array(text()).default([]),
+    rules: z.array(text()).default([]),
+    lead_time: text().optional(),
+    handled_by: z.string().optional(),
+    catalogue_item: z.string().optional(),
+    inputs: z.array(text()).default([]),
+    steps: z.array(text()).default([]),
+    notes: z.string().optional(),
+    status: z.enum(["mandated", "banned", "retiring"]).optional(),
+    dates: z.record(z.string(), dateText).optional(),
+    framework: z.string().optional(),
+    reason: z.string().optional(),
+    source: QuoteIn,
+    also_on: z.array(QuoteIn).default([]),
+  })
+  .superRefine((i, ctx) => {
+    if (!ABOUT_WHO.has(i.kind) && !i.applies_when?.trim())
+      ctx.addIssue({ code: "custom", path: ["applies_when"], message: "applies_when is empty" });
+  });
 type ItemIn = z.infer<typeof ItemIn>;
 const ConflictIn = z.object({
   about: z.union([z.string(), z.array(z.string())]).transform((a) => (Array.isArray(a) ? a : [a])),
@@ -312,6 +335,16 @@ Six kinds of item:
 - constraint: what is being retired (status retiring, with its dates) or a standing limit such as
   a change freeze.
 
+And who and what the pages name (no applies_when for these):
+
+- team: a team, with what it is responsible for, the products and projects it owns, the vendors
+  and products it uses, its contacts and its channel.
+- vendor: an outside company the organisation uses, with what it provides and the team that
+  manages it (owned_by).
+- product: a product or platform a team runs or a vendor makes, with the team that owns it, the
+  teams that use it, its vendor and the systems it is.
+- project: a project a team runs, with the team that owns it.
+
 ## The sources and their tags
 
 ${snapshots
@@ -373,6 +406,19 @@ items:
     framework: anvil         # only when the item is about a tagged framework
     source: { page: service-desk-catalogue.md, section: Network firewall rule, quote: "Handled by: Network team. Lead time: 10 working days." }
     also_on: []
+  - kind: team               # team | vendor | product | project
+    id: messaging-team
+    title: Messaging team
+    responsibilities: [Runs the broker and creates topics]
+    owns: [Broker]           # teams: products and projects; vendors: what they provide
+    uses: []                 # teams: vendors and products they use
+    contacts: []
+    channel: "#messaging"
+    owned_by: ""             # vendors, products, projects: the team that owns or manages it
+    used_by: []              # products: the teams that use it
+    vendor: ""               # products: the vendor that makes it
+    systems: []              # products: the systems it is, as the page names them
+    source: { page: broker-topics-runbook.md, section: Creating a topic, quote: "The Messaging team creates topics only from a Broker topic request." }
 conflicts:
   - about: firewall-rule-request
     pages: [service-desk-catalogue.md, network-firewall-guide.md]
@@ -684,8 +730,51 @@ function toRecord(c: CheckedItem, flags: string[]): KnowledgeRecord {
     ...(item.framework ? { framework: item.framework } : {}),
     ...(item.handled_by ? { handledBy: item.handled_by } : {}),
   };
+  const about = {
+    schemaVersion: common.schemaVersion,
+    id: common.id,
+    status: common.status,
+    confidence: common.confidence,
+    evidence: common.evidence,
+    ...(flags.length ? { flags } : {}),
+    tags,
+    quote,
+    alsoOn,
+  };
+  const party =
+    KNOWLEDGE_RECORD_KIND[item.kind] === "Party"
+      ? {
+          ...about,
+          kind: "Party",
+          name: item.title,
+          partyKind: item.kind === "vendor" ? "vendor" : "internal-team",
+          ...(item.owned_by ? { owner: item.owned_by } : {}),
+          contacts: item.contacts,
+          ...(item.channel ? { channel: item.channel } : {}),
+          responsibilities: item.responsibilities.length
+            ? item.responsibilities
+            : item.description
+              ? [item.description]
+              : [],
+          owns: item.owns,
+          uses: item.uses,
+        }
+      : KNOWLEDGE_RECORD_KIND[item.kind] === "Product"
+        ? {
+            ...about,
+            kind: "Product",
+            name: item.title,
+            productKind: item.kind === "project" ? "project" : "product",
+            ...(item.description ? { description: item.description } : {}),
+            ...(item.owned_by ? { ownedBy: item.owned_by } : {}),
+            usedBy: item.used_by,
+            ...(item.vendor ? { vendor: item.vendor } : {}),
+            systems: item.systems,
+          }
+        : undefined;
   const rec =
-    KNOWLEDGE_RECORD_KIND[item.kind] === "Pattern"
+    party ??
+    (KNOWLEDGE_RECORD_KIND[item.kind] === "Pattern"
       ? {
           ...common,
           kind: "Pattern",
@@ -719,7 +808,7 @@ function toRecord(c: CheckedItem, flags: string[]): KnowledgeRecord {
             ...(item.status ? { stance: item.status } : {}),
             appliesWhen: item.applies_when,
             dates: item.dates ?? {},
-          };
+          });
   const p = parseRecord(rec);
   if (!p.ok)
     throw new KnowledgeRecordError(
@@ -752,6 +841,11 @@ export interface ScanOptions {
   now?: Date;
   /** A hand-off run to read the answer of (after `atticus handoff done`). */
   resume?: string;
+  /**
+   * A rescan (ADR 0101): the items read from these pages last time, so the AI keeps the id of
+   * an item still on its page.
+   */
+  previous?: KnowledgeRecord[];
 }
 
 /** Scan snapshots: the AI reads, the checks confirm, what fails goes back to the AI. */
@@ -788,6 +882,25 @@ export async function scanKnowledge(
     classification: p.page.classification,
     priority: 10,
   }));
+  // A rescan: what these pages gave last time, ids first, for the AI to keep the ids.
+  const previousSource: SourceInput[] = o.previous?.length
+    ? [
+        {
+          id: "5-previous-items",
+          kind: "document",
+          origin: "knowledge/items (the last scan of these pages)",
+          text: [
+            "These pages were read before; these are the items read from them then. When an item is still on its page, keep its id (its other fields may change). Leave out an item that is no longer there. Never copy an item from this list without its page saying it.",
+            ...o.previous.map(
+              (i) =>
+                `- ${i.id} (${knowledgeKindOf(i) ?? i.kind}, ${i.quote?.page ?? "?"}): ${i.kind === "Pattern" ? i.name : ((i as { title?: string }).title ?? "")}`,
+            ),
+          ].join("\n"),
+          classification: "internal",
+          priority: 5,
+        },
+      ]
+    : [];
   const result: KnowledgeScanResult = {
     status: "failed",
     attempts: [],
@@ -817,7 +930,7 @@ export async function scanKnowledge(
         change,
         agent: agent.id,
         budget,
-        sources: [task, ...pageSources, ...feedback],
+        sources: [task, ...pageSources, ...previousSource, ...feedback],
         levels,
         maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
         now,
@@ -1025,6 +1138,10 @@ function finish(
 
 /** Every knowledge record kind, for readers that filter a catalog. */
 export const isKnowledgeRecord = (r: CatalogRecord): r is KnowledgeRecord =>
-  r.kind === "Pattern" || r.kind === "ProcessDefinition" || r.kind === "Decision";
+  r.kind === "Pattern" ||
+  r.kind === "ProcessDefinition" ||
+  r.kind === "Decision" ||
+  r.kind === "Product" ||
+  (r.kind === "Party" && !!r.quote);
 
 export type { KnowledgeKind };

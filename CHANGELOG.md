@@ -7,6 +7,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 ### Knowledge managed in the metarepo
 
 - Wikis kept in git (ADR 0101): `type: git` in `sources.yaml`, an ADO or GitHub wiki or a docs repo, with `ref`, `path` and `checkout: clone` (into local state) or `submodule` (pinned under `knowledge/repos/`). `atticus sources sync` clones or updates it, dates each page by git and records the commit in the snapshot. `atticus sources add git <url> --save` writes the entry for you.
+- People review what the knowledge scan read: `atticus knowledge verify|correct|reject <item>` writes `knowledge/reviews/<item>.yaml`. A correction (`--set catalogueItem=... --set steps="a|b"`) is what plans, answers and lists read from then on; a rejection leaves the item out of plans; `knowledge list` shows a tick, and "check again" when a rescan changed the item since.
+- Rescans: `atticus knowledge scan` reads only the pages that changed since the last scan, keeps items' ids, and says what is new, changed and gone; `--full` reads every page.
+- Teams, vendors, products and projects: the knowledge scan reads them too, as `Party` records (with what a team owns and uses) and the new `Product` kind (C1, additive; API 2.6.0).
 
 ### Everything from the VS Code plugin, guided
 

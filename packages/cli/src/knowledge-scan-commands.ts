@@ -12,7 +12,13 @@ import {
 import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
 import {
   askKnowledge,
+  correctableFields,
   filterItems,
+  planRescan,
+  reviewItem,
+  writeReview,
+  type KnowledgeScanResult,
+  type ReviewSummary,
   itemTitle,
   readKnowledge,
   readSnapshot,
@@ -125,7 +131,7 @@ async function snapshotsFor(
  */
 export async function knowledgeScan(
   root: string,
-  o: { source?: string; attempts?: number; resume?: string; json?: boolean },
+  o: { source?: string; attempts?: number; resume?: string; json?: boolean; full?: boolean },
   deps: KnowledgeDeps,
   io: Output,
 ): Promise<number> {
@@ -133,13 +139,36 @@ export async function knowledgeScan(
   if (!snapshots) return 2;
   const op = await loadOrgPack(orgPackDirOf(root));
   const now = deps.now ?? new Date();
-  const r = await scanKnowledge(snapshots, {
-    runtime: deps.runtime,
-    orgPack: op,
-    now,
-    maxAttempts: o.attempts ?? 3,
-    ...(o.resume ? { resume: o.resume } : {}),
-  });
+  // ADR 0101: a rescan reads only the pages that changed since the last scan (--full: all).
+  const before = await readKnowledge(root, { raw: true });
+  const plan = planRescan(snapshots, before.report, before.items, { full: o.full === true });
+  const gone = Object.values(plan.removed).flat().length;
+  if (!plan.snapshots.length && !gone) {
+    for (const s of snapshots)
+      io.out(
+        `Nothing changed in ${s.manifest.source} since the last scan (snapshot ${s.manifest.date}, ${plural(s.manifest.pages.length, "page")}). --full reads every page again.`,
+      );
+    return 0;
+  }
+  const r: KnowledgeScanResult = plan.snapshots.length
+    ? await scanKnowledge(plan.snapshots, {
+        runtime: deps.runtime,
+        orgPack: op,
+        now,
+        maxAttempts: o.attempts ?? 3,
+        ...(o.resume ? { resume: o.resume } : {}),
+        ...(plan.previous.length ? { previous: plan.previous } : {}),
+      })
+    : {
+        status: "scanned",
+        attempts: [],
+        items: [],
+        conflicts: [],
+        superseded: [],
+        injections: [],
+        failed: [],
+        snapshots: [],
+      };
   if (r.status === "waiting") {
     io.out(
       `Handed the knowledge scan to your assistant (run ${r.runId}). When it is done: atticus handoff done ${r.runId}, then atticus knowledge scan${o.source ? ` --source ${o.source}` : ""} --resume ${r.runId}`,
@@ -152,16 +181,55 @@ export async function knowledgeScan(
     );
     return 1;
   }
-  await writeKnowledge(root, r, stamp(now));
+  const w = await writeKnowledge(root, r, stamp(now), { snapshots, plan });
+  const after = await readKnowledge(root);
+  const recheck = Object.entries(after.reviews)
+    .filter(([, v]) => v.state === "stale")
+    .map(([id]) => id);
   if (o.json) {
-    io.out(JSON.stringify(r, null, 2));
+    io.out(
+      JSON.stringify(
+        {
+          ...r,
+          changes: w.changes,
+          recheck,
+          plan: { changed: plan.changed, removed: plan.removed, unchanged: plan.unchanged },
+        },
+        null,
+        2,
+      ),
+    );
     return r.failed.length ? 1 : 0;
   }
-  for (const s of r.snapshots)
-    io.out(`Read ${plural(s.pages, "page")} of ${s.source} (snapshot ${s.date}).`);
+  for (const s of snapshots) {
+    const id = s.manifest.source;
+    const read = plan.changed[id]?.length ?? 0;
+    const kept = plan.unchanged[id] ?? 0;
+    const removed = plan.removed[id]?.length ?? 0;
+    io.out(
+      kept || removed
+        ? `Read ${plural(read, "page")} of ${id} that changed or are new (snapshot ${s.manifest.date}); kept ${plural(kept, "page")}'s items as they were${removed ? `; ${plural(removed, "page")} gone` : ""}.`
+        : `Read ${plural(read, "page")} of ${id} (snapshot ${s.manifest.date}).`,
+    );
+  }
+  const c = w.changes;
+  if (c.added.length) io.out(`New: ${c.added.join(", ")}`);
+  if (c.changed.length) io.out(`Changed: ${c.changed.join(", ")}`);
+  if (c.removed.length) io.out(`Gone: ${c.removed.join(", ")}`);
+  if (!c.added.length && !c.changed.length && !c.removed.length) io.out("No item changed.");
+  if (recheck.length)
+    io.out(
+      `Reviews to check again, their page changed: ${recheck.join(", ")} (atticus knowledge verify <item>).`,
+    );
   const count = (k: KnowledgeKind) => r.items.filter((i) => knowledgeKindOf(i) === k).length;
   io.out(
-    `Kept ${plural(r.items.length, "item")}, each quote checked on its page: ${KNOWLEDGE_KINDS.map((k) => `${count(k)} ${k}`).join(", ")}.`,
+    `Kept ${plural(r.items.length, "item")}${
+      r.items.length
+        ? `, each quote checked on its page: ${KNOWLEDGE_KINDS.filter((k) => count(k) > 0)
+            .map((k) => `${count(k)} ${k}`)
+            .join(", ")}`
+        : ""
+    }.`,
   );
   io.out(`Written to ${knowledgeRelOf(root)}/items/ and ${knowledgeRelOf(root)}/scan.yaml.`);
   if (r.conflicts.length) {
@@ -219,12 +287,20 @@ export async function knowledgeList(
     );
     return 2;
   }
-  const items = filterItems(k.items, {
+  // Rejected items are listed too, marked: a person said why, and the next one reads it.
+  const items = filterItems([...k.items, ...k.rejected], {
     ...(o.tag ? { tag: o.tag } : {}),
     ...(o.kind ? { kind: o.kind as KnowledgeKind } : {}),
-  });
+  }).sort((a, b) => a.id.localeCompare(b.id));
+  const reviews = k.reviews;
   if (o.json) {
-    io.out(JSON.stringify(items, null, 2));
+    io.out(
+      JSON.stringify(
+        items.map((i) => ({ ...i, ...(reviews[i.id] ? { review: reviews[i.id] } : {}) })),
+        null,
+        2,
+      ),
+    );
     return 0;
   }
   if (!items.length) {
@@ -232,15 +308,20 @@ export async function knowledgeList(
     return 0;
   }
   for (const l of table(
-    ["KIND", "ID", "TITLE", "FROM"],
+    ["KIND", "ID", "TITLE", "REVIEW", "FROM"],
     items.map((r) => [
       knowledgeKindOf(r) ?? r.kind,
       r.id + (r.flags?.some((f) => f.startsWith("conflict:")) ? " !" : ""),
       itemTitle(r),
+      reviewWord(reviews[r.id]),
       where(r),
     ]),
   ))
     io.out(l);
+  if (Object.values(reviews).some((v) => v.state === "stale"))
+    io.out(
+      "check again: a person reviewed it, then its page changed (atticus knowledge verify <item>)",
+    );
   if (items.some((r) => r.flags?.some((f) => f.startsWith("conflict:"))))
     io.out("! another page disagrees: see atticus knowledge ask, or knowledge/scan.yaml");
   return 0;
@@ -298,6 +379,82 @@ export async function knowledgeAsk(
       `  ${id}: ${itemTitle(item)}, ${where(item)}${item.quote ? `: "${item.quote.text}"` : ""}`,
     );
   }
+  return 0;
+}
+
+/** A review in the list: a tick for verified, the state otherwise (ADR 0101). */
+export function reviewWord(r: ReviewSummary | undefined): string {
+  if (!r) return "";
+  if (r.state === "verified") return `✓ ${r.by}`;
+  if (r.state === "corrected") return `✓ corrected by ${r.by}`;
+  if (r.state === "rejected") return `✗ rejected by ${r.by}`;
+  return "check again";
+}
+
+/**
+ * atticus knowledge verify|correct|reject <item>: a person's review of an item (ADR 0101),
+ * written to knowledge/reviews/<item>.yaml and committed with the metarepo. correct takes
+ * --set field=value (a list field takes values split by |); reject takes --note, the reason.
+ */
+export async function knowledgeReview(
+  root: string,
+  verdict: "verified" | "corrected" | "rejected",
+  id: string,
+  o: { set?: string[]; note?: string; by: string; now?: Date; json?: boolean },
+  io: Output,
+): Promise<number> {
+  const k = await readKnowledge(root, { raw: true });
+  const item = k.items.find((i) => i.id === id);
+  if (!item) {
+    io.err(
+      `There is no knowledge item ${id}. atticus knowledge list shows them; atticus knowledge scan reads them.`,
+    );
+    return 1;
+  }
+  const fields = correctableFields(item);
+  const set: Record<string, string | string[]> = {};
+  for (const pair of o.set ?? []) {
+    const at = pair.indexOf("=");
+    if (at < 1) {
+      io.err(`--set takes field=value, not ${pair}.`);
+      return 2;
+    }
+    const field = pair.slice(0, at).trim();
+    const value = pair.slice(at + 1);
+    set[field] = fields[field] === "list" ? value.split("|").map((x) => x.trim()) : value.trim();
+  }
+  const r = reviewItem(item, {
+    verdict,
+    by: o.by,
+    at: stamp(o.now ?? new Date()),
+    ...(o.note ? { note: o.note } : {}),
+    ...(Object.keys(set).length ? { set } : {}),
+  });
+  if ("error" in r) {
+    io.err(r.error);
+    return 2;
+  }
+  const file = await writeReview(root, r.review);
+  if (o.json) {
+    io.out(
+      JSON.stringify(
+        { review: r.review, item: r.item, file: `${knowledgeRelOf(root)}/${file}` },
+        null,
+        2,
+      ),
+    );
+    return 0;
+  }
+  io.out(
+    verdict === "verified"
+      ? `Verified ${id}, by ${o.by}.`
+      : verdict === "corrected"
+        ? `Corrected ${id} (${Object.keys(r.review.corrections ?? {}).join(", ")}), by ${o.by}.`
+        : `Rejected ${id}, by ${o.by}: plans and answers leave it out.`,
+  );
+  io.out(
+    `Written to ${knowledgeRelOf(root)}/${file}: commit it through a pull request. A rescan that changes the item asks for it to be checked again.`,
+  );
   return 0;
 }
 
@@ -441,6 +598,7 @@ export async function knowledgeCli(
   positionals: string[],
   values: Record<string, unknown>,
   io: Output,
+  who: () => string = () => "someone",
 ): Promise<number | undefined> {
   const [group, command, arg] = positionals;
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
@@ -493,6 +651,7 @@ export async function knowledgeCli(
       {
         attempts,
         json,
+        ...(values.full === true ? { full: true } : {}),
         ...(str(values.source) ? { source: str(values.source)! } : {}),
         ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
       },
@@ -538,8 +697,31 @@ export async function knowledgeCli(
       str(values.mode) ? { mode: str(values.mode)! } : {},
       io,
     );
+  if (
+    group === "knowledge" &&
+    (command === "verify" || command === "correct" || command === "reject")
+  ) {
+    if (!arg) {
+      io.err(
+        `Usage: atticus knowledge ${command} <item>${command === "correct" ? " --set field=value" : ""}${command === "reject" ? " --note why" : " [--note text]"}`,
+      );
+      return 2;
+    }
+    const set = Array.isArray(values.set)
+      ? values.set.map(String)
+      : typeof values.set === "string"
+        ? [values.set]
+        : [];
+    return knowledgeReview(
+      root,
+      command === "verify" ? "verified" : command === "correct" ? "corrected" : "rejected",
+      arg,
+      { set, by: who(), json, ...(str(values.note) ? { note: str(values.note)! } : {}) },
+      io,
+    );
+  }
   if (group === "knowledge") {
-    io.err("Usage: atticus knowledge scan|list|ask. See atticus --help.");
+    io.err("Usage: atticus knowledge scan|list|ask|verify|correct|reject. See atticus --help.");
     return 2;
   }
   return undefined;
