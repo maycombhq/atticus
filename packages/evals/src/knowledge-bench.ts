@@ -143,7 +143,11 @@ function repeats(text: string, of: string): boolean {
 }
 
 function itemWords(r: KnowledgeRecord): string {
-  const parts = [itemTitle(r), r.appliesWhen ?? "", r.handledBy ?? ""];
+  const parts = [
+    itemTitle(r),
+    "appliesWhen" in r ? (r.appliesWhen ?? "") : "",
+    "handledBy" in r ? (r.handledBy ?? "") : "",
+  ];
   if (r.kind === "Pattern") parts.push(...r.rules);
   if (r.kind === "ProcessDefinition") parts.push(r.leadTime ?? "", ...r.inputs, ...r.steps);
   return parts.join(". ");
@@ -164,7 +168,7 @@ export function scoreKnowledge(
     run.items.forEach((gi, g) => {
       if (knowledgeKindOf(gi) !== ri.kind) return;
       const t = dice(ri.title, itemTitle(gi));
-      const a = dice(ri.applies_when, gi.appliesWhen ?? "");
+      const a = dice(ri.applies_when, "appliesWhen" in gi ? (gi.appliesWhen ?? "") : "");
       const sameCode = !!code(ri.title) && code(ri.title) === code(itemTitle(gi));
       if (t < 0.5 && a < 0.6 && !sameCode) return;
       const samePlace =

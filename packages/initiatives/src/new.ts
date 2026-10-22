@@ -98,6 +98,13 @@ export async function addParty(
     contacts: o.contacts ?? [],
     ...(o.channel ? { channel: o.channel } : {}),
     systems: o.systems ?? [],
+    // ADR 0101's fields for a team or vendor read from a page; a party recorded here has none.
+    responsibilities: [],
+    owns: [],
+    uses: [],
+    tags: [],
+    alsoOn: [],
+    urls: [],
     typicalLeadTimes: o.typicalLeadTimes ?? {},
   };
   return { party, written: await writeCurated(root, party as CatalogRecord) };
