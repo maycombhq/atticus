@@ -168,6 +168,7 @@ Usage:
   atticus initiative commit <commitment> <open|at-risk|done|slipped>
   atticus learn [list] | learn start <role|lesson> | learn check [--answer a] [--lesson l] [--step s]
   atticus sandbox create <dir>         A throwaway practice metarepo
+  atticus commands [--json]            Every command as data: its arguments, options, area and how it runs (for an editor)
   atticus explain <id|command>         Explain a record, finding, change or command in plain words
   atticus eval run [--agent a]... [--mode mock|replay|live] [--runs n]  Evaluate AI agents
   atticus eval report                  The latest eval results and AI quality

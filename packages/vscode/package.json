@@ -50,6 +50,10 @@
         "isSticky": true,
         "commands": [
           {
+            "name": "new",
+            "description": "Start a change: /new <what it is>, then pick its type and write its brief"
+          },
+          {
             "name": "next",
             "description": "The next step, and a button to run it"
           },
@@ -88,6 +92,10 @@
           {
             "name": "ask",
             "description": "Ask the catalog a plain question: /ask <question>"
+          },
+          {
+            "name": "run",
+            "description": "Any atticus command: /run <command> [arguments] (every command, from atticus commands)"
           }
         ]
       }
@@ -192,6 +200,98 @@
         "title": "Act on the finding",
         "category": "Atticus",
         "icon": "$(check)"
+      },
+      {
+        "command": "atticus.runCommand",
+        "title": "Run a command…",
+        "category": "Atticus",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "atticus.newChange",
+        "title": "New change",
+        "category": "Atticus",
+        "icon": "$(add)"
+      },
+      {
+        "command": "atticus.repoCommand",
+        "title": "Run on this repo…",
+        "category": "Atticus",
+        "icon": "$(play)"
+      },
+      {
+        "command": "atticus.changeCommand",
+        "title": "Run on this change…",
+        "category": "Atticus",
+        "icon": "$(play)"
+      },
+      {
+        "command": "atticus.runTask",
+        "title": "Run the task",
+        "category": "Atticus",
+        "icon": "$(play)"
+      },
+      {
+        "command": "atticus.checkHealth",
+        "title": "Check this machine and the metarepo",
+        "category": "Atticus",
+        "icon": "$(pulse)"
+      },
+      {
+        "command": "atticus.scanAll",
+        "title": "Scan every repo",
+        "category": "Atticus",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "atticus.estateJoin",
+        "title": "Join the estate's flows",
+        "category": "Atticus",
+        "icon": "$(link)"
+      },
+      {
+        "command": "atticus.workspaceSync",
+        "title": "Clone or update the base clones",
+        "category": "Atticus",
+        "icon": "$(repo-pull)"
+      },
+      {
+        "command": "atticus.sourcesSync",
+        "title": "Sync the knowledge sources",
+        "category": "Atticus",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "atticus.knowledgeScan",
+        "title": "Scan the knowledge sources",
+        "category": "Atticus",
+        "icon": "$(book)"
+      },
+      {
+        "command": "atticus.knowledgeAsk",
+        "title": "Ask the knowledge",
+        "category": "Atticus",
+        "icon": "$(question)"
+      },
+      {
+        "command": "atticus.upgrade",
+        "title": "Upgrade the metarepo",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.setup",
+        "title": "The setup checklist",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.digest",
+        "title": "What waits on you",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.runApproved",
+        "title": "Approve and run",
+        "category": "Atticus"
       }
     ],
     "viewsContainers": {
@@ -218,6 +318,11 @@
           "name": "Changes"
         },
         {
+          "id": "atticus.knowledge",
+          "name": "Knowledge",
+          "visibility": "collapsed"
+        },
+        {
           "id": "atticus.catalog",
           "name": "Catalog",
           "visibility": "collapsed"
@@ -228,8 +333,68 @@
       "view/title": [
         {
           "command": "atticus.refresh",
-          "when": "view =~ /^atticus.(view|repos|changes|catalog)$/",
-          "group": "navigation"
+          "when": "view =~ /^atticus.(view|repos|changes|knowledge|catalog)$/",
+          "group": "navigation@9"
+        },
+        {
+          "command": "atticus.runCommand",
+          "when": "view == atticus.view",
+          "group": "navigation@1"
+        },
+        {
+          "command": "atticus.checkHealth",
+          "when": "view == atticus.view",
+          "group": "navigation@2"
+        },
+        {
+          "command": "atticus.setup",
+          "when": "view == atticus.view",
+          "group": "more"
+        },
+        {
+          "command": "atticus.digest",
+          "when": "view == atticus.view",
+          "group": "more"
+        },
+        {
+          "command": "atticus.upgrade",
+          "when": "view == atticus.view",
+          "group": "more"
+        },
+        {
+          "command": "atticus.scanAll",
+          "when": "view == atticus.repos",
+          "group": "navigation@1"
+        },
+        {
+          "command": "atticus.estateJoin",
+          "when": "view == atticus.repos",
+          "group": "navigation@2"
+        },
+        {
+          "command": "atticus.workspaceSync",
+          "when": "view == atticus.repos",
+          "group": "more"
+        },
+        {
+          "command": "atticus.newChange",
+          "when": "view == atticus.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "atticus.sourcesSync",
+          "when": "view == atticus.knowledge",
+          "group": "navigation@1"
+        },
+        {
+          "command": "atticus.knowledgeScan",
+          "when": "view == atticus.knowledge",
+          "group": "navigation@2"
+        },
+        {
+          "command": "atticus.knowledgeAsk",
+          "when": "view == atticus.knowledge",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -252,6 +417,31 @@
           "command": "atticus.findingAction",
           "when": "view == atticus.changes && viewItem == atticus.finding",
           "group": "inline"
+        },
+        {
+          "command": "atticus.repoCommand",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.repoCommand",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.changeCommand",
+          "when": "view == atticus.changes && viewItem == atticus.change",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.changeCommand",
+          "when": "view == atticus.changes && viewItem == atticus.change",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.runTask",
+          "when": "view == atticus.changes && viewItem == atticus.task",
+          "group": "inline"
         }
       ],
       "commandPalette": [
@@ -269,6 +459,22 @@
         },
         {
           "command": "atticus.findingAction",
+          "when": "false"
+        },
+        {
+          "command": "atticus.runApproved",
+          "when": "false"
+        },
+        {
+          "command": "atticus.repoCommand",
+          "when": "false"
+        },
+        {
+          "command": "atticus.changeCommand",
+          "when": "false"
+        },
+        {
+          "command": "atticus.runTask",
           "when": "false"
         }
       ]

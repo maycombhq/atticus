@@ -89,6 +89,9 @@ export class Service {
       codeRoot: (repo) => codeRootFor(repo, root, folders, existsSync),
       catalogRel: existsSync(join(root, ".atticus", "catalog")) ? ".atticus/catalog" : "catalog",
       exists: existsSync,
+      knowledgeRel: existsSync(join(root, ".atticus", "knowledge"))
+        ? ".atticus/knowledge"
+        : "knowledge",
     };
   }
 

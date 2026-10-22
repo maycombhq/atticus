@@ -4,6 +4,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Every command in VS Code
+
+- `atticus commands [--json]` (ADR 0096): every command as data. It records each command's arguments and what they refer to, its options, its area, and how it runs (with an assistant, as a shared write that needs approval, as a server, or locally). It is built from the help text, and a test fails if a command has no area.
+- The VS Code extension offers all of them:
+  - **Run a command…** and `@atticus /run` offer every command, each argument asked with a picker for its kind. A shared write shows its dry run and waits for your yes.
+  - **Starting a change:** New change (the + button, or `@atticus /new`) asks for the type, opens the brief, then offers the feature stage.
+  - **On a repo or a change:** "Run on this repo/change…" offers every command that takes it.
+  - **New sidebar parts:** a change's Tasks, each with Run the task, and a Knowledge section with the sources and the items.
+  - **Title bars** of the sections carry the everyday commands.
+  - **Health:** an upgrade and machine check runs when the window opens.
+
 ### A change's target flows, before and after, and loops and retries as frames
 
 - The Flows screen draws a change's target flows (ADR 0095) as one sequence. Each step says Added, Changed (with what it did before) or Removed, and shows the delta's reason. Components and tables the change adds are lanes marked new. Pick the change in the Flows screen's Change list, or follow the link on the Architecture page or the Target flows item in the VS Code sidebar.

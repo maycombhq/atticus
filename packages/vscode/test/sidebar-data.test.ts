@@ -16,6 +16,10 @@ import {
   repoItems,
   stepItems,
   targetItems,
+  taskItems,
+  knowledgeItems,
+  sourceItems,
+  healthProblems,
   type Paths,
 } from "../src/sidebar-data";
 
@@ -216,6 +220,7 @@ describe("the Changes section", () => {
       ["brief", "done", "pass"],
       ["interfaces", "ready · 2 findings", "circle-large-outline"],
       ["data", "blocked", "lock"],
+      ["Tasks", undefined, "tasklist"],
       ["Target flows", undefined, "git-compare"],
       ["Findings", "2 blocking, 1 gap", "warning"],
       ["In the app", undefined, "link-external"],
@@ -224,7 +229,7 @@ describe("the Changes section", () => {
       kind: "file",
       path: join(root, "openspec/changes/add-note-tags/brief.md"),
     });
-    expect(items[4]!.expand).toEqual({ kind: "findings", change: "add-note-tags" });
+    expect(items[5]!.expand).toEqual({ kind: "findings", change: "add-note-tags" });
     // A file the change hasn't reached yet says so, rather than failing to open.
     const notYet = artifactItems(change, {
       ...paths,
@@ -470,5 +475,118 @@ describe("a change's target flows in the sidebar (ADR 0095)", () => {
     expect(items.find((i) => i.label === "Target flows")).toMatchObject({
       expand: { kind: "targets", change: "add-fraud-check" },
     });
+  });
+});
+
+describe("the rest of Atticus in the sidebar (ADR 0096)", () => {
+  it("gives a repo and a change their menus, through their context", () => {
+    const [r] = repoItems({
+      repos: [
+        {
+          id: "forge-web",
+          type: "forge-ui",
+          owner: "team-web",
+          manifest: "m.yaml",
+          cloned: true,
+          scanSettings: { path: "s.yaml", present: false },
+          lastScan: null,
+        },
+      ],
+    });
+    expect(r!.context).toBe("atticus.repo");
+    const [c] = changeItems([
+      {
+        id: "add-note-tags",
+        title: "Let people tag notes",
+        type: "feature",
+        state: "define",
+        repos: [],
+        openFindings: { blocking: 0, gap: 0, risk: 0, idea: 0 },
+        updatedAt: "2026-10-20T21:52:28Z",
+      },
+    ]);
+    expect(c!.context).toBe("atticus.change");
+  });
+
+  it("lists a change's tasks by repo, each one a task to run", () => {
+    const items = taskItems("add-note-tags", [
+      { id: "t1", repo: "forge-notes", description: "Add the tags column", done: true },
+      {
+        id: "t2",
+        repo: "forge-notes",
+        description: "Accept tags on POST /notes",
+        done: false,
+        story: "s1",
+      },
+    ]);
+    expect(items.map((i) => [i.label, i.description, i.icon, i.context])).toEqual([
+      ["Add the tags column", "forge-notes · done", "pass", "atticus.task"],
+      [
+        "Accept tags on POST /notes",
+        "forge-notes · story s1",
+        "circle-large-outline",
+        "atticus.task",
+      ],
+    ]);
+    expect(items[1]!.task).toEqual({ change: "add-note-tags", id: "t2" });
+  });
+
+  it("lists the knowledge items, each opening its file, and the sources they came from", () => {
+    const items = knowledgeItems(
+      [
+        {
+          kind: "Pattern",
+          id: "pattern.outbox",
+          name: "Outbox",
+          status: "current",
+          confidence: "asserted",
+          evidence: [{ source: "document", path: "wiki/integration/outbox.md" }],
+        },
+      ],
+      { ...paths, knowledgeRel: "knowledge" },
+    );
+    expect(items[0]).toMatchObject({
+      label: "Outbox",
+      description: "Pattern",
+      open: {
+        kind: "file",
+        path: join(root, "knowledge", "items", "pattern", "pattern.outbox.yaml"),
+      },
+    });
+    expect(
+      sourceItems(
+        {
+          path: "org-pack/sources.yaml",
+          present: true,
+          wikis: [{ id: "arch-wiki", type: "markdown-folder", location: "wiki", spaces: [] }],
+          absorbed: [],
+        },
+        paths,
+      ).map((s) => [s.label, s.description]),
+    ).toEqual([["arch-wiki", "markdown-folder · wiki"]]);
+  });
+
+  it("says which of the machine's checks need a look", () => {
+    expect(
+      healthProblems({
+        checks: [
+          { id: "node", label: "Node.js", status: "ok", detail: "Node 24", fix: "" },
+          {
+            id: "proxy",
+            label: "Proxy",
+            status: "warn",
+            detail: "No proxy set",
+            fix: "Set HTTPS_PROXY",
+          },
+          {
+            id: "disk",
+            label: "Disk",
+            status: "fail",
+            detail: "200 MB free",
+            fix: "Free some space",
+          },
+        ],
+      }),
+    ).toEqual(["Proxy: No proxy set. Set HTTPS_PROXY", "Disk: 200 MB free. Free some space"]);
   });
 });

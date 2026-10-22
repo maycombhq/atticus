@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import * as vscode from "vscode";
 import type * as Api from "./api-types";
 import type { Service } from "./service";
@@ -13,6 +14,9 @@ import {
   repoItems,
   stepItems,
   targetItems,
+  taskItems,
+  sourceItems,
+  knowledgeItems,
   type Item,
 } from "./sidebar-data";
 
@@ -26,14 +30,15 @@ import {
 type Node = Item | { id: string; state: "loading" | "error" | "empty"; message: string };
 const isItem = (n: Node): n is Item => !("state" in n);
 
-export type Section = "repos" | "changes" | "catalog";
+export type Section = "repos" | "changes" | "catalog" | "knowledge";
 
 const EMPTY: Record<Section, string> = {
   repos:
     "No repos yet. Add them to a repos.manifest.yaml in org-pack/profiles, then run atticus workspace sync.",
-  changes:
-    "No changes yet. Start one with atticus change new, or /atticus-feature in Copilot Chat.",
+  changes: "No changes yet. Start one with the + button (Atticus: New change).",
   catalog: "The catalog is empty. Run atticus scan.",
+  knowledge:
+    "No knowledge sources yet. Add a wiki to org-pack/sources.yaml (atticus sources add), then sync it.",
 };
 
 export class SectionTree implements vscode.TreeDataProvider<Node> {
@@ -68,6 +73,31 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
     }
     if (this.section === "changes")
       return changeItems(await api.get<Api.ChangeSummary[]>("/api/changes"));
+    if (this.section === "knowledge") {
+      const o = await api.get<Api.OnboardingView>("/api/onboarding");
+      this.onboarding = o;
+      const n = (o.sources?.wikis.length ?? 0) + (o.sources?.absorbed.length ?? 0);
+      return [
+        {
+          id: "sources",
+          label: `Sources (${n})`,
+          description: o.sources?.path ?? "org-pack/sources.yaml",
+          icon: "library",
+          ...(n ? { expand: { kind: "sources" as const } } : {}),
+          ...(o.sources?.present
+            ? { open: { kind: "file" as const, path: join(root, o.sources.path) } }
+            : {}),
+        },
+        {
+          id: "knowledge-items",
+          label: "Knowledge items",
+          tooltip:
+            "Patterns, standards, processes, requests, decisions and constraints read from the sources",
+          icon: "book",
+          expand: { kind: "knowledge-items" as const },
+        },
+      ];
+    }
     return kindItems(await api.get<Api.KindCount[]>("/api/catalog/kinds"));
   }
 
@@ -103,6 +133,11 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
           paths,
         );
       }
+      case "tasks":
+        return taskItems(
+          x.change,
+          await api.get<Api.Task[]>(`/api/changes/${enc(x.change)}/tasks`),
+        );
       case "targets":
         return targetItems(
           await api.get<Api.TargetFlowList>(`/api/changes/${enc(x.change)}/target-flows`),
@@ -112,6 +147,15 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
           await api.get<Api.RecordPage>(`/api/catalog/${enc(x.recordKind)}?limit=200`),
           paths,
         );
+      case "sources":
+        return this.onboarding?.sources ? sourceItems(this.onboarding.sources, paths) : [];
+      case "knowledge-items": {
+        const r = await this.svc.cli(root)(["knowledge", "list", "--json", "--root", root]);
+        // No items yet: the command says what to run, which the empty row shows.
+        if (r.code !== 0)
+          throw new Error(r.stderr.trim().split("\n")[0] || "No knowledge items yet.");
+        return knowledgeItems(JSON.parse(r.stdout) as Api.KnowledgeItem[], paths);
+      }
       case "evidence":
         return evidenceItems(x, paths);
     }

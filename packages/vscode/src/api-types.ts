@@ -20,8 +20,15 @@ export interface OnboardingRepo {
   scanSettings: { path: string; present: boolean };
   lastScan: { records: number; kinds: Record<string, number>; commit?: string } | null;
 }
+export interface Sources {
+  path: string;
+  present: boolean;
+  wikis: { id: string; type: string; location: string; spaces: string[]; owner?: string }[];
+  absorbed: { id: string; url: string; format: string; mode: string }[];
+}
 export interface OnboardingView {
   repos: OnboardingRepo[];
+  sources?: Sources;
 }
 
 export interface SpecList {
@@ -158,4 +165,27 @@ export interface TargetFlowList {
     removed: number;
   }[];
   problems: string[];
+}
+
+export interface Task {
+  id: string;
+  repo: string;
+  description: string;
+  done: boolean;
+  story?: string;
+  branch?: string;
+}
+
+export interface KnowledgeItem {
+  kind: string;
+  id: string;
+  name?: string;
+  title?: string;
+  status: string;
+  confidence: string;
+  evidence: Evidence[];
+}
+
+export interface Doctor {
+  checks: { id: string; label: string; status: string; detail: string; fix: string }[];
 }

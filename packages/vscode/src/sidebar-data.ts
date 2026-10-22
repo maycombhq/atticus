@@ -24,6 +24,9 @@ export type Expand =
   | { kind: "change"; change: string }
   | { kind: "findings"; change: string }
   | { kind: "targets"; change: string }
+  | { kind: "tasks"; change: string }
+  | { kind: "sources" }
+  | { kind: "knowledge-items" }
   | { kind: "kind"; recordKind: string }
   | { kind: "evidence"; repo?: string; evidence: Api.Evidence[] };
 
@@ -40,6 +43,8 @@ export interface Item {
   context?: string;
   /** A finding's item carries it, for Act on the finding. */
   finding?: Api.Finding;
+  /** A task's item carries its change and id, for Run the task. */
+  task?: { change: string; id: string };
 }
 
 export interface Paths {
@@ -50,6 +55,8 @@ export interface Paths {
   catalogRel: string;
   /** Whether a file is there; a change's files that aren't written yet say so. Default: yes. */
   exists?: (path: string) => boolean;
+  /** The knowledge folder relative to the root: knowledge, or .atticus/knowledge. */
+  knowledgeRel?: string;
 }
 
 const num = (n: number) => n.toLocaleString("en-US");
@@ -110,6 +117,7 @@ export function repoItems(v: Api.OnboardingView): Item[] {
     tooltip: `${r.id}: ${r.type}, owned by ${r.owner}. Listed in ${r.manifest}.${r.lastScan?.commit ? ` Last scan at ${r.lastScan.commit.slice(0, 7)}.` : ""}`,
     icon: "repo",
     expand: { kind: "repo", repo: r.id },
+    context: "atticus.repo",
   }));
 }
 
@@ -226,6 +234,7 @@ export function changeItems(cs: Api.ChangeSummary[]): Item[] {
     tooltip: `${c.id} (${c.type}), updated ${c.updatedAt.slice(0, 10)}`,
     icon: "git-pull-request",
     expand: { kind: "change", change: c.id },
+    context: "atticus.change",
   }));
 }
 
@@ -261,6 +270,13 @@ export function artifactItems(c: Api.ChangeDetail, p: Paths): Item[] {
                 : `${a.artifact} isn't written yet.`,
           },
     })),
+    {
+      id: `tasks:${c.id}`,
+      label: "Tasks",
+      tooltip: "The change's tasks, by repo; each can run with AI (atticus task run).",
+      icon: "tasklist",
+      expand: { kind: "tasks" as const, change: c.id },
+    },
     {
       id: `targets:${c.id}`,
       label: "Target flows",
@@ -379,6 +395,63 @@ export function targetItems(v: Api.TargetFlowList): Item[] {
       },
     };
   });
+}
+
+// ------------------------------------------------------------------ tasks, knowledge, health (ADR 0096)
+
+export function taskItems(change: string, tasks: Api.Task[]): Item[] {
+  return tasks.map((t) => ({
+    id: `task:${change}:${t.id}`,
+    label: t.description,
+    description: `${t.repo}${t.done ? " · done" : t.story ? ` · story ${t.story}` : ""}`,
+    tooltip: `${t.id}: ${t.description}${t.branch ? `\nBranch ${t.branch}` : ""}`,
+    icon: t.done ? "pass" : "circle-large-outline",
+    context: "atticus.task",
+    task: { change, id: t.id },
+  }));
+}
+
+export function knowledgeItems(items: Api.KnowledgeItem[], p: Paths): Item[] {
+  const rel = p.knowledgeRel ?? "knowledge";
+  return items.map((k) => ({
+    id: `knowledge:${k.kind}:${k.id}`,
+    label: k.name ?? k.title ?? k.id,
+    description: k.kind,
+    tooltip: [k.id, ...k.evidence.map((e) => e.path ?? e.record ?? "").filter(Boolean)].join("\n"),
+    icon: "book",
+    open: {
+      kind: "file",
+      path: join(p.root, rel, "items", k.kind.toLowerCase(), `${k.id}.yaml`),
+    },
+  }));
+}
+
+export function sourceItems(s: Api.Sources, p: Paths): Item[] {
+  return [
+    ...s.wikis.map((w) => ({
+      id: `source:${w.id}`,
+      label: w.id,
+      description: `${w.type} · ${w.location}`,
+      tooltip: `${w.id}: ${w.type} at ${w.location}${w.spaces.length ? ` (${w.spaces.join(", ")})` : ""}${w.owner ? `, owned by ${w.owner}` : ""}`,
+      icon: "library",
+      open: file(p, s.path),
+    })),
+    ...s.absorbed.map((a) => ({
+      id: `absorbed:${a.id}`,
+      label: a.id,
+      description: `absorbed · ${a.format}`,
+      tooltip: a.url,
+      icon: "repo-clone",
+      open: file(p, s.path),
+    })),
+  ];
+}
+
+/** The machine's checks (atticus doctor --json) that aren't ok, with their fix. */
+export function healthProblems(d: Api.Doctor): string[] {
+  return d.checks
+    .filter((c) => c.status !== "ok" && c.status !== "skip")
+    .map((c) => `${c.label}: ${c.detail}${c.fix ? `. ${c.fix}` : ""}`);
 }
 
 // ------------------------------------------------------------------ catalog

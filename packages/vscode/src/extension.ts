@@ -11,6 +11,7 @@ import {
 } from "./atticus";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { chatHandler } from "./chat";
+import { CommandUi } from "./command-ui";
 import { FlowLenses } from "./codelens";
 import { SectionTree, type Section } from "./sidebar";
 import { findingActions, flowHash, stepOf, type Item, type Open } from "./sidebar-data";
@@ -56,7 +57,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.registerTreeDataProvider("atticus.view", view),
   );
   // The sections that read the app's API (ADR 0093): Repos, Changes and Catalog.
-  const sections = (["repos", "changes", "catalog"] as Section[]).map((name) => {
+  const sections = (["repos", "changes", "knowledge", "catalog"] as Section[]).map((name) => {
     const tree = new SectionTree(svc, name);
     context.subscriptions.push(
       tree,
@@ -116,7 +117,10 @@ ${view.next.why}`
     context.subscriptions.push(ev(soon));
   context.subscriptions.push(files, { dispose: () => clearTimeout(pending) });
 
-  const participant = vscode.chat.createChatParticipant("atticus.chat", chatHandler(svc));
+  const participant = vscode.chat.createChatParticipant(
+    "atticus.chat",
+    chatHandler(svc, () => commands),
+  );
   participant.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "atticus.svg");
   context.subscriptions.push(participant);
 
@@ -183,6 +187,74 @@ ${view.next.why}`
   };
 
   reg("atticus.refresh", refreshAll);
+
+  // ADR 0096: every command the command line has, from its own catalogue.
+  const commands = new CommandUi(svc, { runAi, inTerminal, refreshAll });
+  const withRoot = (f: (root: string) => unknown) => () => {
+    const root = needRoot();
+    if (root) void f(root);
+  };
+  reg(
+    "atticus.runCommand",
+    (id?: string, preset?: { args?: string[]; flags?: Record<string, string | true> }) => {
+      const root = needRoot();
+      if (root) void commands.pickAndRun(root, id, preset ?? {});
+    },
+  );
+  reg("atticus.runApproved", (argv: string[], flag: string) => {
+    const root = needRoot();
+    if (!root || !Array.isArray(argv) || typeof flag !== "string") return;
+    // The person's click in the chat, then the same yes in the editor, before the shared write.
+    void commands.approveAndRun(root, argv, flag).then((p) => {
+      if (p) {
+        for (const l of p.lines) svc.log.appendLine(l);
+        void vscode.window.showInformationMessage(
+          `atticus ${argv.slice(0, 2).join(" ")}: ${p.lines[0] ?? "done"}`,
+        );
+        refreshAll();
+      }
+    });
+  });
+  reg("atticus.newChange", (title?: string) => {
+    const root = needRoot();
+    if (root) void commands.newChange(root, typeof title === "string" ? title : undefined);
+  });
+  reg("atticus.repoCommand", (item?: Item) => {
+    const root = needRoot();
+    const repo = item?.expand?.kind === "repo" ? item.expand.repo : undefined;
+    if (root) void (repo ? commands.forItem(root, "repo", repo) : commands.pickAndRun(root));
+  });
+  reg("atticus.changeCommand", (item?: Item) => {
+    const root = needRoot();
+    const change = item?.expand?.kind === "change" ? item.expand.change : undefined;
+    if (root) void (change ? commands.forItem(root, "change", change) : commands.pickAndRun(root));
+  });
+  reg("atticus.runTask", (item?: Item) => {
+    const root = needRoot();
+    if (root && item?.task)
+      void commands.pickAndRun(root, "task run", { args: [item.task.change, item.task.id] });
+  });
+  reg(
+    "atticus.checkHealth",
+    withRoot((root) => commands.checkHealth(root, false)),
+  );
+  // The everyday ones, one click from the sidebar's title bars.
+  const shortcut: [string, string][] = [
+    ["atticus.scanAll", "scan"],
+    ["atticus.estateJoin", "estate join"],
+    ["atticus.workspaceSync", "workspace sync"],
+    ["atticus.sourcesSync", "sources sync"],
+    ["atticus.knowledgeScan", "knowledge scan"],
+    ["atticus.knowledgeAsk", "knowledge ask"],
+    ["atticus.upgrade", "upgrade"],
+    ["atticus.setup", "setup"],
+    ["atticus.digest", "digest"],
+  ];
+  for (const [name, id] of shortcut)
+    reg(
+      name,
+      withRoot((root) => commands.pickAndRun(root, id)),
+    );
   reg("atticus.openItem", async (o: Open, how?: { beside?: boolean }): Promise<unknown> => {
     if (o.kind === "app")
       return vscode.commands.executeCommand("atticus.showApp", o.hash, how ?? {});
@@ -486,6 +558,8 @@ ${view.next.why}`
   });
 
   void view.refresh().then(updateStatus);
+  // When the window opens: is the metarepo up to date, and is this machine ready?
+  if (svc.root) void commands.checkHealth(svc.root, true).catch(() => undefined);
 }
 
 export function deactivate() {

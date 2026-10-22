@@ -41,17 +41,34 @@ To build the file from the source: `pnpm --filter atticus package` (it writes `p
 | `@atticus /stories <change>`      | The change's stories and tasks (`atticus plan stories`)                                  |
 | `@atticus /answer`                | Each open question with its options as buttons; a click runs `atticus questions answer`  |
 | `@atticus /diagram [repo] [flow]` | The repo on the Architecture canvas, or one of its flows, in the Atticus tab             |
+| `@atticus /new <title>`           | Start a change: pick its type, then write its brief                                      |
+| `@atticus /run <command>`         | Any atticus command, with its dry run and your approval for a shared write               |
 | `@atticus /ask <question>`        | A plain question to the catalog (`atticus ask`); no model is used                        |
 
 Without a repo or change, a step command takes the one `atticus next` names for that step.
 
 ## The sidebar
 
-The Atticus icon in the activity bar opens a sidebar with a section for each part of Atticus (ADR 0093):
+## Everything Atticus does
+
+**Atticus: Run a command…** (the Command Palette, the terminal button in the Next section, or `@atticus /run` in Copilot Chat) offers every command the command line has, by area: set up, repos and specs, knowledge, the catalog, changes, plans, release (ADR 0096). The list comes from `atticus commands --json`, so a new command is there as soon as your `atticus` has it.
+
+- Each argument is asked with a picker: a repo, a change, an open question, a finding, a flow, a system, a file, or the values a choice takes. Then the options it needs (a change's type, from `org-pack/change-types.yaml`), then any options to add.
+- AI steps run with Copilot's model. A command that writes to a shared system (a hand-off pull request, ADO work items, service-desk requests, a task run, a digest sent) runs as a dry run first. The extension shows what the dry run says and asks you before it adds `--approve` or `--send`. A server opens a terminal. Everything else runs, and what it printed is in the Atticus output (or, from the chat, in the chat).
+- In the chat, type the command after `/run` (`@atticus /run spec check nadiengine`). What's missing is filled in from the pickers.
+
+**Starting a change:** the + button in the Changes section, **Atticus: New change**, or `@atticus /new <what it is>`. Pick its type, and the brief opens. Write it, save it, then run the feature stage from the message or with `@atticus /feature <change>`.
+
+**On a repo or a change:** its play button lists every command that takes it, with it filled in: for a repo, survey, verify, spec draft and check, repo type and the rest; for a change, the stages, the critic, status, hand-off, tasks, service desk, work items, release and the rest.
+
+**When the window opens**, the extension checks whether the metarepo needs `atticus upgrade` and whether this machine is ready (`atticus doctor`), and says so with a button when something needs a look.
+
+The Atticus icon in the activity bar opens a sidebar with a section for each part of Atticus (ADR 0093, 0096):
 
 - **Next**: the next step (click it or its Run button), the open questions (click one to answer: pick an option or write your own words), and **Open the app**.
 - **Repos**: each repo with its last scan. Under it, its flows, then each flow's steps. Click a step to open the code at the line it cites, or use its diagram button to see it in the flow. Click a flow to open its diagram. The repo's scan settings and its place on the canvas are there too.
-- **Changes**: each change with its state and blocking findings. Under it, each of its files with its state (click to open; one not written yet says so), its target flows (each flow the change adds, changes or removes; click to see it beside today's, with each step marked Added, Changed or Removed, ADR 0095), its findings (click to open the file a finding is about; the why and the fix are in the tooltip; its check button acts on it, ADR 0094: Apply the fix, I fixed it by hand, Not relevant, Waive it or Ask someone, offering only what the critic allows, and showing a patch before applying it) and a link to the change in the app.
+- **Changes**: each change with its state and blocking findings. Under it, each of its files with its state, its tasks (each with Run the task) (click to open; one not written yet says so), its target flows (each flow the change adds, changes or removes; click to see it beside today's, with each step marked Added, Changed or Removed, ADR 0095), its findings (click to open the file a finding is about; the why and the fix are in the tooltip; its check button acts on it, ADR 0094: Apply the fix, I fixed it by hand, Not relevant, Waive it or Ask someone, offering only what the critic allows, and showing a patch before applying it) and a link to the change in the app.
+- **Knowledge**: the sources in `sources.yaml` and the knowledge items read from them (click one to open its file). Its title bar syncs the sources, scans them and asks the knowledge.
 - **Catalog**: each kind of record with its count. Under it, its records (click to open the record's YAML), and under each record, the code it was read from.
 
 The sections read the app's local API on 127.0.0.1, which the extension starts for them; they follow the files as they change, and the Refresh button reads everything again.

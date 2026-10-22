@@ -7,6 +7,8 @@ import {
   STEP_COMMANDS,
   type StepCommand,
 } from "./atticus";
+import type { CommandUi } from "./command-ui";
+import { answersFrom, buildArgv, howToRun, matchCommand } from "./commands";
 import { block, describeEnd } from "./describe";
 import type { Service } from "./service";
 import type { NextStep, OpenQuestion } from "./types";
@@ -116,7 +118,89 @@ async function answer(
   for (const q of r.value) showQuestion(stream, q);
 }
 
-export function chatHandler(svc: Service): vscode.ChatRequestHandler {
+/**
+ * `@atticus /run <command…>` (ADR 0096): any command of the catalogue. What it prints comes back
+ * here; an AI step runs here with Copilot's model; a shared write shows its dry run and a button
+ * the person clicks to approve; a server opens a terminal.
+ */
+async function runTyped(
+  svc: Service,
+  ui: CommandUi,
+  root: string,
+  line: string,
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken,
+  model: vscode.LanguageModelChat,
+) {
+  const cat = await ui.load(root);
+  const m = line.trim() ? matchCommand(cat, line) : undefined;
+  if (!m) {
+    stream.markdown(
+      line.trim()
+        ? `No atticus command starts with ${inline(line.trim())}. Pick one from the list:`
+        : "Pick a command from the list, by area, or type it after /run (for example /run spec check nadiengine).",
+    );
+    stream.button({ command: "atticus.runCommand", title: "Pick a command" });
+    return;
+  }
+  const { answers, missing } = answersFrom(m.command, m.rest);
+  if (missing.length) {
+    stream.markdown(
+      `${inline(`atticus ${m.command.id}`)} still needs ${missing.join(", ")}. Fill it in from the lists:`,
+    );
+    stream.button({
+      command: "atticus.runCommand",
+      arguments: [m.command.id, answers],
+      title: `Fill in and run ${m.command.id}`,
+    });
+    return;
+  }
+  const argv = buildArgv(m.command, answers);
+  const how = howToRun(m.command);
+  if (how.mode === "ai") {
+    stream.markdown(
+      `Running ${inline(`atticus ${argv.join(" ")} --handoff`)} with Copilot's model.\n`,
+    );
+    const spec = m.command.id === "spec draft" ? argv[2] : undefined;
+    const end = await svc.run(
+      root,
+      { args: argv, ...(spec ? { spec } : {}) },
+      (l) => stream.progress(l),
+      token,
+      model,
+    );
+    const lines = describeEnd(end);
+    stream.markdown(`\n**${lines[0]}**`);
+    if (end.state === "question") for (const q of end.questions) showQuestion(stream, q);
+    else if (lines.length > 1) stream.markdown(block(lines.slice(1)));
+    return;
+  }
+  if (how.mode === "terminal") {
+    await vscode.commands.executeCommand("atticus.runCommand", m.command.id, answers);
+    stream.markdown(`Started ${inline(`atticus ${argv.join(" ")}`)} in a terminal.`);
+    return;
+  }
+  stream.progress(`Running atticus ${argv.join(" ")}...`);
+  const dryArgv = how.mode === "approve" ? argv.filter((a) => a !== how.flag) : argv;
+  const r = await svc.cli(root)([...dryArgv, "--root", root], token);
+  const out = [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(
+    Boolean,
+  );
+  stream.markdown(
+    `${how.mode === "approve" ? "The dry run of" : "Ran"} ${inline(`atticus ${dryArgv.join(" ")}`)} (exit ${r.code}):${block(out.slice(0, 200).length ? out.slice(0, 200) : ["(nothing printed)"])}`,
+  );
+  if (out.length > 200)
+    stream.markdown(`${out.length - 200} more lines are in the Atticus output.`);
+  if (how.mode === "approve")
+    stream.button({
+      command: "atticus.runApproved",
+      arguments: [dryArgv, how.flag],
+      title: `Approve and run (${how.flag})`,
+    });
+  svc.fireChanged();
+}
+
+export function chatHandler(svc: Service, commands?: () => CommandUi): vscode.ChatRequestHandler {
   return async (request, _context, stream, token) => {
     const root = svc.root;
     if (!root) {
@@ -127,11 +211,23 @@ export function chatHandler(svc: Service): vscode.ChatRequestHandler {
     if (!cmd || cmd === "next") {
       if (!cmd && request.prompt.trim())
         stream.markdown(
-          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /answer, /diagram [repo] or /ask <question>.\n\n",
+          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /answer, /diagram [repo], /new <title>, /run <command> or /ask <question>.\n\n",
         );
       return next(svc, root, stream, token);
     }
     if (cmd === "answer") return answer(svc, root, stream, token);
+    if (cmd === "run" && commands)
+      return runTyped(svc, commands(), root, request.prompt, stream, token, request.model);
+    if (cmd === "new") {
+      const t = request.prompt.trim();
+      stream.markdown(
+        t
+          ? `Starting the change ${inline(t)}: pick its type, then write its brief.`
+          : "Say what the change is: /new Let members pin a message",
+      );
+      if (t) await vscode.commands.executeCommand("atticus.newChange", t);
+      return;
+    }
     if (cmd === "diagram") {
       const t = request.prompt.trim();
       await vscode.commands.executeCommand("atticus.diagram", t);
