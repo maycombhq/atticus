@@ -166,6 +166,19 @@ export function stepCommands(): CommandDef[] {
       ),
     ),
     step(
+      "atticus-needs",
+      "Say what a change needs from the organisation: the requests and processes to raise, the standards to follow, the teams and vendors to involve.",
+      "[change]",
+      body(
+        "Find what the change {{ARGS}} needs from the organisation. You read the change (its brief, feature, design, stories and tasks) and the knowledge items, and say which apply, to the whole change or to one feature, flow, story or task, why, and the change's own words that call for each. Atticus checks every one: the item is real and no person rejected it, the target is in the change, the words are in the file you name. It writes needs.yaml and needs.md with each item's how-to, lead time and who handles it.",
+        [
+          ...handoff("atticus change needs {{ARGS}}"),
+          "If the first command says there are no knowledge items yet, stop and say so: run atticus sources sync, then atticus knowledge scan.",
+          "Never raise a request yourself. Tell the person what is open, longest lead time first, and that atticus needs done {{ARGS}} <item> --note <the ticket> records each one they raise.",
+        ],
+      ),
+    ),
+    step(
       "atticus-next",
       "Say the next step to take, with its command and slash command, and why.",
       "[--all]",

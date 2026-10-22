@@ -250,4 +250,39 @@ describe("nextSteps (pure)", () => {
     ]);
     expect(steps[2]!.where).toBe("forge-ledger");
   });
+  it("asks what a placed change needs from the organisation, then has a person raise the open ones (ADR 0101)", () => {
+    const find = nextSteps({
+      ...base,
+      changes: [{ id: "add-limit", state: "design", tasks: [], feature: true }],
+    });
+    expect(commands(find)).toEqual([
+      ["atticus change needs add-limit", "/atticus-needs add-limit"],
+      ["atticus change architecture add-limit", "/atticus-architecture add-limit"],
+    ]);
+    const raise = nextSteps({
+      ...base,
+      changes: [
+        {
+          id: "add-limit",
+          state: "design",
+          tasks: [],
+          feature: true,
+          needs: { open: 2, longest: "SSO intake, 10 working days" },
+        },
+      ],
+    });
+    expect(raise.map((x) => x.step)).toEqual(["architecture", "raise-needs"]);
+    expect(raise[1]).toMatchObject({
+      command: "atticus needs --change add-limit",
+      person: true,
+      why: expect.stringContaining("the longest: SSO intake, 10 working days"),
+    });
+    // A released change has nothing to find or raise.
+    const old = nextSteps({
+      ...base,
+      changes: [{ id: "old", state: "released", tasks: [], feature: true, needs: { open: 1 } }],
+    });
+    expect(old.map((x) => x.step)).not.toContain("raise-needs");
+    expect(old.map((x) => x.step)).not.toContain("needs");
+  });
 });

@@ -42,7 +42,7 @@ Usage:
   atticus index rebuild                Rebuild the local index from the catalog files
   atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
           [--json]
-  atticus sources add <type> <location> Print the sources.yaml entry for a wiki (git, markdown-folder, ado-wiki, ...); --save writes it
+  atticus sources add <type> <location> Print the sources.yaml entry for a wiki (git, markdown-folder, ado-wiki, ...), or write it [--save]
           [--id id] [--path folder] [--ref branch] [--submodule] [--kind k,k] [--framework f,f] [--owner o] [--save]
   atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
   atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
@@ -130,6 +130,11 @@ Usage:
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
   atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]
+  atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run]
+  atticus needs [--change id] [--all] [--json]  What changes need from the organisation, open ones first, with lead times and who handles each
+  atticus needs done <change> <item>   Record a need as done [--for target] [--note text, e.g. the CTASK number]
+  atticus needs skip <change> <item> --note why  Record a need as not needed, and why [--for target]
+  atticus needs reopen <change> <item> Open a need again [--for target]
                                        (with target flows: the stories stage, a task per changed step with its prompt, requests from knowledge)
   atticus plan snow <change>           Draft service-desk requests the change needs [--force]
   atticus plan bar <change>            Measure the story bar [--eval file]

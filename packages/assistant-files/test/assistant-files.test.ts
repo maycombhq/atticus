@@ -51,6 +51,7 @@ const METAREPO_PATHS = [
   ".claude/commands/atticus-feature.md",
   ".claude/commands/atticus-impact.md",
   ".claude/commands/atticus-knowledge.md",
+  ".claude/commands/atticus-needs.md",
   ".claude/commands/atticus-next.md",
   ".claude/commands/atticus-plan.md",
   ".claude/commands/atticus-release.md",
@@ -81,6 +82,7 @@ const METAREPO_PATHS = [
   ".github/prompts/atticus-feature.prompt.md",
   ".github/prompts/atticus-impact.prompt.md",
   ".github/prompts/atticus-knowledge.prompt.md",
+  ".github/prompts/atticus-needs.prompt.md",
   ".github/prompts/atticus-next.prompt.md",
   ".github/prompts/atticus-plan.prompt.md",
   ".github/prompts/atticus-release.prompt.md",
@@ -231,6 +233,7 @@ const STEPS: [name: string, run: string | undefined][] = [
   ["atticus-feature", "atticus change feature"],
   ["atticus-architecture", "atticus change architecture"],
   ["atticus-stories", "atticus plan stories"],
+  ["atticus-needs", "atticus change needs"],
   ["atticus-next", undefined],
 ];
 

@@ -6,6 +6,7 @@ import { changesRelOf, type RecordOf } from "@maycombhq/core";
 import type { SourceInput } from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
 import { readKnowledge } from "@maycombhq/knowledge";
+import { mergeStoryRequests } from "../needs.js";
 import { looksPersonal } from "@maycombhq/naysayer";
 import { PlannerError } from "../errors.js";
 import { GENERATED_MARK } from "../render.js";
@@ -672,11 +673,13 @@ Rules:
       await writeFileAtomic(join(dir, "stories.md"), renderIndex(stories, a));
       await writeFileAtomic(join(dir, "tasks.md"), renderTasks(stories, requests));
       await writeFileAtomic(join(dir, "requests.md"), renderRequests(requests));
+      // ADR 0101: the same requests join the change's needs, beside what change needs found.
+      await mergeStoryRequests(root, change.id, requests, o.now ?? new Date());
       await writeFileAtomic(
         join(dir, ...ANSWER_FILE.split("/")),
         `# The story writer's last answer (ADR 0087).\n${stringify(a, { lineWidth: 0 })}`,
       );
-      return [...files, "stories.md", "tasks.md", "requests.md"];
+      return [...files, "stories.md", "tasks.md", "requests.md", "needs.yaml", "needs.md"];
     },
     current: async () => {
       const t = await readFile(join(dir, ...ANSWER_FILE.split("/")), "utf8").catch(() => undefined);

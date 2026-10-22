@@ -93,9 +93,31 @@ The scan also reads who and what the pages name. It has four more knowledge kind
 
 These four kinds need no "applies when". The catalog's Systems still come from code and are unchanged. The local API (C4) lists the new kind: API 2.6.0, additive.
 
+### 5. What a change needs (built)
+
+`atticus change needs <change>` is an AI step: AI → check → AI, through the AI runtime. It takes `--mode`, `--resume` and `--handoff`, and Copilot Chat runs it as `/atticus-needs`.
+
+- **What the assistant reads**: the change's files (brief, proposal, feature, design, interfaces, stories, tasks, target flows) and the knowledge items, as people reviewed them, with rejected items left out.
+- **What it answers**: which items apply, to what, and why:
+  - requests and processes to raise;
+  - standards and patterns to follow;
+  - decisions and constraints to keep to;
+  - teams, vendors and products to involve.
+
+  Each need is for the whole `change`, or a `feature:<id>` or `flow:<id>` (from `feature.yaml` and `target-flows/`), a `story:<id>` (from `stories/`), or a `task:<n.m>` (from `tasks.md`). It quotes the change's own words that call for it, and may say `when`: before design, build or release. Items it considered and left out are listed with why, for a reviewer.
+
+- **What Atticus checks**: the item is a knowledge item and no person rejected it; the target is in the change; the quote is word for word in the file it names. What fails goes back to the assistant, three attempts by default.
+- **What it writes**: the change's `needs.yaml` and `needs.md`. Each need carries its item's lead time, who handles it, the catalogue item (a CTASK's form), inputs, steps and rules, as people corrected them, and where it was read. `needs.md` groups them, gives each its how-to, and marks a need whose item a person verified with "✓ verified by <who>".
+- **Who acts on it**: a person records each need with `atticus needs done <change> <item> [--note CTASK…]`, `atticus needs skip … --note why` (the reason is required) or `atticus needs reopen …`. That survives every rerun: a rerun replaces only the open needs that came from the same finder.
+- **The stories stage** adds its suggested requests to the same list (`from: stories`, for the flow they were matched on), beside `requests.md`.
+- **`atticus needs [--change id] [--all] [--json]`** lists them across changes.
+- **`atticus next`**: once a change's feature is placed and it has no `needs.yaml`, the next step is `atticus change needs <change>`, early, because a request's lead time runs from the day it is raised. While needs are open, a person's step says how many, naming the one with the longest lead time.
+- Nothing is raised for the developer. Atticus suggests; a person raises.
+
 ## Consequences
 
 - An organisation's wikis and docs repos are read straight from git, pinned when it wants them pinned, with the commit each snapshot read.
 - What the pages say is checked by people where it matters. A correction is what everyone reads from then on, and a tick lasts until the page under it changes.
 - A rescan costs only the pages that changed.
+- A developer starting a change gets, early, the list of what the organisation needs from it: each item with its how-to, lead time and who to ask, quoting why, marked when a person has verified it.
 - C1 now has 33 kinds. As in ADR 0083, every existing record file reads unchanged, so the catalog schema version stays 2 and no migration is needed.

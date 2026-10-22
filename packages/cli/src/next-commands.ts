@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
@@ -11,6 +12,7 @@ import {
 } from "@maycombhq/core";
 import { changeStore } from "@maycombhq/changes";
 import { readKnowledge, snapshotDates } from "@maycombhq/knowledge";
+import { readNeeds } from "@maycombhq/planner";
 import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
@@ -59,7 +61,14 @@ export interface NextState {
   catalogRecords: number;
   openQuestions: string[];
   sources: { id: string; snapshot: boolean; scanned: boolean }[];
-  changes: { id: string; state: string; tasks: { id: string; repo: string; done: boolean }[] }[];
+  changes: {
+    id: string;
+    state: string;
+    tasks: { id: string; repo: string; done: boolean }[];
+    /** ADR 0101: whether its feature is placed, and what it needs from the organisation. */
+    feature?: boolean;
+    needs?: { open: number; longest?: string };
+  }[];
   problems: { file: string; message: string }[];
 }
 
@@ -117,12 +126,29 @@ export async function readNextState(root: string): Promise<NextState> {
   try {
     for (const c of await changeStore(root).list()) {
       const files = await readChangeFiles(join(changesDirOf(root), c.id)).catch(() => undefined);
+      const needs = await readNeeds(root, c.id);
+      const open = needs?.needs.filter((n) => n.status === "open") ?? [];
+      const longest = open
+        .map((n) => ({
+          n,
+          days: Number(/(\d+)\s*(working\s+)?days?/i.exec(n.leadTime ?? "")?.[1] ?? 0),
+        }))
+        .sort((a, b) => b.days - a.days)[0];
       changes.push({
         id: c.id,
         state: c.state,
         tasks: files
           ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
           : [],
+        feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
+        ...(needs
+          ? {
+              needs: {
+                open: open.length,
+                ...(longest?.days ? { longest: `${longest.n.title}, ${longest.n.leadTime}` } : {}),
+              },
+            }
+          : {}),
       });
     }
   } catch (e) {
@@ -163,6 +189,41 @@ function stageOf(
 }
 
 function changeSteps(c: NextState["changes"][number]): NextStep[] {
+  const stage = stageSteps(c);
+  const id = c.id;
+  // ADR 0101: once the feature is placed, what the change needs from the organisation, early,
+  // since a request's lead time runs from when it is raised; then each open need for a person.
+  const done = stageOf(c.state) === "done";
+  const find: NextStep[] =
+    c.feature && !c.needs && !done
+      ? [
+          {
+            step: "needs",
+            command: `atticus change needs ${id}`,
+            slash: `/atticus-needs ${id}`,
+            where: METAREPO,
+            why: `${id} is placed on the estate: your assistant says what it needs from the organisation (requests and processes to raise, standards to follow, teams to involve), and Atticus checks each against the change's own words (ADR 0101).`,
+            change: id,
+          },
+        ]
+      : [];
+  const raise: NextStep[] =
+    c.needs?.open && !done
+      ? [
+          {
+            step: "raise-needs",
+            command: `atticus needs --change ${id}`,
+            where: METAREPO,
+            why: `${plural(c.needs.open, "need")} of ${id} ${c.needs.open === 1 ? "is" : "are"} open${c.needs.longest ? ` (the longest: ${c.needs.longest})` : ""}. Raise each, then record it with atticus needs done ${id} <item>.`,
+            change: id,
+            person: true,
+          },
+        ]
+      : [];
+  return [...find, ...stage, ...raise];
+}
+
+function stageSteps(c: NextState["changes"][number]): NextStep[] {
   const id = c.id;
   switch (stageOf(c.state)) {
     case "feature":

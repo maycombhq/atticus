@@ -130,6 +130,7 @@ const AREA_BY_WORD: Record<string, string> = {
   plan: "plan",
   task: "plan",
   todo: "plan",
+  needs: "changes",
   ado: "plan",
   tests: "plan",
   trace: "plan",

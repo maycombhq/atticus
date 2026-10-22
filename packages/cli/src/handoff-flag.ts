@@ -29,6 +29,8 @@ const STEPS = new Set([
   "change architecture",
   "change draft",
   "plan stories",
+  // ADR 0101: what a change needs from the organisation.
+  "change needs",
 ]);
 
 export const isHandoffStep = (group: string | undefined, command: string | undefined) =>
