@@ -6,6 +6,27 @@
   "license": "Apache-2.0",
   "publisher": "maycombhq",
   "private": true,
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#05070a",
+    "theme": "dark"
+  },
+  "keywords": [
+    "sdd",
+    "spec-driven",
+    "architecture",
+    "flows",
+    "copilot",
+    "openspec",
+    "catalog",
+    "diagrams"
+  ],
+  "homepage": "https://github.com/maycombhq/atticus/tree/main/packages/vscode#readme",
+  "bugs": {
+    "url": "https://github.com/maycombhq/atticus/issues"
+  },
+  "pricing": "Free",
+  "qna": false,
   "repository": {
     "type": "git",
     "url": "https://github.com/maycombhq/atticus.git",
@@ -32,13 +53,16 @@
     "dist",
     "media",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=60000 --hookTimeout=60000",
-    "package": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce package --no-dependencies"
+    "package": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce package --no-dependencies",
+    "marketplace": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce publish --no-dependencies",
+    "marketplace:pre-release": "node scripts/copy-app.mjs && tsc -p tsconfig.build.json && vsce publish --pre-release --no-dependencies"
   },
   "contributes": {
     "chatParticipants": [

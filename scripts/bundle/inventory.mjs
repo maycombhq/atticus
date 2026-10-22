@@ -26,6 +26,13 @@ export const ALLOWED = new Set([
   "EPL-2.0",
 ]);
 
+/**
+ * Licences allowed for font files only, never for code: the app's fonts (IBM Plex Sans, JetBrains
+ * Mono, Rajdhani) are under the SIL Open Font License (decided by the product owner 2026-10-22,
+ * decisions-pending item 19).
+ */
+export const FONT_ALLOWED = new Set(["OFL-1.1"]);
+
 /** An SPDX expression is allowed when one side of every OR, and both sides of every AND, are. */
 export function licenceAllowed(expr) {
   if (!expr) return false;

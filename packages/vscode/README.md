@@ -12,7 +12,7 @@ Atticus's command line does all the checking. The extension only carries the pro
 
 ## Install
 
-The extension isn't on the Marketplace. Install it from the `.vsix` file:
+Install it from the Marketplace once it is published there (search for Atticus, publisher maycombhq; how to publish is in [PUBLISHING.md](https://github.com/maycombhq/atticus/blob/main/packages/vscode/PUBLISHING.md)), or from the `.vsix` file:
 
 1. In VS Code, open the Extensions view, click `...` at the top, and pick **Install from VSIX...**.
 2. Choose `atticus-<version>.vsix`.
@@ -107,4 +107,4 @@ A prompt longer than the model takes is never cut: the extension says so and sto
 - It doesn't check anything itself. Every check is Atticus's.
 - It runs `/atticus-onboard`, `/atticus-knowledge`, `/atticus-task` and `/atticus-release` steps only when `atticus next` names them (Run in the view or the chat): there is no chat command for them yet.
 - The sidebar never runs a step. The only file it changes is a finding's record (and, for Apply the fix, the patched file), when you act on the finding. Steps run from Next, the chat or the Command Palette.
-- It isn't on the Marketplace, and it has only been tested with a fake model, the real command line and the real API, not inside VS Code.
+- It has only been tested with a fake model, the real command line and the real API, and in Chromium set up like a VS Code panel, not inside VS Code itself.

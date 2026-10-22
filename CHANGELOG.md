@@ -4,6 +4,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Ready for the Marketplace
+
+- The VS Code extension has what a Marketplace listing needs:
+  - a 256×256 PNG icon;
+  - a dark gallery banner;
+  - keywords, a homepage and an issues link;
+  - its own CHANGELOG.md.
+- `marketplace` and `marketplace:pre-release` scripts, with the steps in `packages/vscode/PUBLISHING.md`.
+- The app's fonts are under the SIL Open Font License. It is now allowed for font packages only (decisions-pending item 19), and their licence text ships in the extension's THIRD-PARTY-LICENSES.txt.
+- The Architecture outline says a gap every part shares once, on the part they are inside.
+
 ### The diagrams inside VS Code, from the extension's own files
 
 - The Atticus tab loads the app from the extension's own files (ADR 0097), with a strict policy. Its calls go through the extension to the local API, so nothing on 127.0.0.1 is framed. It works where framing a local page is blocked, and over SSH or in a container.

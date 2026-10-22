@@ -277,3 +277,30 @@ describe("a gap every part of the picture shares", () => {
     expect(one.shared).toEqual([]);
   });
 });
+
+describe("the outline says a gap every part shares once (ADR 0097 follow-up)", () => {
+  const g = (id: string, gaps: string[]) => ({ ...node(id, "component", 0, "repo:x"), gaps });
+  const x = { ...node("repo:x", "repo", 3, "estate"), gaps: [] };
+  const vs: Views = new Map([
+    ["estate", view(estate, [x])],
+    [
+      "repo:x",
+      view(x, [
+        g("component:a", ["no-system", "inferred"]),
+        g("component:b", ["no-system"]),
+        g("component:c", ["no-system"]),
+      ]),
+    ],
+  ]);
+
+  it("puts it on the node they are inside, and takes it off each part", () => {
+    const rows = outlineRows(vs, "estate", new Set(["estate", "repo:x"]));
+    expect(rows.map((r) => [r.node.id, r.gaps, r.inside])).toEqual([
+      ["estate", [], []],
+      ["repo:x", [], ["no-system"]],
+      ["component:a", ["inferred"], []],
+      ["component:b", [], []],
+      ["component:c", [], []],
+    ]);
+  });
+});

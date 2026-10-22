@@ -482,8 +482,10 @@ export function Architecture({ hash }: { hash: string }) {
                   >
                     <span className="hud">{r.node.kind}</span> {r.node.label}
                     {r.node.childCount > 0 && ` · ${WORDS.children(r.node.childCount)}`}
-                    {r.node.gaps.length > 0 &&
-                      ` · ${WORDS.gaps}: ${r.node.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}`}
+                    {r.gaps.length > 0 &&
+                      ` · ${WORDS.gaps}: ${r.gaps.map((g) => WORDS.gap[g] ?? g).join(", ")}`}
+                    {r.inside.length > 0 &&
+                      ` · ${WORDS.insideGaps(r.inside.map((g) => WORDS.gap[g] ?? g).join(", "))}`}
                   </button>
                 </li>
               ))}

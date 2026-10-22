@@ -14,19 +14,35 @@ export interface OutlineRow {
   node: Api.HierNodeT;
   depth: number;
   expanded: boolean;
+  /** The node's own gaps, less those every part beside it shares (said on its parent). */
+  gaps: string[];
+  /** Gaps every part inside this open node has (two or more parts): said once, here. */
+  inside: string[];
 }
+
+/** Gaps every one of two or more nodes has. */
+const sharedBy = (ns: Api.HierNodeT[]) =>
+  ns.length > 1 ? ns[0]!.gaps.filter((g) => ns.every((n) => n.gaps.includes(g))) : [];
 
 /** The outline: the root, then each expanded node's loaded children under it, depth first. */
 export function outlineRows(views: Views, root: string, expanded: Set<string>): OutlineRow[] {
   const rootNode = views.get(root)?.node;
   if (!rootNode) return [];
   const out: OutlineRow[] = [];
-  const walk = (n: Api.HierNodeT, depth: number) => {
+  const walk = (n: Api.HierNodeT, depth: number, above: string[]) => {
     const open = expanded.has(n.id) && views.has(n.id);
-    out.push({ node: n, depth, expanded: open });
-    if (open) for (const c of views.get(n.id)!.children) walk(c, depth + 1);
+    const kids = open ? views.get(n.id)!.children : [];
+    const inside = sharedBy(kids);
+    out.push({
+      node: n,
+      depth,
+      expanded: open,
+      gaps: n.gaps.filter((g) => !above.includes(g)),
+      inside,
+    });
+    for (const c of kids) walk(c, depth + 1, inside);
   };
-  walk(rootNode, 0);
+  walk(rootNode, 0, []);
   return out;
 }
 

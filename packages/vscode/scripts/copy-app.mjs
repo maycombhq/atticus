@@ -1,12 +1,12 @@
 // Copy the Atticus app's build (packages/ui/dist) into media/app, for the panel to load from the
 // extension's own files (ADR 0097), with THIRD-PARTY-LICENSES.txt for the code and fonts inside
 // it. Which packages are inside comes from the build's own source maps; the maps themselves stay
-// out of the package. A licence the repo doesn't allow fails the copy, except the fonts' SIL Open
-// Font License, which waits on the product owner's decision and is only warned about.
+// out of the package. A licence the repo doesn't allow fails the copy; a font package may also be
+// under a licence allowed for fonts only (the SIL Open Font License).
 import { cpSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { licenceAllowed } from "../../../scripts/bundle/inventory.mjs";
+import { FONT_ALLOWED, licenceAllowed } from "../../../scripts/bundle/inventory.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "..", "..", "..");
@@ -48,28 +48,23 @@ for (const family of families) {
 
 const notices = [];
 const refused = [];
-const waiting = [];
 for (const [name, dir] of [...packages].sort(([a], [b]) => a.localeCompare(b))) {
   const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
   const licence = typeof pkg.license === "string" ? pkg.license : pkg.license?.type;
-  const file = readdirSync(dir).find((x) => /^(licen[cs]e|copying)/i.test(x));
+  const file = readdirSync(dir).find((x) => /^(licen[cs]e|copying|ofl)/i.test(x));
   const text = file
     ? readFileSync(join(dir, file), "utf8")
     : `Licensed under ${licence}; no licence file in the package.`;
-  notices.push(
-    `${"=".repeat(72)}\n${name}@${pkg.version} (${licence})\n${"=".repeat(72)}\n${text.trim()}\n`,
-  );
-  if (!licenceAllowed(licence))
-    (licence === "OFL-1.1" ? waiting : refused).push(
-      `${name}@${pkg.version}: ${licence ?? "no licence"}`,
-    );
+  const rule = "=".repeat(72);
+  notices.push(`${rule}\n${name}@${pkg.version} (${licence})\n${rule}\n${text.trim()}\n`);
+  const font = name.startsWith("@fontsource/") && FONT_ALLOWED.has(licence);
+  if (!font && !licenceAllowed(licence))
+    refused.push(`${name}@${pkg.version}: ${licence ?? "no licence"}`);
 }
 if (refused.length) {
   for (const r of refused) console.error(`Not an allowed licence: ${r}`);
   process.exit(1);
 }
-for (const w of waiting)
-  console.warn(`Waiting on the product owner's licence decision (fonts): ${w}`);
 
 rmSync(to, { recursive: true, force: true });
 cpSync(from, to, { recursive: true, filter: (src) => !src.endsWith(".map") });
