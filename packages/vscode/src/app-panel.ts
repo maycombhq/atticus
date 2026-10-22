@@ -17,14 +17,25 @@ const slug = (s: string) =>
     .slice(0, 120) || "x";
 
 /**
- * The app link for `@atticus /diagram <name>`: a node id (system:payments) as it is, a repo by
- * its name, and the estate when nothing is named.
+ * The app link for `@atticus /diagram <repo> [flow]`:
+ * - `<repo>` opens the repo on the Architecture canvas (a node id, system:payments, as it is);
+ * - `<repo> flows` opens the repo's flows;
+ * - `<repo> <flow id>` opens that flow, and `<repo> <words>` the flows that match them;
+ * - nothing named opens the estate.
  */
 export function diagramHash(target: string): string {
-  const t = target.trim();
-  if (!t) return "#/architecture";
-  const id = t.includes(":") ? t : `repo:${slug(t)}`;
-  return `#/architecture?node=${encodeURIComponent(id)}`;
+  const [first, ...rest] = target.trim().split(/\s+/).filter(Boolean);
+  if (!first) return "#/architecture";
+  if (!rest.length) {
+    const id = first.includes(":") ? first : `repo:${slug(first)}`;
+    return `#/architecture?node=${encodeURIComponent(id)}`;
+  }
+  const repo = `#/flows?repo=${encodeURIComponent(slug(first))}`;
+  const words = rest.join(" ");
+  if (words.toLowerCase() === "flows") return repo;
+  if (rest.length === 1 && rest[0]!.includes("."))
+    return `${repo}&flow=${encodeURIComponent(rest[0]!)}`;
+  return `${repo}&q=${encodeURIComponent(words)}`;
 }
 
 /** The address `atticus ui` prints when it serves. */

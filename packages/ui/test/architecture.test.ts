@@ -235,3 +235,45 @@ describe("a link to one node (#/architecture?node=<id>, ADR 0091)", () => {
     });
   });
 });
+
+describe("a gap every part of the picture shares", () => {
+  const gappy = (id: string, gaps: string[]) => ({ ...node(id, "component", 0, "repo:x"), gaps });
+  const x = node("repo:x", "repo", 3, "system:s");
+
+  it("is said once for the picture, not on every box", () => {
+    const g = canvasGraph(
+      new Map([
+        [
+          "repo:x",
+          view(x, [
+            gappy("component:x.a", ["no-system", "inferred"]),
+            gappy("component:x.b", ["no-system"]),
+            gappy("component:x.c", ["no-system"]),
+          ]),
+        ],
+      ]),
+      "repo:x",
+      new Set(),
+    );
+    expect(g.shared).toEqual(["no-system"]);
+    expect(g.boxes.map((b) => b.gaps)).toEqual([["inferred"], [], []]);
+  });
+
+  it("stays on the box when only some parts have it, or there is one part", () => {
+    const some = canvasGraph(
+      new Map([
+        ["repo:x", view(x, [gappy("component:x.a", ["no-system"]), gappy("component:x.b", [])])],
+      ]),
+      "repo:x",
+      new Set(),
+    );
+    expect(some.shared).toEqual([]);
+    expect(some.boxes[0]!.gaps).toEqual(["no-system"]);
+    const one = canvasGraph(
+      new Map([["repo:x", view(x, [gappy("component:x.a", ["no-system"])])]]),
+      "repo:x",
+      new Set(),
+    );
+    expect(one.shared).toEqual([]);
+  });
+});

@@ -30,6 +30,7 @@ export const MORE: ScreenDef[] = [
   { id: "home", label: "Command center", group: "Know" },
   { id: "questions", label: COPY.questions.title, group: "Know" },
   { id: "explore", label: "Knowledge explorer", group: "Know" },
+  { id: "flows", label: COPY.flows.title, group: "Know" },
   { id: "map", label: "Ecosystem map", group: "Know" },
   { id: "impact", label: "Impact explorer", group: "Know" },
   { id: "features", label: "Features", group: "Know" },

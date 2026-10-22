@@ -154,6 +154,8 @@ function LinkView(p: EdgeProps<LinkEdge>) {
 }
 
 const nodeTypes = { box: BoxView };
+/** The smallest zoom a fit goes to: below it a box's words are too small to read. */
+export const FIT_MIN_ZOOM = 0.6;
 const edgeTypes = { link: LinkView };
 
 /** The input the layout gets for a canvas graph. */
@@ -297,7 +299,10 @@ export function ArchitectureCanvas(p: {
         setEdges(el.edges);
         setState({ state: "ready" });
         latest.current.onLaid(laid);
-        requestAnimationFrame(() => void rf.current?.fitView({ padding: 0.08, duration: 200 }));
+        // Fit, but never so small the words can't be read: a bigger picture pans instead.
+        requestAnimationFrame(
+          () => void rf.current?.fitView({ padding: 0.08, duration: 200, minZoom: FIT_MIN_ZOOM }),
+        );
       },
       (e: unknown) =>
         live && setState({ state: "failed", error: e instanceof Error ? e.message : String(e) }),
@@ -369,6 +374,7 @@ export function ArchitectureCanvas(p: {
           zoomOnDoubleClick={false}
           minZoom={0.1}
           fitView
+          fitViewOptions={{ padding: 0.08, minZoom: FIT_MIN_ZOOM }}
           colorMode="dark"
           aria-label={WORDS.canvasLabel}
         >

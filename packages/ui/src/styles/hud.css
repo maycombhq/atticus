@@ -337,6 +337,11 @@ a:hover {
   font-weight: 600;
   box-shadow: 0 0 12px var(--glow);
 }
+
+/* A label inside a primary button takes the button's dark text: muted grey on cyan fails 4.5:1. */
+.btn.primary .hud {
+  color: inherit;
+}
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
@@ -596,6 +601,11 @@ a.btn {
   color: var(--amber);
   border-color: var(--amber);
 }
+.arch-shared {
+  margin: 0 0 8px;
+  color: var(--amber);
+}
+
 .arch-notice {
   display: flex;
   flex-wrap: wrap;

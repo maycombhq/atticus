@@ -4,6 +4,73 @@
  * screens still hold theirs inline and move here when they are next changed.
  */
 export const COPY = {
+  /** The Flows screen (ADR 0092): a repo's spec flows, each drawn as a sequence of steps. */
+  flows: {
+    title: "Flows",
+    intro:
+      "Each flow is what happens, step by step, when something starts it: who calls, what the code does, and the components, tables and topics it reaches. Every step cites the file and line it was read from.",
+    repo: "Repo",
+    filter: "Find a flow",
+    filterHint: "Name, id or what starts it",
+    listTitle: "Flows",
+    noSpecs:
+      "No repo has a spec yet. Draft one with atticus spec draft <repo>, or /atticus-spec in Copilot Chat.",
+    noFlows: "This repo's spec has no flows yet.",
+    noMatch: "No flow matches. Try part of its name or what starts it.",
+    pick: "Pick a flow from the list to see its steps.",
+    counts: (steps: number, confirmed: number) =>
+      `${steps} step${steps === 1 ? "" : "s"}, ${confirmed} confirmed`,
+    unreadable: "These files don't read:",
+    file: "File",
+    copyFile: "Copy the file's path",
+    calledBy: "Called by",
+    notJoined:
+      "The estate pass hasn't run, so calls to other repos aren't linked to their flows. Run atticus estate join.",
+    start: "Start",
+    goesTo: (label: string, lane: string) => `Goes to ${label} on ${lane}.`,
+    backTo: (lane: string) => `Goes back to ${lane}.`,
+    opens: (name: string, repo: string) => `Opens "${name}" in ${repo}`,
+    unjoined: (why: string) => `Not linked to a flow: ${why}`,
+    more: (n: number) => `and ${n} more`,
+    confirmed: {
+      check: "Confirmed by the check",
+      ai: "Confirmed by the AI",
+      person: "Confirmed by a person",
+    } as Record<string, string>,
+    notConfirmed: "Not confirmed yet",
+    errorsTitle: "When it goes wrong",
+    noErrors: "The spec names no error paths for this flow.",
+    diagram: (name: string) => `The steps of ${name}`,
+    lanes: {
+      caller: "starts it",
+      gateway: "gateway",
+      self: "runs the flow",
+      component: "called",
+      store: "table",
+      topic: "topic",
+    } as Record<string, string>,
+    kinds: {
+      endpoint: "Endpoint",
+      action: "Action",
+      page: "Page",
+      listener: "Listener",
+      job: "Job",
+      entry: "Entry",
+      lookup: "Lookup",
+      read: "Read",
+      write: "Write",
+      "call-out": "Call",
+      publish: "Publish",
+      transform: "Transform",
+      validate: "Validate",
+      branch: "Branch",
+      log: "Log",
+      respond: "Respond",
+      loop: "Loop",
+      retry: "Retry",
+    } as Record<string, string>,
+    openFlows: "Flows of this repo",
+  },
   questions: {
     title: "Questions",
     intro:

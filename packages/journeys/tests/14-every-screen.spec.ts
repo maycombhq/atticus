@@ -11,6 +11,7 @@ const SCREENS = [
   "task-list?change=add-transfer-limit",
   "home",
   "explore",
+  "flows",
   "map",
   "impact?q=ledger-api",
   "impact?q=ledger-api&incident=1",

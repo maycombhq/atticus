@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { RunState, RunSummary, RuntimeKind } from "./schema/ai.js";
 import { RecordId } from "./schema/common.js";
-import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
+import { Flow, RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./schema/kinds.js";
 import { ChangeArtifact, Phase } from "./schema/orgpack.js";
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
 import { Question, QuestionScopeLevel } from "./schema/question.js";
@@ -19,8 +19,9 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.0.0 (ADR 0073): PUT /api/me and GET /api/me/approvals are gone; /api/me is the Git user.
  * 2.1.0 (ADR 0078): the questions API, /api/questions.
  * 2.2.0 (ADR 0084): GET /api/onboarding, for the Onboarding and Dashboard screens.
+ * 2.3.0 (ADR 0092): the specs API, /api/specs, for the Flows screen.
  */
-export const API_VERSION = "2.2.0";
+export const API_VERSION = "2.3.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -391,6 +392,75 @@ export const OnboardingView = z.object({
   problems: z.array(z.object({ file: z.string(), message: z.string() })),
 });
 export type OnboardingViewT = z.infer<typeof OnboardingView>;
+
+/**
+ * ADR 0092: the specs (ADR 0079) as the Flows screen reads them, from files only: the repos
+ * with a spec, one repo's flows, and one flow with the joins of the estate pass (ADR 0085).
+ */
+export const SpecList = z.object({
+  repos: z.array(z.object({ repo: RecordId, flows: z.number().int() })),
+});
+
+export const SpecFlowSummary = z.object({
+  id: RecordId,
+  name: z.string(),
+  component: RecordId,
+  trigger: z.object({ kind: z.string(), what: z.string() }),
+  steps: z.number().int(),
+  /** Steps a check, the AI's verification or a person confirmed. */
+  confirmed: z.number().int(),
+  errors: z.number().int(),
+  /** Call-outs joined to another repo's flow, and the flows whose call-outs reach this one. */
+  calls: z.number().int(),
+  calledBy: z.number().int(),
+});
+
+export const SpecView = z.object({
+  repo: RecordId,
+  /** The spec folder, relative to the metarepo. */
+  path: z.string(),
+  commit: z.string().optional(),
+  template: z.string().optional(),
+  flows: z.array(SpecFlowSummary),
+  /** Files in the folder that don't read, with why. */
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+
+/** A step of one flow joined to a step or trigger of another (estate.yaml). */
+export const FlowLink = z.object({
+  /** The caller's step, 1-based. */
+  step: z.number().int().positive(),
+  repo: RecordId,
+  flow: RecordId,
+  /** The other flow's name, when its spec reads. */
+  name: z.string().optional(),
+  how: z.string(),
+});
+
+export const FlowView = z.object({
+  repo: RecordId,
+  /** The flow's file, relative to the metarepo. */
+  file: z.string(),
+  flow: Flow,
+  /** Whether specs/estate.yaml was there to read the joins from. */
+  joined: z.boolean(),
+  /** This flow's call-outs and the flows they start. */
+  calls: z.array(FlowLink),
+  /** The flows whose call-outs start this one; step is their step. */
+  calledBy: z.array(FlowLink),
+  /** This flow's call-outs the estate pass couldn't join, with why. */
+  unmatched: z.array(
+    z.object({
+      step: z.number().int().positive(),
+      entry: z.string(),
+      reason: z.string(),
+      message: z.string(),
+    }),
+  ),
+});
+export type SpecListT = z.infer<typeof SpecList>;
+export type SpecViewT = z.infer<typeof SpecView>;
+export type FlowViewT = z.infer<typeof FlowView>;
 
 export const OrgPackView = z.object({
   defaulted: z.array(z.string()),
@@ -1035,6 +1105,35 @@ const OPS: Record<string, Record<string, Op>> = {
       summary: "Repos from every manifest with their base-clone state",
       tag: "workspace",
       ok: { status: 200, schema: arrayOf("RepoView"), description: "OK" },
+    },
+  },
+  "/api/specs": {
+    get: {
+      id: "listSpecs",
+      summary: "The repos with a spec, and how many flows each has (ADR 0092)",
+      tag: "views",
+      ok: { status: 200, schema: "SpecList", description: "OK" },
+    },
+  },
+  "/api/specs/{repo}": {
+    get: {
+      id: "getSpec",
+      summary: "A repo's flows: what starts each, its steps and how many are confirmed (ADR 0092)",
+      tag: "views",
+      params: [p("repo")],
+      ok: { status: 200, schema: "SpecView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/specs/{repo}/flows/{flowId}": {
+    get: {
+      id: "getFlow",
+      summary:
+        "One flow, with the flows its call-outs start and the flows that call it, from specs/estate.yaml (ADR 0092)",
+      tag: "views",
+      params: [p("repo"), p("flowId")],
+      ok: { status: 200, schema: "FlowView", description: "OK" },
+      errors: [400, 404],
     },
   },
   "/api/onboarding": {
@@ -1689,6 +1788,9 @@ export function openApiDocument(): Record<string, unknown> {
     RunView,
     RepoView,
     OnboardingView,
+    SpecList,
+    SpecView,
+    FlowView,
     OrgPackView,
     Health,
     Finding,

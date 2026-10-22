@@ -4,12 +4,19 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Flows drawn as sequence diagrams
+
+- The Flows screen (ADR 0092, under More → Know): a repo's spec flows, and the picked one drawn as a sequence of steps across lanes. The lanes are who starts it, the gateway, the component, and each component, table and topic it reaches. Each step shows its data, its file and line, and who confirmed it. A call another repo's flow answers links to that flow, and the error paths are listed with their citations.
+- The specs API (API 2.3.0): `GET /api/specs`, `GET /api/specs/{repo}` and `GET /api/specs/{repo}/flows/{flowId}`, read from the spec folders and `specs/estate.yaml`.
+- `@atticus /diagram <repo> <flow>` opens a flow in the VS Code tab; the Architecture details panel of a repo links to its flows.
+- The Architecture canvas: a gap every part shares is said once, a fit never zooms below the size words can be read at, the tour stays closed inside an editor's tab, and a label in a primary button keeps its contrast.
+
 ### A VS Code extension runs the AI steps with Copilot
 
 - `packages/vscode` (ADR 0090): an `@atticus` chat participant and a side view. `@atticus /next` reads `atticus next`, sends each AI step's prompt to the Copilot model the person picked, writes the result file and runs the step's finishing command. Atticus's command line still does every check; the extension only carries prompts and files. It stops at a question for a person and says what it is.
 - `atticus <step> --handoff --json` prints the prompt, the result file and the finishing commands as one JSON object, for the extension.
 - The app in a VS Code tab (ADR 0091): Open the app shows the app, its diagrams included, beside the code; `@atticus /diagram <repo>` opens the Architecture canvas on that repo. `atticus ui --embed vscode` lets only a VS Code panel frame the app, and the API keeps every header. `#/architecture?node=<id>` opens the canvas on one node.
-- Not built yet: IntelliJ, a Marketplace listing, and a diagram of a spec's flows. The extension is installed from its `.vsix`.
+- Not built yet: IntelliJ and a Marketplace listing. The extension is installed from its `.vsix`.
 
 ### Spec flows draw the steps a person draws
 

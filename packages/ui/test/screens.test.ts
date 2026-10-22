@@ -59,8 +59,10 @@ describe("the app's menu (plan 4.5, B1)", () => {
     const ids = new Set(SCREENS.map((s) => s.id));
     expect(ids.size).toBe(SCREENS.length);
     expect(BEFORE.filter((id) => !ids.has(id))).toEqual([]);
+    // Screens added under More since, each with its ADR.
+    const ADDED = ["flows"]; // ADR 0092
     expect(MORE.map((s) => s.id).sort()).toEqual(
-      BEFORE.filter((id) => id !== "architecture").sort(),
+      [...BEFORE.filter((id) => id !== "architecture"), ...ADDED].sort(),
     );
     expect(MORE.every((s) => (MORE_GROUPS as readonly string[]).includes(s.group))).toBe(true);
     expect(SCREENS).toHaveLength(MAIN.length + MORE.length);
@@ -70,6 +72,7 @@ describe("the app's menu (plan 4.5, B1)", () => {
     expect(screenOf("#/changes/add-transfer-limit").id).toBe("changes");
     expect(screenOf("#/explore?q=daily").id).toBe("explore");
     expect(screenOf("#/home").id).toBe("home");
+    expect(screenOf("#/flows?repo=forge-web&flow=forge-web.save-customer").id).toBe("flows");
     expect(screenOf("#/stories?change=add-transfer-limit").id).toBe("stories");
     expect(screenOf("").id).toBe("dashboard");
     expect(screenOf("#/nope").id).toBe("dashboard");

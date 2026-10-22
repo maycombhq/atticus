@@ -320,7 +320,8 @@ export function activate(context: vscode.ExtensionContext) {
     const t =
       target ??
       (await vscode.window.showInputBox({
-        prompt: "Which repo? Its name, or a node id such as system:payments. Empty: the estate.",
+        prompt:
+          "Which repo? Its name, or a node id such as system:payments; add a flow's id or words to open a flow. Empty: the estate.",
         ignoreFocusOut: true,
       }));
     if (t === undefined) return;

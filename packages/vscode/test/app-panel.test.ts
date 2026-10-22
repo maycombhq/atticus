@@ -16,7 +16,17 @@ async function fakeAtticus(body: string): Promise<string> {
 describe("the link @atticus /diagram opens (ADR 0091)", () => {
   it("opens a repo by its name, as the estate names it", () => {
     expect(diagramHash("nadiengine")).toBe("#/architecture?node=repo%3Anadiengine");
-    expect(diagramHash("Forge Notes")).toBe("#/architecture?node=repo%3Aforge-notes");
+    expect(diagramHash("Forge-Notes")).toBe("#/architecture?node=repo%3Aforge-notes");
+  });
+
+  it("opens a flow of a repo on the Flows screen, by its id or by words to find it", () => {
+    expect(diagramHash("nadiengine nadiengine-api.save-horoscope")).toBe(
+      "#/flows?repo=nadiengine&flow=nadiengine-api.save-horoscope",
+    );
+    expect(diagramHash("nadiengine save horoscope")).toBe(
+      "#/flows?repo=nadiengine&q=save%20horoscope",
+    );
+    expect(diagramHash("Forge-Web flows")).toBe("#/flows?repo=forge-web");
   });
 
   it("takes a node id as it is, and the estate when nothing is named", () => {

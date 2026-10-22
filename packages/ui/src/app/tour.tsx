@@ -57,7 +57,8 @@ export function Tour() {
   const [i, setI] = useState(0);
 
   useEffect(() => {
-    if (!seen()) {
+    // Not on its own inside an editor's tab (ADR 0091): Help still starts it there.
+    if (!seen() && window.self === window.top) {
       setI(0);
       setOpen(true);
     }

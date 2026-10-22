@@ -29,6 +29,7 @@ export const WORDS = {
   openHere: "Open here",
   closeHere: "Close here",
   gapsOn: (n: number) => `${n} thing${n === 1 ? "" : "s"} missing`,
+  sharedGaps: (what: string) => `Every part here is missing the same thing: ${what}.`,
   insideLinks: (n: number) => `${n} link${n === 1 ? "" : "s"} inside`,
   edgeCount: (n: number, type: string) => `${n} × ${type}`,
   legible: {

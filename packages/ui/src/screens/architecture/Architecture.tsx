@@ -3,6 +3,7 @@ import type { Api } from "@maycombhq/core";
 import { api, ApiError, useLiveEvents } from "../../api/client.js";
 import type { Laid, Point } from "../../app/layout/index.js";
 import { Panel } from "../../app/ui.js";
+import { COPY } from "../../copy.js";
 import { queryParam, setQueryParam } from "../know/common.js";
 import { CopyButton, Facts } from "../run/shared.js";
 import { ArchitectureCanvas } from "./Canvas.js";
@@ -363,6 +364,12 @@ export function Architecture({ hash }: { hash: string }) {
                 )}
               </div>
             )}
+            {graph.shared && graph.shared.length > 0 && (
+              <p className="arch-shared">
+                <span aria-hidden="true">⚠ </span>
+                {WORDS.sharedGaps(graph.shared.map((g) => WORDS.gap[g] ?? g).join("; "))}
+              </p>
+            )}
             <ArrangementBar
               ready={arrangement.state === "ready"}
               saving={keeping.state === "saving"}
@@ -524,6 +531,11 @@ function Inspector({
           <button type="button" className="btn" onClick={here.toggle}>
             {here.open ? WORDS.closeHere : WORDS.openHere}
           </button>
+        )}
+        {node.kind === "repo" && (
+          <a className="btn" href={`#/flows?repo=${encodeURIComponent(node.label)}`}>
+            {COPY.flows.openFlows}
+          </a>
         )}
         {node.kind !== "estate" && (lens === "data" || node.kind === "table") && (
           <button type="button" className="btn" onClick={() => onFocus(node.id)}>

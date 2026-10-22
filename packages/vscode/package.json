@@ -83,7 +83,7 @@
           },
           {
             "name": "diagram",
-            "description": "Open a repo on the Architecture canvas, in a VS Code tab: /diagram [repo]"
+            "description": "A repo on the Architecture canvas, or one of its flows: /diagram [repo] [flow]"
           },
           {
             "name": "ask",

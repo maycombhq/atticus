@@ -137,7 +137,7 @@ export function chatHandler(svc: Service): vscode.ChatRequestHandler {
       await vscode.commands.executeCommand("atticus.diagram", t);
       stream.markdown(
         t
-          ? `Opened ${inline(t)} on the Architecture canvas, in the Atticus tab. Drag boxes to rearrange them; Keep saves the arrangement.`
+          ? `Opened ${inline(t)} in the Atticus tab. On the Architecture canvas, drag boxes to rearrange them; Keep saves the arrangement.`
           : "Opened the estate on the Architecture canvas, in the Atticus tab.",
       );
       stream.button({ command: "atticus.diagram", arguments: [t], title: "Open it again" });

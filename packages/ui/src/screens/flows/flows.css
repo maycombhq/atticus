@@ -1,0 +1,291 @@
+/* The Flows screen (ADR 0092): the list beside the picked flow's sequence diagram. Lanes are equal
+   columns; every step row is a grid with the same columns, so boxes, arrows and the dashed
+   lifelines line up without measuring anything. Wide flows scroll inside their own box. */
+
+.flows-grid {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .flows-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.flow-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.flow-list a {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.flow-list a:hover,
+.flow-list a:focus-visible {
+  border-color: var(--line-2);
+  background: rgba(46, 230, 246, 0.05);
+}
+
+.flow-list a[aria-current="true"] {
+  border-color: var(--accent);
+  background: rgba(46, 230, 246, 0.08);
+}
+
+.flow-name {
+  font-weight: 600;
+}
+
+.flow-trigger,
+.flow-counts {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.seq-wrap {
+  min-width: 0;
+}
+
+.seq {
+  --col: minmax(200px, 1fr);
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.seq-row {
+  display: grid;
+  grid-template-columns: repeat(var(--lanes), var(--col));
+  column-gap: 0;
+  position: relative;
+}
+
+.seq-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.seq-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--ground);
+  padding-bottom: 6px;
+}
+
+.seq-lane {
+  margin: 0 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  text-align: center;
+  display: grid;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+
+.seq-lane small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.seq-lane.self {
+  border-color: var(--accent);
+}
+.seq-lane.caller,
+.seq-lane.gateway {
+  border-color: var(--amber);
+}
+.seq-lane.component {
+  border-color: var(--violet);
+}
+.seq-lane.store {
+  border-color: var(--green);
+}
+.seq-lane.topic {
+  border-color: var(--accent-soft);
+  border-style: dashed;
+}
+
+.seq-life {
+  grid-row: 1;
+  justify-self: center;
+  width: 0;
+  border-left: 1px dashed var(--line-2);
+}
+
+.seq-arrow {
+  grid-row: 1;
+  align-self: start;
+  margin-top: 22px;
+  margin-left: calc(100% / (var(--span) * 2));
+  margin-right: calc(100% / (var(--span) * 2));
+  height: 0;
+  border-top: 2px solid var(--accent-soft);
+  position: relative;
+  z-index: 0;
+}
+
+.seq-arrow.back {
+  border-top-style: dashed;
+}
+
+.seq-arrow::after {
+  content: "";
+  position: absolute;
+  top: -7px;
+  border: 6px solid transparent;
+}
+
+.seq-arrow.right::after {
+  right: -2px;
+  border-left: 9px solid var(--accent-soft);
+  border-right-width: 0;
+}
+
+.seq-arrow.left::after {
+  left: -2px;
+  border-right: 9px solid var(--accent-soft);
+  border-left-width: 0;
+}
+
+.seq-arrow em {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent-soft);
+  background: var(--ground);
+  padding: 0 4px;
+}
+
+.seq-box {
+  grid-row: 1;
+  position: relative;
+  z-index: 1;
+  margin: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: #0b1118;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.seq-box.k-call-out,
+.seq-box.k-publish {
+  border-color: var(--violet);
+}
+.seq-box.k-read,
+.seq-box.k-write,
+.seq-box.k-lookup {
+  border-color: var(--green);
+}
+.seq-box.k-respond {
+  border-color: var(--accent);
+}
+
+.seq-top {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.seq-n {
+  font-family: var(--display);
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.seq-kind {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.seq-what {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.seq-fields {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--text-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.seq-cite {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.seq-cite code {
+  font-family: var(--mono);
+}
+
+.seq-ok {
+  color: var(--green);
+  font-size: 11px;
+}
+
+.seq-unsure {
+  color: var(--amber);
+  font-size: 11px;
+}
+
+.seq-opens {
+  color: var(--accent-soft);
+  font-size: 12px;
+}
+
+.seq-unjoined {
+  margin: 0;
+  color: var(--amber);
+  font-size: 12px;
+}
+
+.seq-h {
+  margin-top: 16px;
+}
+
+.seq-errors {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.seq-errors code {
+  margin-left: 8px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}

@@ -91,6 +91,8 @@ export interface CanvasLink {
 export interface CanvasGraph {
   boxes: CanvasBox[];
   links: CanvasLink[];
+  /** Gaps every part inside the picture has: said once for the picture, taken off each box. */
+  shared?: string[];
 }
 
 const box = (n: Api.HierNodeT, o: Partial<CanvasBox> = {}): CanvasBox => ({
@@ -172,7 +174,14 @@ export function canvasGraph(
       gaps: e.gaps,
     });
   }
-  return { boxes: [...boxes.values()], links };
+  // A gap every part inside has (two or more parts) is said once, not on every box.
+  const inner = [...boxes.values()].filter((b) => !b.outside);
+  const shared =
+    inner.length > 1 ? inner[0]!.gaps.filter((g) => inner.every((b) => b.gaps.includes(g))) : [];
+  if (shared.length)
+    for (const b of inner)
+      boxes.set(b.id, { ...b, gaps: b.gaps.filter((g) => !shared.includes(g)) });
+  return { boxes: [...boxes.values()], links, shared };
 }
 
 /** Which way the layout runs: context (who sits above whom) down, flows and calls across. */
