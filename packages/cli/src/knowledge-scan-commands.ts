@@ -296,7 +296,11 @@ export async function knowledgeList(
   if (o.json) {
     io.out(
       JSON.stringify(
-        items.map((i) => ({ ...i, ...(reviews[i.id] ? { review: reviews[i.id] } : {}) })),
+        items.map((i) => ({
+          ...i,
+          knowledgeKind: knowledgeKindOf(i),
+          ...(reviews[i.id] ? { review: reviews[i.id] } : {}),
+        })),
         null,
         2,
       ),
