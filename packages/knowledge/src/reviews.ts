@@ -38,7 +38,16 @@ export const KnowledgeReview = z.strictObject({
   at: z.iso.datetime({ offset: true }),
   note: z.string().optional(),
   /** Field → the value to read instead of the scan's (corrected only). */
-  corrections: z.record(z.string(), z.union([z.string(), z.array(z.string())])).optional(),
+  corrections: z
+    .record(
+      z.string(),
+      z.union([
+        z.string(),
+        z.array(z.string()),
+        z.array(z.strictObject({ url: z.string(), label: z.string().optional() })),
+      ]),
+    )
+    .optional(),
   /** What the item meant when it was checked (itemMeaning). */
   checked: z.string().regex(/^[0-9a-f]{16}$/),
 });
@@ -58,7 +67,8 @@ export interface ReviewSummary {
 }
 
 /** The fields a person may correct, by record kind; the lists take several values. */
-const CORRECTABLE: Record<string, Record<string, "text" | "list">> = {
+type FieldType = "text" | "list" | "links";
+const CORRECTABLE: Record<string, Record<string, FieldType>> = {
   ProcessDefinition: {
     title: "text",
     appliesWhen: "text",
@@ -68,6 +78,7 @@ const CORRECTABLE: Record<string, Record<string, "text" | "list">> = {
     inputs: "list",
     steps: "list",
     notes: "text",
+    urls: "links",
   },
   Pattern: {
     name: "text",
@@ -75,8 +86,15 @@ const CORRECTABLE: Record<string, Record<string, "text" | "list">> = {
     rules: "list",
     appliesWhen: "text",
     handledBy: "text",
+    urls: "links",
   },
-  Decision: { title: "text", appliesWhen: "text", handledBy: "text", reason: "text" },
+  Decision: {
+    title: "text",
+    appliesWhen: "text",
+    handledBy: "text",
+    reason: "text",
+    urls: "links",
+  },
   Party: {
     name: "text",
     owner: "text",
@@ -85,6 +103,7 @@ const CORRECTABLE: Record<string, Record<string, "text" | "list">> = {
     uses: "list",
     contacts: "list",
     channel: "text",
+    urls: "links",
   },
   Product: {
     name: "text",
@@ -93,12 +112,13 @@ const CORRECTABLE: Record<string, Record<string, "text" | "list">> = {
     usedBy: "list",
     vendor: "text",
     systems: "list",
+    urls: "links",
   },
 };
 const FIXED = new Set(["quote", "alsoOn", "evidence", "id", "kind", "schemaVersion", "status"]);
 
 /** The fields a person may correct on an item, with whether each takes a list. */
-export const correctableFields = (r: { kind: string }): Record<string, "text" | "list"> =>
+export const correctableFields = (r: { kind: string }): Record<string, FieldType> =>
   CORRECTABLE[r.kind] ?? {};
 
 const kindWord = (r: KnowledgeRecord) => knowledgeKindOf(r) ?? r.kind.toLowerCase();
@@ -150,7 +170,7 @@ export function reviewItem(
   if (o.verdict !== "corrected" && Object.keys(set).length)
     return { error: "Only a correction sets fields." };
   const fields = correctableFields(item);
-  const corrections: Record<string, string | string[]> = {};
+  const corrections: Record<string, string | string[] | { url: string; label?: string }[]> = {};
   for (const [k, v] of Object.entries(set)) {
     if (FIXED.has(k))
       return { error: `${k} can't be corrected: it is what the page says, checked word for word.` };
@@ -159,12 +179,21 @@ export function reviewItem(
       return {
         error: `A ${kindWord(item)} has no field ${k}. It has: ${Object.keys(fields).join(", ")}.`,
       };
-    const value =
-      type === "list" ? (Array.isArray(v) ? v : [v]) : Array.isArray(v) ? v.join(", ") : v;
-    corrections[k] =
-      type === "list"
-        ? (value as string[]).map((s) => s.trim()).filter(Boolean)
-        : String(value).trim();
+    const values = (Array.isArray(v) ? v : [v]).map((x) => x.trim()).filter(Boolean);
+    if (type === "text") corrections[k] = values.join(", ");
+    else if (type === "list") corrections[k] = values;
+    else {
+      // A link is label=address, or just the address.
+      const links: { url: string; label?: string }[] = [];
+      for (const x of values) {
+        const at = x.search(/=https?:\/\//);
+        const url = at > 0 ? x.slice(at + 1) : x;
+        if (!/^https?:\/\/\S+$/.test(url))
+          return { error: `${x} isn't an http(s) address (label=address, or the address).` };
+        links.push(at > 0 ? { url, label: x.slice(0, at).trim() } : { url });
+      }
+      corrections[k] = links;
+    }
   }
   const merged = { ...item, ...corrections } as KnowledgeRecord;
   const parsed = parseRecord(merged);

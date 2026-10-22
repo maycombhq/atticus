@@ -19,6 +19,7 @@ import {
   type KnowledgeScanResult,
   type SupersededPage,
 } from "./knowledge-scan.js";
+import { checkQuote } from "./quotes.js";
 import type { RescanPlan } from "./rescan.js";
 import { applyReview, itemMeaning, readReviews, type ReviewSummary } from "./reviews.js";
 import type { Snapshot } from "./snapshot.js";
@@ -157,7 +158,16 @@ export async function writeKnowledge(
     return !pages || page === undefined || pages.has(page);
   };
   const before = await readKnowledge(root, { raw: true });
-  const keep = before.items.filter((r) => !touches(sourceOf(r), r.quote?.page));
+  // An item a person kept from a search stays while its quote is still on its page.
+  const pageText = (source: string, page: string) =>
+    o.snapshots?.find((x) => x.manifest.source === source)?.pages.find((p) => p.pagePath === page)
+      ?.text;
+  const stillQuoted = (r: KnowledgeRecord) => {
+    if (!r.flags?.some((f) => f.startsWith("found:")) || !r.quote) return false;
+    const text = pageText(r.quote.source, r.quote.page);
+    return text !== undefined && checkQuote(text, r.quote.text, r.quote.section).ok;
+  };
+  const keep = before.items.filter((r) => !touches(sourceOf(r), r.quote?.page) || stillQuoted(r));
   const all = [...keep, ...result.items];
   const dir = join(knowledgeDirOf(root), "items");
   const wanted = new Map(all.map((r) => [recordPath(r), serializeRecord(r)]));

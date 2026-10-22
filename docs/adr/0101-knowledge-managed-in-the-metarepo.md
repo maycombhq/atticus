@@ -114,10 +114,41 @@ These four kinds need no "applies when". The catalog's Systems still come from c
 - **`atticus next`**: once a change's feature is placed and it has no `needs.yaml`, the next step is `atticus change needs <change>`, early, because a request's lead time runs from the day it is raised. While needs are open, a person's step says how many, naming the one with the longest lead time.
 - Nothing is raised for the developer. Atticus suggests; a person raises.
 
+### 6. Searching the wikis (built)
+
+`atticus knowledge find "<term or phrase>" [--source s]` is an AI step (`--mode`, `--resume`, `--handoff`; `/atticus-find` in Copilot Chat).
+
+1. **A plain search** finds the sections of every snapshot page that mention the phrase: the phrase on a line, or every word of it in one section. No AI is involved. When no page mentions it, the command says so and asks nothing.
+2. **The assistant reads only those pages.** It is told what the person searched for and which items are already known on them, and writes every item about it: a process or the steps to achieve something, a request and its form, a standard, a decision, a team, a vendor, a product. Items already known come back with their ids, marked known.
+3. **The checks** are a scan's own: every quote word for word on its page, and every link on the page.
+
+The result is saved in `knowledge/finds/<slug>.yaml`; the same phrase searched again replaces it. `atticus knowledge finds` lists the searches.
+
+`atticus knowledge keep <item> [--find search] [--as kind] [--set field=value]` keeps a candidate:
+
+- It can be kept as any kind its record can be: a process or a request; a pattern or a standard; a decision or a constraint; a team or a vendor; a product or a project.
+- It becomes a knowledge item flagged `found:<search>`, and the person's verdict is written as their review: verified, or corrected when they set fields.
+- A rescan of its page keeps it while its quote is still on the page.
+
+### 7. Links (built)
+
+Knowledge items keep the links the page gives for them in `urls`: the request's form in the service-desk catalogue, a runbook, a contact page.
+
+- The kinds that have it are Pattern, ProcessDefinition, Decision, Party and Product (C1, additive). Decision already has a `links` field for the changes and records it links to; that one is unrelated.
+- An item gets the links under the heading it quotes (Markdown links with their labels, links in angle brackets, bare addresses), plus any the AI names, each of which must be on the page.
+- A person can correct them with `--set urls="Form=https://…|https://…"`.
+- A change's needs carry them, and `needs.md` lists them, so a developer opens the form from the need.
+
+### 8. An honest setup checklist (built)
+
+`atticus init` writes an org pack whose files are valid, so "The org pack is valid" was ticked in a metarepo where nothing had been done yet. The step is now "The org pack's files are valid", and a new step, "The org pack has an owner", is not done while `pack.yaml` says `owner: unassigned`, which is how `init` leaves it.
+
 ## Consequences
 
 - An organisation's wikis and docs repos are read straight from git, pinned when it wants them pinned, with the commit each snapshot read.
 - What the pages say is checked by people where it matters. A correction is what everyone reads from then on, and a tick lasts until the page under it changes.
 - A rescan costs only the pages that changed.
 - A developer starting a change gets, early, the list of what the organisation needs from it: each item with its how-to, lead time and who to ask, quoting why, marked when a person has verified it.
+- A developer can look for anything new across every wiki, see what the assistant found about it with each quote checked, and keep what matters as the kind it is.
+- A request found on a page comes with its form's link, all the way to the change that needs it.
 - C1 now has 33 kinds. As in ADR 0083, every existing record file reads unchanged, so the catalog schema version stays 2 and no migration is needed.

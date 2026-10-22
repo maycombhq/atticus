@@ -13,6 +13,11 @@ import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai
 import {
   askKnowledge,
   correctableFields,
+  findKnowledge,
+  keepCandidate,
+  readFind,
+  readFinds,
+  saveFind,
   filterItems,
   planRescan,
   reviewItem,
@@ -386,6 +391,211 @@ export async function knowledgeAsk(
   return 0;
 }
 
+/** A candidate as the JSON and the plugin read it. */
+function candidateJson(c: { record: KnowledgeRecord; known?: string; kept?: unknown }) {
+  const r = c.record as KnowledgeRecord & Record<string, unknown>;
+  return {
+    id: r.id,
+    kind: knowledgeKindOf(r),
+    title: itemTitle(r),
+    ...(typeof r.appliesWhen === "string" ? { appliesWhen: r.appliesWhen } : {}),
+    ...(Array.isArray(r.steps) && r.steps.length ? { steps: r.steps } : {}),
+    ...(Array.isArray(r.urls) && r.urls.length ? { urls: r.urls } : {}),
+    page: r.quote?.page,
+    section: r.quote?.section,
+    quote: r.quote?.text,
+    ...(c.known ? { known: c.known } : {}),
+    ...(c.kept ? { kept: c.kept } : {}),
+  };
+}
+
+/**
+ * atticus knowledge find "<term or phrase>" [--source s] [--mode m] [--resume run] [--json]
+ * (ADR 0101): search every snapshot for it, then have the assistant read the pages that mention
+ * it and propose what isn't a knowledge item yet, each quote checked. Exit 0 found or nothing
+ * found, 1 when the assistant's answer failed its checks, 2 when there is nothing to search.
+ */
+export async function knowledgeFind(
+  root: string,
+  phrase: string,
+  o: { source?: string; resume?: string; json?: boolean; attempts?: number },
+  deps: KnowledgeDeps,
+  io: Output,
+): Promise<number> {
+  const snapshots = await snapshotsFor(root, o.source, io);
+  if (!snapshots) return 2;
+  const op = await loadOrgPack(orgPackDirOf(root));
+  const now = deps.now ?? new Date();
+  const k = await readKnowledge(root);
+  const r = await findKnowledge(snapshots, phrase, {
+    runtime: deps.runtime,
+    items: [...k.items, ...k.rejected],
+    orgPack: op,
+    now,
+    maxAttempts: o.attempts ?? 3,
+    ...(o.resume ? { resume: o.resume } : {}),
+  });
+  if (r.status === "waiting") {
+    io.out(
+      `Handed the search to your assistant (run ${r.runId}). When it is done: atticus handoff done ${r.runId}, then atticus knowledge find ${JSON.stringify(phrase)}${o.source ? ` --source ${o.source}` : ""} --resume ${r.runId}`,
+    );
+    return 0;
+  }
+  const slug = r.status === "found" ? await saveFind(root, r, stamp(now)) : undefined;
+  const file = slug ? `${knowledgeRelOf(root)}/finds/${slug}.yaml` : undefined;
+  if (o.json) {
+    io.out(
+      JSON.stringify(
+        {
+          status: r.status,
+          ...(r.runId ? { runId: r.runId } : {}),
+          phrase,
+          ...(slug ? { slug, file } : {}),
+          pages: [...new Set(r.matches.map((m) => `${m.source}/${m.page}`))],
+          matches: r.matches,
+          candidates: r.candidates.map(candidateJson),
+          failed: r.failed,
+          problems: r.problems,
+        },
+        null,
+        2,
+      ),
+    );
+    return r.status === "failed" ? 1 : 0;
+  }
+  if (r.status === "nothing") {
+    io.out(`No page of the wikis mentions "${phrase}". Nothing was sent to the assistant.`);
+    return 0;
+  }
+  if (r.status === "failed") {
+    io.err(`The assistant's answer failed its checks: ${r.problems.join("; ")}. Nothing was kept.`);
+    return 1;
+  }
+  const pages = [...new Set(r.matches.map((m) => `${m.source}/${m.page}`))];
+  io.out(`"${phrase}" is on ${plural(pages.length, "page")}: ${pages.join(", ")}.`);
+  const fresh = r.candidates.filter((c) => !c.known);
+  io.out(
+    `The assistant found ${plural(r.candidates.length, "item")} about it, each quote checked${fresh.length < r.candidates.length ? `; ${r.candidates.length - fresh.length} already known` : ""}:`,
+  );
+  for (const c of r.candidates)
+    io.out(
+      `  ${c.known ? "known" : "new  "} ${knowledgeKindOf(c.record)} ${c.record.id}: ${itemTitle(c.record)} (${c.record.quote?.page})`,
+    );
+  if (r.failed.length)
+    io.out(
+      `${plural(r.failed.length, "item")} failed the checks and ${r.failed.length === 1 ? "was" : "were"} left out.`,
+    );
+  io.out(
+    `Saved in ${file}. Keep one with atticus knowledge keep <item> --find ${slug} [--as <kind>] [--set field=value].`,
+  );
+  return 0;
+}
+
+/** atticus knowledge keep <candidate> --find <slug> [--as kind] [--set f=v]… [--note text]. */
+export async function knowledgeKeep(
+  root: string,
+  id: string,
+  o: {
+    find?: string;
+    as?: string;
+    set?: string[];
+    note?: string;
+    by: string;
+    now?: Date;
+    json?: boolean;
+  },
+  io: Output,
+): Promise<number> {
+  let slug = o.find;
+  if (!slug) {
+    const all = await readFinds(root);
+    const having = [];
+    for (const f of all)
+      if ((await readFind(root, f.slug))?.candidates.some((c) => c.record.id === id))
+        having.push(f.slug);
+    if (having.length !== 1) {
+      io.err(
+        having.length
+          ? `${id} is in more than one search (${having.join(", ")}): say which with --find.`
+          : `No saved search has a candidate ${id}. atticus knowledge finds lists the searches.`,
+      );
+      return 2;
+    }
+    slug = having[0]!;
+  }
+  if (o.as && !(KNOWLEDGE_KINDS as readonly string[]).includes(o.as)) {
+    io.err(`There is no knowledge kind ${o.as}. Use one of: ${KNOWLEDGE_KINDS.join(", ")}.`);
+    return 2;
+  }
+  const f = await readFind(root, slug);
+  const cand = f?.candidates.find((c) => c.record.id === id);
+  const fields = cand ? correctableFields(cand.record) : {};
+  const set: Record<string, string | string[]> = {};
+  for (const pair of o.set ?? []) {
+    const at = pair.indexOf("=");
+    if (at < 1) {
+      io.err(`--set takes field=value, not ${pair}.`);
+      return 2;
+    }
+    const field = pair.slice(0, at).trim();
+    const value = pair.slice(at + 1);
+    set[field] =
+      fields[field] === "list" || fields[field] === "links"
+        ? value.split("|").map((x) => x.trim())
+        : value.trim();
+  }
+  const r = await keepCandidate(root, slug, id, {
+    ...(o.as ? { as: o.as as KnowledgeKind } : {}),
+    by: o.by,
+    at: stamp(o.now ?? new Date()),
+    ...(o.note ? { note: o.note } : {}),
+    ...(Object.keys(set).length ? { set } : {}),
+  });
+  if ("error" in r) {
+    io.err(r.error);
+    return 2;
+  }
+  if (o.json) {
+    io.out(JSON.stringify({ item: r.item, as: r.as, find: slug }, null, 2));
+    return 0;
+  }
+  io.out(
+    `Kept ${id} as a ${r.as}, verified by ${o.by}: plans, answers and lists read it from now on.`,
+  );
+  io.out(
+    `Written to ${knowledgeRelOf(root)}/items/ and reviews/: commit them through a pull request.`,
+  );
+  return 0;
+}
+
+/** atticus knowledge finds [--json]: the saved searches, newest first. */
+export async function knowledgeFinds(
+  root: string,
+  o: { json?: boolean },
+  io: Output,
+): Promise<number> {
+  const all = await readFinds(root);
+  if (o.json) {
+    const out = [];
+    for (const f of all) {
+      const s = await readFind(root, f.slug);
+      out.push({ ...f, candidateList: (s?.candidates ?? []).map(candidateJson) });
+    }
+    io.out(JSON.stringify(out, null, 2));
+    return 0;
+  }
+  if (!all.length) {
+    io.out('No search yet. atticus knowledge find "<term or phrase>" searches every wiki.');
+    return 0;
+  }
+  for (const l of table(
+    ["SEARCH", "PHRASE", "WHEN", "FOUND", "KEPT"],
+    all.map((f) => [f.slug, f.phrase, f.at.slice(0, 10), String(f.candidates), String(f.kept)]),
+  ))
+    io.out(l);
+  return 0;
+}
+
 /** A review in the list: a tick for verified, the state otherwise (ADR 0101). */
 export function reviewWord(r: ReviewSummary | undefined): string {
   if (!r) return "";
@@ -425,7 +635,11 @@ export async function knowledgeReview(
     }
     const field = pair.slice(0, at).trim();
     const value = pair.slice(at + 1);
-    set[field] = fields[field] === "list" ? value.split("|").map((x) => x.trim()) : value.trim();
+    // A list (and a list of links) takes a|b|c.
+    set[field] =
+      fields[field] === "list" || fields[field] === "links"
+        ? value.split("|").map((x) => x.trim())
+        : value.trim();
   }
   const r = reviewItem(item, {
     verdict,
@@ -701,6 +915,56 @@ export async function knowledgeCli(
       str(values.mode) ? { mode: str(values.mode)! } : {},
       io,
     );
+  if (group === "knowledge" && command === "find") {
+    const phrase = positionals.slice(2).join(" ").trim();
+    if (!phrase) {
+      io.err(
+        'Usage: atticus knowledge find "<term or phrase>" [--source s] [--mode m] [--resume run] [--json]',
+      );
+      return 2;
+    }
+    const rt = await runtime();
+    if (!rt) return 2;
+    return knowledgeFind(
+      root,
+      phrase,
+      {
+        json,
+        attempts,
+        ...(str(values.source) ? { source: str(values.source)! } : {}),
+        ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
+      },
+      { runtime: rt },
+      io,
+    );
+  }
+  if (group === "knowledge" && command === "keep") {
+    if (!arg) {
+      io.err(
+        "Usage: atticus knowledge keep <item> [--find search] [--as kind] [--set field=value] [--note text]",
+      );
+      return 2;
+    }
+    const set = Array.isArray(values.set)
+      ? values.set.map(String)
+      : typeof values.set === "string"
+        ? [values.set]
+        : [];
+    return knowledgeKeep(
+      root,
+      arg,
+      {
+        set,
+        by: who(),
+        json,
+        ...(str(values.find) ? { find: str(values.find)! } : {}),
+        ...(str(values.as) ? { as: str(values.as)! } : {}),
+        ...(str(values.note) ? { note: str(values.note)! } : {}),
+      },
+      io,
+    );
+  }
+  if (group === "knowledge" && command === "finds") return knowledgeFinds(root, { json }, io);
   if (
     group === "knowledge" &&
     (command === "verify" || command === "correct" || command === "reject")
@@ -725,7 +989,9 @@ export async function knowledgeCli(
     );
   }
   if (group === "knowledge") {
-    io.err("Usage: atticus knowledge scan|list|ask|verify|correct|reject. See atticus --help.");
+    io.err(
+      "Usage: atticus knowledge scan|list|ask|find|keep|finds|verify|correct|reject. See atticus --help.",
+    );
     return 2;
   }
   return undefined;

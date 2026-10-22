@@ -89,12 +89,20 @@ export async function setupSteps(
     },
     {
       id: "org-pack",
-      label: "The org pack is valid",
+      label: "The org pack's files are valid",
       done: op.problems.length === 0,
       detail: op.problems.length
         ? `${op.problems.length} problem${op.problems.length === 1 ? "" : "s"}`
-        : "no problems",
+        : "no problems in its files",
       fix: "Run atticus orgpack validate and fix each problem it names (each says the file and field).",
+    },
+    {
+      // A new metarepo's org pack is valid as atticus init wrote it, but nobody owns it yet.
+      id: "org-pack-owner",
+      label: "The org pack has an owner",
+      done: !!op.pack?.owner && op.pack.owner !== "unassigned",
+      detail: op.pack?.owner && op.pack.owner !== "unassigned" ? op.pack.owner : "unassigned",
+      fix: "Set owner in org-pack/pack.yaml to the person who looks after the org pack (normally the platform lead), and commit it through a pull request.",
     },
     {
       id: "repos",

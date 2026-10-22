@@ -51,6 +51,7 @@ describe("atticus setup: the checklist until the catalog is accepted", () => {
     expect(steps.map((s) => s.id)).toEqual([
       "machine",
       "org-pack",
+      "org-pack-owner",
       "repos",
       "clones",
       "scan",
@@ -66,6 +67,23 @@ describe("atticus setup: the checklist until the catalog is accepted", () => {
     expect(byId.get("baseline")!.fix).toMatch(/pull request/);
     // ADR 0073: no step maps groups to roles any more.
     expect(steps.some((s) => /role/i.test(`${s.id} ${s.fix ?? ""}`))).toBe(false);
+  });
+});
+
+describe("a new metarepo's checklist", () => {
+  it("doesn't call the org pack done just because init wrote valid files: it has no owner yet", async () => {
+    const { init } = await import("@maycombhq/adopt");
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const root = join(await mkdtemp(join(tmpdir(), "atticus-setup-new-")), "trp-meta");
+    await init(root, { name: "trp", platform: "socialmedia", openspec: "folders" });
+    const r = await run(root, "setup", "--json");
+    const steps = new Map(
+      (JSON.parse(r.out) as { steps: (Step & { detail?: string })[] }).steps.map((s) => [s.id, s]),
+    );
+    expect(steps.get("org-pack")).toMatchObject({ done: true, detail: "no problems in its files" });
+    expect(steps.get("org-pack-owner")).toMatchObject({ done: false, detail: "unassigned" });
+    expect(steps.get("org-pack-owner")!.fix).toMatch(/pack\.yaml/);
   });
 });
 

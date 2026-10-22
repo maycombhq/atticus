@@ -371,8 +371,19 @@ export const KnowledgeQuote = z.strictObject({
   line: z.number().int().positive().optional(),
 });
 
+/**
+ * A link the page gives for an item (ADR 0101): the request's form in the service-desk
+ * catalogue, a runbook, a contact page. Kept only when the URL is on the page the item quotes.
+ */
+export const KnowledgeLink = z.strictObject({
+  url: z.string().regex(/^https?:\/\/\S+$/, "an http(s) address"),
+  label: z.string().optional(),
+});
+
 /** Knowledge fields shared by the kinds a knowledge scan writes (ADR 0083). */
 const knowledge = {
+  /** Links the page gives for it (ADR 0101). */
+  urls: list(KnowledgeLink),
   /** When the item applies, in the page's words or close to them. */
   appliesWhen: z.string().optional(),
   /** The team that owns or handles it. */
@@ -469,6 +480,7 @@ export const Party = record("Party", {
   tags: list(str()),
   quote: KnowledgeQuote.optional(),
   alsoOn: list(KnowledgeQuote),
+  urls: list(KnowledgeLink),
 });
 
 /**
@@ -488,6 +500,7 @@ export const Product = record("Product", {
   tags: list(str()),
   quote: KnowledgeQuote,
   alsoOn: list(KnowledgeQuote),
+  urls: list(KnowledgeLink),
 });
 
 export const Initiative = record("Initiative", {
@@ -550,6 +563,8 @@ export const ProcessDefinition = record("ProcessDefinition", {
   tags: list(str()),
   quote: KnowledgeQuote,
   alsoOn: list(KnowledgeQuote),
+  /** Links the page gives for it: the request's form, a runbook (ADR 0101). */
+  urls: list(KnowledgeLink),
 });
 
 export const ProcessArtifact = record("ProcessArtifact", {

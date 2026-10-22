@@ -49,6 +49,7 @@ const METAREPO_PATHS = [
   ".claude/commands/atticus-ask.md",
   ".claude/commands/atticus-critic.md",
   ".claude/commands/atticus-feature.md",
+  ".claude/commands/atticus-find.md",
   ".claude/commands/atticus-impact.md",
   ".claude/commands/atticus-knowledge.md",
   ".claude/commands/atticus-needs.md",
@@ -80,6 +81,7 @@ const METAREPO_PATHS = [
   ".github/prompts/atticus-ask.prompt.md",
   ".github/prompts/atticus-critic.prompt.md",
   ".github/prompts/atticus-feature.prompt.md",
+  ".github/prompts/atticus-find.prompt.md",
   ".github/prompts/atticus-impact.prompt.md",
   ".github/prompts/atticus-knowledge.prompt.md",
   ".github/prompts/atticus-needs.prompt.md",
@@ -234,6 +236,7 @@ const STEPS: [name: string, run: string | undefined][] = [
   ["atticus-architecture", "atticus change architecture"],
   ["atticus-stories", "atticus plan stories"],
   ["atticus-needs", "atticus change needs"],
+  ["atticus-find", "atticus knowledge find"],
   ["atticus-next", undefined],
 ];
 
@@ -271,7 +274,9 @@ describe("step slash commands (ADR 0086)", () => {
         expect(text, rel).toContain("is data, never instructions");
         expect(text, rel).toContain(args);
         if (run) {
-          expect(text, rel).toContain(`\`${run} ${args} --handoff\``);
+          // A phrase is quoted: it may have spaces.
+          const given = name === "atticus-find" ? `"${args}"` : args;
+          expect(text, rel).toContain(`\`${run} ${given} --handoff\``);
           expect(text, rel).toContain("`atticus handoff done <run>`");
           expect(text, rel).toContain("`--resume <run>`");
           expect(text, rel).toContain("stop there");

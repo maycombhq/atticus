@@ -49,6 +49,9 @@ Usage:
   atticus knowledge scan [--source s] [--mode m] [--resume run] [--full]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run]  An answer from the knowledge items only, citing them
+  atticus knowledge find "<term or phrase>"  Search every wiki for it; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked [--source s] [--mode m] [--resume run] [--json]
+  atticus knowledge keep <item>        Keep a found item as a knowledge item you verified [--find search] [--as kind] [--set field=value] [--note text]
+  atticus knowledge finds [--json]     The searches saved, and how many of each were kept
   atticus knowledge verify <item>      Mark a knowledge item right as read: a green tick wherever it shows [--note text]
   atticus knowledge correct <item> --set field=value  Correct an item's details (a list takes a|b|c); the corrected item is what plans read [--note text]
   atticus knowledge reject <item> --note why  Mark an item wrong: plans and answers leave it out

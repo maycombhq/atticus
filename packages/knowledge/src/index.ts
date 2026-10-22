@@ -18,3 +18,5 @@ export * from "./knowledge-ask.js";
 export * from "./git-wiki.js";
 export * from "./reviews.js";
 export * from "./rescan.js";
+export * from "./links.js";
+export * from "./find.js";

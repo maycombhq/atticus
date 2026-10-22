@@ -179,6 +179,19 @@ export function stepCommands(): CommandDef[] {
       ),
     ),
     step(
+      "atticus-find",
+      "Search every wiki for a term or phrase and propose what the pages hold about it that isn't known yet.",
+      "[term or phrase]",
+      body(
+        "Search the organisation's wikis for {{ARGS}}. Atticus finds the pages and sections that mention it; you read only those and write every item on them about it (a process or the steps to achieve something, a request and its form, a standard, a decision, a team, a vendor, a product), each with its exact quote; items already known keep their ids. Atticus checks every quote and saves what you found for the person to keep.",
+        [
+          ...handoff('atticus knowledge find "{{ARGS}}"'),
+          "If it says no page mentions it, say so: nothing was sent to you.",
+          "Tell the person what was found, new and already known, and that atticus knowledge keep <item> --find <search> [--as <kind>] keeps one. Never keep one yourself.",
+        ],
+      ),
+    ),
+    step(
       "atticus-next",
       "Say the next step to take, with its command and slash command, and why.",
       "[--all]",

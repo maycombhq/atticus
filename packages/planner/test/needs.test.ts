@@ -47,6 +47,7 @@ const KAFKA = item({
   handledBy: "Messaging team",
   catalogueItem: "CTASK: Kafka topic",
   steps: ["Open the platform catalogue", "Pick Kafka topic"],
+  urls: [{ label: "service desk catalogue", url: "https://servicedesk.example.com/kafka-topic" }],
   quote: quote(
     "how-to/kafka.md",
     "The request",
@@ -167,6 +168,12 @@ describe("what a change needs", () => {
       "- [ ] **Kafka topic** (story s1-export-chat): raise CTASK: Kafka topic with the Messaging team, 5 working days",
     );
     expect(md).toContain("1. Open the platform catalogue");
+    expect(md).toContain(
+      "Links: [service desk catalogue](https://servicedesk.example.com/kafka-topic)",
+    );
+    expect(f.needs[1]!.urls).toEqual([
+      { label: "service desk catalogue", url: "https://servicedesk.example.com/kafka-topic" },
+    ]);
     expect(md).toContain("## Standards and patterns to follow");
   });
 

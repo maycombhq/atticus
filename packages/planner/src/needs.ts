@@ -66,6 +66,8 @@ export const Need = z.strictObject({
   inputs: z.array(z.string()).default([]),
   steps: z.array(z.string()).default([]),
   rules: z.array(z.string()).default([]),
+  /** The links the page gives for it: the request's form, a runbook. */
+  urls: z.array(z.strictObject({ url: z.string(), label: z.string().optional() })).default([]),
   /** Where the item was read: source/page#section. */
   page: z.string().optional(),
   status: z.enum(["open", "done", "not-needed"]).default("open"),
@@ -164,7 +166,7 @@ const order = (t: string) =>
 
 function needFrom(
   r: KnowledgeRecord,
-  n: Omit<Need, "kind" | "title" | "inputs" | "steps" | "rules" | "status"> & {
+  n: Omit<Need, "kind" | "title" | "inputs" | "steps" | "rules" | "urls" | "status"> & {
     status?: Need["status"];
   },
 ): Need {
@@ -182,6 +184,7 @@ function needFrom(
     inputs: arr("inputs"),
     steps: arr("steps"),
     rules: arr("rules"),
+    urls: Array.isArray(p.urls) ? (p.urls as Need["urls"]) : [],
     ...(r.quote ? { page: `${r.quote.source}/${r.quote.page}#${r.quote.section}` } : {}),
     status: n.status ?? "open",
   });
@@ -289,6 +292,8 @@ export function renderNeeds(f: NeedsFile, reviews: Record<string, ReviewSummary>
         lines.push("  How:");
         n.steps.forEach((x, i) => lines.push(`  ${i + 1}. ${x}`));
       }
+      if (n.urls.length)
+        lines.push(`  Links: ${n.urls.map((u) => `[${u.label ?? u.url}](${u.url})`).join(", ")}`);
       if (n.page) lines.push(`  From ${n.page}.`);
     }
     lines.push("");
