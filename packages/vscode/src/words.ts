@@ -27,6 +27,9 @@ const STEP_TITLES: Record<string, (s: NextStep, c: (id?: string) => string) => s
   // ADR 0101: what a change needs from the organisation, then raising each.
   needs: (s, c) => `Find what ${c(s.change)} needs from the organisation`,
   "raise-needs": (s, c) => `Raise ${c(s.change)}'s open needs`,
+  "orgpack-draft": () => "Draft the org pack's systems from the wikis",
+  "accept-orgpack": () => "Accept the systems drafted from the wikis",
+  "verify-knowledge": () => "Check the knowledge items your changes use",
   tasks: (s, c) => `Work through ${c(s.change)}'s tasks`,
   task: (s, c) => `Run a task of ${c(s.change)}`,
   release: (s, c) => `Plan ${c(s.change)}'s release`,

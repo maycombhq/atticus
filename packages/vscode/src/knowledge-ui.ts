@@ -740,4 +740,117 @@ export class KnowledgeUi {
       else if (act.id === "page") return this.openNeedPage(root, n);
     }
   }
+
+  // ------------------------------------------------------------------ the org pack, from the wikis
+
+  /**
+   * The profile's systems drafted from the knowledge (ADR 0101): every product and vendor the
+   * wikis name that the org pack lacks, with its aliases and owner; the person picks what to
+   * accept (verified ones picked to start with), and it goes into profile.yaml.
+   */
+  async draftOrgPack(root: string) {
+    const r = await this.svc.cli(root)(["orgpack", "draft", "--json", "--root", root]);
+    const d = parseJson<{
+      platform: string;
+      file: string;
+      proposals: {
+        from: string;
+        action: "add" | "update";
+        system: { id: string; name: string; boundary: string; owner?: string; aliases: string[] };
+        adds?: { aliases?: string[]; owner?: string };
+        verified: boolean;
+        verifiedBy?: string;
+        quote?: string;
+        notes: string[];
+      }[];
+    }>(r.stdout);
+    if (!d)
+      return void vscode.window.showWarningMessage(
+        `Atticus: ${(r.stderr || r.stdout).trim().split("\n")[0] || "couldn't draft the org pack"}`,
+      );
+    if (!d.proposals.length)
+      return void vscode.window.showInformationMessage(
+        `The ${d.platform} profile already has every system the knowledge items name.`,
+      );
+    const items = d.proposals.map((p) => ({
+      label: `${p.verified ? "$(pass-filled) " : ""}${p.system.name}`,
+      description:
+        p.action === "add"
+          ? `add · ${p.system.boundary}${p.system.owner ? ` · ${p.system.owner}` : ""}${p.system.aliases.length ? ` · also ${p.system.aliases.join(", ")}` : ""}`
+          : `update ${p.system.id} · ${[p.adds?.aliases?.length ? `aliases ${p.adds.aliases.join(", ")}` : "", p.adds?.owner ? `owner ${p.adds.owner}` : ""].filter(Boolean).join(" · ")}`,
+      detail: `${p.verified ? `Verified by ${p.verifiedBy}. ` : "Not yet verified. "}${p.quote ? `“${p.quote}”` : ""}${p.notes.length ? ` ${p.notes.join("; ")}.` : ""}`,
+      picked: p.verified,
+      p,
+    }));
+    const picked = await vscode.window.showQuickPick(items, {
+      title: `Atticus: systems for the ${d.platform} profile, from the wikis. Pick what to accept into profile.yaml.`,
+      canPickMany: true,
+      matchOnDescription: true,
+      matchOnDetail: true,
+      ignoreFocusOut: true,
+    });
+    if (!picked?.length) return;
+    const argv = ["orgpack", "accept", d.platform, "--only", picked.map((x) => x.p.from).join(",")];
+    const p = await this.c.captured(root, argv);
+    this.d.refreshAll();
+    if (p.code !== 0) return this.c.showPrinted(argv, p);
+    const open = await vscode.window.showInformationMessage(
+      `${p.lines[0] ?? "Accepted."} Commit profile.yaml through a pull request.`,
+      "Open profile.yaml",
+    );
+    if (open)
+      await vscode.window.showTextDocument(
+        await vscode.workspace.openTextDocument(
+          vscode.Uri.file(join(root, "org-pack", "profiles", d.platform, "profile.yaml")),
+        ),
+      );
+  }
+
+  /** The knowledge items no person has verified yet, one after another, to verify, correct or reject. */
+  async reviewUnverified(root: string) {
+    for (;;) {
+      const { items } = await readKnowledgeList(this.svc.cli(root), root);
+      const left = items.filter((i) => {
+        const st = i.review?.state;
+        return st !== "verified" && st !== "corrected" && st !== "rejected";
+      });
+      if (!left.length)
+        return void vscode.window.showInformationMessage(
+          "Every knowledge item has been checked by a person.",
+        );
+      const pick = await vscode.window.showQuickPick(
+        left.map((k) => ({
+          label: `${k.review?.state === "stale" ? "$(warning) " : ""}${itemTitle(k)}`,
+          description: `${k.knowledgeKind ?? k.kind}${k.review?.state === "stale" ? " · its page changed: check again" : ""}`,
+          detail: k.quote ? `“${k.quote.text}” (${k.quote.source}/${k.quote.page})` : "",
+          k,
+        })),
+        {
+          title: `Atticus: ${left.length} knowledge item${left.length === 1 ? "" : "s"} no person has checked. Pick one to check it against its page.`,
+          matchOnDescription: true,
+          matchOnDetail: true,
+          ignoreFocusOut: true,
+        },
+      );
+      if (!pick) return;
+      const act = await vscode.window.showQuickPick(
+        [
+          { label: "$(pass-filled) It's right", id: "verify" },
+          { label: "$(edit) Correct it…", id: "correct" },
+          { label: "$(error) It's wrong…", id: "reject" },
+          ...urlsOf(pick.k).map((u) => ({
+            label: `$(link-external) Open ${u.label ?? u.url}`,
+            id: "url",
+            u,
+          })),
+        ],
+        { title: `Atticus: “${itemTitle(pick.k)}”`, ignoreFocusOut: true },
+      );
+      if (!act) continue;
+      if (act.id === "verify") await this.verify(root, pick.k);
+      else if (act.id === "correct") await this.correct(root, pick.k);
+      else if (act.id === "reject") await this.reject(root, pick.k);
+      else if ("u" in act) await vscode.env.openExternal(vscode.Uri.parse(act.u.url));
+    }
+  }
 }

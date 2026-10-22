@@ -103,6 +103,7 @@ const CORRECTABLE: Record<string, Record<string, FieldType>> = {
     uses: "list",
     contacts: "list",
     channel: "text",
+    aliases: "list",
     urls: "links",
   },
   Product: {
@@ -112,6 +113,7 @@ const CORRECTABLE: Record<string, Record<string, FieldType>> = {
     usedBy: "list",
     vendor: "text",
     systems: "list",
+    aliases: "list",
     urls: "links",
   },
 };

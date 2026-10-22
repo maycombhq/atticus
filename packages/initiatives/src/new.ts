@@ -102,6 +102,7 @@ export async function addParty(
     responsibilities: [],
     owns: [],
     uses: [],
+    aliases: [],
     tags: [],
     alsoOn: [],
     urls: [],

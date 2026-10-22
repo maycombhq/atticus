@@ -64,6 +64,7 @@ function instructions(p: PackInput): string {
     "- Stay inside the approved design. If the work needs an interface, table or system the design doesn't list, don't add it: say so in your report as a question for the architect.",
     "- Never push, merge, deploy or touch a protected branch; Atticus raises the pull request with a person's approval.",
     "- Don't edit `.specify/memory/constitution.md`: it is generated from the org pack.",
+    "- needs.md (when the change has one) is what the organisation needs of this change: follow its standards and patterns for this task, its story and the whole change. Its requests and processes are a person's to raise, never yours. An item marked not yet verified was read from a wiki and no person has checked it: follow it, and say in your report if it looks wrong for this code.",
   ];
   if (p.buildLog)
     return [
@@ -154,6 +155,20 @@ export async function taskPack(p: PackInput): Promise<ContextPack> {
   };
   for (const s of t.task.stories) artifact(`stories/${s}.md`, 30);
   for (const a of ["design.md", "interfaces.md", "mappings.md", "data.md"]) artifact(a, 20);
+  // ADR 0101: what the organisation needs of the change: the standards to follow, the requests
+  // a person raises. Items not yet verified are there too, marked.
+  const needs = await readIf(
+    join(t.root, ...changesRelOf(t.root).split("/"), t.change.id, "needs.md"),
+  );
+  if (needs !== undefined)
+    sources.push({
+      id: "needs.md",
+      kind: "artifact",
+      origin: `${changesRelOf(t.root)}/${t.change.id}/needs.md`,
+      text: needs,
+      classification: "internal",
+      priority: 25,
+    });
   const featureFiles =
     p.engine === "speckit"
       ? ["spec.md", "plan.md", "data-model.md", "tasks.md", "research.md", "quickstart.md"].map(

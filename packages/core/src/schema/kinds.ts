@@ -477,6 +477,8 @@ export const Party = record("Party", {
   owns: list(str()),
   /** Vendors and products it uses, by name. */
   uses: list(str()),
+  /** Other names the pages use for it (ADR 0101), for the org pack's aliases. */
+  aliases: list(str()),
   tags: list(str()),
   quote: KnowledgeQuote.optional(),
   alsoOn: list(KnowledgeQuote),
@@ -493,6 +495,8 @@ export const Product = record("Product", {
   name: str(),
   productKind: z.enum(["product", "project"]),
   description: z.string().optional(),
+  /** Other names the pages use for it, for the org pack's aliases. */
+  aliases: list(str()),
   ownedBy: z.string().optional(),
   usedBy: list(str()),
   vendor: z.string().optional(),

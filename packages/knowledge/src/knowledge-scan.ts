@@ -101,6 +101,7 @@ const ItemIn = z
     used_by: z.array(text()).default([]),
     vendor: z.string().optional(),
     systems: z.array(text()).default([]),
+    aliases: z.array(text()).default([]),
     // ADR 0101: the links the page gives for it (a request's form); checked on the page.
     links: z
       .array(
@@ -429,6 +430,7 @@ items:
     used_by: []              # products: the teams that use it
     vendor: ""               # products: the vendor that makes it
     systems: []              # products: the systems it is, as the page names them
+    aliases: []              # teams, vendors, products: other names the pages use for it
     source: { page: broker-topics-runbook.md, section: Creating a topic, quote: "The Messaging team creates topics only from a Broker topic request." }
 conflicts:
   - about: firewall-rule-request
@@ -787,6 +789,7 @@ function toRecord(c: CheckedItem, flags: string[]): KnowledgeRecord {
               : [],
           owns: item.owns,
           uses: item.uses,
+          aliases: item.aliases,
         }
       : KNOWLEDGE_RECORD_KIND[item.kind] === "Product"
         ? {
@@ -797,6 +800,7 @@ function toRecord(c: CheckedItem, flags: string[]): KnowledgeRecord {
             ...(item.description ? { description: item.description } : {}),
             ...(item.owned_by ? { ownedBy: item.owned_by } : {}),
             usedBy: item.used_by,
+            aliases: item.aliases,
             ...(item.vendor ? { vendor: item.vendor } : {}),
             systems: item.systems,
           }

@@ -505,6 +505,18 @@
         "title": "Raise a change's open needs…",
         "category": "Atticus",
         "icon": "$(inbox)"
+      },
+      {
+        "command": "atticus.draftOrgPack",
+        "title": "Draft the org pack from the wikis…",
+        "category": "Atticus",
+        "icon": "$(organization)"
+      },
+      {
+        "command": "atticus.reviewUnverified",
+        "title": "Check what no one has verified…",
+        "category": "Atticus",
+        "icon": "$(pass)"
       }
     ],
     "viewsContainers": {
@@ -663,6 +675,16 @@
           "command": "atticus.raiseNeeds",
           "when": "view == atticus.changes",
           "group": "more@1"
+        },
+        {
+          "command": "atticus.draftOrgPack",
+          "when": "view == atticus.knowledge",
+          "group": "more"
+        },
+        {
+          "command": "atticus.reviewUnverified",
+          "when": "view == atticus.knowledge",
+          "group": "more"
         }
       ],
       "view/item/context": [
@@ -1006,6 +1028,11 @@
         },
         {
           "command": "atticus.addKnowledge",
+          "group": "3_bring@5",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        },
+        {
+          "command": "atticus.draftOrgPack",
           "group": "3_bring@5",
           "when": "atticus.hasMetarepo && !atticus.cliMissing"
         }

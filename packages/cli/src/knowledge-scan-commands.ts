@@ -277,7 +277,7 @@ const where = (r: KnowledgeRecord) =>
 /** atticus knowledge list [--tag t] [--kind k] [--json]: the knowledge items, filtered. */
 export async function knowledgeList(
   root: string,
-  o: { tag?: string; kind?: string; json?: boolean },
+  o: { tag?: string; kind?: string; json?: boolean; unverified?: boolean },
   io: Output,
 ): Promise<number> {
   if (o.kind && !(KNOWLEDGE_KINDS as readonly string[]).includes(o.kind)) {
@@ -298,6 +298,12 @@ export async function knowledgeList(
     ...(o.kind ? { kind: o.kind as KnowledgeKind } : {}),
   }).sort((a, b) => a.id.localeCompare(b.id));
   const reviews = k.reviews;
+  // --unverified: what no person has verified yet, or whose page changed since.
+  if (o.unverified)
+    for (let i = items.length - 1; i >= 0; i--) {
+      const st = reviews[items[i]!.id]?.state;
+      if (st === "verified" || st === "corrected" || st === "rejected") items.splice(i, 1);
+    }
   if (o.json) {
     io.out(
       JSON.stringify(
@@ -884,6 +890,7 @@ export async function knowledgeCli(
         json,
         ...(str(values.tag) ? { tag: str(values.tag)! } : {}),
         ...(str(values.kind) ? { kind: str(values.kind)! } : {}),
+        ...(values.unverified === true ? { unverified: true } : {}),
       },
       io,
     );

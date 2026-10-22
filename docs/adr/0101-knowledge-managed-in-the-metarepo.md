@@ -143,6 +143,27 @@ Knowledge items keep the links the page gives for them in `urls`: the request's 
 
 `atticus init` writes an org pack whose files are valid, so "The org pack is valid" was ticked in a metarepo where nothing had been done yet. The step is now "The org pack's files are valid", and a new step, "The org pack has an owner", is not done while `pack.yaml` says `owner: unassigned`, which is how `init` leaves it.
 
+### 9. The org pack drafted from the wikis, and kept current (built)
+
+A big organisation has more systems, aliases, vendors and teams than one person can configure on day one. The wikis name them, and keeping up with them never stops: wikis are added, pages change, people correct what was read. So:
+
+- **Aliases.** The knowledge scan reads, for teams, vendors and products, the other names the pages use for them (`aliases` on Party and Product, C1 additive). A person can correct them like any other field.
+- **`atticus orgpack draft [--platform p]`** turns the products and vendors the knowledge names into the platform profile's systems. It works deterministically from the checked items; the AI did the reading.
+  - A new system: a vendor has boundary `vendor`, a product `internal`, with its owner (the team that owns it) and its aliases.
+  - A system the profile has under that name, or whose name is one of the item's aliases, gets only the aliases and the owner it lacks.
+  - An alias another system already has is left out, and the draft says so. Two systems never share a name.
+  - It writes `proposals/orgpack/<platform>.yaml` and `.md`. Each entry cites its item and quote, and says whether a person verified it.
+- **`atticus orgpack accept <platform> [--only id,id] [--verified-only] [--dry-run]`** puts what a person picks into `profile.yaml`, keeping its comments, and checks the profile against C6. What is taken leaves the draft. The pull request is the approval.
+- **Unverified detections are used, and marked.**
+  - A change's needs come from every item no person rejected. `needs.md` marks each unverified one "not yet verified: check it against its page".
+  - A task's prompt now includes the change's `needs.md`, telling the assistant to follow its standards, to leave its requests to a person, and to report an unverified item that looks wrong for the code.
+- **`atticus next` keeps it current**, with four new steps:
+  - a wiki whose newest snapshot is over 14 days old is synced again (and the rescan reads only what changed);
+  - when the wikis name products or vendors no profile has, `orgpack draft`;
+  - while a draft waits, a person's step to accept it;
+  - while open needs come from unverified items, a person's step to check them (`atticus knowledge list --unverified`).
+- **The plugin** has Draft the org pack from the wikis (the drafted systems as a multi-pick, verified ones picked to start with) and Check what no one has verified (one item after another: right, correct, wrong, open its links). The new Next steps run them.
+
 ## Consequences
 
 - An organisation's wikis and docs repos are read straight from git, pinned when it wants them pinned, with the commit each snapshot read.
@@ -151,4 +172,5 @@ Knowledge items keep the links the page gives for them in `urls`: the request's 
 - A developer starting a change gets, early, the list of what the organisation needs from it: each item with its how-to, lead time and who to ask, quoting why, marked when a person has verified it.
 - A developer can look for anything new across every wiki, see what the assistant found about it with each quote checked, and keep what matters as the kind it is.
 - A request found on a page comes with its form's link, all the way to the change that needs it.
+- The org pack grows from the wikis: day one is a scan of what the organisation already wrote, not a person filling YAML from memory. Every entry is a proposal a person accepts, and what nobody has verified yet is still used, and said.
 - C1 now has 33 kinds. As in ADR 0083, every existing record file reads unchanged, so the catalog schema version stays 2 and no migration is needed.

@@ -10722,6 +10722,14 @@
               "minLength": 1
             }
           },
+          "aliases": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "tags": {
             "default": [],
             "type": "array",
@@ -10848,6 +10856,7 @@
           "responsibilities",
           "owns",
           "uses",
+          "aliases",
           "tags",
           "alsoOn",
           "urls"
@@ -11970,6 +11979,14 @@
           "description": {
             "type": "string"
           },
+          "aliases": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "ownedBy": {
             "type": "string"
           },
@@ -12112,6 +12129,7 @@
           "evidence",
           "name",
           "productKind",
+          "aliases",
           "usedBy",
           "systems",
           "tags",

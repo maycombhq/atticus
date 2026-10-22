@@ -1,11 +1,13 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
   changesDirOf,
   listQuestions,
   proposalsDirOf,
+  loadOrgPack,
+  orgPackDirOf,
   readRepoSpec,
   readSpecFindings,
   ScanVerifyProposal,
@@ -60,7 +62,15 @@ export interface NextState {
   repos: RepoState[];
   catalogRecords: number;
   openQuestions: string[];
-  sources: { id: string; snapshot: boolean; scanned: boolean }[];
+  /** age: days since the newest snapshot (ADR 0101: an old one is synced again). */
+  sources: { id: string; snapshot: boolean; scanned: boolean; age?: number }[];
+  /**
+   * ADR 0101: products and vendors the knowledge names that no profile has, and a draft of
+   * them waiting for a person.
+   */
+  orgpack?: { missing: number; draft?: { platform: string; proposals: number } };
+  /** Open needs of changes whose knowledge item no person has verified. */
+  unverifiedNeeds?: number;
   changes: {
     id: string;
     state: string;
@@ -73,6 +83,8 @@ export interface NextState {
 }
 
 const METAREPO = "metarepo";
+/** A snapshot older than this many days is synced again (ADR 0101). */
+const STALE_DAYS = 14;
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 async function verifyState(root: string, repo: string): Promise<RepoState["verify"]> {
@@ -120,14 +132,53 @@ export async function readNextState(root: string): Promise<NextState> {
       scanned:
         !!newest &&
         !!knowledge.report?.snapshots.some((s) => s.source === w.id && s.date === newest),
+      ...(newest
+        ? { age: Math.floor((Date.now() - Date.parse(`${newest}T00:00:00Z`)) / 86_400_000) }
+        : {}),
     });
   }
+  // ADR 0101: what the knowledge names that the org pack's profiles don't have yet.
+  let orgpack: NextState["orgpack"];
+  try {
+    const op = await loadOrgPack(orgPackDirOf(root));
+    const names = new Set(
+      op.profiles
+        .flatMap((p) => (p.profile?.systems ?? []).flatMap((x) => [x.name, ...x.aliases]))
+        .map((n) => n.toLowerCase()),
+    );
+    const missing = knowledge.items.filter(
+      (i) =>
+        ((i.kind === "Product" && i.productKind === "product") ||
+          (i.kind === "Party" && i.partyKind === "vendor" && !!i.quote)) &&
+        ![i.name, ...i.aliases].some((n) => names.has(n.toLowerCase())),
+    ).length;
+    let draft: { platform: string; proposals: number } | undefined;
+    for (const f of await readdir(join(proposalsDirOf(root), "orgpack")).catch(
+      () => [] as string[],
+    ))
+      if (f.endsWith(".yaml")) {
+        const d = parse(await readFile(join(proposalsDirOf(root), "orgpack", f), "utf8")) as {
+          platform?: string;
+          proposals?: unknown[];
+        } | null;
+        if (d?.platform && d.proposals?.length)
+          draft = { platform: d.platform, proposals: d.proposals.length };
+      }
+    if (missing || draft) orgpack = { missing, ...(draft ? { draft } : {}) };
+  } catch (e) {
+    problems.push({ file: "org-pack", message: (e as Error).message.split("\n")[0]! });
+  }
   const changes: NextState["changes"] = [];
+  let unverifiedNeeds = 0;
   try {
     for (const c of await changeStore(root).list()) {
       const files = await readChangeFiles(join(changesDirOf(root), c.id)).catch(() => undefined);
       const needs = await readNeeds(root, c.id);
       const open = needs?.needs.filter((n) => n.status === "open") ?? [];
+      unverifiedNeeds += open.filter((n) => {
+        const r = knowledge.reviews[n.item];
+        return r?.state !== "verified" && r?.state !== "corrected";
+      }).length;
       const longest = open
         .map((n) => ({
           n,
@@ -161,6 +212,8 @@ export async function readNextState(root: string): Promise<NextState> {
     sources,
     changes,
     problems,
+    ...(orgpack ? { orgpack } : {}),
+    ...(unverifiedNeeds ? { unverifiedNeeds } : {}),
   };
 }
 
@@ -407,6 +460,36 @@ export function nextSteps(s: NextState): NextStep[] {
         why: `The newest snapshot of ${k.id} hasn't been read into knowledge items yet.`,
         source: k.id,
       });
+    else if ((k.age ?? 0) > STALE_DAYS)
+      out.push({
+        step: "sync-source",
+        command: `atticus sources sync --source ${k.id}`,
+        slash: `/atticus-knowledge ${k.id}`,
+        where: METAREPO,
+        why: `The newest snapshot of ${k.id} is ${k.age} days old: sync it again, and a rescan reads only the pages that changed (ADR 0101).`,
+        source: k.id,
+      });
+  // ADR 0101: the org pack keeps up with what the wikis name, and people check what changes use.
+  if (s.orgpack?.draft)
+    out.push({
+      step: "accept-orgpack",
+      command: `atticus orgpack accept ${s.orgpack.draft.platform}`,
+      why: `A draft of the ${s.orgpack.draft.platform} profile has ${plural(s.orgpack.draft.proposals, "system")} from the wikis waiting: read it (proposals/orgpack/${s.orgpack.draft.platform}.md) and accept what is right, with --only or --verified-only.`,
+      person: true,
+    });
+  else if (s.orgpack?.missing)
+    out.push({
+      step: "orgpack-draft",
+      command: "atticus orgpack draft",
+      why: `The wikis name ${plural(s.orgpack.missing, "product or vendor", "products and vendors")} that no profile has yet: draft them into the org pack, with their aliases and owners.`,
+    });
+  if (s.unverifiedNeeds)
+    out.push({
+      step: "verify-knowledge",
+      command: "atticus knowledge list --unverified",
+      why: `${plural(s.unverifiedNeeds, "open need")} of changes ${s.unverifiedNeeds === 1 ? "comes" : "come"} from knowledge items no person has verified: check each against its page (atticus knowledge verify, correct or reject).`,
+      person: true,
+    });
   const inFlight = s.changes.filter((c) => stageOf(c.state) !== "done");
   for (const c of inFlight) out.push(...changeSteps(c));
   if (!inFlight.length)

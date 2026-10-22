@@ -13,6 +13,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - Search the wikis: `atticus knowledge find "<term or phrase>"` (`/atticus-find`) finds the pages that mention it, has your assistant read just those and propose what isn't known yet, each quote checked; `atticus knowledge keep <item> [--as kind]` keeps one as an item you verified; `atticus knowledge finds` lists the searches.
 - Links: knowledge items keep the links their page gives (a request's service-desk form, a runbook) in `urls`, checked on the page; a change's needs carry them to `needs.md`.
 - `atticus setup` no longer ticks the org pack in a new metarepo: "The org pack's files are valid", then "The org pack has an owner", which waits for `pack.yaml`'s owner.
+- The org pack drafted from the wikis: `atticus orgpack draft` proposes the profile's systems from the products and vendors the knowledge names, with their aliases and owners, each citing its item; `atticus orgpack accept <platform> [--only] [--verified-only]` puts them into `profile.yaml`. The scan reads aliases too.
+- Unverified knowledge is used and marked: `needs.md` says which needs come from items no person has checked, a task's prompt includes the change's needs, and `atticus next` asks a person to check them (`atticus knowledge list --unverified`), syncs a wiki whose snapshot is over 14 days old, and asks for the org pack draft when the wikis name systems it lacks.
 - Teams, vendors, products and projects: the knowledge scan reads them too, as `Party` records (with what a team owns and uses) and the new `Product` kind (C1, additive; API 2.6.0).
 
 ### Everything from the VS Code plugin, guided

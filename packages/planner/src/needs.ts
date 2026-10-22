@@ -267,7 +267,7 @@ export function renderNeeds(f: NeedsFile, reviews: Record<string, ReviewSummary>
           ? ` ✓ verified by ${r.by}`
           : r?.state === "stale"
             ? " (its page changed since it was verified: check it again)"
-            : "";
+            : " (not yet verified: check it against its page)";
       // "raise CTASK: Kafka topic with the Messaging team, 5 working days"
       const requests = s.kinds.includes("request");
       let how = n.catalogueItem ? `${s.verb} ${n.catalogueItem}` : "";

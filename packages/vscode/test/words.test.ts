@@ -78,3 +78,12 @@ describe("a command, in plain words", () => {
     expect(commandTitle("")).toBe("");
   });
 });
+
+describe("keeping the knowledge current, in plain words (ADR 0101)", () => {
+  it("names the org pack draft, its accept and checking what changes use", () => {
+    const s = (step: string) => stepTitle({ step, command: "atticus x", why: "Because." });
+    expect(s("orgpack-draft")).toBe("Draft the org pack's systems from the wikis");
+    expect(s("accept-orgpack")).toBe("Accept the systems drafted from the wikis");
+    expect(s("verify-knowledge")).toBe("Check the knowledge items your changes use");
+  });
+});

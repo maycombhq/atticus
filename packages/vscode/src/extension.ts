@@ -584,6 +584,14 @@ ${view.next.why}`
   });
   // Any step of the Next section, the next one or one after it (ADR 0100, 0101).
   // A click passes the step; an inline Run button passes the row, which holds it.
+  reg("atticus.draftOrgPack", () => {
+    const root = needRoot();
+    if (root) void knowledge.draftOrgPack(root);
+  });
+  reg("atticus.reviewUnverified", () => {
+    const root = needRoot();
+    if (root) void knowledge.reviewUnverified(root);
+  });
   reg("atticus.runStep", async (arg?: NextStep | { step?: unknown }) => {
     const root = needRoot();
     if (!root) return;
@@ -597,6 +605,10 @@ ${view.next.why}`
   const takeStep = async (root: string, n: NextStep): Promise<unknown> => {
     // Raising a change's needs: its open needs, one after another, to mark (ADR 0101).
     if (n.step === "raise-needs") return knowledge.raiseNeeds(root, n.change);
+    // The org pack from the wikis, and checking what changes use (ADR 0101).
+    if (n.step === "orgpack-draft" || n.step === "accept-orgpack")
+      return knowledge.draftOrgPack(root);
+    if (n.step === "verify-knowledge") return knowledge.reviewUnverified(root);
     const a = actionFor(n);
     if (a.kind === "ai") return runAi(a.args, a.spec);
     if (a.kind === "answer") return vscode.commands.executeCommand("atticus.answerQuestion");

@@ -4,6 +4,10 @@ The Atticus extension for VS Code. The command line's own changes are in the rep
 
 ## 0.3.0
 
+- **Draft the org pack from the wikis**: the systems the knowledge names, with their aliases and owners, to pick and accept into profile.yaml.
+- **Check what no one has verified**: the unverified knowledge items, one after another.
+- Next runs the new steps: sync an old wiki again, draft or accept the org pack, check the knowledge your changes use.
+
 Knowledge managed in the metarepo, and what a change needs from the organisation (ADR 0101).
 
 - **Add a wiki or docs repo…** (the + in the Knowledge section, Start or bring in, and Add knowledge): a git repo (an Azure DevOps or GitHub wiki, or a docs repo), a folder of pages, or Confluence or SharePoint. It asks where, its name, the folder and branch to read, clone or submodule, what it is about and who owns it, saves it into `sources.yaml`, and offers to sync and read it with Copilot. Confluence and SharePoint only show their entry: their adapter isn't wired to the command line yet.

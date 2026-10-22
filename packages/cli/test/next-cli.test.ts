@@ -285,4 +285,33 @@ describe("nextSteps (pure)", () => {
     expect(old.map((x) => x.step)).not.toContain("raise-needs");
     expect(old.map((x) => x.step)).not.toContain("needs");
   });
+  it("keeps the knowledge current: a stale wiki synced again, the org pack drafted and accepted, needs verified (ADR 0101)", () => {
+    const steps = nextSteps({
+      ...base,
+      sources: [{ id: "platform-wiki", snapshot: true, scanned: true, age: 30 }],
+      orgpack: { missing: 3 },
+      unverifiedNeeds: 2,
+    });
+    expect(steps.map((x) => [x.step, x.command])).toEqual([
+      ["sync-source", "atticus sources sync --source platform-wiki"],
+      ["orgpack-draft", "atticus orgpack draft"],
+      ["verify-knowledge", "atticus knowledge list --unverified"],
+      ["new-change", 'atticus change new "<title>" --type <type>'],
+    ]);
+    expect(steps[0]!.why).toContain("30 days old");
+    const waiting = nextSteps({
+      ...base,
+      orgpack: { missing: 3, draft: { platform: "forge", proposals: 3 } },
+    });
+    expect(waiting[0]).toMatchObject({
+      step: "accept-orgpack",
+      command: "atticus orgpack accept forge",
+      person: true,
+    });
+    const fresh = nextSteps({
+      ...base,
+      sources: [{ id: "w", snapshot: true, scanned: true, age: 3 }],
+    });
+    expect(fresh.map((x) => x.step)).not.toContain("sync-source");
+  });
 });
