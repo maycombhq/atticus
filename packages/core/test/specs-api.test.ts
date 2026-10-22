@@ -26,12 +26,12 @@ const flow = {
 };
 
 describe("the specs API (ADR 0092)", () => {
-  it("is in the OpenAPI document, as API 2.3.0", () => {
+  it("is in the OpenAPI document", () => {
     const doc = openApiDocument() as {
       paths: Record<string, Record<string, { operationId: string }>>;
       components: { schemas: Record<string, unknown> };
     };
-    expect(API_VERSION).toBe("2.3.0");
+    expect(API_VERSION).toBe("2.4.0");
     expect(doc.paths["/api/specs"]!.get!.operationId).toBe("listSpecs");
     expect(doc.paths["/api/specs/{repo}"]!.get!.operationId).toBe("getSpec");
     expect(doc.paths["/api/specs/{repo}/flows/{flowId}"]!.get!.operationId).toBe("getFlow");
@@ -82,5 +82,41 @@ describe("the specs API (ADR 0092)", () => {
     });
     expect(v.flow.steps[0]!.to?.component).toBe("forge-customers");
     expect(() => Api.FlowView.parse({ ...v, flow: { ...flow, steps: [] } })).toThrow();
+  });
+});
+
+describe("the cited lines of one file (ADR 0094)", () => {
+  it("is in the OpenAPI document, as API 2.4.0", () => {
+    const doc = openApiDocument() as {
+      paths: Record<string, Record<string, { operationId: string }>>;
+      components: { schemas: Record<string, unknown> };
+    };
+    expect(API_VERSION).toBe("2.4.0");
+    expect(doc.paths["/api/cites"]!.get!.operationId).toBe("getCites");
+    expect(doc.components.schemas).toHaveProperty("CiteList");
+  });
+
+  it("gives each cited line with the flow steps and records that cite it", () => {
+    const v = Api.CiteList.parse({
+      repo: "forge-web",
+      path: "src/app/customers/customer.service.ts",
+      lines: [
+        {
+          line: 10,
+          flows: [
+            {
+              repo: "forge-web",
+              flow: "forge-web.save-customer",
+              name: "A person saves a new customer",
+              step: 1,
+              kind: "call-out",
+              confirmedBy: "check",
+            },
+          ],
+          records: [{ kind: "Interface", id: "if-c74e2fa3c8152a13", source: "code" }],
+        },
+      ],
+    });
+    expect(v.lines[0]!.flows[0]!.step).toBe(1);
   });
 });

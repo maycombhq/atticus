@@ -4,8 +4,9 @@ import type * as Api from "../src/api-types";
 import {
   artifactItems,
   changeItems,
-  citesOf,
+  citeLenses,
   codeRootFor,
+  findingActions,
   findingItems,
   flowItems,
   kindItems,
@@ -293,21 +294,122 @@ describe("the Catalog section", () => {
   });
 });
 
-describe("flow steps in the code", () => {
-  it("indexes each cited line by repo and file", () => {
-    const cites = citesOf([flowView]);
-    const form = cites.get("forge-web")!.get("src/form.ts")!;
-    expect(form.map((c) => [c.line, c.n, c.kind])).toEqual([
-      [11, 0, "action"],
-      [12, 2, "respond"],
+describe("a lens's words", () => {
+  it("names the flow and the step, and who confirmed it", () => {
+    const c = { line: 10, n: 1, kind: "call-out", repo: "forge-web", flow: "f", name: "Save" };
+    expect(lensText({ ...c, n: 0, kind: "action" })).toBe("Atticus: Save · start (action)");
+    expect(lensText({ ...c, confirmedBy: "check" })).toBe(
+      "Atticus: Save · step 1, call-out · confirmed by the check",
+    );
+    expect(lensText(c)).toBe("Atticus: Save · step 1, call-out · not confirmed yet");
+  });
+});
+
+describe("acting on a finding from the sidebar (ADR 0094)", () => {
+  const issue = {
+    id: "f1",
+    kind: "issue",
+    change: "add-note-tags",
+    layer: "checklist",
+    severity: "blocking",
+    waivable: true,
+    artifact: "interfaces.md",
+    summary: "No 409 for a duplicate tag.",
+    why: "Clients can't tell a duplicate from a failure.",
+    fix: { text: "Add a 409.", patch: "--- a/interfaces.md\n+++ b/interfaces.md\n" },
+  };
+
+  it("offers what the finding allows, each with what it needs", () => {
+    expect(findingActions(issue).map((a) => [a.action, a.label, a.needs])).toEqual([
+      ["apply", "Apply the fix", undefined],
+      ["edit-and-apply", "I fixed it by hand", "reason"],
+      ["not-relevant", "Not relevant", "reason"],
+      ["waive", "Waive it", "reason"],
+      ["ask", "Ask someone", "askedOf"],
     ]);
-    expect(lensText(form[0]!)).toBe("Atticus: A person saves a new customer · start (action)");
-    const call = cites.get("forge-web")!.get("src/customer.service.ts")![0]!;
-    expect(lensText(call)).toBe(
-      "Atticus: A person saves a new customer · step 1, call-out · confirmed by the check",
+  });
+
+  it("offers no Apply without a patch, and no Waive unless the rule allows it", () => {
+    const plain = { ...issue, severity: "gap", waivable: false, fix: { text: "Say more." } };
+    expect(findingActions(plain).map((a) => a.action)).toEqual([
+      "edit-and-apply",
+      "not-relevant",
+      "ask",
+    ]);
+    expect(
+      findingActions({ ...issue, layer: "constitution", waivable: true }).map((a) => a.action),
+    ).not.toContain("waive");
+  });
+
+  it("answers a knowledge gap by asking its owner, or by writing the fact in", () => {
+    const gap = {
+      ...issue,
+      kind: "knowledge-gap",
+      severity: "gap",
+      question: { text: "Who owns nadiengine-api?", owner: "tomgeorge" },
+    };
+    expect(findingActions(gap)).toEqual([
+      { action: "ask", label: "Ask tomgeorge", needs: undefined, askedOf: "tomgeorge" },
+      { action: "edit-and-apply", label: "I wrote the fact in", needs: "reason" },
+    ]);
+  });
+});
+
+describe("one file's cited lines, as lenses", () => {
+  it("gives a lens per flow step and one for the records on a line", () => {
+    const lenses = citeLenses(
+      {
+        repo: "forge-customers",
+        path: "src/CustomerController.java",
+        lines: [
+          {
+            line: 10,
+            flows: [
+              {
+                repo: "forge-customers",
+                flow: "forge-customers.create-customer",
+                name: "A client creates a customer",
+                step: 0,
+                kind: "endpoint",
+              },
+            ],
+            records: [
+              { kind: "Endpoint", id: "forge-customers.post-customer", source: "code" },
+              { kind: "Interface", id: "if-1", name: "Customers API", source: "code" },
+            ],
+          },
+          { line: 12, flows: [], records: [{ kind: "Table", id: "db.customers", source: "code" }] },
+        ],
+      },
+      paths,
     );
-    expect(lensText(form[1]!)).toBe(
-      "Atticus: A person saves a new customer · step 2, respond · not confirmed yet",
+    expect(lenses.map((l) => [l.line, l.title])).toEqual([
+      [10, "Atticus: A client creates a customer · start (endpoint)"],
+      [10, "Atticus: Endpoint forge-customers.post-customer, Interface Customers API"],
+      [12, "Atticus: Table db.customers"],
+    ]);
+    expect(lenses[0]!.open).toEqual({
+      kind: "app",
+      hash: "#/flows?repo=forge-customers&flow=forge-customers.create-customer&step=0",
+    });
+    expect(lenses[2]!.open).toEqual({
+      kind: "file",
+      path: join(root, "catalog", "generated", "table", "db.customers.yaml"),
+    });
+    // Two records on a line: a pick between their files.
+    expect(lenses[1]!.open).toMatchObject({ kind: "pick" });
+  });
+
+  it("can leave the records out", () => {
+    const only = citeLenses(
+      {
+        repo: "r",
+        path: "a.ts",
+        lines: [{ line: 3, flows: [], records: [{ kind: "Table", id: "t", source: "code" }] }],
+      },
+      paths,
+      { records: false },
     );
+    expect(only).toEqual([]);
   });
 });

@@ -186,6 +186,12 @@
         "title": "Open the flow's diagram",
         "category": "Atticus",
         "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "atticus.findingAction",
+        "title": "Act on the finding",
+        "category": "Atticus",
+        "icon": "$(check)"
       }
     ],
     "viewsContainers": {
@@ -241,6 +247,11 @@
           "command": "atticus.showFlow",
           "when": "view == atticus.repos && viewItem == atticus.flow",
           "group": "inline"
+        },
+        {
+          "command": "atticus.findingAction",
+          "when": "view == atticus.changes && viewItem == atticus.finding",
+          "group": "inline"
         }
       ],
       "commandPalette": [
@@ -254,6 +265,10 @@
         },
         {
           "command": "atticus.showFlow",
+          "when": "false"
+        },
+        {
+          "command": "atticus.findingAction",
           "when": "false"
         }
       ]
@@ -275,6 +290,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Show, above each line of code a spec flow cites, which flow and step cite it. Click one to open the flow."
+        },
+        "atticus.codeLens.records": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "With `atticus.codeLens` on, also show which catalog records (endpoints, tables, interfaces…) were read from a line."
         }
       }
     }

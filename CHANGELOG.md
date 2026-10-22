@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Cited lines in one call, record lenses, and acting on findings in VS Code
+
+- `GET /api/cites?repo=&path=` (ADR 0094, API 2.4.0): each line of one file that a flow step or a catalog record cites. It uses an index the app builds at start-up and again when specs or the catalog change.
+- The CodeLens uses it, one call per file. A line a record was read from says which records, and a click opens the record (`atticus.codeLens.records` turns these off).
+- A finding in the sidebar has "Act on the finding": Apply the fix, I fixed it by hand, Not relevant, Waive it or Ask someone. It offers only what the critic allows and shows a patch before applying it.
+
 ### The VS Code extension shows Atticus's data beside the code
 
 - A sidebar with Next, Repos, Changes and Catalog (ADR 0093):

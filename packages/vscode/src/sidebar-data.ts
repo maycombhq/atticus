@@ -12,7 +12,9 @@ import type * as Api from "./api-types";
 export type Open =
   | { kind: "file"; path: string; line?: number }
   | { kind: "app"; hash: string }
-  | { kind: "missing"; message: string };
+  | { kind: "missing"; message: string }
+  /** More than one thing to open: the person picks. */
+  | { kind: "pick"; title: string; choices: { label: string; detail?: string; open: Open }[] };
 
 /** What an item holds underneath, loaded when it is opened. */
 export type Expand =
@@ -35,6 +37,8 @@ export interface Item {
   open?: Open;
   /** For the view's inline actions (package.json menus). */
   context?: string;
+  /** A finding's item carries it, for Act on the finding. */
+  finding?: Api.Finding;
 }
 
 export interface Paths {
@@ -296,8 +300,41 @@ export function findingItems(fs: Api.Finding[], c: Api.ChangeDetail, p: Paths): 
       description: `${f.severity} · ${f.artifact}`,
       tooltip: `${f.summary}\n\nWhy: ${f.why}\n\nFix: ${f.fix.text}`,
       icon: SEVERITY_ICON[f.severity] ?? "circle-small",
+      context: "atticus.finding",
+      finding: f,
       ...(f.artifact !== "catalog" ? { open: file(p, `${dir}/${f.artifact}`) } : {}),
     }));
+}
+
+/** One thing a person can do with a finding (the API's actions, ADR 0094), and what it needs. */
+export interface FindingChoice {
+  action: "apply" | "edit-and-apply" | "not-relevant" | "waive" | "ask";
+  label: string;
+  /** What to ask the person for first. */
+  needs?: "reason" | "askedOf";
+  /** Who Ask goes to, when the finding names them. */
+  askedOf?: string;
+}
+
+/** The actions a finding allows, by the same rules the critic applies (naysayer act.ts). */
+export function findingActions(f: Api.Finding): FindingChoice[] {
+  if (f.kind === "knowledge-gap") {
+    const owner = f.question?.owner;
+    return [
+      owner
+        ? { action: "ask", label: `Ask ${owner}`, needs: undefined, askedOf: owner }
+        : { action: "ask", label: "Ask someone", needs: "askedOf" },
+      { action: "edit-and-apply", label: "I wrote the fact in", needs: "reason" },
+    ];
+  }
+  const out: FindingChoice[] = [];
+  if (f.fix.patch) out.push({ action: "apply", label: "Apply the fix", needs: undefined });
+  out.push({ action: "edit-and-apply", label: "I fixed it by hand", needs: "reason" });
+  out.push({ action: "not-relevant", label: "Not relevant", needs: "reason" });
+  if (f.severity === "blocking" && f.waivable && f.layer !== "constitution")
+    out.push({ action: "waive", label: "Waive it", needs: "reason" });
+  out.push({ action: "ask", label: "Ask someone", needs: "askedOf" });
+  return out;
 }
 
 // ------------------------------------------------------------------ catalog
@@ -353,6 +390,64 @@ export function evidenceItems(x: Extract<Expand, { kind: "evidence" }>, p: Paths
     }));
 }
 
+// ------------------------------------------------------------------ one file's cited lines (ADR 0094)
+
+export interface Lens {
+  line: number;
+  title: string;
+  tooltip: string;
+  open: Open;
+}
+
+const recordFile = (p: Paths, kind: string, id: string): Open => ({
+  kind: "file",
+  path: join(p.root, p.catalogRel, "generated", kind.toLowerCase(), `${id}.yaml`),
+});
+
+/** A lens for each flow step on a line, and one for the records read from it. */
+export function citeLenses(c: Api.CiteList, p: Paths, o: { records?: boolean } = {}): Lens[] {
+  const out: Lens[] = [];
+  for (const l of c.lines) {
+    for (const f of l.flows) {
+      const cite: Cite = {
+        line: l.line,
+        n: f.step,
+        kind: f.kind,
+        repo: f.repo,
+        flow: f.flow,
+        name: f.name,
+        ...(f.confirmedBy ? { confirmedBy: f.confirmedBy } : {}),
+      };
+      out.push({
+        line: l.line,
+        title: lensText(cite),
+        tooltip: `Open ${f.name} in the Atticus tab, at ${f.step === 0 ? "its start" : `step ${f.step}`}`,
+        open: { kind: "app", hash: flowHash(f.repo, f.flow, f.step) },
+      });
+    }
+    if (o.records === false || !l.records.length) continue;
+    const named = l.records.map((r) => `${r.kind} ${r.name ?? r.id}`);
+    out.push({
+      line: l.line,
+      title: `Atticus: ${named.length > 3 ? `${named.slice(0, 3).join(", ")} and ${named.length - 3} more` : named.join(", ")}`,
+      tooltip: `Read from this line (${[...new Set(l.records.map((r) => r.source))].join(", ")}): ${named.join(", ")}. Open the record.`,
+      open:
+        l.records.length === 1
+          ? recordFile(p, l.records[0]!.kind, l.records[0]!.id)
+          : {
+              kind: "pick",
+              title: "Which record?",
+              choices: l.records.map((r) => ({
+                label: `${r.kind} ${r.name ?? r.id}`,
+                detail: r.id,
+                open: recordFile(p, r.kind, r.id),
+              })),
+            },
+    });
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------ flow steps in the code
 
 export interface Cite {
@@ -364,39 +459,6 @@ export interface Cite {
   flow: string;
   name: string;
   confirmedBy?: string;
-}
-
-/** Every cited line, by the code's repo and its file path in that repo. */
-export function citesOf(views: Api.FlowView[]): Map<string, Map<string, Cite[]>> {
-  const out = new Map<string, Map<string, Cite[]>>();
-  const add = (
-    v: Api.FlowView,
-    e: Api.Evidence,
-    c: Omit<Cite, "line" | "repo" | "flow" | "name">,
-  ) => {
-    const repo = e.repo ?? v.repo;
-    if (!e.path || e.line === undefined) return;
-    const files = out.get(repo) ?? new Map<string, Cite[]>();
-    out.set(repo, files);
-    const list = files.get(e.path) ?? [];
-    files.set(e.path, list);
-    if (!list.some((x) => x.line === e.line && x.flow === v.flow.id && x.n === c.n))
-      list.push({ ...c, line: e.line, repo: v.repo, flow: v.flow.id, name: v.flow.name });
-  };
-  for (const v of views) {
-    for (const e of v.flow.trigger.evidence) add(v, e, { n: 0, kind: v.flow.trigger.kind });
-    v.flow.steps.forEach((s, i) => {
-      for (const e of s.evidence)
-        add(v, e, {
-          n: i + 1,
-          kind: s.kind,
-          ...(s.confirmedBy ? { confirmedBy: s.confirmedBy } : {}),
-        });
-    });
-  }
-  for (const files of out.values())
-    for (const list of files.values()) list.sort((a, b) => a.line - b.line || a.n - b.n);
-  return out;
 }
 
 export function lensText(c: Cite): string {

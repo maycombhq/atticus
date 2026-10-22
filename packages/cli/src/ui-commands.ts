@@ -12,6 +12,7 @@ import { uiAcrossRoutes } from "./ui-api-across.js";
 import { uiGraphRoutes } from "./ui-api-graph.js";
 import { uiOnboardingRoutes } from "./ui-api-onboarding.js";
 import { uiSpecRoutes } from "./ui-api-specs.js";
+import { uiCiteRoutes } from "./ui-api-cites.js";
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export function startUi(
@@ -43,12 +44,18 @@ export function startUi(
       };
     })(),
     extend: (r, ctx) =>
-      uiSpecRoutes(
-        uiOnboardingRoutes(
-          uiQuestionRoutes(
-            uiGraphRoutes(
-              uiAcrossRoutes(
-                uiMeRoutes(uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx), ctx),
+      uiCiteRoutes(
+        uiSpecRoutes(
+          uiOnboardingRoutes(
+            uiQuestionRoutes(
+              uiGraphRoutes(
+                uiAcrossRoutes(
+                  uiMeRoutes(
+                    uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx),
+                    ctx,
+                  ),
+                  ctx,
+                ),
                 ctx,
               ),
               ctx,

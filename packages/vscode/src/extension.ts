@@ -13,7 +13,7 @@ import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { chatHandler } from "./chat";
 import { FlowLenses } from "./codelens";
 import { SectionTree, type Section } from "./sidebar";
-import { stepOf, flowHash, type Item, type Open } from "./sidebar-data";
+import { findingActions, flowHash, stepOf, type Item, type Open } from "./sidebar-data";
 import { commandText } from "./cli";
 import { describeEnd } from "./describe";
 import type { StepEnd } from "./runner";
@@ -183,9 +183,17 @@ ${view.next.why}`
   };
 
   reg("atticus.refresh", refreshAll);
-  reg("atticus.openItem", async (o: Open) => {
-    if (o.kind === "app") return vscode.commands.executeCommand("atticus.showApp", o.hash);
+  reg("atticus.openItem", async (o: Open, how?: { beside?: boolean }): Promise<unknown> => {
+    if (o.kind === "app")
+      return vscode.commands.executeCommand("atticus.showApp", o.hash, how ?? {});
     if (o.kind === "missing") return void vscode.window.showWarningMessage(o.message);
+    if (o.kind === "pick") {
+      const pick = await vscode.window.showQuickPick(
+        o.choices.map((c) => ({ label: c.label, ...(c.detail ? { detail: c.detail } : {}), c })),
+        { placeHolder: o.title },
+      );
+      return pick ? vscode.commands.executeCommand("atticus.openItem", pick.c.open) : undefined;
+    }
     try {
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(o.path));
       const line = Math.max(0, Math.min((o.line ?? 1) - 1, doc.lineCount - 1));
@@ -197,6 +205,62 @@ ${view.next.why}`
       });
     } catch {
       void vscode.window.showWarningMessage(`${o.path} isn't there. Scan or sync again.`);
+    }
+  });
+  // A finding's action from the sidebar (ADR 0094): the API's own action, so the critic's rules
+  // apply; the person picks it, gives what it needs, and confirms a patch before it is applied.
+  reg("atticus.findingAction", async (item: Item) => {
+    const root = needRoot();
+    const f = item?.finding;
+    if (!root || !f) return;
+    const choices = findingActions(f);
+    const pick = await vscode.window.showQuickPick(
+      choices.map((c) => ({ label: c.label, c })),
+      { title: f.summary, placeHolder: "What do you want to do with this finding?" },
+    );
+    if (!pick) return;
+    const c = pick.c;
+    const body: Record<string, string> = { action: c.action };
+    if (c.askedOf) body.askedOf = c.askedOf;
+    if (c.needs === "askedOf") {
+      const who = await vscode.window.showInputBox({
+        title: f.summary,
+        prompt: "Who should answer? A person's handle or a role.",
+        ignoreFocusOut: true,
+      });
+      if (!who?.trim()) return;
+      body.askedOf = who.trim();
+    }
+    if (c.needs === "reason") {
+      const why = await vscode.window.showInputBox({
+        title: f.summary,
+        prompt:
+          c.action === "edit-and-apply"
+            ? "What did you change? It is kept with the finding."
+            : "Why? It is kept with the finding, and the critic learns from it.",
+        ignoreFocusOut: true,
+      });
+      if (!why?.trim()) return;
+      body.reason = why.trim();
+    }
+    if (c.action === "apply") {
+      const ok = await vscode.window.showWarningMessage(
+        `Apply the fix to ${f.artifact}?`,
+        { modal: true, detail: f.fix.patch ?? f.fix.text },
+        "Apply",
+      );
+      if (ok !== "Apply") return;
+    }
+    try {
+      const api = await svc.api(root);
+      await api.post(
+        `/api/findings/${encodeURIComponent(f.change)}/${encodeURIComponent(f.id)}/action`,
+        body,
+      );
+      void vscode.window.showInformationMessage(`${c.label}: done. ${f.summary}`);
+      refreshAll();
+    } catch (e) {
+      void vscode.window.showErrorMessage(`Couldn't do that: ${(e as Error).message}`);
     }
   });
   reg("atticus.showStep", (item: Item) => {

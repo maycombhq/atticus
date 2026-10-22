@@ -96,11 +96,16 @@ export interface Finding {
   id: string;
   kind: string;
   change: string;
+  /** constitution, checklist… A constitution rule's finding is never waived. */
+  layer?: string;
   severity: string;
+  waivable?: boolean;
   artifact: string;
   summary: string;
   why: string;
-  fix: { text: string };
+  fix: { text: string; patch?: string };
+  /** For a knowledge gap: the owner question and who should answer. */
+  question?: { text: string; owner: string };
   state?: string;
 }
 
@@ -121,4 +126,21 @@ export interface RecordPage {
   items: CatalogRecord[];
   total: number;
   next?: string;
+}
+
+export interface CiteList {
+  repo: string;
+  path: string;
+  lines: {
+    line: number;
+    flows: {
+      repo: string;
+      flow: string;
+      name: string;
+      step: number;
+      kind: string;
+      confirmedBy?: string;
+    }[];
+    records: { kind: string; id: string; name?: string; source: string }[];
+  }[];
 }

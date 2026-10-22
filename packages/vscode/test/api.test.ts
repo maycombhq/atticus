@@ -11,6 +11,15 @@ const seen: { path: string; token: string | undefined }[] = [];
 beforeAll(async () => {
   srv = createServer((req, res) => {
     seen.push({ path: req.url ?? "", token: req.headers["x-atticus-token"] as string | undefined });
+    if (req.method === "POST") {
+      let body = "";
+      req.on("data", (d: Buffer) => (body += d.toString()));
+      req.on("end", () => {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ got: JSON.parse(body), type: req.headers["content-type"] }));
+      });
+      return;
+    }
     if (req.url === "/api/specs") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ repos: [{ repo: "forge-web", flows: 3 }] }));
@@ -34,6 +43,15 @@ describe("the app's API, as the sidebar reads it (ADR 0093)", () => {
       repos: [{ repo: "forge-web", flows: 3 }],
     });
     expect(seen.at(-1)).toEqual({ path: "/api/specs", token: "tok-1" });
+  });
+
+  it("posts JSON with the token", async () => {
+    const api = new AtticusApi(url, "tok-1");
+    expect(await api.post("/api/findings/c/f1/action", { action: "ask", askedOf: "pat" })).toEqual({
+      got: { action: "ask", askedOf: "pat" },
+      type: "application/json",
+    });
+    expect(seen.at(-1)).toEqual({ path: "/api/findings/c/f1/action", token: "tok-1" });
   });
 
   it("says what the API said when a call fails", async () => {

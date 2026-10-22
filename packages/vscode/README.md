@@ -51,12 +51,12 @@ The Atticus icon in the activity bar opens a sidebar with a section for each par
 
 - **Next**: the next step (click it or its Run button), the open questions (click one to answer: pick an option or write your own words), and **Open the app**.
 - **Repos**: each repo with its last scan. Under it, its flows, then each flow's steps. Click a step to open the code at the line it cites, or use its diagram button to see it in the flow. Click a flow to open its diagram. The repo's scan settings and its place on the canvas are there too.
-- **Changes**: each change with its state and blocking findings. Under it, each of its files with its state (click to open; one not written yet says so), its findings (click to open the file a finding is about; the why and the fix are in the tooltip) and a link to the change in the app.
+- **Changes**: each change with its state and blocking findings. Under it, each of its files with its state (click to open; one not written yet says so), its findings (click to open the file a finding is about; the why and the fix are in the tooltip; its check button acts on it, ADR 0094: Apply the fix, I fixed it by hand, Not relevant, Waive it or Ask someone, offering only what the critic allows, and showing a patch before applying it) and a link to the change in the app.
 - **Catalog**: each kind of record with its count. Under it, its records (click to open the record's YAML), and under each record, the code it was read from.
 
 The sections read the app's local API on 127.0.0.1, which the extension starts for them; they follow the files as they change, and the Refresh button reads everything again.
 
-**In the code.** Above each line a spec flow cites, a line says which flow and step cite it, and whether a check confirmed it: `Atticus: Save a chart · step 4, lookup · confirmed by the check`. Click it to open the flow beside the code with that step marked. This works for a repo whose code is on this machine: a folder in the window named for the repo, or its base clone in `workspace/<repo>`. Turn it off with the setting `atticus.codeLens`.
+**In the code.** Above each line a spec flow cites, a line says which flow and step cite it, and whether a check confirmed it: `Atticus: Save a chart · step 4, lookup · confirmed by the check`. Click it to open the flow beside the code with that step marked. A line a catalog record was read from says which records (`Atticus: Endpoint nadiengine-api.post-horoscope`); click it to open the record's YAML. One local call per file gives both (ADR 0094). This works for a repo whose code is on this machine: a folder in the window named for the repo, or its base clone in `workspace/<repo>`. Turn them off with the setting `atticus.codeLens`, or only the records' with `atticus.codeLens.records`.
 
 **The status bar** shows the open questions and the next step; click it to open the sidebar.
 
@@ -68,17 +68,18 @@ The same actions are in the Command Palette under **Atticus:**. Every `atticus` 
 
 ## Settings
 
-| Setting            | Default   | What it is                                                                                                                                                                                                                            |
-| ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `atticus.path`     | `atticus` | The `atticus` command: a command on PATH, its full path, or the path to its `bin.js` (run with `node`). On Windows the extension reads the `atticus.cmd` that npm or pnpm writes and runs the `bin.js` it names, so no shell is used. |
-| `atticus.model`    | empty     | A Copilot model family, for example `gpt-4o`. Empty: the model picked in Copilot Chat, else the first Copilot model.                                                                                                                  |
-| `atticus.codeLens` | on        | Above each line of code a spec flow cites, show which flow and step cite it.                                                                                                                                                          |
+| Setting                    | Default   | What it is                                                                                                                                                                                                                            |
+| -------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `atticus.path`             | `atticus` | The `atticus` command: a command on PATH, its full path, or the path to its `bin.js` (run with `node`). On Windows the extension reads the `atticus.cmd` that npm or pnpm writes and runs the `bin.js` it names, so no shell is used. |
+| `atticus.model`            | empty     | A Copilot model family, for example `gpt-4o`. Empty: the model picked in Copilot Chat, else the first Copilot model.                                                                                                                  |
+| `atticus.codeLens`         | on        | Above each line of code a spec flow cites, show which flow and step cite it.                                                                                                                                                          |
+| `atticus.codeLens.records` | on        | With `atticus.codeLens` on, also show which catalog records were read from a line.                                                                                                                                                    |
 
 ## What is sent where
 
 - **To the Copilot model, through VS Code's Language Model API (`vscode.lm`):** a step's prompt file as Atticus wrote it, after one line from the extension that asks for only the result file's content. The prompt holds what the step read from your metarepo and repos. Nothing else is sent to the model, and nothing goes to the model without your consent (VS Code asks the first time).
 - **To the `atticus` command line, on this machine:** the commands in the output. They read and write files in the metarepo, as they do in a terminal.
-- **To the app it started, on `127.0.0.1`:** the sidebar's and the CodeLens's reads of the local API, with the session token the app printed. They only read.
+- **To the app it started, on `127.0.0.1`:** the sidebar's and the CodeLens's reads of the local API, with the session token the app printed. The one write is a finding's action, when you pick it.
 - **Nowhere else.** No telemetry. The extension makes no other network call.
 
 A prompt longer than the model takes is never cut: the extension says so and stops, and the run waits, so you can finish it another way. Cancel stops the step; nothing more is sent or written.
@@ -87,5 +88,5 @@ A prompt longer than the model takes is never cut: the extension says so and sto
 
 - It doesn't check anything itself. Every check is Atticus's.
 - It runs `/atticus-onboard`, `/atticus-knowledge`, `/atticus-task` and `/atticus-release` steps only when `atticus next` names them (Run in the view or the chat): there is no chat command for them yet.
-- The sidebar only shows; it never runs a step or changes a file. Steps run from Next, the chat or the Command Palette.
+- The sidebar never runs a step. The only file it changes is a finding's record (and, for Apply the fix, the patched file), when you act on the finding. Steps run from Next, the chat or the Command Palette.
 - It isn't on the Marketplace, and it has only been tested with a fake model, the real command line and the real API, not inside VS Code.

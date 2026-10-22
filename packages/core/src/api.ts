@@ -20,8 +20,9 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.1.0 (ADR 0078): the questions API, /api/questions.
  * 2.2.0 (ADR 0084): GET /api/onboarding, for the Onboarding and Dashboard screens.
  * 2.3.0 (ADR 0092): the specs API, /api/specs, for the Flows screen.
+ * 2.4.0 (ADR 0094): GET /api/cites, the flow steps and records that cite each line of one file.
  */
-export const API_VERSION = "2.3.0";
+export const API_VERSION = "2.4.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -458,6 +459,42 @@ export const FlowView = z.object({
     }),
   ),
 });
+/**
+ * ADR 0094: one file's cited lines, for an editor's CodeLens: each line a spec flow (its trigger,
+ * a step) or a catalog record cites, with what cites it.
+ */
+export const CiteList = z.object({
+  /** The code's repo and the file's path in it, as the citations name them. */
+  repo: RecordId,
+  path: z.string(),
+  lines: z.array(
+    z.object({
+      line: z.number().int().positive(),
+      flows: z.array(
+        z.object({
+          /** The repo whose spec holds the flow. */
+          repo: RecordId,
+          flow: RecordId,
+          name: z.string(),
+          /** 0 for what starts the flow, else the step, counting from 1. */
+          step: z.number().int().nonnegative(),
+          kind: z.string(),
+          confirmedBy: z.string().optional(),
+        }),
+      ),
+      records: z.array(
+        z.object({
+          kind: z.string(),
+          id: RecordId,
+          name: z.string().optional(),
+          /** The citation's source: code, config, migration… */
+          source: z.string(),
+        }),
+      ),
+    }),
+  ),
+});
+export type CiteListT = z.infer<typeof CiteList>;
 export type SpecListT = z.infer<typeof SpecList>;
 export type SpecViewT = z.infer<typeof SpecView>;
 export type FlowViewT = z.infer<typeof FlowView>;
@@ -1136,6 +1173,20 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/cites": {
+    get: {
+      id: "getCites",
+      summary:
+        "Each line of one file that a spec flow or a catalog record cites, with what cites it (ADR 0094)",
+      tag: "views",
+      params: [
+        q("repo", str, "The code's repo, as citations name it"),
+        q("path", str, "The file's path in that repo, as citations name it"),
+      ],
+      ok: { status: 200, schema: "CiteList", description: "OK" },
+      errors: [400],
+    },
+  },
   "/api/onboarding": {
     get: {
       id: "getOnboarding",
@@ -1791,6 +1842,7 @@ export function openApiDocument(): Record<string, unknown> {
     SpecList,
     SpecView,
     FlowView,
+    CiteList,
     OrgPackView,
     Health,
     Finding,
