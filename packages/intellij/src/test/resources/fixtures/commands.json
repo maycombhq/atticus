@@ -1,0 +1,4371 @@
+{
+  "areas": [
+    {
+      "id": "start",
+      "title": "Set up and keep healthy"
+    },
+    {
+      "id": "repos",
+      "title": "Repos, scans and specs"
+    },
+    {
+      "id": "knowledge",
+      "title": "Knowledge and documents"
+    },
+    {
+      "id": "catalog",
+      "title": "The catalog"
+    },
+    {
+      "id": "changes",
+      "title": "Changes, findings and questions"
+    },
+    {
+      "id": "plan",
+      "title": "Plans, tasks and work items"
+    },
+    {
+      "id": "release",
+      "title": "Release"
+    },
+    {
+      "id": "developer",
+      "title": "For Atticus's own quality"
+    }
+  ],
+  "commands": [
+    {
+      "id": "schema export",
+      "words": [
+        "schema",
+        "export"
+      ],
+      "usage": "atticus schema export [dir]",
+      "summary": "Write JSON Schema for every contract and the API's OpenAPI document (default: ./schema)",
+      "args": [
+        {
+          "name": "dir",
+          "kind": "path",
+          "optional": true,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "catalog validate",
+      "words": [
+        "catalog",
+        "validate"
+      ],
+      "usage": "atticus catalog validate <dir>",
+      "summary": "Check record files: schema, location and canonical form",
+      "args": [
+        {
+          "name": "dir",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--fix",
+          "required": false,
+          "summary": "Rewrite files that aren't in canonical form"
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "catalog diff",
+      "words": [
+        "catalog",
+        "diff"
+      ],
+      "usage": "atticus catalog diff <a> <b>",
+      "summary": "Compare two catalog folders (exit 1 when they differ)",
+      "args": [
+        {
+          "name": "a",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "b",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "scan",
+      "words": [
+        "scan"
+      ],
+      "usage": "atticus scan [--no-drift]",
+      "summary": "Scan every repo's base clone and write catalog/generated",
+      "args": [],
+      "flags": [
+        {
+          "name": "--no-drift",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "scan survey",
+      "words": [
+        "scan",
+        "survey"
+      ],
+      "usage": "atticus scan survey <repo>",
+      "summary": "Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force]",
+      "args": [
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--attempts",
+          "value": "3",
+          "required": false
+        },
+        {
+          "name": "--force",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "ai"
+    },
+    {
+      "id": "scan verify",
+      "words": [
+        "scan",
+        "verify"
+      ],
+      "usage": "atticus scan verify <repo>",
+      "summary": "Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept]",
+      "args": [
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--attempts",
+          "value": "3",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        },
+        {
+          "name": "--accept",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "ai"
+    },
+    {
+      "id": "spec draft",
+      "words": [
+        "spec",
+        "draft"
+      ],
+      "usage": "atticus spec draft <repo>",
+      "summary": "Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m]",
+      "args": [
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--attempts",
+          "value": "3",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "required": false
+        },
+        {
+          "name": "--force",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "ai"
+    },
+    {
+      "id": "spec check",
+      "words": [
+        "spec",
+        "check"
+      ],
+      "usage": "atticus spec check <repo> [--json]",
+      "summary": "Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines",
+      "args": [
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "estate join",
+      "words": [
+        "estate",
+        "join"
+      ],
+      "usage": "atticus estate join [--json]",
+      "summary": "Join each repo's call-outs to the flows their targets start; writes specs/estate.yaml",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "estate flow",
+      "words": [
+        "estate",
+        "flow"
+      ],
+      "usage": "atticus estate flow <flow> [--depth 5] [--json]",
+      "summary": "A flow followed across repos, with the data at each crossing",
+      "args": [
+        {
+          "name": "flow",
+          "kind": "flow",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--depth",
+          "value": "5",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "estate lineage",
+      "words": [
+        "estate",
+        "lineage"
+      ],
+      "usage": "atticus estate lineage <flow> <field> [--depth 5] [--json]",
+      "summary": "Follow a field along a flow to the column it is stored in, or where it breaks",
+      "args": [
+        {
+          "name": "flow",
+          "kind": "flow",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "field",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--depth",
+          "value": "5",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "repo-type detect",
+      "words": [
+        "repo-type",
+        "detect"
+      ],
+      "usage": "atticus repo-type detect <repo> [--json]",
+      "summary": "Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal",
+      "args": [
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "repo-type new",
+      "words": [
+        "repo-type",
+        "new"
+      ],
+      "usage": "atticus repo-type new <id> --from <repo> [--force]",
+      "summary": "Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--from",
+          "value": "repo",
+          "required": true
+        },
+        {
+          "name": "--force",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "scan review",
+      "words": [
+        "scan",
+        "review"
+      ],
+      "usage": "atticus scan review <repo>",
+      "summary": "What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]",
+      "args": [
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--gaps",
+          "required": false
+        },
+        {
+          "name": "--attempts",
+          "value": "3",
+          "required": false
+        },
+        {
+          "name": "--repos",
+          "value": "a,b",
+          "required": false,
+          "summary": "Only these repos"
+        },
+        {
+          "name": "--full",
+          "required": true,
+          "summary": "Ignore the scan cache"
+        },
+        {
+          "name": "--dry-run",
+          "required": true,
+          "summary": "Show what would change; write nothing"
+        },
+        {
+          "name": "--warnings",
+          "required": true,
+          "summary": "List what the scan left out or couldn't read, not just how many"
+        },
+        {
+          "name": "--json",
+          "required": true,
+          "summary": "Print the result as JSON"
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "query",
+      "words": [
+        "query"
+      ],
+      "usage": "atticus query \"<query>\"",
+      "summary": "Find records, e.g. \"kind:interface via:gateway -has:pattern\"",
+      "args": [
+        {
+          "name": "query",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--limit",
+          "value": "n",
+          "required": false,
+          "summary": "(see docs/query-language.md)"
+        },
+        {
+          "name": "--json",
+          "required": false,
+          "summary": "(see docs/query-language.md)"
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "impact",
+      "words": [
+        "impact"
+      ],
+      "usage": "atticus impact <id>",
+      "summary": "What a change to a record reaches, with owners and open questions",
+      "args": [
+        {
+          "name": "id",
+          "kind": "record",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "ask",
+      "words": [
+        "ask"
+      ],
+      "usage": "atticus ask \"<question>\"",
+      "summary": "Answer a plain question from the catalog, showing the query it ran",
+      "args": [
+        {
+          "name": "question",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "setup",
+      "words": [
+        "setup"
+      ],
+      "usage": "atticus setup [--json]",
+      "summary": "The setup checklist until the catalog is accepted, with a fix for each step",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "baseline",
+      "words": [
+        "baseline"
+      ],
+      "usage": "atticus baseline",
+      "summary": "Accept the as-is catalog as the baseline [--note text] [--site dir]",
+      "args": [],
+      "flags": [
+        {
+          "name": "--note",
+          "required": false
+        },
+        {
+          "name": "--site",
+          "value": "dir",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "doctor",
+      "words": [
+        "doctor"
+      ],
+      "usage": "atticus doctor [--json]",
+      "summary": "Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "upgrade",
+      "words": [
+        "upgrade"
+      ],
+      "usage": "atticus upgrade [--check|--dry-run]",
+      "summary": "Bring the metarepo's files up to this version (backs them up first)",
+      "args": [],
+      "flags": [
+        {
+          "name": "--check",
+          "required": false
+        },
+        {
+          "name": "--dry-run",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "support bundle",
+      "words": [
+        "support",
+        "bundle"
+      ],
+      "usage": "atticus support bundle",
+      "summary": "Collect versions, checks, counts and the redacted log in a zip [--out f]",
+      "args": [],
+      "flags": [
+        {
+          "name": "--out",
+          "value": "f",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "digest",
+      "words": [
+        "digest"
+      ],
+      "usage": "atticus digest",
+      "summary": "What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]",
+      "args": [],
+      "flags": [
+        {
+          "name": "--channel",
+          "value": "c",
+          "required": false
+        },
+        {
+          "name": "--send",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "shared",
+      "approve": "--send"
+    },
+    {
+      "id": "guide",
+      "words": [
+        "guide"
+      ],
+      "usage": "atticus guide <system> [--json]",
+      "summary": "A system's guide, generated from the catalog: parts, calls, data, runtime, decisions",
+      "args": [
+        {
+          "name": "system",
+          "kind": "system",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "site build",
+      "words": [
+        "site",
+        "build"
+      ],
+      "usage": "atticus site build <dir> [--title t] The read-only catalog site as static files (only systems open to everyone)",
+      "summary": "",
+      "args": [
+        {
+          "name": "dir",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--title",
+          "value": "t",
+          "required": false
+        },
+        {
+          "name": "--depth",
+          "value": "n",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "index rebuild",
+      "words": [
+        "index",
+        "rebuild"
+      ],
+      "usage": "atticus index rebuild",
+      "summary": "Rebuild the local index from the catalog files",
+      "args": [],
+      "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "reconcile",
+      "words": [
+        "reconcile"
+      ],
+      "usage": "atticus reconcile [diagram...]",
+      "summary": "Compare draw.io diagrams with the catalog (default: inputs/diagrams)",
+      "args": [
+        {
+          "name": "diagram",
+          "kind": "text",
+          "optional": true,
+          "many": true
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "sources add",
+      "words": [
+        "sources",
+        "add"
+      ],
+      "usage": "atticus sources add <type> <location> Print the sources.yaml entry for a wiki (markdown-folder, ado-wiki, ...)",
+      "summary": "",
+      "args": [
+        {
+          "name": "type",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "location",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "sources sync",
+      "words": [
+        "sources",
+        "sync"
+      ],
+      "usage": "atticus sources sync [--source s] [--json]",
+      "summary": "Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts",
+      "args": [],
+      "flags": [
+        {
+          "name": "--source",
+          "value": "s",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "sources tag",
+      "words": [
+        "sources",
+        "tag"
+      ],
+      "usage": "atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]",
+      "summary": "Tag a knowledge source in sources.yaml (kinds, frameworks, owner)",
+      "args": [
+        {
+          "name": "source",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--kind",
+          "value": "k,k",
+          "required": false
+        },
+        {
+          "name": "--framework",
+          "value": "f,f",
+          "required": false
+        },
+        {
+          "name": "--owner",
+          "value": "o",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "knowledge scan",
+      "words": [
+        "knowledge",
+        "scan"
+      ],
+      "usage": "atticus knowledge scan [--source s] [--mode m] [--resume run]",
+      "summary": "Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked",
+      "args": [],
+      "flags": [
+        {
+          "name": "--source",
+          "value": "s",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "ai"
+    },
+    {
+      "id": "knowledge list",
+      "words": [
+        "knowledge",
+        "list"
+      ],
+      "usage": "atticus knowledge list [--tag t] [--kind k] [--json]",
+      "summary": "The knowledge items, by tag and kind",
+      "args": [],
+      "flags": [
+        {
+          "name": "--tag",
+          "value": "t",
+          "required": false
+        },
+        {
+          "name": "--kind",
+          "value": "k",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "knowledge ask",
+      "words": [
+        "knowledge",
+        "ask"
+      ],
+      "usage": "atticus knowledge ask \"<question>\" [--mode m] [--resume run]",
+      "summary": "An answer from the knowledge items only, citing them",
+      "args": [
+        {
+          "name": "question",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "bench knowledge",
+      "words": [
+        "bench",
+        "knowledge"
+      ],
+      "usage": "atticus bench knowledge [--mode m] [--resume run]",
+      "summary": "Scan the bench's invented wiki, ask its questions, and score both",
+      "args": [],
+      "flags": [
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "required": false
+        }
+      ],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "bench design",
+      "words": [
+        "bench",
+        "design"
+      ],
+      "usage": "atticus bench design [--mode m] [--resume run]",
+      "summary": "Read the bench's Figma export, map it against the petclinic estate, and score it",
+      "args": [],
+      "flags": [
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "required": false
+        }
+      ],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "sources refresh",
+      "words": [
+        "sources",
+        "refresh"
+      ],
+      "usage": "atticus sources refresh [--json]",
+      "summary": "Fetch every absorbed source again and show what changed",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "patterns scan",
+      "words": [
+        "patterns",
+        "scan"
+      ],
+      "usage": "atticus patterns scan [--json]",
+      "summary": "Find integration patterns in the wikis and compare them with the org pack",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "coverage",
+      "words": [
+        "coverage"
+      ],
+      "usage": "atticus coverage [--json]",
+      "summary": "What the catalog knows per system and area: verified, document-only, unknown",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "questions",
+      "words": [
+        "questions"
+      ],
+      "usage": "atticus questions [--json]",
+      "summary": "Knowledge gaps and the owner questions that close them",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "questions list",
+      "words": [
+        "questions",
+        "list"
+      ],
+      "usage": "atticus questions list [--state open] [--json]",
+      "summary": "The questions in questions/ a step raised for a person",
+      "args": [],
+      "flags": [
+        {
+          "name": "--state",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "questions answer",
+      "words": [
+        "questions",
+        "answer"
+      ],
+      "usage": "atticus questions answer <id> --option <n> | --text \"...\"",
+      "summary": "Write the answer to the file; prints the rerun",
+      "args": [
+        {
+          "name": "id",
+          "kind": "question",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--option",
+          "value": "n",
+          "required": true
+        },
+        {
+          "name": "--text",
+          "value": "\"...\"",
+          "required": true
+        },
+        {
+          "name": "--scope",
+          "value": "repo|repo-type",
+          "required": false
+        },
+        {
+          "name": "--type",
+          "value": "repo type",
+          "required": false
+        },
+        {
+          "name": "--by",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "intake add",
+      "words": [
+        "intake",
+        "add"
+      ],
+      "usage": "atticus intake add <files...>",
+      "summary": "Drop documents, specs and diagrams into inputs/inbox for intake",
+      "args": [
+        {
+          "name": "files",
+          "kind": "path",
+          "optional": false,
+          "many": true
+        }
+      ],
+      "flags": [],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "intake list",
+      "words": [
+        "intake",
+        "list"
+      ],
+      "usage": "atticus intake list [--json]",
+      "summary": "What intake read from inputs/: kinds, systems, duplicates, versions",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "triage",
+      "words": [
+        "triage"
+      ],
+      "usage": "atticus triage [--json]",
+      "summary": "What needs a person: unknown names, conflicts with code, image edges",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "triage decide",
+      "words": [
+        "triage",
+        "decide"
+      ],
+      "usage": "atticus triage decide <item> <n>",
+      "summary": "Choose option n for a triage item; writes a curated decision",
+      "args": [
+        {
+          "name": "item",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "n",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--reason",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "diagram render",
+      "words": [
+        "diagram",
+        "render"
+      ],
+      "usage": "atticus diagram render <view|file>",
+      "summary": "Draw a view (context, container, data, event, sequence) or a .drawio file",
+      "args": [
+        {
+          "name": "view",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--focus",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--format",
+          "value": "mermaid|drawio",
+          "required": false
+        },
+        {
+          "name": "--out",
+          "value": "file",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "diagram library",
+      "words": [
+        "diagram",
+        "library"
+      ],
+      "usage": "atticus diagram library <file>",
+      "summary": "Write the draw.io shape library",
+      "args": [
+        {
+          "name": "file",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "stub serve",
+      "words": [
+        "stub",
+        "serve"
+      ],
+      "usage": "atticus stub serve <spec|id>",
+      "summary": "Serve a stub of an API from its spec, or from the catalog (--from-catalog)",
+      "args": [
+        {
+          "name": "spec",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--from-catalog",
+          "required": true
+        },
+        {
+          "name": "--port",
+          "value": "4010",
+          "required": false
+        },
+        {
+          "name": "--host",
+          "value": "127.0.0.1",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "serve"
+    },
+    {
+      "id": "stub check",
+      "words": [
+        "stub",
+        "check"
+      ],
+      "usage": "atticus stub check <spec>",
+      "summary": "Which operations have examples to answer with",
+      "args": [
+        {
+          "name": "spec",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "dialect new",
+      "words": [
+        "dialect",
+        "new"
+      ],
+      "usage": "atticus dialect new <name> --from <repo>[,<repo>...]",
+      "summary": "Scaffold a dialect from sample repos",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": false,
+          "many": true
+        }
+      ],
+      "flags": [
+        {
+          "name": "--from",
+          "value": "repo",
+          "required": true
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "dialect test",
+      "words": [
+        "dialect",
+        "test"
+      ],
+      "usage": "atticus dialect test <name>",
+      "summary": "Run a dialect's own tests",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "dialect run",
+      "words": [
+        "dialect",
+        "run"
+      ],
+      "usage": "atticus dialect run <name> <repo>",
+      "summary": "Show the records a dialect produces from one repo [--json]",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "dialect kit",
+      "words": [
+        "dialect",
+        "kit"
+      ],
+      "usage": "atticus dialect kit [dir]",
+      "summary": "Export the dialect build kit for an assistant",
+      "args": [
+        {
+          "name": "dir",
+          "kind": "path",
+          "optional": true,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "dialect tree",
+      "words": [
+        "dialect",
+        "tree"
+      ],
+      "usage": "atticus dialect tree <file> [--language l]",
+      "summary": "Print a file's syntax tree, for syntax matches",
+      "args": [
+        {
+          "name": "file",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--language",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "plugin",
+      "words": [
+        "plugin"
+      ],
+      "usage": "atticus plugin test|pin <id>",
+      "summary": "Run a scanner plugin against its golden files, sandboxed; or pin its entry file's sha256",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "onboard",
+      "words": [
+        "onboard"
+      ],
+      "usage": "atticus onboard <repo> [--name n] [--attempts 3] [--mode m]",
+      "summary": "Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal",
+      "args": [
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--name",
+          "value": "n",
+          "required": false
+        },
+        {
+          "name": "--attempts",
+          "value": "3",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "onboard check",
+      "words": [
+        "onboard",
+        "check"
+      ],
+      "usage": "atticus onboard check <name> --repo <repo>",
+      "summary": "Check a proposal (drafted, handed off or hand-written)",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--repo",
+          "value": "repo",
+          "required": true
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "onboard eval",
+      "words": [
+        "onboard",
+        "eval"
+      ],
+      "usage": "atticus onboard eval <dir> [--mode m] [--json]",
+      "summary": "Score the assistant's drafts against reference dialects",
+      "args": [
+        {
+          "name": "dir",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "onboard accept",
+      "words": [
+        "onboard",
+        "accept"
+      ],
+      "usage": "atticus onboard accept <name> [--replace]",
+      "summary": "Accept a proposal into org-pack/dialects/ (or frameworks/)",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--replace",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "onboard framework",
+      "words": [
+        "onboard",
+        "framework"
+      ],
+      "usage": "atticus onboard framework <name> --from <source|jar|tgz> [--users <repo>,...]",
+      "summary": "Learn a house framework, your assistant drafts what the learner couldn't; checked, kept as a proposal",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--from",
+          "value": "source|jar|tgz",
+          "required": true
+        },
+        {
+          "name": "--users",
+          "value": "repo",
+          "required": false
+        },
+        {
+          "name": "--attempts",
+          "value": "3",
+          "required": false
+        },
+        {
+          "name": "--package",
+          "value": "a.b",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--no-ai",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "onboard check framework",
+      "words": [
+        "onboard",
+        "check",
+        "framework"
+      ],
+      "usage": "atticus onboard check framework <name> [--from <source>] [--users <repo>,...]",
+      "summary": "Check a framework proposal (drafted, handed off or hand-written)",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--from",
+          "value": "source",
+          "required": false
+        },
+        {
+          "name": "--users",
+          "value": "repo",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "onboard accept framework",
+      "words": [
+        "onboard",
+        "accept",
+        "framework"
+      ],
+      "usage": "atticus onboard accept framework <name> [--replace]",
+      "summary": "Accept a framework proposal into org-pack/frameworks/",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--replace",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "frameworks learn",
+      "words": [
+        "frameworks",
+        "learn"
+      ],
+      "usage": "atticus frameworks learn <name> --from <repo|jar|tgz>",
+      "summary": "Learn what a house framework means from its source, JAR or npm package",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--from",
+          "value": "repo|jar|tgz",
+          "required": true
+        },
+        {
+          "name": "--package",
+          "value": "a.b",
+          "required": false,
+          "summary": "(writes org-pack/frameworks/<name>.yaml)"
+        },
+        {
+          "name": "--dry-run",
+          "required": false,
+          "summary": "(writes org-pack/frameworks/<name>.yaml)"
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "frameworks discover",
+      "words": [
+        "frameworks",
+        "discover"
+      ],
+      "usage": "atticus frameworks discover --group <a.b|@scope>[,...]",
+      "summary": "The house artifacts and npm packages the repos build on, found here",
+      "args": [],
+      "flags": [
+        {
+          "name": "--group",
+          "value": "a.b|@scope",
+          "required": true
+        },
+        {
+          "name": "--jars",
+          "value": "dir",
+          "required": false,
+          "summary": "(.jar and .tgz folders, Maven and Gradle caches, node_modules; never downloads)"
+        },
+        {
+          "name": "--learn",
+          "required": false,
+          "summary": "(.jar and .tgz folders, Maven and Gradle caches, node_modules; never downloads)"
+        },
+        {
+          "name": "--json",
+          "required": false,
+          "summary": "(.jar and .tgz folders, Maven and Gradle caches, node_modules; never downloads)"
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "frameworks check",
+      "words": [
+        "frameworks",
+        "check"
+      ],
+      "usage": "atticus frameworks check [name]",
+      "summary": "Run each framework model's own tests; a failing model isn't used",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": true,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "frameworks survey",
+      "words": [
+        "frameworks",
+        "survey"
+      ],
+      "usage": "atticus frameworks survey [--package <prefix>[,...]]",
+      "summary": "How the repos use house frameworks, any language [--json]",
+      "args": [],
+      "flags": [
+        {
+          "name": "--package",
+          "value": "prefix",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "frameworks kit",
+      "words": [
+        "frameworks",
+        "kit"
+      ],
+      "usage": "atticus frameworks kit [dir]",
+      "summary": "Export the framework-model kit for an assistant",
+      "args": [
+        {
+          "name": "dir",
+          "kind": "path",
+          "optional": true,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "change new",
+      "words": [
+        "change",
+        "new"
+      ],
+      "usage": "atticus change new \"<title>\"",
+      "summary": "Start a change from a template: --type <type>",
+      "args": [
+        {
+          "name": "title",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--type",
+          "value": "type",
+          "required": true
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "domain profile",
+      "words": [
+        "domain",
+        "profile"
+      ],
+      "usage": "atticus domain profile <system>",
+      "summary": "A system as a domain profile, filled from the catalog [--out file]",
+      "args": [
+        {
+          "name": "system",
+          "kind": "system",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--out",
+          "value": "file",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "change feature",
+      "words": [
+        "change",
+        "feature"
+      ],
+      "usage": "atticus change feature <change>",
+      "summary": "The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--from-figma",
+          "value": "f.json",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "required": false
+        },
+        {
+          "name": "--force",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "ai"
+    },
+    {
+      "id": "change architecture",
+      "words": [
+        "change",
+        "architecture"
+      ],
+      "usage": "atticus change architecture <change> The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run]",
+      "summary": "",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "ai"
+    },
+    {
+      "id": "change draft",
+      "words": [
+        "change",
+        "draft"
+      ],
+      "usage": "atticus change draft <change>",
+      "summary": "Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--attempts",
+          "value": "3",
+          "required": false
+        },
+        {
+          "name": "--force",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--template",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--id",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--owner",
+          "value": "role=a,b",
+          "required": false
+        },
+        {
+          "name": "--system",
+          "value": "id",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "ai"
+    },
+    {
+      "id": "change status",
+      "words": [
+        "change",
+        "status"
+      ],
+      "usage": "atticus change status <id> [--json]",
+      "summary": "State, next step, what blocks it, risk, the PR to merge and test kinds",
+      "args": [
+        {
+          "name": "id",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "change handoff",
+      "words": [
+        "change",
+        "handoff"
+      ],
+      "usage": "atticus change handoff <id> --approve",
+      "summary": "Open the phase's hand-off PR; merging it approves the gate [--repo]",
+      "args": [
+        {
+          "name": "id",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--approve",
+          "value": "Open",
+          "required": true
+        },
+        {
+          "name": "--repo",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "shared",
+      "approve": "--approve"
+    },
+    {
+      "id": "change sync",
+      "words": [
+        "change",
+        "sync"
+      ],
+      "usage": "atticus change sync <id> [--approve]",
+      "summary": "Read the hand-off PR; a merged PR moves the change on (--approve merges a ready one)",
+      "args": [
+        {
+          "name": "id",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--approve",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "shared",
+      "approve": "--approve"
+    },
+    {
+      "id": "change return",
+      "words": [
+        "change",
+        "return"
+      ],
+      "usage": "atticus change return <id> --reason \"<why>\" --approve",
+      "summary": "Close the hand-off PR and return the change to the product owner",
+      "args": [
+        {
+          "name": "id",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--reason",
+          "value": "\"<why>\"",
+          "required": true
+        },
+        {
+          "name": "--approve",
+          "value": "Close",
+          "required": true
+        }
+      ],
+      "area": "changes",
+      "runs": "shared",
+      "approve": "--approve"
+    },
+    {
+      "id": "change archive",
+      "words": [
+        "change",
+        "archive"
+      ],
+      "usage": "atticus change archive <id> [--no-rescan]",
+      "summary": "Archive a released change and rescan its repos",
+      "args": [
+        {
+          "name": "id",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--no-rescan",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "change list",
+      "words": [
+        "change",
+        "list"
+      ],
+      "usage": "atticus change list [--json]",
+      "summary": "Every change and its state",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "change conflicts",
+      "words": [
+        "change",
+        "conflicts"
+      ],
+      "usage": "atticus change conflicts [--json]",
+      "summary": "Open changes that touch the same systems, records or repos",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "critic",
+      "words": [
+        "critic"
+      ],
+      "usage": "atticus critic <change> [--gate g] [--lens l] [--mode m] [--json]",
+      "summary": "Review a change at a gate: rule checks, then AI lenses (--mode runs them)",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--gate",
+          "required": false
+        },
+        {
+          "name": "--lens",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "critic --resume",
+      "words": [
+        "critic"
+      ],
+      "usage": "atticus critic <change> [--gate g] --resume",
+      "summary": "Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--gate",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "value": "Read",
+          "required": true
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "critic stats",
+      "words": [
+        "critic",
+        "stats"
+      ],
+      "usage": "atticus critic stats [--json]",
+      "summary": "How often each rule's findings are dismissed or waived",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "findings",
+      "words": [
+        "findings"
+      ],
+      "usage": "atticus findings <change> [--json]",
+      "summary": "The change's findings by gate and round",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "finding",
+      "words": [
+        "finding"
+      ],
+      "usage": "atticus finding <change> <id> <action>",
+      "summary": "apply | edit-and-apply | not-relevant | waive | ask (recorded with you; reaches main with the hand-off PR)",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "id",
+          "kind": "finding",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "action",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--gate",
+          "required": false
+        },
+        {
+          "name": "--reason",
+          "required": false
+        },
+        {
+          "name": "--asked-of",
+          "required": false
+        },
+        {
+          "name": "--edit",
+          "value": "patch-file",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "feature list",
+      "words": [
+        "feature",
+        "list"
+      ],
+      "usage": "atticus feature list [--json]",
+      "summary": "Features found in code, named by people or proposed by AI",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "feature show",
+      "words": [
+        "feature",
+        "show"
+      ],
+      "usage": "atticus feature show <id> [--json]",
+      "summary": "A feature's entry points, flow, owner, links and gaps",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "feature name",
+      "words": [
+        "feature",
+        "name"
+      ],
+      "usage": "atticus feature name <id> \"<name>\"",
+      "summary": "Confirm or correct a feature's name [--description] [--owner]",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--description",
+          "required": false
+        },
+        {
+          "name": "--owner",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "feature tag",
+      "words": [
+        "feature",
+        "tag"
+      ],
+      "usage": "atticus feature tag <id> <tags...>",
+      "summary": "Tag a feature",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "tags",
+          "kind": "text",
+          "optional": false,
+          "many": true
+        }
+      ],
+      "flags": [],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "feature merge",
+      "words": [
+        "feature",
+        "merge"
+      ],
+      "usage": "atticus feature merge <into> <from...>",
+      "summary": "Merge features",
+      "args": [
+        {
+          "name": "into",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "from",
+          "kind": "text",
+          "optional": false,
+          "many": true
+        }
+      ],
+      "flags": [],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "feature split",
+      "words": [
+        "feature",
+        "split"
+      ],
+      "usage": "atticus feature split <id> <entry-points...>",
+      "summary": "Split entry points into another feature [--name] [--into]",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "entry-points",
+          "kind": "text",
+          "optional": false,
+          "many": true
+        }
+      ],
+      "flags": [
+        {
+          "name": "--name",
+          "required": false
+        },
+        {
+          "name": "--into",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "feature link",
+      "words": [
+        "feature",
+        "link"
+      ],
+      "usage": "atticus feature link <id> <ref>",
+      "summary": "Link a work item or page, e.g. ado:1234 [--title]",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "ref",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--title",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "feature suggest-links",
+      "words": [
+        "feature",
+        "suggest-links"
+      ],
+      "usage": "atticus feature suggest-links [--json]",
+      "summary": "Suggest links between features and work items",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "feature spec",
+      "words": [
+        "feature",
+        "spec"
+      ],
+      "usage": "atticus feature spec <id>",
+      "summary": "Draft an OpenSpec capability spec from a confirmed feature",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "catalog migrate",
+      "words": [
+        "catalog",
+        "migrate"
+      ],
+      "usage": "atticus catalog migrate [--dry-run]",
+      "summary": "Rewrite catalog files to the current schema version",
+      "args": [],
+      "flags": [
+        {
+          "name": "--dry-run",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "task run",
+      "words": [
+        "task",
+        "run"
+      ],
+      "usage": "atticus task run <change> <task>",
+      "summary": "Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "task",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--level",
+          "value": "plan|draft|pr",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--approve",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "shared",
+      "approve": "--approve"
+    },
+    {
+      "id": "spec hand-down",
+      "words": [
+        "spec",
+        "hand-down"
+      ],
+      "usage": "atticus spec hand-down <change> <task>",
+      "summary": "Create the task's Spec Kit feature in its repo [--force]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "task",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--force",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "spec hand-up",
+      "words": [
+        "spec",
+        "hand-up"
+      ],
+      "usage": "atticus spec hand-up <change> <task>",
+      "summary": "Read the Spec Kit feature back at the PR [--pr n --pr-url url]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "task",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--pr",
+          "value": "n",
+          "required": false
+        },
+        {
+          "name": "--pr-url",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "drift",
+      "words": [
+        "drift"
+      ],
+      "usage": "atticus drift <change> [--json]",
+      "summary": "Compare design, repo plans and code",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "assistant-files",
+      "words": [
+        "assistant-files"
+      ],
+      "usage": "atticus assistant-files [--repo id [--change id]] [--force] [--check]",
+      "summary": "Generate Copilot and Claude Code files",
+      "args": [],
+      "flags": [
+        {
+          "name": "--repo",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--change",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--force",
+          "required": false
+        },
+        {
+          "name": "--check",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "feature suggest-names",
+      "words": [
+        "feature",
+        "suggest-names"
+      ],
+      "usage": "atticus feature suggest-names [--mode m]",
+      "summary": "Ask AI to propose names for detected features",
+      "args": [],
+      "flags": [
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "plan stories",
+      "words": [
+        "plan",
+        "stories"
+      ],
+      "usage": "atticus plan stories <change>",
+      "summary": "Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--force",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--draft",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "ai"
+    },
+    {
+      "id": "plan snow",
+      "words": [
+        "plan",
+        "snow"
+      ],
+      "usage": "atticus plan snow <change>",
+      "summary": "Draft service-desk requests the change needs [--force]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--force",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "plan bar",
+      "words": [
+        "plan",
+        "bar"
+      ],
+      "usage": "atticus plan bar <change>",
+      "summary": "Measure the story bar [--eval file]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--eval",
+          "value": "file",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "plan submit",
+      "words": [
+        "plan",
+        "submit"
+      ],
+      "usage": "atticus plan submit <change>",
+      "summary": "File the drafted requests (a dry run until you add --approve)",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--approve",
+          "required": true
+        }
+      ],
+      "area": "plan",
+      "runs": "shared",
+      "approve": "--approve"
+    },
+    {
+      "id": "ado sync",
+      "words": [
+        "ado",
+        "sync"
+      ],
+      "usage": "atticus ado sync <change>",
+      "summary": "Create or update work items (a dry run until you add --approve) [--epic id]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--approve",
+          "required": true
+        },
+        {
+          "name": "--epic",
+          "value": "id",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "shared",
+      "approve": "--approve"
+    },
+    {
+      "id": "templates draft",
+      "words": [
+        "templates",
+        "draft"
+      ],
+      "usage": "atticus templates draft",
+      "summary": "Draft request and work-item templates from wikis, uploads and past tickets [--no-ai]",
+      "args": [],
+      "flags": [
+        {
+          "name": "--no-ai",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "todo",
+      "words": [
+        "todo"
+      ],
+      "usage": "atticus todo [--change id] [--all]",
+      "summary": "Manual steps waiting for a person",
+      "args": [],
+      "flags": [
+        {
+          "name": "--change",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--all",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "todo show",
+      "words": [
+        "todo",
+        "show"
+      ],
+      "usage": "atticus todo show <step> [--export text|csv|import]",
+      "summary": "",
+      "args": [
+        {
+          "name": "step",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--export",
+          "value": "text|csv|import",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "todo done",
+      "words": [
+        "todo",
+        "done"
+      ],
+      "usage": "atticus todo done <step>",
+      "summary": "Record a manual step's result [--result k=v]... [--skip --note why]",
+      "args": [
+        {
+          "name": "step",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--result",
+          "value": "k=v",
+          "required": false
+        },
+        {
+          "name": "--skip",
+          "required": false
+        },
+        {
+          "name": "--note",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "todo run",
+      "words": [
+        "todo",
+        "run"
+      ],
+      "usage": "atticus todo run <step> --with <executor>",
+      "summary": "Run a step with a team's own tool [--approve --inputs sha] [--fill-only]",
+      "args": [
+        {
+          "name": "step",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--with",
+          "value": "executor",
+          "required": true
+        },
+        {
+          "name": "--approve",
+          "required": false
+        },
+        {
+          "name": "--inputs",
+          "required": false
+        },
+        {
+          "name": "--fill-only",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "shared",
+      "approve": "--approve"
+    },
+    {
+      "id": "executors check",
+      "words": [
+        "executors",
+        "check"
+      ],
+      "usage": "atticus executors check",
+      "summary": "Ping configured executors and show what each covers",
+      "args": [],
+      "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "init",
+      "words": [
+        "init"
+      ],
+      "usage": "atticus init <folder> --platform <p>",
+      "summary": "Create a new metarepo named after the folder [--from pack] [--owner who]",
+      "args": [
+        {
+          "name": "folder",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--platform",
+          "value": "p",
+          "required": true
+        },
+        {
+          "name": "--from",
+          "required": false
+        },
+        {
+          "name": "--owner",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "adopt",
+      "words": [
+        "adopt"
+      ],
+      "usage": "atticus adopt <path>",
+      "summary": "Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]",
+      "args": [
+        {
+          "name": "path",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--platform",
+          "value": "p",
+          "required": false
+        },
+        {
+          "name": "--name",
+          "value": "n",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "unadopt",
+      "words": [
+        "unadopt"
+      ],
+      "usage": "atticus unadopt <path>",
+      "summary": "Remove Atticus from an adopted repo, leaving it as it was",
+      "args": [
+        {
+          "name": "path",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "repos discover",
+      "words": [
+        "repos",
+        "discover"
+      ],
+      "usage": "atticus repos discover <folder> | --org <org>",
+      "summary": "Propose repos.manifest.yaml entries [--platform p] [--dry-run]",
+      "args": [
+        {
+          "name": "folder",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--org",
+          "value": "org",
+          "required": true
+        },
+        {
+          "name": "--platform",
+          "value": "p",
+          "required": false
+        },
+        {
+          "name": "--dry-run",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "absorb",
+      "words": [
+        "absorb"
+      ],
+      "usage": "atticus absorb <git-url|path> --id <id>",
+      "summary": "Translate another team's prompts, agents, checklists, Spec Kit or Atticus repo",
+      "args": [
+        {
+          "name": "git-url",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--id",
+          "value": "id",
+          "required": true
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "absorb --refresh",
+      "words": [
+        "absorb"
+      ],
+      "usage": "atticus absorb --refresh <id>",
+      "summary": "Fetch an absorbed source again and update its proposal",
+      "args": [],
+      "flags": [
+        {
+          "name": "--refresh",
+          "value": "id",
+          "required": true
+        },
+        {
+          "name": "--mode",
+          "value": "adopt|link|ignore",
+          "required": false
+        },
+        {
+          "name": "--ref",
+          "required": false
+        },
+        {
+          "name": "--dry-run",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "tests generate",
+      "words": [
+        "tests",
+        "generate"
+      ],
+      "usage": "atticus tests generate <change> <story>",
+      "summary": "Generate tests from a story [--framework id] [--force] [--check] [--mode m]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "story",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--framework",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--force",
+          "required": false
+        },
+        {
+          "name": "--check",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "trace",
+      "words": [
+        "trace"
+      ],
+      "usage": "atticus trace <change> [--json] [--csv] [--no-write]",
+      "summary": "Requirement → story → test → code → records → feature",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        },
+        {
+          "name": "--csv",
+          "required": false
+        },
+        {
+          "name": "--no-write",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "release plan",
+      "words": [
+        "release",
+        "plan"
+      ],
+      "usage": "atticus release plan <change> [--json]",
+      "summary": "Deploy order across the repos, why, rollback per step, waits and release sections",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "release",
+      "runs": "local"
+    },
+    {
+      "id": "release forecast",
+      "words": [
+        "release",
+        "forecast"
+      ],
+      "usage": "atticus release forecast <change> [--json]",
+      "summary": "Forecast ready-to-release day from lead times and the initiative's plan",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "release",
+      "runs": "local"
+    },
+    {
+      "id": "release evidence",
+      "words": [
+        "release",
+        "evidence"
+      ],
+      "usage": "atticus release evidence <change> [--out dir] [--json]",
+      "summary": "The evidence pack for an approval board or an audit",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--out",
+          "value": "dir",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "release",
+      "runs": "local"
+    },
+    {
+      "id": "release notes",
+      "words": [
+        "release",
+        "notes"
+      ],
+      "usage": "atticus release notes <change> [--audience business|technical] [--json]",
+      "summary": "Release notes from the brief, interfaces and data",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--audience",
+          "value": "business|technical",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "release",
+      "runs": "local"
+    },
+    {
+      "id": "release security",
+      "words": [
+        "release",
+        "security"
+      ],
+      "usage": "atticus release security <change> [--json]",
+      "summary": "Security review draft: auth, classifications, boundaries, vendors, secrets",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "release",
+      "runs": "local"
+    },
+    {
+      "id": "outcome list",
+      "words": [
+        "outcome",
+        "list"
+      ],
+      "usage": "atticus outcome list [--change id] [--json]",
+      "summary": "The brief's success measures and the values recorded after release",
+      "args": [],
+      "flags": [
+        {
+          "name": "--change",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "outcome record",
+      "words": [
+        "outcome",
+        "record"
+      ],
+      "usage": "atticus outcome record <change> <measure> --value <v>",
+      "summary": "Record a measured outcome [--note text]",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "measure",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--value",
+          "value": "v",
+          "required": true
+        },
+        {
+          "name": "--note",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "ci drift",
+      "words": [
+        "ci",
+        "drift"
+      ],
+      "usage": "atticus ci drift [repo] --catalog <path>",
+      "summary": "In a repo's pipeline: compare the repo with the committed catalog",
+      "args": [
+        {
+          "name": "repo",
+          "kind": "repo",
+          "optional": true,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--catalog",
+          "value": "path",
+          "required": true
+        },
+        {
+          "name": "--repo",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        },
+        {
+          "name": "--junit",
+          "value": "file",
+          "required": false
+        },
+        {
+          "name": "--summary",
+          "value": "file",
+          "required": false
+        },
+        {
+          "name": "--warn-only",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "ci snippet",
+      "words": [
+        "ci",
+        "snippet"
+      ],
+      "usage": "atticus ci snippet <github|azure|gitlab|jenkins> [--write dir]",
+      "summary": "Pipeline template for the drift check",
+      "args": [
+        {
+          "name": "choice",
+          "kind": "choice",
+          "optional": false,
+          "many": false,
+          "choices": [
+            "github",
+            "azure",
+            "gitlab",
+            "jenkins"
+          ]
+        }
+      ],
+      "flags": [
+        {
+          "name": "--write",
+          "value": "dir",
+          "required": false
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "ci archive-gate",
+      "words": [
+        "ci",
+        "archive-gate"
+      ],
+      "usage": "atticus ci archive-gate <change> [--drift file]...",
+      "summary": "Whether a change may be archived",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--drift",
+          "value": "file",
+          "required": false
+        }
+      ],
+      "area": "release",
+      "runs": "local"
+    },
+    {
+      "id": "glossary",
+      "words": [
+        "glossary"
+      ],
+      "usage": "atticus glossary list|scan [--json]",
+      "summary": "Business terms from wikis, code and people",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "glossary define",
+      "words": [
+        "glossary",
+        "define"
+      ],
+      "usage": "atticus glossary define <term> \"<definition>\" [--owner team]",
+      "summary": "",
+      "args": [
+        {
+          "name": "term",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "definition",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--owner",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "glossary link",
+      "words": [
+        "glossary",
+        "link"
+      ],
+      "usage": "atticus glossary link <term> <record-id|schema#field>",
+      "summary": "",
+      "args": [
+        {
+          "name": "term",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "glossary alias",
+      "words": [
+        "glossary",
+        "alias"
+      ],
+      "usage": "atticus glossary alias <term> <name>...",
+      "summary": "",
+      "args": [
+        {
+          "name": "term",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": true
+        }
+      ],
+      "flags": [],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "initiative new",
+      "words": [
+        "initiative",
+        "new"
+      ],
+      "usage": "atticus initiative new \"<title>\" --journey <j>",
+      "summary": "Start an initiative [--id] [--release YYYY-MM-DD] [--epic]",
+      "args": [
+        {
+          "name": "title",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--journey",
+          "value": "j",
+          "required": true
+        },
+        {
+          "name": "--id",
+          "required": false
+        },
+        {
+          "name": "--release",
+          "value": "YYYY-MM-DD",
+          "required": false
+        },
+        {
+          "name": "--epic",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "initiative plan",
+      "words": [
+        "initiative",
+        "plan"
+      ],
+      "usage": "atticus initiative plan <id> --target <system>",
+      "summary": "Plan its changes and commitments [--release d] [--system s]... [--dry-run]",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--target",
+          "value": "system",
+          "required": true
+        },
+        {
+          "name": "--release",
+          "value": "d",
+          "required": false
+        },
+        {
+          "name": "--system",
+          "value": "s",
+          "required": false
+        },
+        {
+          "name": "--dry-run",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "initiative status",
+      "words": [
+        "initiative",
+        "status"
+      ],
+      "usage": "atticus initiative status <id>",
+      "summary": "Critical path, at-risk and slipped commitments",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "initiative request",
+      "words": [
+        "initiative",
+        "request"
+      ],
+      "usage": "atticus initiative request <id> <party>",
+      "summary": "Send a team a system card and track the reply [--system s]...",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "party",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--system",
+          "value": "s",
+          "required": false
+        }
+      ],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "initiative commit",
+      "words": [
+        "initiative",
+        "commit"
+      ],
+      "usage": "atticus initiative commit <commitment> <open|at-risk|done|slipped>",
+      "summary": "",
+      "args": [
+        {
+          "name": "commitment",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "choice",
+          "kind": "choice",
+          "optional": false,
+          "many": false,
+          "choices": [
+            "open",
+            "at-risk",
+            "done",
+            "slipped"
+          ]
+        }
+      ],
+      "flags": [],
+      "area": "plan",
+      "runs": "local"
+    },
+    {
+      "id": "learn",
+      "words": [
+        "learn"
+      ],
+      "usage": "atticus learn [list] | learn start <role|lesson> | learn check [--answer a] [--lesson l] [--step s]",
+      "summary": "",
+      "args": [
+        {
+          "name": "list",
+          "kind": "text",
+          "optional": true,
+          "many": false
+        },
+        {
+          "name": "role",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--answer",
+          "required": false
+        },
+        {
+          "name": "--lesson",
+          "required": false
+        },
+        {
+          "name": "--step",
+          "value": "s",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "sandbox create",
+      "words": [
+        "sandbox",
+        "create"
+      ],
+      "usage": "atticus sandbox create <dir>",
+      "summary": "A throwaway practice metarepo",
+      "args": [
+        {
+          "name": "dir",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "commands",
+      "words": [
+        "commands"
+      ],
+      "usage": "atticus commands [--json]",
+      "summary": "Every command as data: its arguments, options, area and how it runs (for an editor)",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "explain",
+      "words": [
+        "explain"
+      ],
+      "usage": "atticus explain <id|command>",
+      "summary": "Explain a record, finding, change or command in plain words",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "eval run",
+      "words": [
+        "eval",
+        "run"
+      ],
+      "usage": "atticus eval run [--agent a]... [--mode mock|replay|live] [--runs n]",
+      "summary": "Evaluate AI agents",
+      "args": [],
+      "flags": [
+        {
+          "name": "--agent",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "mock|replay|live",
+          "required": false
+        },
+        {
+          "name": "--runs",
+          "value": "n",
+          "required": false
+        }
+      ],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "eval report",
+      "words": [
+        "eval",
+        "report"
+      ],
+      "usage": "atticus eval report",
+      "summary": "The latest eval results and AI quality",
+      "args": [],
+      "flags": [],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "bench fetch",
+      "words": [
+        "bench",
+        "fetch"
+      ],
+      "usage": "atticus bench fetch [--repo id] [--batch n] [--cache dir]",
+      "summary": "Clone the bench's public repos at their pinned commits",
+      "args": [],
+      "flags": [
+        {
+          "name": "--repo",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--batch",
+          "value": "n",
+          "required": false
+        },
+        {
+          "name": "--cache",
+          "value": "dir",
+          "required": false
+        }
+      ],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "bench survey",
+      "words": [
+        "bench",
+        "survey"
+      ],
+      "usage": "atticus bench survey [--repo id] [--batch n] [--mode m]",
+      "summary": "Your assistant drafts each bench repo's scan settings; kept for later runs",
+      "args": [],
+      "flags": [
+        {
+          "name": "--repo",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--batch",
+          "value": "n",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        }
+      ],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "bench verify",
+      "words": [
+        "bench",
+        "verify"
+      ],
+      "usage": "atticus bench verify [--repo id] [--batch n] [--mode m]",
+      "summary": "Your assistant verifies each bench repo's scan; kept for bench run to score",
+      "args": [],
+      "flags": [
+        {
+          "name": "--repo",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--batch",
+          "value": "n",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        }
+      ],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "bench run",
+      "words": [
+        "bench",
+        "run"
+      ],
+      "usage": "atticus bench run [--repo id] [--batch n] [--estate e] [--json] [--specs]",
+      "summary": "Scan each bench repo and score it against its reference; --specs also scores drafted specs against bench/flows and scans each estate's repos together",
+      "args": [],
+      "flags": [
+        {
+          "name": "--repo",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--batch",
+          "value": "n",
+          "required": false
+        },
+        {
+          "name": "--estate",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        },
+        {
+          "name": "--specs",
+          "required": false
+        }
+      ],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "defences scan",
+      "words": [
+        "defences",
+        "scan"
+      ],
+      "usage": "atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts",
+      "summary": "",
+      "args": [
+        {
+          "name": "path",
+          "kind": "path",
+          "optional": true,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--all",
+          "required": false
+        }
+      ],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "conformance",
+      "words": [
+        "conformance"
+      ],
+      "usage": "atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>",
+      "summary": "",
+      "args": [
+        {
+          "name": "path",
+          "kind": "path",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--kind",
+          "value": "catalog|org-pack|dialect|plugin|executor",
+          "required": true
+        }
+      ],
+      "area": "developer",
+      "runs": "local"
+    },
+    {
+      "id": "alias",
+      "words": [
+        "alias"
+      ],
+      "usage": "atticus alias \"<name>\" <id>",
+      "summary": "Record that a name used in diagrams or documents means a catalog id",
+      "args": [
+        {
+          "name": "name",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--reason",
+          "required": false
+        }
+      ],
+      "area": "catalog",
+      "runs": "local"
+    },
+    {
+      "id": "orgpack validate",
+      "words": [
+        "orgpack",
+        "validate"
+      ],
+      "usage": "atticus orgpack validate [dir]",
+      "summary": "Check an org pack against its schemas (default: <root>/org-pack)",
+      "args": [
+        {
+          "name": "dir",
+          "kind": "path",
+          "optional": true,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "openspec setup",
+      "words": [
+        "openspec",
+        "setup"
+      ],
+      "usage": "atticus openspec setup",
+      "summary": "Set up OpenSpec with the org-flow schema in the metarepo",
+      "args": [],
+      "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "openspec check",
+      "words": [
+        "openspec",
+        "check"
+      ],
+      "usage": "atticus openspec check",
+      "summary": "Check the OpenSpec version and validate every change and spec",
+      "args": [],
+      "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "handoff done",
+      "words": [
+        "handoff",
+        "done"
+      ],
+      "usage": "atticus handoff done <run-id>",
+      "summary": "Tell Atticus a hand-off artifact is written; it validates it",
+      "args": [
+        {
+          "name": "run-id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "next",
+      "words": [
+        "next"
+      ],
+      "usage": "atticus next [--all] [--json]",
+      "summary": "The next step to take, its command and slash command, and why; from the files only",
+      "args": [],
+      "flags": [
+        {
+          "name": "--all",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "workspace sync",
+      "words": [
+        "workspace",
+        "sync"
+      ],
+      "usage": "atticus workspace sync",
+      "summary": "Clone or update the base clone of every repo in the manifests",
+      "args": [],
+      "flags": [
+        {
+          "name": "--repos",
+          "value": "a,b",
+          "required": false,
+          "summary": "Only these repos"
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "workspace open",
+      "words": [
+        "workspace",
+        "open"
+      ],
+      "usage": "atticus workspace open <change>",
+      "summary": "Create the change's worktrees, repos.yaml and editor workspaces",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--repos",
+          "value": "a,b",
+          "required": false,
+          "summary": "The repos the change touches"
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "workspace prune",
+      "words": [
+        "workspace",
+        "prune"
+      ],
+      "usage": "atticus workspace prune <change>",
+      "summary": "Remove worktrees whose PRs merged or closed",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--all",
+          "required": false,
+          "summary": "All worktrees; also those with uncommitted work"
+        },
+        {
+          "name": "--force",
+          "required": false,
+          "summary": "All worktrees; also those with uncommitted work"
+        }
+      ],
+      "area": "repos",
+      "runs": "local"
+    },
+    {
+      "id": "ui",
+      "words": [
+        "ui"
+      ],
+      "usage": "atticus ui [--port n] [--open]",
+      "summary": "Start the app on this machine (127.0.0.1); Ctrl+C stops it",
+      "args": [],
+      "flags": [
+        {
+          "name": "--port",
+          "value": "n",
+          "required": false
+        },
+        {
+          "name": "--open",
+          "required": false
+        },
+        {
+          "name": "--embed",
+          "required": false,
+          "summary": "Let a VS Code panel show the app (the Atticus extension starts it so)"
+        }
+      ],
+      "area": "start",
+      "runs": "serve"
+    }
+  ]
+}

@@ -10,3 +10,7 @@ docs/evidence/
 packages/site/test/golden/
 packages/assistant-kit/frameworks-kit/examples/
 packages/assistant-kit/kit/examples/
+packages/intellij/build/
+packages/intellij/.gradle/
+packages/intellij/.kotlin/
+packages/intellij/.intellijPlatform/

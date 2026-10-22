@@ -1,0 +1,49 @@
+<idea-plugin>
+    <id>com.maycombhq.atticus</id>
+    <name>Atticus</name>
+    <vendor url="https://github.com/maycombhq/atticus">maycombhq</vendor>
+    <description><![CDATA[
+    <p>Atticus in IntelliJ IDEA: the Atticus app in a tool window, every <code>atticus</code> command from
+    <b>Tools → Atticus: Run a Command…</b>, and the next step in plain words.</p>
+    <ul>
+      <li>AI steps run in GitHub Copilot Chat with their slash commands (<code>/atticus-survey</code>,
+      <code>/atticus-spec</code> and the rest); the plugin calls no model.</li>
+      <li>A command that writes to a shared system runs as a dry run first, and runs for real only
+      after you click <b>Approve and run</b>.</li>
+      <li>It only runs the <code>atticus</code> command line on this machine and shows the app it
+      serves on 127.0.0.1. No telemetry, no other network calls.</li>
+    </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <!-- The embedded browser; its own plugin from 2026.2, an alias from 2025.3.1. -->
+    <depends>com.intellij.modules.jcef</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Atticus" anchor="right" secondary="false"
+                    icon="/icons/atticus.svg"
+                    factoryClass="com.maycombhq.atticus.ide.AtticusToolWindowFactory"/>
+        <applicationConfigurable parentId="tools" id="com.maycombhq.atticus.settings" displayName="Atticus"
+                                 instance="com.maycombhq.atticus.ide.AtticusConfigurable"/>
+        <notificationGroup id="Atticus" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <action id="Atticus.RunCommand" class="com.maycombhq.atticus.ide.RunCommandAction"
+                text="Atticus: Run a Command…" description="Pick any atticus command, answer what it needs, and run it"
+                icon="AllIcons.Actions.Execute">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action id="Atticus.NextStep" class="com.maycombhq.atticus.ide.NextStepAction"
+                text="Atticus: Next Step" description="What to do next, in plain words, with a way to do it"
+                icon="AllIcons.Actions.Forward">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action id="Atticus.Refresh" class="com.maycombhq.atticus.ide.RefreshAction"
+                text="Atticus: Refresh" description="Show the app again, or check for atticus and the metarepo again"
+                icon="AllIcons.Actions.Refresh"/>
+        <action id="Atticus.OpenInBrowser" class="com.maycombhq.atticus.ide.OpenInBrowserAction"
+                text="Atticus: Open in Browser" description="Open the Atticus app in your browser"
+                icon="AllIcons.General.Web"/>
+    </actions>
+</idea-plugin>

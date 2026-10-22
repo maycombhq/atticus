@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### An IntelliJ IDEA plugin
+
+- `packages/intellij` holds a Kotlin plugin, built with Gradle against the IntelliJ IDEA on the machine (ADR 0099). Install the zip it writes with Settings → Plugins → Install Plugin from Disk….
+- The Atticus tool window: it shows the app (`atticus ui`, on 127.0.0.1) in a metarepo. Without a metarepo it offers Create, Use Atticus in this project and a practice metarepo, and it says how to install `atticus` when the command line is missing.
+- Atticus: Run a Command… lists every command by area, in plain words. The AI steps name their `/atticus-*` slash command for Copilot Chat, since IntelliJ's Copilot gives plugins no model. Shared writes run as a dry run first, and run for real only after Approve and run.
+- Atticus: Next Step says the next step in plain words, with a way to do it.
+
 ### The VS Code extension for a first-time user
 
 - Fixed: clicking the app's menu in the Atticus tab did nothing (ADR 0098).

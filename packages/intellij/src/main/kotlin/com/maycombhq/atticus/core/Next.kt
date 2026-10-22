@@ -1,0 +1,70 @@
+package com.maycombhq.atticus.core
+
+/** One step of `atticus next --json`. */
+data class NextStep(
+    val step: String,
+    val command: String,
+    val why: String,
+    val slash: String? = null,
+    val where: String? = null,
+    val person: Boolean = false,
+    val repo: String? = null,
+    val change: String? = null,
+    val source: String? = null,
+)
+
+data class NextView(val next: NextStep?, val steps: List<NextStep>)
+
+/** What the plugin does for a step `atticus next` names. */
+sealed interface NextAction {
+    /** An AI step: run it in Copilot Chat with [slash], or its hand-off in a console. */
+    data class Ai(val args: List<String>, val slash: String?) : NextAction
+
+    /** Questions wait for a person: answer them in the app, or with [slash] in Copilot Chat. */
+    data class Answer(val slash: String?) : NextAction
+
+    /** A command to run, through the same rules as Run a command. */
+    data class Run(val args: List<String>) : NextAction
+
+    /** A step only a person takes, or a command with a part to fill in: shown, not run. */
+    data class Person(val command: String) : NextAction
+}
+
+object Next {
+    /** Read `atticus next --json`; null when it printed no JSON (not a metarepo, say). */
+    fun parse(json: String): NextView? {
+        val root = runCatching { Json.objectIn(json) }.getOrNull().obj() ?: return null
+        return NextView(root["next"].obj()?.let(::step), root.objs("steps").map(::step))
+    }
+
+    private fun step(m: Map<*, *>) =
+        NextStep(
+            step = m.str("step") ?: "",
+            command = m.str("command") ?: "",
+            why = m.str("why") ?: "",
+            slash = m.str("slash"),
+            where = m.str("where"),
+            person = m.bool("person"),
+            repo = m.str("repo"),
+            change = m.str("change"),
+            source = m.str("source"),
+        )
+
+    /** The words of a printed command, without "atticus"; quoted parts kept whole. */
+    fun argsOf(command: String): List<String> =
+        Regex("\"([^\"]*)\"|'([^']*)'|(\\S+)")
+            .findAll(command)
+            .map { m -> m.groups[1]?.value ?: m.groups[2]?.value ?: m.groups[3]!!.value }
+            .toList()
+            .let { if (it.firstOrNull() == "atticus") it.drop(1) else it }
+
+    fun actionFor(s: NextStep): NextAction {
+        if (s.step == "answer") return NextAction.Answer(s.slash)
+        if (s.person || Regex("<[^>]+>").containsMatchIn(s.command)) return NextAction.Person(s.command)
+        val args = argsOf(s.command)
+        if (s.step == "spec" || args.take(2).joinToString(" ") in Commands.AI_STEPS) {
+            return NextAction.Ai(args, s.slash ?: Commands.slashFor(args))
+        }
+        return NextAction.Run(args)
+    }
+}
