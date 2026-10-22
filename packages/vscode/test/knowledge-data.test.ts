@@ -297,6 +297,7 @@ describe("correcting an item (ADR 0101)", () => {
       "inputs",
       "steps",
       "notes",
+      "urls",
     ]);
     expect(c.find((x) => x.field === "inputs")).toMatchObject({
       label: "Inputs",
@@ -717,5 +718,34 @@ candidates:
       ["“Kafka topic”", "2 found · 1 kept · 2026-10-20"],
     ]);
     expect(rows[0]!.command).toEqual({ command: "atticus.keepFound", args: ["kafka-topic-2"] });
+  });
+});
+
+describe("correcting an item's links and other names (ADR 0101)", () => {
+  it("offers them, a link as label=address", () => {
+    const c = correctChoices({
+      id: "kafka-topic-request",
+      kind: "ProcessDefinition",
+      title: "Kafka topic",
+      urls: [
+        { label: "Form", url: "https://servicedesk.example.com/kafka" },
+        { url: "https://wiki.example.com/topics" },
+      ],
+    } as never);
+    expect(c.find((x) => x.field === "urls")).toMatchObject({
+      label: "Links (label=address)",
+      list: true,
+      current: "Form=https://servicedesk.example.com/kafka | https://wiki.example.com/topics",
+    });
+    const v = correctChoices({
+      id: "nwp",
+      kind: "Party",
+      name: "Northwind Pay",
+      aliases: ["NWP"],
+    } as never);
+    expect(v.find((x) => x.field === "aliases")).toMatchObject({
+      label: "Other names",
+      current: "NWP",
+    });
   });
 });

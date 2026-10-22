@@ -180,8 +180,14 @@ export class KnowledgeUi {
       if (pick) this.svc.log.show(true);
       return;
     }
+    // A dialog, not a notification: a notification slips into the bell before it is seen.
     const next = await vscode.window.showInformationMessage(
-      `Added ${id} to sources.yaml: commit it through a pull request. Copy its pages and read them with Copilot now?`,
+      `Added ${id} to sources.yaml.`,
+      {
+        modal: true,
+        detail:
+          "Commit sources.yaml through a pull request. Copy its pages now (a snapshot of what it holds) and read them into knowledge items with Copilot?",
+      },
       "Sync and read it now",
       "Open sources.yaml",
     );

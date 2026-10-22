@@ -865,7 +865,12 @@ export class CommandUi {
     const summary = vscode.Uri.file(join(root, made.value.proposal, "SUMMARY.md"));
     await vscode.commands.executeCommand("markdown.showPreview", summary);
     const pick = await vscode.window.showInformationMessage(
-      `${id} is a proposal in ${made.value.proposal}/. Review its summary, change any action you disagree with, then accept it into the metarepo.`,
+      `${id} is a proposal in ${made.value.proposal}/.`,
+      {
+        modal: true,
+        detail:
+          "Its summary is open. Read it, change any action you disagree with, then accept it into the metarepo.",
+      },
       "Accept it",
     );
     if (pick) await this.absorbAccept(root, id);

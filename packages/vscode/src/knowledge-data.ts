@@ -324,6 +324,8 @@ export function knowledgeItemRows(items: KnowledgeEntry[], p: KnowledgePaths): I
 
 const WORDS: Record<string, string> = {
   title: "Title",
+  urls: "Links (label=address)",
+  aliases: "Other names",
   appliesWhen: "Applies when",
   leadTime: "Lead time",
   handledBy: "Handled by",
@@ -349,7 +351,7 @@ const WORDS: Record<string, string> = {
 };
 
 /** The fields a person may correct, by record kind, as the command line has them (ADR 0101). */
-const CORRECTABLE: Record<string, [string, "text" | "list"][]> = {
+const CORRECTABLE: Record<string, [string, "text" | "list" | "links"][]> = {
   ProcessDefinition: [
     ["title", "text"],
     ["appliesWhen", "text"],
@@ -359,6 +361,7 @@ const CORRECTABLE: Record<string, [string, "text" | "list"][]> = {
     ["inputs", "list"],
     ["steps", "list"],
     ["notes", "text"],
+    ["urls", "links"],
   ],
   Pattern: [
     ["name", "text"],
@@ -366,12 +369,14 @@ const CORRECTABLE: Record<string, [string, "text" | "list"][]> = {
     ["rules", "list"],
     ["appliesWhen", "text"],
     ["handledBy", "text"],
+    ["urls", "links"],
   ],
   Decision: [
     ["title", "text"],
     ["appliesWhen", "text"],
     ["handledBy", "text"],
     ["reason", "text"],
+    ["urls", "links"],
   ],
   Party: [
     ["name", "text"],
@@ -381,6 +386,8 @@ const CORRECTABLE: Record<string, [string, "text" | "list"][]> = {
     ["uses", "list"],
     ["contacts", "list"],
     ["channel", "text"],
+    ["aliases", "list"],
+    ["urls", "links"],
   ],
   Product: [
     ["name", "text"],
@@ -389,6 +396,8 @@ const CORRECTABLE: Record<string, [string, "text" | "list"][]> = {
     ["usedBy", "list"],
     ["vendor", "text"],
     ["systems", "list"],
+    ["aliases", "list"],
+    ["urls", "links"],
   ],
 };
 
@@ -407,8 +416,16 @@ export function correctChoices(i: KnowledgeEntry): CorrectChoice[] {
   return (CORRECTABLE[i.kind] ?? []).map(([field, type]) => ({
     field,
     label: WORDS[field] ?? field,
-    list: type === "list",
-    current: type === "list" ? listOf(i[field]).join(LIST_SEPARATOR) : (textOf(i[field]) ?? ""),
+    list: type !== "text",
+    // A link is label=address, or just the address (ADR 0101).
+    current:
+      type === "links"
+        ? urlsOf(i)
+            .map((u) => (u.label ? `${u.label}=${u.url}` : u.url))
+            .join(LIST_SEPARATOR)
+        : type === "list"
+          ? listOf(i[field]).join(LIST_SEPARATOR)
+          : (textOf(i[field]) ?? ""),
   }));
 }
 

@@ -7,6 +7,8 @@ The Atticus extension for VS Code. The command line's own changes are in the rep
 - **Draft the org pack from the wikis**: the systems the knowledge names, with their aliases and owners, to pick and accept into profile.yaml.
 - **Check what no one has verified**: the unverified knowledge items, one after another.
 - Next runs the new steps: sync an old wiki again, draft or accept the org pack, check the knowledge your changes use.
+- Correct… also edits an item's links (label=address) and other names.
+- Adding a wiki and bringing in a repo ask what to do next in a dialog, not a notification that slips into the bell.
 
 Knowledge managed in the metarepo, and what a change needs from the organisation (ADR 0101).
 
