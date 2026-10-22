@@ -45,7 +45,7 @@ export function useChange(hash: string, screen: string) {
         disabled={list.state !== "ready" || list.data.length === 0}
         style={{
           height: 32,
-          background: "#0B1016",
+          background: "var(--box)",
           color: "var(--text)",
           border: "1px solid var(--line-2)",
           borderRadius: 7,
@@ -150,7 +150,7 @@ export function Markdown({ text }: { text: string }) {
             </thead>
             <tbody>
               {body.map((r, i) => (
-                <tr key={i} style={{ borderTop: "1px solid #18202A", verticalAlign: "top" }}>
+                <tr key={i} style={{ borderTop: "1px solid var(--rule)", verticalAlign: "top" }}>
                   {cells(r).map((c, j) => (
                     <td key={j} style={{ padding: "6px 10px 6px 0", color: "var(--text-2)" }}>
                       {inline(c)}
@@ -177,7 +177,7 @@ export function Markdown({ text }: { text: string }) {
             className="mono"
             style={{
               fontSize: 11.5,
-              background: "#0B1016",
+              background: "var(--box)",
               border: "1px solid var(--line)",
               borderRadius: 8,
               padding: 10,
@@ -264,7 +264,7 @@ export function Note({ note }: { note?: { ok: boolean; text: string } | undefine
       style={{
         margin: "8px 0 0",
         whiteSpace: "pre-line",
-        color: note.ok ? "var(--green)" : "#FF9BCB",
+        color: note.ok ? "var(--green)" : "var(--magenta-text)",
         fontSize: 12.5,
       }}
     >
@@ -298,7 +298,10 @@ export function Table<R>(p: {
         </thead>
         <tbody>
           {p.rows.map((r) => (
-            <tr key={p.rowKey(r)} style={{ borderTop: "1px solid #18202A", verticalAlign: "top" }}>
+            <tr
+              key={p.rowKey(r)}
+              style={{ borderTop: "1px solid var(--rule)", verticalAlign: "top" }}
+            >
               {p.cols.map((c) => (
                 <td
                   key={c.label}

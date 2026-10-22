@@ -78,7 +78,7 @@ export function Ring(p: {
   const frac = p.max > 0 ? Math.min(p.value / p.max, 1) : 0;
   return (
     <svg role="img" aria-label={p.label} width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#1A2330" strokeWidth={4} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth={4} />
       <circle
         cx={size / 2}
         cy={size / 2}
@@ -89,13 +89,13 @@ export function Ring(p: {
         strokeLinecap="round"
         strokeDasharray={`${c * frac} ${c}`}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ filter: `drop-shadow(0 0 4px ${p.color ?? "#2EE6F6"})` }}
+        style={{ filter: `drop-shadow(0 0 var(--glow-size) ${p.color ?? "var(--accent)"})` }}
       />
       <text
         x={size / 2}
         y={size / 2 + 5}
         textAnchor="middle"
-        fill="#E9F6FA"
+        fill="var(--text)"
         fontFamily="Rajdhani, sans-serif"
         fontWeight={700}
         fontSize={size / 4}
@@ -124,7 +124,7 @@ export function Donut(p: {
         height={70}
         viewBox="0 0 70 70"
       >
-        <circle cx={35} cy={35} r={r} fill="none" stroke="#1A2330" strokeWidth={10} />
+        <circle cx={35} cy={35} r={r} fill="none" stroke="var(--track)" strokeWidth={10} />
         {p.parts.map((x) => {
           const len = total ? (x.value / total) * c : 0;
           const el = (

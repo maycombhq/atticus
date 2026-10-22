@@ -35,9 +35,9 @@ interface Questions {
 }
 
 const CELL: Record<string, { bg: string; label: string }> = {
-  verified: { bg: "rgba(46,230,246,0.55)", label: "verified from code" },
-  "document-only": { bg: "rgba(255,181,71,0.45)", label: "from documents only" },
-  unknown: { bg: "rgba(255,255,255,0.05)", label: "unknown" },
+  verified: { bg: "var(--cov-verified)", label: "verified from code" },
+  "document-only": { bg: "var(--cov-doc)", label: "from documents only" },
+  unknown: { bg: "var(--cov-unknown)", label: "unknown" },
 };
 
 function SystemGuide({ system }: { system: string }) {
@@ -113,7 +113,7 @@ export function EcosystemMap() {
                       font: "inherit",
                       cursor: "pointer",
                       padding: "6px 0",
-                      borderBottom: "1px solid #18202A",
+                      borderBottom: "1px solid var(--rule)",
                     }}
                   >
                     <span className="row between">
@@ -195,7 +195,7 @@ export function EcosystemMap() {
                                 height: 26,
                                 borderRadius: 4,
                                 textAlign: "center",
-                                border: "1px solid rgba(255,255,255,0.06)",
+                                border: "1px solid var(--cov-line)",
                               }}
                             >
                               <span className="sr">{cell.label}</span>
@@ -258,7 +258,7 @@ export function EcosystemMap() {
                 <li
                   key={x.id}
                   className="stack"
-                  style={{ gap: 2, paddingBottom: 6, borderBottom: "1px solid #18202A" }}
+                  style={{ gap: 2, paddingBottom: 6, borderBottom: "1px solid var(--rule)" }}
                 >
                   <span style={{ fontSize: 12.5 }}>{x.question}</span>
                   <span className="hud" style={{ fontSize: 9.5 }}>
@@ -359,7 +359,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
             style={{
               flex: "1 1 360px",
               height: 40,
-              background: "#0B1016",
+              background: "var(--box)",
               color: "var(--text)",
               border: "1px solid var(--accent)",
               borderRadius: 10,
@@ -400,7 +400,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
                     </div>
                   ))}
                   {d.ownerUnknown.length > 0 && (
-                    <p style={{ margin: 0, fontSize: 12.5, color: "#FFD18A" }}>
+                    <p style={{ margin: 0, fontSize: 12.5, color: "var(--amber-text)" }}>
                       No owner recorded for {d.ownerUnknown.join(", ")}.
                     </p>
                   )}
@@ -590,7 +590,7 @@ function FeatureGraph({ records }: { records: string[] }) {
           style={{
             border: "1px solid var(--line)",
             borderRadius: 10,
-            background: "rgba(7,11,15,0.6)",
+            background: "var(--inset)",
           }}
         >
           <GraphView
@@ -630,14 +630,14 @@ export function Features({ hash }: { hash: string }) {
                   {
                     label: "Confirmed by people",
                     value: d.coverage.confirmed.length,
-                    color: "#3DDC97",
+                    color: "var(--green)",
                   },
                   {
                     label: "Found in code only",
                     value: d.coverage.detectedOnly.length,
-                    color: "#2EE6F6",
+                    color: "var(--accent)",
                   },
-                  { label: "Unknown", value: d.coverage.unknown.length, color: "#FFB547" },
+                  { label: "Unknown", value: d.coverage.unknown.length, color: "var(--amber)" },
                 ]}
               />
               <nav aria-label="Features" className="stack" style={{ gap: 2 }}>
@@ -651,7 +651,7 @@ export function Features({ hash }: { hash: string }) {
                       textDecoration: "none",
                       padding: "7px 6px",
                       borderRadius: 6,
-                      background: f.id === id ? "rgba(46,230,246,0.08)" : undefined,
+                      background: f.id === id ? "var(--picked)" : undefined,
                     }}
                   >
                     <span className="stack" style={{ gap: 2 }}>
@@ -797,7 +797,7 @@ export function OrgPackScreen() {
                 </div>
               ))}
               {d.problems.length ? (
-                <p role="alert" style={{ color: "#FF9BCB", margin: 0 }}>
+                <p role="alert" style={{ color: "var(--magenta-text)", margin: 0 }}>
                   {d.problems.length} problems:{" "}
                   {d.problems.map((p) => `${p.file}: ${p.message}`).join("; ")}
                 </p>
@@ -950,13 +950,13 @@ function TriageOptions(p: {
 }
 
 const DOC_COLOR: Record<string, string> = {
-  read: "#3DDC97",
-  "needs-reading": "#2EE6F6",
-  "no-reader": "#8F7BFF",
-  unresolved: "#FFB547",
-  duplicate: "#5B6B7A",
-  superseded: "#5B6B7A",
-  failed: "#FF4FA3",
+  read: "var(--green)",
+  "needs-reading": "var(--accent)",
+  "no-reader": "var(--violet)",
+  unresolved: "var(--amber)",
+  duplicate: "var(--gone)",
+  superseded: "var(--gone)",
+  failed: "var(--magenta)",
 };
 
 export function IntakeScreen() {
@@ -991,7 +991,7 @@ export function IntakeScreen() {
               parts={byStatus.map((st) => ({
                 label: st,
                 value: docs.filter((d) => d.status === st).length,
-                color: DOC_COLOR[st] ?? "#BFEFF7",
+                color: DOC_COLOR[st] ?? "var(--accent-pale)",
               }))}
             />
           )}
@@ -1070,7 +1070,7 @@ export function IntakeScreen() {
                 <div
                   key={t.id}
                   className="stack"
-                  style={{ gap: 4, padding: "6px 0", borderBottom: "1px solid #18202A" }}
+                  style={{ gap: 4, padding: "6px 0", borderBottom: "1px solid var(--rule)" }}
                 >
                   <span className="row between" style={{ alignItems: "flex-start" }}>
                     <span style={{ fontSize: 12.5 }}>{t.summary}</span>
@@ -1191,7 +1191,7 @@ export function Scans() {
                 label="Job progress"
               />
               {job.errors.length > 0 && (
-                <span style={{ color: "#FF9BCB" }}>{job.errors.join("; ")}</span>
+                <span style={{ color: "var(--magenta-text)" }}>{job.errors.join("; ")}</span>
               )}
             </div>
           )}

@@ -181,7 +181,7 @@ function DigestButtons() {
         </button>
       </div>
       {error && (
-        <p role="alert" style={{ margin: 0, color: "#FF9BCB", fontSize: 12.5 }}>
+        <p role="alert" style={{ margin: 0, color: "var(--magenta-text)", fontSize: 12.5 }}>
           {error}
         </p>
       )}
@@ -332,11 +332,11 @@ export function CommandCenter() {
                             width: 44,
                             height: 44,
                             borderRadius: "50%",
-                            border: `1.5px solid ${i < at ? "#DDEFF5" : "#3A4756"}`,
+                            border: `1.5px solid ${i < at ? "var(--btn-text)" : "var(--step-off)"}`,
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            color: i < at ? "#DDEFF5" : "var(--muted)",
+                            color: i < at ? "var(--btn-text)" : "var(--muted)",
                           }}
                         >
                           {i < at ? "✓" : ""}
@@ -495,12 +495,12 @@ export function CommandCenter() {
                   {
                     label: "Checks from code",
                     value: f.filter((x) => x.layer !== "ai").length,
-                    color: "#2EE6F6",
+                    color: "var(--accent)",
                   },
                   {
                     label: "AI lenses",
                     value: f.filter((x) => x.layer === "ai").length,
-                    color: "#FF4FA3",
+                    color: "var(--magenta)",
                   },
                 ]}
               />
@@ -534,7 +534,7 @@ export function CommandCenter() {
           </View>
         </Panel>
       </div>
-      <p className="hud" style={{ textAlign: "center", fontSize: 10, color: "#5F7A88" }}>
+      <p className="hud" style={{ textAlign: "center", fontSize: 10, color: "var(--faint)" }}>
         A person approves every write · Atticus never touches live systems · every fact keeps its
         evidence
       </p>

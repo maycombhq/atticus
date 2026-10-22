@@ -248,7 +248,7 @@ export function FlowCanvas({
               markerHeight="7"
               orient="auto"
             >
-              <path d="M0 0 L8 4 L0 8 z" fill="#2EE6F6" />
+              <path d="M0 0 L8 4 L0 8 z" fill="var(--accent)" />
             </marker>
           </defs>
           {view.groups.map((g) => {
@@ -262,8 +262,8 @@ export function FlowCanvas({
                   width={b.w}
                   height={b.h}
                   rx={8}
-                  fill="rgba(46,230,246,0.04)"
-                  stroke="#2EE6F6"
+                  fill="var(--wash)"
+                  stroke="var(--accent)"
                   strokeOpacity={0.35}
                   strokeDasharray={g.kind === "datastore" ? undefined : "3 4"}
                 />
@@ -274,7 +274,7 @@ export function FlowCanvas({
                   fontWeight={700}
                   fontSize={12}
                   letterSpacing="0.08em"
-                  fill="#5FD8E6"
+                  fill="var(--flow-label)"
                 >
                   {g.label}
                 </text>
@@ -286,7 +286,7 @@ export function FlowCanvas({
               <path
                 key={e.id}
                 d={e.d}
-                stroke={lit(e) ? "#7FF4FF" : "#2EE6F6"}
+                stroke={lit(e) ? "var(--accent-soft)" : "var(--accent)"}
                 strokeOpacity={hot === undefined ? 0.45 : lit(e) ? 1 : 0.12}
                 strokeWidth={lit(e) ? 1.6 : 1}
                 strokeDasharray={e.async ? "5 4" : undefined}
@@ -323,13 +323,17 @@ export function FlowCanvas({
                   rx={n.kind === "table" ? 3 : 6}
                   fill={
                     on
-                      ? "rgba(46,230,246,0.22)"
+                      ? "var(--picked-on)"
                       : marked.has(n.id)
-                        ? "rgba(46,230,246,0.12)"
-                        : "#0B1016"
+                        ? "var(--picked-strong)"
+                        : "var(--box)"
                   }
                   stroke={
-                    on || marked.has(n.id) ? "#7FF4FF" : n.kind === "table" ? "#3B8F99" : "#2EE6F6"
+                    on || marked.has(n.id)
+                      ? "var(--accent-soft)"
+                      : n.kind === "table"
+                        ? "var(--flow-table)"
+                        : "var(--accent)"
                   }
                   strokeWidth={on ? 1.6 : 1}
                 />
@@ -338,7 +342,7 @@ export function FlowCanvas({
                   y={b.y + 15}
                   fontFamily="JetBrains Mono, monospace"
                   fontSize={11}
-                  fill={on ? "#E9F6FA" : "#BFEFF7"}
+                  fill={on ? "var(--text)" : "var(--accent-pale)"}
                 >
                   {boxText(n.label, l.inside.get(n.id))}
                 </text>

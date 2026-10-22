@@ -1,25 +1,247 @@
 /* The Atticus HUD look (design canvas "Atticus UI"): near-black ground with a faint grid, glass
    panels with a glowing corner bracket, neon cyan for what's moving, magenta for blocking,
-   amber for needs-you, green for done, violet for AI. Text keeps 4.5:1 on every panel. */
+   amber for needs-you, green for done, violet for AI. Text keeps 4.5:1 on every panel.
+
+   Every colour in the app is one of these tokens, so a theme is only a different set of values
+   (ADR 0098). The browser always gets the dark set below. Inside a VS Code panel the webview's
+   <body> carries vscode-light, vscode-dark, vscode-high-contrast or vscode-high-contrast-light,
+   and the blocks after :root swap the values to follow the editor. */
 
 :root {
   --accent: #2ee6f6;
   --accent-soft: #7ff4ff;
+  --accent-hover: #bffaff;
+  --accent-pale: #bfeff7;
+  --on-accent: #04131a;
   --glow: rgba(46, 230, 246, 0.45);
+  --glow-size: 4px;
   --magenta: #ff4fa3;
+  --magenta-text: #ff9bcb;
+  --magenta-line: rgba(255, 79, 163, 0.45);
+  --danger-text: #ffd6ea;
+  --danger-bg: rgba(255, 79, 163, 0.14);
   --amber: #ffb547;
+  --amber-text: #ffd18a;
+  --amber-line: rgba(255, 181, 71, 0.4);
   --green: #3ddc97;
+  --green-line: rgba(61, 220, 151, 0.4);
+  --green-line-soft: rgba(61, 220, 151, 0.35);
   --violet: #8f7bff;
+  --violet-text: #c9c2ff;
+  --violet-line: rgba(143, 123, 255, 0.45);
   --text: #e9f6fa;
   --text-2: #b7c6d3;
+  --btn-text: #ddeff5;
+  --nav-text: #9fb0bf;
   --muted: #8fa3b5;
+  --muted-2: #8fa3b3;
+  --faint: #5f7a88;
+  --gone: #5b6b7a;
+  --placeholder: #6f8395;
+  /* Grounds, from the page down to the boxes inside panels. */
   --ground: #05070a;
+  --haze: rgba(46, 230, 246, 0.07);
+  --grid: rgba(127, 244, 255, 0.025);
+  --nav: rgba(8, 11, 15, 0.92);
+  --bar: rgba(10, 13, 18, 0.85);
+  --input: #121922;
+  --panel: rgba(24, 30, 40, 0.92);
+  --panel-2: rgba(13, 17, 23, 0.92);
+  --panel-dark: #07090c;
+  --hero: rgba(8, 24, 30, 0.95);
+  --hero-2: rgba(6, 14, 19, 0.95);
+  --box: #0b1016;
+  --box-2: #0b1118;
+  --canvas: #070b10;
+  --inset: rgba(7, 11, 15, 0.6);
+  --backdrop: rgba(2, 5, 8, 0.66);
+  --skel: #121a23;
+  --skel-2: #1a2633;
+  /* Lines. */
   --line: rgba(127, 244, 255, 0.1);
   --line-2: rgba(127, 244, 255, 0.18);
+  --line-soft: rgba(127, 244, 255, 0.08);
+  --line-input: rgba(127, 244, 255, 0.16);
+  --line-hero: rgba(127, 244, 255, 0.22);
+  --chip-line: rgba(127, 244, 255, 0.25);
+  --chip-dim-line: #233040;
+  --bracket: rgba(127, 244, 255, 0.55);
+  --rule: #18202a;
+  --step-off: #3a4756;
   --track: #1a2330;
+  --track-glow: #2ee6f6;
+  /* Hover and picked washes, weakest first. */
+  --hover-soft: rgba(127, 244, 255, 0.04);
+  --hover: rgba(127, 244, 255, 0.05);
+  --wash: rgba(46, 230, 246, 0.04);
+  --picked-soft: rgba(46, 230, 246, 0.05);
+  --picked-faint: rgba(46, 230, 246, 0.06);
+  --picked: rgba(46, 230, 246, 0.08);
+  --picked-list: rgba(46, 230, 246, 0.1);
+  --picked-strong: rgba(46, 230, 246, 0.12);
+  --picked-on: rgba(46, 230, 246, 0.22);
+  /* Diagram marks: the flow map and the knowledge coverage grid. */
+  --flow-label: #5fd8e6;
+  --flow-table: #3b8f99;
+  --cov-verified: rgba(46, 230, 246, 0.55);
+  --cov-doc: rgba(255, 181, 71, 0.45);
+  --cov-unknown: rgba(255, 255, 255, 0.05);
+  --cov-line: rgba(255, 255, 255, 0.06);
+  /* The parts of the Architecture canvas React Flow draws itself, at its dark defaults (the canvas
+     runs in its dark colour mode). */
+  --attribution-bg: rgba(150, 150, 150, 0.25);
+  --attribution-text: #999999;
+  --canvas-dots: #777777;
+  --minimap-mask: rgba(60, 60, 60, 0.6);
+  --minimap-node: #2b2b2b;
+  --handle: #bebebe;
+  --handle-line: #1e1e1e;
+  --controls-hover: #3e3e3e;
+  --controls-hover-text: #ffffff;
+  /* Shadows are whole values: a var() inside a token resolves where the token is defined, so a
+     theme overrides the shadow itself rather than the colour in it. */
+  --shadow: 0 18px 40px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --shadow-hero: 0 0 40px rgba(46, 230, 246, 0.08), 0 18px 40px rgba(0, 0, 0, 0.6);
+  --shadow-ask: 0 0 16px rgba(46, 230, 246, 0.45), inset 0 0 12px rgba(46, 230, 246, 0.15);
+  --shadow-palette: 0 0 40px rgba(46, 230, 246, 0.18);
+  --shadow-tour: 0 0 32px rgba(46, 230, 246, 0.22), 0 18px 40px rgba(0, 0, 0, 0.6);
+  --shadow-target: 0 0 18px rgba(46, 230, 246, 0.45);
+  --shadow-danger: 0 0 12px rgba(255, 79, 163, 0.25);
   --font: "IBM Plex Sans", system-ui, sans-serif;
   --display: "Rajdhani", "IBM Plex Sans", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* VS Code light and high-contrast light: a plain light ground, no grid or glow, and accents
+   darkened until text keeps 4.5:1 and marks and control borders 3:1 on every light panel. The
+   html:has() selector carries the tokens to the page background behind <body> as well. */
+html:has(> body.vscode-light),
+html:has(> body.vscode-high-contrast-light),
+body.vscode-light,
+body.vscode-high-contrast-light {
+  --accent: #00707a;
+  --accent-soft: #005f68;
+  --accent-hover: #004a52;
+  --accent-pale: #005f68;
+  --on-accent: #ffffff;
+  --glow: transparent;
+  --glow-size: 0px;
+  --magenta: #b0185f;
+  --magenta-text: #a3155a;
+  --magenta-line: rgba(176, 24, 95, 0.55);
+  --danger-text: #8f1150;
+  --danger-bg: rgba(176, 24, 95, 0.08);
+  --amber: #8a5300;
+  --amber-text: #7a4a00;
+  --amber-line: rgba(138, 83, 0, 0.55);
+  --green: #08693f;
+  --green-line: rgba(8, 105, 63, 0.55);
+  --green-line-soft: rgba(8, 105, 63, 0.5);
+  --violet: #5a46d6;
+  --violet-text: #4b37c4;
+  --violet-line: rgba(90, 70, 214, 0.55);
+  --text: #17212b;
+  --text-2: #3d4f60;
+  --btn-text: #17212b;
+  --nav-text: #3d4f60;
+  --muted: #56687a;
+  --muted-2: #56687a;
+  --faint: #56687a;
+  --gone: #5b6672;
+  --placeholder: #56687a;
+  --ground: #f4f6f8;
+  --haze: transparent;
+  --grid: transparent;
+  --nav: #eef2f5;
+  --bar: #ffffff;
+  --input: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #ffffff;
+  --panel-dark: #f7f9fb;
+  --hero: #f2f8f9;
+  --hero-2: #f2f8f9;
+  --box: #f7f9fb;
+  --box-2: #ffffff;
+  --canvas: #fafbfc;
+  --inset: #f4f6f8;
+  --backdrop: rgba(23, 33, 43, 0.4);
+  --skel: #e6ebef;
+  --skel-2: #d3dce3;
+  --line: #ccd5dd;
+  --line-2: #7a8a99;
+  --line-soft: #d8e0e7;
+  --line-input: #7a8a99;
+  --line-hero: #7fb4ba;
+  --chip-line: rgba(0, 95, 104, 0.5);
+  --chip-dim-line: #a9b5c0;
+  --bracket: #00707a;
+  --rule: #e1e7ec;
+  --step-off: #7a8a99;
+  --track: #dbe3ea;
+  --track-glow: transparent;
+  --hover-soft: rgba(23, 33, 43, 0.04);
+  --hover: rgba(23, 33, 43, 0.05);
+  --wash: rgba(0, 112, 122, 0.05);
+  --picked-soft: rgba(0, 112, 122, 0.06);
+  --picked-faint: rgba(0, 112, 122, 0.07);
+  --picked: rgba(0, 112, 122, 0.1);
+  --picked-list: rgba(0, 112, 122, 0.1);
+  --picked-strong: rgba(0, 112, 122, 0.12);
+  --picked-on: rgba(0, 112, 122, 0.18);
+  --flow-label: #005f68;
+  --flow-table: #3d7f88;
+  --cov-verified: rgba(0, 112, 122, 0.55);
+  --cov-doc: rgba(138, 83, 0, 0.4);
+  --cov-unknown: rgba(23, 33, 43, 0.06);
+  --cov-line: rgba(23, 33, 43, 0.25);
+  --attribution-bg: #ffffff;
+  --attribution-text: #56687a;
+  --canvas-dots: #a9b5c0;
+  --minimap-mask: rgba(23, 33, 43, 0.12);
+  --minimap-node: #c9d3dc;
+  --handle: #56687a;
+  --handle-line: #ffffff;
+  --controls-hover: #e6ebef;
+  --controls-hover-text: #17212b;
+  --shadow: 0 1px 3px rgba(23, 33, 43, 0.08);
+  --shadow-hero: 0 1px 3px rgba(23, 33, 43, 0.08);
+  --shadow-ask: none;
+  --shadow-palette: 0 8px 28px rgba(23, 33, 43, 0.22);
+  --shadow-tour: 0 8px 28px rgba(23, 33, 43, 0.22);
+  --shadow-target: none;
+  --shadow-danger: none;
+}
+
+/* High contrast light: the light set, black text and the editor's strong dark-blue borders. */
+html:has(> body.vscode-high-contrast-light),
+body.vscode-high-contrast-light {
+  --text: #000000;
+  --btn-text: #000000;
+  --line: #0f4a85;
+  --line-2: #0f4a85;
+  --line-soft: #0f4a85;
+  --line-input: #0f4a85;
+  --line-hero: #0f4a85;
+  --chip-line: #0f4a85;
+  --chip-dim-line: #0f4a85;
+  --rule: #0f4a85;
+  --step-off: #0f4a85;
+}
+
+/* High contrast dark: the dark set with solid borders instead of faint ones. VS Code also puts
+   vscode-high-contrast on a high-contrast light body, so that one is left out. */
+html:has(> body.vscode-high-contrast:not(.vscode-high-contrast-light)),
+body.vscode-high-contrast:not(.vscode-high-contrast-light) {
+  --line: #6fc3df;
+  --line-2: #6fc3df;
+  --line-soft: #6fc3df;
+  --line-input: #6fc3df;
+  --line-hero: #6fc3df;
+  --chip-line: #6fc3df;
+  --chip-dim-line: #6fc3df;
+  --rule: #6fc3df;
+  --step-off: #8fa3b5;
+  --bracket: #6fc3df;
 }
 
 * {
@@ -37,9 +259,9 @@ body {
 
 body {
   background:
-    radial-gradient(1200px 600px at 55% 30%, rgba(46, 230, 246, 0.07), transparent 60%),
-    linear-gradient(rgba(127, 244, 255, 0.025) 1px, transparent 1px) 0 0 / 100% 32px,
-    linear-gradient(90deg, rgba(127, 244, 255, 0.025) 1px, transparent 1px) 0 0 / 32px 100%,
+    radial-gradient(1200px 600px at 55% 30%, var(--haze), transparent 60%),
+    linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 100% 32px,
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 32px 100%,
     var(--ground);
   min-height: 100vh;
 }
@@ -48,7 +270,7 @@ a {
   color: var(--accent-soft);
 }
 a:hover {
-  color: #bffaff;
+  color: var(--accent-hover);
 }
 :focus-visible {
   outline: 2px solid var(--accent-soft);
@@ -69,7 +291,7 @@ a:hover {
   left: 8px;
   top: -40px;
   background: var(--accent);
-  color: #04131a;
+  color: var(--on-accent);
   padding: 8px 12px;
   border-radius: 6px;
   z-index: 10;
@@ -90,8 +312,8 @@ a:hover {
   flex: 1 1 206px;
   max-width: 226px;
   padding: 16px 10px;
-  background: rgba(8, 11, 15, 0.92);
-  border-right: 1px solid rgba(127, 244, 255, 0.08);
+  background: var(--nav);
+  border-right: 1px solid var(--line-soft);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -102,16 +324,16 @@ a:hover {
   gap: 11px;
   padding: 8px 12px;
   border-radius: 8px;
-  color: #9fb0bf;
+  color: var(--nav-text);
   text-decoration: none;
   font-size: 13px;
 }
 .nav a:hover {
-  background: rgba(127, 244, 255, 0.05);
+  background: var(--hover);
   color: var(--text);
 }
 .nav a[aria-current="page"] {
-  background: rgba(46, 230, 246, 0.08);
+  background: var(--picked);
   color: var(--text);
   box-shadow: inset 2px 0 0 var(--accent);
 }
@@ -127,11 +349,9 @@ a:hover {
 .nav .ask {
   margin-top: 12px;
   border: 1px solid var(--accent);
-  background: rgba(46, 230, 246, 0.12);
+  background: var(--picked-strong);
   color: var(--text);
-  box-shadow:
-    0 0 16px var(--glow),
-    inset 0 0 12px rgba(46, 230, 246, 0.15);
+  box-shadow: var(--shadow-ask);
 }
 .brand {
   display: flex;
@@ -161,9 +381,9 @@ a:hover {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border: 1px solid rgba(127, 244, 255, 0.08);
+  border: 1px solid var(--line-soft);
   border-radius: 10px;
-  background: rgba(10, 13, 18, 0.85);
+  background: var(--bar);
 }
 .ask-form {
   flex: 1 1 280px;
@@ -173,8 +393,8 @@ a:hover {
   height: 36px;
   padding: 0 6px 0 12px;
   border-radius: 8px;
-  background: #121922;
-  border: 1px solid rgba(127, 244, 255, 0.16);
+  background: var(--input);
+  border: 1px solid var(--line-input);
 }
 .ask-form input {
   flex: 1;
@@ -187,7 +407,7 @@ a:hover {
   font-size: 12.5px;
 }
 .ask-form input::placeholder {
-  color: #6f8395;
+  color: var(--placeholder);
 }
 
 /* ---------------------------------------------------------------- building blocks */
@@ -214,13 +434,11 @@ a:hover {
 
 .panel {
   position: relative;
-  background: linear-gradient(180deg, rgba(24, 30, 40, 0.92), rgba(13, 17, 23, 0.92));
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 14px;
-  box-shadow:
-    0 18px 40px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: var(--shadow);
   min-width: 0;
 }
 .panel::before {
@@ -230,20 +448,18 @@ a:hover {
   top: -1px;
   width: 14px;
   height: 14px;
-  border-left: 1.5px solid rgba(127, 244, 255, 0.55);
-  border-top: 1.5px solid rgba(127, 244, 255, 0.55);
+  border-left: 1.5px solid var(--bracket);
+  border-top: 1.5px solid var(--bracket);
   border-radius: 10px 0 0 0;
   pointer-events: none;
 }
 .panel.dark {
-  background: #07090c;
+  background: var(--panel-dark);
 }
 .panel.hero {
-  background: linear-gradient(180deg, rgba(8, 24, 30, 0.95), rgba(6, 14, 19, 0.95));
-  border-color: rgba(127, 244, 255, 0.22);
-  box-shadow:
-    0 0 40px rgba(46, 230, 246, 0.08),
-    0 18px 40px rgba(0, 0, 0, 0.6);
+  background: linear-gradient(180deg, var(--hero), var(--hero-2));
+  border-color: var(--line-hero);
+  box-shadow: var(--shadow-hero);
 }
 
 .hud {
@@ -294,29 +510,29 @@ a:hover {
   font-size: 11px;
   border-radius: 5px;
   padding: 2px 7px;
-  border: 1px solid rgba(127, 244, 255, 0.25);
+  border: 1px solid var(--chip-line);
   color: var(--accent-soft);
   white-space: nowrap;
 }
 .chip.blocking {
-  color: #ff9bcb;
-  border-color: rgba(255, 79, 163, 0.45);
+  color: var(--magenta-text);
+  border-color: var(--magenta-line);
 }
 .chip.warn {
   color: var(--amber);
-  border-color: rgba(255, 181, 71, 0.4);
+  border-color: var(--amber-line);
 }
 .chip.done {
   color: var(--green);
-  border-color: rgba(61, 220, 151, 0.4);
+  border-color: var(--green-line);
 }
 .chip.ai {
-  color: #c9c2ff;
-  border-color: rgba(143, 123, 255, 0.45);
+  color: var(--violet-text);
+  border-color: var(--violet-line);
 }
 .chip.dim {
   color: var(--muted);
-  border-color: #233040;
+  border-color: var(--chip-dim-line);
 }
 
 .btn {
@@ -324,8 +540,8 @@ a:hover {
   padding: 0 11px;
   border-radius: 7px;
   border: 1px solid var(--line-2);
-  background: rgba(127, 244, 255, 0.04);
-  color: #ddeff5;
+  background: var(--hover-soft);
+  color: var(--btn-text);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -333,7 +549,7 @@ a:hover {
 .btn.primary {
   border: 0;
   background: var(--accent);
-  color: #04131a;
+  color: var(--on-accent);
   font-weight: 600;
   box-shadow: 0 0 12px var(--glow);
 }
@@ -353,7 +569,7 @@ a:hover {
   justify-content: space-between;
   gap: 10px;
   padding: 7px 0;
-  border-bottom: 1px solid #18202a;
+  border-bottom: 1px solid var(--rule);
 }
 .list-row:last-child {
   border-bottom: 0;
@@ -369,7 +585,7 @@ a:hover {
   height: 6px;
   border-radius: 3px;
   background: var(--accent);
-  box-shadow: 0 0 10px var(--accent);
+  box-shadow: 0 0 10px var(--track-glow);
 }
 
 .big {
@@ -387,12 +603,12 @@ a:hover {
   color: var(--text-2);
 }
 .state.error {
-  color: #ff9bcb;
+  color: var(--magenta-text);
 }
 .skeleton {
   height: 12px;
   border-radius: 4px;
-  background: linear-gradient(90deg, #121a23, #1a2633, #121a23);
+  background: linear-gradient(90deg, var(--skel), var(--skel-2), var(--skel));
   background-size: 200% 100%;
   animation: shimmer 1.4s linear infinite;
 }
@@ -417,7 +633,7 @@ a:hover {
 .palette-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(2, 5, 8, 0.66);
+  background: var(--backdrop);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -427,12 +643,12 @@ a:hover {
 .palette {
   width: min(640px, 92vw);
   border-color: var(--accent);
-  box-shadow: 0 0 40px rgba(46, 230, 246, 0.18);
+  box-shadow: var(--shadow-palette);
 }
 .palette input {
   width: 100%;
   height: 44px;
-  background: #0b1016;
+  background: var(--box);
   color: var(--text);
   border: 1px solid var(--accent);
   border-radius: 10px;
@@ -457,15 +673,15 @@ a:hover {
   font-size: 13px;
 }
 .palette li[aria-selected="true"] {
-  background: rgba(46, 230, 246, 0.1);
+  background: var(--picked-list);
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .btn.danger {
   border-color: var(--magenta);
-  color: #ffd6ea;
-  background: rgba(255, 79, 163, 0.14);
-  box-shadow: 0 0 12px rgba(255, 79, 163, 0.25);
+  color: var(--danger-text);
+  background: var(--danger-bg);
+  box-shadow: var(--shadow-danger);
 }
 
 .tour {
@@ -475,21 +691,19 @@ a:hover {
   width: min(380px, calc(100vw - 32px));
   z-index: 40;
   border-color: var(--accent);
-  box-shadow:
-    0 0 32px rgba(46, 230, 246, 0.22),
-    0 18px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-tour);
 }
 .tour-target {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
-  box-shadow: 0 0 18px rgba(46, 230, 246, 0.45);
+  box-shadow: var(--shadow-target);
   border-radius: 8px;
 }
 
 /* A plain text box or select in a panel (filters, settings). */
 .field {
   height: 32px;
-  background: #0b1016;
+  background: var(--box);
   color: var(--text);
   border: 1px solid var(--line-2);
   border-radius: 7px;
@@ -520,16 +734,27 @@ a.btn {
   border: 1px solid var(--line);
   border-radius: 8px;
   overflow: hidden;
-  background: #070b10;
+  background: var(--canvas);
 }
 .arch-canvas .react-flow {
-  --xy-background-color: #070b10;
+  --xy-background-color: var(--canvas);
   --xy-node-border-radius: 8px;
-  --xy-minimap-background-color: #0b1016;
-  --xy-controls-button-background-color: #0b1016;
+  --xy-minimap-background-color: var(--box);
+  --xy-controls-button-background-color: var(--box);
   --xy-controls-button-color: var(--text);
   --xy-controls-button-border-color: var(--line-2);
   --xy-edge-stroke: var(--text-2);
+  --xy-attribution-background-color: var(--attribution-bg);
+  --xy-background-pattern-color: var(--canvas-dots);
+  --xy-minimap-mask-background-color: var(--minimap-mask);
+  --xy-minimap-node-background-color: var(--minimap-node);
+  --xy-handle-background-color: var(--handle);
+  --xy-handle-border-color: var(--handle-line);
+  --xy-controls-button-background-color-hover: var(--controls-hover);
+  --xy-controls-button-color-hover: var(--controls-hover-text);
+}
+.arch-canvas .react-flow__attribution a {
+  color: var(--attribution-text);
 }
 .arch-box {
   width: 100%;
@@ -537,7 +762,7 @@ a.btn {
   padding: 6px 10px;
   border: 1px solid var(--line-2);
   border-radius: 8px;
-  background: #0b1016;
+  background: var(--box);
   color: var(--text);
   font-size: 12px;
   display: flex;
@@ -545,7 +770,7 @@ a.btn {
   gap: 2px;
 }
 .arch-box.group {
-  background: rgba(46, 230, 246, 0.04);
+  background: var(--wash);
   border-color: var(--accent);
 }
 .arch-box.outside {
@@ -591,7 +816,7 @@ a.btn {
   pointer-events: all;
   padding: 1px 6px;
   border-radius: 4px;
-  background: #0b1016;
+  background: var(--box);
   border: 1px solid var(--line-2);
   color: var(--text-2);
   font-family: var(--mono);

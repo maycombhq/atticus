@@ -258,7 +258,7 @@ export function Evals() {
                   <article
                     key={f.path}
                     className="stack"
-                    style={{ gap: 4, borderTop: "1px solid #18202a", paddingTop: 8 }}
+                    style={{ gap: 4, borderTop: "1px solid var(--rule)", paddingTop: 8 }}
                   >
                     <div className="row between" style={{ flexWrap: "wrap" }}>
                       <span className="mono" style={{ fontSize: 12 }}>
@@ -287,7 +287,7 @@ export function Evals() {
                   <article
                     key={`${q.change}${q.file}${q.source}`}
                     className="stack"
-                    style={{ gap: 4, borderTop: "1px solid #18202a", paddingTop: 8 }}
+                    style={{ gap: 4, borderTop: "1px solid var(--rule)", paddingTop: 8 }}
                   >
                     <div className="row between" style={{ flexWrap: "wrap" }}>
                       <span style={{ fontSize: 12.5 }}>{q.origin}</span>

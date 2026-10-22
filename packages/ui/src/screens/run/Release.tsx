@@ -85,7 +85,7 @@ function List({ list, current }: { list: Loaded<ReleaseItem[]>; current?: string
                   textDecoration: "none",
                   padding: "8px 6px",
                   borderRadius: 6,
-                  background: c.id === current ? "rgba(46,230,246,0.08)" : undefined,
+                  background: c.id === current ? "var(--picked)" : undefined,
                 }}
               >
                 <span className="stack" style={{ gap: 2, minWidth: 0 }}>

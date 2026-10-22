@@ -7,6 +7,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 ### The VS Code extension for a first-time user
 
 - Fixed: clicking the app's menu in the Atticus tab did nothing (ADR 0098).
+- In the Atticus tab the app follows VS Code's theme: light, dark and both high-contrast themes, with every colour a theme token and AA contrast in each. In the browser it looks as before.
 - Start from nothing: with no metarepo open, the sidebar offers Open, Create (`atticus init`), Use Atticus in this repo (`atticus adopt`) and a practice metarepo. A missing command line or Copilot Chat is said, with how to fix it.
 - A Get started walkthrough, from installing the command line to a first change.
 - Add repos (the Repos section's +): found in a folder of clones or a Git host organisation, shown with their types, added when you say yes.

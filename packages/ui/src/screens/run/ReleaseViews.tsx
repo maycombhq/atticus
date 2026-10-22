@@ -187,7 +187,7 @@ export function PlanPanels({ id, tick }: { id: string; tick: number }) {
                             </span>
                           </>
                         ) : (
-                          <span style={{ color: "#ff9bcb" }}>{s.rollback.gap}</span>
+                          <span style={{ color: "var(--magenta-text)" }}>{s.rollback.gap}</span>
                         )}
                       </span>
                     </span>

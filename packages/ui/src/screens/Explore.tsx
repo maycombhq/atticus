@@ -228,7 +228,7 @@ export function Explore({ hash }: { hash: string }) {
                   · edit it below to refine
                 </span>
                 {a.error && (
-                  <span role="alert" style={{ color: "#FF9BCB" }}>
+                  <span role="alert" style={{ color: "var(--magenta-text)" }}>
                     {a.error}
                   </span>
                 )}
@@ -250,7 +250,7 @@ export function Explore({ hash }: { hash: string }) {
             style={{
               flex: "1 1 360px",
               height: 40,
-              background: "#0B1016",
+              background: "var(--box)",
               color: "var(--text)",
               border: "1px solid var(--accent)",
               borderRadius: 10,
@@ -295,7 +295,7 @@ export function Explore({ hash }: { hash: string }) {
                       className="list-row"
                       style={{
                         width: "100%",
-                        background: picked?.id === row.id ? "rgba(46,230,246,0.08)" : "transparent",
+                        background: picked?.id === row.id ? "var(--picked)" : "transparent",
                         border: 0,
                         color: "inherit",
                         font: "inherit",

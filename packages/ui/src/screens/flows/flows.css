@@ -38,12 +38,12 @@
 .flow-list a:hover,
 .flow-list a:focus-visible {
   border-color: var(--line-2);
-  background: rgba(46, 230, 246, 0.05);
+  background: var(--picked-soft);
 }
 
 .flow-list a[aria-current="true"] {
   border-color: var(--accent);
-  background: rgba(46, 230, 246, 0.08);
+  background: var(--picked);
 }
 
 .flow-name {
@@ -188,7 +188,7 @@
   padding: 8px 10px;
   border: 1px solid var(--line-2);
   border-radius: 6px;
-  background: #0b1118;
+  background: var(--box-2);
   display: grid;
   gap: 4px;
   min-width: 0;

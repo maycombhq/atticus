@@ -277,7 +277,7 @@ export function Governance() {
                 <div
                   key={`${w.change}${w.gate}${w.rule}`}
                   className="stack"
-                  style={{ gap: 2, padding: "6px 0", borderBottom: "1px solid #18202a" }}
+                  style={{ gap: 2, padding: "6px 0", borderBottom: "1px solid var(--rule)" }}
                 >
                   <span style={{ fontSize: 12.5 }}>{w.summary}</span>
                   <span className="hud" style={{ fontSize: 9.5 }}>

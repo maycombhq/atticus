@@ -65,7 +65,9 @@ function GateHeader(p: {
           <div className="stack" style={{ gap: 10 }}>
             <p style={{ margin: 0, lineHeight: 1.5 }}>{s.nextStep}</p>
             {s.blockers.length > 0 && (
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: "#FF9BCB" }}>
+              <ul
+                style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: "var(--magenta-text)" }}
+              >
                 {s.blockers.map((b, i) => (
                   <li key={i}>{b.message}</li>
                 ))}
@@ -246,7 +248,7 @@ function FindingsPanel({
         {() => (
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }} className="stack">
             {mine.map((x) => (
-              <li key={x.id} style={{ borderBottom: "1px solid #18202A", paddingBottom: 8 }}>
+              <li key={x.id} style={{ borderBottom: "1px solid var(--rule)", paddingBottom: 8 }}>
                 <button
                   type="button"
                   aria-expanded={open === x.id}
@@ -636,7 +638,7 @@ function StoryBarPanel({ change }: { change: string }) {
             {b.gaps
               .filter((g) => !g.covered)
               .map((g) => (
-                <div key={g.id} style={{ fontSize: 12.5, color: "#FFD18A" }}>
+                <div key={g.id} style={{ fontSize: 12.5, color: "var(--amber-text)" }}>
                   No story covers: {g.what}
                 </div>
               ))}
@@ -1028,7 +1030,9 @@ export function TestTrace({ hash }: { hash: string }) {
                   parts={[...new Set(d.gaps.map((g) => g.kind))].map((k, i) => ({
                     label: k,
                     value: d.gaps.filter((g) => g.kind === k).length,
-                    color: ["#FFB547", "#FF4FA3", "#8F7BFF", "#2EE6F6"][i % 4]!,
+                    color: ["var(--amber)", "var(--magenta)", "var(--violet)", "var(--accent)"][
+                      i % 4
+                    ]!,
                   }))}
                 />
               </div>

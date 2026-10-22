@@ -49,10 +49,11 @@ A review of the extension found that it covered every command (ADR 0096) but was
    `activate` returns handles for this. A manifest test checks that every `command:` link in the welcome views and the walkthrough names a command that exists.
 
 9. **Fixed: the app's links in a panel.** The bundled page had a `<base>`, so the app's own links (`#/architecture`) pointed at another page, and VS Code refused to go there: clicking the menu did nothing. The page now gives its files their full address and has no `<base>`. Checked by clicking the menu in the panel harness (ADR 0097): each screen opened.
-10. **No contract changes.**
+10. **The app follows VS Code's theme in a panel.** Every colour in the app is a theme token (`packages/ui/src/styles/hud.css`). A test fails on a colour literal outside the token blocks, and on a light text token below 4.5:1. VS Code marks the panel's body `vscode-light`, `vscode-dark`, `vscode-high-contrast` or `vscode-high-contrast-light`, and the light and high-contrast token sets apply under those marks. With no mark (the browser) the app is as before: 36 screens were compared colour by colour, and axe found no contrast issue in any of the four themes.
+11. **No contract changes.**
 
 ## Consequences
 
 - Someone with nothing installed is led from the command line to a first change. Every state of the sidebar says what to do next.
 - First run in a real VS Code (VS Code 1.95+, Windows) passed all seven checks.
-- Not built here: a light theme for the app in a panel, and an IntelliJ plugin (both follow-ups).
+- Not built here: an IntelliJ plugin (a follow-up).

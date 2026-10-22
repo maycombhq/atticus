@@ -67,7 +67,7 @@ function ContractList({
                   className="list-row"
                   style={{
                     width: "100%",
-                    background: picked === r.id ? "rgba(46,230,246,0.08)" : "transparent",
+                    background: picked === r.id ? "var(--picked)" : "transparent",
                     border: 0,
                     color: "inherit",
                     font: "inherit",
@@ -233,9 +233,9 @@ export function Contracts() {
             <Donut
               title="Contracts by kind"
               parts={[
-                { label: "APIs", value: n("Endpoint"), color: "#2EE6F6" },
-                { label: "Interfaces", value: n("Interface"), color: "#8F7BFF" },
-                { label: "Tables", value: n("Table"), color: "#FFB547" },
+                { label: "APIs", value: n("Endpoint"), color: "var(--accent)" },
+                { label: "Interfaces", value: n("Interface"), color: "var(--violet)" },
+                { label: "Tables", value: n("Table"), color: "var(--amber)" },
               ]}
             />
           )}
@@ -330,7 +330,7 @@ export function Reconcile({ hash }: { hash: string }) {
                     textDecoration: "none",
                     padding: 6,
                     borderRadius: 6,
-                    background: x === d ? "rgba(46,230,246,0.08)" : undefined,
+                    background: x === d ? "var(--picked)" : undefined,
                   }}
                 >
                   <span className="stack" style={{ gap: 2 }}>
@@ -367,9 +367,14 @@ export function Reconcile({ hash }: { hash: string }) {
                     parts={types.map((t, i) => ({
                       label: t,
                       value: d.items.filter((x) => x.type === t).length,
-                      color: ["#FF4FA3", "#FFB547", "#2EE6F6", "#8F7BFF", "#3DDC97", "#BFEFF7"][
-                        i % 6
-                      ]!,
+                      color: [
+                        "var(--magenta)",
+                        "var(--amber)",
+                        "var(--accent)",
+                        "var(--violet)",
+                        "var(--green)",
+                        "var(--accent-pale)",
+                      ][i % 6]!,
                     }))}
                   />
                   {d.names.length > 0 && (
@@ -546,7 +551,7 @@ export function Diagrams({ hash }: { hash: string }) {
                 onChange={(e) => setFocus(e.target.value)}
                 style={{
                   height: 32,
-                  background: "#0B1016",
+                  background: "var(--box)",
                   color: "var(--text)",
                   border: "1px solid var(--line-2)",
                   borderRadius: 7,
@@ -682,10 +687,10 @@ interface InitiativeStatus {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  done: "#3DDC97",
-  open: "#2EE6F6",
-  "at-risk": "#FFB547",
-  slipped: "#FF4FA3",
+  done: "var(--green)",
+  open: "var(--accent)",
+  "at-risk": "var(--amber)",
+  slipped: "var(--magenta)",
 };
 
 /** Plan items as bars from start to forecast, with the due date marked and today as a line. */
@@ -708,13 +713,13 @@ function Timeline({ s }: { s: InitiativeStatus }) {
     >
       {items.map((i, k) => {
         const y = 10 + k * 26;
-        const c = STATUS_COLOR[i.status] ?? "#2EE6F6";
+        const c = STATUS_COLOR[i.status] ?? "var(--accent)";
         return (
           <g key={i.key}>
             <text
               x={0}
               y={y + 13}
-              fill={i.critical ? "#E9F6FA" : "#8FA3B3"}
+              fill={i.critical ? "var(--text)" : "var(--muted-2)"}
               fontSize={11}
               fontFamily="IBM Plex Sans, sans-serif"
             >
@@ -728,14 +733,14 @@ function Timeline({ s }: { s: InitiativeStatus }) {
               rx={3}
               fill={c}
               opacity={0.75}
-              style={{ filter: `drop-shadow(0 0 4px ${c})` }}
+              style={{ filter: `drop-shadow(0 0 var(--glow-size) ${c})` }}
             />
             <line
               x1={x(i.due)}
               x2={x(i.due)}
               y1={y}
               y2={y + 18}
-              stroke="#E9F6FA"
+              stroke="var(--text)"
               strokeWidth={1.5}
             />
           </g>
@@ -746,13 +751,13 @@ function Timeline({ s }: { s: InitiativeStatus }) {
         x2={x(s.today)}
         y1={0}
         y2={H - 16}
-        stroke="#FF4FA3"
+        stroke="var(--magenta)"
         strokeDasharray="3 3"
       />
       <text
         x={x(s.today) + 4}
         y={H - 4}
-        fill="#FF9BCB"
+        fill="var(--magenta-text)"
         fontSize={10}
         fontFamily="JetBrains Mono, monospace"
       >
@@ -763,7 +768,7 @@ function Timeline({ s }: { s: InitiativeStatus }) {
           x={W - 10}
           y={H - 4}
           textAnchor="end"
-          fill="#8FA3B3"
+          fill="var(--muted-2)"
           fontSize={10}
           fontFamily="JetBrains Mono, monospace"
         >
@@ -807,7 +812,7 @@ export function Initiatives({ hash }: { hash: string }) {
                     padding: 8,
                     borderRadius: 8,
                     border: "1px solid var(--line)",
-                    background: i === one ? "rgba(46,230,246,0.06)" : undefined,
+                    background: i === one ? "var(--picked-faint)" : undefined,
                   }}
                 >
                   <span className="row between">

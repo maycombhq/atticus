@@ -120,7 +120,7 @@ function LocalTool({ step, done }: { step: Step; done: () => void }) {
   const act = useAction();
   if (step.executors.length === 0) return null;
   return (
-    <div className="stack" style={{ borderTop: "1px solid #18202a", paddingTop: 10 }}>
+    <div className="stack" style={{ borderTop: "1px solid var(--rule)", paddingTop: 10 }}>
       <div className="row" style={{ flexWrap: "wrap" }}>
         <span className="chip ai">LOCAL TOOL</span>
         <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>

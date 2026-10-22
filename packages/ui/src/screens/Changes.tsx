@@ -124,7 +124,7 @@ function Note({ note }: { note?: { ok: boolean; text: string } }) {
       style={{
         margin: "8px 0 0",
         whiteSpace: "pre-line",
-        color: note.ok ? "var(--green)" : "#FF9BCB",
+        color: note.ok ? "var(--green)" : "var(--magenta-text)",
         fontSize: 12.5,
       }}
     >
@@ -196,7 +196,7 @@ function ChangeList({
                       textDecoration: "none",
                       padding: "8px 6px",
                       borderRadius: 6,
-                      background: !across && c.id === current ? "rgba(46,230,246,0.08)" : undefined,
+                      background: !across && c.id === current ? "var(--picked)" : undefined,
                     }}
                   >
                     <span className="stack" style={{ gap: 2, minWidth: 0 }}>
@@ -279,7 +279,7 @@ export function Pipeline({ state }: { state: string }) {
                 width: 42,
                 height: 42,
                 borderRadius: "50%",
-                border: `1.5px solid ${i < at ? "#DDEFF5" : "#3A4756"}`,
+                border: `1.5px solid ${i < at ? "var(--btn-text)" : "var(--step-off)"}`,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -345,7 +345,7 @@ export function ArtifactEditor({
               spellCheck
               style={{
                 width: "100%",
-                background: "#0B1016",
+                background: "var(--box)",
                 color: "var(--text)",
                 border: "1px solid var(--line-2)",
                 borderRadius: 8,
@@ -404,7 +404,7 @@ export function FindingActions({
         placeholder="Reason (needed to waive or dismiss)"
         style={{
           height: 30,
-          background: "#0B1016",
+          background: "var(--box)",
           color: "var(--text)",
           border: "1px solid var(--line-2)",
           borderRadius: 6,
@@ -595,7 +595,7 @@ function Detail({ id }: { id: string }) {
               </thead>
               <tbody>
                 {d.artifacts.map((a) => (
-                  <tr key={a.artifact} style={{ borderTop: "1px solid #18202A" }}>
+                  <tr key={a.artifact} style={{ borderTop: "1px solid var(--rule)" }}>
                     <td className="mono" style={{ padding: "7px 0" }}>
                       {a.artifact}
                     </td>
@@ -643,7 +643,7 @@ function Detail({ id }: { id: string }) {
                 <article
                   key={`${f.gate}/${f.id}`}
                   className="stack"
-                  style={{ gap: 6, borderTop: "1px solid #18202A", paddingTop: 10 }}
+                  style={{ gap: 6, borderTop: "1px solid var(--rule)", paddingTop: 10 }}
                 >
                   <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
                     <span
@@ -736,7 +736,9 @@ function Detail({ id }: { id: string }) {
                       {r.runtime} · {r.promptPath ?? r.runId}
                     </span>
                     {r.errors.length > 0 && (
-                      <span style={{ color: "#FF9BCB", fontSize: 12 }}>{r.errors.join("; ")}</span>
+                      <span style={{ color: "var(--magenta-text)", fontSize: 12 }}>
+                        {r.errors.join("; ")}
+                      </span>
                     )}
                   </span>
                   <span className="row" style={{ gap: 6 }}>

@@ -11,7 +11,7 @@ function Logo() {
         fill="none"
         stroke="var(--accent)"
         strokeWidth="1.5"
-        style={{ filter: "drop-shadow(0 0 4px #2EE6F6)" }}
+        style={{ filter: "drop-shadow(0 0 var(--glow-size) var(--accent))" }}
       />
       <path
         d="M8 18 L13 7 L18 18 M10 14 H16"
