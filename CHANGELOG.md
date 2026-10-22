@@ -4,6 +4,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Everything from the VS Code plugin, guided
+
+- Start or bring in (the + in the Next section): create a metarepo, use Atticus in a repo, a practice metarepo, add repos, onboard a repo, bring in another team's repo, accept it, add knowledge; always there, not only in an empty window (ADR 0100).
+- The setup checklist (`atticus setup`) in Next until the catalog is accepted, each step a click to what fixes it.
+- Onboard a repo: clone, scan settings, scan, check the scan, spec, its questions, in order, each with its state; pick one to run it and the list comes back updated.
+- A next step with a part to fill in (`atticus repos discover <folder>`) opens the screen that asks for it, not a terminal with the placeholder in it.
+- `atticus absorb accept <id>`: copy what a reviewed absorb proposal adopts into the org pack (or OpenSpec, or inputs/) and add its `sources.yaml` entry; `--replace`, `--dry-run`, `--json`. Nothing is committed.
+- `atticus absorb` reads TypeSpec: each `.tsp` file becomes a reference with its namespace, operations and models, read, never compiled; the compiled OpenAPI is absorbed for intake.
+- Fixed: the sections refreshed only after a run's notification was closed; a made metarepo's "open it" slipped into the bell; empty sections' rows did nothing; came-back questions looked the same; `scan review` got the scan's options as required ones and `scan` lost `--repos` in the command catalogue; a repo not cloned yet scanned as `spawn git ENOENT`. Extension 0.2.0.
+
 ### An IntelliJ IDEA plugin
 
 - `packages/intellij` holds a Kotlin plugin, built with Gradle against the IntelliJ IDEA on the machine (ADR 0099). Install the zip it writes with Settings → Plugins → Install Plugin from Disk….

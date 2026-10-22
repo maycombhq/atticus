@@ -10,7 +10,9 @@ import {
   changeTypesFrom,
   commandsFor,
   howToRun,
+  matchCommand,
   optionsOf,
+  presetFrom,
   pickList,
   requiredSwitches,
   type Answers,
@@ -21,6 +23,16 @@ import {
 } from "./commands";
 import type { Service } from "./service";
 import { healthProblems } from "./sidebar-data";
+import {
+  absorbConfirm,
+  acceptConfirm,
+  defaultAbsorbId,
+  guidedFor,
+  onboardingStages,
+  type AbsorbDry,
+  type AcceptDry,
+  type Stage,
+} from "./guided";
 import { discoveredFrom, isMetarepoName } from "./start";
 
 /**
@@ -349,12 +361,18 @@ export class CommandUi {
     return { code: r.code, lines };
   }
 
-  private async showPrinted(argv: string[], p: Printed) {
+  /**
+   * Say what a run printed, without waiting for the person: a notification's promise settles only
+   * when it is closed, and it can sit in the bell for good, so what comes after (the sections
+   * read again, the next stage) never waits on it.
+   */
+  private showPrinted(argv: string[], p: Printed): void {
     const first = p.lines[0] ?? (p.code === 0 ? "Done." : `It exited ${p.code}.`);
     const show =
       p.code === 0 ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
-    const pick = await show(`atticus ${argv.slice(0, 2).join(" ")}: ${first}`, "Show the output");
-    if (pick) this.svc.log.show(true);
+    void show(`atticus ${argv.slice(0, 2).join(" ")}: ${first}`, "Show the output").then((pick) => {
+      if (pick) this.svc.log.show(true);
+    });
   }
 
   /** A shared write: the dry run, then the person's yes, then the run with the approve flag. */
@@ -387,11 +405,11 @@ export class CommandUi {
       return;
     } else if (how.mode === "approve") {
       const p = await this.approveAndRun(root, argv, how.flag);
-      if (p) await this.showPrinted(argv, p);
+      if (p) this.showPrinted(argv, p);
     } else {
       const p = await this.captured(root, argv);
       if (cmd.id === "change new" && p.code === 0) await this.afterNewChange(root, p);
-      else await this.showPrinted(argv, p);
+      else this.showPrinted(argv, p);
     }
     this.d.refreshAll();
   }
@@ -485,12 +503,26 @@ export class CommandUi {
       if (pick) this.svc.log.show(true);
       return;
     }
+    const uri = vscode.Uri.file(folder);
+    // An empty window opens it straight away; a window with a folder asks where (ADR 0100). A
+    // notification would slip into the bell before it is seen.
+    if (!vscode.workspace.workspaceFolders?.length) {
+      void vscode.window.showInformationMessage(`${what}: ${folder}. Opening it.`);
+      await vscode.commands.executeCommand("vscode.openFolder", uri, false);
+      return;
+    }
     const pick = await vscode.window.showInformationMessage(
-      `${what}: ${folder}. Open it in this window?`,
-      "Open it",
+      `${what}: ${folder}`,
+      { modal: true, detail: "Open it now?" },
+      "Open it here",
+      "Open in a new window",
     );
     if (pick)
-      await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(folder), false);
+      await vscode.commands.executeCommand(
+        "vscode.openFolder",
+        uri,
+        pick === "Open in a new window",
+      );
   }
 
   private async pickParent(title: string): Promise<string | undefined> {
@@ -557,7 +589,7 @@ export class CommandUi {
     if (p.code === 0) {
       void vscode.window.showInformationMessage(p.lines[0] ?? "Atticus is set up in this repo.");
       this.d.refreshAll();
-    } else await this.showPrinted(["adopt"], p);
+    } else this.showPrinted(["adopt"], p);
   }
 
   /** A practice metarepo with the invented Forge repos, to try Atticus on. */
@@ -662,8 +694,372 @@ export class CommandUi {
     );
     if (ok !== "Add them") return;
     const p = await this.captured(root, argv);
-    await this.showPrinted(argv, p);
+    this.showPrinted(argv, p);
     this.d.refreshAll();
+  }
+
+  // ------------------------------------------------------------------ guided (ADR 0100)
+
+  /** Run a command of the catalogue with what it needs given: nothing more is asked. */
+  async runGiven(
+    root: string,
+    id: string,
+    a: { args?: (string | undefined)[]; flags?: Record<string, string | true> },
+  ): Promise<void> {
+    const cat = await this.load(root);
+    const cmd = cat.commands.find((c) => c.id === id);
+    if (!cmd) return void vscode.window.showWarningMessage(`This atticus has no command ${id}.`);
+    await this.run(root, cmd, {
+      args: a.args ?? [],
+      flags: { ...requiredSwitches(cmd), ...(a.flags ?? {}) },
+    });
+  }
+
+  /**
+   * A printed command with a part to fill in (`atticus repos discover <folder>`): its guided
+   * screen, else the command's own pickers with what it gives kept. False when it isn't a
+   * command the catalogue has.
+   */
+  async fillIn(root: string, command: string): Promise<boolean> {
+    switch (guidedFor(command)) {
+      case "addRepos":
+        await this.addRepos(root);
+        return true;
+      case "newChange":
+        await this.newChange(root);
+        return true;
+      case "absorb":
+        await this.absorb(root);
+        return true;
+      case "absorbAccept":
+        await this.absorbAccept(root);
+        return true;
+      case "createMetarepo":
+        await this.createMetarepo();
+        return true;
+      case "adoptRepo":
+        await this.adoptRepo();
+        return true;
+    }
+    const m = matchCommand(await this.load(root), command);
+    if (!m) return false;
+    await this.pickAndRun(root, m.command.id, presetFrom(m.command, m.rest));
+    return true;
+  }
+
+  /** A command's --json output, with a progress note while it runs. */
+  private async json<T>(
+    root: string,
+    argv: string[],
+  ): Promise<{ ok: true; value: T; code: number } | { ok: false; printed: Printed }> {
+    const r = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Atticus: ${commandText(argv)}` },
+      () => this.svc.cli(root)([...argv, "--root", root]),
+    );
+    this.svc.log.appendLine(`--- ${commandText(argv)} (exit ${r.code})`);
+    if (r.stderr.trim()) this.svc.log.appendLine(r.stderr.trimEnd());
+    try {
+      return { ok: true, value: JSON.parse(r.stdout) as T, code: r.code };
+    } catch {
+      const lines = [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(
+        Boolean,
+      );
+      return { ok: false, printed: { code: r.code || 1, lines } };
+    }
+  }
+
+  /**
+   * Bring in another team's repo (atticus absorb): another metarepo, an OpenSpec, Spec Kit or
+   * TypeSpec repo, or a repo of prompts, agents, skills and checklists. A dry run first; the
+   * proposal only when the person says yes; then its summary, and accepting it.
+   */
+  async absorb(root: string) {
+    const how = await vscode.window.showQuickPick(
+      [
+        {
+          label: "A folder on this machine",
+          detail:
+            "Another metarepo, an OpenSpec, Spec Kit or TypeSpec repo, or a repo of prompts, agents, skills and checklists",
+          id: "folder",
+        },
+        {
+          label: "A Git URL",
+          detail: "Cloned into the metarepo's local state to be read; nothing in it is run",
+          id: "url",
+        },
+      ],
+      { title: "Atticus: bring in from another repo", ignoreFocusOut: true },
+    );
+    if (!how) return;
+    const source =
+      how.id === "folder"
+        ? (
+            await vscode.window.showOpenDialog({
+              title: "The repo to bring in",
+              openLabel: "Bring this in",
+              canSelectFolders: true,
+              canSelectFiles: false,
+            })
+          )?.[0]?.fsPath
+        : (
+            await vscode.window.showInputBox({
+              title: "Atticus: the Git URL",
+              prompt: "For example https://git.example.com/payments/payments-meta.git",
+              ignoreFocusOut: true,
+            })
+          )?.trim();
+    if (!source) return;
+    const id = (
+      await vscode.window.showInputBox({
+        title: "Atticus: its name in this metarepo",
+        prompt: "Lowercase letters, digits and dashes. What it brings in is named after it.",
+        value: defaultAbsorbId(source),
+        validateInput: (v) =>
+          /^[a-z0-9][a-z0-9-]*$/.test(v.trim())
+            ? undefined
+            : "Lowercase letters, digits and dashes",
+        ignoreFocusOut: true,
+      })
+    )?.trim();
+    if (!id) return;
+    const mode = await vscode.window.showQuickPick(
+      [
+        {
+          label: "Let Atticus choose for each item",
+          description: "recommended",
+          detail:
+            "Prompts, agents, skills and checklists are copied; specs, schemas and another metarepo are followed",
+          mode: undefined as string | undefined,
+        },
+        {
+          label: "Copy everything it can translate",
+          detail: "Own a copy: later changes on their side aren't followed",
+          mode: "adopt",
+        },
+        {
+          label: "Follow theirs; copy nothing",
+          detail: "Read where it is; atticus absorb --refresh fetches it again",
+          mode: "link",
+        },
+      ],
+      { title: `Atticus: how to bring in ${id}`, ignoreFocusOut: true },
+    );
+    if (!mode) return;
+    const argv = ["absorb", source, "--id", id, ...(mode.mode ? ["--mode", mode.mode] : [])];
+    const dry = await this.json<AbsorbDry>(root, [...argv, "--dry-run", "--json"]);
+    if (!dry.ok) return this.showPrinted(argv, dry.printed);
+    const c = absorbConfirm(dry.value);
+    const ok = await vscode.window.showInformationMessage(
+      c.message,
+      { modal: true, detail: c.detail },
+      "Make the proposal",
+    );
+    if (ok !== "Make the proposal") return;
+    const made = await this.json<{ proposal?: string }>(root, [...argv, "--json"]);
+    if (!made.ok || !made.value.proposal)
+      return this.showPrinted(argv, made.ok ? { code: made.code, lines: [] } : made.printed);
+    this.d.refreshAll();
+    // The summary as a page to read; its Markdown is a click away in the preview's title bar.
+    const summary = vscode.Uri.file(join(root, made.value.proposal, "SUMMARY.md"));
+    await vscode.commands.executeCommand("markdown.showPreview", summary);
+    const pick = await vscode.window.showInformationMessage(
+      `${id} is a proposal in ${made.value.proposal}/. Review its summary, change any action you disagree with, then accept it into the metarepo.`,
+      "Accept it",
+    );
+    if (pick) await this.absorbAccept(root, id);
+  }
+
+  /** The absorb proposals waiting in the metarepo, by id. */
+  private absorbProposals(root: string): string[] {
+    for (const d of [
+      join(root, "proposals", "absorb"),
+      join(root, ".atticus", "proposals", "absorb"),
+    ])
+      if (existsSync(d))
+        return readdirSync(d, { withFileTypes: true })
+          .filter((e) => e.isDirectory() && existsSync(join(d, e.name, "inventory.json")))
+          .map((e) => e.name)
+          .sort();
+    return [];
+  }
+
+  /** Accept a reviewed absorb proposal: what it adopts copied in, its source followed. */
+  async absorbAccept(root: string, given?: string) {
+    const id =
+      given ??
+      (await this.quick(
+        "Atticus: which proposal to accept?",
+        this.absorbProposals(root).map((x) => ({ label: x, value: x })),
+        "Nothing was brought in yet: Atticus: Bring in from another repo makes a proposal.",
+      ));
+    if (!id) return;
+    const argv = ["absorb", "accept", id];
+    const dry = await this.json<AcceptDry>(root, [...argv, "--dry-run", "--json"]);
+    if (!dry.ok) return this.showPrinted(argv, dry.printed);
+    const a = dry.value;
+    if (!a.copied.length && !a.kept.length && a.entry === "already")
+      return void vscode.window.showInformationMessage(
+        `${id} is already in the metarepo: nothing left to copy.`,
+      );
+    const c = acceptConfirm(a);
+    const pick = await vscode.window.showInformationMessage(
+      c.message,
+      { modal: true, detail: c.detail },
+      "Accept",
+      ...(a.kept.length ? ["Accept and overwrite the changed files"] : []),
+    );
+    if (!pick) return;
+    const run = [...argv, ...(pick === "Accept" ? [] : ["--replace"])];
+    const p = await this.captured(root, run);
+    this.d.refreshAll();
+    if (p.code !== 0) return this.showPrinted(run, p);
+    const copied = run.includes("--replace") ? a.copied.length + a.kept.length : a.copied.length;
+    const next = await vscode.window.showInformationMessage(
+      `Accepted ${id}: ${copied ? `${copied} file${copied === 1 ? "" : "s"} copied into the metarepo` : "nothing to copy"}${a.linked ? `, ${a.linked} item${a.linked === 1 ? "" : "s"} followed through sources.yaml` : ""}. Commit it through a pull request: merging it is the approval.`,
+      "Open Source Control",
+    );
+    if (next) await vscode.commands.executeCommand("workbench.view.scm");
+  }
+
+  /**
+   * A repo's onboarding, one stage after another (ADR 0100): clone, scan settings, scan, check
+   * the scan, spec, its questions. Each pick runs the stage and shows the list again, updated,
+   * until the person closes it.
+   */
+  async onboardRepo(root: string, given?: string) {
+    let repo = given;
+    for (;;) {
+      const api = await this.svc.api(root);
+      const [o, specs, q] = await Promise.all([
+        api.get<Api.OnboardingView>("/api/onboarding"),
+        api.get<Api.SpecList>("/api/specs").catch((): Api.SpecList => ({ repos: [] })),
+        readOpenQuestions(this.svc.cli(root), root),
+      ]);
+      if (!repo) {
+        if (!o.repos.length) {
+          const add = await vscode.window.showInformationMessage(
+            "No repos yet: add them first.",
+            "Add repos",
+          );
+          if (add) await this.addRepos(root);
+          return;
+        }
+        repo = await this.quick(
+          "Atticus: which repo to onboard?",
+          o.repos.map((r) => ({
+            label: r.id,
+            description: r.lastScan ? "scanned" : r.cloned ? "not scanned" : "not cloned",
+            value: r.id,
+          })),
+          "",
+        );
+        if (!repo) return;
+      }
+      const r = o.repos.find((x) => x.id === repo);
+      if (!r) return void vscode.window.showWarningMessage(`${repo} isn't in a repos manifest.`);
+      const stages = onboardingStages(r, {
+        flows: specs.repos.find((x) => x.repo === repo)?.flows ?? 0,
+        questions: q.ok ? q.value.filter((x) => x.repo === repo).length : 0,
+      });
+      const stage = await this.pickStage(repo, stages);
+      if (!stage) return;
+      if (stage.run.kind === "vscode")
+        await vscode.commands.executeCommand(stage.run.command, ...stage.run.args);
+      else await this.runGiven(root, stage.run.id, stage.run);
+    }
+  }
+
+  private pickStage(repo: string, stages: Stage[]): Promise<Stage | undefined> {
+    const ICON: Record<Stage["state"], string> = {
+      done: "$(pass-filled)",
+      next: "$(arrow-right)",
+      todo: "$(circle-large-outline)",
+      again: "$(refresh)",
+      optional: "$(circle-small)",
+    };
+    const WORD: Record<Stage["state"], string> = {
+      done: "done",
+      next: "next",
+      todo: "",
+      again: "after every scan",
+      optional: "only if needed",
+    };
+    const qp = vscode.window.createQuickPick<vscode.QuickPickItem & { stage: Stage }>();
+    qp.title = `Atticus: onboard ${repo}`;
+    qp.placeholder = "Pick a stage to run it; this list comes back when it's done. Esc to stop.";
+    qp.ignoreFocusOut = true;
+    qp.matchOnDetail = true;
+    qp.items = stages.map((s) => ({
+      label: `${ICON[s.state]} ${s.label}`,
+      description: WORD[s.state],
+      detail: s.detail,
+      stage: s,
+    }));
+    const next = qp.items.find((i) => i.stage.state === "next");
+    if (next) qp.activeItems = [next];
+    return new Promise((done) => {
+      qp.onDidAccept(() => {
+        done(qp.selectedItems[0]?.stage);
+        qp.hide();
+      });
+      qp.onDidHide(() => {
+        done(undefined);
+        qp.dispose();
+      });
+      qp.show();
+    });
+  }
+
+  /** Knowledge the catalog doesn't have from code: another repo, a wiki, files, or reading them. */
+  async addKnowledge(root: string) {
+    const pick = await vscode.window.showQuickPick(
+      [
+        {
+          label: "$(cloud-download) Bring in from another repo",
+          detail:
+            "Another metarepo, an OpenSpec, Spec Kit or TypeSpec repo, or a repo of prompts, agents, skills and checklists",
+          go: () => this.absorb(root),
+        },
+        {
+          label: "$(globe) Add a wiki or documentation site",
+          detail: "atticus sources add: read with the rest of the knowledge",
+          go: () => this.pickAndRun(root, "sources add"),
+        },
+        {
+          label: "$(file-add) Add files",
+          detail: "atticus intake add: diagrams, partner specs, exports, into inputs/",
+          go: () => this.pickAndRun(root, "intake add"),
+        },
+        {
+          label: "$(sync) Sync the sources",
+          detail: "atticus sources sync: fetch every wiki source again",
+          go: () => this.pickAndRun(root, "sources sync"),
+        },
+        {
+          label: "$(sparkle) Read the sources with Copilot",
+          detail: "atticus knowledge scan: patterns, standards, decisions, each citing its page",
+          go: () => this.pickAndRun(root, "knowledge scan"),
+        },
+      ],
+      { title: "Atticus: add knowledge", ignoreFocusOut: true },
+    );
+    if (pick) await pick.go();
+  }
+
+  /** Accept the catalog as the baseline, after walking the map with the architect. */
+  async acceptCatalog(root: string) {
+    const pick = await vscode.window.showInformationMessage(
+      "Accept the catalog as the baseline?",
+      {
+        modal: true,
+        detail:
+          "Changes are checked against the accepted catalog. Walk the ecosystem map with the architect first, then accept it and commit catalog/baseline.yaml through a pull request.",
+      },
+      "Open the map",
+      "Accept it",
+    );
+    if (pick === "Open the map") await vscode.commands.executeCommand("atticus.showApp", "#/map");
+    else if (pick === "Accept it") await this.pickAndRun(root, "baseline");
   }
 
   /** Doctor and the upgrade check, when the window opens: say what needs a look. */

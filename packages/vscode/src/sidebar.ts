@@ -27,18 +27,43 @@ import {
  * atticus.openItem with what it opens.
  */
 
-type Node = Item | { id: string; state: "loading" | "error" | "empty"; message: string };
+type Node =
+  | Item
+  | {
+      id: string;
+      state: "loading" | "error" | "empty";
+      message: string;
+      /** An empty section's first step, run by clicking the row (ADR 0100). */
+      action?: { label: string; command: string };
+    };
 const isItem = (n: Node): n is Item => !("state" in n);
 
 export type Section = "repos" | "changes" | "catalog" | "knowledge";
 
-const EMPTY: Record<Section, string> = {
-  repos:
-    "No repos yet. Add them to a repos.manifest.yaml in org-pack/profiles, then run atticus workspace sync.",
-  changes: "No changes yet. Start one with the + button (Atticus: New change).",
-  catalog: "The catalog is empty. Run atticus scan.",
-  knowledge:
-    "No knowledge sources yet. Add a wiki to org-pack/sources.yaml (atticus sources add), then sync it.",
+/** What an empty section says, and the step that fills it, one click away. */
+const EMPTY: Record<Section, { message: string; label: string; command: string }> = {
+  repos: {
+    message:
+      "No repos yet. Add them from a folder of clones or a Git host organisation (atticus repos discover), then onboard each one.",
+    label: "No repos yet: add them",
+    command: "atticus.addRepos",
+  },
+  changes: {
+    message: "No changes yet. Start one: its title and type, then the brief.",
+    label: "No changes yet: start one",
+    command: "atticus.newChange",
+  },
+  catalog: {
+    message: "The catalog is empty. Scan the repos (atticus scan): it reads files only.",
+    label: "The catalog is empty: scan the repos",
+    command: "atticus.scanAll",
+  },
+  knowledge: {
+    message:
+      "No knowledge sources yet. Bring in another team's repo, add a wiki (atticus sources add) or add files (atticus intake add).",
+    label: "No knowledge yet: add some",
+    command: "atticus.addKnowledge",
+  },
 };
 
 export class SectionTree implements vscode.TreeDataProvider<Node> {
@@ -173,7 +198,8 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
           {
             id: `${node?.id ?? this.section}:empty`,
             state: "empty",
-            message: node ? "Nothing here yet." : EMPTY[this.section],
+            message: node ? "Nothing here yet." : EMPTY[this.section].message,
+            ...(node ? {} : { action: EMPTY[this.section] }),
           },
         ];
       return items;
@@ -186,10 +212,13 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
 
   getTreeItem(node: Node): vscode.TreeItem {
     if (!isItem(node)) {
-      const t = new vscode.TreeItem(node.message);
+      const t = new vscode.TreeItem(node.action?.label ?? node.message);
       t.id = node.id;
       t.tooltip = node.message;
-      t.iconPath = new vscode.ThemeIcon(node.state === "error" ? "warning" : "info");
+      t.iconPath = new vscode.ThemeIcon(
+        node.state === "error" ? "warning" : node.action ? "add" : "info",
+      );
+      if (node.action) t.command = { command: node.action.command, title: node.action.label };
       if (node.state === "error")
         t.command = { command: "atticus.showLog", title: "Show the commands run" };
       return t;

@@ -8,7 +8,7 @@ Atticus's command line does all the checking. The extension only carries the pro
 
 - VS Code 1.95 or later, with the GitHub Copilot Chat extension, signed in.
 - The `atticus` command line on your PATH (or its path in the setting `atticus.path`), Node 22.13 or later.
-- Your metarepo open in VS Code: the folder with `org-pack/` (or `.atticus/org-pack/`). The extension starts when that folder is open.
+- Your metarepo open in VS Code: the folder with `org-pack/` (or `.atticus/org-pack/`). With none open, the sidebar offers to make or open one.
 
 ## Install
 
@@ -24,6 +24,22 @@ To build the file from the source: build the app (`pnpm --filter @maycombhq/ui b
 ## New to Atticus?
 
 Open **Get started with Atticus** (Help → Welcome, or the link in the Atticus sidebar). It takes you from installing the command line to your first change, with a button at each step. With no metarepo open, the sidebar offers to open one, create one, use Atticus in the repo you have open, or make a practice one with invented repos.
+
+**Start or bring in:** the + in the Next section's title bar, always there. Create a metarepo, use Atticus in the repo you have open, or make a practice one. With a metarepo open, also:
+
+- **Add repos.**
+- **Onboard a repo:** its stages in order, each with its state.
+  1. Clone.
+  2. Its scan settings, with Copilot.
+  3. Scan.
+  4. Check the scan, with Copilot.
+  5. Its spec, with Copilot.
+  6. Its questions.
+
+  Pick one to run it, and the list comes back updated.
+
+- **Bring in from another repo:** another metarepo, an OpenSpec, Spec Kit or TypeSpec repo, or a repo of prompts, agents, skills and checklists, from a folder or a Git URL. You see what it found in plain words before anything is written. Then its summary opens as a proposal, and **Accept** copies what it adopts into the org pack and adds it to `sources.yaml`. Nothing is committed: open a pull request with it.
+- **Add knowledge:** a wiki, files, or reading the sources.
 
 **Shortcut keys:** Ctrl+Alt+Shift+A runs any command, Ctrl+Alt+Shift+N the next step, and Ctrl+Alt+Shift+D opens the app (Cmd on macOS).
 
@@ -71,9 +87,9 @@ Without a repo or change, a step command takes the one `atticus next` names for 
 
 The Atticus icon in the activity bar opens a sidebar with a section for each part of Atticus (ADR 0093, 0096):
 
-- **Next**: the next step in plain words (click it or its Run button; its command is in the tooltip), the steps after it, and **Open the app**.
+- **Next**: the next step in plain words (click it or its Run button; its command is in the tooltip). A step with a part to fill in opens the screen that asks for it. Then the steps after it, **Set up** (the setup checklist until the catalog is accepted; click a step to do it) and **Open the app**.
 - **Questions**: the open questions by repo. Click one to answer it: pick an option or write your own words. A repo's button answers its questions one after another.
-- **Repos**: each repo with its last scan. The + button adds repos from a folder of clones or a Git host organisation: it shows what it found and adds them when you say yes. Under it, its flows, then each flow's steps. Click a step to open the code at the line it cites, or use its diagram button to see it in the flow. Click a flow to open its diagram. The repo's scan settings and its place on the canvas are there too.
+- **Repos**: each repo with its last scan, and its checklist button: **Onboard a repo**. The + button adds repos from a folder of clones or a Git host organisation: it shows what it found and adds them when you say yes. Under it, its flows, then each flow's steps. Click a step to open the code at the line it cites, or use its diagram button to see it in the flow. Click a flow to open its diagram. The repo's scan settings and its place on the canvas are there too.
 - **Changes**: each change with its state and blocking findings. Under it, each of its files with its state, its tasks (each with Run the task) (click to open; one not written yet says so), its target flows (each flow the change adds, changes or removes; click to see it beside today's, with each step marked Added, Changed or Removed, ADR 0095), its findings (click to open the file a finding is about; the why and the fix are in the tooltip; its check button acts on it, ADR 0094: Apply the fix, I fixed it by hand, Not relevant, Waive it or Ask someone, offering only what the critic allows, and showing a patch before applying it) and a link to the change in the app.
 - **Knowledge**: the sources in `sources.yaml` and the knowledge items read from them (click one to open its file). Its title bar syncs the sources, scans them and asks the knowledge.
 - **Catalog**: each kind of record with its count. Under it, its records (click to open the record's YAML), and under each record, the code it was read from.
@@ -114,4 +130,4 @@ A prompt longer than the model takes is never cut: the extension says so and sto
 - It doesn't check anything itself. Every check is Atticus's.
 - It runs `/atticus-onboard`, `/atticus-knowledge`, `/atticus-task` and `/atticus-release` steps only when `atticus next` names them (Run in the view or the chat): there is no chat command for them yet.
 - The sidebar never runs a step. The only file it changes is a finding's record (and, for Apply the fix, the patched file), when you act on the finding. Steps run from Next, the chat or the Command Palette.
-- It has only been tested with a fake model, the real command line and the real API, and in Chromium set up like a VS Code panel, not inside VS Code itself.
+- Its checks run inside a real VS Code (`pnpm --filter atticus test:vscode`), and its flows were driven there from an empty window to an onboarded repo and an accepted absorb (ADR 0100). Its AI steps have been run with a fake model, not yet with Copilot's on a bank machine.

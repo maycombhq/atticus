@@ -23,6 +23,7 @@ import {
   schemaKind,
   schemaReference,
   toSkill,
+  typespecReference,
 } from "./translate.js";
 import { NOT_TRANSLATABLE, type AbsorbItem, type Action, type ItemKind } from "./types.js";
 
@@ -90,7 +91,7 @@ export interface AbsorbResult {
 const DOC =
   /(^|\/)(README|LICENSE|LICENCE|CHANGELOG|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY|NOTICE|CODEOWNERS)(\.(md|txt|rst|adoc))?$/i;
 const CODE =
-  /\.(java|kt|scala|groovy|ts|tsx|js|jsx|mjs|cjs|vue|py|go|cs|fs|rb|php|rs|c|h|cpp|swift|sql|sh|ps1|bat|cbl|cob|jcl|cpy|tf|hcl|gradle|xml|properties|toml|lock|csproj|sln|dockerfile|ini|cfg)$|(^|\/)(Dockerfile|Makefile|go\.mod|go\.sum|package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|\.gitignore|\.gitattributes|\.editorconfig|\.npmrc|\.nvmrc)$/i;
+  /\.(java|kt|scala|groovy|ts|tsx|js|jsx|mjs|cjs|vue|py|go|cs|fs|rb|php|rs|c|h|cpp|swift|sql|sh|ps1|bat|cbl|cob|jcl|cpy|tf|hcl|gradle|xml|properties|toml|lock|csproj|sln|dockerfile|ini|cfg)$|(^|\/)(Dockerfile|Makefile|tspconfig\.ya?ml|go\.mod|go\.sum|package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|requirements\.txt|\.gitignore|\.gitattributes|\.editorconfig|\.npmrc|\.nvmrc)$/i;
 const CRITIC_PATH = /(^|\/)(reviews?|critic|critics|checklists?|checks)(\/|$)|checklist|critic/i;
 const PROMPT_DIR = /(^|\/)\.?prompts\//i;
 
@@ -609,6 +610,29 @@ export async function absorb(
       translated: s.problems.length === 0,
       artifact: { path: s.path, content: s.content },
       ...(same ? { sameAs: same } : {}),
+    });
+  }
+
+  // ---------------------------------------------------------------- TypeSpec
+  // A .tsp file is read, not compiled (nothing from the source is run): a reference with its
+  // namespace, operations and models. The OpenAPI the repo compiled, if it keeps it, is absorbed
+  // as a schema below, which is what intake reads.
+  const compiled = files.filter((f) => /(^|\/)tsp-output\/.+\.(ya?ml|json)$/i.test(f));
+  for (const f of files.filter((f) => !claimed.has(f) && /\.tsp$/i.test(f))) {
+    claim(f);
+    const t = typespecReference(f, await read(f), prefix, compiled);
+    add({
+      id: `typespec:${f}`,
+      kind: "typespec",
+      path: f,
+      title: t.title,
+      action: o.mode === "adopt" ? "adopt" : o.mode === "ignore" ? "ignore" : "link",
+      reason: compiled.length
+        ? "A TypeSpec contract: kept as a reference with its operations and models; its compiled OpenAPI is absorbed as a schema for intake."
+        : "A TypeSpec contract: kept as a reference with its operations and models. No compiled OpenAPI is in the repo: run tsp compile . there and absorb again for intake to read it.",
+      confidence: "high",
+      translated: true,
+      artifact: { path: t.path, content: t.content },
     });
   }
 

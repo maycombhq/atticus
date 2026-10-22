@@ -248,3 +248,24 @@ describe("endpoint identity", () => {
     expect(endpointId("x", "GET", "/")).toBe("x.get-root");
   });
 });
+
+describe("a repo that isn't cloned yet", () => {
+  it("says so and how to clone it, not what git said about a missing folder", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-scan-"));
+    const scan = await scanEstate({
+      root,
+      orgPack: join(FORGE, "metarepo/org-pack"),
+      repoDir: (id) => join(root, "workspace", "base", id),
+      repos: ["forge-ledger"],
+      scannedAt: "2026-10-18T09:00:00Z",
+      inputsDir: join(FORGE, "inputs"),
+    });
+    expect(scan.problems).toEqual([
+      {
+        repo: "forge-ledger",
+        source: "workspace",
+        message: "isn't cloned here yet; run atticus workspace sync",
+      },
+    ]);
+  });
+});

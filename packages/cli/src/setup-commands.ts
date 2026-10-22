@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import {
   absorb,
+  acceptAbsorbed,
   adopt,
   AdoptError,
   init,
@@ -317,6 +318,50 @@ export async function sourcesRefreshCommand(
     const problems = all.flatMap((r) => r.result.problems.map((p) => `${r.id}: ${p}`));
     for (const p of problems) io.err(`  ${p}`);
     return problems.length ? 1 : 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/** atticus absorb accept <id> [--replace] [--dry-run] [--json]: the reviewed proposal into the metarepo. */
+export async function absorbAcceptCommand(
+  root: string,
+  id: string,
+  o: { replace?: boolean; dryRun?: boolean; json?: boolean },
+  io: Output,
+): Promise<number> {
+  if (!id) {
+    io.err("Usage: atticus absorb accept <id> [--replace] [--dry-run]");
+    return 2;
+  }
+  try {
+    const r = await acceptAbsorbed(root, id, {
+      ...(o.replace ? { replace: true } : {}),
+      ...(o.dryRun ? { dryRun: true } : {}),
+    });
+    if (o.json) {
+      io.out(JSON.stringify({ ...r, dryRun: o.dryRun === true }, null, 2));
+      return 0;
+    }
+    const would = o.dryRun ? "Would copy" : "Copied";
+    io.out(
+      `${would} ${plural(r.copied.length, "file")} from ${r.proposal}/ into the metarepo${r.same.length ? ` (${r.same.length} already there)` : ""}; ${plural(r.linked, "item")} stay linked.`,
+    );
+    for (const f of r.copied) io.out(`  ${f}`);
+    if (r.kept.length) {
+      io.out(
+        `Kept ${plural(r.kept.length, "file")} that already differ (--replace overwrites them):`,
+      );
+      for (const f of r.kept) io.out(`  ${f}`);
+    }
+    io.out(
+      r.entry === "already"
+        ? `${r.sourcesFile} already lists ${id}.`
+        : `${o.dryRun ? "Would add" : r.entry === "added" ? "Added" : "Replaced"} ${id} under absorbed: in ${r.sourcesFile}.`,
+    );
+    if (!o.dryRun && (r.copied.length || r.entry !== "already"))
+      io.out("Commit these through a pull request: merging it is the approval.");
+    return 0;
   } catch (e) {
     return fail(io, e);
   }

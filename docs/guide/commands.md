@@ -11,6 +11,11 @@ Usage:
           [--fix]                      Rewrite files that aren't in canonical form
   atticus catalog diff <a> <b>         Compare two catalog folders (exit 1 when they differ)
   atticus scan [--no-drift]            Scan every repo's base clone and write catalog/generated
+          [--repos a,b]                Only these repos
+          [--full]                     Ignore the scan cache
+          [--dry-run]                  Show what would change; write nothing
+          [--warnings]                 List what the scan left out or couldn't read, not just how many
+          [--json]                     Print the result as JSON
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force]
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept]
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m]
@@ -21,11 +26,6 @@ Usage:
   atticus repo-type detect <repo> [--json]   Match a repo against the org pack's repo types by fingerprint, with the evidence for each signal
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
-          [--repos a,b]                Only these repos
-          [--full]                     Ignore the scan cache
-          [--dry-run]                  Show what would change; write nothing
-          [--warnings]                 List what the scan left out or couldn't read, not just how many
-          [--json]                     Print the result as JSON
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
           [--limit n] [--json]         (see docs/query-language.md)
   atticus impact <id>                  What a change to a record reaches, with owners and open questions
@@ -141,9 +141,10 @@ Usage:
   atticus adopt <path>                 Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]
   atticus unadopt <path>               Remove Atticus from an adopted repo, leaving it as it was
   atticus repos discover <folder> | --org <org>  Propose repos.manifest.yaml entries [--platform p] [--dry-run]
-  atticus absorb <git-url|path> --id <id>  Translate another team's prompts, agents, checklists, Spec Kit or Atticus repo
-  atticus absorb --refresh <id>        Fetch an absorbed source again and update its proposal
+  atticus absorb <git-url|path> --id <id>  Translate another team's prompts, agents, checklists, OpenSpec, Spec Kit, TypeSpec or Atticus repo
           [--mode adopt|link|ignore] [--ref r] [--dry-run]
+  atticus absorb --refresh <id>        Fetch an absorbed source again and update its proposal
+  atticus absorb accept <id>           Copy what the reviewed proposal adopts into the org pack and add its sources.yaml entry [--replace] [--dry-run] [--json]
   atticus tests generate <change> <story>  Generate tests from a story [--framework id] [--force] [--check] [--mode m]
   atticus trace <change> [--json] [--csv] [--no-write]  Requirement → story → test → code → records → feature
   atticus release plan <change> [--json]  Deploy order across the repos, why, rollback per step, waits and release sections

@@ -12,7 +12,7 @@ import {
   type AbsorbItem,
   type AbsorbResult,
 } from "../src/index.js";
-import { cleanup, fixture, tempDir } from "./helpers.js";
+import { cleanup, copyFixture, fixture, tempDir } from "./helpers.js";
 
 afterAll(cleanup);
 
@@ -521,5 +521,55 @@ describe("absorb another Atticus metarepo (federation)", () => {
     expect(r.sourceDir).toBe(join(root, "absorbed", "payments-remote"));
     expect(r.entry.url).toBe(url);
     expect(r.summary.translatedPercent).toBe(100);
+  });
+});
+
+describe("absorb a TypeSpec repo", () => {
+  let r: AbsorbResult;
+  beforeAll(async () => {
+    r = await absorb(root, fixture("typespec-repo"), { id: "pricing" });
+  });
+
+  it("meets the absorb bar, as a plain source (sources.yaml has no TypeSpec format)", async () => {
+    expect(r.format).toBe("plain");
+    await expectEveryFileListed(fixture("typespec-repo"), r);
+    expectBar(r);
+    expect(r.problems).toEqual([]);
+    expect(r.items.map(row)).toEqual([
+      ["typespec:main.tsp", "link"],
+      ["typespec:models/price.tsp", "link"],
+      ["schema:tsp-output/@typespec/openapi3/openapi.yaml", "link"],
+      ["doc:README.md", "ignore"],
+      ["code:2-files", "ignore"],
+    ]);
+  });
+
+  it("keeps a reference for each TypeSpec file: its namespace, operations and models", async () => {
+    const main = r.items.find((i) => i.id === "typespec:main.tsp")!;
+    expect(main.artifact!.path).toBe("references/typespec/pricing-main.yaml");
+    expect(parse(main.artifact!.content)).toEqual({
+      kind: "typespec",
+      source: "pricing:main.tsp",
+      namespace: "NorthwindPay.Pricing",
+      operations: ["GET /prices", "GET /prices/{id}", "POST /prices", "POST /quotes"],
+      note: expect.stringContaining("tsp-output/@typespec/openapi3/openapi.yaml"),
+    });
+    const models = r.items.find((i) => i.id === "typespec:models/price.tsp")!;
+    expect(parse(models.artifact!.content)).toMatchObject({
+      namespace: "NorthwindPay.Pricing",
+      models: ["Price", "QuoteRequest", "Quote", "NotFound"],
+    });
+    expect(main.reason).toContain("compiled OpenAPI");
+  });
+
+  it("says to compile it when the repo has no compiled OpenAPI", async () => {
+    const { rm } = await import("node:fs/promises");
+    const src = await copyFixture("typespec-repo");
+    await rm(join(src, "tsp-output"), { recursive: true });
+    const bare = await absorb(root, src, { id: "pricing-source", dryRun: true });
+    const main = bare.items.find((i) => i.id === "typespec:main.tsp")!;
+    expect(main.reason).toMatch(/tsp compile/);
+    expect(bare.items.some((i) => i.kind === "schema")).toBe(false);
+    expect(bare.summary.translatedPercent).toBe(100);
   });
 });

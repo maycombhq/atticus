@@ -1,0 +1,28 @@
+openapi: 3.0.0
+info:
+  title: Northwind Pay pricing
+  version: 0.0.0
+paths:
+  /prices:
+    get:
+      operationId: Prices_list
+      responses:
+        "200":
+          description: The prices.
+    post:
+      operationId: Prices_create
+      responses:
+        "200":
+          description: The price made.
+  /prices/{id}:
+    get:
+      operationId: Prices_read
+      responses:
+        "200":
+          description: The price.
+  /quotes:
+    post:
+      operationId: quote
+      responses:
+        "200":
+          description: The quote.

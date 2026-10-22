@@ -12,7 +12,8 @@ const HERE = join(process.cwd(), "test");
 const pkg = JSON.parse(readFileSync(join(HERE, "../package.json"), "utf8")) as {
   contributes: {
     commands: { command: string }[];
-    menus: Record<string, { command: string }[]>;
+    menus: Record<string, { command?: string; submenu?: string }[]>;
+    submenus?: { id: string }[];
     views: Record<string, { id: string }[]>;
   };
 };
@@ -37,9 +38,15 @@ describe("the extension's manifest and its code", () => {
     expect([...declared].filter((c) => !registered.has(c))).toEqual([]);
   });
 
-  it("declares every command a menu offers", () => {
-    const inMenus = Object.values(pkg.contributes.menus).flatMap((m) => m.map((x) => x.command));
-    expect(inMenus.filter((c) => !declared.has(c))).toEqual([]);
+  it("declares every command a menu offers, and every submenu it opens", () => {
+    const entries = Object.values(pkg.contributes.menus).flat();
+    const commands = entries.flatMap((x) => (x.command ? [x.command] : []));
+    expect(commands.filter((c) => !declared.has(c))).toEqual([]);
+    const submenus = new Set((pkg.contributes.submenus ?? []).map((s) => s.id));
+    const opened = entries.flatMap((x) => (x.submenu ? [x.submenu] : []));
+    expect(opened.filter((s) => !submenus.has(s))).toEqual([]);
+    for (const s of submenus) expect(pkg.contributes.menus[s]?.length).toBeGreaterThan(0);
+    expect(entries.every((x) => !!x.command !== !!x.submenu)).toBe(true);
   });
 
   it("links only to commands that exist, from the welcome views and the walkthrough (ADR 0098)", () => {

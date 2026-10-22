@@ -229,3 +229,27 @@ export function requiredSwitches(cmd: CatalogCommand): Record<string, true> {
   for (const f of cmd.flags) if (f.required && !f.value) out[f.name] = true;
   return out;
 }
+
+const PLACEHOLDER = /^<[^>]*>$/;
+
+/**
+ * What a printed command already gives, for the pickers to ask the rest (ADR 0100): its words
+ * after the command, with each `<part to fill in>` left out so it is asked.
+ */
+export function presetFrom(cmd: CatalogCommand, rest: string[]): Answers {
+  const { answers } = answersFrom(cmd, rest);
+  const args = answers.args.map((a) =>
+    Array.isArray(a)
+      ? a.filter((x) => !PLACEHOLDER.test(x))
+      : a && PLACEHOLDER.test(a)
+        ? undefined
+        : a,
+  );
+  const flags: Record<string, string | true> = {};
+  for (const [k, v] of Object.entries(answers.flags))
+    if (v === true || !PLACEHOLDER.test(v)) flags[k] = v;
+  return {
+    args: args.map((a) => (Array.isArray(a) && !a.length ? undefined : a)),
+    flags,
+  };
+}

@@ -2,6 +2,17 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.2.0
+
+- **Start or bring in**, the + in the Next section: create a metarepo, use Atticus in a repo, a practice metarepo, add repos, onboard a repo, bring in another team's repo, accept it, add knowledge.
+- **Set up** in Next: the setup checklist until the catalog is accepted; click a step to do it.
+- **Onboard a repo** (a repo's checklist button): its stages in order, each with its state. Pick one to run it; the list comes back updated.
+- **Bring in from another repo**: another metarepo, an OpenSpec, Spec Kit or TypeSpec repo, or a repo of prompts, agents, skills and checklists. A dry run in plain words first, then the proposal's summary, then Accept.
+- A next step with a part to fill in opens the screen that asks for it.
+- Steps name changes by their titles; questions raised again lead with what differs; an empty section's row is its first step.
+- With no metarepo open, only the Next section shows, so its welcome fits.
+- Fixed: the sections refreshed only once a run's notification was closed. A made metarepo now opens (or asks where) instead of a notification that slipped into the bell.
+
 ## 0.1.1
 
 - Fixed: clicking the app's menu and links in the Atticus tab did nothing. VS Code cancels every click on a `#…` link inside a panel; the app now follows its own links there itself.

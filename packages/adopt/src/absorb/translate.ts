@@ -186,3 +186,97 @@ export function reference(kind: string, file: string, prefix: string, note: stri
     confidence: "high",
   };
 }
+
+/** What a line-by-line read of a TypeSpec file finds: its namespace, operations and models. */
+export interface TypeSpecOutline {
+  namespace?: string;
+  operations: string[];
+  models: string[];
+}
+
+const VERBS = /@(get|put|post|patch|delete|head)\b/;
+const ROUTE = /@route\(\s*"([^"]*)"\s*\)/;
+
+/**
+ * Read a .tsp file without compiling it: `namespace`, `model` names and each operation as
+ * `VERB /path`, the path being the interface's @route, the operation's own @route and a
+ * `/{name}` per @path parameter. The verb is the operation's decorator, else POST when it has a
+ * @body and GET when it hasn't (TypeSpec's own default). An operation split over lines is read
+ * from its first line; the compiled OpenAPI stays the full contract.
+ */
+export function typespecOutline(text: string): TypeSpecOutline {
+  const lines = text.replace(/\/\/.*$/gm, "").split("\n");
+  const out: TypeSpecOutline = { operations: [], models: [] };
+  let pendingRoute: string | undefined;
+  let prefix: string | undefined;
+  let depth = 0;
+  let interfaceDepth: number | undefined;
+  for (const raw of lines) {
+    const l = raw.trim();
+    const ns = /^namespace\s+([\w.]+)/.exec(l);
+    if (ns && !out.namespace) out.namespace = ns[1];
+    const route = ROUTE.exec(l)?.[1];
+    const model = /\bmodel\s+(\w+)/.exec(l);
+    if (model) out.models.push(model[1]!);
+    const iface = /\binterface\s+\w+/.test(l);
+    if (iface) {
+      prefix = pendingRoute ?? route ?? "";
+      interfaceDepth = depth;
+      pendingRoute = undefined;
+    }
+    const op = /^((?:@\w+(?:\([^)]*\))?\s+)*)(?:op\s+)?(\w+)\s*\((.*)$/.exec(l);
+    const inInterface = interfaceDepth !== undefined && depth === interfaceDepth + 1;
+    if (op && !model && !iface && (inInterface || /^(?:@\w+(?:\([^)]*\))?\s+)*op\s/.test(l))) {
+      const decorators = op[1] ?? "";
+      const own = ROUTE.exec(decorators)?.[1] ?? (inInterface ? undefined : pendingRoute);
+      const verb = VERBS.exec(decorators)?.[1] ?? (/@body\b/.test(op[3] ?? "") ? "post" : "get");
+      const params = [...(op[3] ?? "").matchAll(/@path\s+(\w+)/g)].map((m) => `/{${m[1]}}`);
+      const path = `${inInterface ? (prefix ?? "") : ""}${own ?? ""}${params.join("")}` || "/";
+      out.operations.push(`${verb.toUpperCase()} ${path.replace(/\/{2,}/g, "/")}`);
+      pendingRoute = undefined;
+    } else if (route && !iface) pendingRoute = route;
+    for (const c of l) {
+      if (c === "{") depth++;
+      else if (c === "}") {
+        depth--;
+        if (interfaceDepth !== undefined && depth === interfaceDepth) {
+          interfaceDepth = undefined;
+          prefix = undefined;
+        }
+      }
+    }
+  }
+  out.operations.sort();
+  return out;
+}
+
+/** The reference kept for a TypeSpec file, and the note saying where its compiled form is. */
+export function typespecReference(
+  file: string,
+  text: string,
+  prefix: string,
+  compiled: string[],
+): Translation {
+  const o = typespecOutline(text);
+  const id = slug(`${prefix}-${file.replace(/\.tsp$/i, "")}`);
+  const note = compiled.length
+    ? `TypeSpec source. Intake reads its compiled OpenAPI, absorbed as a schema: ${compiled.join(", ")}.`
+    : "TypeSpec source. Intake reads OpenAPI, not TypeSpec: run tsp compile . in its repo (emitter @typespec/openapi3) and absorb again, or put the OpenAPI it writes in inputs/specs/.";
+  return {
+    id,
+    title: o.namespace ? `${o.namespace} (${file})` : file,
+    path: `references/typespec/${id}.yaml`,
+    content: stringify(
+      {
+        kind: "typespec",
+        source: `${prefix}:${file}`,
+        ...(o.namespace ? { namespace: o.namespace } : {}),
+        ...(o.operations.length ? { operations: o.operations } : {}),
+        ...(o.models.length ? { models: o.models } : {}),
+        note,
+      },
+      { lineWidth: 0 },
+    ),
+    confidence: "high",
+  };
+}

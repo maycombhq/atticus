@@ -224,7 +224,8 @@ function parseFlags(text: string, summaries: Map<string, string>): CommandFlag[]
     out.set(name, {
       name,
       ...(value ? { value } : {}),
-      required: opened <= 0,
+      // `<folder> | --org <org>`: the option is given instead of the argument, not as well.
+      required: opened <= 0 && !/<[^>]+>\s*\|\s*$/.test(before),
       ...(summary ? { summary } : {}),
     });
   }
@@ -266,7 +267,11 @@ export function parseHelp(help: string): Omit<CommandInfo, "area" | "runs">[] {
     const optionText = [
       usage,
       summary,
-      ...b.more.map((m) => `[${m.replace(/^\[|\]$/g, "")}]`),
+      // Each option line's option part only: its description may hold brackets of its own.
+      ...b.more.map((m) => {
+        const c = m.search(/ {2,}/);
+        return `[${(c > 0 ? m.slice(0, c) : m).replace(/^\[|\]$/g, "")}]`;
+      }),
     ].join(" ");
     out.push({
       id,

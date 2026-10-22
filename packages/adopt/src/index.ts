@@ -14,5 +14,6 @@ export * from "./absorb/translate.js";
 export * from "./absorb/source.js";
 export * from "./absorb/absorb.js";
 export * from "./absorb/refresh.js";
+export * from "./absorb/accept.js";
 export * from "./federation.js";
 export * from "./zero-install.js";

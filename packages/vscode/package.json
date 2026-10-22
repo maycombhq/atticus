@@ -1,7 +1,7 @@
 {
   "name": "atticus",
   "displayName": "Atticus",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Run Atticus's AI steps with Copilot's own model, in VS Code. Atticus's command line does all the checking.",
   "license": "Apache-2.0",
   "publisher": "maycombhq",
@@ -356,6 +356,42 @@
         "command": "atticus.installCopilot",
         "title": "Install GitHub Copilot Chat",
         "category": "Atticus"
+      },
+      {
+        "command": "atticus.absorb",
+        "title": "Bring in from another repo…",
+        "category": "Atticus",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "atticus.absorbAccept",
+        "title": "Accept what was brought in…",
+        "category": "Atticus",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "atticus.onboardRepo",
+        "title": "Onboard a repo…",
+        "category": "Atticus",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "atticus.addKnowledge",
+        "title": "Add knowledge…",
+        "category": "Atticus",
+        "icon": "$(book)"
+      },
+      {
+        "command": "atticus.acceptCatalog",
+        "title": "Accept the catalog…",
+        "category": "Atticus",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "atticus.setupStep",
+        "title": "Fix this setup step",
+        "category": "Atticus",
+        "icon": "$(play)"
       }
     ],
     "viewsContainers": {
@@ -371,34 +407,50 @@
       "atticus": [
         {
           "id": "atticus.view",
-          "name": "Next"
+          "name": "Next",
+          "initialSize": 4
         },
         {
           "id": "atticus.questions",
-          "name": "Questions"
+          "name": "Questions",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
+          "initialSize": 2
         },
         {
           "id": "atticus.repos",
-          "name": "Repos"
+          "name": "Repos",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
+          "initialSize": 3
         },
         {
           "id": "atticus.changes",
-          "name": "Changes"
+          "name": "Changes",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
+          "initialSize": 2
         },
         {
           "id": "atticus.knowledge",
           "name": "Knowledge",
-          "visibility": "collapsed"
+          "visibility": "collapsed",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
+          "initialSize": 1
         },
         {
           "id": "atticus.catalog",
           "name": "Catalog",
-          "visibility": "collapsed"
+          "visibility": "collapsed",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
+          "initialSize": 1
         }
       ]
     },
     "menus": {
       "view/title": [
+        {
+          "submenu": "atticus.start",
+          "when": "view == atticus.view",
+          "group": "navigation@0"
+        },
         {
           "command": "atticus.refresh",
           "when": "view =~ /^atticus.(view|questions|repos|changes|knowledge|catalog)$/",
@@ -468,6 +520,16 @@
           "command": "atticus.addRepos",
           "when": "view == atticus.repos",
           "group": "navigation@0"
+        },
+        {
+          "command": "atticus.absorb",
+          "when": "view == atticus.knowledge",
+          "group": "navigation@0"
+        },
+        {
+          "command": "atticus.onboardRepo",
+          "when": "view == atticus.repos",
+          "group": "more"
         }
       ],
       "view/item/context": [
@@ -492,9 +554,19 @@
           "group": "inline"
         },
         {
+          "command": "atticus.onboardRepo",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
+          "group": "inline"
+        },
+        {
           "command": "atticus.repoCommand",
           "when": "view == atticus.repos && viewItem == atticus.repo",
           "group": "inline"
+        },
+        {
+          "command": "atticus.onboardRepo",
+          "when": "view == atticus.repos && viewItem == atticus.repo",
+          "group": "atticus"
         },
         {
           "command": "atticus.repoCommand",
@@ -519,6 +591,11 @@
         {
           "command": "atticus.answerRepo",
           "when": "view == atticus.questions && viewItem == atticus.questionRepo",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.setupStep",
+          "when": "view == atticus.view && viewItem == atticus.setupStep",
           "group": "inline"
         }
       ],
@@ -558,6 +635,49 @@
         {
           "command": "atticus.answerRepo",
           "when": "false"
+        },
+        {
+          "command": "atticus.setupStep",
+          "when": "false"
+        }
+      ],
+      "atticus.start": [
+        {
+          "command": "atticus.createMetarepo",
+          "group": "1_start@1"
+        },
+        {
+          "command": "atticus.adoptRepo",
+          "group": "1_start@2"
+        },
+        {
+          "command": "atticus.practiceSandbox",
+          "group": "1_start@3"
+        },
+        {
+          "command": "atticus.addRepos",
+          "group": "2_repos@1",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        },
+        {
+          "command": "atticus.onboardRepo",
+          "group": "2_repos@2",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        },
+        {
+          "command": "atticus.absorb",
+          "group": "3_bring@1",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        },
+        {
+          "command": "atticus.absorbAccept",
+          "group": "3_bring@2",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        },
+        {
+          "command": "atticus.addKnowledge",
+          "group": "3_bring@3",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
         }
       ]
     },
@@ -610,31 +730,6 @@
         "view": "atticus.view",
         "when": "!atticus.cliMissing && !atticus.hasMetarepo",
         "contents": "No Atticus metarepo is open in this window. A metarepo holds what Atticus knows about your systems and changes.\n[Open a metarepo](command:vscode.openFolder)\n[Create a metarepo](command:atticus.createMetarepo)\n[Use Atticus in this repo](command:atticus.adoptRepo)\n[Try a practice metarepo](command:atticus.practiceSandbox)\nNew to Atticus? [Get started](command:workbench.action.openWalkthrough?%22maycombhq.atticus%23atticus.start%22)."
-      },
-      {
-        "view": "atticus.questions",
-        "when": "atticus.cliMissing || !atticus.hasMetarepo",
-        "contents": "Open or create a metarepo first: the Next section says how."
-      },
-      {
-        "view": "atticus.repos",
-        "when": "atticus.cliMissing || !atticus.hasMetarepo",
-        "contents": "Open or create a metarepo first: the Next section says how."
-      },
-      {
-        "view": "atticus.changes",
-        "when": "atticus.cliMissing || !atticus.hasMetarepo",
-        "contents": "Open or create a metarepo first: the Next section says how."
-      },
-      {
-        "view": "atticus.knowledge",
-        "when": "atticus.cliMissing || !atticus.hasMetarepo",
-        "contents": "Open or create a metarepo first: the Next section says how."
-      },
-      {
-        "view": "atticus.catalog",
-        "when": "atticus.cliMissing || !atticus.hasMetarepo",
-        "contents": "Open or create a metarepo first: the Next section says how."
       }
     ],
     "walkthroughs": [
@@ -741,6 +836,13 @@
         "key": "ctrl+alt+shift+d",
         "mac": "cmd+alt+shift+d",
         "when": "atticus.hasMetarepo"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "atticus.start",
+        "label": "Start or bring in",
+        "icon": "$(add)"
       }
     ]
   },

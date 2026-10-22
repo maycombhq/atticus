@@ -7,6 +7,8 @@ export type ItemKind =
   | "skill"
   | "critic-rule"
   | "schema"
+  /** A TypeSpec source file (.tsp): a reference with its namespace, operations and models. */
+  | "typespec"
   | "constitution-principle"
   | "speckit-template"
   | "speckit-spec"

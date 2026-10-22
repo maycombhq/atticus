@@ -1,0 +1,5 @@
+{
+  "name": "northwind-pricing-spec",
+  "private": true,
+  "dependencies": { "@typespec/compiler": "1.0.0", "@typespec/http": "1.0.0", "@typespec/openapi3": "1.0.0" }
+}

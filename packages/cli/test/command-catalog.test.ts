@@ -96,6 +96,43 @@ describe("the command catalogue (ADR 0096)", () => {
     ]);
   });
 
+  it("keeps options on the lines below optional, however many there are", () => {
+    const [c] = parseHelp(
+      [
+        "  atticus scan [--no-drift]            Scan every repo",
+        "          [--repos a,b]                Only these repos",
+        "          [--full]                     Ignore the scan cache",
+        "          [--dry-run]                  Show what would change; write nothing",
+      ].join("\n"),
+    );
+    expect(c!.flags.map((f) => [f.name, f.required])).toEqual([
+      ["--no-drift", false],
+      ["--repos", false],
+      ["--full", false],
+      ["--dry-run", false],
+    ]);
+  });
+
+  it("reads an option given instead of an argument (<folder> | --org) as not required", () => {
+    expect(byId.get("repos discover")!.flags.find((f) => f.name === "--org")).toMatchObject({
+      required: false,
+      value: "org",
+    });
+    expect(byId.get("questions answer")!.flags.find((f) => f.name === "--option")!.required).toBe(
+      true,
+    );
+  });
+
+  it("gives the scan its own options, not scan review", () => {
+    const flags = (id: string) => byId.get(id)!.flags.map((f) => f.name);
+    expect(flags("scan")).toEqual(
+      expect.arrayContaining(["--no-drift", "--repos", "--full", "--dry-run", "--warnings"]),
+    );
+    expect(flags("scan review")).not.toContain("--full");
+    expect(byId.get("scan")!.flags.some((f) => f.required)).toBe(false);
+    expect(byId.get("scan review")!.flags.some((f) => f.required)).toBe(false);
+  });
+
   it("prints itself as JSON", async () => {
     const r = await run(["commands", "--json"]);
     expect(r.code).toBe(0);

@@ -408,6 +408,15 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   for (const r of repos) {
     const dir = o.repoDir?.(r.id) ?? inPlace(o.root, r.url) ?? baseClonePath(o.root, r.id);
     let state: { commit: string; dirty: boolean };
+    // No folder: say it isn't cloned, not what git said about a folder that isn't there.
+    if (!o.repoState && !(await stat(dir).catch(() => undefined))) {
+      problems.push({
+        repo: r.id,
+        source: "workspace",
+        message: "isn't cloned here yet; run atticus workspace sync",
+      });
+      continue;
+    }
     try {
       state = o.repoState ? await o.repoState(r.id, dir) : await checkoutState(dir);
     } catch (e) {

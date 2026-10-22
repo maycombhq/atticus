@@ -19,6 +19,7 @@ import { CommandUi } from "./command-ui";
 import { FlowLenses } from "./codelens";
 import { SectionTree, type Section } from "./sidebar";
 import { findingActions, flowHash, stepOf, type Item, type Open } from "./sidebar-data";
+import { setupAction } from "./guided";
 import { commandText } from "./cli";
 import { describeEnd } from "./describe";
 import type { StepEnd } from "./runner";
@@ -176,7 +177,9 @@ ${view.next.why}`
       (p, token) =>
         svc.run(root, { args, ...(spec ? { spec } : {}) }, (l) => p.report({ message: l }), token),
     );
-    await showEnd(end);
+    // Not awaited: the notice can sit in the bell, and what comes next mustn't wait on it.
+    void showEnd(end);
+    svc.fireChanged();
   };
 
   /**
@@ -301,6 +304,39 @@ ${view.next.why}`
     "atticus.draftSpec",
     withRoot((root) => commands.pickAndRun(root, "spec draft")),
   );
+  // ADR 0100: bring in another team's repo, onboard a repo, the setup checklist's steps.
+  reg(
+    "atticus.absorb",
+    withRoot((root) => commands.absorb(root)),
+  );
+  reg("atticus.absorbAccept", (id?: unknown) => {
+    const root = needRoot();
+    if (root) void commands.absorbAccept(root, typeof id === "string" ? id : undefined);
+  });
+  reg("atticus.onboardRepo", (item?: Item | string) => {
+    const root = needRoot();
+    const repo =
+      typeof item === "string"
+        ? item
+        : item?.expand?.kind === "repo"
+          ? item.expand.repo
+          : undefined;
+    if (root) void commands.onboardRepo(root, repo);
+  });
+  reg(
+    "atticus.addKnowledge",
+    withRoot((root) => commands.addKnowledge(root)),
+  );
+  reg(
+    "atticus.acceptCatalog",
+    withRoot((root) => commands.acceptCatalog(root)),
+  );
+  reg("atticus.setupStep", (arg?: string | { step?: { id: string } }) => {
+    const id = typeof arg === "string" ? arg : arg?.step?.id;
+    if (!id) return;
+    const a = setupAction(id);
+    return vscode.commands.executeCommand(a.command, ...(a.args ?? []));
+  });
   reg("atticus.installCopilot", () =>
     vscode.commands.executeCommand("workbench.extensions.installExtension", "GitHub.copilot-chat"),
   );
@@ -455,7 +491,9 @@ ${view.next.why}`
       context.subscriptions.push(sub);
       return;
     }
-    // A person's step, or one with a part to fill in: typed into a terminal, not run.
+    // A part to fill in: the screen that asks for it (ADR 0100).
+    if (/<[^>]+>/.test(a.command) && (await commands.fillIn(root, a.command))) return;
+    // A person's step: typed into a terminal, not run.
     inTerminal(root, "Atticus", argsOf(a.command), false);
     void vscode.window.showInformationMessage(`A person takes this step: ${n.why}`);
   });
@@ -534,8 +572,13 @@ ${view.next.why}`
   });
   reg("atticus.answer", () => vscode.commands.executeCommand("atticus.answerQuestion"));
   // A repo's questions one after another, until the person stops.
-  reg("atticus.answerRepo", async (node?: { questions?: { id: string }[] }) => {
-    for (const q of node?.questions ?? []) {
+  reg("atticus.answerRepo", async (node?: string | { questions?: { id: string }[] }) => {
+    // A row of the Questions section, or a repo's id (the onboarding list, ADR 0100).
+    const qs =
+      typeof node === "string"
+        ? (Array.isArray(view.questions) ? view.questions : []).filter((q) => q.repo === node)
+        : (node?.questions ?? []);
+    for (const q of qs) {
       const before = view.openQuestions;
       await vscode.commands.executeCommand("atticus.answerQuestion", q.id);
       await view.refresh();
