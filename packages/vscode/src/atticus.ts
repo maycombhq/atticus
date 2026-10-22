@@ -71,6 +71,10 @@ const AI_STEPS = new Set([
   "change architecture",
   "change draft",
   "plan stories",
+  // ADR 0101: what a change needs from the organisation; searching the wikis for a phrase.
+  "change needs",
+  "knowledge find",
+  "knowledge ask",
 ]);
 
 /** The words of a printed command, without "atticus"; quotes kept together. */

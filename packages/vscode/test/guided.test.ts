@@ -53,30 +53,34 @@ describe("a next step with a part to fill in", () => {
 });
 
 const steps = (done: Record<string, boolean>): SetupStep[] =>
-  ["machine", "org-pack", "repos", "clones", "scan", "knowledge", "baseline"].map((id) => ({
-    id,
-    label: id,
-    done: done[id] ?? false,
-    fix: `fix ${id}`,
-    ...(id === "knowledge" ? { optional: true } : {}),
-  }));
+  ["machine", "org-pack", "org-pack-owner", "repos", "clones", "scan", "knowledge", "baseline"].map(
+    (id) => ({
+      id,
+      label: id,
+      done: done[id] ?? false,
+      fix: `fix ${id}`,
+      ...(id === "knowledge" ? { optional: true } : {}),
+    }),
+  );
 
 describe("the setup checklist", () => {
   it("counts the steps that must be done, and names the first one left", () => {
     const p = setupProgress(steps({ machine: true, "org-pack": true }));
-    expect(p).toMatchObject({ done: 2, total: 6, complete: false });
-    expect(p.next!.id).toBe("repos");
+    expect(p).toMatchObject({ done: 2, total: 7, complete: false });
+    // atticus init leaves the org pack with owner: unassigned: naming one comes next.
+    expect(p.next!.id).toBe("org-pack-owner");
     const all = setupProgress(
       steps({
         machine: true,
         "org-pack": true,
+        "org-pack-owner": true,
         repos: true,
         clones: true,
         scan: true,
         baseline: true,
       }),
     );
-    expect(all).toMatchObject({ done: 6, total: 6, complete: true });
+    expect(all).toMatchObject({ done: 7, total: 7, complete: true });
     expect(all.next).toBeUndefined();
   });
 
@@ -86,6 +90,7 @@ describe("the setup checklist", () => {
       command: "atticus.runCommand",
       args: ["orgpack validate"],
     });
+    expect(setupAction("org-pack-owner")).toEqual({ command: "atticus.openOrgPackOwner" });
     expect(setupAction("repos")).toEqual({ command: "atticus.addRepos" });
     expect(setupAction("clones")).toEqual({ command: "atticus.workspaceSync" });
     expect(setupAction("scan")).toEqual({ command: "atticus.scanAll" });

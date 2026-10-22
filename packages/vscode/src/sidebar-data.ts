@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { diagramHash } from "./app-panel";
 import type * as Api from "./api-types";
+import type { KnowledgeEntry, NeedEntry } from "./knowledge-data";
 
 /**
  * What the Atticus sidebar shows (ADR 0093), as plain data: each section's items, what a click
@@ -27,6 +28,12 @@ export type Expand =
   | { kind: "tasks"; change: string }
   | { kind: "sources" }
   | { kind: "knowledge-items" }
+  /** ADR 0101: the items of one group of knowledge kinds, what the last scan changed, searches. */
+  | { kind: "knowledge-group"; group: string }
+  | { kind: "last-scan" }
+  | { kind: "finds" }
+  /** A change's needs from the organisation (ADR 0101). */
+  | { kind: "needs"; change: string }
   | { kind: "kind"; recordKind: string }
   | { kind: "evidence"; repo?: string; evidence: Api.Evidence[] };
 
@@ -37,6 +44,12 @@ export interface Item {
   tooltip?: string;
   /** A codicon id. */
   icon?: string;
+  /** A theme colour for the icon (e.g. testing.iconPassed for a green tick). */
+  color?: string;
+  /** The tooltip is Markdown. */
+  markdown?: boolean;
+  /** What clicking runs, in place of opening something: an editor command and its arguments. */
+  command?: { command: string; args?: unknown[] };
   expand?: Expand;
   open?: Open;
   /** For the view's inline actions (package.json menus). */
@@ -45,6 +58,12 @@ export interface Item {
   finding?: Api.Finding;
   /** A task's item carries its change and id, for Run the task. */
   task?: { change: string; id: string };
+  /** A knowledge item's row carries it, for Verify, Correct, Reject and its links (ADR 0101). */
+  knowledge?: KnowledgeEntry;
+  /** A need's row carries it, for Done, Not needed and Reopen (ADR 0101). */
+  need?: NeedEntry;
+  /** A wiki source's row carries its id, for Sync, Read and Tag. */
+  source?: string;
 }
 
 export interface Paths {
@@ -301,7 +320,7 @@ export function artifactItems(c: Api.ChangeDetail, p: Paths): Item[] {
 }
 
 /** The change's folder relative to the root, read from its artifacts' paths. */
-const changeDirOf = (c: Api.ChangeDetail) => {
+export const changeDirOf = (c: Pick<Api.ChangeDetail, "id" | "artifacts">) => {
   const mark = `/changes/${c.id}/`;
   const a = c.artifacts.find((x) => x.path.includes(mark));
   return a ? a.path.slice(0, a.path.indexOf(mark) + mark.length - 1) : `openspec/changes/${c.id}`;

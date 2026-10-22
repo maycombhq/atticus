@@ -67,6 +67,38 @@ export async function run(): Promise<void> {
       throw new Error(items.join(", ") || "empty");
     return items.join(", ");
   });
+  await check("every step in Next runs when clicked", async () => {
+    const rows = h.view.getChildren().map((n) => h.view.getTreeItem(n));
+    const steps = rows.filter((r) => r.contextValue === "atticus.next");
+    if (!steps.length) throw new Error("no step rows");
+    const dead = steps.filter((r) => r.command?.command !== "atticus.runStep");
+    if (dead.length) throw new Error(`no command: ${dead.map(label).join(", ")}`);
+    return `${steps.length} step rows`;
+  });
+  await check("a change shows what it needs, or the step that finds it (ADR 0101)", async () => {
+    const t = h.sections.changes!;
+    const [change] = await t.getChildren();
+    if (!change) throw new Error("no change");
+    const kids = (await t.getChildren(change)).map((n) => t.getTreeItem(n));
+    const needs = kids.find((k) => /^(Needs \(|Find what it needs)/.test(label(k)));
+    if (!needs) throw new Error(`no needs row: ${kids.map(label).join(", ")}`);
+    return label(needs);
+  });
+  await check("Knowledge offers its first step, or its sources and searches", async () => {
+    const items = await top("knowledge");
+    const labels = items.map(label);
+    if (labels[0]?.startsWith("No knowledge yet")) {
+      if (items[0]!.command?.command !== "atticus.addWiki")
+        throw new Error("the empty row doesn't add a wiki");
+      return labels[0];
+    }
+    if (
+      !labels.some((l) => l.startsWith("Sources (")) ||
+      !labels.some((l) => l.startsWith("Searches ("))
+    )
+      throw new Error(labels.join(", "));
+    return labels.join(", ");
+  });
   await check("Catalog lists what the scan read", async () => {
     const items = await top("catalog");
     if (!items.length) throw new Error("empty");

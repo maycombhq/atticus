@@ -43,18 +43,18 @@ Usage:
   atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
           [--json]
   atticus sources add <type> <location> Print the sources.yaml entry for a wiki (git, markdown-folder, ado-wiki, ...), or write it [--save]
-          [--id id] [--path folder] [--ref branch] [--submodule] [--kind k,k] [--framework f,f] [--owner o] [--save]
+          [--id <id>] [--path <folder>] [--ref <branch>] [--submodule] [--kind <k,k>] [--framework <f,f>] [--owner <who>] [--save]
   atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
   atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
   atticus knowledge scan [--source s] [--mode m] [--resume run] [--full]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run]  An answer from the knowledge items only, citing them
-  atticus knowledge find "<term or phrase>"  Search every wiki for it; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked [--source s] [--mode m] [--resume run] [--json]
-  atticus knowledge keep <item>        Keep a found item as a knowledge item you verified [--find search] [--as kind] [--set field=value] [--note text]
+  atticus knowledge find "<phrase>"   Search every wiki for a term or phrase; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked [--source s] [--mode m] [--resume run] [--json]
+  atticus knowledge keep <item>        Keep a found item as a knowledge item you verified [--find <search>] [--as <kind>] [--set <field=value>] [--note <text>]
   atticus knowledge finds [--json]     The searches saved, and how many of each were kept
-  atticus knowledge verify <item>      Mark a knowledge item right as read: a green tick wherever it shows [--note text]
-  atticus knowledge correct <item> --set field=value  Correct an item's details (a list takes a|b|c); the corrected item is what plans read [--note text]
-  atticus knowledge reject <item> --note why  Mark an item wrong: plans and answers leave it out
+  atticus knowledge verify <item>      Mark a knowledge item right as read: a green tick wherever it shows [--note <text>]
+  atticus knowledge correct <item> --set field=value  Correct an item's details (a list takes a|b|c); the corrected item is what plans read [--note <text>]
+  atticus knowledge reject <item> --note <why>  Mark an item wrong: plans and answers leave it out
   atticus bench knowledge [--mode m] [--resume run]  Scan the bench's invented wiki, ask its questions, and score both
   atticus bench design [--mode m] [--resume run]  Read the bench's Figma export, map it against the petclinic estate, and score it
   atticus sources refresh [--json]     Fetch every absorbed source again and show what changed
@@ -135,9 +135,9 @@ Usage:
   atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]
   atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run]
   atticus needs [--change id] [--all] [--json]  What changes need from the organisation, open ones first, with lead times and who handles each
-  atticus needs done <change> <item>   Record a need as done [--for target] [--note text, e.g. the CTASK number]
-  atticus needs skip <change> <item> --note why  Record a need as not needed, and why [--for target]
-  atticus needs reopen <change> <item> Open a need again [--for target]
+  atticus needs done <change> <item>   Record a need as done, e.g. with the CTASK number as its note [--for <target>] [--note <text>]
+  atticus needs skip <change> <item> --note <why>  Record a need as not needed, and why [--for <target>]
+  atticus needs reopen <change> <item> Open a need again [--for <target>]
                                        (with target flows: the stories stage, a task per changed step with its prompt, requests from knowledge)
   atticus plan snow <change>           Draft service-desk requests the change needs [--force]
   atticus plan bar <change>            Measure the story bar [--eval file]

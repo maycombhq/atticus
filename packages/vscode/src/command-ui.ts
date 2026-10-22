@@ -33,6 +33,7 @@ import {
   type AcceptDry,
   type Stage,
 } from "./guided";
+import type { StepEnd } from "./runner";
 import { discoveredFrom, isMetarepoName } from "./start";
 
 /**
@@ -44,7 +45,8 @@ import { discoveredFrom, isMetarepoName } from "./start";
  */
 
 export interface CommandUiDeps {
-  runAi: (args: string[], spec?: string) => Promise<void>;
+  /** Run an AI step with Copilot's model; how it ended, or undefined when it didn't start. */
+  runAi: (args: string[], spec?: string) => Promise<StepEnd | undefined>;
   inTerminal: (root: string, name: string, args: string[], run?: boolean) => vscode.Terminal;
   refreshAll: () => void;
 }
@@ -366,7 +368,7 @@ export class CommandUi {
    * when it is closed, and it can sit in the bell for good, so what comes after (the sections
    * read again, the next stage) never waits on it.
    */
-  private showPrinted(argv: string[], p: Printed): void {
+  showPrinted(argv: string[], p: Printed): void {
     const first = p.lines[0] ?? (p.code === 0 ? "Done." : `It exited ${p.code}.`);
     const show =
       p.code === 0 ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
@@ -1021,9 +1023,16 @@ export class CommandUi {
           go: () => this.absorb(root),
         },
         {
-          label: "$(globe) Add a wiki or documentation site",
-          detail: "atticus sources add: read with the rest of the knowledge",
-          go: () => this.pickAndRun(root, "sources add"),
+          label: "$(repo) Add a wiki or docs repo…",
+          detail:
+            "An Azure DevOps or GitHub wiki, a docs repo or a folder of pages: saved into sources.yaml, then synced and read",
+          go: () => vscode.commands.executeCommand("atticus.addWiki"),
+        },
+        {
+          label: "$(search) Search the wikis…",
+          detail:
+            "atticus knowledge find: a term or phrase; Copilot reads the pages it is on for what isn't an item yet",
+          go: () => vscode.commands.executeCommand("atticus.searchWikis"),
         },
         {
           label: "$(file-add) Add files",
@@ -1043,7 +1052,36 @@ export class CommandUi {
       ],
       { title: "Atticus: add knowledge", ignoreFocusOut: true },
     );
-    if (pick) await pick.go();
+    if (pick) await (pick.go as () => Thenable<unknown>)();
+  }
+
+  /** The org pack's pack.yaml, to name its owner (the setup step org-pack-owner). */
+  async openOrgPackOwner(root: string) {
+    const file =
+      [join(root, "org-pack", "pack.yaml"), join(root, ".atticus", "org-pack", "pack.yaml")].find(
+        (f) => existsSync(f),
+      ) ?? join(root, "org-pack", "pack.yaml");
+    try {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+      const line = Math.max(
+        0,
+        doc
+          .getText()
+          .split(/\r?\n/)
+          .findIndex((l) => /^owner:/.test(l)),
+      );
+      await vscode.window.showTextDocument(doc, {
+        preview: false,
+        selection: new vscode.Range(line, 0, line, doc.lineAt(line).text.length),
+      });
+      void vscode.window.showInformationMessage(
+        "Set owner to the person who looks after the org pack (normally the platform lead), then commit it.",
+      );
+    } catch {
+      void vscode.window.showWarningMessage(
+        `${file} isn't there. Run atticus upgrade, or atticus init.`,
+      );
+    }
   }
 
   /** Accept the catalog as the baseline, after walking the map with the architect. */

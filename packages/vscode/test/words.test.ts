@@ -19,6 +19,42 @@ describe("the next step, in plain words", () => {
     expect(s("new-change")).toBe("Start a change");
   });
 
+  it("names what a change needs from the organisation by the change's title (ADR 0101)", () => {
+    const titles = (id: string) =>
+      id === "let-a-chat-member-export"
+        ? "Let a chat member export the chat's messages"
+        : undefined;
+    const why =
+      "let-a-chat-member-export is placed on the estate: your assistant says what it needs.";
+    expect(
+      stepTitle(
+        {
+          step: "needs",
+          command: "atticus change needs let-a-chat-member-export",
+          why,
+          change: "let-a-chat-member-export",
+        },
+        titles,
+      ),
+    ).toBe("Find what “Let a chat member export the chat's messages” needs from the organisation");
+    expect(
+      stepTitle(
+        {
+          step: "raise-needs",
+          command: "atticus needs --change let-a-chat-member-export",
+          why,
+          change: "let-a-chat-member-export",
+          person: true,
+        },
+        titles,
+      ),
+    ).toBe("Raise “Let a chat member export the chat's messages”'s open needs");
+    // Without its title, the id, never the why's raw text.
+    expect(stepTitle({ step: "needs", command: "x", why, change: "add-tags" })).toBe(
+      "Find what add-tags needs from the organisation",
+    );
+  });
+
   it("falls back to the first sentence of why, for a step it doesn't know", () => {
     expect(
       stepTitle({ step: "brand-new", command: "atticus y", why: "Do the new thing. More." }),

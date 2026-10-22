@@ -3,29 +3,22 @@ import { join } from "node:path";
 import * as vscode from "vscode";
 import { readNext, readOpenQuestions } from "./atticus";
 import { parseJson } from "./cli";
-import { setupProgress, type SetupStep } from "./guided";
+import type { SetupStep } from "./guided";
+import { nextRow, type NextNode } from "./next-rows";
 import type { Service } from "./service";
 import { questionGroups } from "./sidebar-data";
 import type { NextStep, OpenQuestion } from "./types";
-import { questionLabel, stepTitle } from "./words";
+import { questionLabel } from "./words";
 
 /**
  * The Next section (ADR 0090, 0098, 0100): the next step in plain words with a Run button, the
- * steps after it, the setup checklist until the catalog is accepted, and Open the app. The Questions section: the open questions by repo; click one to
- * answer it. Both read `atticus next` and `atticus questions` once; each shows a loading line
- * while it reads, the reason when it can't, and says so when there is nothing.
+ * steps after it (each runs when clicked, as the next one does), the setup checklist until the
+ * catalog is accepted, and Open the app. The Questions section: the open questions by repo;
+ * click one to answer it. Both read `atticus next` and `atticus questions` once; each shows a
+ * loading line while it reads, the reason when it can't, and says so when there is nothing.
  */
 
-type Node =
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "next"; step: NextStep }
-  | { kind: "then"; step: NextStep }
-  | { kind: "no-next" }
-  | { kind: "setup"; steps: SetupStep[] }
-  | { kind: "setup-step"; step: SetupStep }
-  | { kind: "app" }
-  | { kind: "no-root" };
+type Node = NextNode;
 
 /** How many of the steps after the next one to show. */
 const THEN = 4;
@@ -130,80 +123,27 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
   };
 
   getTreeItem(node: Node): vscode.TreeItem {
-    const item = (label: string, o: Partial<vscode.TreeItem> = {}) =>
-      Object.assign(new vscode.TreeItem(label), o);
-    switch (node.kind) {
-      case "loading":
-        return item("Reading the metarepo...", { iconPath: new vscode.ThemeIcon("loading~spin") });
-      case "no-root":
-        return item("Open the metarepo folder (the one with org-pack/).", {
-          iconPath: new vscode.ThemeIcon("info"),
-        });
-      case "error":
-        return item(node.message, {
-          iconPath: new vscode.ThemeIcon("warning"),
-          tooltip: `${node.message}\nThe commands run are in the Atticus output.`,
-          command: { command: "atticus.showLog", title: "Show the commands run" },
-        });
-      case "next":
-        return item(stepTitle(node.step, this.changeTitle), {
-          contextValue: "atticus.next",
-          tooltip: new vscode.MarkdownString(
-            `**Next:** ${node.step.why}\n\n\`${node.step.command}\``,
-          ),
-          description: node.step.person ? "your step" : "next",
-          iconPath: new vscode.ThemeIcon("arrow-right"),
-          command: { command: "atticus.runNext", title: "Run the next step" },
-        });
-      case "then":
-        return item(stepTitle(node.step, this.changeTitle), {
-          tooltip: new vscode.MarkdownString(`${node.step.why}\n\n\`${node.step.command}\``),
-          description: "then",
-          iconPath: new vscode.ThemeIcon("circle-small"),
-        });
-      case "setup": {
-        const p = setupProgress(node.steps);
-        return item(`Set up: ${p.done} of ${p.total} done`, {
-          id: "setup",
-          collapsibleState: p.complete
-            ? vscode.TreeItemCollapsibleState.Collapsed
-            : vscode.TreeItemCollapsibleState.Expanded,
-          description: p.complete ? "accept the catalog" : p.next ? `next: ${p.next.label}` : "",
-          tooltip: "The setup checklist (atticus setup), until the catalog is accepted",
-          iconPath: new vscode.ThemeIcon("checklist"),
-        });
-      }
-      case "setup-step": {
-        const s = node.step;
-        return item(s.label, {
-          id: `setup:${s.id}`,
-          description: s.done ? s.detail : s.optional ? "optional" : s.detail,
-          tooltip: new vscode.MarkdownString(
-            `${s.label}${s.detail ? `: ${s.detail}` : ""}${s.done ? "" : `\n\n${s.fix ?? ""}\n\nClick to do it.`}`,
-          ),
-          iconPath: new vscode.ThemeIcon(
-            s.done ? "pass-filled" : s.optional ? "circle-small" : "circle-large-outline",
-          ),
-          ...(s.done
-            ? {}
-            : {
-                contextValue: "atticus.setupStep",
-                command: { command: "atticus.setupStep", title: "Do it", arguments: [s.id] },
-              }),
-        });
-      }
-      case "no-next":
-        return item("Nothing to do next: everything is up to date.", {
-          iconPath: new vscode.ThemeIcon("check"),
-        });
-      case "app":
-        return item("Open the app", {
-          iconPath: new vscode.ThemeIcon("type-hierarchy"),
-          tooltip:
-            "The app with its diagrams, in a VS Code tab. Atticus: Open the app in the browser opens it there instead.",
-          command: { command: "atticus.showApp", title: "Open the app" },
-        });
-    }
+    const r = nextRow(node, this.changeTitle);
+    const t = new vscode.TreeItem(
+      r.label,
+      r.expanded === undefined
+        ? vscode.TreeItemCollapsibleState.None
+        : r.expanded
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed,
+    );
+    if (r.id) t.id = r.id;
+    if (r.description !== undefined) t.description = r.description;
+    if (r.tooltip) t.tooltip = r.plain ? r.tooltip : new vscode.MarkdownString(r.tooltip);
+    t.iconPath = new vscode.ThemeIcon(r.icon);
+    if (r.context) t.contextValue = r.context;
+    if (r.command)
+      t.command = {
+        command: r.command.command,
+        title: r.command.title,
+        ...(r.command.args ? { arguments: r.command.args } : {}),
+      };
+    return t;
   }
 
   dispose() {

@@ -53,6 +53,9 @@ export function setupAction(id: string): { command: string; args?: unknown[] } {
       return { command: "atticus.checkHealth" };
     case "org-pack":
       return { command: "atticus.runCommand", args: ["orgpack validate"] };
+    case "org-pack-owner":
+      // pack.yaml says owner: unassigned until someone is named (atticus init leaves it so).
+      return { command: "atticus.openOrgPackOwner" };
     case "repos":
       return { command: "atticus.addRepos" };
     case "clones":

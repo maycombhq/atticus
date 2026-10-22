@@ -2,6 +2,20 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.3.0
+
+Knowledge managed in the metarepo, and what a change needs from the organisation (ADR 0101).
+
+- **Add a wiki or docs repo…** (the + in the Knowledge section, Start or bring in, and Add knowledge): a git repo (an Azure DevOps or GitHub wiki, or a docs repo), a folder of pages, or Confluence or SharePoint. It asks where, its name, the folder and branch to read, clone or submodule, what it is about and who owns it, saves it into `sources.yaml`, and offers to sync and read it with Copilot. Confluence and SharePoint only show their entry: their adapter isn't wired to the command line yet.
+- **Sources** each show their last snapshot and the commit read, with **Sync it**, **Read it with Copilot** and **Tag it…**.
+- **Items** by kind (requests and processes, standards and patterns, decisions and constraints, teams, vendors, products and projects), each with its review: a green tick, "check again", or rejected. Click one to open the page it was read from at the quote. **Verify**, **Correct…** (each field shown with its value now), **Reject…**, **Open its links** (request forms and catalogue items the page gave) and **Ask about it**.
+- **What the last scan changed**: new, changed and gone items, and the reviews to check again.
+- **Search the wikis…**: a term or phrase; Copilot reads the pages it is on for what isn't an item yet. Pick what to keep and what as. Saved searches are listed under **Searches** to come back to.
+- **A change's needs**: under each change, **Needs (n open)**, or **Find what it needs** before they are found. Each need with what it is for, its lead time and who handles it, a tick when its item was verified, why (quoting the change) and how. **Done…**, **Not needed…**, **Reopen**, **Open its links**, **Open the item's page**. **Raise a change's open needs…** goes through them one by one.
+- **Next**: every step listed runs when clicked, not only the first; each keeps its Run button. Finding a change's needs runs with Copilot; raising them opens the list of open needs. Both are named in plain words, with the change's title.
+- **Set up**: the org pack's owner step opens `pack.yaml` at `owner:`; clicking the checklist does its next step.
+- The sections follow the knowledge folder and the org pack as they change.
+
 ## 0.2.0
 
 - **Start or bring in**, the + in the Next section: create a metarepo, use Atticus in a repo, a practice metarepo, add repos, onboard a repo, bring in another team's repo, accept it, add knowledge.

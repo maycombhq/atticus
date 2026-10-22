@@ -1,7 +1,7 @@
 {
   "name": "atticus",
   "displayName": "Atticus",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Run Atticus's AI steps with Copilot's own model, in VS Code. Atticus's command line does all the checking.",
   "license": "Apache-2.0",
   "publisher": "maycombhq",
@@ -392,6 +392,119 @@
         "title": "Fix this setup step",
         "category": "Atticus",
         "icon": "$(play)"
+      },
+      {
+        "command": "atticus.runStep",
+        "title": "Run this step",
+        "category": "Atticus",
+        "icon": "$(play)"
+      },
+      {
+        "command": "atticus.openOrgPackOwner",
+        "title": "Name the org pack's owner",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.addWiki",
+        "title": "Add a wiki or docs repo…",
+        "category": "Atticus",
+        "icon": "$(add)"
+      },
+      {
+        "command": "atticus.searchWikis",
+        "title": "Search the wikis…",
+        "category": "Atticus",
+        "icon": "$(search)"
+      },
+      {
+        "command": "atticus.keepFound",
+        "title": "Keep what a search of the wikis found…",
+        "category": "Atticus",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "atticus.syncSource",
+        "title": "Sync it",
+        "category": "Atticus",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "atticus.readSource",
+        "title": "Read it with Copilot",
+        "category": "Atticus",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "atticus.tagSource",
+        "title": "Tag it…",
+        "category": "Atticus",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "atticus.verifyItem",
+        "title": "Verify: it's right",
+        "category": "Atticus",
+        "icon": "$(pass)"
+      },
+      {
+        "command": "atticus.correctItem",
+        "title": "Correct…",
+        "category": "Atticus",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "atticus.rejectItem",
+        "title": "Reject…",
+        "category": "Atticus",
+        "icon": "$(close)"
+      },
+      {
+        "command": "atticus.openLinks",
+        "title": "Open its links",
+        "category": "Atticus",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "atticus.askAboutItem",
+        "title": "Ask about it",
+        "category": "Atticus",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "atticus.findNeeds",
+        "title": "Find what a change needs from the organisation",
+        "category": "Atticus",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "atticus.needDone",
+        "title": "Done…",
+        "category": "Atticus",
+        "icon": "$(check)"
+      },
+      {
+        "command": "atticus.needSkip",
+        "title": "Not needed…",
+        "category": "Atticus",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "atticus.needReopen",
+        "title": "Reopen",
+        "category": "Atticus",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "atticus.openNeedPage",
+        "title": "Open the item's page",
+        "category": "Atticus",
+        "icon": "$(book)"
+      },
+      {
+        "command": "atticus.raiseNeeds",
+        "title": "Raise a change's open needs…",
+        "category": "Atticus",
+        "icon": "$(inbox)"
       }
     ],
     "viewsContainers": {
@@ -502,7 +615,22 @@
           "group": "navigation@1"
         },
         {
-          "command": "atticus.sourcesSync",
+          "command": "atticus.addRepos",
+          "when": "view == atticus.repos",
+          "group": "navigation@0"
+        },
+        {
+          "command": "atticus.onboardRepo",
+          "when": "view == atticus.repos",
+          "group": "more"
+        },
+        {
+          "command": "atticus.addWiki",
+          "when": "view == atticus.knowledge",
+          "group": "navigation@0"
+        },
+        {
+          "command": "atticus.searchWikis",
           "when": "view == atticus.knowledge",
           "group": "navigation@1"
         },
@@ -512,29 +640,34 @@
           "group": "navigation@2"
         },
         {
-          "command": "atticus.knowledgeAsk",
+          "command": "atticus.sourcesSync",
           "when": "view == atticus.knowledge",
           "group": "navigation@3"
         },
         {
-          "command": "atticus.addRepos",
-          "when": "view == atticus.repos",
-          "group": "navigation@0"
+          "command": "atticus.knowledgeAsk",
+          "when": "view == atticus.knowledge",
+          "group": "more@1"
+        },
+        {
+          "command": "atticus.keepFound",
+          "when": "view == atticus.knowledge",
+          "group": "more@2"
         },
         {
           "command": "atticus.absorb",
           "when": "view == atticus.knowledge",
-          "group": "navigation@0"
+          "group": "more@3"
         },
         {
-          "command": "atticus.onboardRepo",
-          "when": "view == atticus.repos",
-          "group": "more"
+          "command": "atticus.raiseNeeds",
+          "when": "view == atticus.changes",
+          "group": "more@1"
         }
       ],
       "view/item/context": [
         {
-          "command": "atticus.runNext",
+          "command": "atticus.runStep",
           "when": "view == atticus.view && viewItem == atticus.next",
           "group": "inline"
         },
@@ -597,6 +730,141 @@
           "command": "atticus.setupStep",
           "when": "view == atticus.view && viewItem == atticus.setupStep",
           "group": "inline"
+        },
+        {
+          "command": "atticus.syncSource",
+          "when": "view == atticus.knowledge && viewItem == atticus.source",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.syncSource",
+          "when": "view == atticus.knowledge && viewItem == atticus.source",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.readSource",
+          "when": "view == atticus.knowledge && viewItem == atticus.source",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.readSource",
+          "when": "view == atticus.knowledge && viewItem == atticus.source",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.tagSource",
+          "when": "view == atticus.knowledge && viewItem == atticus.source",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.verifyItem",
+          "when": "view == atticus.knowledge && viewItem =~ /^atticus\\.knowledgeItem/",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.verifyItem",
+          "when": "view == atticus.knowledge && viewItem =~ /^atticus\\.knowledgeItem/",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.correctItem",
+          "when": "view == atticus.knowledge && viewItem =~ /^atticus\\.knowledgeItem/",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.correctItem",
+          "when": "view == atticus.knowledge && viewItem =~ /^atticus\\.knowledgeItem/",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.rejectItem",
+          "when": "view == atticus.knowledge && viewItem =~ /^atticus\\.knowledgeItem/",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.rejectItem",
+          "when": "view == atticus.knowledge && viewItem =~ /^atticus\\.knowledgeItem/",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.openLinks",
+          "when": "view == atticus.knowledge && viewItem =~ /^atticus\\.knowledgeItem.*\\.urls$/",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.openLinks",
+          "when": "view == atticus.knowledge && viewItem =~ /^atticus\\.knowledgeItem.*\\.urls$/",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.askAboutItem",
+          "when": "view == atticus.knowledge && viewItem =~ /^atticus\\.knowledgeItem/",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.needDone",
+          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.open/",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.needDone",
+          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.open/",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.needSkip",
+          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.open/",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.needSkip",
+          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.open/",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.needReopen",
+          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.closed/",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.needReopen",
+          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.closed/",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.openLinks",
+          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\..*\\.urls$/",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.openLinks",
+          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\..*\\.urls$/",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.openNeedPage",
+          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\./",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.raiseNeeds",
+          "when": "view == atticus.changes && viewItem == atticus.needs",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.raiseNeeds",
+          "when": "view == atticus.changes && viewItem == atticus.needs",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.findNeeds",
+          "when": "view == atticus.changes && viewItem == atticus.needs",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.findNeeds",
+          "when": "view == atticus.changes && viewItem == atticus.change",
+          "group": "atticus"
         }
       ],
       "commandPalette": [
@@ -639,6 +907,58 @@
         {
           "command": "atticus.setupStep",
           "when": "false"
+        },
+        {
+          "command": "atticus.runStep",
+          "when": "false"
+        },
+        {
+          "command": "atticus.syncSource",
+          "when": "false"
+        },
+        {
+          "command": "atticus.readSource",
+          "when": "false"
+        },
+        {
+          "command": "atticus.tagSource",
+          "when": "false"
+        },
+        {
+          "command": "atticus.verifyItem",
+          "when": "false"
+        },
+        {
+          "command": "atticus.correctItem",
+          "when": "false"
+        },
+        {
+          "command": "atticus.rejectItem",
+          "when": "false"
+        },
+        {
+          "command": "atticus.openLinks",
+          "when": "false"
+        },
+        {
+          "command": "atticus.askAboutItem",
+          "when": "false"
+        },
+        {
+          "command": "atticus.needDone",
+          "when": "false"
+        },
+        {
+          "command": "atticus.needSkip",
+          "when": "false"
+        },
+        {
+          "command": "atticus.needReopen",
+          "when": "false"
+        },
+        {
+          "command": "atticus.openNeedPage",
+          "when": "false"
         }
       ],
       "atticus.start": [
@@ -675,8 +995,18 @@
           "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
-          "command": "atticus.addKnowledge",
+          "command": "atticus.addWiki",
           "group": "3_bring@3",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        },
+        {
+          "command": "atticus.searchWikis",
+          "group": "3_bring@4",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        },
+        {
+          "command": "atticus.addKnowledge",
+          "group": "3_bring@5",
           "when": "atticus.hasMetarepo && !atticus.cliMissing"
         }
       ]

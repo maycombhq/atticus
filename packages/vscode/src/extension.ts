@@ -17,6 +17,9 @@ import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { chatHandler } from "./chat";
 import { CommandUi } from "./command-ui";
 import { FlowLenses } from "./codelens";
+import { urlsOf } from "./knowledge-data";
+import { KnowledgeUi } from "./knowledge-ui";
+import type { NextStep } from "./types";
 import { SectionTree, type Section } from "./sidebar";
 import { findingActions, flowHash, stepOf, type Item, type Open } from "./sidebar-data";
 import { setupAction } from "./guided";
@@ -122,7 +125,7 @@ ${view.next.why}`
   context.subscriptions.push(svc.onChanged(refreshAll));
   // Specs, changes, the catalog and questions are files: follow them when they change.
   const files = vscode.workspace.createFileSystemWatcher(
-    "**/{specs,catalog,openspec,questions}/**/*.{yaml,md}",
+    "**/{specs,catalog,openspec,questions,knowledge,org-pack}/**/*.{yaml,md}",
   );
   let pending: ReturnType<typeof setTimeout> | undefined;
   const soon = () => {
@@ -180,6 +183,7 @@ ${view.next.why}`
     // Not awaited: the notice can sit in the bell, and what comes next mustn't wait on it.
     void showEnd(end);
     svc.fireChanged();
+    return end;
   };
 
   /**
@@ -331,6 +335,106 @@ ${view.next.why}`
     "atticus.acceptCatalog",
     withRoot((root) => commands.acceptCatalog(root)),
   );
+  reg(
+    "atticus.openOrgPackOwner",
+    withRoot((root) => commands.openOrgPackOwner(root)),
+  );
+
+  // ADR 0101: knowledge managed in the metarepo, and what a change needs from the organisation.
+  const knowledge = new KnowledgeUi(svc, commands, { runAi, inTerminal, refreshAll });
+  /** The row a menu was opened on, with what it carries. */
+  const onItem =
+    <K extends "knowledge" | "need" | "source">(
+      key: K,
+      f: (root: string, v: NonNullable<Item[K]>) => unknown,
+    ) =>
+    (item?: Item) => {
+      const root = needRoot();
+      const v = item?.[key];
+      if (root && v) void f(root, v as NonNullable<Item[K]>);
+    };
+  reg(
+    "atticus.addWiki",
+    withRoot((root) => knowledge.addWiki(root)),
+  );
+  reg(
+    "atticus.searchWikis",
+    withRoot((root) => knowledge.search(root)),
+  );
+  reg("atticus.keepFound", (slug?: unknown) => {
+    const root = needRoot();
+    if (root) void knowledge.keepFound(root, typeof slug === "string" ? slug : undefined);
+  });
+  reg(
+    "atticus.syncSource",
+    onItem("source", (root, id) => knowledge.syncSource(root, id)),
+  );
+  reg(
+    "atticus.readSource",
+    onItem("source", (root, id) => knowledge.readSource(root, id)),
+  );
+  reg(
+    "atticus.tagSource",
+    onItem("source", (root, id) => knowledge.tagSource(root, id)),
+  );
+  reg(
+    "atticus.verifyItem",
+    onItem("knowledge", (root, k) => knowledge.verify(root, k)),
+  );
+  reg(
+    "atticus.correctItem",
+    onItem("knowledge", (root, k) => knowledge.correct(root, k)),
+  );
+  reg(
+    "atticus.rejectItem",
+    onItem("knowledge", (root, k) => knowledge.reject(root, k)),
+  );
+  reg(
+    "atticus.askAboutItem",
+    onItem("knowledge", (root, k) => knowledge.ask(root, k)),
+  );
+  reg("atticus.openLinks", (item?: Item) => {
+    const x = item?.knowledge ?? item?.need;
+    if (x) void knowledge.openLinks(urlsOf(x), item?.label ?? "It");
+  });
+  reg("atticus.findNeeds", (arg?: Item | string) => {
+    const root = needRoot();
+    if (!root) return;
+    const change =
+      typeof arg === "string"
+        ? arg
+        : arg?.expand?.kind === "change" || arg?.expand?.kind === "needs"
+          ? arg.expand.change
+          : undefined;
+    void (change ? knowledge.findNeeds(root, change) : commands.pickAndRun(root, "change needs"));
+  });
+  reg(
+    "atticus.needDone",
+    onItem("need", (root, n) => knowledge.markNeed(root, n, "done")),
+  );
+  reg(
+    "atticus.needSkip",
+    onItem("need", (root, n) => knowledge.markNeed(root, n, "skip")),
+  );
+  reg(
+    "atticus.needReopen",
+    onItem("need", (root, n) => knowledge.markNeed(root, n, "reopen")),
+  );
+  reg(
+    "atticus.openNeedPage",
+    onItem("need", (root, n) => knowledge.openNeedPage(root, n)),
+  );
+  reg("atticus.raiseNeeds", (arg?: Item | string) => {
+    const root = needRoot();
+    if (!root) return;
+    const change =
+      typeof arg === "string"
+        ? arg
+        : arg?.expand?.kind === "needs" || arg?.expand?.kind === "change"
+          ? arg.expand.change
+          : undefined;
+    void knowledge.raiseNeeds(root, change);
+  });
   reg("atticus.setupStep", (arg?: string | { step?: { id: string } }) => {
     const id = typeof arg === "string" ? arg : arg?.step?.id;
     if (!id) return;
@@ -476,6 +580,23 @@ ${view.next.why}`
     }
     if (!n)
       return void vscode.window.showInformationMessage("Atticus has no next step to suggest.");
+    return takeStep(root, n);
+  });
+  // Any step of the Next section, the next one or one after it (ADR 0100, 0101).
+  // A click passes the step; an inline Run button passes the row, which holds it.
+  reg("atticus.runStep", async (arg?: NextStep | { step?: unknown }) => {
+    const root = needRoot();
+    if (!root) return;
+    const n =
+      arg && typeof arg.step === "object" && arg.step ? (arg.step as NextStep) : (arg as NextStep);
+    if (!n || typeof n.command !== "string")
+      return vscode.commands.executeCommand("atticus.runNext");
+    return takeStep(root, n);
+  });
+  /** A step the way its kind needs: with Copilot, answered, run, filled in, or a person's. */
+  const takeStep = async (root: string, n: NextStep): Promise<unknown> => {
+    // Raising a change's needs: its open needs, one after another, to mark (ADR 0101).
+    if (n.step === "raise-needs") return knowledge.raiseNeeds(root, n.change);
     const a = actionFor(n);
     if (a.kind === "ai") return runAi(a.args, a.spec);
     if (a.kind === "answer") return vscode.commands.executeCommand("atticus.answerQuestion");
@@ -496,7 +617,7 @@ ${view.next.why}`
     // A person's step: typed into a terminal, not run.
     inTerminal(root, "Atticus", argsOf(a.command), false);
     void vscode.window.showInformationMessage(`A person takes this step: ${n.why}`);
-  });
+  };
 
   for (const name of Object.keys(STEP_COMMANDS) as StepCommand[]) {
     const step = STEP_COMMANDS[name];
