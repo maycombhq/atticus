@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Knowledge managed in the metarepo
+
+- Wikis kept in git (ADR 0101): `type: git` in `sources.yaml`, an ADO or GitHub wiki or a docs repo, with `ref`, `path` and `checkout: clone` (into local state) or `submodule` (pinned under `knowledge/repos/`). `atticus sources sync` clones or updates it, dates each page by git and records the commit in the snapshot. `atticus sources add git <url> --save` writes the entry for you.
+
 ### Everything from the VS Code plugin, guided
 
 - Start or bring in (the + in the Next section): create a metarepo, use Atticus in a repo, a practice metarepo, add repos, onboard a repo, bring in another team's repo, accept it, add knowledge; always there, not only in an empty window (ADR 0100).

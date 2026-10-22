@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   loadOrgPack,
@@ -14,15 +14,20 @@ import {
   mapFacts,
   scanPatterns,
   syncSources,
+  checkoutGitWiki,
+  gitWikiAdapter,
+  type GitCheckout,
   toApiCoverage,
   writeSnapshots,
   type PatternDraft,
 } from "@maycombhq/knowledge";
 import { readCatalog } from "@maycombhq/scanner";
+import { createGit } from "@maycombhq/workspace";
+import { isSeq, parseDocument } from "yaml";
 import type { Output } from "./commands.js";
 import { table } from "./index-commands.js";
 
-const WIKI_TYPES = ["confluence", "ado-wiki", "sharepoint", "markdown-folder"] as const;
+const WIKI_TYPES = ["confluence", "ado-wiki", "sharepoint", "markdown-folder", "git"] as const;
 type WikiType = (typeof WIKI_TYPES)[number];
 
 const toPosix = (p: string) => p.split(sep).join("/");
@@ -60,68 +65,158 @@ const now = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
 /**
  * atticus sources add <type> <location>: check a wiki and print the sources.yaml lines to
- * add. It never writes the org pack: the org pack changes only through a reviewed PR.
- * A folder location is given relative to the metarepo root and printed relative to the
- * org-pack folder, which is how sources.yaml reads it.
+ * add. With --save it writes them into sources.yaml (keeping its comments), as sources tag
+ * does: the change is a file, committed through a pull request, which is the approval. A
+ * folder (or a local git repository) is given relative to the metarepo root and written
+ * relative to the org-pack folder, which is how sources.yaml reads it. A git wiki (ADR 0101)
+ * takes --path (its pages' folder), --ref (a branch or tag) and --submodule.
  */
+export interface SourceAddOptions {
+  id?: string;
+  path?: string;
+  ref?: string;
+  submodule?: boolean;
+  kinds?: string[];
+  frameworks?: string[];
+  owner?: string;
+  save?: boolean;
+}
+
+const isRemote = (s: string) => /^[a-z][a-z0-9+.-]*:\/\//i.test(s) || /^[\w.-]+@[\w.-]+:/.test(s);
+
 export async function sourcesAdd(
   root: string,
   kind: string,
   location: string,
   io: Output,
+  o: SourceAddOptions = {},
 ): Promise<number> {
   if (!(WIKI_TYPES as readonly string[]).includes(kind)) {
     io.err(`Unknown wiki type ${kind}. Use one of: ${WIKI_TYPES.join(", ")}.`);
     return 2;
   }
   const type = kind as WikiType;
+  if (type !== "git" && (o.path || o.ref || o.submodule)) {
+    io.err("--path, --ref and --submodule are for a git wiki.");
+    return 2;
+  }
   const orgPackDir = join(orgPackDirOf(root));
   const op = await loadOrgPack(orgPackDir);
-  const folder = type === "markdown-folder" || (type !== "confluence" && !isUrl(location));
   let entryLocation: string;
   let id: string;
-  if (folder) {
-    const abs = isAbsolute(location) ? location : resolve(root, location);
-    if (!(await isDir(abs))) {
-      io.err(`Can't find the folder ${location} (paths are relative to ${root}).`);
-      return 1;
+  if (type === "git") {
+    if (isRemote(location)) {
+      entryLocation = location;
+    } else {
+      const abs = isAbsolute(location) ? location : resolve(root, location);
+      entryLocation = toPosix(relative(orgPackDir, abs)) || ".";
     }
-    entryLocation = toPosix(relative(orgPackDir, abs)) || ".";
     const same = op.sources.wikis.find(
-      (w) => !isUrl(w.location) && resolve(orgPackDir, w.location) === abs,
+      (w) =>
+        w.location === entryLocation ||
+        (!isRemote(w.location) &&
+          !isRemote(entryLocation) &&
+          resolve(orgPackDir, w.location) === resolve(orgPackDir, entryLocation)),
     );
     if (same) {
-      io.err(`That folder is already in sources.yaml as ${same.id}.`);
+      io.err(`That repository is already in sources.yaml as ${same.id}.`);
       return 1;
     }
-    id = slug(basename(abs)) || "wiki";
+    const name = (
+      location
+        .replace(/[\\/]+$/, "")
+        .split(/[\\/:]/)
+        .pop() ?? ""
+    )
+      .replace(/\.git$/i, "")
+      .replace(/\.wiki$/i, "");
+    id = slug(name) || "wiki";
   } else {
-    if (!isUrl(location)) {
-      io.err(`A ${type} wiki needs an https:// address; ${location} isn't one.`);
-      return 1;
+    const folder = type === "markdown-folder" || (type !== "confluence" && !isUrl(location));
+    if (folder) {
+      const abs = isAbsolute(location) ? location : resolve(root, location);
+      if (!(await isDir(abs))) {
+        io.err(`Can't find the folder ${location} (paths are relative to ${root}).`);
+        return 1;
+      }
+      entryLocation = toPosix(relative(orgPackDir, abs)) || ".";
+      const same = op.sources.wikis.find(
+        (w) => !isUrl(w.location) && resolve(orgPackDir, w.location) === abs,
+      );
+      if (same) {
+        io.err(`That folder is already in sources.yaml as ${same.id}.`);
+        return 1;
+      }
+      id = slug(basename(abs)) || "wiki";
+    } else {
+      if (!isUrl(location)) {
+        io.err(`A ${type} wiki needs an https:// address; ${location} isn't one.`);
+        return 1;
+      }
+      const same = op.sources.wikis.find((w) => w.location === location);
+      if (same) {
+        io.err(`That wiki is already in sources.yaml as ${same.id}.`);
+        return 1;
+      }
+      entryLocation = location;
+      id = slug(new URL(location).hostname) || "wiki";
     }
-    const same = op.sources.wikis.find((w) => w.location === location);
-    if (same) {
-      io.err(`That wiki is already in sources.yaml as ${same.id}.`);
-      return 1;
-    }
-    entryLocation = location;
-    id = slug(new URL(location).hostname) || "wiki";
   }
   const taken = new Set(op.sources.wikis.map((w) => w.id));
-  let unique = id;
+  if (o.id && taken.has(o.id)) {
+    io.err(`sources.yaml already has a source ${o.id}.`);
+    return 1;
+  }
+  let unique = o.id ?? id;
   for (let n = 2; taken.has(unique); n++) unique = `${id}-${n}`;
-  const entry = { id: unique, type, location: entryLocation };
+  const tags =
+    o.kinds?.length || o.frameworks?.length
+      ? { kinds: o.kinds ?? [], frameworks: o.frameworks ?? [] }
+      : undefined;
+  const entry = {
+    id: unique,
+    type,
+    location: entryLocation,
+    ...(o.path ? { path: o.path } : {}),
+    ...(o.ref ? { ref: o.ref } : {}),
+    ...(type === "git" && o.submodule ? { checkout: "submodule" as const } : {}),
+    ...(o.owner ? { owner: o.owner } : {}),
+    ...(tags ? { tags } : {}),
+  };
   const check = Sources.safeParse({ ...op.sources, wikis: [...op.sources.wikis, entry] });
   if (!check.success) {
     io.err(check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("\n"));
     return 1;
   }
+  if (o.save) {
+    const file = join(orgPackDir, "sources.yaml");
+    const doc = parseDocument(
+      await readFile(file, "utf8").catch(
+        () => "# Where things are and what Atticus reads.\nschemaVersion: 1\n",
+      ),
+    );
+    const wikis = doc.get("wikis");
+    if (isSeq(wikis)) wikis.add(doc.createNode(entry));
+    else doc.set("wikis", doc.createNode([entry]));
+    await writeFile(file, doc.toString(), "utf8");
+    io.out(
+      `Added ${entry.id} (${type}) to org-pack/sources.yaml: commit it through a pull request.`,
+    );
+    io.out(
+      `Then read it: atticus sources sync --source ${entry.id}, and atticus knowledge scan --source ${entry.id}.`,
+    );
+    return 0;
+  }
   io.out(
-    "Add this under wikis: in org-pack/sources.yaml through a pull request (Atticus never changes the org pack itself):",
+    "Add this under wikis: in org-pack/sources.yaml through a pull request (or run this again with --save):",
   );
+  const extra = [
+    ...(entry.path ? [`path: ${entry.path}`] : []),
+    ...(entry.ref ? [`ref: ${entry.ref}`] : []),
+    ...("checkout" in entry && entry.checkout ? [`checkout: ${entry.checkout}`] : []),
+  ];
   io.out(
-    `  - { id: ${entry.id}, type: ${entry.type}, location: ${JSON.stringify(entry.location)} }`,
+    `  - { id: ${entry.id}, type: ${entry.type}, location: ${JSON.stringify(entry.location)}${extra.map((x) => `, ${x}`).join("")} }`,
   );
   return 0;
 }
@@ -146,9 +241,37 @@ async function syncAll(root: string, io: Output, only?: string) {
     }
     op = { ...op, sources: { ...op.sources, wikis } };
   }
-  const sync = await syncSources({ root, orgPack: op, orgPackDir, records, now: now() });
+  // ADR 0101: a git wiki is cloned (or its submodule updated) before its pages are read.
+  const checkouts = new Map<string, GitCheckout>();
+  const gitProblems: { source: string; message: string }[] = [];
+  const git = createGit();
+  for (const w of op.sources.wikis.filter((x) => x.type === "git"))
+    try {
+      checkouts.set(w.id, await checkoutGitWiki(root, w, orgPackDir, git));
+    } catch (e) {
+      gitProblems.push({
+        source: w.id,
+        message: `Can't fetch the git wiki ${w.id}: ${(e as Error).message.split("\n")[0]}`,
+      });
+    }
+  const readable = {
+    ...op,
+    sources: {
+      ...op.sources,
+      wikis: op.sources.wikis.filter((w) => w.type !== "git" || checkouts.has(w.id)),
+    },
+  };
+  const sync = await syncSources({
+    root,
+    orgPack: readable,
+    orgPackDir,
+    records,
+    now: now(),
+    adapters: { git: gitWikiAdapter(checkouts) },
+  });
+  sync.problems.push(...gitProblems);
   const facts = mapFacts({ pages: sync.pages, records, systems: systemsOf(op) });
-  return { op, records, sync, facts };
+  return { op, records, sync, facts, checkouts };
 }
 
 /**
@@ -165,7 +288,13 @@ export async function sourcesSync(
   if (!r) return 2;
   const { sync, facts } = r;
   // ADR 0083: every page read is copied to a dated snapshot; the knowledge scan reads only those.
-  const snapshots = await writeSnapshots({ root, orgPack: r.op, sync, takenAt: o.now ?? now() });
+  const snapshots = await writeSnapshots({
+    root,
+    orgPack: r.op,
+    sync,
+    takenAt: o.now ?? now(),
+    commits: Object.fromEntries([...r.checkouts].map(([id, c]) => [id, c.commit])),
+  });
   if (o.json) {
     io.out(
       JSON.stringify(
@@ -192,6 +321,11 @@ export async function sourcesSync(
       const skipped = sync.skipped.filter((p) => p.source === w.id).length;
       io.out(`${w.id}: ${read} page${read === 1 ? "" : "s"} read, ${skipped} skipped`);
       for (const p of sync.problems.filter((x) => x.source === w.id)) io.out(`  ! ${p.message}`);
+      const c = r.checkouts.get(w.id);
+      if (c)
+        io.out(
+          `  ${c.submodule ? `Submodule ${c.submodule.path}` : "Cloned"} at commit ${c.commit.slice(0, 7)}${c.submodule?.moved ? `: the pin moved, commit ${c.submodule.path} to keep it` : ""}`,
+        );
       const s = snapshots.find((x) => x.source === w.id);
       if (s) io.out(`  Snapshot: ${s.dir}/ (the knowledge scan reads this copy)`);
     }

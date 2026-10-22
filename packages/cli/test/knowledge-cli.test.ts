@@ -52,7 +52,7 @@ describe("atticus sources add", () => {
     const c = capture();
     expect(await sourcesAdd(root, "markdown-folder", "docs/runbooks", c.io)).toBe(0);
     expect(c.out).toEqual([
-      "Add this under wikis: in org-pack/sources.yaml through a pull request (Atticus never changes the org pack itself):",
+      "Add this under wikis: in org-pack/sources.yaml through a pull request (or run this again with --save):",
       '  - { id: runbooks, type: markdown-folder, location: "../docs/runbooks" }',
     ]);
     expect(readFileSync(join(root, "org-pack/sources.yaml"), "utf8")).toBe(before);

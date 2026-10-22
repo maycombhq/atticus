@@ -15,3 +15,4 @@ export * from "./snapshot.js";
 export * from "./knowledge-scan.js";
 export * from "./knowledge-store.js";
 export * from "./knowledge-ask.js";
+export * from "./git-wiki.js";

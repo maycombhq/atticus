@@ -42,7 +42,8 @@ Usage:
   atticus index rebuild                Rebuild the local index from the catalog files
   atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
           [--json]
-  atticus sources add <type> <location> Print the sources.yaml entry for a wiki (markdown-folder, ado-wiki, ...)
+  atticus sources add <type> <location> Print the sources.yaml entry for a wiki (git, markdown-folder, ado-wiki, ...); --save writes it
+          [--id id] [--path folder] [--ref branch] [--submodule] [--kind k,k] [--framework f,f] [--owner o] [--save]
   atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
   atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
   atticus knowledge scan [--source s] [--mode m] [--resume run]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked

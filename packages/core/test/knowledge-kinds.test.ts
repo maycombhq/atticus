@@ -176,3 +176,38 @@ describe("tags on knowledge sources", () => {
     ).toBe(true);
   });
 });
+
+describe("a wiki kept in git (ADR 0101)", () => {
+  it("names its repository, branch and folder, cloned by default", () => {
+    const s = Sources.parse({
+      schemaVersion: 1,
+      wikis: [
+        {
+          id: "platform-wiki",
+          type: "git",
+          location: "https://git.example.com/forge/platform.wiki.git",
+          ref: "main",
+          path: "docs",
+        },
+      ],
+    });
+    expect(s.wikis[0]).toMatchObject({ type: "git", ref: "main", path: "docs", checkout: "clone" });
+  });
+
+  it("can be a submodule of the metarepo instead", () => {
+    const s = Sources.parse({
+      schemaVersion: 1,
+      wikis: [{ id: "runbooks", type: "git", location: "../runbooks", checkout: "submodule" }],
+    });
+    expect(s.wikis[0]!.checkout).toBe("submodule");
+  });
+
+  it("takes a branch, a folder and a checkout only for a git wiki, and a folder inside it", () => {
+    const bad = (w: Record<string, unknown>) =>
+      Sources.safeParse({ schemaVersion: 1, wikis: [{ id: "w", location: "w", ...w }] }).success;
+    expect(bad({ type: "markdown-folder", ref: "main" })).toBe(false);
+    expect(bad({ type: "confluence", checkout: "submodule" })).toBe(false);
+    expect(bad({ type: "git", path: "../outside" })).toBe(false);
+    expect(bad({ type: "git", path: "docs/how-to" })).toBe(true);
+  });
+});

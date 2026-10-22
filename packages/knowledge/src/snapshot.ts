@@ -24,6 +24,11 @@ export const SnapshotManifest = z.strictObject({
   type: z.string().min(1),
   location: z.string().min(1),
   owner: z.string().optional(),
+  /** A git wiki's commit the pages were read at (ADR 0101). */
+  commit: z
+    .string()
+    .regex(/^[0-9a-f]{7,64}$/)
+    .optional(),
   tags: z
     .strictObject({
       kinds: z.array(z.string()).default([]),
@@ -80,6 +85,8 @@ export async function writeSnapshots(o: {
   takenAt: string;
   /** Only these sources; default every source the sync read. */
   sources?: string[];
+  /** Each git wiki's commit read, by source id (ADR 0101). */
+  commits?: Record<string, string>;
 }): Promise<{ source: string; dir: string; pages: number }[]> {
   const date = o.takenAt.slice(0, 10);
   const out: { source: string; dir: string; pages: number }[] = [];
@@ -99,6 +106,7 @@ export async function writeSnapshots(o: {
       type: w.type,
       location: w.location,
       ...(w.owner ? { owner: w.owner } : {}),
+      ...(o.commits?.[w.id] ? { commit: o.commits[w.id] } : {}),
       tags: sourceTags(w),
       pages: [],
       skipped: o.sync.skipped

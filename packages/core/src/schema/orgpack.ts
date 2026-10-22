@@ -363,15 +363,34 @@ export const Sources = z
     /** Wikis and document stores, always read-only. Facts found there wait for confirmation. */
     wikis: z
       .array(
-        z.strictObject({
-          id: RecordId,
-          type: z.enum(["confluence", "ado-wiki", "sharepoint", "markdown-folder"]),
-          location: z.string().min(1),
-          spaces: z.array(z.string().min(1)).default([]),
-          owner: z.string().optional(),
-          /** What the source is about (ADR 0083), to guide the knowledge scan and filter items. */
-          tags: SourceTags.optional(),
-        }),
+        z
+          .strictObject({
+            id: RecordId,
+            /** git (ADR 0101): a repository of Markdown pages, such as an Azure DevOps or GitHub wiki, or a docs repo. */
+            type: z.enum(["confluence", "ado-wiki", "sharepoint", "markdown-folder", "git"]),
+            location: z.string().min(1),
+            spaces: z.array(z.string().min(1)).default([]),
+            owner: z.string().optional(),
+            /** What the source is about (ADR 0083), to guide the knowledge scan and filter items. */
+            tags: SourceTags.optional(),
+            /** A git wiki's branch or tag; default its default branch. */
+            ref: z.string().min(1).optional(),
+            /** The folder of a git wiki its pages are in; default the whole repository. */
+            path: RelPath.optional(),
+            /** A git wiki is cloned into local state (clone), or kept as a submodule of the metarepo under knowledge/repos/. */
+            checkout: z.enum(["clone", "submodule"]).optional(),
+          })
+          .transform((w) => (w.type === "git" ? { ...w, checkout: w.checkout ?? "clone" } : w))
+          .superRefine((w, ctx) => {
+            if (w.type !== "git")
+              for (const k of ["ref", "path", "checkout"] as const)
+                if (w[k] !== undefined)
+                  ctx.addIssue({
+                    code: "custom",
+                    path: [k],
+                    message: `${k} is for a git wiki; ${w.id} is ${w.type}`,
+                  });
+          }),
       )
       .default([]),
     /** Other teams' repos read as they are. */
