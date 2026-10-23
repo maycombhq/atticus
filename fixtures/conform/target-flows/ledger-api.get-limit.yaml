@@ -1,0 +1,21 @@
+# A new flow the transfer limit adds: the portal reads an account's remaining limit.
+# Hand-written for the conformance tests (ADR 0114).
+schemaVersion: 1
+flow: ledger-api.get-limit
+repo: forge-ledger
+change: new
+name: A client reads an account's daily limit
+trigger: { kind: endpoint, what: "GET /accounts/{id}/limit" }
+why: The portal shows how much of the day's limit is left.
+steps:
+  - op: add
+    kind: entry
+    what: LedgerEndpoints.limit receives the request
+  - op: add
+    kind: lookup
+    what: The account's daily limit is read
+    store: { table: ledger-db.account, columns: [daily_limit] }
+  - op: add
+    kind: respond
+    what: 200 with the limit
+    fields: { returns: [dailyLimit] }

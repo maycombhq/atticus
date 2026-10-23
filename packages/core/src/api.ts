@@ -42,8 +42,9 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  *   GET /api/runs and tools in the transcript; run records are at version 2.
  * 2.13.0 (ADR 0113): files attached to a change, GET and POST /api/changes/{id}/inputs, and
  *   whether a change takes the fast path (fastPath on a change).
+ * 2.14.0 (ADR 0114): does the code do what the design says, GET /api/changes/{id}/conformance.
  */
-export const API_VERSION = "2.13.0";
+export const API_VERSION = "2.14.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -800,6 +801,79 @@ export const ChangeEstimate = z.object({
   problems: z.array(z.string()),
 });
 export type ChangeEstimateT = z.infer<typeof ChangeEstimate>;
+
+/** Where a conformance item is: a file of the repo at the branch's commit, or the target flow. */
+const ConformCite = z.object({
+  source: z.enum(["artifact", "code"]),
+  repo: z.string().optional(),
+  path: z.string(),
+  line: z.number().int().positive().optional(),
+});
+
+/** One thing the conformance check looked for, or found that no target flow names (ADR 0114). */
+export const ConformItem = z.object({
+  status: z.enum(["found", "missing", "still-there", "unexpected"]),
+  check: z.enum(["call", "publish", "table", "column", "migration", "trigger", "endpoint"]),
+  /** The target flow and its step (from 1); none for something no target flow names. */
+  flow: z.string().optional(),
+  item: z.number().int().positive().optional(),
+  task: z.string().optional(),
+  what: z.string(),
+  record: z.string().optional(),
+  at: z.array(ConformCite),
+  /** The finding it became on the conform gate, and its state; none for what was found. */
+  finding: z.object({ id: z.string(), state: z.string() }).optional(),
+});
+export type ConformItemT = z.infer<typeof ConformItem>;
+
+/**
+ * The newest conformance check of one repo of a change (ADR 0114), as stored in the change
+ * folder at conform/<repo>.yaml: the branch's commit scanned, compared with the target flows.
+ */
+export const ConformRepoResult = z.object({
+  schemaVersion: z.literal(1),
+  change: RecordId,
+  repo: z.string(),
+  /** The branch checked, and the commits: the branch's and the base it was cut from. */
+  ref: z.string(),
+  commit: z.string(),
+  base: z.string(),
+  /** The task whose steps were checked; none: every step of the repo's target flows. */
+  task: z.string().optional(),
+  checkedAt: z.string(),
+  counts: z.object({
+    found: z.number().int(),
+    missing: z.number().int(),
+    stillThere: z.number().int(),
+    unexpected: z.number().int(),
+  }),
+  items: z.array(ConformItem),
+  /** Steps no scan can show (a branch, a transform): a person or a test checks them. */
+  unchecked: z.array(
+    z.object({
+      flow: z.string(),
+      item: z.number().int().positive().optional(),
+      kind: z.string(),
+      why: z.string(),
+    }),
+  ),
+  problems: z.array(z.string()),
+});
+export type ConformRepoResultT = z.infer<typeof ConformRepoResult>;
+
+/** A change's newest conformance results, one per repo checked (ADR 0114). */
+export const ChangeConformance = z.object({
+  change: RecordId,
+  title: z.string(),
+  /** How many target flows the change has; 0: nothing to compare yet. */
+  flows: z.number().int(),
+  results: z.array(ConformRepoResult),
+  /** The built-in gate the findings are on, and its newest round. */
+  gate: z.literal("conform"),
+  round: z.number().int().positive().optional(),
+  problems: z.array(z.string()),
+});
+export type ChangeConformanceT = z.infer<typeof ChangeConformance>;
 export type TargetFlowListT = z.infer<typeof TargetFlowList>;
 export type TargetFlowViewT = z.infer<typeof TargetFlowView>;
 
@@ -1899,6 +1973,17 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/changes/{changeId}/conformance": {
+    get: {
+      id: "getChangeConformance",
+      summary:
+        "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with what is missing, still there or unexpected and where (ADR 0114)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ChangeConformance", description: "OK" },
+      errors: [400, 404],
+    },
+  },
   "/api/changes/{changeId}/target-flows/{flowId}": {
     get: {
       id: "getTargetFlow",
@@ -2813,6 +2898,7 @@ export function openApiDocument(): Record<string, unknown> {
     ChangeInput,
     ChangeInputList,
     AttachResult,
+    ChangeConformance,
     OrgPackView,
     Health,
     Finding,

@@ -13,7 +13,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "rules"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -27,7 +28,9 @@
     "@maycombhq/core": "workspace:*",
     "@maycombhq/naysayer": "workspace:*",
     "@maycombhq/planner": "workspace:*",
+    "@maycombhq/scanner": "workspace:*",
     "@maycombhq/speckit": "workspace:*",
+    "@maycombhq/testgen": "workspace:*",
     "@maycombhq/workspace": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"

@@ -117,6 +117,20 @@ describe("built-in gates in the lifecycle", () => {
     ]);
   });
 
+  it("the conform gate (ADR 0114) stops the Build hand-off, until a person dismisses the finding", async () => {
+    const root = await inState("build");
+    await finding(root, "conform", { id: "conform-missing-call-ledger-api-create-transfer-2" });
+    expect((await codes(root)).map((x) => x.message.match(/on the (\S+) gate/)![1])).toEqual([
+      "conform",
+    ]);
+    await finding(root, "conform", {
+      id: "conform-missing-call-ledger-api-create-transfer-2",
+      round: 2,
+      state: "dismissed",
+    });
+    expect(await codes(root)).toEqual([]);
+  });
+
   it("only the newest round counts, and a finding a person has resolved does not block", async () => {
     const root = await inState("build");
     await finding(root, "trace", { id: "story-without-test-s1", round: 1 });

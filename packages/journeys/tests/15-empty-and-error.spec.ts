@@ -42,6 +42,7 @@ const ROUTES = [
   "diagrams",
   "change-diagram",
   "estimate",
+  "conformance",
   "reconcile",
   "contracts",
   "mappings",

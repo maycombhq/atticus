@@ -1001,9 +1001,15 @@ importers:
       '@maycombhq/planner':
         specifier: workspace:*
         version: link:../planner
+      '@maycombhq/scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@maycombhq/speckit':
         specifier: workspace:*
         version: link:../speckit
+      '@maycombhq/testgen':
+        specifier: workspace:*
+        version: link:../testgen
       '@maycombhq/workspace':
         specifier: workspace:*
         version: link:../workspace

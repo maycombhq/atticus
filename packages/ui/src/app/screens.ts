@@ -74,6 +74,8 @@ export const MORE: ScreenDef[] = [
   { id: "estimate", label: S.estimate, group: "Plan" },
   { id: "initiatives", label: S.initiatives, group: "Plan" },
   { id: "tasks", label: S.tasks, group: "Build" },
+  // ADR 0114: does the code do what the design says?
+  { id: "conformance", label: S.conformance, group: "Build" },
   { id: "trace", label: S.trace, group: "Build" },
   { id: "todo", label: S.todo, group: "Build" },
   { id: "release", label: S.release, group: "Release" },

@@ -1,0 +1,31 @@
+# The transfer limit's target of ledger-api.create-transfer (ADR 0087), as a person approved it.
+# Hand-written for the conformance tests (ADR 0114).
+schemaVersion: 1
+flow: ledger-api.create-transfer
+repo: forge-ledger
+change: modify
+why: A transfer over the account's daily limit is refused before any money moves.
+steps:
+  - op: add
+    after: 1
+    kind: lookup
+    what: The account's daily limit is read
+    store:
+      table: ledger-db.account
+      columns: [daily_limit]
+      types: { daily_limit: "numeric(18,2)" }
+      migration: V3__add_daily_limit.sql
+  - op: add
+    after: 1
+    kind: call-out
+    what: Northwind Pay's velocity check scores the transfer
+    to: { component: northwind-pay, entry: POST /v2/velocity-checks, new: true }
+    fields: { sends: [accountId, amount], returns: [score] }
+  - op: add
+    after: 1
+    kind: branch
+    what: A transfer over the limit is refused with 422 and nothing is posted
+    fields: { reads: [daily_limit, amount] }
+  - op: remove
+    step: 2
+    why: Payments go out on payments.initiated now; the direct call to Northwind Pay is retired.

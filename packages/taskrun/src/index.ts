@@ -3,3 +3,4 @@ export * from "./commands.js";
 export * from "./store.js";
 export * from "./prompt.js";
 export * from "./run.js";
+export * from "./conform.js";

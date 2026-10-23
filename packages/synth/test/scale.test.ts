@@ -10,7 +10,9 @@ import { generateEstate, prng, writeEstate } from "../src/index.js";
 
 /** Set ATTICUS_SYNTH_REPOS to try other sizes; CI uses the planned 300. */
 const SIZE = Number(process.env.ATTICUS_SYNTH_REPOS ?? 300);
-const T = 180_000;
+// The scan takes about 17 s alone; with every package's tests at once (pnpm check) it has
+// taken over 180 s, so the limit leaves room for that. It is a limit, not a speed check.
+const T = 600_000;
 
 /** A small stand-in for the M1 Forge dialect: endpoints and client calls from annotations. */
 const forgeDemo = defineExtractor({

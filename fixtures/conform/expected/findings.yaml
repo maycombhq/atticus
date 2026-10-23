@@ -1,0 +1,27 @@
+# The C3 findings the conformance check (ADR 0114) writes on the built-in conform gate for the
+# same after state as result.yaml: what is missing or still there blocks the Build hand-off,
+# what no target flow names is a risk. Hand-written; never regenerate it from output.
+- id: conform-missing-call-ledger-api-create-transfer-2
+  rule: conform.missing
+  severity: blocking
+  artifact: target-flows/ledger-api.create-transfer.yaml
+  summary: ledger-api makes no call to northwind-pay POST /v2/velocity-checks (item 2 of target-flows/ledger-api.create-transfer.yaml).
+  evidence: [{ source: artifact, path: target-flows/ledger-api.create-transfer.yaml, line: 18 }]
+- id: conform-still-there-call-ledger-api-create-transfer-4
+  rule: conform.still-there
+  severity: blocking
+  artifact: target-flows/ledger-api.create-transfer.yaml
+  summary: ledger-api still calls northwind-pay POST /v2/payments, which item 4 of target-flows/ledger-api.create-transfer.yaml removes.
+  evidence: [{ source: code, repo: forge-ledger, path: src/main/java/forge/ledger/NorthwindClient.java, line: 8 }]
+- id: conform-unexpected-call-if-e25b9623de50b834
+  rule: conform.unexpected
+  severity: risk
+  artifact: code
+  summary: ledger-api calls northwind-pay POST /v2/refunds, which no target flow names.
+  evidence: [{ source: code, repo: forge-ledger, path: src/main/java/forge/ledger/NorthwindClient.java, line: 11 }]
+- id: conform-unexpected-table-ledger-db-limit-override
+  rule: conform.unexpected
+  severity: risk
+  artifact: code
+  summary: The code adds the table ledger-db.limit-override, which no target flow names.
+  evidence: [{ source: code, repo: forge-ledger, path: src/main/resources/db/migration/V3__add_daily_limit.sql, line: 3 }]
