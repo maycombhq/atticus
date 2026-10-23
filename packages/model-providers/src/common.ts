@@ -1,4 +1,10 @@
-import { estimateTokens, type ModelProvider } from "@maycombhq/ai";
+import {
+  estimateTokens,
+  type ChatInput,
+  type ChatTurn,
+  type ModelProvider,
+  type ToolCallRequest,
+} from "@maycombhq/ai";
 import { DEFAULT_RETRY, postJson, realClock, type Clock, type RetryPolicy } from "./http.js";
 import { copy, type Where } from "./messages.js";
 import { undiciTransport, type Transport } from "./network.js";
@@ -69,7 +75,7 @@ export abstract class BaseProvider implements ModelProvider {
   /** Secret values that must never reach a message. */
   protected abstract secrets(): string[];
 
-  protected tokensFor(input: CompleteInput): number {
+  protected tokensFor(input: { maxOutputTokens: number }): number {
     return Math.max(1, Math.min(input.maxOutputTokens, this.maxOutputTokens));
   }
 
@@ -113,9 +119,50 @@ export abstract class BaseProvider implements ModelProvider {
     };
   }
 
+  /** One turn of a conversation with tools: its calls, or its text; refused like `finish`. */
+  protected finishTurn(
+    text: string,
+    calls: ToolCallRequest[],
+    stop: { cutOff: boolean; declined?: string },
+    max: number,
+    usage: { inputTokens?: number; outputTokens?: number },
+    input: ChatInput,
+  ): ChatTurn {
+    if (stop.cutOff) throw new ModelProviderError(copy.cutOff(this.where(), max));
+    if (stop.declined) throw new ModelProviderError(copy.declined(this.where(), stop.declined));
+    if (!calls.length && !text.trim()) throw new ModelProviderError(copy.noText(this.where()));
+    const sent = input.messages
+      .map((m) =>
+        m.role === "tool" ? m.results.map((r) => r.text).join("") : "text" in m ? m.text : "",
+      )
+      .join("");
+    return {
+      text,
+      calls,
+      usage: {
+        inputTokens: usage.inputTokens ?? estimateTokens(input.system + sent),
+        outputTokens: usage.outputTokens ?? estimateTokens(text + JSON.stringify(calls)),
+      },
+    };
+  }
+
   abstract complete(
     input: CompleteInput,
   ): Promise<{ text: string; usage: { inputTokens: number; outputTokens: number } }>;
+}
+
+/** A tool call's input as the provider sent it: an object, or JSON text of one; else empty. */
+export function toolInput(v: unknown): Record<string, unknown> {
+  if (typeof v === "string") {
+    try {
+      return toolInput(JSON.parse(v));
+    } catch {
+      return {};
+    }
+  }
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
 }
 
 export const num = (v: unknown): number | undefined =>

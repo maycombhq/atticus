@@ -39,6 +39,7 @@ export async function runsCli(
         r.state,
         r.answered ? "answered" : "no answer yet",
         ...(r.handedBack ? [`${plural(r.handedBack, "problem")} handed back`] : []),
+        ...(r.toolCalls ? [`${plural(r.toolCalls, "tool call")}`] : []),
         when(r.startedAt),
       ].join("  "),
     );
@@ -63,6 +64,19 @@ export async function runShowCli(
   const r = t.run;
   io.out(`${r.runId}: ${r.change}, ${r.agent}, round ${r.attempt}, ${r.state} (${r.runtime})`);
   io.out(`Prompt: ${r.promptPath}${r.promptTokens ? ` (${r.promptTokens} tokens)` : ""}`);
+  if (t.tools) {
+    const calls = t.tools.calls;
+    io.out(
+      `Tools offered: ${t.tools.offered.join(", ") || "none"}; the model called them ${plural(calls.length, "time")}.`,
+    );
+    for (const c of calls) {
+      io.out(
+        `  Round ${c.round}: ${c.name} ${JSON.stringify(c.input)}${c.error ? " (refused)" : ""}, ${plural(c.tokens, "token")} back:`,
+      );
+      for (const l of c.output.trimEnd().split("\n")) io.out(`    ${l}`);
+    }
+    if (t.tools.stopped) io.out(`A cap stopped the tools: ${t.tools.stopped}.`);
+  }
   for (const h of t.handedBack) {
     io.out(`Handed back after round ${h.attempt}:`);
     for (const p of h.problems) io.out(`  - ${p}`);

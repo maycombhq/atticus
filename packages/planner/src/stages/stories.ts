@@ -652,6 +652,7 @@ Rules:
       others: [instructionSource(instructions), ...sources],
       ...(o.context ? { context: o.context } : {}),
       exclude: [change.id],
+      change: change.id,
       origin: "knowledge/items (ADR 0083)",
       priority: 80,
       knowledge: {
@@ -684,6 +685,7 @@ Rules:
     output: "stories-answer.yaml",
     source: ANSWER_FILE,
     instructions,
+    ...(context.gaps?.length ? { gaps: context.gaps } : {}),
     sources,
     parse: (text) => {
       const r = parseYamlAs(text, Answer, (d) => d, "stories");

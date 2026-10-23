@@ -223,6 +223,30 @@ export function RunDetail(p: { of: Loaded<Api.RunTranscript> & { reload?: () => 
               )}
             </section>
           </div>
+          {t.tools && (
+            <section aria-labelledby="run-tools">
+              <h3 id="run-tools" className="hud runs-h">
+                {R.tools.title}
+              </h3>
+              <p className="muted" style={{ margin: 0 }}>
+                {R.tools.offered(t.tools.offered.join(", "), t.tools.calls.length)}
+              </p>
+              {t.tools.stopped && (
+                <p className="muted" role="note">
+                  {R.tools.stopped(t.tools.stopped)}
+                </p>
+              )}
+              {t.tools.calls.map((c, i) => (
+                <section key={`${i}:${c.name}`} aria-labelledby={`run-tool-${i}`}>
+                  <h4 id={`run-tool-${i}`} className="runs-h4">
+                    {R.tools.call(c.round, c.name, c.tokens, c.error === true)}
+                  </h4>
+                  <pre className="runs-line">{JSON.stringify(c.input)}</pre>
+                  <TextBox text={c.output} label={R.tools.returned(c.name)} />
+                </section>
+              ))}
+            </section>
+          )}
           <section aria-labelledby="run-back">
             <h3 id="run-back" className="hud runs-h">
               {R.handedBack}

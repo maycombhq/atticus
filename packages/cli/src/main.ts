@@ -3,7 +3,14 @@ import { createLog, SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
 import { gitUser } from "@maycombhq/workspace";
 import { basename, join, resolve } from "node:path";
 import { type Output } from "./commands.js";
-import { AiOffError, runtimeForCli, RuntimeConfigError, type AiRuntime } from "@maycombhq/ai";
+import {
+  AiOffError,
+  registerToolSource,
+  runtimeForCli,
+  RuntimeConfigError,
+  type AiRuntime,
+} from "@maycombhq/ai";
+import { contextToolBox, openIndex } from "@maycombhq/index";
 import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
 import { existsSync } from "node:fs";
 
@@ -392,6 +399,12 @@ Usage:
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
   atticus query "<words>" --search     Search everything the index holds (records, knowledge items, flows, changes, answered questions, wiki sections), names and ids first [--kind k,k] [--limit n] [--json]
           [--limit n] [--json]         (see docs/query-language.md)
+  atticus context show <id>            One record, flow, step, knowledge item, change, answered question or wiki section in full, with its file
+  atticus context walk <id> [--hops 1] [--kind k,k] [--limit n]  The links from one id, how each was made, at most two hops
+  atticus context code <id> [--around 6]  The code a fact cites, a few lines around each cited line, from the workspace checkout
+          [--repo r --path p --line n]  (or one line a fact cites)
+  atticus context tools [--json]       The read-only tools a step's model may call beside its pack, and their caps
+  atticus context call <tool> --input <json> [--run <run>] [--round n] [--json]  Run one tool call a model made; with --run it is kept in the run's record
   atticus impact <id>                  What a change to a record reaches, with owners and open questions
   atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
@@ -633,6 +646,8 @@ export async function main(
   // runtime.yaml adapters.model.type anthropic, openai-compatible, azure-openai and bedrock work
   // out of the box (ADR 0065); every command that builds a runtime finds them registered.
   registerBuiltInModelProviders();
+  // ADR 0107 addendum: the model runtime offers the context tools to a provider that calls tools.
+  registerToolSource((at) => () => contextToolBox(at, () => openIndex(at)));
   const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
   const flags = [
     ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
@@ -684,6 +699,13 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       "context-tokens": { type: "string" },
       "whole-context": { type: "boolean" },
       search: { type: "boolean" },
+      // atticus context (ADR 0107 addendum): the context tools.
+      input: { type: "string" },
+      run: { type: "string" },
+      round: { type: "string" },
+      hops: { type: "string" },
+      line: { type: "string" },
+      around: { type: "string" },
       depth: { type: "string" },
       by: { type: "string" },
       as: { type: "string" },
@@ -1199,6 +1221,80 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       return 2;
     }
     return askCommand(root, command, { json: values.json === true }, io);
+  }
+  if (group === "context") {
+    const m = await import("./context-commands.js");
+    const target = positionals[2];
+    const csv = (v: unknown) =>
+      typeof v === "string"
+        ? v
+            .split(",")
+            .map((k) => k.trim())
+            .filter(Boolean)
+        : undefined;
+    if (command === "tools") return m.contextTools({ json: values.json === true }, io);
+    if (command === "show" || command === "walk") {
+      if (!target) {
+        io.err(
+          `Usage: atticus context ${command} <id> (an id the index has; atticus query "<words>" --search finds one)`,
+        );
+        return 2;
+      }
+      if (command === "show") return m.contextShow(root, target, io);
+      return m.contextWalk(
+        root,
+        target,
+        {
+          ...(num(values.hops) ? { hops: num(values.hops)! } : {}),
+          ...(csv(values.kind) ? { kinds: csv(values.kind)! } : {}),
+          ...(num(values.limit) ? { limit: num(values.limit)! } : {}),
+        },
+        io,
+      );
+    }
+    if (command === "code") {
+      const repo = typeof values.repo === "string" ? values.repo : undefined;
+      const path = typeof values.path === "string" ? values.path : undefined;
+      if (!target && !(repo && path && num(values.line))) {
+        io.err(
+          "Usage: atticus context code <id>, or --repo <repo> --path <path> --line <n> (a line a fact cites)",
+        );
+        return 2;
+      }
+      const around = typeof values.around === "string" ? Number(values.around) : undefined;
+      return m.contextCode(
+        root,
+        {
+          ...(target ? { id: target } : {}),
+          ...(repo ? { repo } : {}),
+          ...(path ? { path } : {}),
+          ...(num(values.line) ? { line: num(values.line)! } : {}),
+          ...(around !== undefined && Number.isInteger(around) ? { around } : {}),
+        },
+        io,
+      );
+    }
+    if (command === "call") {
+      if (!target) {
+        io.err(
+          "Usage: atticus context call <tool> --input <json> [--run <run>] (atticus context tools lists the tools)",
+        );
+        return 2;
+      }
+      return m.contextCall(
+        root,
+        target,
+        {
+          ...(typeof values.input === "string" ? { input: values.input } : {}),
+          ...(typeof values.run === "string" ? { run: values.run } : {}),
+          ...(num(values.round) ? { round: num(values.round)! } : {}),
+          json: values.json === true,
+        },
+        io,
+      );
+    }
+    io.err(`context takes show, walk, code, tools or call; not ${command ?? "nothing"}.`);
+    return 2;
   }
   if (group === "query") {
     if (!command) {

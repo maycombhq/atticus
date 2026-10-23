@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { HandoffRuntime, type Run } from "@maycombhq/ai";
+import { HandoffRuntime, TOOL_LIMITS, type Run } from "@maycombhq/ai";
+import { CONTEXT_TOOLS } from "@maycombhq/index";
 import { changesRelOf, listQuestions, runsDirOf, runsRelOf, type Question } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 
@@ -216,6 +217,14 @@ async function printJson(
           doneArgs,
           resumeCommand: `atticus ${resumeArgs.map(shell).join(" ")}`,
           resumeArgs,
+          // ADR 0107 addendum: the read-only tools the model may call. A tool call runs as
+          // atticus <callArgs> <tool> --input <json> --round <n> --json <runArgs>, kept in the run.
+          tools: {
+            definitions: CONTEXT_TOOLS,
+            limits: TOOL_LIMITS,
+            callArgs: ["context", "call"],
+            runArgs: ["--run", run.runId, ...rootArgv(argv)],
+          },
           messages: s.out,
         },
         null,

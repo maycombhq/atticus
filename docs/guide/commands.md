@@ -29,6 +29,12 @@ Usage:
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
   atticus query "<words>" --search     Search everything the index holds (records, knowledge items, flows, changes, answered questions, wiki sections), names and ids first [--kind k,k] [--limit n] [--json]
           [--limit n] [--json]         (see docs/query-language.md)
+  atticus context show <id>            One record, flow, step, knowledge item, change, answered question or wiki section in full, with its file
+  atticus context walk <id> [--hops 1] [--kind k,k] [--limit n]  The links from one id, how each was made, at most two hops
+  atticus context code <id> [--around 6]  The code a fact cites, a few lines around each cited line, from the workspace checkout
+          [--repo r --path p --line n]  (or one line a fact cites)
+  atticus context tools [--json]       The read-only tools a step's model may call beside its pack, and their caps
+  atticus context call <tool> --input <json> [--run <run>] [--round n] [--json]  Run one tool call a model made; with --run it is kept in the run's record
   atticus impact <id>                  What a change to a record reaches, with owners and open questions
   atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
 import { resumedAttempt, type Run } from "@maycombhq/ai";
-import { Api, changesDirOf, runsDirOf, runsRelOf } from "@maycombhq/core";
+import { Api, changesDirOf, RUN_SCHEMA_VERSION, runsDirOf, runsRelOf } from "@maycombhq/core";
 
 /**
  * The model runs under .runs/ (ADR 0106), read for the local API, `atticus runs` and the MCP tools:
@@ -90,7 +90,7 @@ export async function item(root: string, s: Stored): Promise<Api.RunListItem> {
   const answer = await answerOf(root, s);
   const agent = r.request.agent as unknown as string | { id: string };
   return {
-    schemaVersion: 1,
+    schemaVersion: RUN_SCHEMA_VERSION,
     runId: r.runId,
     change: r.request.change,
     agent: typeof agent === "string" ? agent : agent.id,
@@ -106,6 +106,7 @@ export async function item(root: string, s: Stored): Promise<Api.RunListItem> {
     answered: answer !== undefined,
     handedBack: back.reduce((n, b) => n + b.problems.length, 0),
     ...(r.request.pack?.manifest ? { promptTokens: r.request.pack.manifest.totalTokens } : {}),
+    ...(r.tools ? { toolCalls: r.tools.calls.length } : {}),
   } as Api.RunListItem;
 }
 
@@ -157,6 +158,7 @@ export async function runTranscript(
     run: await item(root, s),
     prompt: s.prompt,
     ...(answer !== undefined ? { answer } : {}),
+    ...(s.run.tools ? { tools: s.run.tools } : {}),
     handedBack: handedBack(s.prompt),
     rounds: rounds.map((x) => ({
       runId: x.runId,

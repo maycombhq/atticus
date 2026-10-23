@@ -26,7 +26,9 @@ import {
   MockRuntime,
   ModelRuntime,
   ReplayRuntime,
+  type MockChatScript,
   type ModelProvider,
+  type ToolSource,
 } from "./runtimes.js";
 
 /**
@@ -278,6 +280,17 @@ export function clearModelProviders(): void {
   registered.clear();
 }
 
+let toolSource: ((root: string) => ToolSource | undefined) | undefined;
+
+/**
+ * Register where a metarepo's read-only tools come from (ADR 0107 addendum): the CLI registers
+ * the context tools (packages/index) when it starts. The model runtime offers them to a
+ * provider that can call tools. Undefined forgets it (tests).
+ */
+export function registerToolSource(source: ((root: string) => ToolSource | undefined) | undefined) {
+  toolSource = source;
+}
+
 export interface CreateRuntimeOptions {
   /** The metarepo root (hand-off runs and headless prompt files go under .runs/). */
   root: string;
@@ -294,6 +307,10 @@ export interface CreateRuntimeOptions {
   respond?: (request: AiRequest) => string;
   /** Answers of the mock model provider (runtime.yaml `adapters.model.type: mock`), from the prompt. */
   modelAnswer?: (prompt: string) => string;
+  /** The mock model provider's tool calls, round by round. */
+  modelScript?: MockChatScript;
+  /** The read-only tools the model runtime offers. Default: the registered tool source's. */
+  tools?: ToolSource;
   /** Recordings for replay mode: a folder (`<agent>/<promptSha256>.json`) or a list. */
   replayDir?: string;
   recordings?: Recording[];
@@ -346,15 +363,19 @@ export async function createRuntime(
               new MockModelProvider(
                 typeof s.model === "string" ? s.model : "mock-model",
                 o.modelAnswer ?? (() => ""),
+                o.modelScript,
               )
           : undefined);
       if (!make)
         throw new RuntimeConfigError(
           `No ${cfg.type} model provider is installed. Add its plugin, or use hand-off mode.`,
         );
+      const tools = o.tools ?? toolSource?.(o.root);
       return new ModelRuntime(make(cfg.settings as Settings), {
         ...one,
         allowedModels: rt.models.allowed,
+        root: o.root,
+        ...(tools ? { tools } : {}),
       });
     }
     case "headless-claude-code":

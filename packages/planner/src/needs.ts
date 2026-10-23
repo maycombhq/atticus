@@ -8,7 +8,9 @@ import {
   knowledgeKindOf,
   RecordId,
   type OrgPack,
+  type Question,
 } from "@maycombhq/core";
+import { askGaps, gapContext } from "./gaps.js";
 import {
   buildContextPack,
   resumedAttempt,
@@ -30,6 +32,7 @@ import {
   reportOf,
   roomFor,
   selectFor,
+  sourceTokens,
   useEngine,
   wholeLists,
   type ContextOptions,
@@ -384,6 +387,8 @@ export interface NeedsResult {
   file?: NeedsFile;
   /** What the knowledge items in the prompt were: selected (and what was left out) or every one. */
   context?: ContextReport;
+  /** Open questions to a person: the gaps the answer relied on (ADR 0107 point 5). */
+  questions?: Question[];
 }
 
 const unfence = (s: string) => /```(?:ya?ml)?\s*\n([\s\S]*?)```/.exec(s)?.[1] ?? s;
@@ -460,24 +465,43 @@ export async function findNeeds(
     const room = roomFor(budget, sources, o.context);
     const brief = files.get("brief.md") ?? "";
     const title = /^#\s+(.+)$/m.exec(brief)?.[1]?.trim();
-    const got = await selectFor(
-      root,
-      { text: [...files.values()].join("\n\n"), ...(title ? { title } : {}) },
-      {
-        budget: room,
-        kinds: ["Pattern", "ProcessDefinition", "Decision", "Party", "Product"],
-        groups: ["knowledge"],
-        exclude: [change],
-        priority: 10,
-        render: (n, level) => {
-          const r = byId.get(n.id);
-          return level === "full" && r ? itemForAi(r, k.report?.conflicts ?? []) : undefined;
+    const select = (budget: number) =>
+      selectFor(
+        root,
+        { text: [...files.values()].join("\n\n"), ...(title ? { title } : {}) },
+        {
+          budget,
+          kinds: ["Pattern", "ProcessDefinition", "Decision", "Party", "Product"],
+          groups: ["knowledge"],
+          exclude: [change],
+          priority: 10,
+          render: (n, level) => {
+            const r = byId.get(n.id);
+            return level === "full" && r ? itemForAi(r, k.report?.conflicts ?? []) : undefined;
+          },
         },
-      },
-    );
+      );
+    let got = await select(room);
     if (got.selection) {
-      sources.push(...asSources(got.selection, "catalog"));
-      context = reportOf(got.selection, room);
+      // What neither the wikis nor the repos say (ADR 0107 point 5): listed, never guessed. The
+      // gaps and the answers people gave take their room from the selection, not from the input.
+      const g = await gapContext(root, change, got.selection.unknown);
+      const less = sourceTokens(g.sources);
+      if (less) got = await select(Math.max(0, room - less));
+      sources.push(...asSources(got.selection!, "catalog"), ...g.sources);
+      // What was left out for room, by id, so the model can ask for one (ADR 0107 point 3);
+      // the lowest priority, so it is the first to go when even that doesn't fit.
+      const left = got.selection!.leftOut.map((l) => l.id);
+      if (left.length)
+        sources.push({
+          id: "ctx-left-out",
+          kind: "catalog",
+          origin: "the index (ask for one in full by its id)",
+          text: `Also there, left out for room (name one by id if you need it): ${left.slice(0, 40).join(", ")}${left.length > 40 ? ` and ${left.length - 40} more` : ""}.`,
+          classification: "internal",
+          priority: 1,
+        });
+      context = { ...reportOf(got.selection!, room), gaps: g.gaps };
     } else {
       sources.push(...whole);
       context = { ...wholeLists(), ...(got.note ? { note: got.note } : {}) };
@@ -590,6 +614,16 @@ export async function findNeeds(
       await write(root, file);
       result.status = "done";
       result.file = file;
+      // A gap the answer relies on (it names it) goes to a person, never a guess.
+      if (context.gaps?.length && run.output) {
+        const asked = await askGaps(root, change, context.gaps, run.output, {
+          command: `atticus change needs ${change}`,
+          rerun: `atticus change needs ${change}`,
+          run: run.runId,
+          at: stamp(now),
+        });
+        result.questions = asked.filter((q) => q.state === "open");
+      }
       return result;
     }
     feedback = [

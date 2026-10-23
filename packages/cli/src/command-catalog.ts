@@ -112,6 +112,7 @@ const AREA_BY_WORD: Record<string, string> = {
   domain: "knowledge",
   catalog: "catalog",
   query: "catalog",
+  context: "catalog",
   impact: "catalog",
   ask: "catalog",
   guide: "catalog",

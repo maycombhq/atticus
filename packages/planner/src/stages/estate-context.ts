@@ -5,11 +5,13 @@ import {
   reportOf,
   roomFor,
   selectFor,
+  sourceTokens,
   useEngine,
   type ContextOptions,
   type ContextReport,
   type ContextStep,
 } from "../engine.js";
+import { gapContext } from "../gaps.js";
 import { ESTATE_HEADING, ESTATE_KINDS, estateLine, type Estate } from "./estate.js";
 
 /**
@@ -50,6 +52,8 @@ export async function estateContext(
     origin: string;
     priority: number;
     knowledge?: KnowledgeLines;
+    /** The change: its gaps are found in its files, and its answered gaps go in the pack. */
+    change?: string;
   },
 ): Promise<EstateContext | { note: string } | undefined> {
   if (!useEngine(step, o.context)) return undefined;
@@ -67,13 +71,21 @@ export async function estateContext(
     }
     return estateLine(e, n.kind, n.id);
   };
-  const got = await selectFor(root, input, {
-    budget: room,
-    kinds,
-    groups: [...(e ? ["catalog", "flow"] : []), ...(o.knowledge ? ["knowledge"] : [])],
-    exclude: o.exclude ?? [],
-    render: (n, level) => render(n, level) ?? `${n.kind} ${n.id}`,
-  });
+  const select = (budget: number) =>
+    selectFor(root, input, {
+      budget,
+      kinds,
+      groups: [...(e ? ["catalog", "flow"] : []), ...(o.knowledge ? ["knowledge"] : [])],
+      exclude: o.exclude ?? [],
+      render: (n, level) => render(n, level) ?? `${n.kind} ${n.id}`,
+    });
+  let got = await select(room);
+  if (!got.selection) return got.note ? { note: got.note } : undefined;
+  // What neither the wikis nor the repos say (ADR 0107 point 5): listed, never guessed. The gaps
+  // and the answers people gave take their room from the selection, not from the step's input.
+  const g = o.change ? await gapContext(root, o.change, got.selection.unknown) : undefined;
+  const less = g ? sourceTokens(g.sources) : 0;
+  if (less) got = await select(Math.max(0, room - less));
   if (!got.selection) return got.note ? { note: got.note } : undefined;
   const s = got.selection;
   const sources: SourceInput[] = [];
@@ -102,5 +114,10 @@ export async function estateContext(
         ...(o.knowledge.empty ? { empty: o.knowledge.empty } : {}),
       }),
     );
-  return { sources, report: reportOf(s, room) };
+  const report = reportOf(s, room);
+  if (g) {
+    report.gaps = g.gaps;
+    sources.push(...g.sources);
+  }
+  return { sources, report };
 }

@@ -6,12 +6,12 @@ C4 is every interface between Atticus and code outside it: plugins that read fil
 
 Specification version 0.1.0.
 
-| Version           | Value |
-| ----------------- | ----- |
-| Workspace files   | 1     |
-| Change state file | 1     |
-| Executor protocol | 1     |
-| Local API         | 2.9.0 |
+| Version           | Value  |
+| ----------------- | ------ |
+| Workspace files   | 1      |
+| Change state file | 1      |
+| Executor protocol | 1      |
+| Local API         | 2.10.0 |
 
 ## Plugins
 
@@ -55,7 +55,7 @@ Adapters connect Atticus to external systems by type: work tracker, service desk
 
 ## Local API
 
-The local API (version 2.9.0) is an OpenAPI 3.1 document, generated from the same schemas and committed at [docs/api/openapi.json](../../api/openapi.json). It listens on 127.0.0.1 only and every request carries the per-session token printed at start-up.
+The local API (version 2.10.0) is an OpenAPI 3.1 document, generated from the same schemas and committed at [docs/api/openapi.json](../../api/openapi.json). It listens on 127.0.0.1 only and every request carries the per-session token printed at start-up.
 
 ## RepoManifest
 

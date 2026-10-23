@@ -1,5 +1,12 @@
 import * as vscode from "vscode";
-import { ModelRefused, type Cancel, type StepModel } from "./types";
+import {
+  ModelRefused,
+  type Cancel,
+  type ChatTurnMessage,
+  type ModelTool,
+  type ModelTurn,
+  type StepModel,
+} from "./types";
 
 /**
  * vscode.lm in the runner's shape (ADR 0090). The model is a Copilot chat model: the family in
@@ -35,6 +42,56 @@ function adapt(m: vscode.LanguageModelChat): StepModel {
           token as vscode.CancellationToken,
         );
         return r.text;
+      } catch (e) {
+        throw refused(e);
+      }
+    },
+    // ADR 0107 addendum: the language model API's tool calls (LanguageModelChatRequestOptions
+    // tools, LanguageModelToolCallPart in the answer, LanguageModelToolResultPart back).
+    async chat(messages: ChatTurnMessage[], tools: ModelTool[], token: Cancel): Promise<ModelTurn> {
+      const sent = messages.map((x) =>
+        x.role === "user"
+          ? vscode.LanguageModelChatMessage.User(x.text)
+          : x.role === "assistant"
+            ? vscode.LanguageModelChatMessage.Assistant([
+                ...(x.text ? [new vscode.LanguageModelTextPart(x.text)] : []),
+                ...x.calls.map((c) => new vscode.LanguageModelToolCallPart(c.id, c.name, c.input)),
+              ])
+            : vscode.LanguageModelChatMessage.User(
+                x.results.map(
+                  (r) =>
+                    new vscode.LanguageModelToolResultPart(r.id, [
+                      new vscode.LanguageModelTextPart(r.text),
+                    ]),
+                ),
+              ),
+      );
+      try {
+        const r = await m.sendRequest(
+          sent,
+          {
+            justification: JUSTIFICATION,
+            tools: tools.map((t) => ({
+              name: t.name,
+              description: t.description,
+              inputSchema: t.inputSchema,
+            })),
+            toolMode: vscode.LanguageModelChatToolMode.Auto,
+          },
+          token as vscode.CancellationToken,
+        );
+        let text = "";
+        const calls: ModelTurn["calls"] = [];
+        for await (const part of r.stream) {
+          if (part instanceof vscode.LanguageModelTextPart) text += part.value;
+          else if (part instanceof vscode.LanguageModelToolCallPart)
+            calls.push({
+              id: part.callId,
+              name: part.name,
+              input: (part.input ?? {}) as Record<string, unknown>,
+            });
+        }
+        return { text, calls };
       } catch (e) {
         throw refused(e);
       }

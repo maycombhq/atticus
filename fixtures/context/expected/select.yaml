@@ -42,3 +42,28 @@
   must: [northwind-pay]
   never: []
   unknown: [POST /v3/risk-scores, Quillfeather Risk]
+
+# The unknown names, without the false positives (ADR 0107 addendum, point 5): words that
+# start a sentence or a Given/When/Then, days and months, fields, files and commands in
+# backticks, a known name with a generic word after it (Northwind Pay API, Forge Shop UI), and a
+# name a wiki section already says something about (the security questionnaire) are not gaps.
+# What is left is what neither the wikis nor the repos say.
+- name: a brief full of capitalised words that are not names
+  input:
+    text: |
+      # Hold Risky Orders For Review
+
+      As A Customer I want a risky order held. Given An Order Over The Limit, When The Screen
+      Fails, Then the order waits. On Monday In October the rollout starts.
+
+      The `orderId` and `amount` fields go in the request; run `atticus change needs hold-orders`
+      and read `docs/hold-notes.md`. The Northwind Pay API answers within a second, the Forge
+      Shop UI shows the hold, and the Security Questionnaire covers it.
+
+      Ask Quillfeather Risk, and the Brambleford Ledger Service keeps the held orders in
+      `forge-hold-store`. Acceptance Criteria and Open Questions follow.
+  kinds: [System, Component, Flow, Endpoint]
+  budget: 4000
+  must: [northwind-pay]
+  never: []
+  unknown: [Brambleford Ledger Service, Quillfeather Risk, forge-hold-store]

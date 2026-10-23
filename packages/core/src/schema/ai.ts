@@ -107,9 +107,51 @@ export const RunState = z.enum([
 ]);
 export type RunState = z.infer<typeof RunState>;
 
+/**
+ * The run record's own version (ADR 0107 addendum): 2 adds the tools a run's model called.
+ * A version 1 record is read through `migrateRunSummary`, which gives it no tool calls.
+ */
+export const RUN_SCHEMA_VERSION = 2 as const;
+
+/** A read-only tool a step's model may call beside its pack (ADR 0107 point 4). */
+export const ToolDefinition = z.strictObject({
+  name: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+  description: z.string().min(1),
+  /** JSON Schema of the tool's input (an object). */
+  inputSchema: z.record(z.string(), z.unknown()),
+});
+export type ToolDefinition = z.infer<typeof ToolDefinition>;
+
+/** One tool call a model made, and what it was given back, as kept in the run record. */
+export const ToolCallRecord = z.strictObject({
+  /** The round of the conversation it was made in, from 1. */
+  round: z.number().int().positive(),
+  /** The provider's id of the call, when it gives one. */
+  id: z.string().min(1).optional(),
+  name: z.string().min(1),
+  input: z.record(z.string(), z.unknown()),
+  /** What the model was given back, exactly (data, already cut to the caps). */
+  output: z.string(),
+  /** Tokens of the output, as the pack counts them. */
+  tokens: z.number().int().min(0),
+  /** The call failed or was refused; the output says why. */
+  error: z.boolean().optional(),
+});
+export type ToolCallRecord = z.infer<typeof ToolCallRecord>;
+
+/** The tools a run offered and how its model used them. */
+export const RunTools = z.strictObject({
+  /** The tools offered, by name. */
+  offered: z.array(z.string()),
+  calls: z.array(ToolCallRecord).default([]),
+  /** When a cap ended the tool calls: which one (the rounds, or the tokens tools may return). */
+  stopped: z.string().min(1).optional(),
+});
+export type RunTools = z.infer<typeof RunTools>;
+
 /** What goes into review/ for every run; full packs and transcripts stay in git-ignored .runs/. */
 export const RunSummary = z.strictObject({
-  schemaVersion: z.literal(AI_SCHEMA_VERSION),
+  schemaVersion: z.literal(RUN_SCHEMA_VERSION),
   runId: z.string().regex(/^run-[0-9a-z-]+$/),
   change: RecordId,
   agent: RecordId,
@@ -125,8 +167,23 @@ export const RunSummary = z.strictObject({
   contextManifestSha256: z.string().regex(/^[0-9a-f]{64}$/),
   errors: z.array(z.string()).default([]),
   attempt: z.number().int().positive().default(1),
+  /** The tools the run's model was offered and what it called (version 2). */
+  tools: RunTools.optional(),
 });
 export type RunSummary = z.infer<typeof RunSummary>;
+
+/**
+ * A stored run record at the current version: version 1 (before tools) reads as version 2
+ * with no tools; anything else is returned as it is, for the schema to judge.
+ */
+export function migrateRunSummary(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const r = raw as Record<string, unknown>;
+  return r.schemaVersion === 1 ? { ...r, schemaVersion: RUN_SCHEMA_VERSION } : raw;
+}
+
+/** Read a stored run record of any version (ADR 0107 addendum). */
+export const readRunSummary = (raw: unknown) => RunSummary.safeParse(migrateRunSummary(raw));
 
 /** A recorded model output for the replay runtime, keyed by agent and prompt hash. */
 export const Recording = z.strictObject({

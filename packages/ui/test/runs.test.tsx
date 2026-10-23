@@ -30,7 +30,7 @@ const esc = (s: string) =>
 
 type Item = Api.RunListItem;
 const run = (n: number, over: Partial<Item> = {}): Item => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   runId: `run-2026102303400${n}-0001`,
   change: "knowledge-scan",
   agent: "knowledge-reader",
@@ -145,6 +145,52 @@ describe("one model run", () => {
     expect(out).toContain("title: Invalid input");
     expect(out).toContain(R.failedAnswer(1));
     expect(out).toContain("items:\n  - id: firewall-rule-request</pre>");
+  });
+
+  it("shows what the model looked up: each tool call, its input and what it gave back, as text (ADR 0107)", () => {
+    const out = html(
+      <RunDetail
+        of={{
+          state: "ready",
+          data: {
+            ...transcript,
+            tools: {
+              offered: ["search", "show", "walk", "show_code"],
+              calls: [
+                {
+                  round: 1,
+                  name: "show",
+                  input: { id: "forge-ledger" },
+                  output: '<atticus-data id="tool-show">System forge-ledger</atticus-data>',
+                  tokens: 9,
+                },
+                {
+                  round: 2,
+                  name: "show_code",
+                  input: { id: "nope" },
+                  output: "There is nothing called nope in the index.",
+                  tokens: 11,
+                  error: true,
+                },
+              ],
+              stopped: "rounds: the 6 rounds of tool calls a run may make were used",
+            },
+          },
+        }}
+      />,
+    );
+    expect(out).toContain(R.tools.title);
+    expect(out).toContain(esc(R.tools.offered("search, show, walk, show_code", 2)));
+    expect(out).toContain(esc(R.tools.call(2, "show_code", 11, true)));
+    expect(out).toContain("&lt;atticus-data id=&quot;tool-show&quot;&gt;System forge-ledger");
+    expect(out).not.toContain("<atticus-data");
+    expect(out).toContain(
+      esc(R.tools.stopped("rounds: the 6 rounds of tool calls a run may make were used")),
+    );
+    // A run with no tools shows no tools section.
+    expect(html(<RunDetail of={{ state: "ready", data: transcript }} />)).not.toContain(
+      R.tools.title,
+    );
   });
 
   it("links the rounds of the step, marking this one", () => {

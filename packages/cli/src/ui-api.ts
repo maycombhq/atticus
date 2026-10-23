@@ -11,6 +11,7 @@ import {
   orgPackDirOf,
   runsDirOf,
   runsRelOf,
+  RUN_SCHEMA_VERSION,
   type ChangeLifecycle,
   type Finding,
 } from "@maycombhq/core";
@@ -173,7 +174,7 @@ async function runView(root: string, change: string, runId: string) {
   };
   const manifest = await readFile(join(dir, "context-manifest.json"), "utf8").catch(() => "");
   return {
-    schemaVersion: 1,
+    schemaVersion: RUN_SCHEMA_VERSION,
     runId: r.runId,
     change: r.request.change,
     // A run records the whole agent definition; the view names it.

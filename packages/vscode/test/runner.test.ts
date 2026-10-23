@@ -6,7 +6,14 @@ import { describe, expect, it } from "vitest";
 import { cliRunner } from "../src/cli";
 import { describeEnd } from "../src/describe";
 import { runSpec, runStep, type StepEnd } from "../src/runner";
-import { ModelRefused, type Cancel, type StepModel } from "../src/types";
+import {
+  ModelRefused,
+  type Cancel,
+  type ChatTurnMessage,
+  type ModelTool,
+  type ModelTurn,
+  type StepModel,
+} from "../src/types";
 
 /**
  * The runner's loop (ADR 0090) against the real `atticus` command line in a temp metarepo, with
@@ -57,7 +64,7 @@ function cancelSource() {
 
 /** The fake model: canned answers in order, the prompts it was sent. */
 class FakeModel implements StepModel {
-  readonly name = "Fake model";
+  readonly name: string = "Fake model";
   readonly prompts: string[][] = [];
   constructor(
     private readonly answers: (string | ((token: Cancel) => AsyncIterable<string>))[],
@@ -78,6 +85,21 @@ class FakeModel implements StepModel {
       yield a.slice(0, 20);
       yield a.slice(20);
     })();
+  }
+}
+
+/** A fake model that calls tools: canned turns in order, every request it was sent. */
+class ToolModel extends FakeModel {
+  override readonly name: string = "Fake tool model";
+  readonly requests: { messages: ChatTurnMessage[]; tools: ModelTool[] }[] = [];
+  constructor(private readonly turns: ModelTurn[]) {
+    super([]);
+  }
+  async chat(messages: ChatTurnMessage[], tools: ModelTool[]): Promise<ModelTurn> {
+    this.requests.push({ messages: structuredClone(messages), tools });
+    const t = this.turns.shift();
+    if (!t) throw new Error("no more canned turns");
+    return t;
   }
 }
 
@@ -220,6 +242,65 @@ describe("the step runner", { timeout: 120_000 }, () => {
     // The prompt is written; no answer is, so there is none to open.
     expect(end.files?.prompt).toMatch(/prompt\.md$/);
     expect(end.files?.answer).toBeUndefined();
+  });
+
+  // ADR 0107 addendum: Copilot's model may ask for more through the language model API's tools;
+  // each call runs as atticus context call, and the run's record keeps it.
+  it("runs the model's tool calls through atticus and keeps them in the run's record", async () => {
+    const root = await metarepo();
+    const model = new ToolModel([
+      { text: "", calls: [{ id: "c1", name: "search", input: { text: "notes api" } }] },
+      { text: "", calls: [{ id: "c2", name: "show", input: { id: "no-such-record" } }] },
+      { text: SETTINGS, calls: [] },
+    ]);
+    const { d, progress } = deps(root, model);
+    const end = await runStep(SURVEY, d, cancelSource());
+    expect(end.state, JSON.stringify(end)).toBe("done");
+    expect(model.requests).toHaveLength(3);
+    expect(model.requests[0]!.tools.map((t) => t.name)).toEqual([
+      "search",
+      "show",
+      "walk",
+      "show_code",
+    ]);
+    // The second request carried the first call's result back as a tool result, wrapped as data.
+    const back = model.requests[1]!.messages.at(-1)!;
+    expect(back.role).toBe("tool");
+    if (back.role === "tool") expect(back.results[0]!.text).toMatch(/^<atticus-data /);
+    expect(progress.some((p) => /Round 1 of tools: Fake tool model asked for search/.test(p))).toBe(
+      true,
+    );
+    const run = JSON.parse(
+      await readFile(join(root, end.files!.prompt!.replace(/prompt\.md$/, "run.json")), "utf8"),
+    ) as {
+      tools?: { offered: string[]; calls: { round: number; name: string; error?: boolean }[] };
+    };
+    expect(run.tools?.offered).toContain("show_code");
+    expect(run.tools?.calls.map((c) => [c.round, c.name, c.error ?? false])).toEqual([
+      [1, "search", false],
+      [2, "show", true],
+    ]);
+  });
+
+  it("stops offering tools at the rounds cap and asks for the answer", async () => {
+    const root = await metarepo();
+    const always = { text: "", calls: [{ id: "c", name: "search", input: { text: "x" } }] };
+    const model = new ToolModel([
+      always,
+      always,
+      always,
+      always,
+      always,
+      always,
+      { text: SETTINGS, calls: [] },
+    ]);
+    const { d } = deps(root, model);
+    const end = await runStep(SURVEY, d, cancelSource());
+    expect(end.state, JSON.stringify(end)).toBe("done");
+    // Six rounds of calls, then the seventh request says no more.
+    expect(model.requests).toHaveLength(7);
+    const last = model.requests[6]!.messages.at(-1)!;
+    expect(last.role === "user" && last.text).toMatch(/^No more tool calls/);
   });
 
   it("carries no files when the step never handed a prompt off", async () => {
