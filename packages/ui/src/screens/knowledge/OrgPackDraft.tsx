@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message, Note } from "../know/common.js";
 import { Command } from "../work/RunNext.js";
+import { pageText } from "./shared.js";
 
 /**
  * The org pack from the wikis (ADR 0102): each platform profile's systems drafted from the
@@ -99,7 +100,7 @@ export function PlatformDraft(p: {
                       <span style={{ fontSize: 12 }}>{proposalWords(x)}</span>
                       {x.quote && (
                         <span className="muted" style={{ fontSize: 12 }}>
-                          "{x.quote}" ({x.page},{" "}
+                          "{x.quote}" ({x.page ? `${pageText(x.page)}, ` : ""}
                           <a href={`#/knowledge?item=${encodeURIComponent(x.from)}`}>{x.from}</a>)
                         </span>
                       )}
@@ -164,19 +165,22 @@ export function DraftPage(p: {
 export function OrgPackDraft() {
   const view = useApi<Api.OrgPackDraftViewT>("/api/orgpack/draft");
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
+  const [note, setNote] = useState<{ ok: boolean; text: string; working?: boolean } | undefined>();
+  // Draft and Accept redraw the list under the keyboard: it moves to what they did instead.
+  const said = useRef<HTMLDivElement>(null);
   useLiveEvents((e) => {
     if (e.type === "file.changed") view.reload();
   });
   const act = (f: () => Promise<string>) => {
     setBusy(true);
-    setNote(undefined);
+    setNote({ ok: true, text: COPY.app.working, working: true });
     f()
       .then((text) => setNote({ ok: true, text }))
       .catch((e: unknown) => setNote({ ok: false, text: message(e) }))
       .finally(() => {
         setBusy(false);
         view.reload();
+        said.current?.focus();
       });
   };
   return (
@@ -184,7 +188,9 @@ export function OrgPackDraft() {
       <p className="work-say" style={{ marginTop: 0 }}>
         {O.intro}
       </p>
-      <Note note={note} />
+      <div ref={said} tabIndex={-1}>
+        <Note note={note} />
+      </div>
       <DraftPage
         of={view}
         busy={busy}

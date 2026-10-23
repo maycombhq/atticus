@@ -6,6 +6,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Every screen says what is happening
 
+- Verify, Correct, Reject, Keep, Done, Not needed and Reopen keep the keyboard on the item or need you acted on, and say "Working on it…" while they save.
+- A need whose knowledge item was rejected says so; each need's buttons are named for the need; a reopened need is "open again".
+- Opening a saved search keeps the search you typed; each Keep button names its candidate.
+- An item link that no longer resolves says so; a never-synced source says "Not synced yet" rather than that its snapshot is too old; pages read `page.md (Heading)` on every screen.
+- No screen scrolls sideways at 320 px; scrolling tables and code blocks take keyboard focus. The journeys add a keyboard run through knowledge review, a search's Keep and a change's needs (spec 16).
 - A stopped server is said in words: one note at the top of the page names `atticus ui` and how to start it again (in a VS Code panel, Atticus: Open the app), with Try again; each panel only says it couldn't load. When the server answers again the screen loads afresh. No more "Failed to fetch", and a reply that isn't Atticus's says so with its status.
 - A load that fails offers Try again. A screen that works on one change shows that the changes are loading, or why they didn't load, instead of a skeleton that waits forever (Feature brief, UX, reviews, mappings, Breakdown, Task board, Test trace).
 - Every action button says it started ("Working on it…") and then what happened. The critic's outcome on a change's page no longer hides behind the hand-off's; each task's Run with AI keeps its own outcome.

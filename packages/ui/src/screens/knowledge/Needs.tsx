@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message, Note } from "../know/common.js";
-import { AiStep, groupItems, kindLabel, Links } from "./shared.js";
+import { AiStep, groupItems, kindLabel, Links, pageText } from "./shared.js";
 
 /**
  * What a change needs from the organisation (ADR 0102), on the change's page: its needs.yaml
@@ -20,13 +20,23 @@ const R = COPY.knowledge.review;
 
 type Need = Api.NeedViewT;
 
-/** The item's review on a need: the tick, check again, or not yet verified. */
-export function needTick(n: Need): { text: string; ok: boolean } {
+/** The item's review on a need: the tick, check again, rejected, or not yet verified. */
+export function needTick(n: Need): { text: string; ok: boolean; rejected?: true } {
   const r = n.review;
   if (r?.state === "verified" || r?.state === "corrected")
     return { text: R.verified(r.by, r.at.slice(0, 10)), ok: true };
   if (r?.state === "stale") return { text: R.stale(r.by), ok: false };
+  // Its item was rejected: say so, so the person doesn't raise a request no one stands behind.
+  if (r?.state === "rejected")
+    return { text: R.rejected(r.by, r.at.slice(0, 10)), ok: false, rejected: true };
   return { text: R.none, ok: false };
+}
+
+/** What a need is once marked, in the words the note uses. */
+export function markedWords(status: string): string {
+  if (status === "open") return N.openAgain;
+  if (status === "not-needed") return N.markSkip.toLowerCase();
+  return status;
 }
 
 /** The body for marking a need, or what to fix first. */
@@ -75,15 +85,27 @@ function NeedRow(p: {
   const [err, setErr] = useState<string | undefined>();
   const tick = needTick(n);
   const base = `need-${n.item}-${n.for}`.replace(/[^a-z0-9-]/gi, "-");
+  // The keyboard follows the form: into its box when it opens, back to the need when it closes.
+  const title = useRef<HTMLAnchorElement>(null);
+  const box = useRef<HTMLInputElement>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (open) box.current?.focus();
+    else if (wasOpen.current) title.current?.focus();
+    wasOpen.current = !!open;
+  }, [open]);
   const save = (status: "done" | "not-needed" | "open") => {
     const b = markBody(status, note, n.for);
     if ("error" in b) {
       setErr(b.error);
+      box.current?.focus();
       return;
     }
     setErr(undefined);
     setOpen(undefined);
     setNote("");
+    // Reopen has no form: its button goes while the call runs, so the keyboard waits on the need.
+    if (!open) title.current?.focus();
     p.onMark?.(n, b.body);
   };
   return (
@@ -91,6 +113,7 @@ function NeedRow(p: {
       <div className="row between" style={{ flexWrap: "wrap", gap: 6 }}>
         <span>
           <a
+            ref={title}
             id={`${base}-t`}
             href={`#/knowledge?item=${encodeURIComponent(n.item)}`}
             style={n.status === "not-needed" ? { textDecoration: "line-through" } : undefined}
@@ -102,7 +125,9 @@ function NeedRow(p: {
           </span>
         </span>
         <span className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-          <span className={`chip ${tick.ok ? "done" : "warn"}`}>{tick.text}</span>
+          <span className={`chip ${tick.ok ? "done" : tick.rejected ? "blocking" : "warn"}`}>
+            {tick.text}
+          </span>
           <span className={`chip ${n.status === "open" ? "ai" : "dim"}`}>
             {n.status === "open"
               ? N.open
@@ -167,7 +192,7 @@ function NeedRow(p: {
       )}
       <p className="muted mono" style={{ margin: "2px 0", fontSize: 11 }}>
         {n.from === "stories" ? N.fromStories : ""}
-        {n.page ? `${n.from === "stories" ? " · " : ""}${N.from(n.page)}` : ""}
+        {n.page ? `${n.from === "stories" ? " · " : ""}${N.from(pageText(n.page))}` : ""}
       </p>
       {p.onMark && !open && (
         <div className="row" style={{ gap: 8, marginTop: 4 }}>
@@ -177,6 +202,7 @@ function NeedRow(p: {
                 type="button"
                 className="btn primary"
                 disabled={p.busy}
+                aria-label={N.markDoneOf(n.title)}
                 onClick={() => setOpen("done")}
               >
                 {N.markDone}
@@ -185,13 +211,20 @@ function NeedRow(p: {
                 type="button"
                 className="btn"
                 disabled={p.busy}
+                aria-label={N.markSkipOf(n.title)}
                 onClick={() => setOpen("not-needed")}
               >
                 {N.markSkip}
               </button>
             </>
           ) : (
-            <button type="button" className="btn" disabled={p.busy} onClick={() => save("open")}>
+            <button
+              type="button"
+              className="btn"
+              disabled={p.busy}
+              aria-label={N.reopenOf(n.title)}
+              onClick={() => save("open")}
+            >
               {N.reopen}
             </button>
           )}
@@ -210,8 +243,11 @@ function NeedRow(p: {
             {open === "done" ? N.doneNote : N.skipNote}
           </label>
           <input
+            ref={box}
             id={`${base}-note`}
             className="field"
+            aria-describedby={err ? `${base}-err` : undefined}
+            aria-invalid={err ? true : undefined}
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
@@ -224,7 +260,11 @@ function NeedRow(p: {
             </button>
           </div>
           {err && (
-            <p role="alert" style={{ margin: 0, color: "var(--magenta-text)", fontSize: 12.5 }}>
+            <p
+              id={`${base}-err`}
+              role="alert"
+              style={{ margin: 0, color: "var(--magenta-text)", fontSize: 12.5 }}
+            >
               {err}
             </p>
           )}
@@ -286,13 +326,13 @@ export function NeedsView(p: {
 export function NeedsPanel({ change, span }: { change: string; span?: string }) {
   const needs = useApi<Api.ChangeNeedsViewT>(`/api/changes/${encodeURIComponent(change)}/needs`);
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
+  const [note, setNote] = useState<{ ok: boolean; text: string; working?: boolean } | undefined>();
   useLiveEvents((e) => {
     if (e.type === "file.changed") needs.reload();
   });
   const onMark = (n: Need, body: Record<string, unknown>) => {
     setBusy(true);
-    setNote(undefined);
+    setNote({ ok: true, text: COPY.app.working, working: true });
     api<Api.MarkedNeedT>(
       `/api/changes/${encodeURIComponent(change)}/needs/${encodeURIComponent(n.item)}`,
       { method: "POST", body },
@@ -300,10 +340,7 @@ export function NeedsPanel({ change, span }: { change: string; span?: string }) 
       .then((r) =>
         setNote({
           ok: true,
-          text: N.marked(
-            r.need.title,
-            r.need.status === "not-needed" ? N.markSkip.toLowerCase() : r.need.status,
-          ),
+          text: N.marked(r.need.title, markedWords(r.need.status)),
         }),
       )
       .catch((e: unknown) => setNote({ ok: false, text: message(e) }))

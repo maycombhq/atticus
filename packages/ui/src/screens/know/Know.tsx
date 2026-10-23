@@ -144,8 +144,14 @@ export function EcosystemMap() {
         <View of={cov} empty={(c) => c.systems.length === 0} emptyText="No systems yet.">
           {(c) => {
             const areas = [...new Set(c.systems.flatMap((x) => x.areas.map((a) => a.area)))];
+            // Positioned, so the hidden words in its cells scroll with it instead of widening the page.
             return (
-              <div style={{ overflowX: "auto" }}>
+              <div
+                style={{ overflowX: "auto", position: "relative" }}
+                tabIndex={0}
+                role="region"
+                aria-label={COPY.app.scrollTable("Coverage by system and area")}
+              >
                 <table
                   style={{
                     borderCollapse: "separate",

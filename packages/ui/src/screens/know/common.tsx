@@ -39,7 +39,7 @@ export function useChange(hash: string, screen: string) {
   const picker = (
     <label className="row" style={{ gap: 8 }}>
       <span className="hud" style={{ fontSize: 10 }}>
-        Change
+        {COPY.app.changePicker}
       </span>
       <select
         value={id ?? ""}
@@ -56,7 +56,7 @@ export function useChange(hash: string, screen: string) {
         }}
       >
         {list.state === "ready" && list.data.length === 0 && (
-          <option value="">No changes yet</option>
+          <option value="">{COPY.app.noChanges}</option>
         )}
         {list.state === "ready" &&
           list.data.map((c) => (
@@ -154,7 +154,13 @@ export function Markdown({ text }: { text: string }) {
       const [head, ...rest] = table;
       const body = rest.filter((r) => !/^\s*\|?\s*:?-{2,}/.test(r));
       out.push(
-        <div key={`t${out.length}`} style={{ overflowX: "auto", margin: "6px 0 10px" }}>
+        <div
+          key={`t${out.length}`}
+          style={{ overflowX: "auto", position: "relative", margin: "6px 0 10px" }}
+          tabIndex={0}
+          role="region"
+          aria-label={COPY.app.scrollTable(cells(head!).join(", "))}
+        >
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
             <thead>
               <tr>
@@ -201,6 +207,9 @@ export function Markdown({ text }: { text: string }) {
           <pre
             key={`c${out.length}`}
             className="mono"
+            tabIndex={0}
+            role="region"
+            aria-label={COPY.app.scrollCode}
             style={{
               fontSize: 11.5,
               background: "var(--box)",
@@ -314,7 +323,12 @@ export function Table<R>(p: {
 }) {
   // Wide tables scroll sideways on narrow screens, so the scroll box takes keyboard focus.
   return (
-    <div style={{ overflowX: "auto" }} tabIndex={0} role="region" aria-label={p.caption ?? "Table"}>
+    <div
+      style={{ overflowX: "auto", position: "relative" }}
+      tabIndex={0}
+      role="region"
+      aria-label={p.caption ?? "Table"}
+    >
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 480 }}>
         {p.caption && <caption className="sr">{p.caption}</caption>}
         <thead>

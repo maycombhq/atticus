@@ -104,6 +104,12 @@ export function where(record: Record<string, unknown>): string | undefined {
   return K.items.page(`${q.source}/${q.page}${q.section ? ` (${q.section})` : ""}`, q.line);
 }
 
+/** A page as the API names it, `source/page.md#Heading`, in the words the items page uses. */
+export function pageText(page: string): string {
+  const at = page.indexOf("#");
+  return at < 0 ? page : `${page.slice(0, at)} (${page.slice(at + 1)})`;
+}
+
 export const quoteOf = (record: Record<string, unknown>) =>
   (record.quote as { text?: string } | undefined)?.text;
 

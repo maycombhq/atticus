@@ -9,6 +9,12 @@ export const COPY = {
     loading: "Loading",
     cantLoad: (why: string) => `Couldn't load this: ${why}`,
     tryAgain: "Try again",
+    /** A box that scrolls sideways: the keyboard reaches it, and its name says what it holds. */
+    scrollTable: (what: string) => `Table: ${what} (scrolls sideways)`,
+    scrollCode: "Code block (scrolls sideways)",
+    /** The change picker on the screens that work on one change. */
+    changePicker: "Change",
+    noChanges: "No changes yet",
     offline:
       "The Atticus server isn't answering. Check that atticus ui is still running in its terminal (start it again with atticus ui if it stopped), then press Try again or reload the page.",
     notJson: (status: number) =>
@@ -269,7 +275,8 @@ export const COPY = {
       commit: (c: string) => `at commit ${c.slice(0, 7)}`,
       scanned: (date: string) => `The knowledge scan read the snapshot of ${date}`,
       notScanned: "The knowledge scan hasn't read it yet",
-      stale: (days: number) => `Sync it again: the snapshot is older than ${days} days, or missing`,
+      stale: (days: number) => `Sync it again: the snapshot is older than ${days} days`,
+      unsynced: "Not synced yet: sync it so the knowledge scan can read it",
       sync: (id: string) => `Sync ${id}`,
       syncing: "Syncing",
       synced: (id: string) => `Synced ${id}.`,
@@ -319,6 +326,8 @@ export const COPY = {
         "There are no knowledge items yet. Sync a source on the Knowledge sources page, then read it with your assistant.",
       noMatch: "No item matches.",
       pick: "Pick an item to see it and review it.",
+      missing: (id: string) =>
+        `There is no knowledge item ${id}: a rescan may have removed it, or the link is wrong. Pick one from the list.`,
       count: (n: number) => `${n} item${n === 1 ? "" : "s"}`,
       quote: "What the page says",
       page: (where: string, line?: number) => `${where}${line ? `, line ${line}` : ""}`,
@@ -373,6 +382,7 @@ export const COPY = {
       keepAs: "Keep as",
       keep: "Keep",
       keeping: "Keeping",
+      keepOf: (title: string) => `Keep ${title}`,
       keptNote: (id: string, as: string) =>
         `Kept ${id} as a ${as}, verified by you. Commit knowledge/items/ and reviews/ through a pull request.`,
       pick: "Pick a saved search to see what it found.",
@@ -449,6 +459,10 @@ export const COPY = {
       done: (by: string, note?: string) => `Done by ${by}${note ? `: ${note}` : ""}`,
       notNeeded: (by: string, note: string) => `Not needed (${by}): ${note}`,
       markDone: "Done",
+      markDoneOf: (title: string) => `Done: ${title}`,
+      markSkipOf: (title: string) => `Not needed: ${title}`,
+      reopenOf: (title: string) => `Reopen: ${title}`,
+      openAgain: "open again",
       markSkip: "Not needed",
       reopen: "Reopen",
       doneNote: "Note (optional), e.g. the CTASK number",

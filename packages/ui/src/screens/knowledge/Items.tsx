@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
@@ -34,6 +34,22 @@ import {
 
 const K = COPY.knowledge;
 const I = K.items;
+
+/** The item the address names: found, not there (a rescan removed it, say), or none asked. */
+export function itemFor(items: Item[], id: string | undefined): { item?: Item; missing?: string } {
+  if (!id) return {};
+  const item = items.find((i) => i.id === id);
+  return item ? { item } : { missing: id };
+}
+
+/** Put the keyboard on a form's first box when it opens. */
+function useFocusFirst<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>("input, textarea, select")?.focus();
+  }, []);
+  return ref;
+}
 
 /** The fields shown for an item besides those a person may correct. */
 const SHOWN = ["decision", "stance"];
@@ -232,8 +248,9 @@ export function CorrectForm(p: {
     p.onSave(b.set);
   };
   const base = `fix-${p.item.id}`;
+  const ref = useFocusFirst<HTMLFormElement>();
   return (
-    <form onSubmit={submit} className="stack" style={{ gap: 10 }} aria-label={I.correct}>
+    <form ref={ref} onSubmit={submit} className="stack" style={{ gap: 10 }} aria-label={I.correct}>
       <p className="work-say">{I.correctIntro}</p>
       {Object.entries(p.item.fields).map(([f, t]) =>
         t === "text" ? (
@@ -283,8 +300,10 @@ export function CorrectForm(p: {
 function RejectForm(p: { onSave: (note: string) => void; onCancel: () => void; busy?: boolean }) {
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | undefined>();
+  const ref = useFocusFirst<HTMLFormElement>();
   return (
     <form
+      ref={ref}
       className="stack"
       style={{ gap: 8 }}
       aria-label={I.reject}
@@ -292,6 +311,7 @@ function RejectForm(p: { onSave: (note: string) => void; onCancel: () => void; b
         e.preventDefault();
         if (!note.trim()) {
           setErr(I.needWhy);
+          document.getElementById("reject-why")?.focus();
           return;
         }
         p.onSave(note.trim());
@@ -303,6 +323,8 @@ function RejectForm(p: { onSave: (note: string) => void; onCancel: () => void; b
       <textarea
         id="reject-why"
         className="field"
+        aria-describedby={err ? "reject-why-err" : undefined}
+        aria-invalid={err ? true : undefined}
         rows={3}
         value={note}
         onChange={(e) => setNote(e.target.value)}
@@ -316,7 +338,11 @@ function RejectForm(p: { onSave: (note: string) => void; onCancel: () => void; b
         </button>
       </div>
       {err && (
-        <p role="alert" style={{ margin: 0, color: "var(--magenta-text)", fontSize: 12.5 }}>
+        <p
+          id="reject-why-err"
+          role="alert"
+          style={{ margin: 0, color: "var(--magenta-text)", fontSize: 12.5 }}
+        >
           {err}
         </p>
       )}
@@ -340,6 +366,18 @@ export function ItemDetail(p: {
   const quote = quoteOf(r);
   const at = where(r);
   const review = (body: Record<string, unknown>, ok: string) => p.onReview?.(body, ok);
+  // The keyboard goes back to the button it pressed once its form closes or its call ends:
+  // the buttons go while a form is open and are disabled while a call runs.
+  const verifyBtn = useRef<HTMLButtonElement>(null);
+  const correctBtn = useRef<HTMLButtonElement>(null);
+  const rejectBtn = useRef<HTMLButtonElement>(null);
+  const back = useRef<"verify" | "correct" | "reject" | undefined>(undefined);
+  useEffect(() => {
+    if (p.mode || p.busy || !back.current) return;
+    const b = { verify: verifyBtn, correct: correctBtn, reject: rejectBtn }[back.current];
+    back.current = undefined;
+    b.current?.focus();
+  }, [p.mode, p.busy]);
   return (
     <article className="stack" style={{ gap: 10 }} aria-labelledby={`item-${i.id}`}>
       <div className="row between" style={{ flexWrap: "wrap", gap: 8 }}>
@@ -421,24 +459,36 @@ export function ItemDetail(p: {
           <button
             type="button"
             className="btn primary"
+            ref={verifyBtn}
             disabled={p.busy}
-            onClick={() => review({ verdict: "verified" }, I.verified(i.id))}
+            onClick={() => {
+              back.current = "verify";
+              review({ verdict: "verified" }, I.verified(i.id));
+            }}
           >
             {I.verify}
           </button>
           <button
             type="button"
             className="btn"
+            ref={correctBtn}
             disabled={p.busy || Object.keys(i.fields).length === 0}
-            onClick={() => p.onMode?.("correct")}
+            onClick={() => {
+              back.current = "correct";
+              p.onMode?.("correct");
+            }}
           >
             {I.correct}
           </button>
           <button
             type="button"
             className="btn danger"
+            ref={rejectBtn}
             disabled={p.busy}
-            onClick={() => p.onMode?.("reject")}
+            onClick={() => {
+              back.current = "reject";
+              p.onMode?.("reject");
+            }}
           >
             {I.reject}
           </button>
@@ -517,15 +567,18 @@ export function KnowledgeItems({ hash }: { hash: string }) {
   // The form open, for the item it was opened on: picking another item closes it.
   const [open, setOpen] = useState<{ id: string; mode: "correct" | "reject" } | undefined>();
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
+  const [note, setNote] = useState<{ ok: boolean; text: string; working?: boolean } | undefined>();
+  // A note is about the item it was made on: picking another clears it.
+  useEffect(() => setNote(undefined), [current]);
   useLiveEvents((e) => {
     if (e.type === "file.changed") list.reload();
   });
-  const item = list.state === "ready" ? list.data.items.find((i) => i.id === current) : undefined;
+  const { item, missing } =
+    list.state === "ready" ? itemFor(list.data.items, current) : ({} as ReturnType<typeof itemFor>);
   const onReview = (body: Record<string, unknown>, ok: string) => {
     if (!item) return;
     setBusy(true);
-    setNote(undefined);
+    setNote({ ok: true, text: COPY.app.working, working: true });
     api<unknown>(`/api/knowledge/items/${encodeURIComponent(item.id)}/review`, {
       method: "POST",
       body,
@@ -561,7 +614,7 @@ export function KnowledgeItems({ hash }: { hash: string }) {
             <Note note={note} />
           </>
         ) : (
-          <div className="state">{I.pick}</div>
+          <div className="state">{missing ? I.missing(missing) : I.pick}</div>
         )}
       </Panel>
     </div>

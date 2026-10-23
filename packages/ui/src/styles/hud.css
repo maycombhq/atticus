@@ -575,6 +575,27 @@ a:hover {
   border-bottom: 0;
 }
 
+/* A phone-wide window (WCAG 1.4.10, reflow at 320 px): rows of buttons, a panel's heading and
+   its picker, and a long chip (a review, a stale snapshot, a PR address) wrap instead of
+   pushing the page sideways. */
+@media (max-width: 640px) {
+  .row,
+  .list-row {
+    flex-wrap: wrap;
+  }
+  .chip {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* Long file paths and ids break anywhere rather than run off the side. */
+  .mono,
+  code,
+  .run-table th,
+  .run-table td {
+    overflow-wrap: anywhere;
+  }
+}
+
 .track {
   height: 6px;
   border-radius: 3px;

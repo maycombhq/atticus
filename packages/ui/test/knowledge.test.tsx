@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
-import { CorrectForm, ItemDetail, ItemList } from "../src/screens/knowledge/Items.js";
-import { needTick, markBody, NeedsView } from "../src/screens/knowledge/Needs.js";
+import { CorrectForm, ItemDetail, ItemList, itemFor } from "../src/screens/knowledge/Items.js";
+import { needTick, markBody, markedWords, NeedsView } from "../src/screens/knowledge/Needs.js";
 import { DraftPage, initialPick } from "../src/screens/knowledge/OrgPackDraft.js";
 import { PartiesPage, relations } from "../src/screens/knowledge/Parties.js";
 import { FindDetail, FindList, SearchResult } from "../src/screens/knowledge/Search.js";
@@ -12,6 +12,7 @@ import {
   correctionBody,
   groupItems,
   matchItem,
+  pageText,
   reviewText,
   tagsOf,
 } from "../src/screens/knowledge/shared.js";
@@ -641,5 +642,69 @@ describe("A change's needs", () => {
     expect(markBody("open", "x", "change")).toEqual({ body: { status: "open", for: "change" } });
     expect(needTick(needs.needs[0]!).ok).toBe(true);
     expect(needTick(needs.needs[1]!)).toEqual({ text: K.review.none, ok: false });
+  });
+});
+
+/** What the app review found (October 2026): each gap, as the screen now says it. */
+describe("the knowledge screens, after the app review", () => {
+  it("says a source was never synced, not that its snapshot is too old", () => {
+    const never = { ...sources.sources[0]!, snapshot: undefined, scanned: undefined };
+    const out = html(
+      <SourceList of={ready({ ...sources, sources: [never] })} onSync={() => undefined} />,
+    );
+    expect(out).toContain(esc(K.sources.unsynced));
+    expect(out).not.toContain(esc(K.sources.stale(14)));
+    // One with an old snapshot still says how old is too old.
+    expect(html(<SourceList of={ready(sources)} onSync={() => undefined} />)).toContain(
+      esc(K.sources.stale(14)),
+    );
+  });
+
+  it("says when the item in the address isn't there, instead of asking to pick one", () => {
+    expect(itemFor([kafka, logging], "json-logging")).toEqual({ item: logging });
+    expect(itemFor([kafka], "gone-item")).toEqual({ missing: "gone-item" });
+    expect(itemFor([kafka], undefined)).toEqual({});
+  });
+
+  it("names a page and its heading the same way on every screen", () => {
+    expect(pageText("platform/vendors.md#Vendors")).toBe("platform/vendors.md (Vendors)");
+    expect(pageText("platform/vendors.md")).toBe("platform/vendors.md");
+    const out = html(<DraftPage of={ready(draft)} onAccept={() => undefined} />);
+    expect(out).toContain("platform/vendors.md (Vendors)");
+    expect(out).not.toContain("vendors.md#Vendors");
+    const n = html(<NeedsView of={ready(needs)} onMark={() => undefined} />);
+    expect(n).toContain(esc(K.needs.from("platform/how-to/kafka.md (The request)")));
+  });
+
+  it("opening a saved search keeps the search on screen", () => {
+    expect(html(<FindList of={ready({ finds: [find] })} q="new starter" />)).toContain(
+      'href="#/wiki-search?q=new+starter&amp;find=new-starter"',
+    );
+  });
+
+  it("gives each Keep, Done, Not needed and Reopen a name that says which one", () => {
+    const keep = html(<FindDetail of={ready(find)} onKeep={() => undefined} />);
+    expect(keep).toContain(`aria-label="${esc(K.search.keepOf("New starter request"))}"`);
+    const out = html(<NeedsView of={ready(needs)} onMark={() => undefined} />);
+    expect(out).toContain(`aria-label="${esc(K.needs.markDoneOf("Kafka topic"))}"`);
+    expect(out).toContain(`aria-label="${esc(K.needs.markSkipOf("Kafka topic"))}"`);
+    expect(out).toContain(`aria-label="${esc(K.needs.reopenOf("Log as JSON"))}"`);
+  });
+
+  it("says a need's item was rejected, not that it is unverified", () => {
+    const rejected = { ...needs.needs[0]!, review: northwind.review };
+    expect(needTick(rejected)).toEqual({
+      text: K.review.rejected("priya.nair", "2026-10-22"),
+      ok: false,
+      rejected: true,
+    });
+    const out = html(<NeedsView of={ready({ ...needs, needs: [rejected] })} />);
+    expect(out).toContain(`chip blocking">${esc(K.review.rejected("priya.nair", "2026-10-22"))}`);
+  });
+
+  it("says a reopened need is open again", () => {
+    expect(markedWords("open")).toBe(K.needs.openAgain);
+    expect(markedWords("done")).toBe("done");
+    expect(markedWords("not-needed")).toBe(K.needs.markSkip.toLowerCase());
   });
 });

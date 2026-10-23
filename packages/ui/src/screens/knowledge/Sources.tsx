@@ -33,7 +33,9 @@ function SourceCard(p: {
           {s.id}
         </h3>
         <span className="row" style={{ gap: 6 }}>
-          {s.stale && <span className="chip warn">{S.stale(p.staleDays)}</span>}
+          {s.stale && (
+            <span className="chip warn">{s.snapshot ? S.stale(p.staleDays) : S.unsynced}</span>
+          )}
           <button type="button" className="btn" disabled={p.busy} onClick={() => p.onSync(s.id)}>
             {p.busy ? S.syncing : S.sync(s.id)}
           </button>

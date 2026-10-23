@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
@@ -65,15 +65,22 @@ export function SearchResult({ of }: { of: Loaded<Api.WikiSearchResultT> }) {
   );
 }
 
-/** The saved searches, newest first, each a link to its candidates. */
-export function FindList(p: { of: Loaded<Api.SavedFindListT>; current?: string | undefined }) {
+/** The saved searches, newest first, each a link to its candidates; the search shown stays. */
+export function FindList(p: {
+  of: Loaded<Api.SavedFindListT>;
+  current?: string | undefined;
+  q?: string;
+}) {
   return (
     <View of={p.of} empty={(d) => d.finds.length === 0} emptyText={S.noSaved}>
       {(d) => (
         <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
           {d.finds.map((f) => (
             <li key={f.slug} className="list-row">
-              <a href={route("", f.slug)} aria-current={f.slug === p.current ? "true" : undefined}>
+              <a
+                href={route(p.q ?? "", f.slug)}
+                aria-current={f.slug === p.current ? "true" : undefined}
+              >
                 {f.phrase}
               </a>
               <span className="hud" style={{ fontSize: 10 }}>
@@ -93,13 +100,22 @@ export function Candidate(p: {
   c: Api.FindCandidateViewT;
   onKeep?: (id: string, as: string) => void;
   busy?: boolean;
+  /** The candidate being kept now, if any: only its button says so. */
+  keeping?: string | undefined;
 }) {
   const c = p.c;
   const [as, setAs] = useState<string>(c.kind);
+  // Keep's form goes once the candidate is kept: the keyboard stays on the candidate.
+  const row = useRef<HTMLLIElement>(null);
+  const wasKept = useRef(!!c.kept);
+  useEffect(() => {
+    if (c.kept && !wasKept.current) row.current?.focus();
+    wasKept.current = !!c.kept;
+  }, [c.kept]);
   const at = where(c.record);
   const quote = quoteOf(c.record);
   return (
-    <li className="list-row" style={{ display: "block" }}>
+    <li ref={row} tabIndex={-1} className="list-row" style={{ display: "block" }}>
       <div className="row between" style={{ flexWrap: "wrap", gap: 6 }}>
         <span>
           <strong>{c.title}</strong>{" "}
@@ -148,8 +164,13 @@ export function Candidate(p: {
               </option>
             ))}
           </select>
-          <button type="submit" className="btn primary" disabled={p.busy}>
-            {p.busy ? S.keeping : S.keep}
+          <button
+            type="submit"
+            className="btn primary"
+            disabled={p.busy}
+            aria-label={S.keepOf(c.title)}
+          >
+            {p.keeping === c.id ? S.keeping : S.keep}
           </button>
         </form>
       )}
@@ -161,6 +182,7 @@ export function FindDetail(p: {
   of: Loaded<Api.SavedFindViewT>;
   onKeep?: (id: string, as: string) => void;
   busy?: boolean;
+  keeping?: string | undefined;
 }) {
   return (
     <View of={p.of}>
@@ -171,7 +193,7 @@ export function FindDetail(p: {
           </p>
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
             {f.candidates.map((c) => (
-              <Candidate key={c.id} c={c} onKeep={p.onKeep} busy={p.busy} />
+              <Candidate key={c.id} c={c} onKeep={p.onKeep} busy={p.busy} keeping={p.keeping} />
             ))}
           </ul>
         </div>
@@ -184,6 +206,8 @@ export function WikiSearch({ hash }: { hash: string }) {
   const q = queryParam(hash, "q") ?? "";
   const find = queryParam(hash, "find");
   const [text, setText] = useState(q);
+  // The box says what is searched: a link or the palette can change the address under it.
+  useEffect(() => setText(q), [q]);
   const result = useApi<Api.WikiSearchResultT>(
     q ? `/api/knowledge/search?q=${encodeURIComponent(q)}` : undefined,
   );
@@ -191,8 +215,11 @@ export function WikiSearch({ hash }: { hash: string }) {
   const one = useApi<Api.SavedFindViewT>(
     find ? `/api/knowledge/finds/${encodeURIComponent(find)}` : undefined,
   );
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
+  const [keeping, setKeeping] = useState<string | undefined>();
+  const busy = keeping !== undefined;
+  const [note, setNote] = useState<{ ok: boolean; text: string; working?: boolean } | undefined>();
+  // A note is about the saved search it was made on.
+  useEffect(() => setNote(undefined), [find]);
   useLiveEvents((e) => {
     if (e.type === "file.changed") {
       finds.reload();
@@ -215,8 +242,8 @@ export function WikiSearch({ hash }: { hash: string }) {
   };
   const onKeep = (id: string, as: string) => {
     if (!find) return;
-    setBusy(true);
-    setNote(undefined);
+    setKeeping(id);
+    setNote({ ok: true, text: COPY.app.working, working: true });
     api<unknown>(`/api/knowledge/finds/${encodeURIComponent(find)}/keep`, {
       method: "POST",
       body: { item: id, as },
@@ -227,7 +254,7 @@ export function WikiSearch({ hash }: { hash: string }) {
         finds.reload();
       })
       .catch((x: unknown) => setNote({ ok: false, text: message(x) }))
-      .finally(() => setBusy(false));
+      .finally(() => setKeeping(undefined));
   };
   return (
     <div className="bento">
@@ -267,11 +294,11 @@ export function WikiSearch({ hash }: { hash: string }) {
       </Panel>
       <div className="column" style={{ gridColumn: "span 5" }}>
         <Panel title={S.savedTitle}>
-          <FindList of={finds} current={find} />
+          <FindList of={finds} current={find} q={q} />
         </Panel>
         {find && (
-          <Panel title={find} labelledBy="find-detail">
-            <FindDetail of={one} onKeep={onKeep} busy={busy} />
+          <Panel title={one.state === "ready" ? one.data.phrase : find} labelledBy="find-detail">
+            <FindDetail of={one} onKeep={onKeep} busy={busy} keeping={keeping} />
             <Note note={note} />
           </Panel>
         )}
