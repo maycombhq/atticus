@@ -1,5 +1,5 @@
 import { readdir, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { parse } from "yaml";
 import { gapNameOf } from "./gaps.js";
 import {
@@ -164,14 +164,15 @@ export async function listSources(root: string): Promise<SourceFile[]> {
     add("review")(files);
   }
   {
-    // specs/<repo>/<flow id>.yaml; the header and the critic's findings aren't flows.
+    // specs/<repo>/<flow id>.yaml; the header and the critic's findings aren't flows, and nor
+    // is a file at the top of specs/ (estate.yaml: the estate pass's joins, ADR 0085).
     const files: string[] = [];
     await walk(
       specsDirOf(root),
       (n) => YAML(n) && n !== "spec.yaml" && n !== "findings.yaml",
       files,
     );
-    add("flow")(files);
+    add("flow")(files.filter((f) => dirname(f) !== specsDirOf(root)));
   }
   {
     // A change folder's own files: what it is, its brief and proposal, its placement, needs and target flows.

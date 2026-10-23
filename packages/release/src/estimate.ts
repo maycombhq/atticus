@@ -271,7 +271,6 @@ export function estimateChange(input: EstimateInput): ChangeEstimate {
   };
   if (effort && input.waitDays !== undefined)
     calendar.longer = effort.p80 > input.waitDays ? "work" : "waiting";
-  else if (input.waitDays !== undefined) calendar.longer = "waiting";
   return {
     change: input.change,
     units,

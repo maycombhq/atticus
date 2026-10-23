@@ -37,6 +37,17 @@ const counts = (ix: CatalogIndex) =>
   );
 
 describe("the graph in the index (ADR 0107 point 1)", () => {
+  it("reads flows from the repos' spec folders only: specs/estate.yaml is the estate's joins, not a flow", async () => {
+    const root = await contextRoot();
+    await writeFile(
+      join(root, "specs/estate.yaml"),
+      "schemaVersion: 1\njoins: []\nunmatched: []\n",
+    );
+    const ix = await openIndex(root);
+    expect(ix.problems).toEqual([]);
+    ix.close();
+  });
+
   it("holds knowledge, flows, changes, answered questions and wiki sections, linked as expected", async () => {
     const root = await contextRoot();
     const expected = parse(readFileSync(join(CONTEXT, "expected/graph.yaml"), "utf8")) as {

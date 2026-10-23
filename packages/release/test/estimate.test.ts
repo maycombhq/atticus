@@ -154,6 +154,8 @@ describe("a change's estimate (ADR 0109)", () => {
     expect(e.calendar).toMatchObject({ waitDays: 30, longer: "waiting" });
     const quick = estimateChange({ ...base, table: TABLE, waitDays: 1 });
     expect(quick.calendar).toMatchObject({ waitDays: 1, longer: "work" });
+    // Without days for the work there is nothing to compare the waiting with.
+    expect(estimateChange({ ...base, waitDays: 0 }).calendar).toEqual({ waitDays: 0 });
   });
 
   it("has nothing to size before the architecture stage", () => {

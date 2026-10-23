@@ -58,6 +58,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- The index no longer reads `specs/estate.yaml` (the estate's joins) as a flow, which every search warned about on a real metarepo.
+- An estimate with no days no longer says the waiting is longer than the work: there is nothing to compare it with.
 - `pnpm check` passes again: the core-neutral check allowlists the English word "teams" and the C6 wiki types; the inbox's matching moved out of a .tsx file; journeys 19 and 20 read the page's token without DOM types; the context engine's timing test reports times instead of asserting them.
 
 ### Model runs, and what waits, in every surface
