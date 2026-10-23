@@ -55,6 +55,9 @@ object Metarepo {
         return Files.list(profiles).use { s -> s.filter { Files.isDirectory(it) }.map { it.fileName.toString() }.sorted().toList() }
     }
 
+    /** The app's Prompt history screen (ADR 0110): what people asked their assistant here, and what it answered. */
+    const val PROMPT_HISTORY_SCREEN = "#/history"
+
     /** A screen of the app (`#/home`, `#/runs?run=…`) at the address it printed; the app as it is for anything else. */
     fun screenUrl(base: String, screen: String?): String {
         val b = base.trimEnd('/')

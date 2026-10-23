@@ -58,6 +58,7 @@ const ROUTES = [
   "evals",
   "learning",
   "runs",
+  "history",
   "settings",
 ];
 

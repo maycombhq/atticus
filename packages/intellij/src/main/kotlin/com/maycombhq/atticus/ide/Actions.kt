@@ -8,6 +8,7 @@ import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.project.DumbAwareAction
 import com.maycombhq.atticus.core.Commands
 import com.maycombhq.atticus.core.Copy
+import com.maycombhq.atticus.core.Metarepo
 
 /** The plugin's actions (Tools menu, the tool window's toolbar and Find Action). Their names are in plugin.xml. */
 abstract class AtticusAction : DumbAwareAction() {
@@ -96,5 +97,16 @@ class EstimateAction : AtticusAction() {
 class ModelRunsAction : AtticusAction() {
     override fun actionPerformed(e: AnActionEvent) {
         openScreen(e.project ?: return, "#/runs")
+    }
+}
+
+/**
+ * What people asked their assistant in the metarepo and what it answered (ADR 0110, #/history).
+ * Copilot in IntelliJ gives plugins no chat, so nothing typed here is recorded; the screen shows
+ * what Claude Code and VS Code's @atticus recorded.
+ */
+class PromptHistoryAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        openScreen(e.project ?: return, Metarepo.PROMPT_HISTORY_SCREEN)
     }
 }

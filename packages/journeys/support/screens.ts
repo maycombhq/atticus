@@ -55,5 +55,7 @@ export const SCREENS = [
   "learning",
   // ADR 0106: what Atticus asked a model and what it answered.
   "runs",
+  // ADR 0110: what people asked their assistant and what it answered.
+  "history",
   "settings",
 ];

@@ -161,9 +161,9 @@ const WORK_REFS = "C1 ExternalRef.system adapter-type values (ado, jira) and the
 export const ALLOW = [
   {
     file: "packages/core/src/api.ts",
-    names: ["confluence", "ado", "sharepoint"],
+    names: ["confluence", "ado", "sharepoint", "claude"],
     reason:
-      "the wiki types sources.yaml takes are the C6 contract's enum (ADR 0101), named in the API for the app's source form",
+      "the wiki types sources.yaml takes are the C6 contract's enum (ADR 0101), named in the API for the app's source form; claude-code is a surface the prompt history records from, as runtime.yaml's assistants enum names it (ADR 0110)",
   },
   {
     file: "packages/knowledge/src/knowledge-scan.ts",

@@ -71,6 +71,8 @@ Without a repo or change, a step command takes the one `atticus next` names for 
 
 When a step ends, its reply has **Open the prompt** and **Open the answer** (ADR 0106): what Atticus asked the model in the last round, and what the model answered, each when its file is there.
 
+**The prompt history** (ADR 0110): every `@atticus` request and the reply it streamed are recorded through `atticus history add`, in `.atticus/history/` on your machine (never committed). A chat's requests share a session while the chat goes on; a new chat starts another. **Atticus: Open the prompt history** opens the app's Prompt history screen in the Atticus tab. Only `@atticus` is recorded: VS Code gives extensions no access to Copilot's other chats, so what you ask Copilot directly isn't. `atticus history off` stops recording on your machine; the org pack can turn it off for everyone (`history: { record: false }` in `runtime.yaml`).
+
 ## The sidebar
 
 ## Everything Atticus does
@@ -141,7 +143,7 @@ The same actions are in the Command Palette under **Atticus:**. Every `atticus` 
 ## What is sent where
 
 - **To the Copilot model, through VS Code's Language Model API (`vscode.lm`):** a step's prompt file as Atticus wrote it, after one line from the extension that asks for only the result file's content. The prompt holds what the step read from your metarepo and repos. Nothing else is sent to the model, and nothing goes to the model without your consent (VS Code asks the first time).
-- **To the `atticus` command line, on this machine:** the commands in the output. They read and write files in the metarepo, as they do in a terminal.
+- **To the `atticus` command line, on this machine:** the commands in the output. They read and write files in the metarepo, as they do in a terminal. Each `@atticus` request and its reply go to `atticus history add` on its stdin (ADR 0110), kept in `.atticus/history/` on this machine.
 - **To the app it started, on `127.0.0.1`:** the sidebar's and the CodeLens's reads of the local API, with the session token the app printed. The one write is a finding's action, when you pick it.
 - **To the app in its tab:** a step's progress and how it ended, when you ran it from the app with **Run with Copilot**.
 - **Nowhere else.** No telemetry. The extension makes no other network call.

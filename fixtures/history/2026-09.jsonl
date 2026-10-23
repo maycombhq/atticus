@@ -1,0 +1,2 @@
+{"id":"h-20260930160000-0c0c0c","at":"2026-09-30T16:00:00.000Z","surface":"claude-code","session":"9e9e9e9e","kind":"prompt","text":"Draft the brief for refunds-through-northwind-pay","size":49,"change":"refunds-through-northwind-pay"}
+{"id":"h-20260930160200-0d0d0d","at":"2026-09-30T16:02:00.000Z","surface":"claude-code","session":"9e9e9e9e","kind":"response","text":"The brief is in openspec/changes/refunds-through-northwind-pay/brief.md. The sandbox key I used was api_key=***.","size":131,"masked":true}

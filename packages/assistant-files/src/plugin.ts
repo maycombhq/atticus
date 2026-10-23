@@ -22,6 +22,18 @@ export interface PluginFile {
 
 const json = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
 
+/** The metarepo above a folder: the one with org-pack/ (or .atticus/org-pack/), else none. */
+const findMetarepo = (from: string) => [
+  "let root;",
+  `for (let d = ${from}; ; d = dirname(d)) {`,
+  '  if (existsSync(join(d, "org-pack")) || existsSync(join(d, ".atticus", "org-pack"))) {',
+  "    root = d;",
+  "    break;",
+  "  }",
+  "  if (dirname(d) === d) break;",
+  "}",
+];
+
 /** The hook: finds the metarepo above the project folder and says its next step, or nothing. */
 const SESSION_START = [
   "// The Atticus plugin's SessionStart hook (ADR 0104). What it prints is added to the session:",
@@ -30,14 +42,7 @@ const SESSION_START = [
   'import { existsSync } from "node:fs";',
   'import { dirname, join } from "node:path";',
   "",
-  "let root;",
-  "for (let d = process.env.CLAUDE_PROJECT_DIR || process.cwd(); ; d = dirname(d)) {",
-  '  if (existsSync(join(d, "org-pack")) || existsSync(join(d, ".atticus", "org-pack"))) {',
-  "    root = d;",
-  "    break;",
-  "  }",
-  "  if (dirname(d) === d) break;",
-  "}",
+  ...findMetarepo("process.env.CLAUDE_PROJECT_DIR || process.cwd()"),
   "if (!root) process.exit(0);",
   "",
   "// ATTICUS_BIN names the command line's bin.js; else atticus on PATH.",
@@ -89,6 +94,101 @@ const SESSION_START = [
   "",
 ].join("\n");
 
+/**
+ * The history hooks (ADR 0110): `history.mjs prompt` on UserPromptSubmit, `history.mjs response`
+ * on Stop. In a metarepo each hands the text to `atticus history add` on stdin; it prints
+ * nothing, so nothing is added to the conversation, and a failure never stops a prompt.
+ */
+const HISTORY_HOOK = [
+  "// The Atticus plugin's history hooks (ADR 0110): each prompt (UserPromptSubmit) and each reply",
+  "// (Stop) in an Atticus metarepo goes to `atticus history add`, kept in .atticus/history/ on this",
+  "// machine. Prints nothing: what a UserPromptSubmit hook prints is added to the conversation.",
+  "// The text is data: it goes to the command on stdin, never as an argument.",
+  'import { spawnSync } from "node:child_process";',
+  'import { existsSync, readFileSync } from "node:fs";',
+  'import { dirname, join } from "node:path";',
+  "",
+  "const kind = process.argv[2];",
+  'if (kind !== "prompt" && kind !== "response") process.exit(0);',
+  "let input;",
+  "try {",
+  '  input = JSON.parse(readFileSync(0, "utf8"));',
+  "} catch {",
+  "  process.exit(0);",
+  "}",
+  ...findMetarepo("process.env.CLAUDE_PROJECT_DIR || input?.cwd || process.cwd()"),
+  "if (!root) process.exit(0);",
+  "",
+  "// The reply: the transcript's last assistant message, every text of it, through its tool calls.",
+  "function lastReply(file) {",
+  "  let lines;",
+  "  try {",
+  '    lines = readFileSync(file, "utf8").split(/\\r?\\n/);',
+  "  } catch {",
+  "    return undefined;",
+  "  }",
+  "  const texts = [];",
+  "  for (let i = lines.length - 1; i >= 0; i--) {",
+  "    let e;",
+  "    try {",
+  "      e = JSON.parse(lines[i]);",
+  "    } catch {",
+  "      continue;",
+  "    }",
+  "    const content = e?.message?.content;",
+  '    if (e?.type === "assistant" && Array.isArray(content)) {',
+  "      const t = content",
+  '        .filter((b) => b?.type === "text" && typeof b.text === "string")',
+  "        .map((b) => b.text)",
+  '        .join("\\n\\n");',
+  "      if (t.trim()) texts.unshift(t);",
+  '    } else if (e?.type === "user") {',
+  "      // A tool's result belongs to the reply; anything else the person sent began it.",
+  "      const fromTool =",
+  "        Array.isArray(content) &&",
+  "        content.length > 0 &&",
+  '        content.every((b) => b?.type === "tool_result");',
+  "      if (!fromTool) break;",
+  "    }",
+  "  }",
+  '  return texts.length ? texts.join("\\n\\n") : undefined;',
+  "}",
+  "",
+  "const text =",
+  '  kind === "prompt"',
+  '    ? typeof input?.prompt === "string"',
+  "      ? input.prompt",
+  "      : undefined",
+  '    : typeof input?.transcript_path === "string"',
+  "      ? lastReply(input.transcript_path)",
+  "      : undefined;",
+  "if (!text || !text.trim()) process.exit(0);",
+  "",
+  "// ATTICUS_BIN names the command line's bin.js; else atticus on PATH.",
+  'const win = process.platform === "win32";',
+  'const session = typeof input.session_id === "string" ? input.session_id : "";',
+  "const args = [",
+  '  "history",',
+  '  "add",',
+  '  "--surface",',
+  '  "claude-code",',
+  '  "--kind",',
+  "  kind,",
+  '  ...(/^[\\w.-]+$/.test(session) ? ["--session", session] : []),',
+  '  "--root",',
+  "  root,",
+  "];",
+  'const o = { input: text, encoding: "utf8", timeout: 15000, stdio: ["pipe", "ignore", "ignore"] };',
+  "if (process.env.ATTICUS_BIN) spawnSync(process.execPath, [process.env.ATTICUS_BIN, ...args], o);",
+  "else",
+  '  spawnSync(win ? "atticus.cmd" : "atticus", args.map((a) => (win ? `"${a}"` : a)), {',
+  "    ...o,",
+  "    shell: win,",
+  "  });",
+  "process.exit(0);",
+  "",
+].join("\n");
+
 /** The MCP server's launcher: atticus mcp, found the way a person's terminal finds it. */
 const MCP_LAUNCHER = [
   "// Starts `atticus mcp` for Claude Code (ADR 0104), on every platform: atticus on PATH (atticus.cmd",
@@ -122,7 +222,8 @@ It needs the \`atticus\` command line on your PATH (or \`ATTICUS_BIN\` set to it
 
 - **Slash commands.** Every Atticus step: \`/atticus-next\`, \`/atticus-survey\`, \`/atticus-spec\`, \`/atticus-knowledge\`, \`/atticus-find\`, \`/atticus-feature\`, \`/atticus-architecture\`, \`/atticus-stories\`, \`/atticus-needs\`, \`/atticus-answer\`, and the catalog commands \`/atticus-ask\`, \`/atticus-impact\`, \`/atticus-critic\`, \`/atticus-plan\`, \`/atticus-snow\` and \`/atticus-release\`. Claude does the model work; Atticus checks every answer.
 - **The next step.** When a session starts in a metarepo, Claude is told the next step and how to take it, and how much waits on you.
-- **Read-only tools.** The \`atticus\` MCP server: the next step; what waits on you across every change, grouped by change, with a filter; the open needs; the model runs, each with its prompt, answer and the problems handed back; the catalog, knowledge items, changes and their status, a change's picture (marked + new, ◇ changed, ✕ retired, as Mermaid) and its estimate, findings, open questions, features, triage and manual steps. They read; to change anything Claude runs the command, and a person approves every write to a shared system.
+- **Prompt history.** In a metarepo, each prompt you send and each reply Claude gives is kept in \`.atticus/history/\` on your machine (never committed), with its session and the change it is about; the app's Prompt history screen and \`atticus history\` show them. \`atticus history off\` stops it on your machine, and \`history: { record: false }\` in the org pack's \`runtime.yaml\` for everyone (ADR 0110).
+- **Read-only tools.** The \`atticus\` MCP server: the next step; what waits on you across every change, grouped by change, with a filter; the open needs; the model runs, each with its prompt, answer and the problems handed back; the prompt history; the catalog, knowledge items, changes and their status, a change's picture (marked + new, ◇ changed, ✕ retired, as Mermaid) and its estimate, findings, open questions, features, triage and manual steps. They read; to change anything Claude runs the command, and a person approves every write to a shared system.
 
 The org pack's own agents, skills and commands come from \`atticus assistant-files\`, committed in the metarepo. A metarepo's \`.claude/commands\` win over the plugin's of the same name, so an organisation that changed its catalog or OpenSpec folders gets the right paths from its own files.
 
@@ -141,7 +242,7 @@ export function claudeCodePluginFiles(version: string): PluginFile[] {
         name: "atticus",
         version,
         description:
-          "Atticus in Claude Code: every step as a slash command, the next step when a session starts, and read-only tools over the catalog, knowledge, changes and needs.",
+          "Atticus in Claude Code: every step as a slash command, the next step when a session starts, read-only tools over the catalog, knowledge, changes and needs, and a history of the prompts and replies in a metarepo, kept on your machine.",
         author: { name: "Maycomb" },
         homepage: "https://github.com/maycombhq/atticus",
         repository: "https://github.com/maycombhq/atticus",
@@ -173,10 +274,34 @@ export function claudeCodePluginFiles(version: string): PluginFile[] {
               ],
             },
           ],
+          // ADR 0110: each prompt and each reply in a metarepo, kept in .atticus/history/.
+          UserPromptSubmit: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/history.mjs" prompt',
+                  timeout: 20,
+                },
+              ],
+            },
+          ],
+          Stop: [
+            {
+              hooks: [
+                {
+                  type: "command",
+                  command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/history.mjs" response',
+                  timeout: 20,
+                },
+              ],
+            },
+          ],
         },
       }),
     },
     { path: "hooks/session-start.mjs", content: SESSION_START },
+    { path: "hooks/history.mjs", content: HISTORY_HOOK },
     { path: "bin/atticus-mcp.mjs", content: MCP_LAUNCHER },
     { path: "README.md", content: README },
     ...commands.map((c) => ({ path: `commands/${c.name}.md`, content: claudeCommandContent(c) })),

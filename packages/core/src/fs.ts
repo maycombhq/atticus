@@ -127,8 +127,11 @@ export async function acquireLock(
   throw new Error(`Couldn't take the ${name} lock at ${file}.`);
 }
 
-/** What stays on this machine inside .atticus/: the person's settings, the log, locks and upgrade backups. */
-export const LOCAL_ONLY = ["me.yaml", "logs/", "locks/", "backups/"] as const;
+/**
+ * What stays on this machine inside .atticus/: the person's settings, the log, locks, upgrade
+ * backups and the prompt and response history (ADR 0110).
+ */
+export const LOCAL_ONLY = ["me.yaml", "logs/", "locks/", "backups/", "history/"] as const;
 
 /**
  * Make sure .atticus/.gitignore keeps this machine's files out of Git. It lives inside

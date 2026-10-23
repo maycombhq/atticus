@@ -503,6 +503,12 @@ export const Runtime = z.strictObject({
   retention: z
     .strictObject({ runsDays: z.number().int().positive().default(30) })
     .default({ runsDays: 30 }),
+  /**
+   * The prompt and response history (ADR 0110): what people type to their assistant in a
+   * metarepo, kept on their machine under .atticus/history/. On unless this says record: false.
+   * Additive and optional, so no schema version bump. Configuration, not a safety rule.
+   */
+  history: z.strictObject({ record: z.boolean().default(true) }).optional(),
   /** Atticus sends no telemetry unless an organisation turns it on here. */
   telemetry: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   adapters: z

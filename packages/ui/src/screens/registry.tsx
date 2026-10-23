@@ -7,6 +7,7 @@ import { Questions } from "./Questions.js";
 import { KNOW_SCREENS } from "./know/index.js";
 import { KNOWLEDGE_SCREENS } from "./knowledge/index.js";
 import { RUN_SCREENS } from "./run/index.js";
+import { History } from "./history/History.js";
 import { Runs } from "./runs/Runs.js";
 import { ChangeDiagram } from "./work/ChangeDiagram.js";
 import { Dashboard } from "./work/Dashboard.js";
@@ -38,6 +39,8 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   ...KNOWLEDGE_SCREENS,
   ...RUN_SCREENS,
   runs: Runs,
+  // ADR 0110: what people asked their assistant, and what it answered.
+  history: History,
   "change-diagram": ChangeDiagram,
   estimate: Estimate,
 };

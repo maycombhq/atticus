@@ -12,6 +12,7 @@ import { answersFrom, buildArgv, howToRun, matchCommand } from "./commands";
 import { changeMapMarkdown, type ChangeMapJson } from "./change-map";
 import { parseJson } from "./cli";
 import { block, describeEnd, endFiles } from "./describe";
+import { ChatSessions, promptText, recordChat, recordingStream } from "./history";
 import type { StepEnd } from "./runner";
 import { stepTitle } from "./words";
 import type { Service } from "./service";
@@ -215,7 +216,38 @@ async function runTyped(
   svc.fireChanged();
 }
 
-export function chatHandler(svc: Service, commands?: () => CommandUi): vscode.ChatRequestHandler {
+/**
+ * The participant, with each request and its reply recorded in the prompt history (ADR 0110):
+ * the request as typed, then everything the reply streamed as markdown, through `atticus
+ * history add`. Recording never holds the reply up, and a failure to record is never the chat's.
+ */
+export function chatHandler(
+  svc: Service,
+  commands?: () => CommandUi,
+  sessions = new ChatSessions(),
+): vscode.ChatRequestHandler {
+  const handle = participant(svc, commands);
+  return async (request, context, stream, token) => {
+    const root = svc.root;
+    if (!root) return handle(request, context, stream, token);
+    const rec = recordingStream(stream);
+    let ended: (text: string) => void = () => undefined;
+    const response = new Promise<string>((r) => (ended = r));
+    void recordChat(svc.cli(root), root, {
+      session: sessions.sessionFor(request, context.history),
+      ...(request.command ? { command: `/${request.command}` } : {}),
+      prompt: promptText(request),
+      response,
+    });
+    try {
+      return await handle(request, context, rec.stream, token);
+    } finally {
+      ended(rec.text());
+    }
+  };
+}
+
+function participant(svc: Service, commands?: () => CommandUi): vscode.ChatRequestHandler {
   return async (request, _context, stream, token) => {
     const root = svc.root;
     if (!root) {

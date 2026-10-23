@@ -91,10 +91,15 @@ export const quoteArg = (a: string) =>
 export const commandText = (args: string[]) => `atticus ${args.map(quoteArg).join(" ")}`;
 
 export function cliRunner(o: CliOptions): Cli {
-  return (args: string[], token?: Cancel) => runCli(o, args, token);
+  return (args: string[], token?: Cancel, input?: string) => runCli(o, args, token, input);
 }
 
-export function runCli(o: CliOptions, args: string[], token?: Cancel): Promise<CliResult> {
+export function runCli(
+  o: CliOptions,
+  args: string[],
+  token?: Cancel,
+  input?: string,
+): Promise<CliResult> {
   const log = o.log ?? (() => undefined);
   const cmd = resolveCommand(o);
   log(`> ${commandText(args)}`);
@@ -128,6 +133,10 @@ export function runCli(o: CliOptions, args: string[], token?: Cancel): Promise<C
       cancelled = true;
       child.kill();
     });
+    // What the command reads on stdin (ADR 0110: history add); none closes it at once, so a
+    // command that reads it never waits.
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(input ?? "", "utf8");
     child.stdout?.setEncoding("utf8").on("data", (d: string) => (stdout += d));
     child.stderr?.setEncoding("utf8").on("data", (d: string) => (stderr += d));
     child.on("error", (e) => {

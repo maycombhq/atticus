@@ -136,6 +136,41 @@ describe("atticus mcp (ADR 0104)", () => {
     });
   });
 
+  it("reads the prompt history through atticus history, read-only (ADR 0110)", async () => {
+    const calls: string[][] = [];
+    const call = (args: Record<string, unknown>) =>
+      handleMcp(
+        {
+          jsonrpc: "2.0",
+          id: 11,
+          method: "tools/call",
+          params: { name: "prompt_history", arguments: args },
+        },
+        fake(calls),
+        "1",
+      );
+    await call({});
+    await call({ change: "add-transfer-limit", filter: "northwind pay", limit: "5" });
+    await call({ session: "5f1d7c0e" });
+    expect(calls).toEqual([
+      ["history", "--json"],
+      [
+        "history",
+        "--change",
+        "add-transfer-limit",
+        "--filter",
+        "northwind pay",
+        "--limit",
+        "5",
+        "--json",
+      ],
+      ["history", "--session", "5f1d7c0e", "--json"],
+    ]);
+    const bad = await call({ session: "--surface" });
+    expect(calls).toHaveLength(3);
+    expect(bad).toMatchObject({ result: { isError: true } });
+  });
+
   it("refuses a value that would be read as an option, and a tool it hasn't", async () => {
     const calls: string[][] = [];
     const bad = await handleMcp(
