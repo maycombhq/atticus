@@ -5,7 +5,10 @@ import { groupLabel, MAIN, MORE, MORE_GROUPS, type ScreenDef } from "./screens.j
 
 const T = COPY.menu;
 
-/** Atticus's mark: a pair of round wire glasses (docs/brand/glasses.svg), in the theme's accent. */
+/**
+ * Atticus's mark: Atticus Finch's glasses (docs/brand/glasses.svg), a glint in each lens leaning
+ * toward the other like the legs of an A, in the theme's accent.
+ */
 function Logo() {
   return (
     <svg
@@ -15,16 +18,15 @@ function Logo() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="var(--accent)"
-      strokeWidth="1.4"
       strokeLinecap="round"
-      strokeLinejoin="round"
       style={{ filter: "drop-shadow(0 0 var(--glow-size) var(--accent))" }}
     >
-      <circle cx="6.5" cy="12.6" r="4.5" />
-      <circle cx="17.5" cy="12.6" r="4.5" />
-      <path d="M10.9 11.5 C11.1 9.9 12.9 9.9 13.1 11.5" />
-      <path d="M2.05 12.0 L0.7 11.7" />
-      <path d="M21.95 12.0 L23.3 11.7" />
+      <g strokeWidth="1.25">
+        <circle cx="6.5" cy="12.4" r="4.5" />
+        <circle cx="17.5" cy="12.4" r="4.5" />
+        <path d="M11 11.4 H13" />
+      </g>
+      <path strokeWidth="1.05" d="M6.5 12.7 L8.5 10.2 M17.5 12.7 L15.5 10.2" />
     </svg>
   );
 }
