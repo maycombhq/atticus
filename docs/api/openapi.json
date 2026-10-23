@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.10.0",
+    "version": "2.11.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -2401,6 +2401,67 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChangeEstimate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/conformance": {
+      "get": {
+        "operationId": "getChangeConformance",
+        "summary": "Does the code do what the design says: the newest check of each repo's branch against the change's target flows, with what is missing, still there or unexpected and where (ADR 0114)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeConformance"
                 }
               }
             }
@@ -18520,6 +18581,265 @@
           "drivers",
           "calendar",
           "calibration",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeConformance": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "flows": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "schemaVersion": {
+                  "type": "number",
+                  "const": 1
+                },
+                "change": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "commit": {
+                  "type": "string"
+                },
+                "base": {
+                  "type": "string"
+                },
+                "task": {
+                  "type": "string"
+                },
+                "checkedAt": {
+                  "type": "string"
+                },
+                "counts": {
+                  "type": "object",
+                  "properties": {
+                    "found": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "missing": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "stillThere": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "unexpected": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "found",
+                    "missing",
+                    "stillThere",
+                    "unexpected"
+                  ],
+                  "additionalProperties": false
+                },
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "enum": [
+                          "found",
+                          "missing",
+                          "still-there",
+                          "unexpected"
+                        ]
+                      },
+                      "check": {
+                        "type": "string",
+                        "enum": [
+                          "call",
+                          "publish",
+                          "table",
+                          "column",
+                          "migration",
+                          "trigger",
+                          "endpoint"
+                        ]
+                      },
+                      "flow": {
+                        "type": "string"
+                      },
+                      "item": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "task": {
+                        "type": "string"
+                      },
+                      "what": {
+                        "type": "string"
+                      },
+                      "record": {
+                        "type": "string"
+                      },
+                      "at": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "artifact",
+                                "code"
+                              ]
+                            },
+                            "repo": {
+                              "type": "string"
+                            },
+                            "path": {
+                              "type": "string"
+                            },
+                            "line": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "source",
+                            "path"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "finding": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "state": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "state"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": [
+                      "status",
+                      "check",
+                      "what",
+                      "at"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "unchecked": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "flow": {
+                        "type": "string"
+                      },
+                      "item": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "why": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "flow",
+                      "kind",
+                      "why"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "problems": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "schemaVersion",
+                "change",
+                "repo",
+                "ref",
+                "commit",
+                "base",
+                "checkedAt",
+                "counts",
+                "items",
+                "unchecked",
+                "problems"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "gate": {
+            "type": "string",
+            "const": "conform"
+          },
+          "round": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "change",
+          "title",
+          "flows",
+          "results",
+          "gate",
           "problems"
         ],
         "additionalProperties": false

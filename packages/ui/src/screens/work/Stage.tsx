@@ -171,6 +171,11 @@ export function StagePage(p: {
               </p>
               <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
                 <RunsLink change={c.id} />
+                {p.stage === "tasks" && (
+                  <a href={`#/conformance?change=${encodeURIComponent(c.id)}`}>
+                    {COPY.conformance.title}
+                  </a>
+                )}
                 <ChangePicker list={list} current={c.id} screen={screen} />
               </div>
             </div>

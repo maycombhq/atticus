@@ -1,0 +1,38 @@
+# The conformance check's rules (ADR 0114): does the code on a branch do what the change's
+# target flows say? Contract C3. Built in, in the org layer: a person can dismiss a finding as
+# not relevant (with a reason) or waive a blocking one, as with any other finding.
+schemaVersion: 1
+name: conform
+version: 1.0.0
+description: The code on a change's branch has every call, table, column, migration and endpoint its target flows add, none of the calls they remove, and nothing they don't name.
+rules:
+  - id: conform.missing
+    title: The code has what the target flows add
+    description: A call, table, column, migration or endpoint a target flow adds isn't in the scan of the branch's commit, so the task doesn't do what the approved design says yet.
+    layer: org
+    lens: code-and-test
+    appliesTo: { artifacts: [design, code] }
+    severity: blocking
+    check: { type: deterministic, check: conform }
+    waivable: true
+    source: Does the code do what the design says? (ADR 0114)
+  - id: conform.still-there
+    title: The code no longer makes the calls the target flows remove
+    description: A call a target flow removes, or sends elsewhere, is still in the scan of the branch's commit.
+    layer: org
+    lens: code-and-test
+    appliesTo: { artifacts: [design, code] }
+    severity: blocking
+    check: { type: deterministic, check: conform }
+    waivable: true
+    source: Does the code do what the design says? (ADR 0114)
+  - id: conform.unexpected
+    title: The code adds nothing the target flows don't name
+    description: The branch adds a call, publish, endpoint, table or column that no target flow of the change names. Either the design misses it, or the task went beyond it.
+    layer: org
+    lens: code-and-test
+    appliesTo: { artifacts: [design, code] }
+    severity: risk
+    check: { type: deterministic, check: conform }
+    waivable: false
+    source: Does the code do what the design says? (ADR 0114)

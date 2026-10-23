@@ -34,6 +34,7 @@ import {
 import { createGit, toRepoRelative, type GitRunner } from "@maycombhq/workspace";
 import { applyChanges, parseAnswer } from "./apply.js";
 import { shellCommandRunner, type CommandRunner } from "./commands.js";
+import { conformAfterBuild } from "./conform.js";
 import { taskPack, taskRunnerAgent } from "./prompt.js";
 import {
   findWaitingTaskRun,
@@ -394,6 +395,8 @@ async function finish(c: Ctx, run: Run): Promise<TaskRunRecord> {
     }
     await buildAndFix(c, run.runId);
     if (c.record.state === "built" || c.record.state === "unverified") await commit(c, run.runId);
+    // ADR 0114: a passing build is checked against the design before anything goes further.
+    await conformAfterBuild(c);
     if (c.record.level === "pr") await openPr(c);
   }
   return done(c);
@@ -575,6 +578,7 @@ export async function completeTaskHandoff(
         if (!record.changed.includes(p)) record.changed.push(p);
       }
       await commit(c, runId);
+      await conformAfterBuild(c);
       if (record.level === "pr") await openPr(c);
     }
     return done(c);

@@ -283,9 +283,10 @@ export function phaseGates(ctx: ChangeContext, phase: PhaseId): string[] {
 
 /**
  * Gates Atticus itself writes findings to, whether or not gates.yaml lists them: the drift
- * check, the Spec Kit hand-up and traceability (ADR 0039).
+ * check, the Spec Kit hand-up and traceability (ADR 0039), and the code against the target
+ * flows (conform, ADR 0114).
  */
-export const BUILT_IN_GATES: readonly string[] = ["drift", "hand-up", "trace"];
+export const BUILT_IN_GATES: readonly string[] = ["drift", "hand-up", "trace", "conform"];
 
 /** The phases whose hand-offs the built-in gates hold back: Build, QA and Go/no-go. */
 const BUILT_IN_GATE_PHASES: readonly PhaseId[] = ["build", "qa", "release"];

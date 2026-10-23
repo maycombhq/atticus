@@ -28,6 +28,7 @@ export const SCREENS = [
   "diagrams",
   "change-diagram?change=add-transfer-limit",
   "estimate?change=add-transfer-limit",
+  "conformance?change=add-transfer-limit",
   "architecture",
   "reconcile",
   "contracts",

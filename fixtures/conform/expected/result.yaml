@@ -1,0 +1,62 @@
+# What the conformance check (ADR 0114) must find when forge-ledger's change branch is the
+# "after" state (fixtures/forge/repos/forge-ledger with after/forge-ledger laid over it) and
+# the base is fixtures/forge/repos/forge-ledger. Hand-written; never regenerate it from output.
+# `at` is <repo>:<path>:<line> in the new code, or <change file>:<line> for what is missing.
+items:
+  - status: found
+    check: migration
+    flow: ledger-api.create-transfer
+    item: 1
+    task: "1.1"
+    what: The migration V3__add_daily_limit.sql is in the repo.
+    at: forge-ledger:src/main/resources/db/migration/V3__add_daily_limit.sql:1
+  - status: found
+    check: column
+    flow: ledger-api.create-transfer
+    item: 1
+    task: "1.1"
+    what: ledger-db.account has the column daily_limit.
+    record: ledger-db.account.daily-limit
+    at: forge-ledger:src/main/resources/db/migration/V3__add_daily_limit.sql:1
+  - status: missing
+    check: call
+    flow: ledger-api.create-transfer
+    item: 2
+    task: "1.3"
+    what: ledger-api makes no call to northwind-pay POST /v2/velocity-checks (item 2 of target-flows/ledger-api.create-transfer.yaml).
+    at: target-flows/ledger-api.create-transfer.yaml:18
+  - status: still-there
+    check: call
+    flow: ledger-api.create-transfer
+    item: 4
+    task: "1.2"
+    what: ledger-api still calls northwind-pay POST /v2/payments, which item 4 of target-flows/ledger-api.create-transfer.yaml removes.
+    record: if-e7344c9455608119
+    at: forge-ledger:src/main/java/forge/ledger/NorthwindClient.java:8
+  - status: found
+    check: trigger
+    flow: ledger-api.get-limit
+    what: ledger-api serves GET /accounts/{id}/limit, the trigger of ledger-api.get-limit.
+    record: ledger-api.get-limit
+    at: forge-ledger:src/main/java/forge/ledger/LedgerEndpoints.java:17
+  - status: found
+    check: column
+    flow: ledger-api.get-limit
+    item: 2
+    what: ledger-db.account has the column daily_limit.
+    record: ledger-db.account.daily-limit
+    at: forge-ledger:src/main/resources/db/migration/V3__add_daily_limit.sql:1
+  - status: unexpected
+    check: call
+    what: ledger-api calls northwind-pay POST /v2/refunds, which no target flow names.
+    record: if-e25b9623de50b834
+    at: forge-ledger:src/main/java/forge/ledger/NorthwindClient.java:11
+  - status: unexpected
+    check: table
+    what: The code adds the table ledger-db.limit-override, which no target flow names.
+    record: ledger-db.limit-override
+    at: forge-ledger:src/main/resources/db/migration/V3__add_daily_limit.sql:3
+unchecked:
+  - { flow: ledger-api.create-transfer, item: 3, kind: branch }
+  - { flow: ledger-api.get-limit, item: 1, kind: entry }
+  - { flow: ledger-api.get-limit, item: 3, kind: respond }

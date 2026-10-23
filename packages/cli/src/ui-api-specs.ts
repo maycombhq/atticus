@@ -162,6 +162,15 @@ export function uiSpecRoutes(r: Router, ctx: ServerContext): Router {
     return { status: 200, body: { change, flows, problems } satisfies Api.TargetFlowListT };
   });
 
+  // ADR 0114: the newest check of the code against the target flows (stored; scans nothing).
+  r.add("GET", "/api/changes/{changeId}/conformance", async ({ params }) => {
+    const change = idOf(params.changeId!, "change");
+    const { conformanceOf } = await import("@maycombhq/taskrun");
+    const c = await conformanceOf(root, change);
+    if (!c) throw notFound(`There is no change ${change}.`);
+    return { status: 200, body: c };
+  });
+
   // ADR 0109: the change's estimate, counted from the same target flows.
   r.add("GET", "/api/changes/{changeId}/estimate", async ({ params }) => {
     const change = idOf(params.changeId!, "change");

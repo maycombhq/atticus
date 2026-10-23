@@ -474,6 +474,7 @@ Usage:
   atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
   atticus change list [--json]         Every change and its state
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
+  atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]  Does the code do what the design says: scan the branch's commit and check it against the target flows; what is missing, still there or not in the design becomes findings on the conform gate (--latest shows the newest check, scanning nothing)
   atticus change estimate <change> [--json]  The change's estimate: its size from the target flows, the org pack's ranges summed, and what drives it, each with its source; never a number nobody stands behind
   atticus change map <change> [--format mermaid|drawio] [--json]  The change's picture: the components, entries and tables its target flows touch, marked + new, ◇ modify or ✕ retire
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
@@ -751,6 +752,8 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       "fill-only": { type: "boolean" },
       platform: { type: "string" },
       ref: { type: "string" },
+      task: { type: "string" },
+      latest: { type: "boolean" },
       org: { type: "string" },
       framework: { type: "string" },
       csv: { type: "boolean" },
@@ -1925,6 +1928,27 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       );
     if (command === "list") return changeList(root, { json }, io);
     if (command === "conflicts") return changeConflicts(root, { json }, io);
+    if (command === "conform") {
+      if (!arg) {
+        io.err(
+          "change conform needs a change id, for example: atticus change conform add-transfer-limit",
+        );
+        return 2;
+      }
+      const { changeConformCommand } = await import("./change-conform.js");
+      return changeConformCommand(
+        root,
+        arg,
+        {
+          ...(str(values.repo) ? { repo: str(values.repo)! } : {}),
+          ...(str(values.ref) ? { ref: str(values.ref)! } : {}),
+          ...(str(values.task) ? { task: str(values.task)! } : {}),
+          latest: values.latest === true,
+          json,
+        },
+        io,
+      );
+    }
     if (command === "estimate") {
       if (!arg) {
         io.err(

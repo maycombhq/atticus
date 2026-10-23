@@ -18,6 +18,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - A change's estimate: its size counted from its target flows, each changed step a class of work, the org pack's ranges (new optional `estimates.yaml`, with who agreed them) summed by a seeded simulation, the drivers named with their sources, the calendar beside the release forecast's waiting, and never a number nobody stands behind; a unit no class matches says it needs one. `atticus change estimate <change> [--json]`, `GET /api/changes/{id}/estimate` (API 2.10.0), the app's Estimate (More, Plan; linked from the Architecture stage), `@atticus /estimate` and Open a change's estimate in VS Code, IntelliJ's Atticus: Estimate, and the `change_estimate` MCP tool. It says it isn't calibrated: past changes don't record their effort yet.
 
+### Does the code do what the design says? (ADR 0114)
+
+- `atticus change conform <change> [--repo r] [--ref branch] [--task t] [--latest] [--json]`: each repo's branch (the change branch, a task's branch, or `--ref`) is scanned at its commit and at its base, from a detached worktree of the base clone with the scan cache (nobody's working copy is touched), and checked against the change's target flows: every call a step adds is an Interface from the flow's component, every table, column and migration a step names exists, a new flow's endpoint exists, every call a step removes is gone; what the branch adds that no target flow names (a call, publish, endpoint, table or column) is out of scope. Every item cites its file and line in the new code, or the target-flow file and step for what is missing. No AI; planned (Spec Kit) records never count as code.
+- Missing and still-there items are blocking findings, out-of-scope items risks, on a new built-in `conform` gate that holds back the Build hand-off like drift, hand-up and trace; a person dismisses one as not relevant, and the dismissal survives the next check. Each repo's newest result is kept at `conform/<repo>.yaml` in the change folder.
+- `atticus task run` (and `atticus handoff done` for a task run) checks the task branch's commit against the task's steps when its build passes, and says what it found in the run's notes.
+- `GET /api/changes/{id}/conformance` (API 2.11.0), the app's Code against design (More, Build; linked from the Tasks stage) with every item, its step, task, citation and finding state, and the read-only `change_conformance` MCP tool.
+- Golden test on the Forge fixtures (`fixtures/conform`): forge-ledger after part of the transfer limit, with the hand-written result and findings.
+
 ### Fixed
 
 - `pnpm check` passes again: the core-neutral check allowlists the English word "teams" and the C6 wiki types; the inbox's matching moved out of a .tsx file; journeys 19 and 20 read the page's token without DOM types; the context engine's timing test reports times instead of asserting them.

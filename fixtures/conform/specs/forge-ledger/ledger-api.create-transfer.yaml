@@ -1,0 +1,43 @@
+# Today's flow for POST /transfers in the invented forge-ledger repo (fixtures/forge/repos),
+# written by hand for the conformance tests (ADR 0114). Lines cite fixtures/forge/repos/forge-ledger.
+schemaVersion: 2
+kind: Flow
+id: ledger-api.create-transfer
+status: current
+confidence: inferred
+component: ledger-api
+name: A client creates a transfer
+template: default@1
+family: []
+evidence: []
+errors: []
+trigger:
+  kind: endpoint
+  ref: ledger-api.post-transfer
+  what: A client posts a transfer
+  evidence:
+    - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEndpoints.java, line: 11 }
+steps:
+  - kind: entry
+    what: LedgerEndpoints.transfer receives the transfer
+    refs: [ledger-api.post-transfer]
+    evidence:
+      - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEndpoints.java, line: 12 }
+  - kind: call-out
+    what: Northwind Pay takes the payment
+    refs: []
+    to: { component: northwind-pay, entry: POST /v2/payments }
+    evidence:
+      - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/NorthwindClient.java, line: 8 }
+  - kind: write
+    what: The entry is posted
+    refs: [ledger-db.entry]
+    store: { table: ledger-db.entry, columns: [account_id, amount] }
+    evidence:
+      - { source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 1 }
+  - kind: publish
+    what: The completed transfer is published
+    refs: [topic.transfers-completed]
+    to: { component: reports-job, entry: transfers.completed }
+    evidence:
+      - { source: code, repo: forge-ledger, path: src/main/java/forge/ledger/LedgerEvents.java, line: 9 }

@@ -536,7 +536,51 @@ export const COPY = {
       runs: "Model runs",
       changeDiagram: "Change diagram",
       estimate: "Estimate",
+      conformance: "Code against design",
     },
+  },
+  /** ADR 0114: does the code do what the design says? */
+  conformance: {
+    title: "Code against design",
+    intro:
+      "Does the code do what the design says? Each repo's branch is scanned at its commit and checked against the change's target flows: every call, table, column, migration and endpoint they add must be there, every call they remove gone, and nothing they don't name added. Every item cites its file and line. No AI; a person can dismiss a finding as not relevant.",
+    none: "No change yet. Start one from a brief, then run its architecture stage.",
+    noTargets: (id: string) =>
+      `${id} has no target flows yet, so there is nothing to check the code against. Its architecture stage writes them:`,
+    notChecked: (id: string) =>
+      `${id}'s code hasn't been checked against its target flows yet. A task run checks it when its build passes, or run:`,
+    repo: (repo: string, ref: string) => `${repo} at ${ref}`,
+    commits: (commit: string, base: string) =>
+      `Commit ${commit.slice(0, 12)}, compared with ${base.slice(0, 12)}`,
+    task: (task: string) => `Only the steps task ${task} builds`,
+    counts: (c: { found: number; missing: number; stillThere: number; unexpected: number }) =>
+      `${c.found} found, ${c.missing} missing, ${c.stillThere} still there, ${c.unexpected} not in the design`,
+    allGood: "Everything its target flows add is there, and nothing they don't name.",
+    itemsCaption: (repo: string) => `What the check looked for in ${repo}, and what it found`,
+    status: {
+      found: "Found",
+      missing: "Missing",
+      "still-there": "Still there",
+      unexpected: "Not in the design",
+    } as Record<string, string>,
+    col: {
+      status: "Result",
+      what: "What",
+      step: "Step",
+      task: "Task",
+      at: "Where",
+      finding: "Finding",
+    },
+    step: (flow: string, item?: number) => (item ? `${flow} item ${item}` : `${flow} trigger`),
+    noStep: "no target flow",
+    unchecked: "Not checked by a scan",
+    uncheckedIntro: "A scan can't show these steps; a person or a test checks them.",
+    gate: (round?: number) =>
+      round
+        ? `The findings are on the conform gate, round ${round}. Dismiss one as not relevant from the change's findings.`
+        : "Nothing was written to the conform gate.",
+    problems: "What couldn't be read",
+    run: "Check the code again",
   },
   /** ADR 0109: a change's estimate, from its target flows. */
   estimate: {
