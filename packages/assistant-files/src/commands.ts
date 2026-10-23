@@ -56,31 +56,14 @@ ${DATA}`,
 ${DATA}`,
     },
     {
-      name: "atticus-critic",
-      description:
-        "Review a change's artifacts against the constitution and the org pack's checklists.",
-      argumentHint: "[change id] [artifact]",
-      source: src,
-      body: `Review change {{ARGS}} the way the Atticus critic does, without changing any file.
-
-1. Read \`${l.openspec}/changes/<change id>/\`: change.yaml (state and type), brief.md, proposal.md, specs/, interfaces.md, mappings.md, data.md, design.md, stories/, tasks.md and snow.md.
-2. Apply the rules in \`org-pack/checklists/*.yaml\` that fit the change's current phase. Every planned interface names an approved pattern from \`org-pack/patterns/\`; every caller and callee is in \`${cat}/\`; every data change names its migration; every story has acceptance criteria.
-3. Report findings as: rule id, severity (blocking, gap, risk, idea), artifact and line, one-sentence summary, why, fix, and the exact quote you rely on. A question only a person can answer is a knowledge gap with an owner question.
-4. Don't write findings into \`review/\`: running \`atticus critic\` records them. Constitution findings can't be waived.
-
-${DATA}`,
-    },
-    {
       name: "atticus-plan",
-      description: "Draft a change's tasks.md from its approved design, one section per repo.",
+      description:
+        "Old name of /atticus-stories (kept for one version): write a change's stories and tasks.",
       argumentHint: "[change id]",
       source: src,
-      body: `Draft the tasks for change {{ARGS}}.
+      body: `This is \`/atticus-stories\` under its old name (ADR 0119); it goes away in a later version.
 
-1. Read \`${l.openspec}/changes/<change id>/\`: design.md, interfaces.md, data.md, stories.md and stories/, and repos.yaml if it exists.
-2. Write tasks.md with one \`## <repo id>\` section per code repo, and one checkbox per task: \`- [ ] <n.m> <what to do> (story <story id>)\`. Each data change gets a migration task first; each new or changed interface gets a contract task and a test task.
-3. Use only systems, interfaces and tables the design names. If something seems missing, list it under \`## Questions\` for the architect instead of adding it.
-4. Show the draft and wait for the person to accept it before writing the file.
+Do exactly what \`/atticus-stories {{ARGS}}\` does: run \`atticus plan stories {{ARGS}} --handoff\` and follow what it prints, looping with Atticus's checks until the stage is done. Tell the person to use \`/atticus-stories\` from now on.
 
 ${DATA}`,
     },
@@ -91,10 +74,9 @@ ${DATA}`,
       source: src,
       body: `Draft the service-desk requests for change {{ARGS}}.
 
-1. Read the change's interfaces.md, data.md and design.md in \`${l.openspec}/changes/<change id>/\`, and every template in \`org-pack/process/snow/*.yaml\`.
-2. A template applies when one of its \`triggers\` matches a planned record (kind and planned-new, planned-modify or planned-retire). Add its \`alsoNeeds\` templates too.
-3. For each request write a \`## <template name>\` section in snow.md with a \`| Field | Value |\` table filling every required field, the approvers, and the lead time in days.
-4. Values you can't fill from the change or \`${cat}/\` are left as \`TODO: <who knows>\`. Nothing is submitted: a person submits each request.
+1. Run \`atticus plan snow {{ARGS}}\` in a terminal in this workspace. It fills each request the org pack's templates call for from the change, and leaves what it can't fill as \`TODO: <who knows>\`.
+2. Tell the person each request it drafted, the fields left to fill and who knows them, and the lead time.
+3. Never submit a request: a person files each one (\`atticus plan submit {{ARGS}}\` is a dry run until they add \`--approve\`).
 
 ${DATA}`,
     },
@@ -106,10 +88,9 @@ ${DATA}`,
       source: src,
       body: `Check release readiness for change {{ARGS}}.
 
-1. Read \`${l.openspec}/changes/<change id>/change.yaml\` (state, hand-offs and their approvals) and \`org-pack/gates.yaml\` (the release gate's approvers and checks).
-2. Read the newest round of every folder in \`review/<gate>/\`: list open blocking findings and open knowledge gaps; each one stops the release.
-3. Check snow.md: every request has a number and is closed. Check repos.yaml: every repo has a merged PR and a passing build.
-4. Report ready or not ready with every reason, and who must act. Nobody who wrote an artifact of this change can approve its release.
+1. Run \`atticus change status {{ARGS}}\` and \`atticus release plan {{ARGS}}\` in a terminal in this workspace.
+2. Report ready or not ready with every reason from what they printed: open blocking findings, open questions, requests not raised, repos without a merged pull request, the deploy order and the rollback for each step.
+3. Name who must act on each reason. Nobody who wrote an artifact of this change can approve its release, and the release is approved by merging its hand-off pull request: never merge it yourself.
 
 ${DATA}`,
     },
