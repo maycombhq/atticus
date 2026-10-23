@@ -7,26 +7,26 @@ const T = COPY.menu;
 
 /**
  * Atticus's mark: Atticus Finch's glasses (docs/brand/glasses.svg), a small curved glint at the
- * outer top of each lens like an eyebrow, in the theme's accent. The name is set below it.
+ * outer top of each lens like an eyebrow, in the theme's accent.
  */
 function Logo() {
   return (
     <svg
       aria-hidden="true"
-      width="48"
-      height="28"
-      viewBox="0 5.5 24 14"
+      width="26"
+      height="26"
+      viewBox="0 0 24 24"
       fill="none"
       stroke="var(--accent)"
       strokeLinecap="round"
       style={{ filter: "drop-shadow(0 0 var(--glow-size) var(--accent))" }}
     >
-      <g strokeWidth="1.1">
+      <g strokeWidth="1.25">
         <circle cx="6.5" cy="12.4" r="4.5" />
         <circle cx="17.5" cy="12.4" r="4.5" />
         <path d="M11 11.4 H13" />
       </g>
-      <path strokeWidth="0.95" d="M3.7 11.3 Q3.9 10.0 5.2 9.6 M20.3 11.3 Q20.1 10.0 18.8 9.6" />
+      <path strokeWidth="1.05" d="M3.7 11.3 Q3.9 10.0 5.2 9.6 M20.3 11.3 Q20.1 10.0 18.8 9.6" />
     </svg>
   );
 }

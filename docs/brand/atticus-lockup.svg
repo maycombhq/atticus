@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="120" height="96" viewBox="0 0 120 96">
-  <!-- Atticus's lockup: the glasses (glasses.svg) with "atticus" set below, for marks large enough to
-       read the name (the Marketplace icon, the app's sidebar). Smaller icons use the glasses alone. -->
+  <!-- Atticus's lockup: the glasses (glasses.svg) with "atticus" set below, for a logo that stands
+       alone (the VS Code Marketplace icon, the IntelliJ plugin icon). Elsewhere the glasses are used
+       alone, and the app puts its name beside them. -->
   <g transform="translate(18 -26) scale(3.5)" fill="none" stroke="currentColor" stroke-linecap="round"><g stroke-width="0.8"><circle cx="6.5" cy="12.4" r="4.5"/><circle cx="17.5" cy="12.4" r="4.5"/><path d="M11 11.4 H13"/></g><path stroke-width="0.75" d="M3.7 11.3 Q3.9 10.0 5.2 9.6 M20.3 11.3 Q20.1 10.0 18.8 9.6"/></g>
   <text x="60" y="84" text-anchor="middle" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-weight="600" font-size="17" letter-spacing="2.7" fill="currentColor">atticus</text>
 </svg>

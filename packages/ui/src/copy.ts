@@ -826,7 +826,7 @@ export const COPY = {
       `${v} edges. Point at a box to light its edges; dashed lines are asynchronous.`,
   },
   menu: {
-    atticus: "atticus",
+    atticus: "ATTICUS",
     askAtticus: "Ask Atticus",
   },
   palette: {

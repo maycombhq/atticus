@@ -6,7 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### A pair of glasses
 
-- Atticus's mark is Atticus Finch's glasses (`docs/brand/glasses.svg`): two fine round lenses and a straight bridge, with a small curved glint at the outer top of each lens, like an eyebrow. Where there is room the name is set below it (`docs/brand/atticus-lockup.svg`): the Marketplace icon and the app's sidebar. The glasses alone are the favicon, the VS Code activity bar and the IntelliJ icons.
+- Atticus's mark is Atticus Finch's glasses (`docs/brand/glasses.svg`): two fine round lenses and a straight bridge, with a small curved glint at the outer top of each lens, like an eyebrow. Where the logo stands alone it carries the name below (`docs/brand/atticus-lockup.svg`): the VS Code Marketplace icon and the IntelliJ plugin icon. The app's header keeps the name beside the glasses; the favicon, the VS Code activity bar and the IntelliJ tool window use the glasses alone.
 
 ### Every screen says what is happening
 
