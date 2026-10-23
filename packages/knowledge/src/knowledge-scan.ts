@@ -6,8 +6,10 @@ import {
   knowledgeKindOf,
   KNOWLEDGE_RECORD_KIND,
   parseRecord,
+  memoryJudgments,
   RecordId,
   type CatalogRecord,
+  type JudgmentStore,
   type KnowledgeKind,
   type OrgPack,
   type RecordOf,
@@ -25,7 +27,8 @@ import {
 } from "@maycombhq/ai";
 import { linksIn, sectionAt, type PageLink } from "./links.js";
 import { checkQuote, foldQuote, visibleText } from "./quotes.js";
-import { groundValues } from "./grounding.js";
+import { groundValues, type ValueClaim } from "./grounding.js";
+import { settleClaims } from "./value-claims.js";
 import type { Snapshot } from "./snapshot.js";
 import type { KnowledgePage } from "./sources.js";
 
@@ -115,13 +118,24 @@ const ItemIn = z
       .default([]),
     rules: z.array(text()).default([]),
     lead_time: text().optional(),
+    // ADR 0117: the words that state the lead time, and the model's normalised reading of it.
+    lead_time_quote: z.string().optional(),
+    lead_time_days: z
+      .object({
+        min: z.number().min(0),
+        max: z.number().min(0),
+        unit: z.enum(["working-days", "calendar-days", "hours"]),
+      })
+      .optional(),
     handled_by: z.string().optional(),
     catalogue_item: z.string().optional(),
     inputs: z.array(text()).default([]),
     steps: z.array(text()).default([]),
     notes: z.string().optional(),
     status: z.enum(["mandated", "banned", "retiring"]).optional(),
+    status_quote: z.string().optional(),
     dates: z.record(z.string(), dateText).optional(),
+    date_quotes: z.record(z.string(), z.string()).optional(),
     framework: z.string().optional(),
     reason: z.string().optional(),
     source: QuoteIn,
@@ -387,6 +401,11 @@ ${snapshots
 - Every lead time, date, owner (handled_by, owned_by) and status you write must be in a quote:
   when the sentence that states it isn't the source quote, add it under also_on (the same page
   is fine). Atticus checks each value against the quotes and hands back any that isn't there.
+- Give the exact words that state a lead time as lead_time_quote, a status as status_quote and
+  each date as date_quotes.<name>, copied from the page. Write lead_time as the page says it, and
+  its reading as lead_time_days: { min, max, unit: working-days | calendar-days | hours }
+  ("a fortnight" is { min: 10, max: 10, unit: working-days }). Atticus checks the words are on
+  the page and that they say the value; one they don't say is handed back.
 - When two pages disagree about the same thing (a lead time, a retention period), extract the item
   from the page that owns it and list the disagreement under conflicts, quoting both pages.
 - When a page says it replaces an older page, list it under superseded, and extract nothing from
@@ -413,12 +432,16 @@ items:
     applies_when: A workload needs to reach a host or port it cannot reach today.
     rules: []                # patterns and standards: one line per rule
     lead_time: 10 working days
+    lead_time_quote: "Lead time: 10 working days."
+    lead_time_days: { min: 10, max: 10, unit: working-days }
     handled_by: Network team
     catalogue_item: Network firewall rule
     inputs: [source workload, destination host, port]
     steps: []                # processes: the steps, in order
     status: banned           # decisions and constraints: mandated | banned | retiring
+    status_quote: ""         # the words that state the status, copied exactly
     dates: {}                # constraints: named dates, e.g. { switched_off: 2027-03-31 }
+    date_quotes: {}          # the words that state each date, e.g. { switched_off: "switched off on 31 March 2027" }
     links: []                # links the page gives for it (a request's form, a runbook): only addresses on the page
     framework: anvil         # only when the item is about a tagged framework
     source: { page: service-desk-catalogue.md, section: Network firewall rule, quote: "Handled by: Network team. Lead time: 10 working days." }
@@ -508,6 +531,8 @@ interface CheckedItem {
   /** The AI's links that are on the page, then the links under the quoted heading. */
   links: PageLink[];
   alsoOn: { page: PreparedPage; line: number; section: string; quote: string }[];
+  /** Values the words it cites may state but no check settles (ADR 0117): judged, or the model's. */
+  claims: ValueClaim[];
 }
 
 const fmt = (issues: z.core.$ZodIssue[]) =>
@@ -564,18 +589,19 @@ function checkItem(
       for (const l of linksIn(sectionAt(text, line)))
         if (!links.some((x) => x.url === l.url)) links.push(l);
   }
-  // ADR 0111: what the item states as a value is in its quotes.
+  // ADR 0111, 0117: what the item states as a value is said by the words it cites.
+  let claims: ValueClaim[] = [];
   if (page && line && alsoOn.length === item.also_on.length) {
     const owner = page.page.frontMatter.owner;
-    problems.push(
-      ...groundValues(item, {
-        quotes: [item.source.quote, ...alsoOn.map((a) => a.quote)],
-        pages: [page, ...alsoOn.map((a) => a.page)]
-          .map((p) => visibleText(p.page.text ?? ""))
-          .join("\n"),
-        ...(typeof owner === "string" ? { owner } : {}),
-      }),
-    );
+    const itsPages = [page, ...alsoOn.map((a) => a.page)];
+    const g = groundValues(item, {
+      quotes: [item.source.quote, ...alsoOn.map((a) => a.quote)],
+      pages: itsPages.map((p) => visibleText(p.page.text ?? "")).join("\n"),
+      onPage: (span) => itsPages.some((p) => checkQuote(p.page.text ?? "", span).ok),
+      ...(typeof owner === "string" ? { owner } : {}),
+    });
+    problems.push(...g.problems);
+    claims = g.claims;
   }
   if (repeatsQuarantined(itemText(item), quarantined))
     problems.push(
@@ -583,7 +609,7 @@ function checkItem(
     );
   if (problems.length)
     return { failed: { ...label, ...(page ? { page: page.page.pagePath } : {}), problems } };
-  return { ok: { item, page: page!, line, section, alsoOn, links } };
+  return { ok: { item, page: page!, line, section, alsoOn, links, claims } };
 }
 
 function checkConflict(
@@ -906,6 +932,11 @@ export interface ScanOptions {
    * pages, which the AI writes with their own ids.
    */
   focus?: { phrase: string; known: KnowledgeRecord[] };
+  /**
+   * Where the judgments of values are kept (ADR 0117): judgments/states-value/ and the
+   * normalised lead times under judgments/lead-time/. Default: kept in memory only.
+   */
+  judgments?: JudgmentStore;
 }
 
 /** Scan snapshots: the AI reads, the checks confirm, what fails goes back to the AI. */
@@ -925,6 +956,7 @@ export async function scanKnowledge(
   ];
   const budget = o.orgPack?.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget;
   const now = o.now ?? new Date();
+  const store = o.judgments ?? memoryJudgments();
   const change = "knowledge-scan";
   const task: SourceInput = {
     id: "0-task",
@@ -1133,6 +1165,23 @@ export async function scanKnowledge(
           ],
         });
       }
+    }
+    // ADR 0117: the values no check settles are judged, or kept as the model's reading.
+    for (const [id, problem] of await settleClaims([...kept.values()], {
+      runtime: o.runtime,
+      store,
+      run: run.runId,
+      now,
+    })) {
+      const c = kept.get(id)!;
+      kept.delete(id);
+      failed.push({
+        id,
+        kind: c.item.kind,
+        title: c.item.title,
+        page: c.page.page.pagePath,
+        problems: problem,
+      });
     }
     const ids = new Set(kept.keys());
     conflicts = conflicts.filter((c) => c.about.every((a) => ids.has(a)));
