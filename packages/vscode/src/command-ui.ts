@@ -286,6 +286,26 @@ export class CommandUi {
         "The catalog has no systems yet: run atticus scan.",
         "Reading the catalog's systems…",
       );
+    if (kind === "record")
+      return this.quick(
+        title,
+        async () => {
+          const x = await api();
+          const kinds = await x.get<Api.KindCount[]>("/api/catalog/kinds");
+          const items: { label: string; description: string; value: string }[] = [];
+          for (const k of kinds.filter((k) => k.count > 0))
+            for (const r of (await x.get<Api.RecordPage>(`/api/catalog/${enc(k.kind)}?limit=500`))
+              .items)
+              items.push({
+                label: r.name ?? r.id,
+                description: `${k.kind} · ${r.id}`,
+                value: r.id,
+              });
+          return items;
+        },
+        "The catalog is empty: run atticus scan.",
+        "Reading the catalog…",
+      );
     if (kind === "choice" && a.choices)
       return this.quick(
         title,
@@ -425,7 +445,158 @@ export class CommandUi {
           this.platforms(root).map((x) => ({ label: x, value: x })),
           "The org pack has no platform yet: org-pack/profiles/<platform>/.",
         );
+      case "feature":
+        return this.quick(
+          title,
+          async () =>
+            (
+              await this.cliJson<{ features: { id: string; name?: string }[] }>(root, [
+                "feature",
+                "list",
+              ])
+            ).features.map((f) => ({ label: f.name ?? f.id, description: f.id, value: f.id })),
+          "The catalog has no features yet: run atticus scan, then atticus feature list.",
+          "Reading the features…",
+        );
+      case "todo":
+        return this.quick(
+          title,
+          async () =>
+            (
+              await this.cliJson<{ id: string; change?: string; title: string; state?: string }[]>(
+                root,
+                ["todo", "--all"],
+              )
+            ).map((t) => ({
+              label: t.title,
+              description: `${t.change ? `${t.change}/` : ""}${t.id}${t.state ? ` · ${t.state}` : ""}`,
+              value: t.change ? `${t.change}/${t.id}` : t.id,
+            })),
+          "No manual steps yet: a change's plan writes them (atticus todo lists them).",
+          "Reading the manual steps…",
+        );
+      case "triage":
+        return this.quick(
+          title,
+          async () =>
+            (
+              await this.cliJson<{ items: { id: string; kind: string; summary: string }[] }>(root, [
+                "triage",
+              ])
+            ).items.map((t) => ({
+              label: t.summary,
+              description: `${t.kind} · ${t.id}`,
+              value: t.id,
+            })),
+          "Nothing waits for triage: the drawings and the code agree.",
+          "Reading what waits for triage…",
+        );
+      case "initiative":
+        return this.quick(
+          title,
+          async () =>
+            (
+              await api().then((x) =>
+                x.get<{ initiative: string; title: string; status: string }[]>("/api/initiatives"),
+              )
+            ).map((i) => ({
+              label: i.title,
+              description: `${i.initiative} · ${i.status}`,
+              value: i.initiative,
+            })),
+          "No initiatives yet: start one with atticus initiative new.",
+          "Reading the initiatives…",
+        );
+      case "commitment":
+        return this.quick(
+          title,
+          async () =>
+            (
+              await api().then((x) =>
+                x.get<
+                  {
+                    title: string;
+                    commitments: { id: string; what: string; party: string; status: string }[];
+                  }[]
+                >("/api/initiatives"),
+              )
+            ).flatMap((i) =>
+              i.commitments.map((c) => ({
+                label: c.what,
+                description: `${c.party} · ${c.status} · ${i.title}`,
+                value: c.id,
+              })),
+            ),
+          "No commitments yet: atticus initiative request asks a team for one.",
+          "Reading the commitments…",
+        );
+      case "term":
+        return this.quick(
+          title,
+          async () =>
+            (
+              await this.cliJson<{ terms: { id: string; term: string; definition?: string }[] }>(
+                root,
+                ["glossary", "list"],
+              )
+            ).terms.map((t) => ({
+              label: t.term,
+              ...(t.definition ? { detail: t.definition } : {}),
+              value: t.term,
+            })),
+          "The glossary has no terms yet: atticus glossary scan reads them, or define one.",
+          "Reading the glossary…",
+        );
+      case "dialect-proposal":
+      case "framework-proposal": {
+        const folder = list === "dialect-proposal" ? "dialects" : "frameworks";
+        return this.quick(
+          title,
+          this.yamlNames(join(root, "proposals", folder)).map((x) => ({ label: x, value: x })),
+          `No ${list === "dialect-proposal" ? "dialect" : "framework"} proposal yet: proposals/${folder}/ is empty (atticus onboard${list === "framework-proposal" ? " framework" : ""} drafts one).`,
+        );
+      }
+      case "story": {
+        if (!change) return undefined;
+        const dir = [
+          join(root, "openspec", "changes", change, "stories"),
+          join(root, ".atticus", "openspec", "changes", change, "stories"),
+        ].find((d) => existsSync(d));
+        const stories = dir
+          ? readdirSync(dir)
+              .filter((f) => f.endsWith(".md"))
+              .sort()
+              .map((f) => {
+                const head = /^#\s+(.+)$/m.exec(readFileSync(join(dir, f), "utf8"))?.[1];
+                const id = f.replace(/\.md$/, "");
+                return { label: head ?? id, description: id, value: id };
+              })
+          : [];
+        return this.quick(
+          title,
+          stories,
+          `${change} has no stories yet: the stories stage writes them (Atticus: Write a change's stories).`,
+        );
+      }
     }
+  }
+
+  /** A command's --json output, parsed; its first line of stderr when it can't be read. */
+  private async cliJson<T>(root: string, args: string[]): Promise<T> {
+    const r = await this.svc.cli(root)([...args, "--json", "--root", root]);
+    const j = parseJson<T>(r.stdout);
+    if (j === undefined || j === null)
+      throw new Error(r.stderr.trim().split("\n")[0] || `Couldn't read atticus ${args.join(" ")}.`);
+    return j;
+  }
+
+  /** The names of the YAML files in a folder, without .yaml; none when it isn't there. */
+  private yamlNames(dir: string): string[] {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((f) => /\.ya?ml$/.test(f))
+      .map((f) => f.replace(/\.ya?ml$/, ""))
+      .sort();
   }
 
   /** The change types of the org pack, for change new's --type. */

@@ -104,6 +104,15 @@ describe("asking for a command's arguments", () => {
       "atticus change handoff: which change?",
     );
     expect(argTitle(verify, verify.args[0]!)).toBe("atticus knowledge verify: which item?");
+    const show = { id: "feature show" };
+    const id = { name: "id", kind: "text" as const, optional: false, many: false };
+    expect(argTitle(show, id)).toBe("atticus feature show: which feature?");
+    expect(argTitle({ id: "todo done" }, { ...id, name: "step" })).toBe(
+      "atticus todo done: which manual step?",
+    );
+    expect(argTitle({ id: "onboard accept" }, { ...id, name: "name" })).toBe(
+      "atticus onboard accept: which proposal?",
+    );
     expect(argTitle(verify, { name: "dir", kind: "path", optional: true, many: false })).toBe(
       "atticus knowledge verify: dir (optional)",
     );
@@ -133,6 +142,26 @@ describe("asking for a command's arguments", () => {
     expect(arg("absorb accept", "id")).toBe("absorbed");
     expect(arg("orgpack accept", "platform")).toBe("platform");
     expect(arg("ask", "question")).toBeUndefined();
+    // Features, manual steps, triage items, initiatives and their commitments, glossary terms,
+    // onboarding proposals and a change's stories: each is one of the metarepo's own.
+    for (const c of ["show", "name", "tag", "split", "link", "spec"])
+      expect(arg(`feature ${c}`, "id")).toBe("feature");
+    expect(arg("feature merge", "into")).toBe("feature");
+    expect(arg("feature merge", "from")).toBe("feature");
+    for (const c of ["show", "done", "run"]) expect(arg(`todo ${c}`, "step")).toBe("todo");
+    expect(arg("triage decide", "item")).toBe("triage");
+    for (const c of ["plan", "status", "request"])
+      expect(arg(`initiative ${c}`, "id")).toBe("initiative");
+    expect(arg("initiative commit", "commitment")).toBe("commitment");
+    expect(arg("glossary link", "term")).toBe("term");
+    expect(arg("glossary alias", "term")).toBe("term");
+    // A new term is the person's own words, not picked.
+    expect(arg("glossary define", "term")).toBeUndefined();
+    expect(arg("onboard check", "name")).toBe("dialect-proposal");
+    expect(arg("onboard accept", "name")).toBe("dialect-proposal");
+    expect(arg("onboard check framework", "name")).toBe("framework-proposal");
+    expect(arg("onboard accept framework", "name")).toBe("framework-proposal");
+    expect(arg("tests generate", "story")).toBe("story");
     expect(listFor(refresh, { name: "--refresh" })).toBe("absorbed");
   });
 });

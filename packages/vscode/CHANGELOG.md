@@ -23,6 +23,7 @@ Nothing a person clicks leaves them unsure.
 - **Copilot is set up, not installed.** With no model, Atticus offers **Set up Copilot**, VS Code's own setup (Copilot is built into VS Code 1.143 and later); it installs Copilot Chat only in an older VS Code. **Atticus: Set up GitHub Copilot** does the same.
 - A step that stopped, or couldn't run, says why in its notice, in the command line's own words; all of it is behind Show details.
 - **Run a command** picks what only the metarepo knows: a knowledge item, a change's need or task, a wiki source, what was brought in, a platform. Titles say what is asked ("which change?"), and an option that takes a value says so in words.
+- **Run a command** also picks a feature, a manual step, a triage item, an initiative or a commitment, a glossary term, an onboarding proposal, a change's story and a catalog record (for impact); each list is titled by what it picks ("which feature?") and says why when it is empty.
 - **Run a command** opens the guided screen for searching the wikis, keeping what a search found, adding a wiki, drafting or accepting the org pack, adding repos, bringing in a repo, answering a question and raising needs.
 - **Ask the knowledge** shows its answer. The Catalog section has an **Ask** button.
 - Escape cancels at every step of Run a command. An empty required box says what it needs, instead of ending without a word.

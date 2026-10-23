@@ -280,7 +280,22 @@ const WHICH: Partial<Record<ArgKind, string>> = {
 };
 
 /** The lists of the metarepo's own a text argument is picked from, by command and argument. */
-export type ListKind = "knowledge-item" | "need" | "task" | "source" | "absorbed" | "platform";
+export type ListKind =
+  | "knowledge-item"
+  | "need"
+  | "task"
+  | "source"
+  | "absorbed"
+  | "platform"
+  | "feature"
+  | "todo"
+  | "triage"
+  | "initiative"
+  | "commitment"
+  | "term"
+  | "dialect-proposal"
+  | "framework-proposal"
+  | "story";
 
 const LISTS: Record<string, ListKind> = {
   "knowledge verify item": "knowledge-item",
@@ -296,15 +311,58 @@ const LISTS: Record<string, ListKind> = {
   "absorb accept id": "absorbed",
   "absorb --refresh --refresh": "absorbed",
   "orgpack accept platform": "platform",
+  "feature show id": "feature",
+  "feature name id": "feature",
+  "feature tag id": "feature",
+  "feature split id": "feature",
+  "feature link id": "feature",
+  "feature spec id": "feature",
+  "feature merge into": "feature",
+  "feature merge from": "feature",
+  "todo show step": "todo",
+  "todo done step": "todo",
+  "todo run step": "todo",
+  "triage decide item": "triage",
+  "initiative plan id": "initiative",
+  "initiative status id": "initiative",
+  "initiative request id": "initiative",
+  "initiative commit commitment": "commitment",
+  "glossary link term": "term",
+  "glossary alias term": "term",
+  "onboard check name": "dialect-proposal",
+  "onboard accept name": "dialect-proposal",
+  "onboard check framework name": "framework-proposal",
+  "onboard accept framework name": "framework-proposal",
+  "tests generate story": "story",
 };
 
 /** The list an argument (or an option's value) is picked from, when it is an id of the metarepo's. */
 export const listFor = (cmd: Pick<CatalogCommand, "id">, a: Pick<CatalogArg, "name">) =>
   LISTS[`${cmd.id} ${a.name}`];
 
+/** What a list asks for, in words: "which feature?" rather than "which id?". */
+const WHICH_LIST: Record<ListKind, string> = {
+  "knowledge-item": "which item?",
+  need: "which need?",
+  task: "which task?",
+  source: "which source?",
+  absorbed: "which one?",
+  platform: "which platform?",
+  feature: "which feature?",
+  todo: "which manual step?",
+  triage: "which item?",
+  initiative: "which initiative?",
+  commitment: "which commitment?",
+  term: "which term?",
+  "dialect-proposal": "which proposal?",
+  "framework-proposal": "which proposal?",
+  story: "which story?",
+};
+
 /** The title of the box or list that asks for an argument: the command, then what is asked. */
 export function argTitle(cmd: Pick<CatalogCommand, "id">, a: CatalogArg): string {
-  const what = WHICH[a.kind] ?? (listFor(cmd, a) ? `which ${a.name}?` : a.name);
+  const list = listFor(cmd, a);
+  const what = (list && WHICH_LIST[list]) ?? WHICH[a.kind] ?? a.name;
   return `atticus ${cmd.id}: ${what}${a.optional ? " (optional)" : ""}`;
 }
 
