@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
-import type { Loaded } from "../api/client.js";
+import { useState, type ReactNode } from "react";
+import { isOffline, type Loaded } from "../api/client.js";
+import { COPY } from "../copy.js";
 
 /** Shared pieces: panels, the loading/empty/error states every screen needs, and HUD charts. */
 
@@ -36,15 +37,17 @@ export function Panel(p: {
 
 /** Loading, error and empty states, so no screen ever shows a blank or a crash. */
 export function View<T>(p: {
-  of: Loaded<T>;
+  of: Loaded<T> & { reload?: () => void };
   empty?: (d: T) => boolean;
   emptyText?: string;
+  /** An empty state with more than words: a link or the command to run. */
+  emptyContent?: ReactNode;
   children: (d: T) => ReactNode;
 }) {
   if (p.of.state === "loading")
     return (
       <div className="stack" aria-busy="true" aria-live="polite">
-        <span className="sr">Loading</span>
+        <span className="sr">{COPY.app.loading}</span>
         <div className="skeleton" style={{ width: "80%" }} />
         <div className="skeleton" style={{ width: "60%" }} />
         <div className="skeleton" style={{ width: "70%" }} />
@@ -52,15 +55,77 @@ export function View<T>(p: {
     );
   // "Scan first" and the like: an empty state that names the step, not an error.
   if (p.of.state === "error" && p.of.notYet) return <div className="state">{p.of.error}</div>;
-  if (p.of.state === "error")
-    return (
-      <div className="state error" role="alert">
-        Couldn't load this: {p.of.error}
-      </div>
-    );
+  if (p.of.state === "error") return <LoadError error={p.of.error} retry={p.of.reload} />;
   if (p.empty?.(p.of.data))
-    return <div className="state">{p.emptyText ?? "Nothing here yet."}</div>;
+    return p.emptyContent !== undefined ? (
+      <>{p.emptyContent}</>
+    ) : (
+      <div className="state">{p.emptyText ?? "Nothing here yet."}</div>
+    );
   return <>{p.children(p.of.data)}</>;
+}
+
+/** Why a load failed, in words, with Try again when the call can be run again. */
+export function LoadError({ error, retry }: { error: string; retry?: (() => void) | undefined }) {
+  return (
+    <div className="state error" role="alert">
+      <p style={{ margin: 0 }}>
+        {COPY.app.cantLoad(isOffline(error) ? COPY.app.offlineShort : error)}
+      </p>
+      {retry && (
+        <button type="button" className="btn" style={{ marginTop: 8 }} onClick={retry}>
+          {COPY.app.tryAgain}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A link that leaves the app (a PR, a wiki page, a service-desk ticket): in a browser it opens a
+ * new tab so the app stays where it was; in a VS Code panel the editor opens it, with its own
+ * prompt. The words say so, never the icon alone.
+ */
+export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer noopener">
+      {children}
+      <span className="sr"> {COPY.app.newTab}</span>
+    </a>
+  );
+}
+
+/**
+ * A button that loads a view again, and says it did: "Checking…" while the call runs, then the
+ * time it answered. Without it a reload that finds nothing new looks like a dead click.
+ */
+export function CheckAgain(p: {
+  of: { reload: () => void; refreshing: boolean; at?: number };
+  label: string;
+  /** What the button runs, when it is more than loading the same call again. */
+  run?: () => void;
+}) {
+  const [asked, setAsked] = useState(false);
+  return (
+    <span className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+      <button
+        type="button"
+        className="btn"
+        disabled={p.of.refreshing}
+        onClick={() => {
+          setAsked(true);
+          (p.run ?? p.of.reload)();
+        }}
+      >
+        {p.of.refreshing ? COPY.app.checking : p.label}
+      </button>
+      <span role="status" className="muted" style={{ fontSize: 12 }}>
+        {asked && !p.of.refreshing && p.of.at
+          ? COPY.app.checkedAt(new Date(p.of.at).toTimeString().slice(0, 8))
+          : ""}
+      </span>
+    </span>
+  );
 }
 
 /** A ring gauge with a label inside: value of max. */

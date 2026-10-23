@@ -14,7 +14,7 @@ import {
   type Stage,
   type TaskRow,
 } from "./next.js";
-import { Command, RunNextPanel } from "./RunNext.js";
+import { Command, NoChangeYet, RunNextPanel } from "./RunNext.js";
 
 /**
  * Feature design, Stories and Tasks (plan 4.5): for now each shows the change's files and the
@@ -154,10 +154,10 @@ export function StagePage(p: {
 }) {
   const screen = STAGE_SCREEN[p.stage]!.id;
   return (
-    <View of={p.list} empty={(l) => l.length === 0} emptyText={W.noChangeYet}>
+    <View of={p.list} empty={(l) => l.length === 0} emptyContent={<NoChangeYet />}>
       {(list) => {
         const c = pickChange(list, p.wanted, p.stage as Stage);
-        if (!c) return <div className="state">{W.noChangeYet}</div>;
+        if (!c) return <NoChangeYet />;
         const ready = p.tasks?.state === "ready" ? p.tasks.data : undefined;
         return (
           <>

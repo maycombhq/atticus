@@ -11,6 +11,9 @@
 .run-note.bad {
   color: var(--magenta-text);
 }
+.run-note.working {
+  color: var(--text-2);
+}
 
 .run-input,
 .run-select,

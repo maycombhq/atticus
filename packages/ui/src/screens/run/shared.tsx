@@ -1,14 +1,29 @@
 import { useState, type ReactNode } from "react";
 import { ApiError } from "../../api/client.js";
+import { COPY } from "../../copy.js";
 import "./run.css";
 
 /** Pieces the Release and Run screens share: actions that say what happened, copy buttons, chips. */
 
 export function message(e: unknown): string {
-  return e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e);
+  if (e instanceof ApiError) return e.problem.detail ?? e.problem.title;
+  return e instanceof Error ? e.message : String(e);
 }
 
-export type Outcome = { ok: boolean; text: string };
+export type Outcome = { ok: boolean; text: string; working?: boolean };
+
+/**
+ * The command line's "Re-run with --force" means nothing in the app: say what to do here
+ * instead (tick the box, or the command to run in a terminal).
+ */
+export function forceHint(text: string, hint: string): string {
+  return text.replace(/Re-run with --force to [^.]*\./, hint);
+}
+
+/** Rethrow a failure with the app's words for --force. */
+export const withForceHint = (hint: string) => (e: unknown) => {
+  throw new Error(forceHint(message(e), hint));
+};
 
 /** One button that runs an action and shows its outcome in words, never a silent failure. */
 export function useAction() {
@@ -16,7 +31,8 @@ export function useAction() {
   const [note, setNote] = useState<Outcome | undefined>();
   const run = async (f: () => Promise<unknown>, ok: string | ((r: unknown) => string)) => {
     setBusy(true);
-    setNote(undefined);
+    // Say at once that it started: some steps take a while, and a still page reads as a dead click.
+    setNote({ ok: true, text: COPY.app.working, working: true });
     try {
       const r = await f();
       setNote({ ok: true, text: typeof ok === "string" ? ok : ok(r) });
@@ -32,7 +48,11 @@ export function useAction() {
 export function Note({ note }: { note?: Outcome }) {
   if (!note) return null;
   return (
-    <p role={note.ok ? "status" : "alert"} className={`run-note ${note.ok ? "ok" : "bad"}`}>
+    <p
+      role={note.ok ? "status" : "alert"}
+      aria-busy={note.working ? true : undefined}
+      className={`run-note ${note.working ? "working" : note.ok ? "ok" : "bad"}`}
+    >
       {note.text}
     </p>
   );

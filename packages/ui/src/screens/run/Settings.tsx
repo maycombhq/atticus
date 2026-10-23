@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { api, useApi, type Loaded } from "../../api/client.js";
 import { useMe } from "../../app/me.js";
-import { Panel, View } from "../../app/ui.js";
+import { CheckAgain, Panel, View } from "../../app/ui.js";
+import { COPY } from "../../copy.js";
 import { Facts, Note, useAction } from "./shared.js";
 
 interface Settings {
@@ -151,9 +152,7 @@ function MachinePanel() {
               </div>
             ))}
             <div className="row" style={{ gap: 8 }}>
-              <button type="button" className="btn" onClick={() => setFresh(fresh + 1)}>
-                Check again
-              </button>
+              <CheckAgain of={d} label="Check again" run={() => setFresh(fresh + 1)} />
               <span className="muted" style={{ fontSize: 12 }}>
                 The same checks as <code className="mono">atticus doctor</code>. Nothing leaves this
                 machine, and no secret is shown.
@@ -524,6 +523,7 @@ function ExecutorsPanel({
                 type="button"
                 className="btn"
                 disabled={check.busy || d.executors.configured.length === 0}
+                aria-describedby={d.executors.configured.length === 0 ? "no-executors" : undefined}
                 onClick={() =>
                   void check.run(
                     () => api<Check>("/api/settings/executors/check"),
@@ -542,6 +542,11 @@ function ExecutorsPanel({
               >
                 Check they answer
               </button>
+              {d.executors.configured.length === 0 && (
+                <span id="no-executors" className="muted" style={{ fontSize: 12 }}>
+                  {COPY.app.noExecutors}
+                </span>
+              )}
             </div>
             <Note note={check.note} />
             <p className="muted" style={{ margin: 0, fontSize: 12 }}>

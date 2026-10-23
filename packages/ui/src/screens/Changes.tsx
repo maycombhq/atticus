@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from "react";
-import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client.js";
+import { api, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { Panel, Ring, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
 import { NeedsPanel } from "./knowledge/Needs.js";
+import { COPY } from "../copy.js";
+import { Note, useAction } from "./know/common.js";
 
 export interface ChangeSummary {
   id: string;
@@ -94,45 +96,7 @@ const LABEL: Record<string, string> = {
   "release-ready": "Release",
 };
 
-function message(e: unknown): string {
-  return e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e);
-}
-
-/** One button that runs an action and shows its outcome in words, never a silent failure. */
-function useAction() {
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
-  const run = async (f: () => Promise<unknown>, ok: string) => {
-    setBusy(true);
-    setNote(undefined);
-    try {
-      await f();
-      setNote({ ok: true, text: ok });
-    } catch (e) {
-      setNote({ ok: false, text: message(e) });
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { busy, note, run };
-}
-
-function Note({ note }: { note?: { ok: boolean; text: string } }) {
-  if (!note) return null;
-  return (
-    <p
-      role={note.ok ? "status" : "alert"}
-      style={{
-        margin: "8px 0 0",
-        whiteSpace: "pre-line",
-        color: note.ok ? "var(--green)" : "var(--magenta-text)",
-        fontSize: 12.5,
-      }}
-    >
-      {note.text}
-    </p>
-  );
-}
+// One button that runs an action and shows its outcome in words: know/common.tsx.
 
 function ChangeList({
   list,
@@ -373,6 +337,9 @@ export function ArtifactEditor({
   );
 }
 
+const NEEDS_REASON = COPY.findings.needsReason;
+const CANT_WAIVE = COPY.findings.cantWaive;
+
 export function FindingActions({
   change,
   f,
@@ -425,6 +392,8 @@ export function FindingActions({
           type="button"
           className="btn"
           disabled={act.busy || !reason}
+          title={reason ? undefined : NEEDS_REASON}
+          aria-describedby={reason ? undefined : `why-${f.id}`}
           onClick={() => void go("not-relevant")}
         >
           Not relevant
@@ -433,12 +402,20 @@ export function FindingActions({
           type="button"
           className="btn"
           disabled={act.busy || !reason || !f.waivable}
-          title={f.waivable ? undefined : "This rule can't be waived"}
+          title={!f.waivable ? CANT_WAIVE : reason ? undefined : NEEDS_REASON}
+          aria-describedby={!f.waivable || !reason ? `why-${f.id}` : undefined}
           onClick={() => void go("waive")}
         >
           Waive
         </button>
       </div>
+      {(!reason || !f.waivable) && (
+        <p id={`why-${f.id}`} className="muted" style={{ margin: 0, fontSize: 11.5 }}>
+          {[!reason ? NEEDS_REASON : "", !f.waivable ? `${CANT_WAIVE}.` : ""]
+            .filter(Boolean)
+            .join(" ")}
+        </p>
+      )}
       <Note note={act.note} />
     </div>
   );
@@ -567,7 +544,8 @@ function Detail({ id }: { id: string }) {
                         {aiOn ? "Run the critic (your assistant)" : "Run the rule checks"}
                       </button>
                     </div>
-                    <Note note={handoff.note ?? critic.note} />
+                    <Note note={handoff.note} />
+                    <Note note={critic.note} />
                   </div>
                 )}
               </View>

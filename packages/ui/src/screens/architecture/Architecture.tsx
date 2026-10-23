@@ -292,18 +292,25 @@ export function Architecture({ hash }: { hash: string }) {
               {crumbs.map((c, i) => (
                 <li key={c.id} className="row" style={{ gap: 4 }}>
                   {i > 0 && <span aria-hidden="true">/</span>}
-                  <button
-                    type="button"
-                    className="btn"
-                    aria-current={i === crumbs.length - 1 ? "location" : undefined}
-                    onClick={() => {
-                      if (c.id !== current) setInPlace(new Set());
-                      setCurrent(c.id);
-                      setFocus(undefined);
-                    }}
-                  >
-                    {c.label}
-                  </button>
+                  {/* Where you are is no button: clicking it would do nothing. */}
+                  {i === crumbs.length - 1 && !focus ? (
+                    <span className="chip" aria-current="location">
+                      {c.label}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn"
+                      aria-current={i === crumbs.length - 1 ? "location" : undefined}
+                      onClick={() => {
+                        if (c.id !== current) setInPlace(new Set());
+                        setCurrent(c.id);
+                        setFocus(undefined);
+                      }}
+                    >
+                      {c.label}
+                    </button>
+                  )}
                 </li>
               ))}
             </ol>
@@ -439,6 +446,7 @@ export function Architecture({ hash }: { hash: string }) {
             {sel ? (
               <Inspector
                 node={sel}
+                isCurrent={sel.id === current}
                 onOpen={open}
                 onFocus={showFocus}
                 lens={lens}
@@ -499,12 +507,15 @@ export function Architecture({ hash }: { hash: string }) {
 
 function Inspector({
   node,
+  isCurrent,
   lens,
   onOpen,
   onFocus,
   here,
 }: {
   node: Api.HierNodeT;
+  /** The box is the one the canvas shows already: Open would do nothing. */
+  isCurrent?: boolean;
   lens: Lens;
   onOpen: (id: string) => void;
   onFocus: (id: string) => void;
@@ -524,7 +535,7 @@ function Inspector({
         ]}
       />
       <div className="row" style={{ gap: 6 }}>
-        {node.childCount > 0 && (
+        {node.childCount > 0 && !isCurrent && (
           <button type="button" className="btn" onClick={() => onOpen(node.id)}>
             {WORDS.open}
           </button>

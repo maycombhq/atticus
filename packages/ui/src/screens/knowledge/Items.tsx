@@ -20,6 +20,7 @@ import {
   valueText,
   where,
   type FormValue,
+  NoKnowledgeYet,
   type Item,
   type Link,
 } from "./shared.js";
@@ -47,7 +48,11 @@ export function ItemList(p: {
 }) {
   const screen = p.screen ?? "knowledge";
   return (
-    <View of={p.of} empty={(d) => d.items.length === 0} emptyText={I.empty}>
+    <View
+      of={p.of}
+      empty={(d) => d.items.length === 0}
+      emptyContent={<NoKnowledgeYet text={I.empty} />}
+    >
       {(d) => {
         const shown = d.items.filter((i) => (!p.kind || i.kind === p.kind) && matchItem(i, p.text));
         const groups = groupItems(shown, K.groups);

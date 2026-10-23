@@ -2,7 +2,7 @@ import type { Api } from "@maycombhq/core";
 import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
-import { kindLabel, Links, ReviewChip, urlsOf, type Item } from "./shared.js";
+import { kindLabel, Links, NoKnowledgeYet, ReviewChip, urlsOf, type Item } from "./shared.js";
 
 /**
  * Teams, vendors and products (ADR 0102): the Party and Product knowledge items, browsable.
@@ -152,7 +152,11 @@ export function PartiesPage({ of }: { of: Loaded<Api.KnowledgeItemListT> }) {
     <View
       of={of}
       empty={(d) => !d.items.some((i) => ["team", "vendor", "product", "project"].includes(i.kind))}
-      emptyText={P.empty}
+      emptyContent={
+        <Panel title={K.nav.parties}>
+          <NoKnowledgeYet text={P.empty} />
+        </Panel>
+      }
     >
       {(d) => {
         const r = relations(d.items.filter((i) => i.review?.state !== "rejected"));

@@ -230,8 +230,9 @@ export function FlowCanvas({
           borderRadius: 8,
         }}
       >
+        {/* A group, not an image: its boxes are buttons (an image can hold no control). */}
         <svg
-          role="img"
+          role="group"
           aria-label={`${view.title}: ${view.nodes.length} nodes in ${view.groups.length} groups, ${view.edges.length} edges.`}
           width={l.width}
           height={l.height}

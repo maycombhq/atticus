@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, useApi } from "../../api/client.js";
 import { Bar, Panel, Ring, View } from "../../app/ui.js";
+import { COPY } from "../../copy.js";
 import { Choice, CopyButton, Note, plural, useAction } from "./shared.js";
 
 interface LessonStep {
@@ -147,12 +148,19 @@ function Exercise({ cur, reload }: { cur: NonNullable<Learning["current"]>; relo
 
 function SandboxForm() {
   const [dir, setDir] = useState("");
+  const [blank, setBlank] = useState(false);
   const act = useAction();
   return (
     <form
       className="stack"
       onSubmit={(e) => {
         e.preventDefault();
+        // No folder yet: say so, rather than a button that silently does nothing.
+        if (!dir.trim()) {
+          setBlank(true);
+          return;
+        }
+        setBlank(false);
         void act.run(
           () => api<{ root: string }>("/api/learning/sandbox", { method: "POST", body: { dir } }),
           (r) =>
@@ -172,14 +180,23 @@ function SandboxForm() {
             id="sandbox-dir"
             className="run-input"
             value={dir}
-            onChange={(e) => setDir(e.target.value)}
+            onChange={(e) => {
+              setDir(e.target.value);
+              setBlank(false);
+            }}
+            aria-describedby={blank ? "sandbox-dir-blank" : undefined}
             placeholder="/home/you/atticus-sandbox"
           />
         </label>
-        <button type="submit" className="btn primary" disabled={act.busy || !dir.trim()}>
+        <button type="submit" className="btn primary" disabled={act.busy}>
           Make a sandbox
         </button>
       </div>
+      {blank && (
+        <p id="sandbox-dir-blank" role="alert" className="run-note bad">
+          {COPY.app.needFolder}
+        </p>
+      )}
       <Note note={act.note} />
     </form>
   );

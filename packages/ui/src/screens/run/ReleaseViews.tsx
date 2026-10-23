@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, useApi } from "../../api/client.js";
+import { hostBridge } from "../../api/bridge.js";
+import { COPY } from "../../copy.js";
 import { Panel, View } from "../../app/ui.js";
 import { Choice, CopyButton, Note, day, plural, useAction } from "./shared.js";
 
@@ -687,8 +689,30 @@ function saveFile(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/**
+ * Where the evidence pack goes: a file the browser saves, or, in a VS Code panel (which can
+ * save no file, ADR 0097), the text itself to copy, with the command that writes the files.
+ */
+export function evidenceOutcome(
+  id: string,
+  pack: { markdown: string; files: unknown[] },
+  inPanel: boolean,
+): { saved: boolean; text: string } {
+  const file = `evidence-${id}.md`;
+  if (inPanel)
+    return {
+      saved: false,
+      text: COPY.app.panelNoSave(file, `atticus release evidence ${id} --out <folder>`),
+    };
+  return {
+    saved: true,
+    text: `Saved ${file}: the summary, ${plural(pack.files.length, "file")} with their sha-256, rounds, waivers, approvals, trace, requests, drift and AI runs.`,
+  };
+}
+
 export function ExportEvidence({ id }: { id: string }) {
   const act = useAction();
+  const [shown, setShown] = useState<string | undefined>();
   return (
     <div className="stack" style={{ gap: 4 }}>
       <div className="row" style={{ flexWrap: "wrap" }}>
@@ -701,12 +725,13 @@ export function ExportEvidence({ id }: { id: string }) {
               () =>
                 api<{ markdown: string; files: unknown[] }>(`/api/release/${id}/evidence`).then(
                   (pack) => {
-                    saveFile(`evidence-${id}.md`, pack.markdown);
-                    return pack;
+                    const inPanel = !!hostBridge();
+                    if (inPanel) setShown(pack.markdown);
+                    else saveFile(`evidence-${id}.md`, pack.markdown);
+                    return evidenceOutcome(id, pack, inPanel);
                   },
                 ),
-              (r) =>
-                `Saved evidence-${id}.md: the summary, ${plural((r as { files: unknown[] }).files.length, "file")} with their sha-256, rounds, waivers, approvals, trace, requests, drift and AI runs.`,
+              (r) => (r as { text: string }).text,
             )
           }
         >
@@ -714,6 +739,23 @@ export function ExportEvidence({ id }: { id: string }) {
         </button>
       </div>
       <Note note={act.note} />
+      {shown !== undefined && (
+        <>
+          <label htmlFor={`evidence-${id}`} className="sr">
+            {`evidence-${id}.md`}
+          </label>
+          <textarea
+            id={`evidence-${id}`}
+            className="run-textarea"
+            readOnly
+            rows={10}
+            value={shown}
+          />
+          <div>
+            <CopyButton text={shown} label={`Copy evidence-${id}.md`} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

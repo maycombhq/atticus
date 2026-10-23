@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
-import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
+import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
 import {
   ArtifactEditor,
   FindingActions,
@@ -13,7 +13,10 @@ import {
   type Task,
 } from "../Changes.js";
 import { AI_OFF_TEXT, useAiOn } from "../../app/me.js";
-import { Markdown, Note, Table, useAction, useChange, useView } from "./common.js";
+import { COPY } from "../../copy.js";
+import { withForceHint } from "../run/shared.js";
+import { NoChangeYet } from "../work/RunNext.js";
+import { ChangeWaiting, Markdown, Note, Table, useAction, useChange, useView } from "./common.js";
 
 const SEV_CHIP: Record<string, string> = {
   blocking: "blocking",
@@ -76,10 +79,8 @@ function GateHeader(p: {
             {s.handoff ? (
               <span className="muted" style={{ fontSize: 12 }}>
                 Approval: merge{" "}
-                <a href={s.handoff.pr.url} target="_blank" rel="noreferrer">
-                  PR #{s.handoff.pr.number}
-                </a>{" "}
-                on the Git host; that approves the gate.
+                <ExternalLink href={s.handoff.pr.url}>PR #{s.handoff.pr.number}</ExternalLink> on
+                the Git host; that approves the gate.
               </span>
             ) : (
               <span className="muted" style={{ fontSize: 12 }}>
@@ -298,11 +299,9 @@ function FindingsPanel({
 
 function NoChange() {
   return (
-    <Panel title="No change yet" span="1 / -1">
-      <div className="state">
-        Start a change on the <a href="#/changes">Changes</a> screen; this screen works on one.
-      </div>
-    </Panel>
+    <div className="bento">
+      <NoChangeYet />
+    </div>
   );
 }
 
@@ -320,14 +319,7 @@ function PhaseScreen(p: {
   const c = useChange(p.hash, p.screen);
   const [tick, setTick] = useState(0);
   if (c.none) return <NoChange />;
-  if (!c.id)
-    return (
-      <div className="bento">
-        <Panel title={p.title} span="1 / -1">
-          <div className="skeleton" />
-        </Panel>
-      </div>
-    );
+  if (!c.id) return <ChangeWaiting list={c.list} title={p.title} />;
   const header = {
     id: c.id,
     title: p.title,
@@ -670,7 +662,7 @@ function StoryWriter({ change }: { change: string }) {
                   api(`/api/changes/${change}/runs`, {
                     method: "POST",
                     body: { agent: "story-writer", runtime: "hand-off" },
-                  }),
+                  }).catch(withForceHint(COPY.app.forceStories(change))),
                 "The story writer's prompt is ready for your assistant.",
               )
             }
@@ -719,18 +711,22 @@ function TasksByRepo({
   const tasks = useApi<Task[]>(`/api/changes/${change}/tasks`);
   const aiOn = useAiOn();
   const [ran, setRan] = useState<Record<string, string>>({});
+  const [running, setRunning] = useState<Record<string, boolean>>({});
+  // Each task keeps its own outcome: set from the latest state, so two runs don't erase each other.
+  const say = (id: string, text: string) => setRan((o) => ({ ...o, [id]: text }));
   const run = async (t: Task) => {
+    setRunning((o) => ({ ...o, [t.id]: true }));
+    say(t.id, COPY.app.working);
     try {
       const r = await api<Run>(`/api/changes/${change}/runs`, {
         method: "POST",
         body: { agent: "task-runner", task: t.id, runtime: "hand-off" },
       });
-      setRan({ ...ran, [t.id]: `Run ${r.runId} prepared: your assistant takes it from here.` });
+      say(t.id, `Run ${r.runId} prepared: your assistant takes it from here.`);
     } catch (e) {
-      setRan({
-        ...ran,
-        [t.id]: e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e),
-      });
+      say(t.id, e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e));
+    } finally {
+      setRunning((o) => ({ ...o, [t.id]: false }));
     }
   };
   return (
@@ -784,7 +780,12 @@ function TasksByRepo({
                             {x.done ? (
                               <span className="chip done">DONE</span>
                             ) : aiOn ? (
-                              <button type="button" className="btn" onClick={() => void run(x)}>
+                              <button
+                                type="button"
+                                className="btn"
+                                disabled={running[x.id]}
+                                onClick={() => void run(x)}
+                              >
                                 Run with AI
                               </button>
                             ) : (
@@ -865,7 +866,7 @@ function RunsPanel({ change }: { change: string }) {
 export function Tasks({ hash }: { hash: string }) {
   const c = useChange(hash, "tasks");
   if (c.none) return <NoChange />;
-  if (!c.id) return null;
+  if (!c.id) return <ChangeWaiting list={c.list} title="Task board" />;
   return (
     <div className="bento" key={c.id}>
       <Panel title="Task board" span="1 / -1" meta={c.picker}>
@@ -912,6 +913,7 @@ export function TestTrace({ hash }: { hash: string }) {
     c.id ? `/api/changes/${c.id}/status` : undefined,
   );
   if (c.none) return <NoChange />;
+  if (!c.id) return <ChangeWaiting list={c.list} title="Test trace" />;
   const covered = t.state === "ready" ? t.data.rows.filter((r) => r.tests.length > 0).length : 0;
   const total = t.state === "ready" ? t.data.rows.length : 0;
   return (

@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useApi } from "../api/client.js";
-import { Panel, View } from "../app/ui.js";
+import { ExternalLink, Panel, View } from "../app/ui.js";
 import { Table } from "./know/common.js";
 
 /**
@@ -105,7 +105,7 @@ const COLS: Record<AcrossId, Col[]> = {
       cell: (r) => {
         const h = r.handoff as { phase: string; pr: string; state: string } | undefined;
         return h ? (
-          <a href={h.pr}>{`${h.phase} · ${h.state}`}</a>
+          <ExternalLink href={h.pr}>{`${h.phase} · ${h.state}`}</ExternalLink>
         ) : (
           <span className="muted">none open</span>
         );

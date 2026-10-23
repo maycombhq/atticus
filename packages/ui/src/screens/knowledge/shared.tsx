@@ -1,4 +1,5 @@
 import type { Api } from "@maycombhq/core";
+import { ExternalLink } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Command } from "../work/RunNext.js";
 import "../run/run.css";
@@ -60,6 +61,22 @@ export function AiStep({ command, slash, why }: { command: string; slash?: strin
   );
 }
 
+/**
+ * Nothing read from the wikis yet: what to do, with the Knowledge sources page one click away
+ * and the knowledge scan to copy (an AI step the app doesn't run).
+ */
+export function NoKnowledgeYet({ text }: { text: string }) {
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <div className="state">{text}</div>
+      <p style={{ margin: 0 }}>
+        <a href="#/wikis">{K.emptyGo}</a>
+      </p>
+      <AiStep command="atticus knowledge scan" slash="/atticus-knowledge" />
+    </div>
+  );
+}
+
 /** The links a page gives for an item; each opens in a new tab and says where it goes. */
 export function Links({ urls }: { urls: Link[] }) {
   if (!urls.length) return null;
@@ -67,9 +84,7 @@ export function Links({ urls }: { urls: Link[] }) {
     <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
       {urls.map((u) => (
         <li key={u.url}>
-          <a href={u.url} target="_blank" rel="noreferrer noopener">
-            {u.label ?? u.url}
-          </a>
+          <ExternalLink href={u.url}>{u.label ?? u.url}</ExternalLink>
           {u.label && (
             <span className="muted mono" style={{ fontSize: 11, marginLeft: 6 }}>
               {u.url}

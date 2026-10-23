@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useApi } from "../api/client.js";
+import { api, SERVER_EVENT, useApi } from "../api/client.js";
+import { hostBridge } from "../api/bridge.js";
+import { COPY } from "../copy.js";
 import { SCREEN_COMPONENTS } from "../screens/registry.js";
 import { NotBuilt } from "../screens/NotBuilt.js";
 import { ScreenBoundary } from "./boundary.js";
@@ -66,9 +68,16 @@ function Person({ health }: { health: Health }) {
 
 function TopBar({ health }: { health?: Health }) {
   const [q, setQ] = useState("");
+  const [blank, setBlank] = useState(false);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (q.trim()) location.hash = `#/explore?ask=${encodeURIComponent(q.trim())}`;
+    // An empty Ask says what it needs instead of doing nothing.
+    if (!q.trim()) {
+      setBlank(true);
+      document.getElementById("ask")?.focus();
+      return;
+    }
+    location.hash = `#/explore?ask=${encodeURIComponent(q.trim())}`;
   };
   return (
     <header className="topbar">
@@ -79,12 +88,19 @@ function TopBar({ health }: { health?: Health }) {
         <input
           id="ask"
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => {
+            setQ(e.target.value);
+            setBlank(false);
+          }}
+          aria-describedby={blank ? "ask-blank" : undefined}
           placeholder="Ask: what breaks if ledger-db.account changes?"
         />
         <button type="submit" className="btn" aria-label="Ask">
           Ask
         </button>
+        <span id="ask-blank" role="status" className={blank ? "chip warn" : "sr"}>
+          {blank ? COPY.app.askEmpty : ""}
+        </span>
       </form>
       <AiChip />
       <button type="button" className="btn" onClick={replayTour} title="Replay the tour">
@@ -98,10 +114,57 @@ function TopBar({ health }: { health?: Health }) {
   );
 }
 
+/**
+ * Whether the local server answers. While it doesn't, one note at the top says why and how to
+ * start it again (each panel then only says it couldn't load); when it answers again, the
+ * screen loads afresh. `epoch` counts the comebacks.
+ */
+function useServer(): { down: boolean; epoch: number } {
+  const [s, set] = useState({ down: false, epoch: 0 });
+  useEffect(() => {
+    const on = (e: Event) => {
+      const up = (e as CustomEvent<{ up: boolean }>).detail.up;
+      set((o) => (up ? { down: false, epoch: o.epoch + 1 } : { ...o, down: true }));
+    };
+    addEventListener(SERVER_EVENT, on);
+    return () => removeEventListener(SERVER_EVENT, on);
+  }, []);
+  return s;
+}
+
+export function ServerDown({ inPanel }: { inPanel: boolean }) {
+  const [trying, setTrying] = useState(false);
+  return (
+    <div className="state error" role="alert" style={{ marginBottom: 12 }}>
+      <p style={{ margin: 0 }}>{inPanel ? COPY.app.offlinePanel : COPY.app.offline}</p>
+      <button
+        type="button"
+        className="btn"
+        style={{ marginTop: 8 }}
+        disabled={trying}
+        onClick={() => {
+          setTrying(true);
+          // Any answer tells the app the server is back, and the screen loads again.
+          void api("/api/health")
+            .catch(() => undefined)
+            .finally(() => setTrying(false));
+        }}
+      >
+        {trying ? COPY.app.checking : COPY.app.tryAgain}
+      </button>
+    </div>
+  );
+}
+
 export function App() {
   const hash = useHash();
   const current = screenOf(hash);
   const health = useApi<Health>("/api/health");
+  const server = useServer();
+  const reloadHealth = health.reload;
+  useEffect(() => {
+    if (server.epoch) reloadHealth();
+  }, [server.epoch, reloadHealth]);
   useEffect(() => {
     document.title = `${current.label} · Atticus`;
   }, [current]);
@@ -117,10 +180,11 @@ export function App() {
         <main id="main" className="main" tabIndex={-1}>
           <TopBar health={health.state === "ready" ? health.data : undefined} />
           <h1 className="sr">{current.label}</h1>
+          {server.down && <ServerDown inPanel={!!hostBridge()} />}
           {(() => {
             const S = SCREEN_COMPONENTS[current.id];
             return S ? (
-              <ScreenBoundary key={current.id} name={current.label}>
+              <ScreenBoundary key={`${current.id}:${server.epoch}`} name={current.label}>
                 <S hash={hash} />
               </ScreenBoundary>
             ) : (

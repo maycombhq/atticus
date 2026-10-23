@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { COPY } from "../copy.js";
 import { hostBridge } from "./bridge.js";
 
 /**
@@ -28,6 +29,48 @@ export function token(): string {
   return document.querySelector<HTMLMetaElement>('meta[name="atticus-token"]')?.content ?? "";
 }
 
+/** The problem when the local server can't be reached at all. */
+export function unreachable(inPanel = false): Problem {
+  return {
+    type: "about:blank",
+    title: "Server not answering",
+    status: 0,
+    detail: inPanel ? COPY.app.offlinePanel : COPY.app.offline,
+  };
+}
+
+/** Whether the server answers, as the last call found; the app shows one note while it doesn't. */
+export const SERVER_EVENT = "atticus:server";
+let down = false;
+export function serverAnswered(up: boolean): void {
+  if (up === !down) return;
+  down = !up;
+  if (typeof dispatchEvent === "function")
+    dispatchEvent(new CustomEvent(SERVER_EVENT, { detail: { up } }));
+}
+
+/** An error that only says the server is down: the page-wide note says how to fix it. */
+export const isOffline = (error: string) =>
+  error === COPY.app.offline || error === COPY.app.offlinePanel;
+
+/** A reply's JSON; a page that isn't JSON (a proxy's error page, say) is a problem in words. */
+export function parseBody(text: string, status: number): unknown {
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    throw new ApiError({
+      type: "about:blank",
+      title: "Not an Atticus answer",
+      status,
+      detail: COPY.app.notJson(status),
+    });
+  }
+}
+
+/** The title the VS Code extension gives a call the local API didn't answer. */
+const PANEL_DOWN = "The Atticus app isn't answering";
+
 export async function api<T>(
   path: string,
   o: { method?: string; body?: unknown; signal?: AbortSignal } = {},
@@ -39,6 +82,12 @@ export async function api<T>(
       ...(o.body !== undefined ? { body: o.body } : {}),
     });
     if (o.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    // The extension answers 503 when the local API it started doesn't (ADR 0097).
+    if (r.status === 503 && (r.body as Problem | undefined)?.title === PANEL_DOWN) {
+      serverAnswered(false);
+      throw new ApiError(unreachable(true));
+    }
+    serverAnswered(true);
     if (r.status < 200 || r.status >= 300) {
       const p = (r.body as Problem | undefined) ?? {
         type: "about:blank",
@@ -49,17 +98,27 @@ export async function api<T>(
     }
     return r.body as T;
   }
-  const r = await fetch(path, {
-    method: o.method ?? "GET",
-    headers: {
-      "X-Atticus-Token": token(),
-      ...(o.body !== undefined ? { "Content-Type": "application/json" } : {}),
-    },
-    ...(o.body !== undefined ? { body: JSON.stringify(o.body) } : {}),
-    ...(o.signal ? { signal: o.signal } : {}),
-  });
-  const text = await r.text();
-  const body = text ? (JSON.parse(text) as unknown) : undefined;
+  let r: Response;
+  let text: string;
+  try {
+    r = await fetch(path, {
+      method: o.method ?? "GET",
+      headers: {
+        "X-Atticus-Token": token(),
+        ...(o.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(o.body !== undefined ? { body: JSON.stringify(o.body) } : {}),
+      ...(o.signal ? { signal: o.signal } : {}),
+    });
+    text = await r.text();
+  } catch (e) {
+    // The server stopped or the network refused: say so in words, not "Failed to fetch".
+    if (o.signal?.aborted) throw e;
+    serverAnswered(false);
+    throw new ApiError(unreachable());
+  }
+  serverAnswered(true);
+  const body = parseBody(text, r.status);
   if (!r.ok) {
     const p = (body as Problem | undefined) ?? {
       type: "about:blank",
@@ -76,28 +135,45 @@ export type Loaded<T> =
   | { state: "error"; error: string; notYet?: boolean }
   | { state: "ready"; data: T };
 
-/** Load a GET call; reload() runs it again (after a live event, say). */
-export function useApi<T>(path: string | undefined): Loaded<T> & { reload: () => void } {
+/**
+ * Load a GET call; reload() runs it again (after a live event, say). A reload keeps what is
+ * shown until the answer comes; `refreshing` says one is under way, and `at` when the last
+ * answer came, so a "Check again" button can say what it did.
+ */
+export function useApi<T>(
+  path: string | undefined,
+): Loaded<T> & { reload: () => void; refreshing: boolean; at?: number } {
   const [s, set] = useState<Loaded<T>>({ state: "loading" });
   const [tick, setTick] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const [at, setAt] = useState<number | undefined>();
   const reload = useCallback(() => setTick((t) => t + 1), []);
+  const answered = useRef(false);
   useEffect(() => {
     if (!path) return;
     const ctl = new AbortController();
-    api<T>(path, { signal: ctl.signal }).then(
-      (data) => set({ state: "ready", data }),
-      (e: unknown) => {
+    if (answered.current) setRefreshing(true);
+    api<T>(path, { signal: ctl.signal })
+      .then(
+        (data) => set({ state: "ready", data }),
+        (e: unknown) => {
+          if (ctl.signal.aborted) return;
+          set({
+            state: "error",
+            error: e instanceof Error ? e.message : String(e),
+            ...(e instanceof ApiError && e.problem.notYet ? { notYet: true } : {}),
+          });
+        },
+      )
+      .finally(() => {
         if (ctl.signal.aborted) return;
-        set({
-          state: "error",
-          error: e instanceof Error ? e.message : String(e),
-          ...(e instanceof ApiError && e.problem.notYet ? { notYet: true } : {}),
-        });
-      },
-    );
+        answered.current = true;
+        setRefreshing(false);
+        setAt(Date.now());
+      });
     return () => ctl.abort();
   }, [path, tick]);
-  return { ...s, reload };
+  return { ...s, reload, refreshing, ...(at !== undefined ? { at } : {}) };
 }
 
 export type LiveEvent = { type: string } & Record<string, unknown>;

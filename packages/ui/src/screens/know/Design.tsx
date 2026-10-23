@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useApi, useLiveEvents } from "../../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../../app/flow.js";
 import { GraphView, type Graph } from "../../app/graph.js";
-import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
+import { Bar, CheckAgain, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { Table, queryParam, setQueryParam, useView } from "./common.js";
 
 // ------------------------------------------------------------------ Contracts
@@ -346,9 +346,7 @@ export function Reconcile({ hash }: { hash: string }) {
                   </span>
                 </a>
               ))}
-              <button type="button" className="btn" onClick={() => r.reload()}>
-                Check again
-              </button>
+              <CheckAgain of={r} label="Check again" />
               {d && (
                 <div className="stack" style={{ gap: 12, marginTop: 10 }}>
                   <div className="row">

@@ -1,8 +1,13 @@
 import { existsSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
 
-/** A pre-installed Chromium when there is one (the build machine), else Playwright's own. */
-const chromium = ["/opt/pw-browsers/chromium"].find((p) => existsSync(p));
+/**
+ * A pre-installed Chromium when there is one (ATTICUS_CHROMIUM, or the build machine's), else
+ * Playwright's own.
+ */
+const chromium = [process.env.ATTICUS_CHROMIUM, "/opt/pw-browsers/chromium"].find(
+  (p): p is string => !!p && existsSync(p),
+);
 
 export default defineConfig({
   testDir: "tests",

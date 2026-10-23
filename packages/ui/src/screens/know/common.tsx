@@ -1,5 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ApiError, useApi, type Loaded } from "../../api/client.js";
+import { LoadError, Panel } from "../../app/ui.js";
+import { COPY } from "../../copy.js";
 
 /** A read-only view (`/api/view/<name>[/<id>]`): the JSON an `atticus … --json` command prints. */
 export function useView<T>(
@@ -65,7 +67,31 @@ export function useChange(hash: string, screen: string) {
       </select>
     </label>
   );
-  return { id, picker, none: list.state === "ready" && list.data.length === 0 };
+  return { id, picker, none: list.state === "ready" && list.data.length === 0, list };
+}
+
+/**
+ * A screen that works on one change, before it has one: the list of changes is loading, or it
+ * couldn't load (with why and Try again), never a skeleton that waits forever.
+ */
+export function ChangeWaiting(p: {
+  list: Loaded<unknown> & { reload?: () => void };
+  title: string;
+}) {
+  return (
+    <div className="bento">
+      <Panel title={p.title} span="1 / -1">
+        {p.list.state === "error" ? (
+          <LoadError error={p.list.error} retry={p.list.reload} />
+        ) : (
+          <div aria-busy="true" aria-live="polite">
+            <span className="sr">{COPY.app.loading}</span>
+            <div className="skeleton" />
+          </div>
+        )}
+      </Panel>
+    </div>
+  );
 }
 
 /** Inline `code` spans and **bold**, as React nodes (never HTML). */
@@ -235,15 +261,17 @@ export function Markdown({ text }: { text: string }) {
 }
 
 export function message(e: unknown): string {
-  return e instanceof ApiError ? (e.problem.detail ?? e.problem.title) : String(e);
+  if (e instanceof ApiError) return e.problem.detail ?? e.problem.title;
+  return e instanceof Error ? e.message : String(e);
 }
 
 export function useAction() {
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<{ ok: boolean; text: string } | undefined>();
+  const [note, setNote] = useState<{ ok: boolean; text: string; working?: boolean } | undefined>();
   const run = async (f: () => Promise<unknown>, ok: string) => {
     setBusy(true);
-    setNote(undefined);
+    // Say at once that it started: some steps take a while, and a still page reads as a dead click.
+    setNote({ ok: true, text: COPY.app.working, working: true });
     try {
       await f();
       setNote({ ok: true, text: ok });
@@ -256,15 +284,20 @@ export function useAction() {
   return { busy, note, run };
 }
 
-export function Note({ note }: { note?: { ok: boolean; text: string } | undefined }) {
+export function Note({
+  note,
+}: {
+  note?: { ok: boolean; text: string; working?: boolean } | undefined;
+}) {
   if (!note) return null;
   return (
     <p
       role={note.ok ? "status" : "alert"}
+      aria-busy={note.working ? true : undefined}
       style={{
         margin: "8px 0 0",
         whiteSpace: "pre-line",
-        color: note.ok ? "var(--green)" : "var(--magenta-text)",
+        color: note.working ? "var(--text-2)" : note.ok ? "var(--green)" : "var(--magenta-text)",
         fontSize: 12.5,
       }}
     >

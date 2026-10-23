@@ -71,6 +71,27 @@ export function RunNext<T>({ of, step }: { of: Loaded<T>; step: (d: T) => Step }
   return <View of={of}>{(d) => <RunNextPanel step={step(d)} />}</View>;
 }
 
+/**
+ * A page that works on one change, when there is none: what to run to start one, with Copy,
+ * and where the changes are listed. Always in a panel, never a bare line.
+ */
+export function NoChangeYet({ title }: { title?: string }) {
+  const W = COPY.work;
+  return (
+    <section className="panel" aria-labelledby="no-change" style={{ gridColumn: "1 / -1" }}>
+      <h2 id="no-change" className="h">
+        {title ?? W.noChangeTitle}
+      </h2>
+      <p className="work-why">{W.noChangeYet}</p>
+      <p className="work-say">{R.terminal}</p>
+      <Command text={W.noChangeCommand} label={R.copy} />
+      <p className="work-say">
+        <a href="#/changes">{W.noChangeLink}</a>
+      </p>
+    </section>
+  );
+}
+
 /** Files that couldn't be read, by name, so nothing is dropped silently. */
 export function Problems({ list }: { list: { file: string; message: string }[] }) {
   if (list.length === 0) return null;

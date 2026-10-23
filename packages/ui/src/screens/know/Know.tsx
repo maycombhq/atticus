@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
+import { COPY } from "../../copy.js";
 import { Markdown, Note, Table, list, queryParam, useAction, useView } from "./common.js";
 
 interface Coverage {
@@ -335,8 +336,15 @@ export function ImpactExplorer({ hash }: { hash: string }) {
   const inc = useApi<Incident>(
     q && incident ? `/api/incident/${encodeURIComponent(q)}` : undefined,
   );
+  const [blank, setBlank] = useState(false);
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    // No id yet: say what to type, rather than a button that changes nothing.
+    if (!text.trim()) {
+      setBlank(true);
+      return;
+    }
+    setBlank(false);
     location.hash = `#/impact?q=${encodeURIComponent(text.trim())}${incident ? "&incident=1" : ""}`;
   };
   const byHop = new Map<number, number>();
@@ -354,7 +362,11 @@ export function ImpactExplorer({ hash }: { hash: string }) {
           <input
             id="impact-id"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              setBlank(false);
+            }}
+            aria-describedby={blank ? "impact-blank" : undefined}
             placeholder="A component, interface, table, column or topic id, e.g. ledger-db.account"
             style={{
               flex: "1 1 360px",
@@ -384,6 +396,11 @@ export function ImpactExplorer({ hash }: { hash: string }) {
             Find an id in the Knowledge explorer
           </a>
         </form>
+        {blank && (
+          <p id="impact-blank" role="alert" className="run-note bad">
+            {COPY.app.needId}
+          </p>
+        )}
       </Panel>
       {q && incident && (
         <>
@@ -944,7 +961,7 @@ function TriageOptions(p: {
         ))}
       </div>
       {/* Success shows above the list: this item leaves it. */}
-      <Note note={act.note?.ok ? undefined : act.note} />
+      <Note note={act.note?.ok && !act.note.working ? undefined : act.note} />
     </div>
   );
 }
@@ -1183,7 +1200,8 @@ export function Scans() {
           {job && (
             <div className="stack" role="status" aria-live="polite">
               <span className="hud" style={{ fontSize: 10 }}>
-                {job.state} · {job.progress.message}
+                {job.state}
+                {job.state === "failed" ? "" : ` · ${job.progress.message}`}
               </span>
               <Bar
                 value={job.progress.done}

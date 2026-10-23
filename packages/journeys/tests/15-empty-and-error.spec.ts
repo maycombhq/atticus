@@ -12,13 +12,28 @@ import { accessible, expect, startApp, stopApp, test, type App } from "../suppor
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../cli/dist/bin.js");
 const ROUTES = [
+  // The six screens that follow the work (plan 4.5).
+  "dashboard",
+  "onboarding",
+  "feature-design",
+  "architecture",
+  "stories",
+  "task-list",
   "home",
+  "questions",
   "explore",
+  "flows",
   "map",
   "impact",
   "features",
   "orgpack",
   "intake",
+  // ADR 0102: knowledge in the app.
+  "wikis",
+  "knowledge",
+  "wiki-search",
+  "parties",
+  "orgpack-draft",
   "scans",
   "brief",
   "ux",
@@ -68,11 +83,30 @@ for (const route of ROUTES)
     await accessible(page, `${route} (empty)`);
   });
 
-for (const route of ["home", "map", "changes", "release", "settings"])
-  test(`#/${route} says so when the server can't be reached`, async ({ page }) => {
+for (const route of ["home", "dashboard", "map", "changes", "release", "knowledge", "settings"])
+  test(`#/${route} says so when the server can't be reached, and how to fix it`, async ({
+    page,
+  }) => {
     await page.goto(`${app!.url}/#/${route}`);
     await expect(page.locator(".panel").first()).toBeVisible();
     await page.route("**/api/**", (r) => r.abort());
     await page.reload();
     await expect(page.getByRole("alert").first()).toBeVisible();
+    // One note for the page names the server and how to start it; never "Failed to fetch".
+    await expect(page.getByText(/The Atticus server isn't answering/)).toHaveCount(1);
+    await expect(page.getByText(/Failed to fetch/)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Try again" }).first()).toBeVisible();
+    await accessible(page, `${route} (server unreachable)`);
   });
+
+test("the page loads again by itself once the server answers", async ({ page }) => {
+  await page.goto(`${app!.url}/#/changes`);
+  await expect(page.locator(".panel").first()).toBeVisible();
+  await page.route("**/api/**", (r) => r.abort());
+  await page.reload();
+  await expect(page.getByText(/The Atticus server isn't answering/)).toBeVisible();
+  await page.unroute("**/api/**");
+  await page.getByRole("button", { name: "Try again" }).first().click();
+  await expect(page.getByText(/The Atticus server isn't answering/)).toHaveCount(0);
+  await expect(page.getByText(/Couldn't load this/)).toHaveCount(0);
+});

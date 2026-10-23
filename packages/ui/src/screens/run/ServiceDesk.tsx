@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
-import { Donut, Panel, View } from "../../app/ui.js";
-import { AdapterChip, Choice, CopyButton, Note, plural, useAction } from "./shared.js";
+import { Donut, ExternalLink, Panel, View } from "../../app/ui.js";
+import { COPY } from "../../copy.js";
+import {
+  AdapterChip,
+  Choice,
+  CopyButton,
+  Note,
+  plural,
+  useAction,
+  withForceHint,
+} from "./shared.js";
 
 interface Request {
   change: string;
@@ -57,10 +66,12 @@ function DraftForm({ done }: { done: () => void }) {
                 api<{ lines: string[] }>(`/api/service-desk/${id}/draft`, {
                   method: "POST",
                   body: force ? { force: true } : {},
-                }).then((r) => {
-                  done();
-                  return r;
-                }),
+                })
+                  .then((r) => {
+                    done();
+                    return r;
+                  })
+                  .catch(withForceHint(COPY.app.forceSnow)),
               (r) => (r as { lines: string[] }).lines.join("\n") || "Drafted.",
             );
           }}
@@ -188,7 +199,7 @@ function RequestDetail({ r, done }: { r: Request; done: () => void }) {
           {r.url ? (
             <>
               {" "}
-              (<a href={r.url}>open</a>)
+              (<ExternalLink href={r.url}>open</ExternalLink>)
             </>
           ) : null}
           .

@@ -4,6 +4,43 @@
  * screens still hold theirs inline and move here when they are next changed.
  */
 export const COPY = {
+  /** Words every screen shares: loading, failures, links that leave the app, actions under way. */
+  app: {
+    loading: "Loading",
+    cantLoad: (why: string) => `Couldn't load this: ${why}`,
+    tryAgain: "Try again",
+    offline:
+      "The Atticus server isn't answering. Check that atticus ui is still running in its terminal (start it again with atticus ui if it stopped), then press Try again or reload the page.",
+    notJson: (status: number) =>
+      `The server answered with something that isn't Atticus's (status ${status}). Check that the address is the one atticus ui printed.`,
+    offlinePanel:
+      "The Atticus server the extension started isn't answering. Run Atticus: Open the app from the Command Palette to start it again, then press Try again.",
+    offlineShort: "the server isn't answering (the note at the top says how to fix it)",
+    online: "The server is answering again.",
+    working: "Working on it…",
+    ccReading: "Reading your metarepo…",
+    ccCantRead: "Couldn't read what needs attention: each panel below says why.",
+    notLoaded: "not loaded",
+    checking: "Checking…",
+    checkedAt: (time: string) => `Checked again at ${time}.`,
+    newTab: "(opens in a new tab)",
+    askEmpty: "Type a question first.",
+    tourEscape: "Esc closes the tour",
+    needId:
+      "Type a record id first, for example ledger-db.account. The Knowledge explorer finds one.",
+    needFolder: "Type the folder for the sandbox first: a new, empty one.",
+    noExecutors: "No tool is set up on this machine yet, so there is nothing to check.",
+    forceSnow: "To replace it, tick “Replace a snow.md a person edited” and draft again.",
+    forceStories: (change: string) =>
+      `Edit them on this page, or to replace them run atticus plan stories ${change} --force in a terminal.`,
+    panelNoSave: (file: string, command: string) =>
+      `The VS Code panel can't save files, so ${file} wasn't saved. Copy the text below into a file, or run ${command} in a terminal.`,
+  },
+  /** What a person does with a critic finding. */
+  findings: {
+    needsReason: "Not relevant and Waive need a reason: type it above first.",
+    cantWaive: "This rule can't be waived",
+  },
   /** The Flows screen (ADR 0092): a repo's spec flows, each drawn as a sequence of steps. */
   flows: {
     title: "Flows",
@@ -146,6 +183,7 @@ export const COPY = {
       parties: "Teams, vendors and products",
       orgpack: "Org pack from the wikis",
     },
+    emptyGo: "Open Knowledge sources to add or sync a wiki",
     kinds: {
       pattern: "Pattern",
       standard: "Standard",
@@ -318,6 +356,8 @@ export const COPY = {
       label: "A term or phrase",
       placeholder: "e.g. new starter, Kafka topic, change freeze",
       go: "Search",
+      needText: "Type a word or phrase to look for first.",
+      searching: "Searching the wikis again…",
       noSnapshot: "No source has a snapshot yet: sync one on the Knowledge sources page first.",
       none: (q: string) =>
         `No page of the wikis mentions "${q}". There is nothing to send to your assistant.`,
@@ -628,6 +668,9 @@ export const COPY = {
     // The stage screens
     pickChange: "Change",
     noChangeYet: 'No change yet. Start one with atticus change new "<title>" --type <type>.',
+    noChangeTitle: "No change yet",
+    noChangeCommand: 'atticus change new "<title>" --type <type>',
+    noChangeLink: "The Changes screen lists every change once you start one.",
     stageIs: (stage: string) => `This change is at the ${stage} stage.`,
     goStage: (page: string) => `Open ${page}`,
     files: "The change's files",

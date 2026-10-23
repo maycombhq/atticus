@@ -4,6 +4,18 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Every screen says what is happening
+
+- A stopped server is said in words: one note at the top of the page names `atticus ui` and how to start it again (in a VS Code panel, Atticus: Open the app), with Try again; each panel only says it couldn't load. When the server answers again the screen loads afresh. No more "Failed to fetch", and a reply that isn't Atticus's says so with its status.
+- A load that fails offers Try again. A screen that works on one change shows that the changes are loading, or why they didn't load, instead of a skeleton that waits forever (Feature brief, UX, reviews, mappings, Breakdown, Task board, Test trace).
+- Every action button says it started ("Working on it…") and then what happened. The critic's outcome on a change's page no longer hides behind the hand-off's; each task's Run with AI keeps its own outcome.
+- No silent clicks: an empty Ask, wiki search, impact search or sandbox folder says what to type; Check again (Reconcile, Settings) says "Checking…" and when it answered; searching the wikis for the same words searches again; the Architecture canvas no longer offers Open on the box it shows or a button for where you already are; Esc closes the tour.
+- Disabled buttons say why: Not relevant and Waive need a reason, a rule that can't be waived says so, Check they answer says no tool is set up.
+- The empty states say what to do next: a page that works on a change gives `atticus change new` to copy and the way to Changes; Knowledge items and Teams, vendors and products link to Knowledge sources and give `atticus knowledge scan` and `/atticus-knowledge` to copy; the Command center shows a dash, not a 0, for a count it couldn't read.
+- The command line's "Re-run with --force" is said in the app's words: tick the box on the Service desk queue, or the command to run for stories.
+- Links that leave the app (a hand-off PR, a request in the desk, a knowledge item's links) open beside it and say so to a screen reader; in a VS Code panel the editor opens them. The evidence pack, which a VS Code panel can't save as a file, is shown there to copy, with `atticus release evidence <change> --out <folder>`.
+- The journeys' empty-state check covers all 41 screens, and the server-unreachable check covers seven, with axe on each; `ATTICUS_CHROMIUM` points the journeys at an installed Chromium.
+
 ### Fixed
 
 - `atticus ui --embed vscode` stops when stdin closes, so the server the VS Code extension starts ends with its window, even when the window or VS Code is killed.

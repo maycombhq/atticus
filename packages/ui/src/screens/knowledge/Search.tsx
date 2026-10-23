@@ -199,9 +199,19 @@ export function WikiSearch({ hash }: { hash: string }) {
       one.reload();
     }
   });
+  const [blank, setBlank] = useState(false);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    location.hash = route(text.trim(), find);
+    // An empty search says what it needs instead of a button that silently does nothing.
+    if (!text.trim()) {
+      setBlank(true);
+      return;
+    }
+    setBlank(false);
+    const next = route(text.trim(), find);
+    // The same words again: search again, rather than a click that changes nothing.
+    if (location.hash === next) result.reload();
+    else location.hash = next;
   };
   const onKeep = (id: string, as: string) => {
     if (!find) return;
@@ -235,12 +245,24 @@ export function WikiSearch({ hash }: { hash: string }) {
             style={{ flex: 1 }}
             value={text}
             placeholder={S.placeholder}
-            onChange={(e) => setText(e.target.value)}
+            aria-describedby={blank ? "wiki-q-blank" : undefined}
+            onChange={(e) => {
+              setText(e.target.value);
+              setBlank(false);
+            }}
           />
-          <button type="submit" className="btn primary" disabled={!text.trim()}>
+          <button type="submit" className="btn primary">
             {S.go}
           </button>
         </form>
+        {blank && (
+          <p id="wiki-q-blank" role="alert" className="run-note bad" style={{ marginTop: -4 }}>
+            {S.needText}
+          </p>
+        )}
+        <p role="status" className="muted" style={{ margin: "0 0 6px", fontSize: 12 }}>
+          {result.refreshing ? S.searching : ""}
+        </p>
         {q && <SearchResult of={result} />}
       </Panel>
       <div className="column" style={{ gridColumn: "span 5" }}>

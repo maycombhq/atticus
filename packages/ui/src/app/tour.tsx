@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { COPY } from "../copy.js";
 
 /**
  * First-run tour: a few steps through Home, the sidebar, asking and the hand-off PR. It is the
@@ -80,6 +81,18 @@ export function Tour() {
     return () => el?.classList.remove("tour-target");
   }, [open, step]);
 
+  // Esc closes the tour from anywhere, as it closes the palette.
+  useEffect(() => {
+    if (!open) return;
+    const on = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      remember();
+      setOpen(false);
+    };
+    addEventListener("keydown", on);
+    return () => removeEventListener("keydown", on);
+  }, [open]);
+
   if (!open || !step) return null;
   const close = () => {
     remember();
@@ -88,7 +101,7 @@ export function Tour() {
   return (
     <div role="dialog" aria-modal="false" aria-labelledby="tour-title" className="tour panel hero">
       <div className="hud" style={{ fontSize: 10 }}>
-        Tour · {i + 1} of {TOUR.length}
+        Tour · {i + 1} of {TOUR.length} · {COPY.app.tourEscape}
       </div>
       <h2 id="tour-title" className="h" style={{ margin: "6px 0" }}>
         {step.title}

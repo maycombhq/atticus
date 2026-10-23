@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { COPY } from "../copy.js";
 import { api, ApiError, useApi, useLiveEvents } from "../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../app/flow.js";
 import type { Graph } from "../app/graph.js";
@@ -264,9 +265,13 @@ export function CommandCenter() {
     <>
       <div className="row between" style={{ flexWrap: "wrap" }}>
         <p className="n" style={{ margin: 0, fontSize: 24, letterSpacing: "0.02em" }}>
-          {blocking.length + gaps.length > 0
-            ? `${blocking.length + gaps.length} things need attention.`
-            : "Nothing is blocked right now."}
+          {changes.state === "error" || findings.state === "error"
+            ? COPY.app.ccCantRead
+            : changes.state !== "ready" || findings.state !== "ready"
+              ? COPY.app.ccReading
+              : blocking.length + gaps.length > 0
+                ? `${blocking.length + gaps.length} things need attention.`
+                : "Nothing is blocked right now."}
         </p>
         <span className="hud">
           {me ? `Live from your metarepo · you are ${me.user}` : "Live from your metarepo"}
@@ -280,25 +285,41 @@ export function CommandCenter() {
 
       <div className="bento" role="list" aria-label="Key numbers">
         {[
-          { label: "Changes in flight", value: inFlight.length, color: "var(--text)" },
+          // A count not loaded shows a dash, never a 0 that reads as "none".
+          {
+            label: "Changes in flight",
+            value: changes.state === "ready" ? inFlight.length : undefined,
+            color: "var(--text)",
+          },
           {
             label: "Blocking findings",
-            value: blocking.length,
+            value: findings.state === "ready" ? blocking.length : undefined,
             color: blocking.length ? "var(--magenta)" : "var(--text)",
           },
           {
             label: "Open owner questions",
-            value: questions,
+            value: qs.state === "ready" ? questions : undefined,
             color: questions ? "var(--amber)" : "var(--text)",
           },
-          { label: "Facts in the catalog", value: facts, color: "var(--accent)" },
+          {
+            label: "Facts in the catalog",
+            value: kinds.state === "ready" ? facts : undefined,
+            color: "var(--accent)",
+          },
         ].map((k) => (
           <div key={k.label} role="listitem" className="panel" style={{ gridColumn: "span 3" }}>
             <div className="hud" style={{ fontSize: 10 }}>
               {k.label}
             </div>
             <div className="n" style={{ fontSize: 30, color: k.color }}>
-              {k.value.toLocaleString()}
+              {k.value === undefined ? (
+                <>
+                  <span aria-hidden="true">–</span>
+                  <span className="sr">{COPY.app.notLoaded}</span>
+                </>
+              ) : (
+                k.value.toLocaleString()
+              )}
             </div>
           </div>
         ))}
