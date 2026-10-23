@@ -35,6 +35,7 @@ const healthy = (o: Partial<DoctorDeps> = {}): DoctorDeps => ({
   portFree: async () => true,
   freeBytes: async () => 50 * 1024 ** 3,
   onPath: (p) => p === "code",
+  assistantFiles: async () => ({ missing: [], stale: [], edited: [] }),
   ...o,
 });
 
@@ -151,6 +152,69 @@ describe("atticus doctor", () => {
       byId(await doctorChecks(root, healthy({ freeBytes: async () => 100 * 1024 ** 2 })), "disk")
         .status,
     ).toBe("fail");
+  });
+
+  it("says whether the slash-command files are there and current (ADR 0119)", async () => {
+    const missing = await doctorChecks(
+      root,
+      healthy({
+        assistantFiles: async () => ({
+          missing: [".github/prompts/atticus-feature.prompt.md"],
+          stale: [],
+          edited: [],
+        }),
+      }),
+    );
+    expect(byId(missing, "assistant-files")).toMatchObject({ status: "warn" });
+    expect(byId(missing, "assistant-files").detail).toContain("1 missing");
+    expect(byId(missing, "assistant-files").fix).toContain("atticus assistant-files");
+    const stale = await doctorChecks(
+      root,
+      healthy({
+        assistantFiles: async () => ({
+          missing: [],
+          stale: ["a.md", "b.md"],
+          edited: ["c.md"],
+        }),
+      }),
+    );
+    expect(byId(stale, "assistant-files").detail).toContain("2 out of date");
+    expect(byId(stale, "assistant-files").detail).toContain("1 edited by hand");
+    expect(byId(await doctorChecks(root, healthy()), "assistant-files").status).toBe("ok");
+  });
+
+  it("says how AI steps run here, and whether model mode has a provider and its key, by name only", async () => {
+    const handoff = byId(await doctorChecks(root, healthy()), "model");
+    expect(handoff).toMatchObject({ status: "ok" });
+    expect(handoff.detail).toMatch(/hand off to your assistant/);
+    const own = await mkdtemp(join(tmpdir(), "atticus-doctor-model-"));
+    await cp(join(FIXTURES, "forge/metarepo"), own, { recursive: true });
+    const rt = (adapter: string) =>
+      writeFile(
+        join(own, "org-pack/runtime.yaml"),
+        [
+          "schemaVersion: 1",
+          "assistants: { allowed: [copilot], default: copilot }",
+          "modes: { allowed: [hand-off, model], default: hand-off }",
+          "adapters:",
+          adapter,
+        ].join("\n"),
+      );
+    await rt("  gitHost: { type: mock }");
+    expect(byId(await doctorChecks(own, healthy()), "model")).toMatchObject({ status: "warn" });
+    await rt(
+      "  model: { type: anthropic, settings: { model: claude-opus-5-5, keyEnv: ATTICUS_MODEL_KEY } }",
+    );
+    const unset = byId(await doctorChecks(own, healthy()), "model");
+    expect(unset.status).toBe("warn");
+    expect(unset.detail).toContain("ATTICUS_MODEL_KEY isn't set");
+    const set = byId(
+      await doctorChecks(own, healthy({ env: { PATH: "", ATTICUS_MODEL_KEY: "sk-secret-value" } })),
+      "model",
+    );
+    expect(set.status).toBe("ok");
+    expect(set.detail).toContain("anthropic");
+    expect(JSON.stringify(set)).not.toContain("sk-secret-value");
   });
 
   it("puts the machine first on the setup checklist", async () => {

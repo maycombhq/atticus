@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { access, constants, mkdir, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { delimiter, join } from "node:path";
+import { generateAssistantFiles } from "@maycombhq/assistant-files";
 import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock } from "@maycombhq/core";
 import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
 import { createGit, type GitRunner } from "@maycombhq/workspace";
@@ -40,6 +41,21 @@ export interface DoctorDeps {
   freeBytes?: (dir: string) => Promise<number | undefined>;
   /** Whether a program is on PATH. */
   onPath?: (program: string) => boolean;
+  /** The slash-command files that are missing, out of date or edited by hand (ADR 0119). */
+  assistantFiles?: (root: string) => Promise<AssistantFilesState>;
+}
+
+export interface AssistantFilesState {
+  missing: string[];
+  stale: string[];
+  edited: string[];
+}
+
+/** What `atticus assistant-files --check` would do, as lists; nothing is written. */
+async function defaultAssistantFiles(root: string): Promise<AssistantFilesState> {
+  const r = await generateAssistantFiles(root, { check: true });
+  const of = (a: string) => r.results.filter((x) => x.action === a).map((x) => x.path);
+  return { missing: of("created"), stale: of("updated"), edited: of("kept-edited") };
 }
 
 export const MIN_NODE = "22.13.0";
@@ -333,6 +349,62 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
         : "no editor listed in runtime.yaml",
     fix: "Change worktrees open as VS Code or IntelliJ workspaces: install one, or add its command to PATH.",
   });
+  // ---- How AI steps run here, and whether model mode can (ADR 0119). Names only, no call:
+  // doctor makes no network call, so a provider is checked for being named and keyed, not reached.
+  const model = rt.adapters.model;
+  const keyEnv =
+    model && typeof model.settings.keyEnv === "string" ? model.settings.keyEnv : undefined;
+  const modelMode = rt.modes.allowed.includes("model");
+  const named = !!model && model.type !== "mock";
+  out.push({
+    id: "model",
+    label: "How AI steps run",
+    status:
+      rt.ai === "off" || !modelMode || (named && (!keyEnv || envName(env, keyEnv))) ? "ok" : "warn",
+    detail:
+      rt.ai === "off"
+        ? "AI is off here (runtime.yaml)"
+        : !modelMode
+          ? "AI steps hand off to your assistant; runtime.yaml doesn't allow Atticus to call a model itself"
+          : !named
+            ? "model mode is allowed, but runtime.yaml names no model provider"
+            : keyEnv && !envName(env, keyEnv)
+              ? `model mode with ${model.type}, but ${keyEnv} isn't set on this machine`
+              : `model mode with ${model.type}${typeof model.settings.model === "string" ? ` (${model.settings.model})` : ""}${keyEnv ? `; ${keyEnv} is set` : ""}. Not called here: doctor makes no network call`,
+    fix: !named
+      ? "Name the provider under adapters.model in runtime.yaml (docs/guide/admin.md, Calling a model directly), or leave model mode out of modes.allowed."
+      : `Set the environment variable ${keyEnv ?? "the provider's key variable"} to the key on this machine (never in runtime.yaml), then open a new terminal.`,
+  });
+
+  // ---- The slash commands the assistant runs: there and current (ADR 0119)
+  if (rt.ai !== "off") {
+    let files: AssistantFilesState | undefined;
+    let problem: string | undefined;
+    try {
+      files = await (deps.assistantFiles ?? defaultAssistantFiles)(root);
+    } catch (e) {
+      problem = e instanceof Error ? e.message : String(e);
+    }
+    const parts = files
+      ? [
+          files.missing.length ? `${files.missing.length} missing` : "",
+          files.stale.length ? `${files.stale.length} out of date` : "",
+          files.edited.length ? `${files.edited.length} edited by hand (kept)` : "",
+        ].filter(Boolean)
+      : [];
+    out.push({
+      id: "assistant-files",
+      label: "Slash commands",
+      status: problem || files!.missing.length || files!.stale.length ? "warn" : "ok",
+      detail: problem
+        ? `couldn't check them: ${problem}`
+        : parts.length
+          ? `${parts.join(", ")}: the /atticus-* commands your assistant runs`
+          : "the /atticus-* commands your assistant runs are there and current",
+      fix: "Run atticus assistant-files, then commit what it wrote in a pull request; a file edited by hand is kept unless you add --force.",
+    });
+  }
+
   const live = Object.entries(rt.adapters).filter(
     ([, a]) => a && a.type !== "mock" && a.type !== "manual",
   );

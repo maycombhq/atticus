@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Start with `atticus doctor` in the metarepo: most problems are on the machine, and each line it prints says what to do.
+Start with `atticus doctor` in the metarepo: most problems are on the machine, and each line it prints says what to do. It also says how AI steps run here (handed off to your assistant, or model mode with which provider and whether its key variable is set, by name only) and whether the `/atticus-*` slash-command files are there and current. It makes no network call, so it doesn't call the model.
 
 | What you see                                                                            | What it means                                                                                      | What to do                                                                                                                                         |
 | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
