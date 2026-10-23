@@ -5,6 +5,17 @@ import type { NextStep } from "./types";
  * them. No `vscode` here, so it is tested outside the editor.
  */
 
+/**
+ * What the extension says when something it does by itself goes wrong (ADR 0119): never
+ * nothing, and never as if all were well.
+ */
+export const WORDS = {
+  showOutput: "Show the output",
+  lensesFailed: (why: string) =>
+    `Atticus couldn't read which flows cite this file, so it shows no lenses for now: ${why}`,
+  healthFailed: (why: string) => `Atticus couldn't check this machine and the metarepo: ${why}`,
+};
+
 /** A change's title, by its id, when the extension can read it. */
 export type ChangeTitles = (id: string) => string | undefined;
 

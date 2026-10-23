@@ -178,6 +178,22 @@ export function useApi<T>(
 
 export type LiveEvent = { type: string } & Record<string, unknown>;
 
+/** A file or a model run changed: what an assistant, the CLI or another screen wrote. */
+export const isFileChange = (e: LiveEvent): boolean =>
+  e.type === "file.changed" || e.type === "run.changed" || e.type === "index.rebuilt";
+
+/**
+ * Read these views again when files change (ADR 0119), so a screen follows what an assistant
+ * or the CLI writes without a reload. Views not loaded yet are left alone.
+ */
+export function useReloadOnFiles(...views: ({ reload(): void } | undefined)[]): void {
+  const current = useRef(views);
+  current.current = views;
+  useLiveEvents((e) => {
+    if (isFileChange(e)) for (const v of current.current) v?.reload();
+  });
+}
+
 /** Live events on /api/events; reconnects with a backoff while the page is open. */
 export function useLiveEvents(onEvent: (e: LiveEvent) => void): void {
   const handler = useRef(onEvent);

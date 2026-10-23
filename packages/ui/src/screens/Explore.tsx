@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useApi } from "../api/client.js";
+import { useApi, useReloadOnFiles } from "../api/client.js";
 import { GraphView, type Graph } from "../app/graph.js";
 import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
@@ -194,6 +194,7 @@ export function Explore({ hash }: { hash: string }) {
   const graph = useApi<Graph>(
     focusId ? `/api/graph?focus=${encodeURIComponent(focusId)}&depth=2` : "/api/graph",
   );
+  useReloadOnFiles(results, graph);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setPicked(undefined);

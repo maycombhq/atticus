@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useApi } from "../api/client.js";
+import { useApi, useReloadOnFiles } from "../api/client.js";
 import { ExternalLink, Panel, View } from "../app/ui.js";
 import { FilterBox, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
 import { Table } from "./know/common.js";
@@ -138,6 +138,7 @@ export function filterRows(rows: AcrossRow[], text: string): AcrossRow[] {
 
 export function AcrossPanel({ view }: { view: AcrossId }) {
   const data = useApi<Across>(view === "needs" ? undefined : `/api/across?view=${view}`);
+  useReloadOnFiles(data);
   const [text, setText] = useState("");
   const label = ACROSS.find((a) => a.id === view)!.label;
   return (

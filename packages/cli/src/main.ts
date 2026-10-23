@@ -1,4 +1,4 @@
-import { parseArgs } from "node:util";
+import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { createLog, SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
 import { gitUser } from "@maycombhq/workspace";
 import { basename, join, resolve } from "node:path";
@@ -613,6 +613,7 @@ Usage:
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
           [--parent pid]               Stop when that process ends (an editor that started it)
+          [--show-token]               Print the session token, for an assistant or a script (an editor that starts it gets it)
   atticus --version                    Print the version
   atticus --help                       Show this help
 
@@ -721,154 +722,161 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
   }
 }
 
+/**
+ * Every option any command takes. A flag not here, nor in the help, is refused (ADR 0119): see
+ * checkFlags.
+ */
+const OPTIONS = {
+  help: { type: "boolean", short: "h" },
+  version: { type: "boolean", short: "v" },
+  fix: { type: "boolean" },
+  root: { type: "string" },
+  repos: { type: "string" },
+  all: { type: "boolean" },
+  kind: { type: "string" },
+  executor: { type: "string" },
+  fixture: { type: "string" },
+  force: { type: "boolean" },
+  draft: { type: "boolean" },
+  gaps: { type: "boolean" },
+  full: { type: "boolean" },
+  "dry-run": { type: "boolean" },
+  json: { type: "boolean" },
+  limit: { type: "string" },
+  filter: { type: "string" },
+  "batch-tokens": { type: "string" },
+  "max-tokens": { type: "string" },
+  "context-tokens": { type: "string" },
+  "whole-context": { type: "boolean" },
+  search: { type: "boolean" },
+  regex: { type: "boolean" },
+  "ignore-case": { type: "boolean" },
+  paths: { type: "string" },
+  // atticus context (ADR 0107 addendum): the context tools.
+  input: { type: "string" },
+  run: { type: "string" },
+  round: { type: "string" },
+  hops: { type: "string" },
+  line: { type: "string" },
+  around: { type: "string" },
+  depth: { type: "string" },
+  by: { type: "string" },
+  as: { type: "string" },
+  group: { type: "string", multiple: true },
+  channel: { type: "string" },
+  send: { type: "boolean" },
+  site: { type: "string" },
+  reason: { type: "string" },
+  focus: { type: "string" },
+  format: { type: "string" },
+  out: { type: "string" },
+  port: { type: "string" },
+  open: { type: "boolean" },
+  "show-token": { type: "boolean" },
+  embed: { type: "string" },
+  parent: { type: "string" },
+  host: { type: "string" },
+  catalog: { type: "string" },
+  "from-catalog": { type: "boolean" },
+  from: { type: "string" },
+  package: { type: "string" },
+  jars: { type: "string", multiple: true },
+  learn: { type: "boolean" },
+  type: { type: "string" },
+  template: { type: "string" },
+  id: { type: "string" },
+  owner: { type: "string", multiple: true },
+  system: { type: "string", multiple: true },
+  base: { type: "string" },
+  repo: { type: "string" },
+  gate: { type: "string" },
+  lens: { type: "string" },
+  "asked-of": { type: "string" },
+  edit: { type: "string" },
+  description: { type: "string" },
+  title: { type: "string" },
+  name: { type: "string" },
+  attempts: { type: "string" },
+  users: { type: "string" },
+  language: { type: "string" },
+  replace: { type: "boolean" },
+  into: { type: "string" },
+  level: { type: "string" },
+  mode: { type: "string" },
+  approve: { type: "boolean" },
+  pr: { type: "string" },
+  "pr-url": { type: "string" },
+  change: { type: "string" },
+  check: { type: "boolean" },
+  resume: { type: "string" },
+  eval: { type: "string" },
+  epic: { type: "string" },
+  "no-ai": { type: "boolean" },
+  "no-drift": { type: "boolean" },
+  warnings: { type: "boolean" },
+  "no-rescan": { type: "boolean" },
+  refresh: { type: "string" },
+  export: { type: "string" },
+  result: { type: "string", multiple: true },
+  skip: { type: "boolean" },
+  note: { type: "string" },
+  for: { type: "string" },
+  with: { type: "string" },
+  inputs: { type: "string" },
+  "fill-only": { type: "boolean" },
+  platform: { type: "string" },
+  ref: { type: "string" },
+  task: { type: "string" },
+  latest: { type: "boolean" },
+  org: { type: "string" },
+  framework: { type: "string" },
+  csv: { type: "boolean" },
+  "no-write": { type: "boolean" },
+  junit: { type: "string" },
+  summary: { type: "string" },
+  "json-out": { type: "string" },
+  "warn-only": { type: "boolean" },
+  write: { type: "string" },
+  path: { type: "string" },
+  submodule: { type: "boolean" },
+  save: { type: "boolean" },
+  only: { type: "string" },
+  "verified-only": { type: "boolean" },
+  unverified: { type: "boolean" },
+  set: { type: "string", multiple: true },
+  find: { type: "string" },
+  drift: { type: "string", multiple: true },
+  journey: { type: "string" },
+  release: { type: "string" },
+  target: { type: "string" },
+  answer: { type: "string" },
+  lesson: { type: "string" },
+  step: { type: "string" },
+  agent: { type: "string", multiple: true },
+  runs: { type: "string" },
+  audience: { type: "string" },
+  value: { type: "string" },
+  bench: { type: "string" },
+  cache: { type: "string" },
+  batch: { type: "string" },
+  specs: { type: "boolean" },
+  estate: { type: "string" },
+  accept: { type: "boolean" },
+  tag: { type: "string" },
+  source: { type: "string" },
+  "from-figma": { type: "string" },
+  replaces: { type: "string" },
+  surface: { type: "string" },
+  session: { type: "string" },
+  command: { type: "string" },
+  markdown: { type: "boolean" },
+} satisfies ParseArgsOptionsConfig;
+
 async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
-    options: {
-      help: { type: "boolean", short: "h" },
-      version: { type: "boolean", short: "v" },
-      fix: { type: "boolean" },
-      root: { type: "string" },
-      repos: { type: "string" },
-      all: { type: "boolean" },
-      kind: { type: "string" },
-      executor: { type: "string" },
-      fixture: { type: "string" },
-      force: { type: "boolean" },
-      draft: { type: "boolean" },
-      gaps: { type: "boolean" },
-      full: { type: "boolean" },
-      "dry-run": { type: "boolean" },
-      json: { type: "boolean" },
-      limit: { type: "string" },
-      filter: { type: "string" },
-      "batch-tokens": { type: "string" },
-      "max-tokens": { type: "string" },
-      "context-tokens": { type: "string" },
-      "whole-context": { type: "boolean" },
-      search: { type: "boolean" },
-      regex: { type: "boolean" },
-      "ignore-case": { type: "boolean" },
-      paths: { type: "string" },
-      // atticus context (ADR 0107 addendum): the context tools.
-      input: { type: "string" },
-      run: { type: "string" },
-      round: { type: "string" },
-      hops: { type: "string" },
-      line: { type: "string" },
-      around: { type: "string" },
-      depth: { type: "string" },
-      by: { type: "string" },
-      as: { type: "string" },
-      group: { type: "string", multiple: true },
-      channel: { type: "string" },
-      send: { type: "boolean" },
-      site: { type: "string" },
-      reason: { type: "string" },
-      focus: { type: "string" },
-      format: { type: "string" },
-      out: { type: "string" },
-      port: { type: "string" },
-      open: { type: "boolean" },
-      embed: { type: "string" },
-      parent: { type: "string" },
-      host: { type: "string" },
-      catalog: { type: "string" },
-      "from-catalog": { type: "boolean" },
-      from: { type: "string" },
-      package: { type: "string" },
-      jars: { type: "string", multiple: true },
-      learn: { type: "boolean" },
-      type: { type: "string" },
-      template: { type: "string" },
-      id: { type: "string" },
-      owner: { type: "string", multiple: true },
-      system: { type: "string", multiple: true },
-      base: { type: "string" },
-      repo: { type: "string" },
-      gate: { type: "string" },
-      lens: { type: "string" },
-      "asked-of": { type: "string" },
-      edit: { type: "string" },
-      description: { type: "string" },
-      title: { type: "string" },
-      name: { type: "string" },
-      attempts: { type: "string" },
-      users: { type: "string" },
-      language: { type: "string" },
-      replace: { type: "boolean" },
-      into: { type: "string" },
-      level: { type: "string" },
-      mode: { type: "string" },
-      approve: { type: "boolean" },
-      pr: { type: "string" },
-      "pr-url": { type: "string" },
-      change: { type: "string" },
-      check: { type: "boolean" },
-      resume: { type: "string" },
-      eval: { type: "string" },
-      epic: { type: "string" },
-      "no-ai": { type: "boolean" },
-      "no-drift": { type: "boolean" },
-      warnings: { type: "boolean" },
-      "no-rescan": { type: "boolean" },
-      refresh: { type: "string" },
-      export: { type: "string" },
-      result: { type: "string", multiple: true },
-      skip: { type: "boolean" },
-      note: { type: "string" },
-      for: { type: "string" },
-      with: { type: "string" },
-      inputs: { type: "string" },
-      "fill-only": { type: "boolean" },
-      platform: { type: "string" },
-      ref: { type: "string" },
-      task: { type: "string" },
-      latest: { type: "boolean" },
-      org: { type: "string" },
-      framework: { type: "string" },
-      csv: { type: "boolean" },
-      "no-write": { type: "boolean" },
-      junit: { type: "string" },
-      summary: { type: "string" },
-      "json-out": { type: "string" },
-      "warn-only": { type: "boolean" },
-      write: { type: "string" },
-      path: { type: "string" },
-      submodule: { type: "boolean" },
-      save: { type: "boolean" },
-      only: { type: "string" },
-      "verified-only": { type: "boolean" },
-      unverified: { type: "boolean" },
-      set: { type: "string", multiple: true },
-      find: { type: "string" },
-      drift: { type: "string", multiple: true },
-      journey: { type: "string" },
-      release: { type: "string" },
-      target: { type: "string" },
-      answer: { type: "string" },
-      lesson: { type: "string" },
-      step: { type: "string" },
-      agent: { type: "string", multiple: true },
-      runs: { type: "string" },
-      audience: { type: "string" },
-      value: { type: "string" },
-      bench: { type: "string" },
-      cache: { type: "string" },
-      batch: { type: "string" },
-      specs: { type: "boolean" },
-      estate: { type: "string" },
-      accept: { type: "boolean" },
-      tag: { type: "string" },
-      source: { type: "string" },
-      "from-figma": { type: "string" },
-      replaces: { type: "string" },
-      surface: { type: "string" },
-      session: { type: "string" },
-      command: { type: "string" },
-      markdown: { type: "boolean" },
-    },
+    options: OPTIONS,
     strict: false,
   });
 
@@ -877,6 +885,13 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     return 0;
   }
   const [group, command, arg] = positionals;
+  const refused = await checkFlags(argv, positionals, io);
+  if (refused !== undefined) return refused;
+  // ADR 0119: one command's help, with `atticus help <command>` or `<command> --help`.
+  if (group === "help" || (values.help && group)) {
+    const { helpCommand } = await import("./help-commands.js");
+    return helpCommand(group === "help" ? positionals.slice(1) : positionals, HELP, io);
+  }
   if (values.help || !group) {
     io.out(HELP);
     return 0;
@@ -1642,6 +1657,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
             ? { port: num(values.port)! }
             : {}),
         open: values.open === true,
+        showToken: values["show-token"] === true,
         ...(values.embed === "vscode" ? { embed: "vscode" as const } : {}),
         ...(parent !== undefined ? { parent } : {}),
         version: VERSION,
@@ -2729,6 +2745,54 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       io,
     );
   }
-  io.err(`Unknown command: ${positionals.join(" ")}\n\n${HELP}`);
+  // ADR 0119: the nearest command, not the whole help.
+  const { commandCatalog } = await import("./command-catalog.js");
+  const { nearestCommand } = await import("./flags.js");
+  const near = nearestCommand(
+    positionals,
+    commandCatalog(HELP).map((c) => c.id),
+  );
+  io.err(
+    `Unknown command: ${positionals.join(" ")}.${near ? ` Did you mean atticus ${near}?` : ""}`,
+  );
+  io.err("atticus help lists every command; atticus help <command> explains one.");
+  return 2;
+}
+
+/** Flags the questions commands read themselves (question-commands.ts). */
+const QUESTION_FLAGS = ["state", "option", "text", "scope", "type"];
+
+/**
+ * Refuse a flag no command knows, with the nearest one (ADR 0119): an ignored --aprove is a write
+ * the person thought they'd asked for. Known: every option parsed here, the questions commands'
+ * own, --handoff, and every flag the help names. Undefined when all are known.
+ */
+async function checkFlags(
+  argv: string[],
+  positionals: string[],
+  io: Output,
+): Promise<number | undefined> {
+  const { unknownFlags, unknownFlagMessages } = await import("./flags.js");
+  const quick = new Set([...Object.keys(OPTIONS), ...QUESTION_FLAGS, "handoff"]);
+  if (!unknownFlags(argv, quick).length) return undefined;
+  const { commandCatalog } = await import("./command-catalog.js");
+  const catalog = commandCatalog(HELP);
+  const known = new Set([
+    ...quick,
+    ...catalog.flatMap((c) => c.flags.map((f) => f.name.replace(/^--/, ""))),
+  ]);
+  const unknown = unknownFlags(argv, known);
+  if (!unknown.length) return undefined;
+  for (const m of unknownFlagMessages(unknown, known)) io.err(m);
+  const { commandOf } = await import("./help-commands.js");
+  const id = commandOf(
+    positionals,
+    catalog.map((c) => c.id),
+  );
+  io.err(
+    id
+      ? `atticus help ${id} lists what it takes. Nothing was run.`
+      : "atticus help lists every command and what it takes. Nothing was run.",
+  );
   return 2;
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, useApi } from "../../api/client.js";
+import { api, useApi, useReloadOnFiles } from "../../api/client.js";
 import { Bar, Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Choice, CopyButton, Note, plural, useAction } from "./shared.js";
@@ -204,6 +204,7 @@ function SandboxForm() {
 
 export function Learning() {
   const l = useApi<Learning>("/api/learning");
+  useReloadOnFiles(l);
   const [role, setRole] = useState("all");
   const start = useAction();
   const roles = l.state === "ready" ? l.data.roles : [];

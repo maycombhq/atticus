@@ -30,7 +30,7 @@ import { commandText } from "./cli";
 import { copilotSetup, describeEnd, endActions, endFiles } from "./describe";
 import { aiProgressTitle, runProgressTitle } from "./feedback";
 import { pickLoading } from "./pick";
-import { statusText, stepTitle } from "./words";
+import { statusText, stepTitle, WORDS } from "./words";
 import type { StepEnd } from "./runner";
 import { checkRunStep, runEndMessage, runProgressMessage, runRefusedMessage } from "./run-step";
 import type * as Api from "./api-types";
@@ -412,10 +412,20 @@ ${view.next.why}`
     if (!change) return;
     let task = item?.task?.id;
     if (!task) {
-      const tasks = await svc
-        .api(root)
-        .then((x) => x.get<Api.Task[]>(`/api/changes/${encodeURIComponent(change)}/tasks`))
-        .catch(() => [] as Api.Task[]);
+      let tasks: Api.Task[];
+      try {
+        tasks = await svc
+          .api(root)
+          .then((x) => x.get<Api.Task[]>(`/api/changes/${encodeURIComponent(change)}/tasks`));
+      } catch (e) {
+        // A read that failed is not "no tasks" (ADR 0119): say so, with the output.
+        const why = e instanceof Error ? e.message : String(e);
+        svc.log.appendLine(START_WORDS.tasksFailed(change, why));
+        void vscode.window
+          .showErrorMessage(START_WORDS.tasksFailed(change, why), WORDS.showOutput)
+          .then((p) => p && svc.log.show());
+        return;
+      }
       if (!tasks.length) {
         void vscode.window.showWarningMessage(START_WORDS.noTasks(change));
         return;
@@ -1153,16 +1163,18 @@ ${view.next.why}`
   const toApp = (event: { type: string; path?: string }) => {
     if (panel && panelMode === "bundled") void panel.webview.postMessage({ type: "event", event });
   };
+  // The app also follows what the sidebar doesn't: proposals, inputs, the model runs and the
+  // prompt history (ADR 0119), so its Model runs and Prompt history screens update too.
+  const appFiles = vscode.workspace.createFileSystemWatcher(
+    "**/{specs,catalog,openspec,questions,knowledge,org-pack,proposals,inputs,.runs,history}/**/*",
+  );
+  const toAppPath = (u: vscode.Uri) =>
+    toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u, false) });
   context.subscriptions.push(
-    files.onDidChange((u) =>
-      toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u) }),
-    ),
-    files.onDidCreate((u) =>
-      toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u) }),
-    ),
-    files.onDidDelete((u) =>
-      toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u) }),
-    ),
+    appFiles,
+    appFiles.onDidChange(toAppPath),
+    appFiles.onDidCreate(toAppPath),
+    appFiles.onDidDelete(toAppPath),
   );
   reg("atticus.showApp", async (hash?: string, o?: { beside?: boolean }) => {
     const root = needRoot();
@@ -1317,7 +1329,12 @@ ${view.next.why}`
           "Set up Copilot",
         )
         .then((p) => p && vscode.commands.executeCommand("atticus.installCopilot"));
-    if (svc.root && svc.cliOk) void commands.checkHealth(svc.root, true).catch(() => undefined);
+    if (svc.root && svc.cliOk)
+      void commands
+        .checkHealth(svc.root, true)
+        .catch((e: unknown) =>
+          svc.log.appendLine(WORDS.healthFailed(e instanceof Error ? e.message : String(e))),
+        );
   });
   return {
     ready,

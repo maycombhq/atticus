@@ -4,3 +4,4 @@ export * from "./server.js";
 export * from "./jobs.js";
 export * from "./ws.js";
 export * from "./static.js";
+export * from "./watch.js";

@@ -8,6 +8,7 @@ import { HttpError, notFound, conflict, problem, Router } from "./http.js";
 import { JobManager } from "./jobs.js";
 import { apiRoutes, type Context } from "./routes.js";
 import { appCsp, staticFile } from "./static.js";
+import { watchMetarepo } from "./watch.js";
 import { upgrade, type Socket } from "./ws.js";
 
 /** A live event (contract C4 LiveEvent): file, job, index and run changes. */
@@ -59,6 +60,11 @@ export interface ServerOptions {
    * (frame-ancestors vscode-webview:). The API keeps every header; default: nothing may frame.
    */
   embed?: "vscode";
+  /**
+   * Follow the metarepo's files and send what changed as live events (ADR 0119), so the app
+   * updates when an assistant or the CLI writes. Default true.
+   */
+  watch?: boolean;
   /** Told about every API call when it ends: method, path (no query), status and time. */
   onRequest?: (r: {
     method: string;
@@ -83,6 +89,8 @@ export interface RunningServer {
   jobs: JobManager;
   /** Who the app records as `by`: the Git user, or who `user` named (ADR 0073). */
   person: GitUser;
+  /** The folders followed for live events, from the root (ADR 0119); empty when not watching. */
+  following: string[];
   close(): Promise<void>;
 }
 
@@ -261,6 +269,10 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     server.listen(o.port ?? DEFAULT_PORT, host, () => resolve());
   });
   port = (server.address() as AddressInfo).port;
+  const watcher =
+    o.watch === false
+      ? undefined
+      : watchMetarepo({ root: o.root, publish: (e) => events.publish(e) });
   return {
     url: `http://127.0.0.1:${port}`,
     port,
@@ -268,8 +280,12 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     events,
     jobs,
     person,
+    get following() {
+      return watcher?.following ?? [];
+    },
     close: () =>
       new Promise<void>((resolve) => {
+        watcher?.close();
         events.closeAll();
         server.closeAllConnections?.();
         server.close(() => resolve());

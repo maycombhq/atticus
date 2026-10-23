@@ -17,6 +17,8 @@ export const START_WORDS = {
   copied: (task: string, why: string) =>
     `Copilot Chat couldn't be opened (${why}), so task ${task}'s context is on the clipboard: paste it into Copilot Chat in agent mode.`,
   failed: (why: string) => `Couldn't read the task's context: ${why}`,
+  tasksFailed: (change: string, why: string) =>
+    `Couldn't read ${change}'s tasks: ${why} The output says more.`,
   attachPick: "Attach to which change?",
 };
 

@@ -1132,11 +1132,18 @@ export function Scans() {
       }
     }
   });
+  const [stopping, setStopping] = useState(false);
   const start = (path: string, label: string) =>
     act.run(async () => {
+      setStopping(false);
       const r = await api<{ jobId: string }>(path, { method: "POST", body: {} });
       setJob(await api<Job>(`/api/jobs/${r.jobId}`));
     }, `${label} started.`);
+  const cancel = (id: string) => {
+    setStopping(true);
+    // A job that ended meanwhile says so with 409; its end arrives as job.done either way.
+    void api(`/api/jobs/${id}/cancel`, { method: "POST", body: {} }).catch(() => undefined);
+  };
   const present =
     repos.state === "ready" ? repos.data.filter((r) => r.baseClone.present).length : 0;
   const total = repos.state === "ready" ? repos.data.length : 0;
@@ -1176,16 +1183,39 @@ export function Scans() {
           {job && (
             <div className="stack" role="status" aria-live="polite">
               <span className="hud" style={{ fontSize: 10 }}>
-                {job.state}
-                {job.state === "failed" ? "" : ` · ${job.progress.message}`}
+                {T.jobState[job.state] ?? job.state}
+                {job.state === "running" ? ` · ${job.progress.message}` : ""}
               </span>
               <Bar
                 value={job.progress.done}
                 max={Math.max(job.progress.total, 1)}
                 label={T.jobProgress}
               />
+              {job.state === "running" && (
+                <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={stopping}
+                    aria-describedby="scan-cancel-hint"
+                    onClick={() => cancel(job.id)}
+                  >
+                    {stopping ? T.cancelling : T.cancelJob}
+                  </button>
+                  <span id="scan-cancel-hint" className="muted" style={{ fontSize: 12 }}>
+                    {T.cancelJobHint}
+                  </span>
+                </div>
+              )}
               {job.errors.length > 0 && (
-                <span style={{ color: "var(--magenta-text)" }}>{job.errors.join("; ")}</span>
+                <ul
+                  aria-label={T.jobProblems}
+                  style={{ margin: 0, paddingLeft: 18, color: "var(--magenta-text)" }}
+                >
+                  {job.errors.map((e, i) => (
+                    <li key={`${i}:${e}`}>{e}</li>
+                  ))}
+                </ul>
               )}
             </div>
           )}

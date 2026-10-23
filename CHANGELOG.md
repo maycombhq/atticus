@@ -4,6 +4,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### One experience on every surface: state that tells the truth (ADR 0119)
+
+- The local server follows the metarepo's files: what an assistant, the CLI or a person writes (a change's files, specs, questions, knowledge, the catalog, proposals, inputs, model runs, the prompt history) reaches the app as a `file.changed` live event within about a second. The app in a browser and in IntelliJ's panel now updates as VS Code's does, without a reload. It never follows the base clones, the index or Git. `startServer({ watch: false })` turns it off.
+- Explore, Questions, Learning, Settings and Across now read again when files change, as the other screens do (`useReloadOnFiles`).
+- Cancel stops the work: a job runs inside an abort signal, which a model call stops on at once (the run is recorded as cancelled) and a scan checks between repos, before it writes. A cancelled job ends as cancelled, not failed. The Scans panel and Run with the model show Cancel while they run.
+- The Scans panel says a job's state in words and lists each error on its own line.
+- VS Code: a failed read of a change's tasks says so instead of "no tasks"; lenses that can't be read and a startup check that fails say why in the output. Its app panel also follows proposals, inputs, the model runs and the prompt history.
+- `atticus ui` prints the session token only when an editor started it (`--embed`, `--parent`) or with the new `--show-token`.
+- The command line refuses a flag no command knows, with the nearest one and exit 2, running nothing: `--aprove` says "Did you mean --approve?". Every flag the help names, the editors pass and the slash commands use is known.
+- `atticus help <command>` (and `atticus <command> --help`) prints that command's usage and options instead of the whole help; a misspelled command says the nearest one ("Did you mean atticus change list?") instead of printing all 230 lines.
+
 ### What an adversarial review of the stage loop found (ADR 0115 addendum)
 
 - A lens that didn't review is never a clean review. An empty answer, a refusal or prose (no `findings` list) fails `atticus handoff done` and is offered again; in model mode it records the lens `failed`. A failed lens in a gate's newest round now stops the gate's hand-off (`lens-failed`) until a new critic round reviews. This applies to the code-and-test lens's hand-up review too.

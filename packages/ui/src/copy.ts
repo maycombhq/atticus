@@ -1562,6 +1562,18 @@ export const COPY = {
     syncRepos: "Sync repos",
     scanNow: "Scan now",
     jobProgress: "Job progress",
+    /** A job's state in words (ADR 0119). */
+    jobState: {
+      queued: "Waiting to start",
+      running: "Running",
+      done: "Done",
+      failed: "It stopped with problems",
+      cancelled: "Cancelled: it stopped before writing anything more",
+    } as Record<string, string>,
+    cancelJob: "Cancel",
+    cancelling: "Stopping…",
+    cancelJobHint: "Stops at the next repo; what was already written stays.",
+    jobProblems: "What went wrong",
     scansReadFilesOnly: "Scans read files only: no network, no AI.",
     scan: "Scan",
     repos: "Repos",
@@ -2464,6 +2476,9 @@ export const COPY = {
     ended: (state: string) => `It ended: ${state}.`,
     openRun: "Read the run in Model runs",
     openRuns: "Open Model runs",
+    cancel: "Cancel",
+    cancelling: "Stopping…",
+    cancelHint: "Stops the model call; nothing from this run is kept.",
     cantStart: (why: string) => `Couldn't start it: ${why}`,
   },
   nextStep: {
