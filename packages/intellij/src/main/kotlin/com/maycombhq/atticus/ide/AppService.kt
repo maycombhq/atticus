@@ -11,7 +11,9 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.Key
+import com.maycombhq.atticus.core.Catalog
 import com.maycombhq.atticus.core.CommandLine
+import com.maycombhq.atticus.core.Commands
 import com.maycombhq.atticus.core.Copy
 import com.maycombhq.atticus.core.Metarepo
 import java.nio.file.Path
@@ -86,7 +88,10 @@ class AtticusApp(private val project: Project) : Disposable {
 
     private fun start(root: Path) {
         set(AppState.Starting)
-        val args = listOf("ui", "--port", "0", "--root", root.toString())
+        // The catalogue says whether this command line can stop with the IDE (--parent).
+        val catalog =
+            runCatching { Catalog.parse(AtticusCli.run(project, root.toString(), listOf("commands", "--json"), 60_000).stdout) }.getOrNull()
+        val args = Commands.uiArgs(root.toString(), catalog, ProcessHandle.current().pid())
         val log = AtticusLog.of(project)
         log.line("> ${CommandLine.text(args)}")
         val h =

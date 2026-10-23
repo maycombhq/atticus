@@ -59,4 +59,19 @@ describe("atticus ui", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(done).toBe(false);
   });
+
+  it("--parent <pid> stops when the editor that started it is gone, however it ended", async () => {
+    let alive = true;
+    let done = false;
+    const stopped = untilStopped(false, new PassThrough(), {
+      parent: 4242,
+      alive: (pid) => pid === 4242 && alive,
+      everyMs: 5,
+    }).then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(done).toBe(false);
+    alive = false;
+    await stopped;
+    expect(done).toBe(true);
+  });
 });

@@ -68,14 +68,35 @@ function openBrowser(url: string): void {
 /**
  * Resolves on Ctrl+C or SIGTERM. With --embed vscode it also resolves when stdin closes: the
  * extension holds that pipe open, so the app ends with the window that started it, even when
- * the window or its extension host is killed and nothing gets to stop it.
+ * the window or its extension host is killed and nothing gets to stop it. With --parent <pid> it
+ * also resolves once that process is gone: an editor (the IntelliJ plugin) that started it and
+ * was killed leaves no server behind.
  */
 export function untilStopped(
   embedded: boolean,
   stdin: NodeJS.ReadableStream = process.stdin,
+  o: { parent?: number; alive?: (pid: number) => boolean; everyMs?: number } = {},
 ): Promise<void> {
   return new Promise<void>((resolve) => {
+    const alive =
+      o.alive ??
+      ((pid: number) => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch (e) {
+          // EPERM: it is there, run by someone else.
+          return (e as NodeJS.ErrnoException).code === "EPERM";
+        }
+      });
+    const watch =
+      o.parent !== undefined
+        ? setInterval(() => {
+            if (!alive(o.parent!)) stop();
+          }, o.everyMs ?? 2000)
+        : undefined;
     const stop = () => {
+      if (watch) clearInterval(watch);
       process.off("SIGINT", stop);
       process.off("SIGTERM", stop);
       if (embedded) {
@@ -104,7 +125,14 @@ export function untilStopped(
  */
 export async function uiCommand(
   root: string,
-  o: { port?: number; open?: boolean; version?: string; user?: string; embed?: "vscode" },
+  o: {
+    port?: number;
+    open?: boolean;
+    version?: string;
+    user?: string;
+    embed?: "vscode";
+    parent?: number;
+  },
   io: Output,
 ): Promise<number> {
   let srv: RunningServer;
@@ -134,7 +162,11 @@ export async function uiCommand(
   );
   if (p.warning) io.err(p.warning);
   if (o.open) openBrowser(srv.url);
-  await untilStopped(o.embed === "vscode");
+  await untilStopped(
+    o.embed === "vscode",
+    process.stdin,
+    o.parent !== undefined ? { parent: o.parent } : {},
+  );
   await srv.close();
   io.out("Stopped.");
   return 0;

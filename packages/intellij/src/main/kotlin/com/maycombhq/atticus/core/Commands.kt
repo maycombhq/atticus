@@ -138,6 +138,16 @@ object Commands {
         return if (target != null) "$slash $target" else slash
     }
 
+    /**
+     * `atticus ui` for the tool window: on a free port, for the project. With `--parent <the IDE's pid>`
+     * when the command line has it, so a killed IDE leaves no server behind; an older one starts as before.
+     */
+    fun uiArgs(root: String, catalog: Catalog?, idePid: Long): List<String> {
+        val base = listOf("ui", "--port", "0", "--root", root)
+        val ui = catalog?.commands?.firstOrNull { it.id == "ui" }
+        return if (ui?.flags?.any { it.name == "--parent" } == true) base + listOf("--parent", idePid.toString()) else base
+    }
+
     /** The AI step's deterministic half (`--handoff`): it writes the prompt for a model run elsewhere. */
     fun handoff(argv: List<String>): List<String> = if ("--handoff" in argv) argv else argv + "--handoff"
 

@@ -27,9 +27,11 @@ import com.maycombhq.atticus.core.CommandLine
 import com.maycombhq.atticus.core.Commands
 import com.maycombhq.atticus.core.Copy
 import com.maycombhq.atticus.core.HowToRun
+import com.maycombhq.atticus.core.Lists
 import com.maycombhq.atticus.core.Metarepo
 import com.maycombhq.atticus.core.Next
 import com.maycombhq.atticus.core.NextAction
+import com.maycombhq.atticus.core.Pick
 import com.maycombhq.atticus.core.PickItem
 import com.maycombhq.atticus.core.Words
 import java.awt.datatransfer.StringSelection
@@ -100,11 +102,46 @@ class CommandFlow(private val project: Project) {
     private fun fromList(title: String, values: List<String>, empty: String, hint: String): String? =
         if (values.isEmpty()) typed(title, "$empty $hint") else pickOrType(title, Copy.PICK_OR_TYPE, values)
 
-    private fun askArg(cmd: CatalogCommand, a: CatalogArg): Got? {
+    private val metarepo: Path? = Roots.metarepo(project)
+
+    /** One of the metarepo's own, picked by what a person reads; typed when the list is empty. */
+    private fun fromPicks(title: String, picks: List<Pick>, empty: String, hint: String): String? {
+        if (picks.isEmpty()) return typed(title, "$empty $hint")
+        val shown = picks.map { p -> listOf(p.label, p.value.takeIf { it != p.label }, p.detail.takeIf { it.isNotBlank() && it != p.value }).filterNotNull().joinToString("  —  ") }
+        val chosen = pickOrType(title, Copy.PICK_OR_TYPE, shown) ?: return null
+        return picks.getOrNull(shown.indexOf(chosen))?.value ?: chosen
+    }
+
+    /** The list an argument is picked from, read when it is asked (ADR 0099), or null when it is typed. */
+    private fun ownList(cmd: CatalogCommand, a: CatalogArg, before: List<String>): Pair<List<Pick>, String>? {
+        val kind = Lists.kindFor(cmd.id, a.name, a.kind) ?: return null
+        val root = metarepo ?: return null
+        val change = before.firstOrNull()
+        fun json(what: String, args: List<String>) = modal("Reading $what") { cli(Commands.withRoot(args + "--json", cwd)) }.stdout
+        return when (kind) {
+            "knowledge-item" -> Lists.knowledgeItems(json("the knowledge items", listOf("knowledge", "list"))) to Copy.NO_KNOWLEDGE
+            "need" -> Lists.needs(json("the needs", listOf("needs") + (change?.let { listOf("--change", it) } ?: emptyList()) + "--all")) to Copy.NO_NEEDS
+            "feature" -> Lists.features(json("the features", listOf("feature", "list"))) to Copy.NO_FEATURES
+            "todo" -> Lists.todos(json("the manual steps", listOf("todo", "--all"))) to Copy.NO_TODOS
+            "triage" -> Lists.triage(json("what waits for triage", listOf("triage"))) to Copy.NO_TRIAGE
+            "term" -> Lists.terms(json("the glossary", listOf("glossary", "list"))) to Copy.NO_TERMS
+            "finding" -> (if (change != null) Lists.findings(json("the findings", listOf("findings", change))) else emptyList()) to Copy.NO_FINDINGS
+            "dialect-proposal" -> Lists.proposals(root, "dialects") to Copy.NO_PROPOSALS
+            "framework-proposal" -> Lists.proposals(root, "frameworks") to Copy.NO_PROPOSALS
+            "story" -> (if (change != null) Lists.stories(root, change) else emptyList()) to Copy.NO_STORIES
+            "flow" -> Lists.flows(root) to Copy.NO_FLOWS
+            "system" -> Lists.records(root, "System") to Copy.NO_RECORDS
+            "record" -> Lists.records(root, null) to Copy.NO_RECORDS
+            else -> null
+        }
+    }
+
+    private fun askArg(cmd: CatalogCommand, a: CatalogArg, before: List<String> = emptyList()): Got? {
         val title = Copy.argTitle(cmd, a)
         val hint = "${cmd.summary}${Copy.leaveEmpty(a.optional)}"
+        val own = if (a.kind == "repo" || a.kind == "change" || a.kind == "question") null else ownList(cmd, a, before)
         val v: String? =
-            when (a.kind) {
+            if (own != null) fromPicks(title, own.first, own.second, hint) else when (a.kind) {
                 "repo" -> fromList(title, repos(), Copy.NO_REPOS, hint)
                 "change" -> fromList(title, changes(), Copy.NO_CHANGES, hint)
                 "question" -> {
@@ -144,7 +181,7 @@ class CommandFlow(private val project: Project) {
     /** Each argument, then the required options, then any options to add. Null: the person cancelled. */
     fun ask(cmd: CatalogCommand): Answers? {
         val args = mutableListOf<List<String>?>()
-        for (a in cmd.args) args += (askArg(cmd, a) ?: return null).value
+        for (a in cmd.args) args += (askArg(cmd, a, args.mapNotNull { it?.firstOrNull() }) ?: return null).value
         val flags = LinkedHashMap<String, String?>(Commands.requiredSwitches(cmd))
         var alternativeGiven = false
         for (f in Commands.requiredToAsk(cmd)) {

@@ -172,4 +172,16 @@ class CommandsTest {
             Commands.changeTypesFrom(yaml),
         )
     }
+
+    @Test
+    fun `the app is started to stop with the IDE, when the command line knows how`() {
+        assertEquals(
+            listOf("ui", "--port", "0", "--root", "C:/forge-meta", "--parent", "4242"),
+            Commands.uiArgs("C:/forge-meta", catalog, 4242),
+        )
+        // An older command line without --parent: the app still starts, as before.
+        val old = Catalog(catalog.areas, catalog.commands.map { c -> if (c.id == "ui") c.copy(flags = c.flags.filter { it.name != "--parent" }) else c })
+        assertEquals(listOf("ui", "--port", "0", "--root", "C:/forge-meta"), Commands.uiArgs("C:/forge-meta", old, 4242))
+        assertEquals(listOf("ui", "--port", "0", "--root", "C:/forge-meta"), Commands.uiArgs("C:/forge-meta", null, 4242))
+    }
 }

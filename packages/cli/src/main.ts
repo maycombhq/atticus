@@ -574,6 +574,7 @@ Usage:
   --by <handle>                        Who is acting (default: the metarepo's Git user, git config user.email)
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
+          [--parent pid]               Stop when that process ends (an editor that started it)
   atticus --version                    Print the version
   atticus --help                       Show this help
 
@@ -683,6 +684,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       port: { type: "string" },
       open: { type: "boolean" },
       embed: { type: "string" },
+      parent: { type: "string" },
       host: { type: "string" },
       catalog: { type: "string" },
       "from-catalog": { type: "boolean" },
@@ -1275,6 +1277,11 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       io.err(`--embed takes vscode (the app in a VS Code panel), not ${values.embed}.`);
       return 2;
     }
+    const parent = values.parent === undefined ? undefined : Number(values.parent);
+    if (parent !== undefined && !(Number.isInteger(parent) && parent > 0)) {
+      io.err(`--parent takes a process id, not ${String(values.parent)}.`);
+      return 2;
+    }
     return uiCommand(
       root,
       {
@@ -1286,6 +1293,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
             : {}),
         open: values.open === true,
         ...(values.embed === "vscode" ? { embed: "vscode" as const } : {}),
+        ...(parent !== undefined ? { parent } : {}),
         version: VERSION,
         ...(given ? { user: given } : {}),
       },

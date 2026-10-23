@@ -214,6 +214,7 @@ Usage:
   --by <handle>                        Who is acting (default: the metarepo's Git user, git config user.email)
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
+          [--parent pid]               Stop when that process ends (an editor that started it)
   atticus --version                    Print the version
   atticus --help                       Show this help
 

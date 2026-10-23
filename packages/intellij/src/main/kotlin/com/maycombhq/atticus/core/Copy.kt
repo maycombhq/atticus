@@ -48,6 +48,17 @@ object Copy {
     const val NO_CHANGES = "No changes yet: start one with change new."
     const val NO_QUESTIONS = "No question is waiting for an answer."
     const val PICK_OR_TYPE = "Pick one, or type it."
+    const val NO_KNOWLEDGE = "No knowledge items yet: add a wiki, sync it, and read it with /atticus-knowledge in Copilot Chat."
+    const val NO_NEEDS = "No needs yet: find them with /atticus-needs <change> in Copilot Chat."
+    const val NO_FEATURES = "The catalog has no features yet: run atticus scan."
+    const val NO_TODOS = "No manual steps yet: a change's plan writes them."
+    const val NO_TRIAGE = "Nothing waits for triage: the drawings and the code agree."
+    const val NO_TERMS = "The glossary has no terms yet: atticus glossary scan reads them."
+    const val NO_FINDINGS = "The change has no open findings."
+    const val NO_PROPOSALS = "No proposal yet: atticus onboard drafts one."
+    const val NO_STORIES = "The change has no stories yet: write them with /atticus-stories <change> in Copilot Chat."
+    const val NO_FLOWS = "No repo has a spec yet: draft one with /atticus-spec <repo> in Copilot Chat."
+    const val NO_RECORDS = "The catalog is empty: run atticus scan."
 
     fun argTitle(cmd: CatalogCommand, arg: CatalogArg) = "atticus ${cmd.id}: ${arg.name}${if (arg.optional) " (optional)" else ""}"
 

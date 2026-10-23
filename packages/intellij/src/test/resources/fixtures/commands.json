@@ -118,6 +118,32 @@
         {
           "name": "--no-drift",
           "required": false
+        },
+        {
+          "name": "--repos",
+          "value": "a,b",
+          "required": false,
+          "summary": "Only these repos"
+        },
+        {
+          "name": "--full",
+          "required": false,
+          "summary": "Ignore the scan cache"
+        },
+        {
+          "name": "--dry-run",
+          "required": false,
+          "summary": "Show what would change; write nothing"
+        },
+        {
+          "name": "--warnings",
+          "required": false,
+          "summary": "List what the scan left out or couldn't read, not just how many"
+        },
+        {
+          "name": "--json",
+          "required": false,
+          "summary": "Print the result as JSON"
         }
       ],
       "area": "repos",
@@ -130,7 +156,7 @@
         "survey"
       ],
       "usage": "atticus scan survey <repo>",
-      "summary": "Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force]",
+      "summary": "Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code",
       "args": [
         {
           "name": "repo",
@@ -160,7 +186,7 @@
         "verify"
       ],
       "usage": "atticus scan verify <repo>",
-      "summary": "Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept]",
+      "summary": "Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/",
       "args": [
         {
           "name": "repo",
@@ -194,7 +220,7 @@
         "draft"
       ],
       "usage": "atticus spec draft <repo>",
-      "summary": "Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m]",
+      "summary": "Your assistant writes the repo's flows, one per trigger, each step cited and checked",
       "args": [
         {
           "name": "repo",
@@ -397,7 +423,7 @@
         "review"
       ],
       "usage": "atticus scan review <repo>",
-      "summary": "What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]",
+      "summary": "What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked",
       "args": [
         {
           "name": "repo",
@@ -415,32 +441,6 @@
           "name": "--attempts",
           "value": "3",
           "required": false
-        },
-        {
-          "name": "--repos",
-          "value": "a,b",
-          "required": false,
-          "summary": "Only these repos"
-        },
-        {
-          "name": "--full",
-          "required": true,
-          "summary": "Ignore the scan cache"
-        },
-        {
-          "name": "--dry-run",
-          "required": true,
-          "summary": "Show what would change; write nothing"
-        },
-        {
-          "name": "--warnings",
-          "required": true,
-          "summary": "List what the scan left out or couldn't read, not just how many"
-        },
-        {
-          "name": "--json",
-          "required": true,
-          "summary": "Print the result as JSON"
         }
       ],
       "area": "repos",
@@ -538,7 +538,7 @@
         "baseline"
       ],
       "usage": "atticus baseline",
-      "summary": "Accept the as-is catalog as the baseline [--note text] [--site dir]",
+      "summary": "Accept the as-is catalog as the baseline",
       "args": [],
       "flags": [
         {
@@ -599,7 +599,7 @@
         "bundle"
       ],
       "usage": "atticus support bundle",
-      "summary": "Collect versions, checks, counts and the redacted log in a zip [--out f]",
+      "summary": "Collect versions, checks, counts and the redacted log in a zip",
       "args": [],
       "flags": [
         {
@@ -617,7 +617,7 @@
         "digest"
       ],
       "usage": "atticus digest",
-      "summary": "What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]",
+      "summary": "What waits on you: hand-offs to revise, blocking findings",
       "args": [],
       "flags": [
         {
@@ -668,8 +668,8 @@
         "site",
         "build"
       ],
-      "usage": "atticus site build <dir> [--title t] The read-only catalog site as static files (only systems open to everyone)",
-      "summary": "",
+      "usage": "atticus site build <dir> [--title t]",
+      "summary": "The read-only catalog site as static files (only systems open to everyone)",
       "args": [
         {
           "name": "dir",
@@ -740,8 +740,8 @@
         "sources",
         "add"
       ],
-      "usage": "atticus sources add <type> <location> Print the sources.yaml entry for a wiki (markdown-folder, ado-wiki, ...)",
-      "summary": "",
+      "usage": "atticus sources add <type> <location>",
+      "summary": "Print the sources.yaml entry for a wiki (git, markdown-folder, ado-wiki, ...), or write it",
       "args": [
         {
           "name": "type",
@@ -756,7 +756,46 @@
           "many": false
         }
       ],
-      "flags": [],
+      "flags": [
+        {
+          "name": "--save",
+          "required": false
+        },
+        {
+          "name": "--id",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--path",
+          "value": "folder",
+          "required": false
+        },
+        {
+          "name": "--ref",
+          "value": "branch",
+          "required": false
+        },
+        {
+          "name": "--submodule",
+          "required": false
+        },
+        {
+          "name": "--kind",
+          "value": "k,k",
+          "required": false
+        },
+        {
+          "name": "--framework",
+          "value": "f,f",
+          "required": false
+        },
+        {
+          "name": "--owner",
+          "value": "who",
+          "required": false
+        }
+      ],
       "area": "knowledge",
       "runs": "local"
     },
@@ -825,8 +864,8 @@
         "knowledge",
         "scan"
       ],
-      "usage": "atticus knowledge scan [--source s] [--mode m] [--resume run]",
-      "summary": "Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked",
+      "usage": "atticus knowledge scan [--source s] [--mode m] [--resume run] [--full]",
+      "summary": "Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed",
       "args": [],
       "flags": [
         {
@@ -842,6 +881,10 @@
         {
           "name": "--resume",
           "required": false
+        },
+        {
+          "name": "--full",
+          "required": false
         }
       ],
       "area": "knowledge",
@@ -853,7 +896,7 @@
         "knowledge",
         "list"
       ],
-      "usage": "atticus knowledge list [--tag t] [--kind k] [--json]",
+      "usage": "atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]",
       "summary": "The knowledge items, by tag and kind",
       "args": [],
       "flags": [
@@ -865,6 +908,10 @@
         {
           "name": "--kind",
           "value": "k",
+          "required": false
+        },
+        {
+          "name": "--unverified",
           "required": false
         },
         {
@@ -900,6 +947,187 @@
         {
           "name": "--resume",
           "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "ai"
+    },
+    {
+      "id": "knowledge find",
+      "words": [
+        "knowledge",
+        "find"
+      ],
+      "usage": "atticus knowledge find \"<phrase>\"",
+      "summary": "Search every wiki for a term or phrase; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked",
+      "args": [
+        {
+          "name": "phrase",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--source",
+          "value": "s",
+          "required": false
+        },
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "ai"
+    },
+    {
+      "id": "knowledge keep",
+      "words": [
+        "knowledge",
+        "keep"
+      ],
+      "usage": "atticus knowledge keep <item>",
+      "summary": "Keep a found item as a knowledge item you verified",
+      "args": [
+        {
+          "name": "item",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--find",
+          "value": "search",
+          "required": false
+        },
+        {
+          "name": "--as",
+          "value": "kind",
+          "required": false
+        },
+        {
+          "name": "--set",
+          "value": "field=value",
+          "required": false
+        },
+        {
+          "name": "--note",
+          "value": "text",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "knowledge finds",
+      "words": [
+        "knowledge",
+        "finds"
+      ],
+      "usage": "atticus knowledge finds [--json]",
+      "summary": "The searches saved, and how many of each were kept",
+      "args": [],
+      "flags": [
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "knowledge verify",
+      "words": [
+        "knowledge",
+        "verify"
+      ],
+      "usage": "atticus knowledge verify <item>",
+      "summary": "Mark a knowledge item right as read: a green tick wherever it shows",
+      "args": [
+        {
+          "name": "item",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--note",
+          "value": "text",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "knowledge correct",
+      "words": [
+        "knowledge",
+        "correct"
+      ],
+      "usage": "atticus knowledge correct <item> --set field=value",
+      "summary": "Correct an item's details (a list takes a|b|c); the corrected item is what plans read",
+      "args": [
+        {
+          "name": "item",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--set",
+          "value": "field=value",
+          "required": true
+        },
+        {
+          "name": "--note",
+          "value": "text",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "knowledge reject",
+      "words": [
+        "knowledge",
+        "reject"
+      ],
+      "usage": "atticus knowledge reject <item> --note <why>",
+      "summary": "Mark an item wrong: plans and answers leave it out",
+      "args": [
+        {
+          "name": "item",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--note",
+          "value": "why",
+          "required": true
         }
       ],
       "area": "knowledge",
@@ -1068,7 +1296,7 @@
         {
           "name": "--text",
           "value": "\"...\"",
-          "required": true
+          "required": false
         },
         {
           "name": "--scope",
@@ -1344,7 +1572,7 @@
         "run"
       ],
       "usage": "atticus dialect run <name> <repo>",
-      "summary": "Show the records a dialect produces from one repo [--json]",
+      "summary": "Show the records a dialect produces from one repo",
       "args": [
         {
           "name": "name",
@@ -1755,7 +1983,7 @@
         "survey"
       ],
       "usage": "atticus frameworks survey [--package <prefix>[,...]]",
-      "summary": "How the repos use house frameworks, any language [--json]",
+      "summary": "How the repos use house frameworks, any language",
       "args": [],
       "flags": [
         {
@@ -1824,7 +2052,7 @@
         "profile"
       ],
       "usage": "atticus domain profile <system>",
-      "summary": "A system as a domain profile, filled from the catalog [--out file]",
+      "summary": "A system as a domain profile, filled from the catalog",
       "args": [
         {
           "name": "system",
@@ -1850,7 +2078,7 @@
         "feature"
       ],
       "usage": "atticus change feature <change>",
-      "summary": "The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force]",
+      "summary": "The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done",
       "args": [
         {
           "name": "change",
@@ -1888,8 +2116,8 @@
         "change",
         "architecture"
       ],
-      "usage": "atticus change architecture <change> The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run]",
-      "summary": "",
+      "usage": "atticus change architecture <change>",
+      "summary": "The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way",
       "args": [
         {
           "name": "change",
@@ -1919,7 +2147,7 @@
         "draft"
       ],
       "usage": "atticus change draft <change>",
-      "summary": "Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]",
+      "summary": "Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked",
       "args": [
         {
           "name": "change",
@@ -1999,7 +2227,7 @@
         "handoff"
       ],
       "usage": "atticus change handoff <id> --approve",
-      "summary": "Open the phase's hand-off PR; merging it approves the gate [--repo]",
+      "summary": "Open the phase's hand-off PR; merging it approves the gate",
       "args": [
         {
           "name": "id",
@@ -2349,7 +2577,7 @@
         "name"
       ],
       "usage": "atticus feature name <id> \"<name>\"",
-      "summary": "Confirm or correct a feature's name [--description] [--owner]",
+      "summary": "Confirm or correct a feature's name",
       "args": [
         {
           "name": "id",
@@ -2436,7 +2664,7 @@
         "split"
       ],
       "usage": "atticus feature split <id> <entry-points...>",
-      "summary": "Split entry points into another feature [--name] [--into]",
+      "summary": "Split entry points into another feature",
       "args": [
         {
           "name": "id",
@@ -2471,7 +2699,7 @@
         "link"
       ],
       "usage": "atticus feature link <id> <ref>",
-      "summary": "Link a work item or page, e.g. ado:1234 [--title]",
+      "summary": "Link a work item or page, e.g. ado:1234",
       "args": [
         {
           "name": "id",
@@ -2558,7 +2786,7 @@
         "run"
       ],
       "usage": "atticus task run <change> <task>",
-      "summary": "Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]",
+      "summary": "Run a task with AI",
       "args": [
         {
           "name": "change",
@@ -2600,7 +2828,7 @@
         "hand-down"
       ],
       "usage": "atticus spec hand-down <change> <task>",
-      "summary": "Create the task's Spec Kit feature in its repo [--force]",
+      "summary": "Create the task's Spec Kit feature in its repo",
       "args": [
         {
           "name": "change",
@@ -2631,7 +2859,7 @@
         "hand-up"
       ],
       "usage": "atticus spec hand-up <change> <task>",
-      "summary": "Read the Spec Kit feature back at the PR [--pr n --pr-url url]",
+      "summary": "Read the Spec Kit feature back at the PR",
       "args": [
         {
           "name": "change",
@@ -2741,7 +2969,7 @@
         "stories"
       ],
       "usage": "atticus plan stories <change>",
-      "summary": "Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]",
+      "summary": "Write stories, stories.md and tasks.md from the approved design",
       "args": [
         {
           "name": "change",
@@ -2769,13 +2997,175 @@
       "runs": "ai"
     },
     {
+      "id": "change needs",
+      "words": [
+        "change",
+        "needs"
+      ],
+      "usage": "atticus change needs <change>",
+      "summary": "Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--mode",
+          "value": "m",
+          "required": false
+        },
+        {
+          "name": "--resume",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "ai"
+    },
+    {
+      "id": "needs",
+      "words": [
+        "needs"
+      ],
+      "usage": "atticus needs [--change id] [--all] [--json]",
+      "summary": "What changes need from the organisation, open ones first, with lead times and who handles each",
+      "args": [],
+      "flags": [
+        {
+          "name": "--change",
+          "value": "id",
+          "required": false
+        },
+        {
+          "name": "--all",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "needs done",
+      "words": [
+        "needs",
+        "done"
+      ],
+      "usage": "atticus needs done <change> <item>",
+      "summary": "Record a need as done, e.g. with the CTASK number as its note",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "item",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--for",
+          "value": "target",
+          "required": false
+        },
+        {
+          "name": "--note",
+          "value": "text",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "needs skip",
+      "words": [
+        "needs",
+        "skip"
+      ],
+      "usage": "atticus needs skip <change> <item> --note <why>",
+      "summary": "Record a need as not needed, and why",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "item",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--note",
+          "value": "why",
+          "required": true
+        },
+        {
+          "name": "--for",
+          "value": "target",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
+      "id": "needs reopen",
+      "words": [
+        "needs",
+        "reopen"
+      ],
+      "usage": "atticus needs reopen <change> <item>",
+      "summary": "Open a need again",
+      "args": [
+        {
+          "name": "change",
+          "kind": "change",
+          "optional": false,
+          "many": false
+        },
+        {
+          "name": "item",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--for",
+          "value": "target",
+          "required": false
+        }
+      ],
+      "area": "changes",
+      "runs": "local"
+    },
+    {
       "id": "plan snow",
       "words": [
         "plan",
         "snow"
       ],
       "usage": "atticus plan snow <change>",
-      "summary": "Draft service-desk requests the change needs [--force]",
+      "summary": "Draft service-desk requests the change needs",
       "args": [
         {
           "name": "change",
@@ -2800,7 +3190,7 @@
         "bar"
       ],
       "usage": "atticus plan bar <change>",
-      "summary": "Measure the story bar [--eval file]",
+      "summary": "Measure the story bar",
       "args": [
         {
           "name": "change",
@@ -2852,7 +3242,7 @@
         "sync"
       ],
       "usage": "atticus ado sync <change>",
-      "summary": "Create or update work items (a dry run until you add --approve) [--epic id]",
+      "summary": "Create or update work items (a dry run until you add --approve)",
       "args": [
         {
           "name": "change",
@@ -2883,7 +3273,7 @@
         "draft"
       ],
       "usage": "atticus templates draft",
-      "summary": "Draft request and work-item templates from wikis, uploads and past tickets [--no-ai]",
+      "summary": "Draft request and work-item templates from wikis, uploads and past tickets",
       "args": [],
       "flags": [
         {
@@ -2923,7 +3313,7 @@
         "show"
       ],
       "usage": "atticus todo show <step> [--export text|csv|import]",
-      "summary": "",
+      "summary": "A manual step: what to do, where, and what it needs",
       "args": [
         {
           "name": "step",
@@ -2949,7 +3339,7 @@
         "done"
       ],
       "usage": "atticus todo done <step>",
-      "summary": "Record a manual step's result [--result k=v]... [--skip --note why]",
+      "summary": "Record a manual step's result",
       "args": [
         {
           "name": "step",
@@ -2983,7 +3373,7 @@
         "run"
       ],
       "usage": "atticus todo run <step> --with <executor>",
-      "summary": "Run a step with a team's own tool [--approve --inputs sha] [--fill-only]",
+      "summary": "Run a step with a team's own tool",
       "args": [
         {
           "name": "step",
@@ -3034,7 +3424,7 @@
         "init"
       ],
       "usage": "atticus init <folder> --platform <p>",
-      "summary": "Create a new metarepo named after the folder [--from pack] [--owner who]",
+      "summary": "Create a new metarepo named after the folder",
       "args": [
         {
           "name": "folder",
@@ -3067,7 +3457,7 @@
         "adopt"
       ],
       "usage": "atticus adopt <path>",
-      "summary": "Use Atticus in an existing repo; writes only .atticus/ [--platform p] [--name n]",
+      "summary": "Use Atticus in an existing repo; writes only .atticus/",
       "args": [
         {
           "name": "path",
@@ -3117,7 +3507,7 @@
         "discover"
       ],
       "usage": "atticus repos discover <folder> | --org <org>",
-      "summary": "Propose repos.manifest.yaml entries [--platform p] [--dry-run]",
+      "summary": "Propose repos.manifest.yaml entries",
       "args": [
         {
           "name": "folder",
@@ -3130,7 +3520,7 @@
         {
           "name": "--org",
           "value": "org",
-          "required": true
+          "required": false
         },
         {
           "name": "--platform",
@@ -3151,7 +3541,7 @@
         "absorb"
       ],
       "usage": "atticus absorb <git-url|path> --id <id>",
-      "summary": "Translate another team's prompts, agents, checklists, Spec Kit or Atticus repo",
+      "summary": "Translate another team's prompts, agents, checklists, OpenSpec, Spec Kit, TypeSpec or Atticus repo",
       "args": [
         {
           "name": "git-url",
@@ -3163,24 +3553,6 @@
       "flags": [
         {
           "name": "--id",
-          "value": "id",
-          "required": true
-        }
-      ],
-      "area": "knowledge",
-      "runs": "local"
-    },
-    {
-      "id": "absorb --refresh",
-      "words": [
-        "absorb"
-      ],
-      "usage": "atticus absorb --refresh <id>",
-      "summary": "Fetch an absorbed source again and update its proposal",
-      "args": [],
-      "flags": [
-        {
-          "name": "--refresh",
           "value": "id",
           "required": true
         },
@@ -3202,13 +3574,64 @@
       "runs": "local"
     },
     {
+      "id": "absorb --refresh",
+      "words": [
+        "absorb"
+      ],
+      "usage": "atticus absorb --refresh <id>",
+      "summary": "Fetch an absorbed source again and update its proposal",
+      "args": [],
+      "flags": [
+        {
+          "name": "--refresh",
+          "value": "id",
+          "required": true
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
+      "id": "absorb accept",
+      "words": [
+        "absorb",
+        "accept"
+      ],
+      "usage": "atticus absorb accept <id>",
+      "summary": "Copy what the reviewed proposal adopts into the org pack and add its sources.yaml entry",
+      "args": [
+        {
+          "name": "id",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--replace",
+          "required": false
+        },
+        {
+          "name": "--dry-run",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "knowledge",
+      "runs": "local"
+    },
+    {
       "id": "tests generate",
       "words": [
         "tests",
         "generate"
       ],
       "usage": "atticus tests generate <change> <story>",
-      "summary": "Generate tests from a story [--framework id] [--force] [--check] [--mode m]",
+      "summary": "Generate tests from a story",
       "args": [
         {
           "name": "change",
@@ -3443,7 +3866,7 @@
         "record"
       ],
       "usage": "atticus outcome record <change> <measure> --value <v>",
-      "summary": "Record a measured outcome [--note text]",
+      "summary": "Record a measured outcome",
       "args": [
         {
           "name": "change",
@@ -3603,7 +4026,7 @@
         "define"
       ],
       "usage": "atticus glossary define <term> \"<definition>\" [--owner team]",
-      "summary": "",
+      "summary": "Define a business term, as you",
       "args": [
         {
           "name": "term",
@@ -3634,7 +4057,7 @@
         "link"
       ],
       "usage": "atticus glossary link <term> <record-id|schema#field>",
-      "summary": "",
+      "summary": "Link a term to a catalog record or field",
       "args": [
         {
           "name": "term",
@@ -3654,7 +4077,7 @@
         "alias"
       ],
       "usage": "atticus glossary alias <term> <name>...",
-      "summary": "",
+      "summary": "Another name people use for a term",
       "args": [
         {
           "name": "term",
@@ -3680,7 +4103,7 @@
         "new"
       ],
       "usage": "atticus initiative new \"<title>\" --journey <j>",
-      "summary": "Start an initiative [--id] [--release YYYY-MM-DD] [--epic]",
+      "summary": "Start an initiative",
       "args": [
         {
           "name": "title",
@@ -3719,7 +4142,7 @@
         "plan"
       ],
       "usage": "atticus initiative plan <id> --target <system>",
-      "summary": "Plan its changes and commitments [--release d] [--system s]... [--dry-run]",
+      "summary": "Plan its changes and commitments",
       "args": [
         {
           "name": "id",
@@ -3779,7 +4202,7 @@
         "request"
       ],
       "usage": "atticus initiative request <id> <party>",
-      "summary": "Send a team a system card and track the reply [--system s]...",
+      "summary": "Send a team a system card and track the reply",
       "args": [
         {
           "name": "id",
@@ -3811,7 +4234,7 @@
         "commit"
       ],
       "usage": "atticus initiative commit <commitment> <open|at-risk|done|slipped>",
-      "summary": "",
+      "summary": "Record a commitment's status",
       "args": [
         {
           "name": "commitment",
@@ -3842,7 +4265,7 @@
         "learn"
       ],
       "usage": "atticus learn [list] | learn start <role|lesson> | learn check [--answer a] [--lesson l] [--step s]",
-      "summary": "",
+      "summary": "Lessons by role in a practice sandbox: list them, start one, check a step",
       "args": [
         {
           "name": "list",
@@ -4101,8 +4524,8 @@
         "defences",
         "scan"
       ],
-      "usage": "atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts",
-      "summary": "",
+      "usage": "atticus defences scan [path] [--all]",
+      "summary": "Look for instructions hidden in documents and prompts",
       "args": [
         {
           "name": "path",
@@ -4126,7 +4549,7 @@
         "conformance"
       ],
       "usage": "atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>",
-      "summary": "",
+      "summary": "Check a catalog, org pack, dialect, plugin or executor against the spec",
       "args": [
         {
           "name": "path",
@@ -4192,6 +4615,67 @@
         }
       ],
       "flags": [],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "orgpack draft",
+      "words": [
+        "orgpack",
+        "draft"
+      ],
+      "usage": "atticus orgpack draft",
+      "summary": "Draft the profile's systems from the knowledge items: the products and vendors the wikis name, with their aliases and owners, each citing its item",
+      "args": [],
+      "flags": [
+        {
+          "name": "--platform",
+          "value": "p",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
+      "area": "start",
+      "runs": "local"
+    },
+    {
+      "id": "orgpack accept",
+      "words": [
+        "orgpack",
+        "accept"
+      ],
+      "usage": "atticus orgpack accept <platform>",
+      "summary": "Put the drafted systems into profile.yaml",
+      "args": [
+        {
+          "name": "platform",
+          "kind": "text",
+          "optional": false,
+          "many": false
+        }
+      ],
+      "flags": [
+        {
+          "name": "--only",
+          "value": "id,id",
+          "required": false
+        },
+        {
+          "name": "--verified-only",
+          "required": false
+        },
+        {
+          "name": "--dry-run",
+          "required": false
+        },
+        {
+          "name": "--json",
+          "required": false
+        }
+      ],
       "area": "start",
       "runs": "local"
     },
@@ -4362,6 +4846,11 @@
           "name": "--embed",
           "required": false,
           "summary": "Let a VS Code panel show the app (the Atticus extension starts it so)"
+        },
+        {
+          "name": "--parent",
+          "required": false,
+          "summary": "Stop when that process ends (an editor that started it)"
         }
       ],
       "area": "start",
