@@ -357,15 +357,20 @@ a:hover {
   color: var(--text);
   box-shadow: var(--shadow-ask);
 }
+/* The lockup: the glasses with the name set below them. */
 .brand {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  align-self: flex-start;
+  width: fit-content;
+  gap: 2px;
   padding: 4px 12px 16px;
   font-family: var(--display);
-  font-weight: 700;
-  font-size: 18px;
-  letter-spacing: 0.22em;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.16em;
+  text-indent: 0.16em;
   color: var(--accent);
   text-shadow: 0 0 10px var(--glow);
 }

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <!-- The Marketplace icon: Atticus's glasses (docs/brand/glasses.svg) on its dark ground. Rendered to media/icon.png. -->
+  <!-- The Marketplace icon: Atticus's glasses with its name (docs/brand/atticus-lockup.svg) on its dark ground. Rendered to media/icon.png. -->
   <defs>
     <radialGradient id="g" cx="50%" cy="35%" r="70%">
       <stop offset="0" stop-color="#0d2a33"/>
@@ -8,5 +8,6 @@
   </defs>
   <rect width="256" height="256" rx="48" fill="url(#g)"/>
   <rect x="6" y="6" width="244" height="244" rx="44" fill="none" stroke="#2ee6f6" stroke-opacity="0.35" stroke-width="3"/>
-  <g transform="translate(32 32) scale(8)"><g fill="none" stroke="#2ee6f6" stroke-linecap="round"><g stroke-width="0.8"><circle cx="6.5" cy="12.4" r="4.5"/><circle cx="17.5" cy="12.4" r="4.5"/><path d="M11 11.4 H13"/></g><path stroke-width="0.8" d="M3.6 12.7 L5.6 10.2 M20.4 12.7 L18.4 10.2"/></g></g>
+  <g transform="translate(44 6) scale(7)"><g fill="none" stroke="#2ee6f6" stroke-linecap="round"><g stroke-width="0.8"><circle cx="6.5" cy="12.4" r="4.5"/><circle cx="17.5" cy="12.4" r="4.5"/><path d="M11 11.4 H13"/></g><path stroke-width="0.75" d="M3.7 11.3 Q3.9 10.0 5.2 9.6 M20.3 11.3 Q20.1 10.0 18.8 9.6"/></g></g>
+  <text x="128" y="190" text-anchor="middle" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif" font-weight="600" font-size="36" letter-spacing="6" fill="#2ee6f6">atticus</text>
 </svg>
