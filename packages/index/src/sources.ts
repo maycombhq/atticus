@@ -183,6 +183,8 @@ export async function listSources(root: string): Promise<SourceFile[]> {
       for (const f of ["change.yaml", "brief.md", "proposal.md", "feature.yaml", "needs.yaml"])
         files.push(join(dir, id, f));
       await walk(join(dir, id, "target-flows"), YAML, files);
+      // ADR 0113: what was read from the files attached to the change.
+      await walk(join(dir, id, "inputs", "read"), (n) => n.endsWith(".md"), files);
       const exist: string[] = [];
       for (const f of files) if (await stat(f).catch(() => undefined)) exist.push(f);
       add("change")(exist);
@@ -493,9 +495,33 @@ function changeNodes(path: string, text: string): FileRead {
   const parts = path.split("/");
   const fileName = parts.slice(-1)[0]!;
   const inTargets = parts.at(-2) === "target-flows";
-  const change = inTargets ? parts.at(-3)! : parts.at(-2)!;
+  const inInputs = parts.at(-2) === "read" && parts.at(-3) === "inputs";
+  const change = inTargets ? parts.at(-3)! : inInputs ? parts.at(-4)! : parts.at(-2)!;
   const ckey = `change:Change:${change}`;
   const out: FileRead = { nodes: [], names: [], links: [] };
+  if (inInputs) {
+    // ADR 0113: a file attached to the change, as intake read it (each line cited); data only.
+    const input = `inputs/${fileName.replace(/\.md$/, "")}`;
+    const id = `${change}/${input}`;
+    const key = `change:ChangeDoc:${id}`;
+    out.links.push({ from: key, to: change, by: "id", type: "part-of", how: input });
+    out.nodes.push({
+      key,
+      kind: "ChangeDoc",
+      id,
+      grp: "change",
+      name: input,
+      file: path,
+      verified: false,
+      line: `${input} attached to change ${change} [${path}]`,
+      detail: `${path}:\n${text}`,
+      names: input,
+      ids: idWords(id),
+      body: text.slice(0, 20000),
+      mentions: true,
+    });
+    return out;
+  }
   const data = (): Record<string, unknown> | undefined => {
     try {
       const d = parse(text) as unknown;

@@ -167,6 +167,23 @@ export const MCP_TOOLS: McpTool[] = [
     argv: (a) => ["change", "map", String(a.change), "--json"],
   },
   {
+    name: "task_context",
+    description:
+      "A task's context for coding it: the task, its story and acceptance criteria, the target-flow step it implements with today's step and the file and line it is cited at, the needs, standards and decisions that apply, the files attached to the change and the files likely to change (atticus task context). Markdown, or JSON with json.",
+    args: [
+      change,
+      s("task", "The task's id, as tasks.md lists it, for example 1.2."),
+      { name: "json", description: "JSON instead of Markdown.", type: "boolean" },
+    ],
+    argv: (a) => [
+      "task",
+      "context",
+      String(a.change),
+      String(a.task),
+      a.json ? "--json" : "--markdown",
+    ],
+  },
+  {
     name: "change_needs",
     description:
       "What a change needs from the organisation: requests and processes to raise, standards to follow, teams and vendors to involve, each with whether it is done (atticus needs).",

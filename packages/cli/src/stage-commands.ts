@@ -8,6 +8,7 @@ import { changeFolder } from "@maycombhq/changes";
 import {
   architectureStage,
   featureStage,
+  smallStage,
   storiesStage,
   TARGET_DIR,
   type Stage,
@@ -54,6 +55,7 @@ const NAMES: Record<Stage, string> = {
   feature: "feature",
   architecture: "architecture",
   stories: "stories",
+  small: "fast path",
 };
 
 function printStage(
@@ -107,7 +109,8 @@ export async function stageCli(
   const [group, command, arg] = positionals;
   const json = values.json === true;
   const isStage =
-    (group === "change" && (command === "feature" || command === "architecture")) ||
+    (group === "change" &&
+      (command === "feature" || command === "architecture" || command === "small")) ||
     (group === "plan" &&
       command === "stories" &&
       !!arg &&
@@ -162,6 +165,19 @@ export async function stageCli(
           ]
         : [];
       return printStage(r, `atticus change architecture ${arg}`, io, extra);
+    }
+    // ADR 0113: the fast path, brief to tasks in one AI step.
+    if (command === "small") {
+      const r = await smallStage(root, arg, o);
+      if (json) return out(io, r);
+      const tasks = r.stories.reduce((n, s) => n + s.tasks.length, 0);
+      const extra = r.answer
+        ? [
+            `Placed on ${plural(r.answer.flows.length, "flow")}; ${plural(r.answer.targetFlows.length, "target flow")}; ${r.stories.length} ${r.stories.length === 1 ? "story" : "stories"} and ${plural(tasks, "task")}, from the target flows; ${r.requests.length} ${r.requests.length === 1 ? "request or process" : "requests and processes"} suggested in requests.md. A person raises each one.`,
+            `Next: once the pull request is merged, the tasks (atticus task context ${arg} <task>, or /atticus-task ${arg} <task>).`,
+          ]
+        : [];
+      return printStage(r, `atticus change small ${arg}`, io, extra);
     }
     const r = await storiesStage(root, arg, o);
     if (json) return out(io, r);

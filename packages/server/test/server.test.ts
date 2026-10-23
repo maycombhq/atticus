@@ -363,6 +363,40 @@ describe("hardening (threat model S1, D1)", () => {
     expect(form.status).toBe(415);
   });
 
+  it("lets only a call that says so take a larger body, an upload (ADR 0113)", async () => {
+    const up = await startServer({
+      root,
+      port: 0,
+      user: "priya",
+      extend: (r) =>
+        r.add(
+          "POST",
+          "/api/test-upload",
+          ({ body }) => ({
+            status: 200,
+            body: { size: String((body as { content: string }).content).length },
+          }),
+          { maxBody: 8 * 1024 * 1024 },
+        ),
+    });
+    try {
+      const body = JSON.stringify({ content: "x".repeat(5 * 1024 * 1024) });
+      const headers = { "X-Atticus-Token": up.token, "Content-Type": "application/json" };
+      const ok = await fetch(up.url + "/api/test-upload", { method: "POST", headers, body });
+      expect(ok.status).toBe(200);
+      expect(await ok.json()).toEqual({ size: 5 * 1024 * 1024 });
+      // Without the token it is refused like every other call.
+      const anon = await fetch(up.url + "/api/test-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      expect(anon.status).toBe(401);
+    } finally {
+      await up.close();
+    }
+  });
+
   it("refuses live events opened from another site", async () => {
     const status = await new Promise<number>((resolve, reject) => {
       const sock = connect(srv.port, "127.0.0.1", () => {

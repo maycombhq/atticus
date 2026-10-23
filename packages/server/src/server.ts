@@ -94,12 +94,12 @@ function sameToken(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage, max = MAX_BODY): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const c of req) {
     size += (c as Buffer).length;
-    if (size > MAX_BODY) throw new HttpError(413, "The request body is too large");
+    if (size > max) throw new HttpError(413, "The request body is too large");
     chunks.push(c as Buffer);
   }
   if (size === 0) return undefined;
@@ -222,7 +222,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
           throw new HttpError(404, "Not found", `There is no API call ${url.pathname}.`);
         throw new HttpError(405, "Method not allowed", `Use ${m.allowed.join(" or ")}.`);
       }
-      const body = await readBody(req);
+      const body = await readBody(req, m.maxBody);
       const out = await m.handler({
         method: req.method ?? "GET",
         path: url.pathname,

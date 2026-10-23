@@ -998,6 +998,9 @@ importers:
       '@maycombhq/naysayer':
         specifier: workspace:*
         version: link:../naysayer
+      '@maycombhq/planner':
+        specifier: workspace:*
+        version: link:../planner
       '@maycombhq/speckit':
         specifier: workspace:*
         version: link:../speckit

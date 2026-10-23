@@ -101,6 +101,7 @@ describe("atticus upgrade", () => {
       "state-folders-ignored",
       "gates-v2",
       "flow-schema-v2",
+      "change-types-v2",
     ]);
     expect(
       await readFile(join(root, "specs/forge-web/forge-web.save-customer.yaml"), "utf8"),

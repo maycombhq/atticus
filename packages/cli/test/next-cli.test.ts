@@ -246,9 +246,33 @@ describe("nextSteps (pure)", () => {
     expect(commands(steps)).toEqual([
       ["atticus change feature add-limit", "/atticus-feature add-limit"],
       ["atticus change architecture move-ledger", "/atticus-architecture move-ledger"],
-      ["atticus task run split-fees 1.2", "/atticus-task 1.2"],
+      // ADR 0113: /atticus-task loads the task's context in the metarepo.
+      ["atticus task run split-fees 1.2", "/atticus-task split-fees 1.2"],
     ]);
-    expect(steps[2]!.where).toBe("forge-ledger");
+    expect(steps[2]!.where).toBe("metarepo");
+    expect(steps[2]!.repo).toBe("forge-ledger");
+  });
+
+  it("gives a small change the fast path's one step until it is built (ADR 0113)", () => {
+    const steps = nextSteps({
+      ...base,
+      changes: [
+        { id: "fix-label", state: "plan", tasks: [], fast: true },
+        { id: "raise-timeout", state: "define", tasks: [], fast: true },
+        {
+          id: "fix-built",
+          state: "build",
+          tasks: [{ id: "1.1", repo: "forge-web", done: false }],
+          fast: true,
+        },
+      ],
+    });
+    expect(commands(steps)).toEqual([
+      ["atticus change small fix-label", "/atticus-small fix-label"],
+      ["atticus change small raise-timeout", "/atticus-small raise-timeout"],
+      ["atticus task run fix-built 1.1", "/atticus-task fix-built 1.1"],
+    ]);
+    expect(steps[0]!.why).toMatch(/one step/);
   });
   it("asks what a placed change needs from the organisation, then has a person raise the open ones (ADR 0101)", () => {
     const find = nextSteps({

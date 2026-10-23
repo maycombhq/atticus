@@ -39,13 +39,20 @@ interface Route {
   method: string;
   parts: string[];
   handler: Handler;
+  /** The largest body this call takes, when it isn't the server's default (an upload). */
+  maxBody?: number;
 }
 
 export class Router {
   private routes: Route[] = [];
 
-  add(method: string, pattern: string, handler: Handler): this {
-    this.routes.push({ method, parts: pattern.split("/").filter(Boolean), handler });
+  add(method: string, pattern: string, handler: Handler, o: { maxBody?: number } = {}): this {
+    this.routes.push({
+      method,
+      parts: pattern.split("/").filter(Boolean),
+      handler,
+      ...(o.maxBody ? { maxBody: o.maxBody } : {}),
+    });
     return this;
   }
 
@@ -53,7 +60,8 @@ export class Router {
   match(
     method: string,
     path: string,
-  ): { handler: Handler; params: Record<string, string> } | { allowed: string[] } {
+  ):
+    { handler: Handler; params: Record<string, string>; maxBody?: number } | { allowed: string[] } {
     const segs = path.split("/").filter(Boolean);
     const allowed: string[] = [];
     for (const r of this.routes) {
@@ -76,7 +84,8 @@ export class Router {
         }
       }
       if (!ok) continue;
-      if (r.method === method) return { handler: r.handler, params };
+      if (r.method === method)
+        return { handler: r.handler, params, ...(r.maxBody ? { maxBody: r.maxBody } : {}) };
       allowed.push(r.method);
     }
     return { allowed };

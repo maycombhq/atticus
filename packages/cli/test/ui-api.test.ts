@@ -276,3 +276,40 @@ describe("the critic from the app (ADR 0046)", () => {
     );
   });
 });
+
+describe("files attached to a change from the app (ADR 0113)", () => {
+  it("attaches a file sent as base64, lists it, and refuses the same bytes again (422)", async () => {
+    const content = Buffer.from(
+      "# Limits\n\nA transfer over 10,000 needs a second approver.\n",
+    ).toString("base64");
+    const r = await call(`/api/changes/${ID}/inputs`, {
+      method: "POST",
+      body: { name: "limits-note.md", content },
+    });
+    expect(r.status).toBe(201);
+    expect(Api.AttachResult.parse(r.body).added).toEqual([
+      expect.objectContaining({ path: "inputs/limits-note.md", addedBy: "pat", read: "text" }),
+    ]);
+    const list = await call(`/api/changes/${ID}/inputs`);
+    expect(Api.ChangeInputList.parse(list.body).files.map((f) => f.path)).toEqual([
+      "inputs/limits-note.md",
+    ]);
+    const again = await call(`/api/changes/${ID}/inputs`, {
+      method: "POST",
+      body: { name: "copy.md", content },
+    });
+    expect(again.status).toBe(422);
+    expect(again.body.detail).toBe("It is already attached as inputs/limits-note.md.");
+    const bad = await call(`/api/changes/${ID}/inputs`, {
+      method: "POST",
+      body: { name: "../change.yaml", content },
+    });
+    expect(bad.status).toBe(422);
+    expect((await call(`/api/changes/no-such/inputs`)).status).toBe(404);
+    const noContent = await call(`/api/changes/${ID}/inputs`, {
+      method: "POST",
+      body: { name: "x.md" },
+    });
+    expect(noContent.status).toBe(400);
+  });
+});
