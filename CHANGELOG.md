@@ -6,7 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### A mockingbird
 
-- Atticus's mark is a mockingbird (`docs/brand/mockingbird.svg`): the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
+- Atticus's mark is a mockingbird, singing (`docs/brand/mockingbird.svg`; the bird alone in icons of 24 px and smaller): the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
 
 ### Every screen says what is happening
 
