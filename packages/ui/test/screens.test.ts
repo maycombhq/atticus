@@ -18,6 +18,7 @@ const BEFORE = [
   "arch-review",
   "diagrams",
   "change-diagram",
+  "estimate",
   "architecture",
   "reconcile",
   "contracts",
@@ -87,7 +88,7 @@ describe("the app's menu (plan 4.5, B1; ADR 0105)", () => {
       "contracts",
       "mappings",
     ]);
-    expect(of("Plan")).toEqual(["breakdown", "initiatives"]);
+    expect(of("Plan")).toEqual(["breakdown", "estimate", "initiatives"]);
     expect(of("Build")).toEqual(["tasks", "trace", "todo"]);
     expect(of("Release")).toEqual(["release", "service-desk"]);
     expect(of("Run")).toEqual(["governance", "evals", "learning", "runs"]);

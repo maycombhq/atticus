@@ -17,6 +17,9 @@ export interface ChangeMapJson {
 export const changeDiagramHash = (change: string) =>
   `#/change-diagram?change=${encodeURIComponent(change)}`;
 
+/** The app's Estimate on one change (ADR 0109). */
+export const estimateHash = (change: string) => `#/estimate?change=${encodeURIComponent(change)}`;
+
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** What the chat shows: the picture, what it marks, and what couldn't be drawn. */

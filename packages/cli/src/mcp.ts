@@ -167,6 +167,13 @@ export const MCP_TOOLS: McpTool[] = [
     argv: (a) => ["change", "map", String(a.change), "--json"],
   },
   {
+    name: "change_estimate",
+    description:
+      "A change's estimate: its size counted from the target flows, the org pack's day ranges summed (p20, p50, p80), the drivers with their sources, and the waiting the release forecast finds; it says when it isn't calibrated (atticus change estimate).",
+    args: [change],
+    argv: (a) => ["change", "estimate", String(a.change), "--json"],
+  },
+  {
     name: "change_needs",
     description:
       "What a change needs from the organisation: requests and processes to raise, standards to follow, teams and vendors to involve, each with whether it is done (atticus needs).",

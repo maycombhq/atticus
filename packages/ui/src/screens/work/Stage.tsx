@@ -270,6 +270,9 @@ export function ArchitectureStep({ list }: { list: Loaded<ChangeRow[]> }) {
                     <a href={`#/change-diagram?change=${encodeURIComponent(c.id)}`}>
                       {COPY.changeDiagram.title}: {c.title}
                     </a>
+                    <a href={`#/estimate?change=${encodeURIComponent(c.id)}`}>
+                      {COPY.estimate.title}: {c.title}
+                    </a>
                   </span>
                 ))}
               </p>

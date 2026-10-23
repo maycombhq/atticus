@@ -120,6 +120,10 @@
             "description": "A change's picture: what it touches, marked + new, ◇ changed or ✕ retired: /changemap <change>"
           },
           {
+            "name": "estimate",
+            "description": "A change's estimate: its size from the target flows, the org pack's ranges and what drives it: /estimate <change>"
+          },
+          {
             "name": "ask",
             "description": "Ask the catalog a plain question: /ask <question>"
           },
@@ -196,6 +200,11 @@
       {
         "command": "atticus.changeDiagram",
         "title": "Open a change's diagram",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.estimate",
+        "title": "Open a change's estimate",
         "category": "Atticus"
       },
       {

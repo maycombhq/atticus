@@ -14,6 +14,7 @@ import {
 } from "@maycombhq/core";
 import { mergeDelta, readDeltas, TARGET_DIR } from "@maycombhq/planner";
 import { badRequest, notFound, type Router, type ServerContext } from "@maycombhq/server";
+import { estimateOf } from "./change-estimate.js";
 import { changeMapBody, changeMapOf } from "./change-map.js";
 
 /**
@@ -159,6 +160,14 @@ export function uiSpecRoutes(r: Router, ctx: ServerContext): Router {
       });
     }
     return { status: 200, body: { change, flows, problems } satisfies Api.TargetFlowListT };
+  });
+
+  // ADR 0109: the change's estimate, counted from the same target flows.
+  r.add("GET", "/api/changes/{changeId}/estimate", async ({ params }) => {
+    const change = idOf(params.changeId!, "change");
+    const e = await estimateOf(root, change);
+    if (!e) throw notFound(`There is no change ${change}.`);
+    return { status: 200, body: e };
   });
 
   // ADR 0108: the change's picture, drawn from the same target flows.

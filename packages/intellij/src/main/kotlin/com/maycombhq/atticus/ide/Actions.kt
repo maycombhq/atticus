@@ -80,6 +80,18 @@ class ChangeDiagramAction : AtticusAction() {
     }
 }
 
+/** A change's estimate (ADR 0109): asks which change, then opens #/estimate on it. */
+class EstimateAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val change =
+            com.intellij.openapi.ui.Messages.showInputDialog(project, Copy.CHANGE_DIAGRAM_ASK, Copy.ESTIMATE, null)
+                ?.trim()
+        if (change.isNullOrEmpty()) return
+        openScreen(project, Commands.estimateHash(change))
+    }
+}
+
 /** What Atticus asked a model and what came back (#/runs). */
 class ModelRunsAction : AtticusAction() {
     override fun actionPerformed(e: AnActionEvent) {

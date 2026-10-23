@@ -535,7 +535,60 @@ export const COPY = {
       settings: "Settings",
       runs: "Model runs",
       changeDiagram: "Change diagram",
+      estimate: "Estimate",
     },
+  },
+  /** ADR 0109: a change's estimate, from its target flows. */
+  estimate: {
+    title: "Estimate",
+    intro:
+      "How big the change is, counted from its target flows: each step it adds, changes or removes is a unit of work, classed by what it reaches. The days come from the org pack's ranges, summed; every unit and driver says where it comes from. No AI, and never a number nobody stands behind.",
+    none: "No change yet. Start one from a brief, then run its architecture stage.",
+    noTargets: (id: string) =>
+      `${id} has no target flows yet, so there is nothing to size. Its architecture stage writes them:`,
+    effort: "Effort",
+    effortRange: (p20: number, p80: number, p50: number) =>
+      `${p20} to ${p80} developer days (most likely ${p50})`,
+    noDays: (units: number) => `${units} unit${units === 1 ? "" : "s"} of work, and no days:`,
+    noTable:
+      "the org pack has no estimates.yaml, so no unit has a range. Add one with the ranges your teams agree.",
+    noMatch: "no class in the org pack's estimates.yaml matches this work.",
+    from: (classed: number, units: number) =>
+      `from ${classed} of ${units} units of work; the rest need a class and count for nothing yet`,
+    calendar: "Calendar",
+    waiting: (days: number) => `Waiting, from the release forecast: ${days} working days`,
+    longer: (what: "work" | "waiting") =>
+      what === "work"
+        ? "The work takes longer than the waiting."
+        : "The waiting takes longer than the work.",
+    noWait: "No waiting worked out: the release forecast couldn't be read.",
+    calibration: "Calibration",
+    notCalibrated: (source?: string, table?: string) =>
+      source
+        ? `Not calibrated yet: the ranges are ${source}'s, from ${table ?? "estimates.yaml"}. Once past changes record their effort, the ranges are checked against them.`
+        : "Not calibrated yet, and no ranges to calibrate.",
+    drivers: "What drives it",
+    driversCaption: "What makes the change bigger or riskier, with where it comes from",
+    noDrivers: "Nothing makes it bigger or riskier than its units of work.",
+    widens: (x: number) => `widens the upper end ${x}×`,
+    work: "The work",
+    workCaption: (id: string) => `Every unit of work in ${id}`,
+    needsClass: "needs a class",
+    perRepo: "By repo",
+    col: {
+      what: "What",
+      count: "How many",
+      effect: "Effect",
+      source: "From",
+      repo: "Repo",
+      flow: "Flow",
+      step: "Step",
+      cls: "Class",
+      days: "Days",
+      units: "Units",
+    },
+    days: (d: { p20: number; p50: number; p80: number }) => `${d.p20}–${d.p80} (${d.p50})`,
+    problems: "What couldn't be read",
   },
   /** ADR 0108: a change's picture, from its target flows. */
   changeDiagram: {

@@ -226,7 +226,7 @@ export function chatHandler(svc: Service, commands?: () => CommandUi): vscode.Ch
     if (!cmd || cmd === "next") {
       if (!cmd && request.prompt.trim())
         stream.markdown(
-          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /answer, /diagram [repo], /changemap <change>, /new <title>, /run <command> or /ask <question>.\n\n",
+          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /answer, /diagram [repo], /changemap <change>, /estimate <change>, /new <title>, /run <command> or /ask <question>.\n\n",
         );
       return next(svc, root, stream, token);
     }
@@ -273,6 +273,27 @@ export function chatHandler(svc: Service, commands?: () => CommandUi): vscode.Ch
           command: "atticus.changeDiagram",
           arguments: [change],
           title: "Open the Change diagram",
+        });
+      return;
+    }
+    if (cmd === "estimate") {
+      const change = request.prompt.trim().split(/\s+/)[0];
+      if (!change) {
+        stream.markdown("Say the change: /estimate add-transfer-limit");
+        return;
+      }
+      stream.progress(`Sizing ${change}...`);
+      const r = await svc.cli(root)(["change", "estimate", change, "--root", root], token);
+      stream.markdown(
+        block(
+          [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(Boolean),
+        ),
+      );
+      if (r.code === 0)
+        stream.button({
+          command: "atticus.estimate",
+          arguments: [change],
+          title: "Open the Estimate",
         });
       return;
     }

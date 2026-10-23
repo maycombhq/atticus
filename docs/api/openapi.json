@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.9.0",
+    "version": "2.10.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -2340,6 +2340,67 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChangeMap"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/estimate": {
+      "get": {
+        "operationId": "getChangeEstimate",
+        "summary": "The change's estimate: its size from the target flows, the org pack's ranges summed, the drivers with their sources (ADR 0109)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeEstimate"
                 }
               }
             }
@@ -18232,6 +18293,233 @@
           "edges",
           "mermaid",
           "flows",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeEstimate": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "units": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "flow": {
+                  "type": "string"
+                },
+                "repo": {
+                  "type": "string"
+                },
+                "step": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "what": {
+                  "type": "string"
+                },
+                "class": {
+                  "type": "string"
+                },
+                "days": {
+                  "type": "object",
+                  "properties": {
+                    "p20": {
+                      "type": "number"
+                    },
+                    "p50": {
+                      "type": "number"
+                    },
+                    "p80": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "p20",
+                    "p50",
+                    "p80"
+                  ],
+                  "additionalProperties": false
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "flow",
+                "repo",
+                "what",
+                "class",
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "needsClass": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "effort": {
+            "type": "object",
+            "properties": {
+              "p20": {
+                "type": "number"
+              },
+              "p50": {
+                "type": "number"
+              },
+              "p80": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "p20",
+              "p50",
+              "p80"
+            ],
+            "additionalProperties": false
+          },
+          "perRepo": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "units": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "effort": {
+                  "type": "object",
+                  "properties": {
+                    "p20": {
+                      "type": "number"
+                    },
+                    "p50": {
+                      "type": "number"
+                    },
+                    "p80": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "p20",
+                    "p50",
+                    "p80"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "repo",
+                "units"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "drivers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "what": {
+                  "type": "string"
+                },
+                "count": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "widens": {
+                  "type": "number"
+                },
+                "source": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "what",
+                "count"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "calendar": {
+            "type": "object",
+            "properties": {
+              "effortDays": {
+                "type": "number"
+              },
+              "waitDays": {
+                "type": "number"
+              },
+              "longer": {
+                "type": "string",
+                "enum": [
+                  "work",
+                  "waiting"
+                ]
+              }
+            },
+            "additionalProperties": false
+          },
+          "calibration": {
+            "type": "object",
+            "properties": {
+              "calibrated": {
+                "type": "boolean",
+                "const": false
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "calibrated"
+            ],
+            "additionalProperties": false
+          },
+          "table": {
+            "type": "string"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "change",
+          "title",
+          "source",
+          "units",
+          "needsClass",
+          "perRepo",
+          "drivers",
+          "calendar",
+          "calibration",
           "problems"
         ],
         "additionalProperties": false

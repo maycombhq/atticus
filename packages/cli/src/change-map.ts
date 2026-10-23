@@ -1,9 +1,16 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { changeStore } from "@maycombhq/changes";
-import { changesDirOf, changesRelOf, readRepoSpec, specRepos, type Api } from "@maycombhq/core";
+import {
+  changesDirOf,
+  changesRelOf,
+  readRepoSpec,
+  specRepos,
+  type Api,
+  type CatalogRecord,
+} from "@maycombhq/core";
 import { changeView, toDrawio, toMermaid, type FlowView } from "@maycombhq/diagrams";
-import { mergeDelta, readDeltas, TARGET_DIR } from "@maycombhq/planner";
+import { mergeDelta, readDeltas, TARGET_DIR, type MergedFlow } from "@maycombhq/planner";
 import type { Output } from "./commands.js";
 import { loadCatalog } from "./diagram-commands.js";
 
@@ -21,8 +28,23 @@ export interface ChangeMap {
   problems: string[];
 }
 
-/** The change's picture; undefined when there is no such change. */
-export async function changeMapOf(root: string, change: string): Promise<ChangeMap | undefined> {
+/** A change's target flows merged with today's, and what reading them needs (ADR 0108, 0109). */
+export interface TargetFlows {
+  title: string;
+  /** The target-flow folder, relative to the metarepo. */
+  source: string;
+  merged: MergedFlow[];
+  problems: string[];
+  records: CatalogRecord[];
+  /** Every component today's specs name, catalog or not. */
+  known: Set<string>;
+}
+
+/** The change's target flows; undefined when there is no such change. */
+export async function targetFlowsOf(
+  root: string,
+  change: string,
+): Promise<TargetFlows | undefined> {
   const dir = join(changesDirOf(root), change);
   if (!(await stat(join(dir, "change.yaml")).catch(() => undefined))) return undefined;
   const title = await changeStore(root)
@@ -32,7 +54,7 @@ export async function changeMapOf(root: string, change: string): Promise<ChangeM
   const { deltas, problems } = await readDeltas(dir);
   const repos = new Set(await specRepos(root));
   const specs = new Map<string, Awaited<ReturnType<typeof readRepoSpec>>>();
-  const merged = [];
+  const merged: MergedFlow[] = [];
   for (const d of deltas) {
     if (repos.has(d.repo) && !specs.has(d.repo))
       specs.set(d.repo, await readRepoSpec(root, d.repo));
@@ -45,19 +67,36 @@ export async function changeMapOf(root: string, change: string): Promise<ChangeM
   }
   // Catalog problems are the catalog's to report; the picture draws what reads.
   const { records } = await loadCatalog(root, { out: () => undefined, err: () => undefined });
-  const source = `${changesRelOf(root)}/${change}/${TARGET_DIR}`;
-  // Every component today's specs name is known, catalog or not.
   const known = new Set<string>();
   for (const repo of repos) {
     const spec = specs.get(repo) ?? (await readRepoSpec(root, repo));
     for (const f of spec.flows) known.add(f.component);
   }
   return {
-    view: changeView(records, { id: change, title, source }, merged, known),
     title,
-    source,
-    flows: deltas.length,
+    source: `${changesRelOf(root)}/${change}/${TARGET_DIR}`,
+    merged,
     problems,
+    records,
+    known,
+  };
+}
+
+/** The change's picture; undefined when there is no such change. */
+export async function changeMapOf(root: string, change: string): Promise<ChangeMap | undefined> {
+  const t = await targetFlowsOf(root, change);
+  if (!t) return undefined;
+  return {
+    view: changeView(
+      t.records,
+      { id: change, title: t.title, source: t.source },
+      t.merged,
+      t.known,
+    ),
+    title: t.title,
+    source: t.source,
+    flows: t.merged.length,
+    problems: t.problems,
   };
 }
 

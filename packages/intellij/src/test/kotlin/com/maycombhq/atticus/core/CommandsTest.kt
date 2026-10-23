@@ -131,6 +131,7 @@ class CommandsTest {
         for (s in listOf("change needs", "knowledge find", "knowledge ask", "knowledge scan", "change draft")) assertTrue(s in Commands.AI_STEPS, s)
         assertNull(Commands.slashFor(listOf("knowledge", "ask", "Who owns the ledger?")))
         assertEquals("#/change-diagram?change=add%20transfer", Commands.changeDiagramHash("add transfer"))
+        assertEquals("#/estimate?change=add%20transfer", Commands.estimateHash("add transfer"))
         // The critic's AI lenses, one at a time; its stats and --resume aren't AI steps.
         assertTrue(Commands.isAiStep(listOf("critic", "add-transfer-limit")))
         assertTrue(!Commands.isAiStep(listOf("critic", "stats")))

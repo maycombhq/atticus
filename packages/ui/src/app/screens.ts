@@ -70,6 +70,8 @@ export const MORE: ScreenDef[] = [
   { id: "contracts", label: S.contracts, group: "Design" },
   { id: "mappings", label: S.mappings, group: "Design" },
   { id: "breakdown", label: S.breakdown, group: "Plan" },
+  // ADR 0109: a change's estimate, from its target flows.
+  { id: "estimate", label: S.estimate, group: "Plan" },
   { id: "initiatives", label: S.initiatives, group: "Plan" },
   { id: "tasks", label: S.tasks, group: "Build" },
   { id: "trace", label: S.trace, group: "Build" },

@@ -50,6 +50,7 @@ object Copy {
     const val PICK_OR_TYPE = "Pick one, or type it."
     const val OPEN_PROMPT = "Open the prompt"
     const val CHANGE_DIAGRAM = "Atticus: Change Diagram"
+    const val ESTIMATE = "Atticus: Estimate"
     const val CHANGE_DIAGRAM_ASK = "Which change? Its id, such as add-transfer-limit."
     const val MODEL_RUNS = "Model runs"
 

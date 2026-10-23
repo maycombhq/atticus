@@ -57,6 +57,7 @@ describe("atticus mcp (ADR 0104)", () => {
         "knowledge_items",
         "change_needs",
         "change_map",
+        "change_estimate",
         "open_questions",
       ]),
     );

@@ -41,6 +41,7 @@ const ROUTES = [
   "arch-review",
   "diagrams",
   "change-diagram",
+  "estimate",
   "reconcile",
   "contracts",
   "mappings",

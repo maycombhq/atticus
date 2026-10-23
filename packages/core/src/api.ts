@@ -36,8 +36,9 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  *   drafted from the wikis.
  * 2.8.0 (ADR 0106): model runs, GET /api/runs and /api/runs/{id}/transcript, and POST /api/runs.
  * 2.9.0 (ADR 0108): a change's picture, GET /api/changes/{id}/map.
+ * 2.10.0 (ADR 0109): a change's estimate, GET /api/changes/{id}/estimate.
  */
-export const API_VERSION = "2.9.0";
+export const API_VERSION = "2.10.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -678,6 +679,52 @@ export const ChangeMap = z.object({
   problems: z.array(z.string()),
 });
 export type ChangeMapT = z.infer<typeof ChangeMap>;
+
+const Days = z.object({ p20: z.number(), p50: z.number(), p80: z.number() });
+
+/** A change's estimate (ADR 0109): its size from the target flows, ranges with their drivers. */
+export const ChangeEstimate = z.object({
+  change: RecordId,
+  title: z.string(),
+  /** The target-flow folder it is counted from, relative to the metarepo. */
+  source: z.string(),
+  units: z.array(
+    z.object({
+      flow: z.string(),
+      repo: z.string(),
+      step: z.number().int().optional(),
+      what: z.string(),
+      class: z.string(),
+      days: Days.optional(),
+      source: z.string(),
+    }),
+  ),
+  needsClass: z.number().int(),
+  effort: Days.optional(),
+  perRepo: z.array(
+    z.object({ repo: z.string(), units: z.number().int(), effort: Days.optional() }),
+  ),
+  drivers: z.array(
+    z.object({
+      id: z.string(),
+      what: z.string(),
+      count: z.number().int(),
+      widens: z.number().optional(),
+      source: z.string().optional(),
+    }),
+  ),
+  calendar: z.object({
+    effortDays: z.number().optional(),
+    waitDays: z.number().optional(),
+    longer: z.enum(["work", "waiting"]).optional(),
+  }),
+  calibration: z.object({ calibrated: z.literal(false), source: z.string().optional() }),
+  /** The org pack's estimates.yaml, relative to the metarepo, when it has one. */
+  table: z.string().optional(),
+  /** What couldn't be read: target flows, estimates.yaml, the forecast. */
+  problems: z.array(z.string()),
+});
+export type ChangeEstimateT = z.infer<typeof ChangeEstimate>;
 export type TargetFlowListT = z.infer<typeof TargetFlowList>;
 export type TargetFlowViewT = z.infer<typeof TargetFlowView>;
 
@@ -1702,6 +1749,17 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/changes/{changeId}/estimate": {
+    get: {
+      id: "getChangeEstimate",
+      summary:
+        "The change's estimate: its size from the target flows, the org pack's ranges summed, the drivers with their sources (ADR 0109)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ChangeEstimate", description: "OK" },
+      errors: [400, 404],
+    },
+  },
   "/api/changes/{changeId}/target-flows/{flowId}": {
     get: {
       id: "getTargetFlow",
@@ -2583,6 +2641,7 @@ export function openApiDocument(): Record<string, unknown> {
     TargetFlowList,
     TargetFlowView,
     ChangeMap,
+    ChangeEstimate,
     OrgPackView,
     Health,
     Finding,

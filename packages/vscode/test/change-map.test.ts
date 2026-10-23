@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { changeDiagramHash, changeMapMarkdown, type ChangeMapJson } from "../src/change-map";
+import {
+  changeDiagramHash,
+  changeMapMarkdown,
+  estimateHash,
+  type ChangeMapJson,
+} from "../src/change-map";
 
 /** /changemap (ADR 0108): a change's picture in Copilot Chat. */
 
@@ -39,7 +44,8 @@ describe("a change's picture in the chat (ADR 0108)", () => {
     );
   });
 
-  it("opens the Change diagram on the change", () => {
+  it("opens the Change diagram and the Estimate on the change", () => {
     expect(changeDiagramHash("add transfer")).toBe("#/change-diagram?change=add%20transfer");
+    expect(estimateHash("add transfer")).toBe("#/estimate?change=add%20transfer");
   });
 });

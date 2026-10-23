@@ -16,7 +16,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Estimates (ADR 0109)
 
-- The estimate's engine: a change's size counted from its target flows, each changed step a class of work, the org pack's ranges (new optional `estimates.yaml`) summed by a seeded simulation, the drivers named with their sources, never a number nobody stands behind. The command, API and screens come next.
+- A change's estimate: its size counted from its target flows, each changed step a class of work, the org pack's ranges (new optional `estimates.yaml`, with who agreed them) summed by a seeded simulation, the drivers named with their sources, the calendar beside the release forecast's waiting, and never a number nobody stands behind; a unit no class matches says it needs one. `atticus change estimate <change> [--json]`, `GET /api/changes/{id}/estimate` (API 2.10.0), the app's Estimate (More, Plan; linked from the Architecture stage), `@atticus /estimate` and Open a change's estimate in VS Code, IntelliJ's Atticus: Estimate, and the `change_estimate` MCP tool. It says it isn't calibrated: past changes don't record their effort yet.
 
 ### Fixed
 

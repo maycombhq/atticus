@@ -14,7 +14,7 @@ import {
 } from "./atticus";
 import { answerApp, bundledHtml } from "./app-bundle";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
-import { changeDiagramHash } from "./change-map";
+import { changeDiagramHash, estimateHash } from "./change-map";
 import { chatHandler } from "./chat";
 import { CommandUi, SHOWN_SCHEME, showReadOnly, shownDocs } from "./command-ui";
 import { FlowLenses } from "./codelens";
@@ -1189,6 +1189,19 @@ ${view.next.why}`
       }));
     if (!c?.trim()) return;
     await vscode.commands.executeCommand("atticus.showApp", changeDiagramHash(c.trim()));
+  });
+
+  // ADR 0109: a change's estimate, in the Atticus tab.
+  reg("atticus.estimate", async (change?: string) => {
+    const c =
+      change ??
+      (await vscode.window.showInputBox({
+        title: "Atticus: the Estimate",
+        prompt: "Which change? Its id, such as add-transfer-limit.",
+        ignoreFocusOut: true,
+      }));
+    if (!c?.trim()) return;
+    await vscode.commands.executeCommand("atticus.showApp", estimateHash(c.trim()));
   });
 
   reg("atticus.openApp", async () => {

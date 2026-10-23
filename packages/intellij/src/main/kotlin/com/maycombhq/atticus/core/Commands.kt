@@ -157,6 +157,10 @@ object Commands {
     fun changeDiagramHash(change: String): String =
         "#/change-diagram?change=" + java.net.URLEncoder.encode(change, Charsets.UTF_8).replace("+", "%20")
 
+    /** The app's Estimate on one change (ADR 0109). */
+    fun estimateHash(change: String): String =
+        "#/estimate?change=" + java.net.URLEncoder.encode(change, Charsets.UTF_8).replace("+", "%20")
+
     /** The prompt file a hand-off printed ("Prompt: <path>"), to open after it. */
     fun promptPathFrom(out: String): String? = Regex("(?m)^Prompt: (\\S+)").find(out)?.groupValues?.get(1)
 

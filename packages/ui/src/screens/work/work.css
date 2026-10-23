@@ -123,3 +123,12 @@
   border: 1px solid var(--line-2);
   font-size: 11.5px;
 }
+
+/* ADR 0109: the Estimate's bands. */
+.est-band {
+  margin: 0 0 10px;
+}
+.est-big {
+  font-size: 15px;
+  margin: 2px 0 0;
+}

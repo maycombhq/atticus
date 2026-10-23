@@ -111,6 +111,7 @@ Usage:
   atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
   atticus change list [--json]         Every change and its state
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
+  atticus change estimate <change> [--json]  The change's estimate: its size from the target flows, the org pack's ranges summed, and what drives it, each with its source; never a number nobody stands behind
   atticus change map <change> [--format mermaid|drawio] [--json]  The change's picture: the components, entries and tables its target flows touch, marked + new, ◇ modify or ✕ retire
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
   atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
