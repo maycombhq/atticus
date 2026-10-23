@@ -6,6 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Model runs, and what waits, in every surface
 
+- A knowledge scan reads a big wiki in batches that fit the model: `atticus knowledge scan --batch-tokens <n>` reads only the changed pages that fit, keeps what it read, records only those pages as read, and says how many are left; the next scan carries on. The VS Code extension passes the model's room (its limit less 4,000 tokens for the instructions; GPT-4o mini on Copilot takes 12,078) and runs batch after batch until every page is read. Every page is still sent once; only the instructions repeat per batch.
 - Model runs (ADR 0106): what Atticus asked a model, what it answered and what the checks handed back, kept under `.runs/` and now shown. `atticus runs [--change id] [--json]` and `atticus runs show <run> [--json]`; the local API's `GET /api/runs` (with the server's model, if any) and `GET /api/runs/{runId}/transcript`; and `POST /api/runs`, which starts an AI step on the server with `runtime.yaml`'s model, as a job, where one is configured (only the AI steps; never an argument that starts with `-`). API 2.8.0.
 - `atticus waiting [--group change|kind] [--filter words] [--json]` (ADR 0105): what waits on a person across every change, grouped by change (blocking first) or by kind, with a filter.
 - The Claude Code plugin's MCP server gains `waiting_on_you`, `open_needs`, `model_runs` and `model_run`; a session in a metarepo starts with how much waits on you.

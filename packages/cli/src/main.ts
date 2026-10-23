@@ -407,7 +407,7 @@ Usage:
           [--id <id>] [--path <folder>] [--ref <branch>] [--submodule] [--kind <k,k>] [--framework <f,f>] [--owner <who>] [--save]
   atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
   atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
-  atticus knowledge scan [--source s] [--mode m] [--resume run] [--full]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
+  atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]  The knowledge items, by tag and kind
   atticus knowledge ask "<question>" [--mode m] [--resume run]  An answer from the knowledge items only, citing them
   atticus knowledge find "<phrase>"   Search every wiki for a term or phrase; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked [--source s] [--mode m] [--resume run] [--json]
@@ -676,6 +676,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       json: { type: "boolean" },
       limit: { type: "string" },
       filter: { type: "string" },
+      "batch-tokens": { type: "string" },
       depth: { type: "string" },
       by: { type: "string" },
       as: { type: "string" },

@@ -305,3 +305,62 @@ function emptyResult() {
     snapshots: [],
   };
 }
+
+// A model takes so much at a time (12,078 tokens for Copilot's GPT-4o mini): a source too big
+// for one prompt is read in batches, each fitting the budget, and the next scan carries on.
+describe("a scan in batches that fit the model", () => {
+  it("reads the pages that fit, leaves the rest for the next scan, and keeps what it read", async () => {
+    const m = await metarepo();
+    const snap = await sync(m.root, "2026-10-20T09:00:00Z");
+    const kafka = snap.pages.find((p) => p.pagePath === "how-to/kafka.md")!;
+    // A budget for one page only.
+    const budget = Math.ceil((kafka.text ?? "").length / 4) + 5;
+    const first = planRescan([snap], undefined, [], { batchTokens: budget });
+    expect(first.changed).toEqual({ platform: ["how-to/kafka.md"] });
+    expect(first.deferred).toEqual({ platform: ["how-to/sso.md"] });
+    expect(first.snapshots[0]!.pages.map((p) => p.pagePath)).toEqual(["how-to/kafka.md"]);
+    const r1 = await scanKnowledge(first.snapshots, {
+      runtime: new MockRuntime(() => answer({ sso: false })),
+      now: new Date("2026-10-20T09:00:00Z"),
+    });
+    await writeKnowledge(m.root, r1, "2026-10-20T09:00:00Z", { snapshots: [snap], plan: first });
+    const k1 = await readKnowledge(m.root, { raw: true });
+    expect(k1.items.map((i) => i.id)).toEqual(["kafka-topic-request"]);
+    // Only the page read is recorded as read.
+    expect(Object.keys(k1.report!.snapshots[0]!.hashes!)).toEqual(["how-to/kafka.md"]);
+
+    const second = planRescan([snap], k1.report, k1.items, { batchTokens: budget * 10 });
+    expect(second.changed).toEqual({ platform: ["how-to/sso.md"] });
+    expect(second.deferred).toEqual({});
+    expect(second.previous).toEqual([]);
+    const r2 = await scanKnowledge(second.snapshots, {
+      runtime: new MockRuntime(() =>
+        answer().replace(
+          / {2}- kind: request\n {4}id: kafka-topic-request[\s\S]*?\n(?= {2}- kind)/,
+          "",
+        ),
+      ),
+      now: new Date("2026-10-20T09:05:00Z"),
+    });
+    await writeKnowledge(m.root, r2, "2026-10-20T09:05:00Z", { snapshots: [snap], plan: second });
+    const k2 = await readKnowledge(m.root, { raw: true });
+    // The first batch's item stays; the second's joins it; every page is now recorded.
+    expect(k2.items.map((i) => i.id).sort()).toEqual(["kafka-topic-request", "sso-intake"]);
+    expect(Object.keys(k2.report!.snapshots[0]!.hashes!).sort()).toEqual([
+      "how-to/kafka.md",
+      "how-to/sso.md",
+    ]);
+    expect(planRescan([snap], k2.report, k2.items, { batchTokens: budget }).snapshots).toEqual([]);
+  });
+
+  it("reads a page bigger than the budget on its own, rather than never", () => {
+    // The scan says the prompt is too long, with the page's name, instead of skipping it.
+    return (async () => {
+      const m = await metarepo();
+      const snap = await sync(m.root, "2026-10-20T09:00:00Z");
+      const plan = planRescan([snap], undefined, [], { batchTokens: 1 });
+      expect(plan.changed).toEqual({ platform: ["how-to/kafka.md"] });
+      expect(plan.deferred).toEqual({ platform: ["how-to/sso.md"] });
+    })();
+  });
+});

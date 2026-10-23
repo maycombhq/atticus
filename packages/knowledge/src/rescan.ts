@@ -19,22 +19,56 @@ export interface RescanPlan {
   unchanged: Record<string, number>;
   /** Items the last scan read from the changed and removed pages. */
   previous: KnowledgeRecord[];
+  /**
+   * Pages new or changed that this scan leaves for the next, by source: with `batchTokens`, only
+   * the pages that fit are read (always at least one), and the rest wait (they stay unrecorded).
+   */
+  deferred: Record<string, string[]>;
 }
+
+/** About as many tokens as the context pack will count for a page. */
+const tokensOf = (text: string) => Math.ceil(text.length / 4);
 
 export function planRescan(
   snapshots: Snapshot[],
   report: KnowledgeReport | undefined,
   items: KnowledgeRecord[],
-  o: { full?: boolean } = {},
+  o: { full?: boolean; batchTokens?: number } = {},
 ): RescanPlan {
-  const plan: RescanPlan = { snapshots: [], changed: {}, removed: {}, unchanged: {}, previous: [] };
+  const plan: RescanPlan = {
+    snapshots: [],
+    changed: {},
+    removed: {},
+    unchanged: {},
+    previous: [],
+    deferred: {},
+  };
+  // The batch's room, across every source; the first page always goes, however big.
+  let room = o.batchTokens;
+  let taken = 0;
   for (const s of snapshots) {
     const source = s.manifest.source;
     const last = o.full ? undefined : report?.snapshots.find((x) => x.source === source)?.hashes;
     const now = new Map(s.manifest.pages.map((p) => [p.page, p.sha256]));
-    const changed = s.manifest.pages
+    const all = s.manifest.pages
       .filter((p) => !last || last[p.page] !== p.sha256)
       .map((p) => p.page);
+    const changed: string[] = [];
+    const deferred: string[] = [];
+    for (const page of all) {
+      if (room === undefined) {
+        changed.push(page);
+        continue;
+      }
+      const text = s.pages.find((p) => p.pagePath === page)?.text ?? "";
+      const t = tokensOf(text);
+      if (taken === 0 || (deferred.length === 0 && t <= room)) {
+        changed.push(page);
+        room -= t;
+        taken++;
+      } else deferred.push(page);
+    }
+    if (deferred.length) plan.deferred[source] = deferred;
     const removed = last
       ? Object.keys(last)
           .filter((p) => !now.has(p))
@@ -42,7 +76,7 @@ export function planRescan(
       : [];
     if (changed.length) plan.changed[source] = changed;
     if (removed.length) plan.removed[source] = removed;
-    plan.unchanged[source] = s.manifest.pages.length - changed.length;
+    plan.unchanged[source] = s.manifest.pages.length - all.length;
     if (changed.length) {
       const keep = new Set(changed);
       plan.snapshots.push({ ...s, pages: s.pages.filter((p) => keep.has(p.pagePath)) });

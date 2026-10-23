@@ -203,6 +203,20 @@ export async function writeKnowledge(
     xs.filter((x) =>
       x.pages ? x.pages.every((p) => !touches(p.source, p.page)) : !touches(x.source, x.page),
     );
+  /**
+   * The pages recorded as read: every page of the snapshot, except those a batched scan left for
+   * the next (they keep what the last scan recorded, if anything, so the next scan reads them).
+   */
+  const hashesAfter = (w: Snapshot, source: string): Record<string, string> => {
+    const left = new Set(plan?.deferred[source] ?? []);
+    const was = old?.snapshots.find((x) => x.source === source)?.hashes ?? {};
+    const out: Record<string, string> = {};
+    for (const p of w.manifest.pages) {
+      if (!left.has(p.page)) out[p.page] = p.sha256;
+      else if (was[p.page] !== undefined) out[p.page] = was[p.page]!;
+    }
+    return out;
+  };
   const read = new Map(result.snapshots.map((x) => [x.source, x]));
   const whole = new Map((o.snapshots ?? []).map((x) => [x.manifest.source, x]));
   const snapshots = [
@@ -214,9 +228,7 @@ export async function writeKnowledge(
         source,
         date: w?.manifest.date ?? r!.date,
         pages: w?.manifest.pages.length ?? r!.pages,
-        ...(w
-          ? { hashes: Object.fromEntries(w.manifest.pages.map((p) => [p.page, p.sha256])) }
-          : {}),
+        ...(w ? { hashes: hashesAfter(w, source) } : {}),
       };
     }),
   ];

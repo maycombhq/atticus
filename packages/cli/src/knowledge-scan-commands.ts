@@ -137,7 +137,14 @@ async function snapshotsFor(
  */
 export async function knowledgeScan(
   root: string,
-  o: { source?: string; attempts?: number; resume?: string; json?: boolean; full?: boolean },
+  o: {
+    source?: string;
+    attempts?: number;
+    resume?: string;
+    json?: boolean;
+    full?: boolean;
+    batchTokens?: number;
+  },
   deps: KnowledgeDeps,
   io: Output,
 ): Promise<number> {
@@ -147,7 +154,14 @@ export async function knowledgeScan(
   const now = deps.now ?? new Date();
   // ADR 0101: a rescan reads only the pages that changed since the last scan (--full: all).
   const before = await readKnowledge(root, { raw: true });
-  const plan = planRescan(snapshots, before.report, before.items, { full: o.full === true });
+  // --batch-tokens: only the pages that fit one prompt of the model (ADR 0106); the rest wait.
+  const plan = planRescan(snapshots, before.report, before.items, {
+    full: o.full === true,
+    ...(o.batchTokens ? { batchTokens: o.batchTokens } : {}),
+  });
+  const left = Object.values(plan.deferred).flat().length;
+  const leftLine = () =>
+    `${plural(left, "page")} left to read: run atticus knowledge scan again for the next batch.`;
   const gone = Object.values(plan.removed).flat().length;
   if (!plan.snapshots.length && !gone) {
     for (const s of snapshots)
@@ -200,6 +214,7 @@ export async function knowledgeScan(
           changes: w.changes,
           recheck,
           plan: { changed: plan.changed, removed: plan.removed, unchanged: plan.unchanged },
+          pagesLeft: left,
         },
         null,
         2,
@@ -238,6 +253,7 @@ export async function knowledgeScan(
     }.`,
   );
   io.out(`Written to ${knowledgeRelOf(root)}/items/ and ${knowledgeRelOf(root)}/scan.yaml.`);
+  if (left) io.out(leftLine());
   if (r.conflicts.length) {
     io.out(
       `${plural(r.conflicts.length, "conflict")} between pages (both kept, for an owner to settle):`,
@@ -878,6 +894,12 @@ export async function knowledgeCli(
       io.err("--attempts is a whole number from 1 to 10.");
       return 2;
     }
+    const bt = str(values["batch-tokens"]);
+    const batchTokens = bt === undefined ? undefined : Number(bt);
+    if (batchTokens !== undefined && !(Number.isInteger(batchTokens) && batchTokens >= 500)) {
+      io.err("--batch-tokens is a whole number of 500 or more: the room for pages in one prompt.");
+      return 2;
+    }
     const rt = await runtime();
     if (!rt) return 2;
     return knowledgeScan(
@@ -888,6 +910,7 @@ export async function knowledgeCli(
         ...(values.full === true ? { full: true } : {}),
         ...(str(values.source) ? { source: str(values.source)! } : {}),
         ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
+        ...(batchTokens ? { batchTokens } : {}),
       },
       { runtime: rt },
       io,

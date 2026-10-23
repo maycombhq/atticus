@@ -93,8 +93,55 @@ const failed = (message: string, rounds: number): StepEnd => ({
   questions: [],
 });
 
+/**
+ * The room for pages in one prompt of the model (ADR 0106): its limit, less what the scan's
+ * instructions and the items read before take. Copilot's GPT-4o mini takes 12,078 tokens.
+ */
+export const batchTokensFor = (maxInputTokens: number) => Math.max(500, maxInputTokens - 4000);
+
+/** How many pages a batched knowledge scan says it left for the next batch. */
+export function pagesLeft(messages: string[]): number {
+  for (const m of messages) {
+    const x = /^(\d+) pages? left to read/.exec(m);
+    if (x) return Number(x[1]);
+  }
+  return 0;
+}
+
+const MAX_BATCHES = 50;
+
 /** Run one AI step, `args` as `atticus` takes them (e.g. ["scan", "survey", "forge-notes"]). */
 export async function runStep(args: string[], d: RunnerDeps, token: Cancel): Promise<StepEnd> {
+  // A knowledge scan reads its pages in batches that fit one prompt of the model.
+  const batchable =
+    args[0] === "knowledge" &&
+    args[1] === "scan" &&
+    !args.includes("--batch-tokens") &&
+    !args.includes("--resume");
+  if (!batchable) return runOnce(args, d, token);
+  const model = await d.model();
+  if (!model) return runOnce(args, d, token);
+  const room = batchTokensFor(model.maxInputTokens);
+  const say = d.progress ?? (() => undefined);
+  for (let batch = 1; ; batch++) {
+    const end = await runOnce([...args, "--batch-tokens", String(room)], d, token);
+    if (end.state !== "done") return end;
+    const left = pagesLeft(end.messages);
+    if (!left || batch >= MAX_BATCHES) {
+      if (batch === 1) return end;
+      return {
+        ...end,
+        messages: [
+          `Read the pages in ${batch} batches, each fitting ${model.name} (${model.maxInputTokens} tokens).`,
+          ...end.messages,
+        ],
+      };
+    }
+    say(`${left} page${left === 1 ? "" : "s"} left to read: batch ${batch + 1}.`);
+  }
+}
+
+async function runOnce(args: string[], d: RunnerDeps, token: Cancel): Promise<StepEnd> {
   const last: { round?: Waiting } = {};
   const end = await loop(args, d, token, last);
   const w = last.round;

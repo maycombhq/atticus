@@ -263,3 +263,80 @@ describe("runSpec", { timeout: 120_000 }, () => {
     if (end.state === "done") expect(end.messages).toContain("The spec passes.");
   });
 });
+
+// ADR 0106: a knowledge scan too big for one prompt of the model is read in batches that fit.
+describe("a knowledge scan in batches", () => {
+  const never: Cancel = {
+    isCancellationRequested: false,
+    onCancellationRequested: () => ({ dispose() {} }),
+  } as unknown as Cancel;
+  it("passes the model's room for pages, and runs the next batch while pages are left", async () => {
+    const calls: string[][] = [];
+    let n = 0;
+    const cli = async (argv: string[]) => {
+      calls.push(argv);
+      n++;
+      const left =
+        n === 1
+          ? ["3 pages left to read: run atticus knowledge scan again for the next batch."]
+          : [];
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          state: "done",
+          exitCode: 0,
+          messages: [`Read batch ${n}.`, ...left],
+          errors: [],
+          questions: [],
+        }),
+        stderr: "",
+      };
+    };
+    const progress: string[] = [];
+    const model = new FakeModel([], 12_078);
+    const end = await runStep(
+      ["knowledge", "scan", "--source", "forge-eng"],
+      {
+        root: tmpdir(),
+        cli: cli as never,
+        model: async () => model,
+        progress: (p) => progress.push(p),
+      },
+      never,
+    );
+    expect(calls.map((c) => c.slice(0, 6))).toEqual([
+      ["knowledge", "scan", "--source", "forge-eng", "--batch-tokens", "8078"],
+      ["knowledge", "scan", "--source", "forge-eng", "--batch-tokens", "8078"],
+    ]);
+    expect(end).toMatchObject({ state: "done" });
+    expect((end as { messages: string[] }).messages[0]).toBe(
+      "Read the pages in 2 batches, each fitting Fake model (12078 tokens).",
+    );
+    expect(progress).toContain("3 pages left to read: batch 2.");
+  });
+
+  it("leaves a scan that is resumed, or already batched, as it is", async () => {
+    const calls: string[][] = [];
+    const cli = async (argv: string[]) => {
+      calls.push(argv);
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          state: "done",
+          exitCode: 0,
+          messages: [],
+          errors: [],
+          questions: [],
+        }),
+        stderr: "",
+      };
+    };
+    const d = { root: tmpdir(), cli: cli as never, model: async () => new FakeModel([], 12_078) };
+    await runStep(["knowledge", "scan", "--batch-tokens", "900"], d, never);
+    await runStep(["survey", "forge-notes"], d, never);
+    expect(calls.map((c) => c.slice(0, 4))).toEqual([
+      ["knowledge", "scan", "--batch-tokens", "900"],
+      ["survey", "forge-notes", "--handoff", "--json"],
+    ]);
+  });
+});
