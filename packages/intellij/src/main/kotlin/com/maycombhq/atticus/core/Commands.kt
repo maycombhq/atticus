@@ -53,6 +53,11 @@ object Commands {
     /** The AI steps, by their first two words: those with a slash command, and knowledge ask (a hand-off only). */
     val AI_STEPS: Set<String> = SLASH.keys + "knowledge ask"
 
+    /** An AI step's words: one of AI_STEPS, or `critic <change>`, its lenses one at a time (ADR 0106 addendum). */
+    fun isAiStep(args: List<String>): Boolean =
+        args.take(2).joinToString(" ") in AI_STEPS ||
+            (args.firstOrNull() == "critic" && args.size > 1 && args[1] != "stats" && "--resume" !in args)
+
     private val HOW =
         mapOf(
             Runs.AI to "in Copilot Chat",

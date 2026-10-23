@@ -56,7 +56,9 @@ export function stepArgs(command: string): string[] | undefined {
   const w = words(command.trim());
   if (!w || w[0] !== "atticus" || w.length < 3) return undefined;
   const args = w.slice(1);
-  if (!AI_STEPS.has(`${args[0]} ${args[1]}`)) return undefined;
+  // `atticus critic <change>` is one too: its AI lenses, one at a time (ADR 0106 addendum).
+  const critic = args[0] === "critic" && args[1] !== "stats";
+  if (!critic && !AI_STEPS.has(`${args[0]} ${args[1]}`)) return undefined;
   if (args.some((a) => a.startsWith("-") || /[<>]/.test(a) || a.trim() === "")) return undefined;
   return args;
 }
@@ -134,7 +136,7 @@ export async function runOnServer(
     if (said && said !== last) o.onLine(said);
     last = said;
     if (ENDED.has(job.state)) {
-      const result = (job.result ?? {}) as { code?: unknown; lines?: unknown };
+      const result = (job.result ?? {}) as { code?: unknown; lines?: unknown; runId?: unknown };
       const lines = Array.isArray(result.lines)
         ? result.lines.filter((l): l is string => typeof l === "string")
         : job.errors;
@@ -144,10 +146,15 @@ export async function runOnServer(
             ? "done"
             : "stopped"
           : job.state;
-      const runId = await o
-        .call<Api.RunList>("/api/runs?limit=1")
-        .then((r) => r.runs.find((x) => x.startedAt >= job.startedAt)?.runId)
-        .catch(() => undefined);
+      // The server names the run the step made; an older server doesn't, so then the newest run
+      // that started after the job.
+      const runId =
+        typeof result.runId === "string"
+          ? result.runId
+          : await o
+              .call<Api.RunList>("/api/runs?limit=1")
+              .then((r) => r.runs.find((x) => x.startedAt >= job.startedAt)?.runId)
+              .catch(() => undefined);
       return { state, lines, ...(runId ? { runId } : {}) };
     }
     await o.wait(700);

@@ -345,6 +345,9 @@ describe("Onboarding", () => {
     expect(out).toContain("org-pack/scan/forge-ledger.yaml");
     expect(out).toContain(W.settingsMissing);
     expect(out).toContain("atticus repo-type detect forge-ledger");
+    // The survey is an AI step: its runs are a link away (ADR 0106).
+    expect(out).toContain('href="#/runs?q=survey"');
+    expect(out).toContain(COPY.runs.surveys);
     expect(out).toContain(W.recordCount(4));
     expect(out).toContain(W.atCommit("abc1234def"));
     expect(out).toContain("Endpoint 3, Table 1");

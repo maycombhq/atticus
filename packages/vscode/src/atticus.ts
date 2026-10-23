@@ -88,6 +88,9 @@ export function actionFor(step: NextStep): NextAction {
   if (step.person || /<[^>]+>/.test(step.command)) return { kind: "person", command: step.command };
   if (step.step === "spec" && step.repo) return { kind: "ai", args, spec: step.repo };
   if (AI_STEPS.has(args.slice(0, 2).join(" "))) return { kind: "ai", args };
+  // The critic's AI lenses, one at a time (ADR 0106 addendum); critic stats only reads.
+  if (args[0] === "critic" && args[1] && args[1] !== "stats" && !args.includes("--resume"))
+    return { kind: "ai", args };
   return { kind: "run", args };
 }
 

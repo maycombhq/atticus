@@ -295,3 +295,53 @@ describe("with AI off in the org pack (ADR 0046)", () => {
     expect(c.err.join("\n")).toMatch(/AI is off here .*Write the artifact yourself/);
   });
 });
+
+describe("atticus critic <change> --handoff --json (ADR 0106 addendum)", () => {
+  interface Handed {
+    state: string;
+    runId?: string;
+    resultFile?: string;
+    doneArgs?: string[];
+    resumeArgs?: string[];
+    messages?: string[];
+  }
+  const step = async (argv: string[]) => {
+    const { main } = await import("../src/main.js");
+    const c = capture();
+    const code = await main(argv, c.io, { quiet: true });
+    return { code, j: JSON.parse(c.out.join("\n")) as Handed, err: c.err };
+  };
+  const agentOf = async (r: string, runId: string) =>
+    (
+      JSON.parse(await readFile(join(r, ".runs", CHANGE, runId, "run.json"), "utf8")) as {
+        request: { agent: { id: string } };
+      }
+    ).request.agent.id;
+
+  it("hands the AI lenses off one at a time, oldest first, and ends with the gate's verdict", async () => {
+    const r = await root();
+    let s = await step(["critic", CHANGE, "--gate", "plan", "--handoff", "--json", "--root", r]);
+    const offered: string[] = [];
+    for (let i = 0; s.j.state === "handoff" && i < 10; i++) {
+      const runId = s.j.runId!;
+      offered.push(/findings-(\w+)\.yaml$/.exec(s.j.resultFile!)![1]!);
+      await writeFile(
+        join(r, s.j.resultFile!),
+        await recordedAnswer(r, { agent: await agentOf(r, runId), runId }),
+      );
+      const { main } = await import("../src/main.js");
+      expect(await main(s.j.doneArgs!, capture().io, { quiet: true })).toBe(0);
+      s = await step(s.j.resumeArgs!);
+    }
+    expect(offered).toEqual(["business", "architecture", "story", "ux", "delivery"]);
+    expect(s.j.state).toBe("stopped");
+    expect(s.j.messages?.at(-1)).toMatch(/^The plan gate is closed: 14 blocking/);
+  });
+
+  it("counts as an AI step, and critic stats doesn't", async () => {
+    const { isHandoffStep } = await import("../src/handoff-flag.js");
+    expect(isHandoffStep("critic", CHANGE)).toBe(true);
+    expect(isHandoffStep("critic", "stats")).toBe(false);
+    expect(isHandoffStep("critic", undefined)).toBe(false);
+  });
+});

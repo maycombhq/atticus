@@ -36,7 +36,14 @@ const STEPS = new Set([
 ]);
 
 export const isHandoffStep = (group: string | undefined, command: string | undefined) =>
-  STEPS.has(`${group ?? ""} ${command ?? ""}`);
+  STEPS.has(`${group ?? ""} ${command ?? ""}`) || isCritic(group, command);
+
+/**
+ * `atticus critic <change>` (ADR 0106 addendum): its AI lenses wait together, one run each, so
+ * --handoff offers them one at a time, oldest first, and each resume offers the next.
+ */
+const isCritic = (group: string | undefined, command: string | undefined) =>
+  group === "critic" && !!command && command !== "stats";
 
 type Dispatch = (argv: string[], io: Output) => Promise<number>;
 
@@ -110,16 +117,32 @@ export async function handoffStep(
     code = 3;
   }
   const after = await runStates(root);
+  const byStart = (a: Run, b: Run) =>
+    a.startedAt.localeCompare(b.startedAt) || a.runId.localeCompare(b.runId);
   const waiting = [...after]
     .filter(([path, s]) => s.run.state === "waiting" && before.get(path)?.key !== s.key)
     .map(([, s]) => s.run)
-    .sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.runId.localeCompare(b.runId));
+    .sort(byStart);
   // Resumed before `handoff done`: the same run is still waiting, so say how to finish it again.
   const resumed = resume.length ? resume.join("=").split("=").at(-1) : undefined;
-  const still = [...after.values()].find(
-    (s) => s.run.runId === resumed && s.run.state === "waiting",
-  )?.run;
-  const run = waiting.at(-1) ?? still;
+  const resumedRun = [...after.values()].find((s) => s.run.runId === resumed)?.run;
+  const still = resumedRun?.state === "waiting" ? resumedRun : undefined;
+  const queue = isCritic(args[0], args[1]);
+  // The critic's next lens: a run of the same change, started with or after the one resumed.
+  const next =
+    queue && resumedRun && !still
+      ? [...after.values()]
+          .map((s) => s.run)
+          .filter(
+            (x) =>
+              x.state === "waiting" &&
+              x.runId !== resumedRun.runId &&
+              x.request.change === resumedRun.request.change &&
+              x.startedAt >= resumedRun.startedAt,
+          )
+          .sort(byStart)[0]
+      : undefined;
+  const run = (queue ? waiting[0] : waiting.at(-1)) ?? still ?? next;
   if (json)
     return printJson(
       root,

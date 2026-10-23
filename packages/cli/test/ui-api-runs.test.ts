@@ -88,6 +88,7 @@ async function run(n: number, at: string, prompt: string, state: string, answer?
 const started: string[][] = [];
 const fakeStep = async (args: string[]) => {
   started.push(args);
+  await run(4, "2026-10-23T03:40:04Z", "# Task: survey the repo\n", "validated", "ok\n");
   return { code: 0, out: ["The step is done."], err: [] };
 };
 const post = async (path: string, body: unknown) => {
@@ -199,6 +200,13 @@ describe("model runs (ADR 0106)", () => {
       expect(r.body.jobId).toEqual(expect.any(String));
       for (let i = 0; i < 50 && !started.length; i++) await new Promise((x) => setTimeout(x, 20));
       expect(started).toEqual([["scan", "survey", "forge-ledger", "--mode", "model"]]);
+      // The job's result names the run the step made, so the app links to it.
+      let job = (await call(`/api/jobs/${String(r.body.jobId)}`)).body;
+      for (let i = 0; i < 50 && job.state !== "done"; i++) {
+        await new Promise((x) => setTimeout(x, 20));
+        job = (await call(`/api/jobs/${String(r.body.jobId)}`)).body;
+      }
+      expect(job.result).toMatchObject({ code: 0, runId: "run-20261023034004-0001" });
       expect(
         (await post("/api/runs", { args: ["change", "handoff", "add-transfer-limit"] })).status,
       ).toBe(400);

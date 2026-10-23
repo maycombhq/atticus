@@ -39,3 +39,7 @@ ADR 0105's Waiting on you, grouped by change with a filter, and this ADR's model
 | Run an AI step                           | Run with Copilot in a VS Code panel; Run with the server's model in a browser where one is configured | the sidebar, the palette, `@atticus`                     | the app's Run with the server's model where one is configured; else the slash command in Copilot Chat (Copilot in IntelliJ gives plugins no model) | Claude runs it, with the slash command                                                                |
 
 The MCP tools stay read-only (ADR 0104): they read what waits and what ran; the steps that change anything are the commands.
+
+The critic is an AI step too. `atticus critic <change>` leaves one run waiting per AI lens, so `--handoff` offers them one at a time, oldest first: each resume reads in the answers there are and offers the next lens of the same change, and the last ends with the gate's verdict. Every surface's Run therefore reviews a change (`critic --resume` and `critic stats` stay a person's commands). `atticus task run` stays a command: it edits a repo's code, so it runs in the assistant's agent mode, where a person watches each edit, not as one prompt and one answer.
+
+A step started on the server names the run it made in its job's result (`runId`), so the app links to that run.

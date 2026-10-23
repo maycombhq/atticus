@@ -307,13 +307,16 @@ export function commandCatalog(help: string): CommandInfo[] {
     seen.add(c.id);
     const area = AREA_BY_ID[c.id] ?? AREA_BY_WORD[c.words[0] ?? ""] ?? "";
     const approve = APPROVE_FLAGS.find((f) => c.flags.some((x) => x.name === f));
-    const runs: Runs = isHandoffStep(c.words[0], c.words[1])
-      ? "ai"
-      : SERVES.has(c.id)
-        ? "serve"
-        : approve
-          ? "shared"
-          : "local";
+    // `critic <change>` takes --handoff too (its lenses one at a time); `critic --resume` is a
+    // person's way to read answers in, and `critic stats` reads.
+    const runs: Runs =
+      isHandoffStep(c.words[0], c.words[1]) || c.id === "critic"
+        ? "ai"
+        : SERVES.has(c.id)
+          ? "serve"
+          : approve
+            ? "shared"
+            : "local";
     return { ...c, area, runs, ...(approve && runs === "shared" ? { approve } : {}) };
   });
 }

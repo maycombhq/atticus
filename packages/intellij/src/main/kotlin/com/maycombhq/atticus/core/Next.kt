@@ -63,7 +63,7 @@ object Next {
         if (s.person || Regex("<[^>]+>").containsMatchIn(s.command)) return NextAction.Person(s.command)
         val args = argsOf(s.command)
         // A step atticus next gives a slash command for is an AI step; so is one the plugin knows.
-        if (s.slash != null || s.step == "spec" || args.take(2).joinToString(" ") in Commands.AI_STEPS) {
+        if (s.slash != null || s.step == "spec" || Commands.isAiStep(args)) {
             return NextAction.Ai(args, s.slash ?: Commands.slashFor(args))
         }
         return NextAction.Run(args)

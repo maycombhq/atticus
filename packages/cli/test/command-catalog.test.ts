@@ -56,6 +56,10 @@ describe("the command catalogue (ADR 0096)", () => {
       "plan stories",
     ])
       expect(byId.get(id)!.runs).toBe("ai");
+    // The critic's AI lenses take --handoff, one at a time; reading answers in and the stats don't.
+    expect(byId.get("critic")!.runs).toBe("ai");
+    expect(byId.get("critic --resume")!.runs).toBe("local");
+    expect(byId.get("critic stats")!.runs).toBe("local");
   });
 
   it("marks what writes to a shared system, and the flag a person adds to approve it", () => {

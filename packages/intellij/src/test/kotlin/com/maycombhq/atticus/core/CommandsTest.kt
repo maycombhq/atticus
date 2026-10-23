@@ -130,6 +130,10 @@ class CommandsTest {
     fun `every AI step the command line has is one, with or without a slash command`() {
         for (s in listOf("change needs", "knowledge find", "knowledge ask", "knowledge scan", "change draft")) assertTrue(s in Commands.AI_STEPS, s)
         assertNull(Commands.slashFor(listOf("knowledge", "ask", "Who owns the ledger?")))
+        // The critic's AI lenses, one at a time; its stats and --resume aren't AI steps.
+        assertTrue(Commands.isAiStep(listOf("critic", "add-transfer-limit")))
+        assertTrue(!Commands.isAiStep(listOf("critic", "stats")))
+        assertTrue(!Commands.isAiStep(listOf("critic", "add-transfer-limit", "--resume")))
     }
 
     @Test

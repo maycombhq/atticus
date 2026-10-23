@@ -2229,6 +2229,7 @@ export const COPY = {
     textBox: (what: string) => `${what}, scrolls on its own`,
     forChange: (change: string) => `Model runs for ${change}`,
     knowledge: "Model runs of the knowledge steps",
+    surveys: "Model runs of the surveys",
     all: "Every model run",
   },
   /** ADR 0106: an AI step run from the app, with Copilot in a VS Code panel or the server's model. */

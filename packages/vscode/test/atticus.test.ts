@@ -110,6 +110,14 @@ describe("what a next step becomes", { timeout: 120_000 }, () => {
       kind: "ai",
       args: ["knowledge", "scan", "--source", "wiki"],
     });
+    // The critic's AI lenses, one at a time; its stats and --resume aren't AI steps.
+    expect(
+      actionFor(step({ step: "critic", command: "atticus critic add-transfer-limit" })),
+    ).toEqual({ kind: "ai", args: ["critic", "add-transfer-limit"] });
+    expect(actionFor(step({ step: "critic", command: "atticus critic stats" }))).toEqual({
+      kind: "run",
+      args: ["critic", "stats"],
+    });
     expect(
       actionFor(step({ step: "answer", command: "atticus questions list --state open" })),
     ).toEqual({ kind: "answer" });

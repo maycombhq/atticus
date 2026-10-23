@@ -184,6 +184,8 @@ describe("which Run button an AI step gets (ADR 0106)", () => {
       "find",
       "firewall rule",
     ]);
+    expect(stepArgs("atticus critic add-transfer-limit")).toEqual(["critic", "add-transfer-limit"]);
+    expect(stepArgs("atticus critic stats")).toBeUndefined();
     // Not an AI step, an option, a placeholder or not atticus at all: no Run button.
     expect(stepArgs("atticus scan")).toBeUndefined();
     expect(stepArgs("atticus change handoff add-transfer-limit --approve")).toBeUndefined();
@@ -363,6 +365,22 @@ describe("Run with the server's model, in a browser (ADR 0106)", () => {
       lines: ["Wrote scan-settings.yaml"],
       runId: "run-20261023034004-0001",
     });
+  });
+
+  it("links to the run the server names in the job's result, without guessing", async () => {
+    const api = stubApi({
+      "POST /api/runs": [{ jobId: "job-1", model: "anthropic" }],
+      "GET /api/jobs/job-1": [
+        job("done", "Done", { code: 0, lines: ["Wrote scan-settings.yaml"], runId: "run-7" }),
+      ],
+    });
+    const end = await runOnServer(["scan", "survey", "forge-ledger"], {
+      call: api.call,
+      wait: async () => {},
+      onLine: () => {},
+    });
+    expect(end).toEqual({ state: "done", lines: ["Wrote scan-settings.yaml"], runId: "run-7" });
+    expect(api.calls.map((c) => c.path)).not.toContain("/api/runs?limit=1");
   });
 
   it("says it stopped when the step's exit code isn't 0, and names no older run", async () => {

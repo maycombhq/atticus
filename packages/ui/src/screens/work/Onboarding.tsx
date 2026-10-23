@@ -2,6 +2,7 @@ import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Table } from "../know/common.js";
+import { RunsLink } from "../runs/Runs.js";
 import type { QuestionListView } from "../Questions.js";
 import { onboardingProgress, onboardingStep, type OnboardingData } from "./next.js";
 import { Command, Problems, RunNext } from "./RunNext.js";
@@ -53,6 +54,9 @@ export function OnboardingSteps({
           <Chip done={p.listed > 0 && p.settings === p.listed} /> {W.stepSurvey}
         </p>
         <Command text={`atticus scan survey ${unsurveyed}`} label={COPY.runNext.copy} />
+        <p>
+          <RunsLink q="survey" label={COPY.runs.surveys} />
+        </p>
       </li>
       <li>
         <p>
