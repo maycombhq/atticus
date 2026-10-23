@@ -66,6 +66,38 @@ function openBrowser(url: string): void {
 }
 
 /**
+ * Resolves on Ctrl+C or SIGTERM. With --embed vscode it also resolves when stdin closes: the
+ * extension holds that pipe open, so the app ends with the window that started it, even when
+ * the window or its extension host is killed and nothing gets to stop it.
+ */
+export function untilStopped(
+  embedded: boolean,
+  stdin: NodeJS.ReadableStream = process.stdin,
+): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const stop = () => {
+      process.off("SIGINT", stop);
+      process.off("SIGTERM", stop);
+      if (embedded) {
+        stdin.off("end", stop);
+        stdin.off("close", stop);
+        stdin.pause();
+      }
+      resolve();
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+    if (embedded) {
+      stdin.once("end", stop);
+      stdin.once("close", stop);
+      // Read and drop what comes: the stream only ends once it flows.
+      stdin.on("data", () => undefined);
+      stdin.resume();
+    }
+  });
+}
+
+/**
  * atticus ui [--port n] [--open] [--by handle]: serve the app on 127.0.0.1 until Ctrl+C. The session token
  * is new each start and is handed to the app inside its page, so only this machine's browser,
  * on a page from this server, can drive the API.
@@ -102,11 +134,7 @@ export async function uiCommand(
   );
   if (p.warning) io.err(p.warning);
   if (o.open) openBrowser(srv.url);
-  await new Promise<void>((resolve) => {
-    const stop = () => resolve();
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-  });
+  await untilStopped(o.embed === "vscode");
   await srv.close();
   io.out("Stopped.");
   return 0;

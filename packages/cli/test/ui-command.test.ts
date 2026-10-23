@@ -1,9 +1,10 @@
 import { cp, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { startUi } from "../src/ui-commands.js";
+import { startUi, untilStopped } from "../src/ui-commands.js";
 
 const FORGE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/forge");
 
@@ -37,5 +38,25 @@ describe("atticus ui", () => {
     } finally {
       await srv.close();
     }
+  });
+
+  it("--embed vscode stops when the extension's pipe on stdin closes, so no window leaves one behind", async () => {
+    const stdin = new PassThrough();
+    let done = false;
+    const stopped = untilStopped(true, stdin).then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(done).toBe(false);
+    stdin.end();
+    await stopped;
+    expect(done).toBe(true);
+  });
+
+  it("without --embed, stdin closing doesn't stop it: only Ctrl+C does", async () => {
+    const stdin = new PassThrough();
+    let done = false;
+    void untilStopped(false, stdin).then(() => (done = true));
+    stdin.end();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(done).toBe(false);
   });
 });

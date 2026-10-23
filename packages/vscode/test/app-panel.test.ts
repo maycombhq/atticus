@@ -1,8 +1,9 @@
+import { spawn } from "node:child_process";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { appUrlFrom, diagramHash, panelHtml, startApp } from "../src/app-panel";
+import { appUrlFrom, diagramHash, panelHtml, startApp, stopChild } from "../src/app-panel";
 import { commandText } from "../src/cli";
 
 /** A stand-in for `atticus ui`: a .js file the extension runs with node. */
@@ -91,4 +92,49 @@ describe("starting the app for the panel", { timeout: 60_000 }, () => {
       /--embed takes vscode/,
     );
   });
+});
+
+describe("stopping the app", { timeout: 60_000 }, () => {
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const closed = (c: ReturnType<typeof spawn>) =>
+    new Promise<number | null>((r) => c.once("close", (code) => r(code)));
+
+  it("closes the app's stdin, which atticus ui --embed vscode takes as the sign to stop", async () => {
+    const c = spawn(process.execPath, [
+      "-e",
+      `process.stdin.on("end", () => process.exit(7)); process.stdin.resume(); setInterval(() => {}, 1000);`,
+    ]);
+    const code = closed(c);
+    stopChild(c, 30_000);
+    expect(await code).toBe(7);
+  });
+
+  it.skipIf(process.platform !== "win32")(
+    "kills the whole tree on Windows, so a server under cmd.exe doesn't outlive the window",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "atticus-stop-"));
+      const server = join(dir, "server.js");
+      await writeFile(server, `console.log("pid " + process.pid); setInterval(() => {}, 1000);`);
+      const c = spawn(`"${process.execPath}"`, [`"${server}"`], { shell: true, windowsHide: true });
+      const pid = await new Promise<number>((r) =>
+        c.stdout!.setEncoding("utf8").on("data", (d: string) => {
+          const m = /pid (\d+)/.exec(d);
+          if (m) r(Number(m[1]));
+        }),
+      );
+      expect(alive(pid)).toBe(true);
+      const code = closed(c);
+      stopChild(c);
+      await code;
+      for (let i = 0; i < 50 && alive(pid); i++) await new Promise((r) => setTimeout(r, 100));
+      expect(alive(pid)).toBe(false);
+    },
+  );
 });

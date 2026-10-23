@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { commandText, resolveCommand, SHELL_UNSAFE, type CliOptions } from "./cli";
 
 /**
@@ -75,6 +75,31 @@ export interface RunningApp {
   onExit(f: (code: number | null) => void): void;
 }
 
+/**
+ * Stop the app: close its stdin, which `atticus ui --embed vscode` takes as the sign to stop
+ * (and which closes by itself when the extension host dies), and kill it, at once by default,
+ * since an older atticus doesn't watch stdin and the window may be closing. On Windows it may run
+ * under cmd.exe, so the kill takes the process tree: killing the shell alone leaves the server.
+ */
+export function stopChild(child: ChildProcess, graceMs = 0): void {
+  const gone = () => child.exitCode !== null || child.signalCode !== null;
+  if (gone()) return;
+  child.stdin?.end();
+  const kill = () => {
+    if (gone()) return;
+    if (process.platform === "win32" && child.pid !== undefined) {
+      const k = spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      k.on("error", () => child.kill());
+    } else child.kill();
+  };
+  if (graceMs <= 0) return kill();
+  const t = setTimeout(kill, graceMs);
+  child.once("close", () => clearTimeout(t));
+}
+
 /** Start `atticus ui --port 0 --embed vscode`; resolves once it prints its address. */
 export function startApp(o: CliOptions): Promise<RunningApp> {
   const log = o.log ?? (() => undefined);
@@ -117,7 +142,7 @@ export function startApp(o: CliOptions): Promise<RunningApp> {
         resolve({
           url,
           token,
-          stop: () => child.kill(),
+          stop: () => stopChild(child),
           onExit: (f) => exits.push(f),
         });
       }

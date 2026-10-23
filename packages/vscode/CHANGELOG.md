@@ -19,6 +19,7 @@ Nothing a person clicks leaves them unsure.
 - Nothing found says so: Add repos when the folder holds no repo; Answer this repo's questions when it has none; Onboard a repo when there are no repos (a dialog with Add repos); open needs, searches and unverified items when there are none; a need list that couldn't be read says why instead of "no open needs".
 - A command that needs a metarepo, run without one, offers to open or create one; without the command line, it offers to check again.
 - Fixed: Edit the manifest by hand failed silently when the manifest wasn't written yet; a new change whose brief couldn't be opened failed silently; the Next section could stay on "Reading the metarepo..." when reading it threw.
+- Fixed: closing a window, or VS Code ending, left its `atticus ui` server running. On Windows only the shell around it was stopped; now the whole process tree is, and the server also stops by itself when the window that started it goes, even if VS Code is killed.
 
 ## 0.3.0
 

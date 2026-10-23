@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Fixed
+
+- `atticus ui --embed vscode` stops when stdin closes, so the server the VS Code extension starts ends with its window, even when the window or VS Code is killed.
+
 ### Knowledge and needs in the app
 
 - The app has it all (ADR 0102), under More, Know:

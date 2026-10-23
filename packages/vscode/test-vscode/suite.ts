@@ -13,18 +13,33 @@ const label = (t: vscode.TreeItem) =>
 
 export async function run(): Promise<void> {
   const results: { check: string; ok: boolean; detail?: string }[] = [];
-  const check = async (name: string, f: () => Promise<string | void>) => {
+  // A check that never finishes fails, named, instead of holding the window open.
+  const check = async (name: string, f: () => Promise<string | void>, ms = 60_000) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const detail = await f();
+      const detail = await Promise.race([
+        f(),
+        new Promise<never>((_, no) => {
+          timer = setTimeout(() => no(new Error(`didn't finish in ${ms / 1000} s`)), ms);
+        }),
+      ]);
       results.push({ check: name, ok: true, ...(detail ? { detail } : {}) });
     } catch (e) {
       results.push({ check: name, ok: false, detail: (e as Error).message });
+    } finally {
+      clearTimeout(timer);
     }
+    console.log(`[atticus test] ${results.at(-1)!.ok ? "ok" : "FAIL"} ${name}`);
   };
   const ext = vscode.extensions.getExtension<AtticusHandles>("maycombhq.atticus");
   if (!ext) throw new Error("The extension isn't loaded.");
   const h = await ext.activate();
+  const late = setTimeout(
+    () => console.log("[atticus test] still waiting for the extension to be ready"),
+    30_000,
+  );
   await h.ready;
+  clearTimeout(late);
 
   await check("finds the metarepo and the command line", async () => {
     if (!h.service.root) throw new Error("no metarepo found in the workspace");
