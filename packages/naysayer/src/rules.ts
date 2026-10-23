@@ -109,6 +109,24 @@ export async function loadConstitution(): Promise<ChecklistPack> {
   return pack;
 }
 
+/**
+ * The starter review (ADR 0119): AI rules for the critic's lenses that `atticus init` and
+ * `atticus adopt` write into the org pack, and `atticus upgrade` adds once to a metarepo that
+ * has no AI review of its own. Organisation configuration, not the constitution: the critic
+ * never loads this file itself, only the copy in the org pack, which the org changes or deletes.
+ */
+export const STARTER_REVIEW_FILE = fileURLToPath(
+  new URL("../starter/review.yaml", import.meta.url),
+);
+
+/** Where the starter review goes, relative to the org pack. */
+export const STARTER_REVIEW_PATH = "checklists/review.yaml";
+
+/** The starter review's text, comments and all, as it is written into the org pack. */
+export async function starterReviewText(): Promise<string> {
+  return readFile(STARTER_REVIEW_FILE, "utf8");
+}
+
 /** Read every checklist file under a folder, validated against C3. Problems are collected. */
 export async function readPackFiles(
   root: string,

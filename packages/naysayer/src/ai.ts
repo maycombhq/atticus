@@ -470,6 +470,11 @@ export async function runLenses(
     // A stage's draft goes with the artifacts it was drafted from, once they pass layer 1.
     const review = sent.length && o.review && o.failed.size === 0 ? o.review : undefined;
     for (const d of review?.docs ?? []) if (!docs.has(d.path)) docs.set(d.path, d);
+    // The lens reviews the draft against the brief (ADR 0119), so the brief rides with it even
+    // when this lens's rules read other artifacts (a story lens's rules read the stories).
+    const brief = review && ctx.isDue("brief") ? ctx.files.docs.get("brief.md") : undefined;
+    if (brief && !docs.has(brief.path) && (agent.inputs as string[]).includes("brief"))
+      docs.set(brief.path, brief);
     const base = {
       lens,
       agent: agent.id,

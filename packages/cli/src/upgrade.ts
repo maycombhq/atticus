@@ -1,6 +1,8 @@
-import { cp, mkdir, readFile } from "node:fs/promises";
+import { cp, mkdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
+import { CHECKLISTS_README, STARTER_CHECKLISTS_README } from "@maycombhq/adopt";
+import { readPackFiles, STARTER_REVIEW_PATH, starterReviewText } from "@maycombhq/naysayer";
 import {
   catalogDirOf,
   ensureLocalIgnore,
@@ -140,7 +142,57 @@ export const MIGRATIONS: Migration[] = [
       return [rel];
     },
   },
+  {
+    id: "starter-review",
+    summary:
+      "The starter review: AI rules for the critic's lenses in checklists/review.yaml, for an org pack with no AI review of its own (ADR 0119)",
+    async pending(root) {
+      return (await starterReviewPlan(root)).map((f) => f.rel);
+    },
+    async apply(root) {
+      const out: string[] = [];
+      for (const f of await starterReviewPlan(root)) {
+        await writeFileAtomic(join(root, ...f.rel.split("/")), f.text);
+        out.push(f.rel);
+      }
+      return out;
+    },
+  },
 ];
+
+/**
+ * What adding the starter review (ADR 0119) would write: review.yaml, and the checklists README
+ * when it is still the one Atticus wrote (or missing), so every clone can tell the review was
+ * added. Nothing when the org pack has a review.yaml or a pack named review, when any of its
+ * checklists has an AI rule (the org wrote its own review), when this metarepo's stamp says the
+ * step ran, or when the README names the starter review (it was there and the org deleted it).
+ */
+async function starterReviewPlan(root: string): Promise<{ rel: string; text: string }[]> {
+  if ((await readStamp(root))?.migrations.includes("starter-review")) return [];
+  const dirRel = packRel(root, "checklists");
+  const reviewRel = packRel(root, STARTER_REVIEW_PATH);
+  if (await exists(join(root, ...reviewRel.split("/")))) return [];
+  const { packs } = await readPackFiles(root, join(root, ...dirRel.split("/")));
+  if (
+    packs.some((p) => p.pack.name === "review" || p.pack.rules.some((r) => r.check.type === "ai"))
+  )
+    return [];
+  const readmeRel = `${dirRel}/README.md`;
+  const readme = await readFile(join(root, ...readmeRel.split("/")), "utf8").catch(() => undefined);
+  const norm = (t: string) => t.replace(/\r\n/g, "\n");
+  if (readme !== undefined && norm(readme).includes("starter review")) return [];
+  const out = [{ rel: reviewRel, text: await starterReviewText() }];
+  if (readme === undefined || norm(readme) === CHECKLISTS_README)
+    out.unshift({ rel: readmeRel, text: STARTER_CHECKLISTS_README });
+  return out;
+}
+
+async function exists(path: string): Promise<boolean> {
+  return stat(path).then(
+    () => true,
+    () => false,
+  );
+}
 
 function packRel(root: string, file: string): string {
   return `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/${file}`;

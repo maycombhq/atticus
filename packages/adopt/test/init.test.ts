@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { DEFAULT_GATES, loadOrgPack } from "@maycombhq/core";
+import { ChecklistPack, DEFAULT_GATES, loadOrgPack } from "@maycombhq/core";
+import { readPackFiles, starterReviewText } from "@maycombhq/naysayer";
 import { AdoptError, exists, init } from "../src/index.js";
 import { cleanup, tempDir } from "./helpers.js";
 
@@ -33,6 +34,7 @@ describe("init", () => {
       "org-pack/profiles/shop/profile.yaml",
       "org-pack/profiles/shop/repos.manifest.yaml",
       "org-pack/checklists/README.md",
+      "org-pack/checklists/review.yaml",
       "openspec/config.yaml",
       "openspec/schemas/org-flow/schema.yaml",
       "catalog/generated/README.md",
@@ -59,6 +61,32 @@ describe("init", () => {
     });
     const gi = await readFile(join(root, ".gitignore"), "utf8");
     for (const l of ["/workspace/", "/.index/", "/.runs/", "/.atticus/"]) expect(gi).toContain(l);
+    // ADR 0119: the starter review, the org's own checklist to change or delete.
+    const review = await readFile(join(root, "org-pack/checklists/review.yaml"), "utf8");
+    expect(review).toBe(await starterReviewText());
+    expect(ChecklistPack.parse(parse(review)).rules.every((r) => r.check.type === "ai")).toBe(true);
+    expect(await readFile(join(root, "org-pack/checklists/README.md"), "utf8")).toContain(
+      "`review.yaml` is the starter review",
+    );
+    const packs = await readPackFiles(root, join(root, "org-pack/checklists"));
+    expect(packs.problems).toEqual([]);
+    expect(packs.packs.map((p) => [p.pack.name, p.file])).toEqual([
+      ["review", "org-pack/checklists/review.yaml"],
+    ]);
+  });
+
+  it("writes no starter review into an org pack it copies (--pack-from)", async () => {
+    const root = join(await tempDir(), "forge-meta");
+    const r = await init(root, {
+      name: "forge",
+      platform: "payments",
+      packFrom: FORGE_PACK,
+      openspec: "folders",
+    });
+    expect(r.created).not.toContain("org-pack/checklists/review.yaml");
+    expect(await readFile(join(root, "org-pack/checklists/README.md"), "utf8")).not.toContain(
+      "starter review",
+    );
   });
 
   it("copies a given org pack and adds the platform profile", async () => {
