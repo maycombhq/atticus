@@ -254,6 +254,15 @@ describe("conformance rules on small records (ADR 0114)", () => {
       tableKind: "table",
       evidence: ev("db/V5__screenings.sql", 1),
     });
+    // The scan reads the table's columns (it has one): a column the design names is checked.
+    const id = rec({
+      kind: "Column",
+      id: "orders-db.screenings.id",
+      table: "orders-db.screenings",
+      name: "id",
+      type: "bigint",
+      evidence: ev("db/V5__screenings.sql", 2),
+    });
     const r = conform({
       repo: "forge-orders",
       deltas: [
@@ -276,6 +285,7 @@ describe("conformance rules on small records (ADR 0114)", () => {
       after: [
         component,
         table,
+        id,
         rec({
           kind: "Column",
           id: "orders-db.orders.notes",
@@ -302,6 +312,80 @@ describe("conformance rules on small records (ADR 0114)", () => {
       ["missing", "column", 10],
       ["unexpected", "endpoint", "forge-orders.delete-all"],
       ["unexpected", "column", "orders-db.orders.notes"],
+      ["unexpected", "column", "orders-db.screenings.id"],
+    ]);
+  });
+
+  it("finds a migration the design names with its folder (M7)", () => {
+    const r = conform({
+      repo: "forge-orders",
+      deltas: [
+        delta([
+          {
+            op: "change",
+            step: 1,
+            kind: "write",
+            what: "The verdict is kept",
+            store: {
+              table: "orders-db.orders",
+              columns: [],
+              migration: "db/migration/V5__verdict.sql",
+            },
+          },
+        ]),
+      ],
+      before: [component],
+      after: [component],
+      files: ["src/main/resources/db/migration/V5__verdict.sql", "db/migration/V6__other.sql"],
+    });
+    expect(r.items.filter((i) => i.check === "migration")).toEqual([
+      expect.objectContaining({
+        status: "found",
+        at: [
+          {
+            source: "code",
+            repo: "forge-orders",
+            path: "src/main/resources/db/migration/V5__verdict.sql",
+            line: 1,
+          },
+        ],
+      }),
+    ]);
+  });
+
+  it("leaves a table's columns unchecked when neither scan read any column of it (M8)", () => {
+    const table = rec({
+      kind: "Table",
+      id: "orders-db.orders",
+      dataStore: "orders-db",
+      name: "orders",
+      tableKind: "table",
+      evidence: ev("src/main/resources/mapper/OrderMapper.xml", 3),
+    });
+    const r = conform({
+      repo: "forge-orders",
+      deltas: [
+        delta([
+          {
+            op: "change",
+            step: 1,
+            kind: "write",
+            what: "The verdict is kept",
+            store: { table: "orders-db.orders", columns: ["fraud_verdict"] },
+          },
+        ]),
+      ],
+      before: [component, table],
+      after: [component, table],
+      files: [],
+    });
+    expect(r.items.filter((i) => i.check === "column")).toEqual([]);
+    expect(r.unchecked).toEqual([
+      expect.objectContaining({
+        flow: "forge-orders.place-order",
+        item: 1,
+        why: "The scans read no column of orders-db.orders (its columns are kept where the reader doesn't look), so fraud_verdict can't be checked here.",
+      }),
     ]);
   });
 
