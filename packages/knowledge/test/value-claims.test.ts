@@ -21,7 +21,7 @@ const judgeModel = () =>
     new MockModelProvider("recorded-judge", (prompt) => {
       const rows = [
         ...prompt.matchAll(
-          /item (\d+):\n  span: (".*")\n  facts:\n    - field: (.*)\n    - value: (.*)/g,
+          /item (\d+):\n {2}span: (".*")\n {2}facts:\n {4}- field: (.*)\n {4}- value: (.*)/g,
         ),
       ].map((m) => {
         const span = JSON.parse(m[2]!) as string;

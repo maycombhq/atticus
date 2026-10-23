@@ -17,7 +17,6 @@ import {
   judge,
   MockRuntime,
   questionJudge,
-  STATES_VALUE_SPEC,
   type AiRequest,
   type JudgeItem,
   type JudgeSpec,
