@@ -226,7 +226,8 @@ export async function taskContext(
     : undefined;
   const sf = storyText ? readStoryFile(storyText) : undefined;
   const answer = await readStoriesAnswer(dir);
-  const own = answer?.stories.flatMap((s) => s.tasks).find((t) => t.id === id)?.criteria;
+  const ownCriteria = answer?.stories.flatMap((s) => s.tasks).find((t) => t.id === id)?.criteria;
+  const own = ownCriteria?.map((c) => c.text);
   const criteria = own?.length ? own : (sf?.criteria ?? []);
 
   let todayStep: TaskContextStep["today"];
@@ -431,7 +432,12 @@ export async function taskContext(
     files,
     prompt:
       dt && ds
-        ? taskPrompt(change.id, ds, dt, criteria)
+        ? taskPrompt(
+            change.id,
+            ds,
+            dt,
+            own?.length ? ownCriteria! : criteria.map((text) => ({ text, checks: [] })),
+          )
         : [
             `Implement task ${id} of the change ${change.id} in the repo ${line.repo}: ${line.title}.`,
             "Acceptance criteria:",

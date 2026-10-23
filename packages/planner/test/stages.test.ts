@@ -119,13 +119,27 @@ const STORIES = `stories:
     tasks:
       - id: "1.1"
         criteria:
-          - "Given a new order, when it is placed, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read"
+          - text: "Given a new order, when it is placed, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read"
+            checks: [sku, quantity, cardToken, verdict]
       - id: "1.2"
         criteria:
-          - "Given a rejected verdict, when the order is placed, then it is refused with 422 and no stock is reserved"
+          - text: "Given a rejected verdict, when the order is placed, then it is refused with 422 and no stock is reserved"
+            checks: [verdict]
       - id: "1.3"
         criteria:
-          - "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+          - text: "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+            checks: [sku, quantity, fraud_verdict]
+requests:
+  - item: firewall-rule-request
+    flow: forge-orders.place-order
+    step: 1
+    why: The new call reaches the Northwind Pay host.
+    quote: "including every new vendor host"
+  - item: vendor-onboarding
+    flow: forge-orders.place-order
+    step: 1
+    why: The order's details go to Northwind Pay for the first time.
+    quote: "Before a service sends any data to a vendor for the first time."
 `;
 
 describe("the feature stage", () => {
@@ -491,20 +505,15 @@ describe("the stories stage", () => {
     expect(
       (await architectureStage(root, CHANGE, { runtime: assistant([DELTAS]), now: NOW })).state,
     ).toBe("done");
-    // The first wording forgets the fields in task 1.3's criteria.
-    const bad = STORIES.replace(
-      "then the orders row holds sku, quantity and fraud_verdict",
-      "then the order is saved",
-    );
+    // The first wording checks only some of task 1.3's fields.
+    const bad = STORIES.replace("checks: [sku, quantity, fraud_verdict]", "checks: [sku]");
     const prompts: string[] = [];
     const r = await storiesStage(root, CHANGE, {
       runtime: assistant([bad, STORIES], prompts),
       now: NOW,
     });
     expect(r.state).toBe("done");
-    expect(prompts[1]).toContain(
-      "Task 1.3's criteria name none of the fields it touches (sku, quantity, fraud_verdict)",
-    );
+    expect(prompts[1]).toContain("Task 1.3's criteria check no value of quantity, fraud_verdict");
     expect(r.stories.map((s) => [s.id, s.repo, s.tasks.map((t) => t.id)])).toEqual([
       ["s1-place-order", "forge-orders", ["1.1", "1.2", "1.3"]],
     ]);

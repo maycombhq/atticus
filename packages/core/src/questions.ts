@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { writeFileAtomic } from "./fs.js";
 import { addManifestHost, hostOfQuestion, HOSTS_NONE, HOSTS_STEP } from "./host-questions.js";
+import { fileJudgments, judgmentKey, makeJudgment, type JudgmentStore } from "./judgments.js";
 import { isAdopted, questionsDirOf, questionsRelOf } from "./metarepo.js";
 import {
   Question,
@@ -160,93 +161,243 @@ export async function listQuestions(
 export const askedByStep = (q: Question, step: string): boolean =>
   q.askedBy.step === step || (q.alsoAskedBy ?? []).some((a) => a.step === step);
 
-const STOP = new Set(
-  "a an and are as at be by can do does for from has have in is it its of on or should so that the this these those to was were what when where which who why will with would".split(
-    " ",
-  ),
-);
+/** The kind of judgment that says whether a new question is one already on file (ADR 0117). */
+export const SAME_QUESTION = "same-question";
+/** Bumped when what the same-question judgment is asked changes, so old verdicts aren't read. */
+const SAME_QUESTION_VERSION = 1;
 
-/** A question's content words: lower case, without small words and the repo's own id. */
-const contentWords = (s: string, repo: string) =>
-  new Set(
-    s
-      .toLowerCase()
-      .split(/[^a-z0-9_./-]+/)
-      .map((w) => w.replace(/^[./-]+|[./-]+$/g, ""))
-      .filter((w) => w.length > 1 && !STOP.has(w) && w !== repo.toLowerCase()),
-  );
+export type SameVerdict = "same" | "narrower" | "different" | "unsure";
+export const SAME_VERDICTS: readonly SameVerdict[] = ["same", "narrower", "different", "unsure"];
 
 /**
- * What a question asks about, without its asides: the words before ", or", with brackets and
- * a clause between commas left out ("Is X, the old project, still used, or ..." is "Is X still
- * used").
+ * The ids, fields, paths and numbers a question names, as written: a word with a capital inside
+ * it (renamedAt), an underscore (renamed_at), a dot or slash between letters
+ * (nadiengine-db.chat, /api/charts), a hyphen between letters and digits (forge-legacy) or a
+ * digit (1000, 5xx). Folded only in case and underscores, so renamedAt and renamed_at are one
+ * field. Format parsing, not meaning: it is what the veto compares.
  */
-const kernel = (s: string) =>
-  s
-    .replace(/\([^)]*\)/g, " ")
-    .split(/,\s+or\s+|\s+or\s+/i)[0]!
-    .replace(/,[^,]*,/, " ");
-
-const jaccard = (a: Set<string>, b: Set<string>) => {
-  if (a.size === 0 || b.size === 0) return 0;
-  let n = 0;
-  for (const w of a) if (b.has(w)) n++;
-  return n / (a.size + b.size - n);
-};
-
-/**
- * Whether two questions about one repo ask the same thing (ADR 0089): they cite a line in
- * common and share a quarter of their words, or their words are near-identical (what each asks
- * about, asides left out, shares three quarters of its words, or the whole questions share
- * seven in ten).
- */
-export function sameQuestion(
-  a: { repo: string; question: string; evidence: readonly string[] },
-  b: { repo: string; question: string; evidence: readonly string[] },
-): boolean {
-  if (a.repo !== b.repo) return false;
-  const ka = contentWords(kernel(a.question), a.repo);
-  const kb = contentWords(kernel(b.question), b.repo);
-  const k = jaccard(ka, kb);
-  const whole = jaccard(contentWords(a.question, a.repo), contentWords(b.question, b.repo));
-  // Two questions can read the same line and ask different things ("which format?" and "leave
-  // the redacted ones out?"), so a shared line needs a quarter of the words in common too.
-  if (a.evidence.some((e) => b.evidence.includes(e)) && Math.max(k, whole) >= 0.25) return true;
-  if (Math.min(ka.size, kb.size) >= 3 && k >= 0.75) return true;
-  return whole >= 0.7;
+export function namedIdentifiers(text: string, repo = ""): Set<string> {
+  const out = new Set<string>();
+  const skip = repo.toLowerCase();
+  for (const raw of text.split(/[\s,;:()"'`?!]+/)) {
+    const w = raw.replace(/^[.-]+/, "").replace(/[.-]+$/, "");
+    if (w.length < 2) continue;
+    const id =
+      /[a-z][A-Z]/.test(w) ||
+      /\w_\w/.test(w) ||
+      /\w[./]\w/.test(w) ||
+      /^\/\w/.test(w) ||
+      /[a-z0-9]-[a-z0-9]/i.test(w) ||
+      /\d/.test(w);
+    if (!id) continue;
+    const folded = w.toLowerCase().replace(/_/g, "");
+    if (folded !== skip.replace(/_/g, "")) out.add(folded);
+  }
+  return out;
 }
 
 /**
- * Write the questions a step raised. One already on file (open, answered or retired) is left
- * as it is and returned in `known`: an answered question is not asked again. A question
- * another step already asked about the same repo, open or answered, with a line in common or
- * near-identical words, is reused (ADR 0089): the step is added to its `alsoAskedBy`, so it
- * reads the same answer, and the question is returned in `reused` (and in `known`).
+ * The veto that runs before any judgment (ADR 0117): two questions that each name an id, field,
+ * path or number the other doesn't are about different things, so they are never the same
+ * question, whatever a model says. renamedAt and renamedBy of one table are two columns; a
+ * classification answered for one is never read for the other.
+ */
+export function differentThings(
+  a: { question: string },
+  b: { question: string },
+  repo = "",
+): string | undefined {
+  const ia = namedIdentifiers(a.question, repo);
+  const ib = namedIdentifiers(b.question, repo);
+  const onlyA = [...ia].filter((x) => !ib.has(x));
+  const onlyB = [...ib].filter((x) => !ia.has(x));
+  return onlyA.length && onlyB.length
+    ? `they name different things: ${onlyA.join(", ")} and ${onlyB.join(", ")}`
+    : undefined;
+}
+
+/** What a same-question judgment is about, as hashed into its key. */
+export function sameQuestionInputs(
+  repo: string,
+  d: { question: string; evidence: readonly string[] },
+  existing: Pick<Question, "id" | "question" | "evidence">,
+): Record<string, unknown> {
+  return {
+    v: SAME_QUESTION_VERSION,
+    repo,
+    new: { question: d.question.trim(), evidence: [...d.evidence].sort() },
+    existing: {
+      id: existing.id,
+      question: existing.question.trim(),
+      evidence: [...existing.evidence].sort(),
+    },
+  };
+}
+
+/** A pair the checks couldn't settle, for a judge. */
+export interface QuestionPair {
+  /** The judgment's key: judgmentKey(SAME_QUESTION, inputs). */
+  key: string;
+  inputs: Record<string, unknown>;
+  repo: string;
+  draft: QuestionDraft;
+  existing: Question;
+}
+
+/**
+ * Judges the pairs in one go (a model through the AI runtime, @maycombhq/ai's
+ * questionJudge): each judgment it settles is kept in the store under its pair's key, and its
+ * verdict comes back. A pair left out (the model was unsure, or the run waits in a hand-off) is
+ * raised as a question, listed as related.
+ */
+export type QuestionJudge = (pairs: QuestionPair[]) => Promise<Map<string, SameVerdict>>;
+
+export interface RaiseOptions {
+  /** Judge pairs the checks and the step's own reading leave open. None: they are raised. */
+  judge?: QuestionJudge;
+  /** Where judgments are kept; default the metarepo's judgments/. */
+  judgments?: JudgmentStore;
+}
+
+const evidenceFile = (e: string) => e.slice(0, e.lastIndexOf(":"));
+
+/** Fold what a word-for-word check forgives: whitespace runs, curly quotes and case. */
+const fold = (s: string) =>
+  s
+    .replace(/[‘’‛′]/g, "'")
+    .replace(/[“”‟″]/g, '"')
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+/** Whether `quote` is word for word in `text` (whitespace, curly quotes and case aside). */
+export const quotedIn = (text: string, quote: string) =>
+  fold(quote).length > 0 && fold(text).includes(fold(quote));
+
+/**
+ * The questions on file a new one is weighed against: the same repo, not retired, asked by
+ * another step (or answered, by this one), citing a file in common or naming an id in common.
+ * Cheap and wide; the veto and the judgment decide.
+ */
+function candidatesFor(repo: string, d: QuestionDraft, step: string, others: Question[]) {
+  const files = new Set(d.evidence.map(evidenceFile));
+  const ids = namedIdentifiers(d.question, repo);
+  return others.filter(
+    (x) =>
+      x.state !== "retired" &&
+      (x.askedBy.step !== step || x.state === "answered") &&
+      (x.id === d.sameAs?.id ||
+        x.evidence.some((e) => files.has(evidenceFile(e))) ||
+        [...namedIdentifiers(x.question, repo)].some((i) => ids.has(i))),
+  );
+}
+
+/**
+ * Write the questions a step raised (ADR 0078, 0089, 0117). One already on file by its id is
+ * left as it is and returned in `known`. Otherwise it is weighed against the questions on file
+ * for the same repo:
+ * 1. the veto: the two name different ids, fields or numbers, so they differ;
+ * 2. the step's own reading (`sameAs`), when the id is a candidate and its words are in it;
+ * 3. a judgment already in judgments/same-question/;
+ * 4. the judge, when one is given.
+ * Same: the step is added to the earlier question's `alsoAskedBy` and reads its answer (it is
+ * returned in `reused` and `known`), except an answered question the new one names more ids
+ * than: that is narrower, so a person sees it. Narrower or unsure: the question is raised with
+ * the earlier one under `related`. `of` is the question each draft became, in order.
  */
 export async function raiseQuestions(
   root: string,
   drafts: QuestionDraft[],
   by: AskedBy,
-): Promise<{ raised: Question[]; known: Question[]; reused: Question[] }> {
+  o: RaiseOptions = {},
+): Promise<{
+  raised: Question[];
+  known: Question[];
+  reused: Question[];
+  of: (Question | undefined)[];
+}> {
+  const store = o.judgments ?? fileJudgments(root);
   const raised: Question[] = [];
   const known: Question[] = [];
   const reused: Question[] = [];
+  const of: (Question | undefined)[] = drafts.map(() => undefined);
   let others: Question[] | undefined;
-  for (const d of drafts) {
+  const plans: { i: number; d: QuestionDraft; q: Question; cands: Question[] }[] = [];
+  for (const [i, d] of drafts.entries()) {
     const q = questionFromDraft(d, by);
     const existing = await readQuestion(root, q.id).catch(() => undefined);
     if (existing) {
       if (!known.some((k) => k.id === existing.id)) known.push(existing);
+      of[i] = existing;
       continue;
     }
-    if (raised.some((r) => r.id === q.id)) continue;
     others ??= (await listQuestions(root, { repo: by.repo })).questions;
-    const same = others.find(
-      (x) =>
-        x.state !== "retired" &&
-        x.askedBy.step !== by.step &&
-        sameQuestion({ repo: by.repo, question: d.question, evidence: d.evidence }, x),
+    const cands = candidatesFor(by.repo, d, by.step, others).filter(
+      (x) => !differentThings(d, x, by.repo),
     );
+    plans.push({ i, d, q, cands });
+  }
+
+  // What each pair is: stored, the step's own reading, or the judge's.
+  const verdicts = new Map<string, SameVerdict>();
+  const pending: QuestionPair[] = [];
+  for (const p of plans)
+    for (const x of p.cands) {
+      const inputs = sameQuestionInputs(by.repo, p.d, x);
+      const key = judgmentKey(SAME_QUESTION, inputs);
+      if (verdicts.has(key) || pending.some((y) => y.key === key)) continue;
+      const stored = await store.get(SAME_QUESTION, key);
+      if (stored && typeof stored.verdict === "string") {
+        verdicts.set(key, stored.verdict as SameVerdict);
+        continue;
+      }
+      const said = p.d.sameAs?.id === x.id ? p.d.sameAs : undefined;
+      if (said && quotedIn(x.question, said.quote)) {
+        const j = await store.put(
+          makeJudgment({
+            kind: SAME_QUESTION,
+            inputs,
+            verdict: said.verdict,
+            quotes: [{ of: "existing", text: said.quote }],
+            confirmedBy: { by: "ai", run: by.run ?? by.command },
+            at: by.at,
+          }),
+        );
+        verdicts.set(key, j.verdict as SameVerdict);
+        continue;
+      }
+      pending.push({ key, inputs, repo: by.repo, draft: p.d, existing: x });
+    }
+  if (pending.length && o.judge)
+    for (const [k, v] of await o.judge(pending)) if (!verdicts.has(k)) verdicts.set(k, v);
+
+  for (const p of plans) {
+    const dup = raised.find((r) => r.id === p.q.id);
+    if (dup) {
+      of[p.i] = dup;
+      continue;
+    }
+    let same: Question | undefined;
+    const related: NonNullable<Question["related"]> = [];
+    for (const x of p.cands) {
+      const key = judgmentKey(SAME_QUESTION, sameQuestionInputs(by.repo, p.d, x));
+      const v = verdicts.get(key) ?? "unsure";
+      if (v === "different") continue;
+      const judgment = verdicts.has(key) ? { judgment: key } : {};
+      // An answered question is read for another only when the new one names nothing it
+      // doesn't: a person answered that question, not one about more things.
+      const namesMore =
+        x.state === "answered" &&
+        [...namedIdentifiers(p.d.question, by.repo)].some(
+          (n) => !namedIdentifiers(x.question, by.repo).has(n),
+        );
+      if (v === "same" && !namesMore) {
+        same = x;
+        break;
+      }
+      if (!related.some((r) => r.id === x.id))
+        related.push({ id: x.id, verdict: v === "unsure" ? "unsure" : "narrower", ...judgment });
+    }
     if (same) {
       let kept = same;
       if (!askedByStep(same, by.step)) {
@@ -264,16 +415,19 @@ export async function raiseQuestions(
           ],
         });
         await write(root, kept);
-        others = others.map((x) => (x.id === kept.id ? kept : x));
+        others = (others ?? []).map((x) => (x.id === kept.id ? kept : x));
       }
       if (!reused.some((k) => k.id === kept.id)) reused.push(kept);
       if (!known.some((k) => k.id === kept.id)) known.push(kept);
+      of[p.i] = kept;
       continue;
     }
+    const q = related.length ? Question.parse({ ...p.q, related }) : p.q;
     await write(root, q);
     raised.push(q);
+    of[p.i] = q;
   }
-  return { raised, known, reused };
+  return { raised, known, reused, of };
 }
 
 /** What a step says of a question it reused: who asked it first, and that it waits on it. */

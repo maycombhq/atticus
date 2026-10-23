@@ -10,7 +10,6 @@ import {
   raiseQuestions,
   readRepoSpec,
   reusedLine,
-  sameQuestion,
   readSpecFindings,
   serializeRecord,
   specFindingFingerprint,
@@ -381,11 +380,8 @@ export async function specCheck(
   );
   const questionIds: string[] = [];
   const callerIds = new Set<string>();
-  for (const x of toAsk) {
-    const all = [...asked.raised, ...asked.known];
-    const q =
-      all.find((k) => k.question === x.q.question && k.evidence[0] === x.q.evidence[0]) ??
-      asked.reused.find((k) => sameQuestion({ repo: repo.id, ...x.q }, k));
+  for (const [i, x] of toAsk.entries()) {
+    const q = asked.of[i];
     if (!q) continue;
     questionIds.push(q.id);
     if (x.fs[0]?.rule === "caller-unknown") callerIds.add(q.id);

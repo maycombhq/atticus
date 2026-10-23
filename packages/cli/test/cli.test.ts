@@ -62,6 +62,7 @@ describe("atticus CLI", () => {
     );
     expect((await readdir(join(dir, "ai"))).sort()).toEqual([
       "ContextPackManifest.json",
+      "Judgment.json",
       "Recording.json",
       "RunSummary.json",
     ]);
