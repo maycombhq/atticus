@@ -144,6 +144,15 @@ async function changeFiles(dir: string): Promise<Map<string, string>> {
   return out;
 }
 
+/** A file a need cites, as the change folder names it: `brief.md`, `<change>/brief.md` or `openspec/changes/<change>/brief.md`. */
+function changeFile(files: Map<string, string>, cited: string, change: string): string | undefined {
+  const f = cited.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (files.has(f)) return f;
+  for (const prefix of [`openspec/changes/${change}/`, `changes/${change}/`, `${change}/`])
+    if (f.startsWith(prefix) && files.has(f.slice(prefix.length))) return f.slice(prefix.length);
+  return undefined;
+}
+
 /** What a need may be for: the change, its features and flows, its stories and tasks. */
 async function targetsOf(dir: string, files: Map<string, string>): Promise<string[]> {
   const out = new Set<string>(["change"]);
@@ -497,8 +506,12 @@ export async function findNeeds(
         );
         continue;
       }
-      const text = files.get(n.because.file);
-      const at = text ? fold(text).indexOf(fold(n.because.quote)) : -1;
+      // The change's file, named as the change folder has it, or with that folder in front
+      // (ADR 0103); the punctuation a quote ends with is the model's, not always the file's.
+      const file = changeFile(files, n.because.file, change);
+      const text = file !== undefined ? files.get(file) : undefined;
+      const words = fold(n.because.quote).replace(/[\s.,;:!?]+$/, "");
+      const at = text && words ? fold(text).indexOf(words) : -1;
       if (!text || at < 0) {
         problems.push(
           text
@@ -520,7 +533,7 @@ export async function findNeeds(
           item: n.item,
           for: n.for,
           why: n.why,
-          because: { file: n.because.file, quote: n.because.quote, ...(line > 0 ? { line } : {}) },
+          because: { file: file!, quote: n.because.quote, ...(line > 0 ? { line } : {}) },
           ...(n.when ? { when: n.when } : {}),
           from: "assistant",
         }),

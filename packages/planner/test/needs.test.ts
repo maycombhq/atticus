@@ -201,6 +201,23 @@ describe("what a change needs", () => {
     expect(prompts[1]).toContain("failed these checks");
   });
 
+  // ADR 0103: Copilot names a change's file with the change's folder in front, and ends a quote
+  // with its own full stop; the file is the same file and every word is still in it.
+  it("takes a change's file named with its folder, and a quote ended with the model's full stop", async () => {
+    const { root } = await metarepo();
+    const answer = GOOD.replace(
+      '{ file: stories/s1-export-chat.md, quote: "Publish an export event on the chat-exports topic." }',
+      `{ file: ${CHANGE}/stories/s1-export-chat.md, quote: "Publish an export event on the chat-exports topic." }`,
+    ).replace(/file: brief\.md/g, `file: openspec/changes/${CHANGE}/brief.md`);
+    expect(answer).toContain(`${CHANGE}/stories/s1-export-chat.md`);
+    const r = await findNeeds(root, CHANGE, { runtime: run(() => answer), now: NOW });
+    expect(r.attempts[0]!.problems).toEqual([]);
+    expect(r.status).toBe("done");
+    expect(r.file?.needs.find((n) => n.item === "kafka-topic-request")?.because?.file).toBe(
+      "stories/s1-export-chat.md",
+    );
+  });
+
   it("keeps what a person did with a need when it runs again", async () => {
     const { root } = await metarepo();
     await findNeeds(root, CHANGE, { runtime: run(GOOD), now: NOW });
