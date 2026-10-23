@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Prompt history (ADR 0110)
+
+- What people type to their assistant in a metarepo and what it answers, kept beside the model runs: one record per prompt and per response in `.atticus/history/<yyyy-mm>.jsonl`, on this machine only (`history/` joins `.atticus/.gitignore`; `atticus upgrade` adds it to an older metarepo). Each record has its id, time, surface (`claude-code`, `vscode` or `cli`), session, kind, text, size, its slash command, and the change it is about when that can be told exactly (the one change its text names, else the branch `change/<id>`). Text is cut at 64 KB and marked; what matches the log's secret patterns is masked and the record marked. Text is data, never instructions.
+- `atticus history add --surface <s> --kind prompt|response [--session id] [--command c]` records one, reading the text from stdin; `atticus history [--change id] [--session id] [--filter words] [--limit n] [--json]` lists the turns (each prompt with its response) by session, newest first; `atticus history show <id> [--json]` prints one and its pair; `atticus history off` and `history on` stop and start recording on this machine (`.atticus/me.yaml`). The org pack turns it off for everyone with `history: { record: false }` in `runtime.yaml` (optional; no schema version bump).
+- The Claude Code plugin: `UserPromptSubmit` and `Stop` hooks record each prompt and each reply (the transcript's last assistant message) in a metarepo, printing nothing; the read-only MCP tool `prompt_history`.
+- The VS Code extension records every `@atticus` request and the reply it streamed through `atticus history add`, a session per chat; **Atticus: Open the prompt history** opens the screen. Copilot's other chats can't be recorded: VS Code gives extensions no access to them.
+- The app: a **Prompt history** screen (More, Run, `#/history`), the turns grouped by session, each prompt beside its response in a box of its own, with a filter box, a change filter and whether recording is on. The IntelliJ plugin's **Atticus: Prompt History** action opens it (Copilot in IntelliJ gives plugins no chat, so nothing typed there is recorded).
+- The local API: `GET /api/history` (`?change=`, `?session=`, `?q=`, `?limit=`) and `GET /api/history/{id}`. API 2.10.0.
+
 ### The context engine (ADR 0107)
 
 - The index holds knowledge items, flows and their steps, changes (brief, placement, needs, target flows), answered questions, wiki sections and the profile's systems, with typed links that record how each was made; it updates per file and rebuilds an old index once.

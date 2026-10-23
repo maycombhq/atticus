@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.9.0",
+    "version": "2.10.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -4130,6 +4130,137 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RunTranscript"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history": {
+      "get": {
+        "operationId": "listPromptHistory",
+        "summary": "The prompts people sent their assistant and the responses they got, as turns, newest first, and whether recording is on (ADR 0110)",
+        "tags": [
+          "ai"
+        ],
+        "parameters": [
+          {
+            "name": "change",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only the turns about this change",
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only this session's turns",
+            "required": false
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only the turns whose text, command, change or session has every word",
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "At most this many turns (default 200)",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/history/{historyId}": {
+      "get": {
+        "operationId": "getPromptHistoryRecord",
+        "summary": "One prompt or response, and its pair (ADR 0110)",
+        "tags": [
+          "ai"
+        ],
+        "parameters": [
+          {
+            "name": "historyId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryEntry"
                 }
               }
             }
@@ -16628,6 +16759,325 @@
           "prompt",
           "handedBack",
           "rounds"
+        ],
+        "additionalProperties": false
+      },
+      "HistoryList": {
+        "type": "object",
+        "properties": {
+          "turns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "session": {
+                  "type": "string"
+                },
+                "surface": {
+                  "type": "string",
+                  "enum": [
+                    "claude-code",
+                    "vscode",
+                    "cli"
+                  ]
+                },
+                "at": {
+                  "type": "string"
+                },
+                "change": {
+                  "type": "string"
+                },
+                "prompt": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^h-\\d{14}-[0-9a-f]{6}$"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "surface": {
+                      "type": "string",
+                      "enum": [
+                        "claude-code",
+                        "vscode",
+                        "cli"
+                      ]
+                    },
+                    "session": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "prompt",
+                        "response"
+                      ]
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "masked": {
+                      "type": "boolean"
+                    },
+                    "change": {
+                      "type": "string"
+                    },
+                    "command": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "surface",
+                    "session",
+                    "kind",
+                    "text",
+                    "size"
+                  ],
+                  "additionalProperties": false
+                },
+                "response": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^h-\\d{14}-[0-9a-f]{6}$"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "surface": {
+                      "type": "string",
+                      "enum": [
+                        "claude-code",
+                        "vscode",
+                        "cli"
+                      ]
+                    },
+                    "session": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "prompt",
+                        "response"
+                      ]
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "truncated": {
+                      "type": "boolean"
+                    },
+                    "masked": {
+                      "type": "boolean"
+                    },
+                    "change": {
+                      "type": "string"
+                    },
+                    "command": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "at",
+                    "surface",
+                    "session",
+                    "kind",
+                    "text",
+                    "size"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "session",
+                "surface",
+                "at"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "recording": {
+            "type": "object",
+            "properties": {
+              "on": {
+                "type": "boolean"
+              },
+              "offBy": {
+                "type": "string",
+                "enum": [
+                  "org-pack",
+                  "local"
+                ]
+              }
+            },
+            "required": [
+              "on"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "turns",
+          "total",
+          "recording"
+        ],
+        "additionalProperties": false
+      },
+      "HistoryEntry": {
+        "type": "object",
+        "properties": {
+          "record": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^h-\\d{14}-[0-9a-f]{6}$"
+              },
+              "at": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string",
+                "enum": [
+                  "claude-code",
+                  "vscode",
+                  "cli"
+                ]
+              },
+              "session": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "prompt",
+                  "response"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "masked": {
+                "type": "boolean"
+              },
+              "change": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "at",
+              "surface",
+              "session",
+              "kind",
+              "text",
+              "size"
+            ],
+            "additionalProperties": false
+          },
+          "pair": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^h-\\d{14}-[0-9a-f]{6}$"
+              },
+              "at": {
+                "type": "string"
+              },
+              "surface": {
+                "type": "string",
+                "enum": [
+                  "claude-code",
+                  "vscode",
+                  "cli"
+                ]
+              },
+              "session": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "prompt",
+                  "response"
+                ]
+              },
+              "text": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "truncated": {
+                "type": "boolean"
+              },
+              "masked": {
+                "type": "boolean"
+              },
+              "change": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "at",
+              "surface",
+              "session",
+              "kind",
+              "text",
+              "size"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "record"
         ],
         "additionalProperties": false
       },

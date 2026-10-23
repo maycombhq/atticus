@@ -34,7 +34,7 @@ export interface CliResult {
 }
 
 /** Run `atticus <args>` in the metarepo. */
-export type Cli = (args: string[], token?: Cancel) => Promise<CliResult>;
+export type Cli = (args: string[], token?: Cancel, input?: string) => Promise<CliResult>;
 
 /** An open question, as `atticus questions list --json` and `--handoff --json` give it. */
 export interface OpenQuestion {

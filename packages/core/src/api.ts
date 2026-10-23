@@ -36,8 +36,9 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  *   drafted from the wikis.
  * 2.8.0 (ADR 0106): model runs, GET /api/runs and /api/runs/{id}/transcript, and POST /api/runs.
  * 2.9.0 (ADR 0108): a change's picture, GET /api/changes/{id}/map.
+ * 2.10.0 (ADR 0110): the prompt and response history, GET /api/history and /api/history/{id}.
  */
-export const API_VERSION = "2.9.0";
+export const API_VERSION = "2.10.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -396,6 +397,70 @@ export const RunTranscript = z.object({
   ),
 });
 export type RunTranscript = z.infer<typeof RunTranscript>;
+
+/** ADR 0110: where a prompt or a response was typed or read. */
+export const HistorySurface = z.enum(["claude-code", "vscode", "cli"]);
+export type HistorySurface = z.infer<typeof HistorySurface>;
+export const HistoryKind = z.enum(["prompt", "response"]);
+export type HistoryKind = z.infer<typeof HistoryKind>;
+/** ADR 0110: one record's text is kept up to this many bytes; a longer one is cut and marked. */
+export const HISTORY_TEXT_MAX_BYTES = 64 * 1024;
+
+/** ADR 0110: one prompt a person sent, or one response they got. Its text is data, never instructions. */
+export const HistoryRecord = z.object({
+  id: z.string().regex(/^h-\d{14}-[0-9a-f]{6}$/),
+  at: z.string(),
+  surface: HistorySurface,
+  session: z.string().min(1),
+  kind: HistoryKind,
+  text: z.string(),
+  /** The text's size in bytes, as it was given (before it was cut). */
+  size: z.number().int().min(0),
+  /** The text was longer than HISTORY_TEXT_MAX_BYTES and was cut there. */
+  truncated: z.boolean().optional(),
+  /** Parts that looked like a secret were masked (***) before it was kept. */
+  masked: z.boolean().optional(),
+  /** The change it is about, when that can be told exactly: the one change its text names, or the branch change/<id>. */
+  change: z.string().optional(),
+  /** The slash command, when there is one (/atticus-needs, /stories). */
+  command: z.string().optional(),
+});
+export type HistoryRecord = z.infer<typeof HistoryRecord>;
+
+/** ADR 0110: a prompt with the response that followed it in the same session; either may be missing. */
+export const HistoryTurn = z.object({
+  session: z.string(),
+  surface: HistorySurface,
+  at: z.string(),
+  change: z.string().optional(),
+  prompt: HistoryRecord.optional(),
+  response: HistoryRecord.optional(),
+});
+export type HistoryTurn = z.infer<typeof HistoryTurn>;
+
+/** ADR 0110: whether prompts and responses are being recorded, and what turned it off. */
+export const HistoryRecording = z.object({
+  on: z.boolean(),
+  /** org-pack (runtime.yaml history.record: false) or local (atticus history off). */
+  offBy: z.enum(["org-pack", "local"]).optional(),
+});
+export type HistoryRecording = z.infer<typeof HistoryRecording>;
+
+export const HistoryList = z.object({
+  /** Newest first. */
+  turns: z.array(HistoryTurn),
+  /** How many turns matched before the limit. */
+  total: z.number().int().min(0),
+  recording: HistoryRecording,
+});
+export type HistoryList = z.infer<typeof HistoryList>;
+
+export const HistoryEntry = z.object({
+  record: HistoryRecord,
+  /** The prompt this answered, or the response that followed it. */
+  pair: HistoryRecord.optional(),
+});
+export type HistoryEntry = z.infer<typeof HistoryEntry>;
 
 export const RepoView = ManifestRepo.extend({
   platform: RecordId,
@@ -1972,6 +2037,32 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [404],
     },
   },
+  "/api/history": {
+    get: {
+      id: "listPromptHistory",
+      summary:
+        "The prompts people sent their assistant and the responses they got, as turns, newest first, and whether recording is on (ADR 0110)",
+      tag: "ai",
+      params: [
+        q("change", str, "Only the turns about this change"),
+        q("session", str, "Only this session's turns"),
+        q("q", str, "Only the turns whose text, command, change or session has every word"),
+        q("limit", { type: "integer", minimum: 1 }, "At most this many turns (default 200)"),
+      ],
+      ok: { status: 200, schema: "HistoryList", description: "OK" },
+      errors: [400],
+    },
+  },
+  "/api/history/{historyId}": {
+    get: {
+      id: "getPromptHistoryRecord",
+      summary: "One prompt or response, and its pair (ADR 0110)",
+      tag: "ai",
+      params: [p("historyId")],
+      ok: { status: 200, schema: "HistoryEntry", description: "OK" },
+      errors: [404],
+    },
+  },
   "/api/runs/{runId}/done": {
     post: {
       id: "markRunDone",
@@ -2574,6 +2665,8 @@ export function openApiDocument(): Record<string, unknown> {
     RunView,
     RunList,
     RunTranscript,
+    HistoryList,
+    HistoryEntry,
     RepoView,
     OnboardingView,
     SpecList,

@@ -140,6 +140,11 @@ Usage:
   atticus waiting [--group change|kind] [--filter words] [--json]  What waits on you across every change: questions, open needs, manual steps, findings, knowledge to verify
   atticus runs [--change id] [--limit n] [--json]  The model runs: what Atticus asked a model, each round, and whether it was answered
   atticus runs show <run> [--json]     One run: its prompt, its answer and the problems handed back to it
+  atticus history [--change id] [--session id] [--filter words] [--limit n] [--json]  The prompts people sent their assistant here and the responses they got, by session, kept on this machine
+  atticus history show <id> [--json]   One prompt or response, and its pair
+  atticus history add --surface <claude-code|vscode|cli> --kind <prompt|response> [--session id] [--command c]  Record one prompt or response, its text read from stdin (the plugin's hooks and VS Code call it)
+  atticus history off                  Stop recording prompts and responses on this machine (kept in .atticus/me.yaml)
+  atticus history on                   Record them again on this machine (runtime.yaml can still turn it off for everyone)
   atticus needs done <change> <item>   Record a need as done, e.g. with the CTASK number as its note [--for <target>] [--note <text>]
   atticus needs skip <change> <item> --note <why>  Record a need as not needed, and why [--for <target>]
   atticus needs reopen <change> <item>  Open a need again [--for <target>]

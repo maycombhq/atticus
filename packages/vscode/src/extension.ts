@@ -15,6 +15,7 @@ import {
 import { answerApp, bundledHtml } from "./app-bundle";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { changeDiagramHash } from "./change-map";
+import { HISTORY_HASH } from "./history";
 import { chatHandler } from "./chat";
 import { CommandUi, SHOWN_SCHEME, showReadOnly, shownDocs } from "./command-ui";
 import { FlowLenses } from "./codelens";
@@ -1190,6 +1191,11 @@ ${view.next.why}`
     if (!c?.trim()) return;
     await vscode.commands.executeCommand("atticus.showApp", changeDiagramHash(c.trim()));
   });
+
+  // ADR 0110: the prompts sent to @atticus (and Claude Code's, with the plugin) and their replies.
+  reg("atticus.promptHistory", () =>
+    vscode.commands.executeCommand("atticus.showApp", HISTORY_HASH),
+  );
 
   reg("atticus.openApp", async () => {
     const root = needRoot();

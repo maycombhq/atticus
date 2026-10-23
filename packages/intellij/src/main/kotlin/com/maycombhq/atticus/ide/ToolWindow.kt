@@ -52,7 +52,7 @@ class AppPanel(private val project: Project, parent: Disposable) : SimpleToolWin
 
     init {
         val group = DefaultActionGroup()
-        for (id in listOf("Atticus.Refresh", "Atticus.OpenInBrowser", "Atticus.RunCommand", "Atticus.NextStep", "Atticus.WaitingOnYou", "Atticus.ModelRuns")) {
+        for (id in listOf("Atticus.Refresh", "Atticus.OpenInBrowser", "Atticus.RunCommand", "Atticus.NextStep", "Atticus.WaitingOnYou", "Atticus.ModelRuns", "Atticus.PromptHistory")) {
             ActionManager.getInstance().getAction(id)?.let { group.add(it) }
         }
         val bar = ActionManager.getInstance().createActionToolbar("AtticusToolWindow", group, true)

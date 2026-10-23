@@ -81,6 +81,8 @@ export const MORE: ScreenDef[] = [
   { id: "learning", label: S.learning, group: "Run" },
   // ADR 0106: what Atticus asked a model and what it answered.
   { id: "runs", label: S.runs, group: "Run" },
+  // ADR 0110: what people asked their assistant and what it answered.
+  { id: "history", label: S.history, group: "Run" },
 ];
 
 /** Pages out of the menu, each a section of a menu entry (ADR 0105). */

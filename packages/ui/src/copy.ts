@@ -534,6 +534,7 @@ export const COPY = {
       learning: "Learning",
       settings: "Settings",
       runs: "Model runs",
+      history: "Prompt history",
       changeDiagram: "Change diagram",
     },
   },
@@ -2270,6 +2271,41 @@ export const COPY = {
     knowledge: "Model runs of the knowledge steps",
     surveys: "Model runs of the surveys",
     all: "Every model run",
+  },
+  /** ADR 0110: what people asked their assistant in the metarepo, and what it answered. */
+  history: {
+    title: "Prompt history",
+    intro:
+      "What people asked their assistant in this metarepo and what it answered, by session, newest first. It is kept on this machine only, in .atticus/history/, and never committed. Each prompt and response is shown as text, as it was written.",
+    what: "Recorded: prompts and replies in Claude Code with the Atticus plugin, and @atticus requests and replies in VS Code. Copilot's other chats can't be recorded: VS Code gives extensions no access to them, and Copilot in IntelliJ gives plugins no chat at all.",
+    recordingOn: "Recording is on. atticus history off stops it on this machine.",
+    offOrgPack:
+      "Recording is off for everyone: the org pack's runtime.yaml says history: { record: false }. What was kept before is still here.",
+    offLocal:
+      "Recording is off on this machine: atticus history on turns it back on. What was kept before is still here.",
+    empty:
+      "No prompts yet. With the Atticus plugin in Claude Code, or @atticus in VS Code, each prompt and reply in this metarepo is listed here.",
+    change: "Change",
+    everyChange: "Every change",
+    session: (id: string) => `Session ${id}`,
+    surfaces: {
+      "claude-code": "Claude Code",
+      vscode: "VS Code, @atticus",
+      cli: "Command line",
+    } as Record<string, string>,
+    onlySession: (id: string) => `Only session ${id}.`,
+    showAll: "Show every session",
+    prompt: "Prompt",
+    response: "Response",
+    noResponse: "No response yet.",
+    command: "Command",
+    about: "About",
+    box: (what: string, id: string) => `${what} ${id}, scrolls on its own`,
+    truncated: (size: number) => `Cut at 64 KB: the text was ${size} bytes.`,
+    masked: "Parts that looked like a secret were masked (***) before it was kept.",
+    newest: (shown: number, total: number) =>
+      `The newest ${shown} of ${total} turns. atticus history --limit n lists more.`,
+    turns: (n: number) => (n === 1 ? "1 turn" : `${n} turns`),
   },
   /** ADR 0106: an AI step run from the app, with Copilot in a VS Code panel or the server's model. */
   runStep: {

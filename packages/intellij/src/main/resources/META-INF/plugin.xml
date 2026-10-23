@@ -54,6 +54,11 @@
                 icon="AllIcons.Actions.ListFiles">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
+        <action id="Atticus.PromptHistory" class="com.maycombhq.atticus.ide.PromptHistoryAction"
+                text="Atticus: Prompt History" description="What people asked their assistant in this metarepo and what it answered (Claude Code, and @atticus in VS Code)"
+                icon="AllIcons.Vcs.History">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
         <action id="Atticus.Refresh" class="com.maycombhq.atticus.ide.RefreshAction"
                 text="Atticus: Refresh" description="Show the app again, or check for atticus and the metarepo again"
                 icon="AllIcons.Actions.Refresh"/>

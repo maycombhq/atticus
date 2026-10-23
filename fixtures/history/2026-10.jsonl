@@ -1,0 +1,6 @@
+{"id":"h-20261023091500-111111","at":"2026-10-23T09:15:00.000Z","surface":"vscode","session":"vscode-20261023091500-7a7a7a","kind":"prompt","text":"@atticus /stories add-transfer-limit","size":36,"change":"add-transfer-limit","command":"/stories"}
+{"id":"h-20261023091610-222222","at":"2026-10-23T09:16:10.000Z","surface":"vscode","session":"vscode-20261023091500-7a7a7a","kind":"response","text":"Running `atticus plan stories add-transfer-limit --handoff` with Copilot's model.\n\n**Done: 4 stories written.**","size":104,"change":"add-transfer-limit","command":"/stories"}
+this line is not a record
+{"id":"h-20261023101500-a1b2c3","at":"2026-10-23T10:15:00.000Z","surface":"claude-code","session":"5f1d7c0e","kind":"prompt","text":"/atticus-needs add-transfer-limit","size":33,"change":"add-transfer-limit","command":"/atticus-needs"}
+{"id":"h-20261023101530-d4e5f6","at":"2026-10-23T10:15:30.000Z","surface":"claude-code","session":"5f1d7c0e","kind":"response","text":"add-transfer-limit needs a firewall rule to Northwind Pay and a Kafka topic for the refusals.","size":92,"change":"add-transfer-limit"}
+{"id":"h-20261023102000-0a0b0c","at":"2026-10-23T10:20:00.000Z","surface":"claude-code","session":"5f1d7c0e","kind":"prompt","text":"Which repos call forge-ledger?","size":30}

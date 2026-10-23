@@ -74,6 +74,123 @@ describe("the Claude Code plugin (ADR 0104)", () => {
     ]);
   });
 
+  describe("the prompt and response history hooks (ADR 0110)", () => {
+    const TRANSCRIPT = join(REPO, "fixtures/history/claude-transcript.jsonl");
+
+    it("records each prompt and each reply with UserPromptSubmit and Stop", () => {
+      const hooks = JSON.parse(byPath.get("hooks/hooks.json")!).hooks;
+      expect(hooks.UserPromptSubmit[0].hooks[0]).toMatchObject({
+        type: "command",
+        command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/history.mjs" prompt',
+      });
+      expect(hooks.Stop[0].hooks[0]).toMatchObject({
+        type: "command",
+        command: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/history.mjs" response',
+      });
+    });
+
+    /** The hook, with a fake atticus that writes down what it was asked and what it was given. */
+    const setUp = async (inMetarepo: boolean) => {
+      const dir = await mkdtemp(join(tmpdir(), "atticus-history-hook-"));
+      await writeFile(join(dir, "history.mjs"), byPath.get("hooks/history.mjs")!);
+      const meta = join(dir, "meta");
+      await mkdir(join(meta, inMetarepo ? "org-pack" : "src"), { recursive: true });
+      const bin = join(dir, "fake-atticus.js");
+      const log = join(dir, "calls.jsonl");
+      await writeFile(
+        bin,
+        [
+          'const { appendFileSync, readFileSync } = require("node:fs");',
+          `appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), text: readFileSync(0, "utf8") }) + "\\n");`,
+          'console.log("Recorded h-20261023101500-a1b2c3 (prompt, 33 bytes).");',
+        ].join("\n"),
+      );
+      const run = (kind: string, input: unknown) =>
+        execFileSync(process.execPath, [join(dir, "history.mjs"), kind], {
+          env: { ...process.env, CLAUDE_PROJECT_DIR: meta, ATTICUS_BIN: bin },
+          input: JSON.stringify(input),
+          encoding: "utf8",
+        });
+      const calls = () =>
+        existsSync(log)
+          ? readFileSync(log, "utf8")
+              .trim()
+              .split("\n")
+              .map((l) => JSON.parse(l) as { argv: string[]; text: string })
+          : [];
+      return { meta, run, calls };
+    };
+
+    it("records a prompt in a metarepo, and adds nothing to the conversation", async () => {
+      const h = await setUp(true);
+      const out = h.run("prompt", {
+        session_id: "5f1d7c0e",
+        transcript_path: TRANSCRIPT,
+        cwd: h.meta,
+        hook_event_name: "UserPromptSubmit",
+        prompt: "/atticus-needs add-transfer-limit",
+      });
+      expect(out).toBe("");
+      expect(h.calls()).toEqual([
+        {
+          argv: [
+            "history",
+            "add",
+            "--surface",
+            "claude-code",
+            "--kind",
+            "prompt",
+            "--session",
+            "5f1d7c0e",
+            "--root",
+            h.meta,
+          ],
+          text: "/atticus-needs add-transfer-limit",
+        },
+      ]);
+    });
+
+    it("records the reply: the transcript's last assistant message, every text of it", async () => {
+      const h = await setUp(true);
+      expect(
+        h.run("response", {
+          session_id: "5f1d7c0e",
+          transcript_path: TRANSCRIPT,
+          hook_event_name: "Stop",
+          stop_hook_active: false,
+        }),
+      ).toBe("");
+      const [c] = h.calls();
+      expect(c!.argv.slice(0, 6)).toEqual([
+        "history",
+        "add",
+        "--surface",
+        "claude-code",
+        "--kind",
+        "response",
+      ]);
+      expect(c!.text).toBe(
+        "Reading the change first.\n\nadd-transfer-limit needs a firewall rule to Northwind Pay and a Kafka topic for the refusals.",
+      );
+    });
+
+    it("records nothing outside a metarepo, or when the input isn't what Claude Code sends", async () => {
+      const outside = await setUp(false);
+      outside.run("prompt", { session_id: "s", prompt: "Which repos call forge-ledger?" });
+      expect(outside.calls()).toEqual([]);
+      const inside = await setUp(true);
+      expect(
+        execFileSync(process.execPath, [join(inside.meta, "..", "history.mjs"), "prompt"], {
+          env: { ...process.env, CLAUDE_PROJECT_DIR: inside.meta, ATTICUS_BIN: "missing.js" },
+          input: "not json",
+          encoding: "utf8",
+        }),
+      ).toBe("");
+      inside.run("response", { session_id: "s", transcript_path: join(inside.meta, "none.jsonl") });
+      expect(inside.calls()).toEqual([]);
+    });
+  });
+
   describe("the hook at the start of a session", () => {
     const hook = async () => {
       const dir = await mkdtemp(join(tmpdir(), "atticus-plugin-"));

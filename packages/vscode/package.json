@@ -199,6 +199,11 @@
         "category": "Atticus"
       },
       {
+        "command": "atticus.promptHistory",
+        "title": "Open the prompt history",
+        "category": "Atticus"
+      },
+      {
         "command": "atticus.openApp",
         "title": "Open the app in the browser",
         "category": "Atticus"

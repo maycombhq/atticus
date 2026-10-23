@@ -503,6 +503,11 @@ Usage:
   atticus waiting [--group change|kind] [--filter words] [--json]  What waits on you across every change: questions, open needs, manual steps, findings, knowledge to verify
   atticus runs [--change id] [--limit n] [--json]  The model runs: what Atticus asked a model, each round, and whether it was answered
   atticus runs show <run> [--json]     One run: its prompt, its answer and the problems handed back to it
+  atticus history [--change id] [--session id] [--filter words] [--limit n] [--json]  The prompts people sent their assistant here and the responses they got, by session, kept on this machine
+  atticus history show <id> [--json]   One prompt or response, and its pair
+  atticus history add --surface <claude-code|vscode|cli> --kind <prompt|response> [--session id] [--command c]  Record one prompt or response, its text read from stdin (the plugin's hooks and VS Code call it)
+  atticus history off                  Stop recording prompts and responses on this machine (kept in .atticus/me.yaml)
+  atticus history on                   Record them again on this machine (runtime.yaml can still turn it off for everyone)
   atticus needs done <change> <item>   Record a need as done, e.g. with the CTASK number as its note [--for <target>] [--note <text>]
   atticus needs skip <change> <item> --note <why>  Record a need as not needed, and why [--for <target>]
   atticus needs reopen <change> <item>  Open a need again [--for <target>]
@@ -611,6 +616,13 @@ const RECORDS_A_PERSON = new Set([
   "triage",
   "handoff",
 ]);
+
+/** Everything a stream gives, as UTF-8 text. */
+async function readAll(stream: NodeJS.ReadableStream): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const c of stream) chunks.push(typeof c === "string" ? Buffer.from(c) : (c as Buffer));
+  return Buffer.concat(chunks).toString("utf8");
+}
 
 /** A positive whole number from an option, or undefined. */
 function num(v: unknown): number | undefined {
@@ -787,6 +799,9 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       tag: { type: "string" },
       source: { type: "string" },
       "from-figma": { type: "string" },
+      surface: { type: "string" },
+      session: { type: "string" },
+      command: { type: "string" },
     },
     strict: false,
   });
@@ -924,6 +939,55 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       root,
       {
         ...(typeof values.change === "string" ? { change: values.change } : {}),
+        ...(limit ? { limit } : {}),
+        json: values.json === true,
+      },
+      io,
+    );
+  }
+  // ADR 0110: the prompts people sent their assistant and the responses they got.
+  if (group === "history") {
+    const m = await import("./history-commands.js");
+    const text = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
+    if (command === "add") {
+      if (process.stdin.isTTY) {
+        io.err(
+          "history add reads the text from stdin; pipe the prompt or response into it (the plugin's hooks and VS Code do).",
+        );
+        return 2;
+      }
+      return m.historyAddCli(
+        root,
+        {
+          ...(text(values.surface) ? { surface: text(values.surface)! } : {}),
+          ...(text(values.kind) ? { kind: text(values.kind)! } : {}),
+          ...(text(values.session) ? { session: text(values.session)! } : {}),
+          ...(text(values.command) ? { command: text(values.command)! } : {}),
+        },
+        () => readAll(process.stdin),
+        io,
+      );
+    }
+    if (command === "show") {
+      const id = positionals[2];
+      if (!id) {
+        io.err("Usage: atticus history show <id> [--json] (atticus history lists them)");
+        return 2;
+      }
+      return m.historyShowCli(root, id, { json: values.json === true }, io);
+    }
+    if (command === "on" || command === "off") return m.historyOnOffCli(root, command === "on", io);
+    if (command !== undefined) {
+      io.err(`history takes show <id>, add, on or off, or nothing to list them; not ${command}.`);
+      return 2;
+    }
+    const limit = num(values.limit);
+    return m.historyCli(
+      root,
+      {
+        ...(text(values.change) ? { change: text(values.change)! } : {}),
+        ...(text(values.session) ? { session: text(values.session)! } : {}),
+        ...(text(values.filter) ? { filter: text(values.filter)! } : {}),
         ...(limit ? { limit } : {}),
         json: values.json === true,
       },
