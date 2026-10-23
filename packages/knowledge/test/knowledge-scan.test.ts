@@ -247,6 +247,38 @@ superseded:
   - { old: anvil-logging-2023.md, new: anvil-service-standard.md, quote: "It replaces the Anvil 2 logging and health guide (anvil-logging-2023), which no longer applies to any service." }
 `;
 
+describe("values tied to the quote (ADR 0111)", () => {
+  const item = (alsoOn: string) => `items:
+  - kind: process
+    id: vendor-onboarding
+    title: Vendor onboarding
+    applies_when: A Forge system will exchange data with a vendor host not already in the approved vendor register.
+    lead_time: 30 working days
+    handled_by: Vendor Management
+    source: { page: vendor-onboarding.md, section: When this applies, quote: "Any change that makes a Forge system exchange data with a vendor host that is not already in the approved vendor register." }
+    also_on: ${alsoOn}
+`;
+  it("hands back a lead time stated in another section, and keeps it once that line is quoted", async () => {
+    const prompts: string[] = [];
+    const runtime = new MockRuntime((r: AiRequest) => {
+      prompts.push(r.pack.prompt);
+      return r.pack.prompt.includes("failed these checks")
+        ? item(
+            '[{ page: vendor-onboarding.md, section: Lead time, quote: "Allow 30 working days from the vendor register entry to the first production call." }]',
+          )
+        : item("[]");
+    });
+    const r = await scanKnowledge([snap], { runtime, now: new Date(NOW) });
+    expect(r.attempts[0]!.problems).toEqual([
+      'process vendor-onboarding: lead_time "30 working days" isn\'t in the quote: quote the line that states it (under also_on when it is another sentence, on this page or another)',
+    ]);
+    // Vendor Management is the page's own owner (its front matter), so who handles it passes.
+    expect(r.attempts[1]!.problems).toEqual([]);
+    expect(r.items.map((i) => i.id)).toEqual(["vendor-onboarding"]);
+    expect(prompts[0]).toContain("Every lead time, date, owner (handled_by, owned_by) and status");
+  });
+});
+
 describe("the knowledge scan", () => {
   const prompts: string[] = [];
   const runtime = new MockRuntime((r: AiRequest) => {
@@ -266,8 +298,9 @@ describe("the knowledge scan", () => {
     expect(problems).toMatch(
       /anvil-2-health: anvil-logging-2023.md is superseded by anvil-service-standard.md/,
     );
+    // ADR 0111: a lead time the quote doesn't state goes back, with the injected text it repeats.
     expect(problems).toMatch(
-      /broker-topic-request: it repeats text that tries to instruct AI tools/,
+      /broker-topic-request: lead_time "none" isn't in the quote: quote the line that states it.*; it repeats text that tries to instruct AI tools/,
     );
     expect(r.attempts[1]!.problems).toEqual([]);
     expect(r.items.map((i) => i.id)).toEqual([

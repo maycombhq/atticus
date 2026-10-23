@@ -10,6 +10,7 @@ export * from "./feature-checks.js";
 export * from "./glossary-check.js";
 export * from "./domain-profile.js";
 export * from "./quotes.js";
+export * from "./grounding.js";
 export * from "./tags.js";
 export * from "./snapshot.js";
 export * from "./knowledge-scan.js";

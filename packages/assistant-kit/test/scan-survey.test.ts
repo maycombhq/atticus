@@ -1,3 +1,5 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -64,15 +66,54 @@ describe("atticus scan survey (ADR 0075)", () => {
       .replace('"docs/**"', '"site/**"');
     expect((await checkSurvey(wrong, repo(), "forge-notes")).problems).toEqual([
       "repo: it is forge-notes, not forge-other",
+      // ADR 0111: the cited file isn't in the folder and its line doesn't name it.
+      "exclude.0: docs/playground.js:1 isn't in site/** and doesn't name it, so site/** is still read",
       "exclude.0: site/** matches no file in the repo",
     ]);
     expect((await checkSurvey("not: [yaml", repo(), "forge-notes")).problems[0]).toMatch(
       /isn't YAML/,
     );
-    // Nothing to set is a correct answer.
+  });
+
+  // ADR 0111: an empty answer is the cheapest one, so it passes only where nothing could apply,
+  // or with the lines that show nothing does.
+  it("hands back an empty answer for a repo with entry points, unless it says why with the lines it checked", async () => {
     const empty = await checkSurvey("schemaVersion: 1\nrepo: forge-notes\n", repo(), "forge-notes");
-    expect(empty.problems).toEqual([]);
-    expect(empty.settings).toMatchObject({ exclude: [], prefixes: [], clients: [] });
+    expect(empty.problems).toEqual([
+      "every list is empty, but the readers found 3 entry points and 0 calls with no host, in src/main/java/forge/notes/NoteController.java: add the entries they need, ask a question, or say why nothing applies under nothing_to_set with the lines you checked",
+    ]);
+    const said = (checked: string) =>
+      [
+        "schemaVersion: 1",
+        "repo: forge-notes",
+        "nothing_to_set:",
+        "  why: The service sets no context path and every controller maps its full path.",
+        `  checked: [${checked}]`,
+      ].join("\n");
+    const ok = await checkSurvey(
+      said('"src/main/resources/application.properties:2"'),
+      repo(),
+      "forge-notes",
+    );
+    expect(ok.problems).toEqual([]);
+    expect(ok.settings).toMatchObject({ exclude: [], prefixes: [], clients: [] });
+    expect(ok.nothingToSet).toEqual({
+      why: "The service sets no context path and every controller maps its full path.",
+      checked: ["src/main/resources/application.properties:2"],
+    });
+    expect((await checkSurvey(said('"pom.xml:400"'), repo(), "forge-notes")).problems).toEqual([
+      "nothing_to_set.checked.0: pom.xml has fewer than 400 lines",
+    ]);
+    expect((await checkSurvey(said(""), repo(), "forge-notes")).problems).toEqual([
+      "nothing_to_set.checked: name at least one line you read",
+    ]);
+    // A repo with no entry points and no calls: nothing could apply, so empty is the answer.
+    const dir = await mkdtemp(join(tmpdir(), "atticus-empty-"));
+    await writeFile(join(dir, "README.md"), "# Notes\n");
+    const bare = fsRepo("forge-bare", dir, "a".repeat(40));
+    expect(
+      (await checkSurvey("schemaVersion: 1\nrepo: forge-bare\n", bare, "forge-bare")).problems,
+    ).toEqual([]);
   });
 
   it("asks for client bases, shows the calls built from a name, and checks the answer (ADR 0076)", async () => {
@@ -207,7 +248,7 @@ describe("questions the survey raises when it isn't sure (ADR 0078)", () => {
     const runtime = new MockRuntime(
       (req: AiRequest) => {
         prompts.push(req.pack.prompt);
-        return "schemaVersion: 1\nrepo: forge-notes\n";
+        return answer("/notes-api");
       },
       { now: () => NOW },
     );

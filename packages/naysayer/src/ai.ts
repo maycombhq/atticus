@@ -225,6 +225,8 @@ const AiFinding = z.object({
 });
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
+/** The shortest quote an evidence entry may give (ADR 0111), as the knowledge scan asks. */
+const MIN_QUOTE = 12;
 
 /** Parse a lens's output into hits; returns what was discarded and why. */
 export function parseLensOutput(
@@ -285,20 +287,24 @@ export function parseLensOutput(
       continue;
     }
     const evidence: Hit["evidence"] = [];
+    let unquoted = 0;
     for (const e of f.evidence) {
       const d = byPath.get(e.path);
       if (!d) continue;
       let line = e.line;
-      if (e.quote) {
-        const q = norm(e.quote);
-        if (!q) continue;
-        const at =
-          line && norm(d.rawLines[line - 1] ?? "").includes(q)
-            ? line
-            : d.rawLines.findIndex((l) => norm(l).includes(q)) + 1;
-        if (!at) continue;
-        line = at;
-      } else if (!line || line > d.rawLines.length || !d.rawLines[line - 1]!.trim()) continue;
+      // ADR 0111: an entry quotes the words it relies on, at least 12 characters, on the line it
+      // cites; a quote on another line counts only when it is on exactly one line of the file.
+      const q = norm(e.quote ?? "");
+      if (q.length < MIN_QUOTE) {
+        unquoted++;
+        continue;
+      }
+      if (!(line && norm(d.rawLines[line - 1] ?? "").includes(q))) {
+        const lines = d.rawLines.flatMap((l, k) => (norm(l).includes(q) ? [k + 1] : []));
+        if (lines.length !== 1) continue;
+        line = lines[0]!;
+      }
+      if (!line) continue;
       const text = d.rawLines[line - 1]!.trim();
       const quote =
         e.quote && e.quote.length <= 200
@@ -309,7 +315,11 @@ export function parseLensOutput(
       evidence.push({ source: "artifact", path: d.path, line, quote });
     }
     if (evidence.length === 0) {
-      drop("none of its evidence is in the files it was given");
+      drop(
+        unquoted && unquoted === f.evidence.filter((e) => byPath.has(e.path)).length
+          ? "its evidence quotes nothing: each entry needs the exact words (at least 12 characters) on the line it cites"
+          : "none of its evidence is in the files it was given",
+      );
       continue;
     }
     if (f.kind === "knowledge-gap" && !f.question) {

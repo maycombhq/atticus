@@ -102,13 +102,13 @@ describe("AI lens output", () => {
     artifact: ux.md
     summary: A gap without a question.
     why: x
-    evidence: [{ path: ux.md, line: 3 }]
+    evidence: [{ path: ux.md, line: 3, quote: "under the amount field" }]
   - rule: ux-states-complete
     kind: knowledge-gap
     artifact: ux.md
     summary: A question cut at a comma.
     why: x
-    evidence: [{ path: ux.md, line: 3 }]
+    evidence: [{ path: ux.md, line: 3, quote: "under the amount field" }]
     question: { text: Who decides the limit, and when, owner: product-owner }
   - rule: ux-states-complete
     artifact: ux.md
@@ -151,6 +151,31 @@ describe("AI lens output", () => {
     // The quote was found on line 3, not line 1 as claimed; the evidence points at the real line.
     expect(f.evidence).toEqual([
       { source: "artifact", path: "ux.md", line: 3, quote: "under the amount field" },
+    ]);
+  });
+
+  // ADR 0111: evidence is the words on the line it cites, never a line number alone.
+  it("keeps evidence only where its quote is on the cited line, or on just one line of the file", async () => {
+    const root = await forgeChangeRoot();
+    const finding = (evidence: string) => `  - rule: ux-states-complete
+    artifact: ux.md
+    summary: The screen has no loading state.
+    why: Nothing is shown while the limit loads.
+    evidence: [${evidence}]
+`;
+    const ux = `findings:
+${finding("{ path: ux.md, line: 3 }")}${finding('{ path: ux.md, line: 3, quote: "amount" }')}${finding('{ path: ux.md, line: 1, quote: "The transfer screen shows" }')}`;
+    const rt = new MockRuntime((req) => (req.agent.id === "ux-critic" ? ux : "findings: []"), {
+      now: () => new Date(NOW),
+    });
+    const r = await runCritic(root, CHANGE, { now: NOW, runtime: rt });
+    expect(r.discarded.map((d) => d.reason)).toEqual([
+      "its evidence quotes nothing: each entry needs the exact words (at least 12 characters) on the line it cites",
+      "its evidence quotes nothing: each entry needs the exact words (at least 12 characters) on the line it cites",
+    ]);
+    const kept = r.findings.filter((f) => f.layer === "ai");
+    expect(kept.map((k) => k.finding.evidence)).toEqual([
+      [{ source: "artifact", path: "ux.md", line: 3, quote: "The transfer screen shows" }],
     ]);
   });
 

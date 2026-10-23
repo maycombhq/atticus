@@ -7,7 +7,15 @@ import { parse } from "yaml";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { reviewItem, writeReview, readKnowledge } from "@maycombhq/knowledge";
-import { findNeeds, markNeed, mergeStoryRequests, NeedsFile, readNeeds } from "../src/index.js";
+import {
+  findNeeds,
+  markNeed,
+  mergeStoryRequests,
+  NeedsFile,
+  needQuoteProblem,
+  readNeeds,
+  whenFromLeadTime,
+} from "../src/index.js";
 
 /**
  * ADR 0101: what a change needs from the organisation. The assistant reads the change (its
@@ -216,6 +224,55 @@ describe("what a change needs", () => {
     expect(r.file?.needs.find((n) => n.item === "kafka-topic-request")?.because?.file).toBe(
       "stories/s1-export-chat.md",
     );
+  });
+
+  // ADR 0111: a quote that carries the change's words, and "when" from the item's lead time.
+  it("hands back a quote too short to tie a need to the change, or one of only small words", async () => {
+    const { root } = await metarepo();
+    const SHORT = GOOD.replace(
+      'quote: "A member downloads the chat as a file."',
+      'quote: "the chat"',
+    ).replace('quote: "Publish an export event on the chat-exports topic."', 'quote: "on the"');
+    const r = await findNeeds(root, CHANGE, {
+      runtime: run((q) => (q.pack.prompt.includes("failed these checks") ? GOOD : SHORT)),
+      now: NOW,
+    });
+    expect(r.attempts[0]!.problems).toEqual([
+      'kafka-topic-request quotes "on the": quote at least 12 letters of the change\'s own words, with a word that says what calls for it',
+      'json-logging quotes "the chat": quote at least 12 letters of the change\'s own words, with a word that says what calls for it',
+    ]);
+    expect(r.status).toBe("done");
+    expect(needQuoteProblem("and the of it is in a to")).toBeDefined();
+    expect(needQuoteProblem("Publish an export event")).toBeUndefined();
+  });
+
+  it("works out when a need is needed from the item's lead time, not the assistant's word", async () => {
+    const { root } = await metarepo();
+    const answer = GOOD.replace("    when: before-build\n", "    when: before-release\n").replace(
+      "not_needed:",
+      `  - item: sso-intake
+    for: change
+    why: The export page signs in.
+    because: { file: brief.md, quote: "A member downloads the chat as a file." }
+    when: before-design
+not_needed:`,
+    );
+    const r = await findNeeds(root, CHANGE, { runtime: run(answer), now: NOW });
+    expect(r.status).toBe("done");
+    const when = Object.fromEntries(r.file!.needs.map((n) => [n.item, n.when ?? null]));
+    // 5 and 10 working days: before build; no lead time: the assistant's word (none here).
+    expect(when).toEqual({
+      "kafka-topic-request": "before-build",
+      "sso-intake": "before-build",
+      "json-logging": null,
+    });
+    expect(whenFromLeadTime("30 working days")).toBe("before-design");
+    expect(whenFromLeadTime("four weeks")).toBe("before-design");
+    expect(whenFromLeadTime("5 working days")).toBe("before-build");
+    expect(whenFromLeadTime("2 working days")).toBe("before-release");
+    expect(whenFromLeadTime("3 days")).toBe("before-release");
+    expect(whenFromLeadTime("none")).toBeUndefined();
+    expect(whenFromLeadTime("on request")).toBeUndefined();
   });
 
   it("keeps what a person did with a need when it runs again", async () => {

@@ -1,5 +1,40 @@
+import { createHash } from "node:crypto";
 import type { FlowRecord } from "@maycombhq/core";
 import type { DeltaStep, FlowDelta } from "./schema.js";
+
+/**
+ * The version of today's flow a delta is written against (ADR 0111): the sha-256 of its steps'
+ * kind, what, to and store, in order. Citations and confirmations are left out, so a rescan that
+ * only moves a line doesn't change it; a step added, removed, reworded or moved does.
+ */
+export function flowBase(flow: Pick<FlowRecord, "steps">): string {
+  const steps = flow.steps.map((s) => ({
+    kind: s.kind,
+    what: s.what,
+    to: s.to ? { component: s.to.component, entry: s.to.entry } : null,
+    store: s.store ? { table: s.store.table, columns: s.store.columns } : null,
+  }));
+  return createHash("sha256").update(JSON.stringify(steps)).digest("hex");
+}
+
+/** Whether a delta still fits today's flow: same, changed since, or written before the pin. */
+export function deltaBase(
+  d: FlowDelta,
+  today: Pick<FlowRecord, "steps"> | undefined,
+): "same" | "changed" | "not-pinned" | undefined {
+  if (d.change === "new" || !today) return undefined;
+  if (!d.base) return "not-pinned";
+  return d.base.steps === flowBase(today) ? "same" : "changed";
+}
+
+/** What the merge says when the pin doesn't hold (ADR 0111). */
+export function baseProblem(d: FlowDelta, state: ReturnType<typeof deltaBase>): string | undefined {
+  if (state === "changed")
+    return `Today's flow ${d.flow} changed since this target was written, so its step numbers may point at other steps now. Check them, then run atticus change architecture again.`;
+  if (state === "not-pinned")
+    return `This target of ${d.flow} was written before target flows were pinned to today's flow, so a change to today's flow can't be seen. Check its step numbers, then run atticus change architecture again to pin it.`;
+  return undefined;
+}
 
 /**
  * A change's target flow beside today's (ADR 0095): one list of steps, each marked the same,
@@ -81,6 +116,8 @@ const fromDelta = (d: DeltaStep): Partial<MergedStep> => ({
 
 export function mergeDelta(d: FlowDelta, today: FlowRecord | undefined): MergedFlow {
   const problems: string[] = [];
+  const stale = baseProblem(d, deltaBase(d, today));
+  if (stale) problems.push(stale);
   const base = {
     flow: d.flow,
     repo: d.repo,

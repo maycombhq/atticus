@@ -13,6 +13,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - The app: a **Prompt history** screen (More, Run, `#/history`), the turns grouped by session, each prompt beside its response in a box of its own, with a filter box, a change filter and whether recording is on. The IntelliJ plugin's **Atticus: Prompt History** action opens it (Copilot in IntelliJ gives plugins no chat, so nothing typed there is recorded).
 - The local API: `GET /api/history` (`?change=`, `?session=`, `?q=`, `?limit=`) and `GET /api/history/{id}`. API 2.10.0.
 
+### Checks that tie each value to its source (ADR 0111)
+
+- The knowledge scan and `atticus knowledge find` check each lead time, date, owner and status against the item's quotes (numbers folded from words, "five" is 5; units exact), and each number a rule states against its page; a value no quote states goes back to the assistant, which quotes its line under `also_on`. The bench reference quotes its three lead times so.
+- `atticus change needs`: a need's quote has at least 12 letters and a word that isn't a stop word, and when it is needed comes from the item's lead time (20 working days or more before design, 5 or more before build, less before release), not the assistant's word.
+- Scan settings: an exclude cites a file in the folder or a line that names it, and can't leave out more than half the code or the main source folder unless a build or config file leaves it out itself; a prefix is the value on its line (or its URL's path or placeholder default); `atticus scan survey` hands back an empty answer for a repo with entry points or calls unless it says why under `nothing_to_set` with the lines it read.
+- `atticus change architecture`: a call's entry must be one of the callee's endpoints (or `new: true`, and then not one of them), a new table must not be in the catalog, and a read names columns the table has. Each target flow records the version of today's flow it was written against (flow delta schemaVersion 2; version 1 files read and are flagged as not pinned), so a spec drafted again shows "today's flow changed since this target was written" instead of re-targeting steps by number.
+- The critic keeps an evidence entry only with a quote of at least 12 characters on the line it cites (or on just one line of the file); a line number alone no longer counts.
+
 ### The context engine (ADR 0107)
 
 - The index holds knowledge items, flows and their steps, changes (brief, placement, needs, target flows), answered questions, wiki sections and the profile's systems, with typed links that record how each was made; it updates per file and rebuilds an old index once.

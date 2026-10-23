@@ -196,7 +196,7 @@ items:
     applies_when: Any stored data reaches the end of its use.
     rules:
       - Ledger entries 10 years after the account closes.
-      - Audit records 7 years (conflicts with the platform logging runbook's 2 years).
+      - Audit records 7 years (the platform logging runbook disagrees).
       - Identity document images 5 years after the relationship ends.
       - Application logs 90 days.
       - Broker events 7 days.
@@ -295,6 +295,10 @@ items:
       page: forge-wiki/vendor-onboarding.md
       section: "When this applies"
       quote: "Any change that makes a Forge system exchange data with a vendor host that is not already in the approved vendor register."
+    also_on:
+      - page: forge-wiki/vendor-onboarding.md
+        section: "Lead time"
+        quote: "Allow 30 working days from the vendor register entry to the first production call."
 
   - kind: process
     id: cab-approval
@@ -317,6 +321,10 @@ items:
       page: forge-wiki/change-advisory-board.md
       section: "When a change needs the board"
       quote: "Every production change needs change advisory board approval unless it is a standard change on the pre-approved list."
+    also_on:
+      - page: forge-wiki/change-advisory-board.md
+        section: "How to submit"
+        quote: "Allow 5 working days from submission to approval."
 
   - kind: process
     id: emergency-change
@@ -478,6 +486,10 @@ items:
       page: forge-wiki/data-classification-review.md
       section: "When you need one"
       quote: "Before a new field, column, event attribute or file that holds personal data reaches production, or before personal data is sent to a vendor for the first time."
+    also_on:
+      - page: forge-wiki/data-classification-review.md
+        section: "Lead time"
+        quote: "The Data Protection Office answers within 10 working days."
 
   # --------------------------------------------------------------- decisions
   - kind: decision
