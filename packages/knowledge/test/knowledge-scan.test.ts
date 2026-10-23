@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { loadOrgPack, type OrgPack } from "@maycombhq/core";
-import { MockRuntime, type AiRequest } from "@maycombhq/ai";
+import { MockRuntime, type AiRequest, type AiRuntime, type Run } from "@maycombhq/ai";
 import {
   askKnowledge,
   checkQuote,
@@ -123,6 +123,26 @@ describe("the quote check", () => {
     expect(
       checkQuote(text, "Every service exposes /status on port 80.", "Health endpoints").ok,
     ).toBe(false);
+  });
+  // ADR 0103: what a model ends its quote with, and the quote marks it writes, are forgiven;
+  // every word is still on the page, in order.
+  it("forgives the full stop a quote ends with where the page's sentence goes on", () => {
+    const t =
+      "# Teams\n\n## Ledger team\n\nThe Ledger team owns the Ledger service, which people call the books.\n";
+    expect(checkQuote(t, "The Ledger team owns the Ledger service.", "Ledger team")).toMatchObject({
+      ok: true,
+      line: 5,
+    });
+    expect(checkQuote(t, "The Ledger team owns the ledger service.", "Ledger team").ok).toBe(false);
+  });
+  it("forgives a table cell quoted as a sentence, and single quotes for double", () => {
+    const t =
+      '# Integration patterns\n\n| Code | Name |\n| --- | --- |\n| S.GW.VND | Synchronous via the gateway to a vendor |\n\nRaise a "Network firewall rule" request in the service desk.\n';
+    expect(checkQuote(t, "Synchronous via the gateway to a vendor.").ok).toBe(true);
+    expect(checkQuote(t, "Raise a 'Network firewall rule' request in the service desk.").ok).toBe(
+      true,
+    );
+    expect(checkQuote(t, "Synchronous through the gateway to a vendor.").ok).toBe(false);
   });
   it("never matches text hidden in a comment", () => {
     const t = page("broker-topics-runbook.md");
@@ -315,6 +335,22 @@ describe("the knowledge scan", () => {
     ]);
   });
 
+  it("refuses a conflict whose pages say the same words: that is no conflict", async () => {
+    const same = SECOND.replace(
+      /conflicts:\n[\s\S]*?\nsuperseded:/,
+      'conflicts:\n  - about: firewall-rule-request\n    pages: [service-desk-catalogue.md, service-desk-catalogue.md]\n    says: ["Handled by: Network team. Lead time: 10 working days.", "Handled by: Network team. Lead time: 10 working days."]\nsuperseded:',
+    );
+    const r = await scanKnowledge([snap], {
+      runtime: new MockRuntime(() => same),
+      now: new Date(NOW),
+      maxAttempts: 1,
+    });
+    expect(r.conflicts).toEqual([]);
+    expect(r.attempts.at(-1)!.problems).toContain(
+      "the conflict about firewall-rule-request quotes the same words twice: a conflict needs two statements that differ",
+    );
+  });
+
   it("waits for a hand-off and picks the answer up on resume", async () => {
     let n = 0;
     const handoff = new (class extends MockRuntime {
@@ -326,6 +362,72 @@ describe("the knowledge scan", () => {
     const r = await scanKnowledge([snap], { runtime: handoff, now: new Date(NOW) });
     expect(r.status).toBe("waiting");
     expect(n).toBe(1);
+  });
+
+  // Through a hand-off each attempt is a new run, resumed by the command line, as the VS Code
+  // extension does with Copilot: the attempts must run out, and a repeated answer ends it at once.
+  const chain = (answer: (n: number) => string) => {
+    const runs = new Map<string, Run>();
+    let n = 0;
+    const rt: AiRuntime & { handedOff: () => number } = {
+      kind: "hand-off",
+      handedOff: () => n,
+      async prepare(request) {
+        const run: Run = {
+          runId: `run-${++n}`,
+          request,
+          runtime: "hand-off",
+          state: "prepared",
+          attempt: 1,
+          startedAt: NOW,
+          errors: [],
+        };
+        runs.set(run.runId, run);
+        return run;
+      },
+      async run(id) {
+        return { ...runs.get(id)!, state: "waiting" };
+      },
+      async result(id) {
+        return { ...runs.get(id)!, state: "produced", output: answer(Number(id.slice(4))) };
+      },
+    };
+    return rt;
+  };
+  const BAD = (n: number) =>
+    `items:
+  - kind: request
+    id: made-up-${n}
+    title: Made up
+    source: { page: service-desk-catalogue.md, section: Nowhere, quote: "Words the page doesn't have." }
+`;
+  const resumeAll = async (rt: ReturnType<typeof chain>) => {
+    let r = await scanKnowledge([snap], { runtime: rt, now: new Date(NOW) });
+    let rounds = 0;
+    while (r.status === "waiting" && rounds < 10) {
+      rounds++;
+      r = await scanKnowledge([snap], { runtime: rt, now: new Date(NOW), resume: r.runId! });
+    }
+    return { r, rounds };
+  };
+
+  it("through a hand-off, hands an answer back no more than its attempts allow", async () => {
+    const rt = chain(BAD);
+    const { r, rounds } = await resumeAll(rt);
+    expect(r.status).not.toBe("waiting");
+    expect(rt.handedOff()).toBe(3);
+    expect(rounds).toBe(3);
+    expect(r.attempts.at(-1)).toMatchObject({ attempt: 3, state: "checked" });
+  });
+
+  it("through a hand-off, stops when the answer is word for word the one that failed", async () => {
+    const rt = chain(() => BAD(1));
+    const { r } = await resumeAll(rt);
+    expect(r.status).not.toBe("waiting");
+    expect(rt.handedOff()).toBe(2);
+    expect(r.attempts.at(-1)!.problems).toContain(
+      "the answer is word for word the one attempt 1 gave, so asking again won't change it",
+    );
   });
 
   it("stores items per kind and lists them by tag and kind", async () => {

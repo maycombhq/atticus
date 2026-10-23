@@ -16,6 +16,7 @@ import {
   buildContextPack,
   hiddenSpans,
   INSTRUCTION_RULES,
+  resumedAttempt,
   screenText,
   type AiRuntime,
   type DefenceRule,
@@ -582,6 +583,10 @@ function checkConflict(
     return { problem: `${label} names no item with the id ${unknown.join(", ")}` };
   if (c.pages.length !== c.says.length)
     return { problem: `${label} needs one quote in says for each page` };
+  if (new Set(c.says.map((s) => foldQuote(s).toLowerCase())).size < 2)
+    return {
+      problem: `${label} quotes the same words twice: a conflict needs two statements that differ`,
+    };
   const refs: PageRef[] = [];
   for (let k = 0; k < c.pages.length; k++) {
     const pg = resolvePage(pages, c.pages[k]!);
@@ -978,9 +983,16 @@ export async function scanKnowledge(
   const aiInjections: Injection[] = [];
   let feedback: SourceInput[] = [];
   let answered = false;
-  for (let attempt = 1; attempt <= (o.maxAttempts ?? 3); attempt++) {
+  // A resumed hand-off carries on the attempts it was handed back from.
+  const resumed = o.resume ? await o.runtime.result(o.resume) : undefined;
+  const from = resumed ? resumedAttempt(resumed) : { attempt: 1, repeats: false };
+  for (
+    let attempt = from.attempt;
+    attempt <= Math.max(o.maxAttempts ?? 3, from.attempt);
+    attempt++
+  ) {
     let run: Run;
-    if (o.resume && attempt === 1) run = await o.runtime.result(o.resume);
+    if (resumed && attempt === from.attempt) run = resumed;
     else {
       const pack = buildContextPack({
         change,
@@ -1043,6 +1055,7 @@ export async function scanKnowledge(
       problems.push(`the answer isn't YAML: ${(e as Error).message.split("\n")[0]}`);
     }
     if (!answer) {
+      const repeated = repeats(run, attempt, problems);
       result.attempts.push({
         attempt,
         runId: run.runId,
@@ -1050,6 +1063,7 @@ export async function scanKnowledge(
         kept: kept.size,
         problems,
       });
+      if (repeated) break;
       feedback = handBack(run.output, problems, attempt);
       continue;
     }
@@ -1120,6 +1134,7 @@ export async function scanKnowledge(
         aiInjections.push(c);
     }
     for (const f of failed) problems.push(`${f.kind} ${f.id}: ${f.problems.join("; ")}`);
+    const repeated = repeats(run, attempt, problems);
     result.attempts.push({
       attempt,
       runId: run.runId,
@@ -1127,11 +1142,20 @@ export async function scanKnowledge(
       kept: kept.size,
       problems,
     });
-    if (!problems.length) break;
+    if (!problems.length || repeated) break;
     feedback = handBack(run.output, problems, attempt);
   }
   result.status = answered ? "scanned" : "failed";
   return finish(result, kept, failed, conflicts, superseded, aiInjections);
+
+  /** A resumed answer word for word the last one: it fails as that did, so it isn't asked again. */
+  function repeats(run: Run, attempt: number, problems: string[]): boolean {
+    if (run !== resumed || !from.repeats || !problems.length) return false;
+    problems.push(
+      `the answer is word for word the one attempt ${attempt - 1} gave, so asking again won't change it`,
+    );
+    return true;
+  }
 }
 
 const sameSet = (a: string[], b: string[]) =>

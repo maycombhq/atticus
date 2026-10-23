@@ -18,6 +18,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- AI steps hold up with a real Copilot model (ADR 0103). Through a hand-off, each step's attempts now carry across resumes, so a step that never gets a passing answer stops after `--attempts` instead of handing it back for ever (the knowledge scan, ask and find, a change's needs, and the scan survey, verify, review and spec draft). An answer word for word the one that just failed ends the step instead of being asked for again.
+- The quote check forgives the punctuation a quote ends with and single quote marks for double: a sentence cut short or a table cell quoted as a sentence matches; every word is still on the page, in order. A conflict that quotes the same words twice is refused.
 - The command catalogue (`atticus commands --json`) says what every command does: summaries no longer end in the options they list (those are read as options), a description on the line under its command is read, and the commands that had none have one. The editors show these words.
 - The IntelliJ plugin runs a change's needs and a wiki search in Copilot Chat (`/atticus-needs`, `/atticus-find`) and `knowledge ask` as a hand-off, instead of as plain commands; a next step `atticus next` gives a slash command for is always an AI step.
 - `atticus ui --embed vscode` stops when stdin closes, so the server the VS Code extension starts ends with its window, even when the window or VS Code is killed.

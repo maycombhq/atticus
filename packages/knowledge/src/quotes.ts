@@ -4,8 +4,10 @@ import { hiddenSpans } from "@maycombhq/ai";
  * The knowledge scan's quote check (ADR 0083): the words an item quotes are on the cited page,
  * under the cited heading, in the snapshot. Deterministic, no AI. Text a person can't see (HTML
  * comments, hidden elements) never counts: a quote has to be in what a reader of the page sees.
- * Whitespace and line breaks are folded, and curly quotes match straight ones; nothing else is
- * forgiven.
+ * Whitespace and line breaks are folded, curly quotes match straight ones, single quote marks
+ * match double ones, and the punctuation a quote ends with is left out, so a sentence cut short or
+ * a table cell quoted as a sentence still matches (ADR 0103); every word is still on the page, in
+ * order. Nothing else is forgiven.
  */
 
 export interface PageLine {
@@ -73,12 +75,15 @@ const sameHeading = (a: string, b: string) =>
     .replace(/^#+\s*/, "")
     .toLowerCase();
 
+/** Folded for matching a quote: double quote marks as single ones too (ADR 0103). */
+const matchFold = (s: string) => foldQuote(s).replace(/"/g, "'");
+
 /** Find folded words in a run of lines; the line the match starts on. */
 function findIn(lines: PageLine[], q: string): number | undefined {
   let text = "";
   const lineAt: number[] = [];
   for (const l of lines) {
-    const t = foldQuote(l.text);
+    const t = matchFold(l.text);
     if (!t) continue;
     if (text) {
       text += " ";
@@ -100,7 +105,8 @@ export type QuoteCheck =
  * Sections with the same heading are all searched.
  */
 export function checkQuote(text: string, quote: string, section?: string): QuoteCheck {
-  const q = foldQuote(quote);
+  // The punctuation a quote ends with is the model's, not always the page's (ADR 0103).
+  const q = matchFold(quote).replace(/[\s.,;:!?]+$/, "");
   if (q.length < 12) return { ok: false, problem: "the quote is too short to check" };
   const lines = pageLines(text);
   const sections = [...new Set(lines.map((l) => l.section))];

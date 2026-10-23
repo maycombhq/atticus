@@ -1,6 +1,12 @@
 import { parse, stringify } from "yaml";
 import { z } from "zod";
-import { buildContextPack, type AiRuntime, type Run, type SourceInput } from "@maycombhq/ai";
+import {
+  buildContextPack,
+  resumedAttempt,
+  type AiRuntime,
+  type Run,
+  type SourceInput,
+} from "@maycombhq/ai";
 import {
   AgentDefinition,
   answerWords,
@@ -604,7 +610,14 @@ export async function draftSpec(
   const change = `spec-${o.repoId}`;
   let feedback: SourceInput[] = [];
   let runId: string | undefined;
-  for (let attempt = 1; attempt <= (o.maxAttempts ?? 3); attempt++) {
+  // A resumed hand-off carries on the attempts it was handed back from; an answer word for
+  // word the one that failed is checked once more and not asked for again.
+  const resumed = o.resume ? await o.runtime.result(o.resume) : undefined;
+  const carried = resumed ? resumedAttempt(resumed) : { attempt: 1, repeats: false };
+  const lastAttempt = carried.repeats
+    ? carried.attempt
+    : Math.max(o.maxAttempts ?? 3, carried.attempt);
+  for (let attempt = carried.attempt; attempt <= lastAttempt; attempt++) {
     const done = covered([...keep, ...kept.values()]);
     const todo = all.filter((t) => !done.has(t.id));
     const task: SourceInput = {
@@ -630,7 +643,7 @@ export async function draftSpec(
       trusted: true,
     };
     let run: Run;
-    if (o.resume && attempt === 1) run = await o.runtime.result(o.resume);
+    if (resumed && attempt === carried.attempt) run = resumed;
     else {
       const pack = buildContextPack({
         change,
