@@ -21,6 +21,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - `atticus change architecture`: a call's entry must be one of the callee's endpoints (or `new: true`, and then not one of them), a new table must not be in the catalog, and a read names columns the table has. Each target flow records the version of today's flow it was written against (flow delta schemaVersion 2; version 1 files read and are flagged as not pinned), so a spec drafted again shows "today's flow changed since this target was written" instead of re-targeting steps by number.
 - The critic keeps an evidence entry only with a quote of at least 12 characters on the line it cites (or on just one line of the file); a line number alone no longer counts.
 
+### Every prompt fits the model it goes to (ADR 0112)
+
+- `--max-tokens n` on every AI step (scan survey and verify, spec draft, knowledge scan, find and ask, change feature, architecture, draft and needs, plan stories, critic): the whole prompt fits n tokens, counted as characters / 4 with a quarter kept back for the count's error and 400 tokens for the hand-off's frame (8,658 of GPT-4o mini's 12,078). The context engine's steps take that room as their budget; the others cut their lowest-priority sources to it. A knowledge scan given only the limit sizes its batches from it.
+- A step whose smallest useful prompt (its instructions and what it can't do without) can't fit says so before handing off, with the numbers and what to do: a model with a bigger limit, or, for the knowledge scan, fewer pages at a time.
+- The VS Code extension passes its model's limit to every step, not only the knowledge scan, and every round keeps it. The app's server passes the configured model's limit to each step it starts when `runtime.yaml` gives one (`adapters.model.settings.maxInput`, a new optional setting).
+- Spec draft and scan verify send code as numbered excerpts, 20 lines either side of each cited line, merged where they overlap and ranked by how many facts cite them; spec draft keeps the cited code ahead of other repos' entry points.
+- Scan verify gets the code around each record and must cite each confirmation: the record, the line that shows it in the file it was read from, and a quote of at least 8 characters found there that names its path, method or table. An uncited confirmation (including a bare id) is handed back and never pinned as verified.
+
 ### The context engine (ADR 0107)
 
 - The index holds knowledge items, flows and their steps, changes (brief, placement, needs, target flows), answered questions, wiki sections and the profile's systems, with typed links that record how each was made; it updates per file and rebuilds an old index once.

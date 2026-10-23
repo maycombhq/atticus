@@ -6,6 +6,7 @@ import {
   quarantineReason,
   type DefenceDecision,
 } from "./defences.js";
+import { currentPromptLimit, fitBudget, PromptTooLong } from "./fit.js";
 
 export const sha256 = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 
@@ -36,6 +37,21 @@ export interface BuildContextOptions {
   /** Highest level this runtime may send; sources above it are left out. */
   maxClassification: string;
   now: Date;
+  /**
+   * The model's limit (ADR 0112): the whole prompt must fit it. The budget becomes the smaller
+   * of `budget` and the room the limit leaves. Default: the limit the step runs with
+   * (`withPromptLimit`, the CLI's --max-tokens), else none.
+   */
+  maxTokens?: number;
+  /**
+   * Sources the step can't do without (by id), beside its instructions: when they and the
+   * instructions don't fit the model's limit, the pack isn't built and PromptTooLong says so.
+   */
+  required?: readonly string[];
+  /** The step in the person's words (e.g. "spec draft forge-orders"), for PromptTooLong. */
+  step?: string;
+  /** The step's smaller form, when it has one, for PromptTooLong. */
+  smaller?: string;
 }
 
 export interface ContextPack {
@@ -79,7 +95,28 @@ export const DATA_RULE =
  * the text as ingested), and every source left out with the reason; `defences` records each
  * decision.
  */
-export function buildContextPack(o: BuildContextOptions): ContextPack {
+export function buildContextPack(given: BuildContextOptions): ContextPack {
+  const maxTokens = given.maxTokens ?? currentPromptLimit();
+  const o = { ...given, budget: fitBudget(given.budget, maxTokens) };
+  if (maxTokens !== undefined) {
+    // The smallest useful prompt: the rule, the instructions and what the step can't do without.
+    const required = new Set(o.required ?? []);
+    const needed = o.sources
+      .filter((s) => s.trusted || required.has(s.id))
+      .reduce(
+        (n, s) => n + estimateTokens(s.trusted ? s.text : wrapData(s, s.text)),
+        estimateTokens(DATA_RULE),
+      );
+    if (needed > o.budget)
+      throw new PromptTooLong(
+        o.step ?? o.agent,
+        needed,
+        o.budget,
+        maxTokens,
+        o.sources.filter((s) => !s.trusted && required.has(s.id)).map((s) => s.id),
+        o.smaller,
+      );
+  }
   const maxLevel = o.levels.indexOf(o.maxClassification);
   if (maxLevel === -1) throw new Error(`unknown classification ${o.maxClassification}`);
   const dropped: { id: string; reason: string }[] = [];

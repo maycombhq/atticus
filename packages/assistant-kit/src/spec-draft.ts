@@ -34,6 +34,7 @@ import {
   type SpecTrigger,
 } from "@maycombhq/scanner";
 import type { RepoHandle } from "@maycombhq/sdk";
+import { citationsOf, codeExcerpts, excerptSources } from "./excerpts.js";
 import type { SurveyRepoType } from "./scan-survey.js";
 
 /**
@@ -407,19 +408,35 @@ function catalogSources(records: readonly CatalogRecord[], repoId: string): Sour
   for (const r of records)
     if (r.kind === "Column" && tables.has(r.table))
       mine.push(`Column ${r.id}: ${r.table}.${r.name} ${r.type}`);
-  const others = records
-    .filter(
-      (r): r is Extract<CatalogRecord, { kind: "Endpoint" }> =>
-        r.kind === "Endpoint" && !comps.has(r.component),
-    )
-    .slice(0, 400)
-    .map(
-      (r) =>
-        `Endpoint ${r.id} on ${r.component}: ${r.endpointType} ${r.method ?? ""} ${r.pathOrTopic}`,
+  // Other repos' entry points, for call-out targets (ADR 0112): the ones this repo's calls
+  // reach first, then each other component's own list, so a tight budget cuts a list whole
+  // per component, the components this repo calls last.
+  const calls = records.filter(
+    (r): r is Extract<CatalogRecord, { kind: "Interface" }> =>
+      r.kind === "Interface" && comps.has(r.from),
+  );
+  const called = new Set(calls.map((c) => c.to));
+  const reached = (r: Extract<CatalogRecord, { kind: "Endpoint" }>) =>
+    calls.some(
+      (c) =>
+        c.to === r.component &&
+        c.normalizedPath === r.normalizedPath &&
+        (!c.method || !r.method || c.method === r.method),
     );
+  const endpointLine = (r: Extract<CatalogRecord, { kind: "Endpoint" }>) =>
+    `Endpoint ${r.id} on ${r.component}: ${r.endpointType} ${r.method ?? ""} ${r.pathOrTopic}`;
+  const others = records.filter(
+    (r): r is Extract<CatalogRecord, { kind: "Endpoint" }> =>
+      r.kind === "Endpoint" && !comps.has(r.component),
+  );
+  const byComponent = new Map<string, string[]>();
+  for (const r of others)
+    if (!reached(r))
+      byComponent.set(r.component, [...(byComponent.get(r.component) ?? []), endpointLine(r)]);
   const otherComps = records
     .filter((r) => r.kind === "Component" && !comps.has(r.id))
     .map((r) => `Component ${r.id}`);
+  const reachedLines = others.filter(reached).map(endpointLine);
   return [
     {
       id: "4-catalog",
@@ -434,46 +451,49 @@ function catalogSources(records: readonly CatalogRecord[], repoId: string): Sour
     {
       id: "5-targets",
       kind: "catalog",
-      origin: "catalog (other repos' components and entry points)",
-      text: `Other components and entry points in the catalog, for call-out targets:\n${[...otherComps, ...others].join("\n") || "(none)"}`,
+      origin: "catalog (other repos' components and the entry points this repo calls)",
+      text: `Other components in the catalog, and the entry points this repo's calls reach, for call-out targets:\n${[...otherComps, ...reachedLines].join("\n") || "(none)"}`,
       classification: "internal",
-      priority: 25,
+      priority: 35,
     },
+    ...[...byComponent].flatMap(([comp, lines]) =>
+      chunks(lines.slice(0, 400), 100).map((part, i): SourceInput => ({
+        id: `5-targets-${comp}-${i}`,
+        kind: "catalog",
+        origin: `catalog (entry points of ${comp})`,
+        text: `Other entry points of ${comp}, for call-out targets:\n${part.join("\n")}`,
+        classification: "internal",
+        priority: called.has(comp) ? 26 : 24,
+      })),
+    ),
   ];
 }
 
-/** The files the repo's catalog records cite, numbered, so a one-shot model can read them. */
+/** `xs` in parts of at most `n`, in order. */
+const chunks = <T>(xs: T[], n: number): T[][] =>
+  Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+
+/**
+ * The code the repo's catalog records and its flows on file cite, as numbered excerpts around
+ * each cited line (ADR 0112), most cited first, so a one-shot model reads the lines the flows
+ * rest on (the service and repository lines a flow's steps cite too) and the budget cuts the
+ * least cited first. Above the other repos' entry points: code goes before a target list.
+ */
 async function codeSources(
   repo: RepoHandle,
   records: readonly CatalogRecord[],
   repoId: string,
+  flows: readonly FlowRecord[],
 ): Promise<SourceInput[]> {
   const comps = repoComponents(records, repoId);
-  const files = new Set<string>();
-  for (const r of records) {
-    const ours =
+  const ours = records.filter(
+    (r) =>
       (r.kind === "Endpoint" && comps.has(r.component)) ||
       (r.kind === "Interface" && comps.has(r.from)) ||
-      r.evidence.some((e) => e.repo === repoId);
-    if (ours)
-      for (const e of r.evidence) if (e.path && (!e.repo || e.repo === repoId)) files.add(e.path);
-  }
-  const out: SourceInput[] = [];
-  let n = 0;
-  for (const p of [...files].sort().slice(0, 30)) {
-    const text = await repo.readText(p).catch(() => undefined);
-    if (text === undefined) continue;
-    const lines = text.split(/\r?\n/).slice(0, 400);
-    out.push({
-      id: `6-code-${n++}`,
-      kind: "code",
-      origin: `${repo.name}:${p}`,
-      text: `${p} (numbered):\n${lines.map((l, i) => `${i + 1}: ${l}`).join("\n")}`,
-      classification: "internal",
-      priority: 20,
-    });
-  }
-  return out;
+      r.evidence.some((e) => e.repo === repoId),
+  );
+  const excerpts = await codeExcerpts(repo, citationsOf([...ours, ...flows], repoId));
+  return excerptSources(excerpts, { id: "6-code", origin: repo.name, priority: 30 });
 }
 
 /** The repo type and its skills, as trusted instructions (the organisation's reviewed org pack). */
@@ -564,6 +584,13 @@ export async function draftSpec(
     questions?: Question[];
     /** Flows already in the spec that stay as they are (not stale): their triggers aren't asked for. */
     keep?: readonly FlowRecord[];
+    /**
+     * The spec's flows on file, kept or drafted again: the lines their steps cite rank the code
+     * excerpts the prompt carries (ADR 0112).
+     */
+    onFile?: readonly FlowRecord[];
+    /** The model's limit (ADR 0112): the whole prompt fits it. Default: the step's (--max-tokens). */
+    maxTokens?: number;
     /** The last atticus spec check's findings, to fix in this draft. */
     critic?: readonly string[];
     maxAttempts?: number;
@@ -605,7 +632,7 @@ export async function draftSpec(
         ]
       : []),
     ...catalogSources(o.records, o.repoId),
-    ...(await codeSources(repo, o.records, o.repoId)),
+    ...(await codeSources(repo, o.records, o.repoId, [...(o.onFile ?? []), ...keep])),
   ];
   const change = `spec-${o.repoId}`;
   let feedback: SourceInput[] = [];
@@ -653,6 +680,10 @@ export async function draftSpec(
         levels,
         maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
         now,
+        // ADR 0112: the repo's catalog records are the least a draft can be written from.
+        required: ["4-catalog"],
+        step: `spec draft ${o.repoId}`,
+        ...(o.maxTokens ? { maxTokens: o.maxTokens } : {}),
       });
       const prepared = await o.runtime.prepare({
         change,

@@ -8,6 +8,7 @@ import { parse } from "yaml";
 import { MockRuntime } from "@maycombhq/ai";
 import { listQuestions, raiseQuestions, ScanSettings, ScanVerifyProposal } from "@maycombhq/core";
 import { readCatalog } from "@maycombhq/scanner";
+import { main } from "../src/main.js";
 import { scanCommand } from "../src/scan-commands.js";
 import { scanVerify, scanVerifyAccept } from "../src/scan-verify-commands.js";
 
@@ -100,7 +101,13 @@ wrong:
           - { label: Leave it out, means: nobody ships it, changes: the scan leaves samples/ out }
           - { label: Product, means: it ships, changes: the scan keeps reading samples/ }
         evidence: ["samples/demo.js:1"]
-confirmed: [${i.add}, ${i.table}]
+confirmed:
+  - record: ${i.add}
+    at: "src/main/java/forge/tasks/TaskController.java:19"
+    says: "@PostMapping"
+  - record: ${i.table}
+    at: "src/main/resources/db/migration/V1__create_task.sql:1"
+    says: "CREATE TABLE task ("
 `;
 
 describe("atticus scan verify (ADR 0082)", () => {
@@ -302,6 +309,79 @@ describe("atticus scan verify (ADR 0082)", () => {
         parse(await readFile(join(root, "proposals", "scan", "forge-tasks.yaml"), "utf8")),
       );
       expect(proposal.questions).toEqual([id]);
+    },
+    T,
+  );
+
+  it(
+    "fits the prompt to --max-tokens, and says before handing off when it can't (ADR 0112)",
+    async () => {
+      const root = await scanned();
+      const t = io();
+      expect(
+        await main(
+          [
+            "scan",
+            "verify",
+            "forge-tasks",
+            "--handoff",
+            "--json",
+            "--max-tokens",
+            "12078",
+            "--root",
+            root,
+          ],
+          t.io,
+        ),
+        t.err.join("\n"),
+      ).toBe(0);
+      const h = JSON.parse(t.out.join("\n")) as {
+        state: string;
+        runId: string;
+        resumeArgs: string[];
+      };
+      expect(h.state).toBe("handoff");
+      // The resume carries the limit, so every round fits.
+      expect(h.resumeArgs).toEqual(expect.arrayContaining(["--max-tokens", "12078"]));
+      const run = JSON.parse(
+        await readFile(join(root, ".runs", "verify-forge-tasks", h.runId, "run.json"), "utf8"),
+      ) as { request: { pack: { manifest: { budget: number; totalTokens: number } } } };
+      expect(run.request.pack.manifest.budget).toBe(8658);
+      expect(run.request.pack.manifest.totalTokens).toBeLessThanOrEqual(8658);
+
+      const small = io();
+      expect(
+        await main(
+          [
+            "scan",
+            "verify",
+            "forge-tasks",
+            "--handoff",
+            "--json",
+            "--max-tokens",
+            "1500",
+            "--root",
+            root,
+          ],
+          small.io,
+        ),
+      ).toBe(2);
+      const f = JSON.parse(small.out.join("\n")) as { state: string; errors: string[] };
+      expect(f.state).toBe("failed");
+      expect(f.errors[0]).toMatch(
+        /^atticus scan verify forge-tasks can't fit its smallest useful prompt in the model: it needs about \d+ tokens .*, and a model of 1500 tokens leaves 725 for the prompt\. Use a model with a bigger limit/,
+      );
+
+      const bad = io();
+      expect(
+        await main(
+          ["scan", "verify", "forge-tasks", "--max-tokens", "lots", "--root", root],
+          bad.io,
+        ),
+      ).toBe(2);
+      expect(bad.err).toEqual([
+        "--max-tokens is a whole number of 1000 or more: the model's limit, which the whole prompt must fit.",
+      ]);
     },
     T,
   );

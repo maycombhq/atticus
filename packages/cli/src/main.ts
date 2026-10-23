@@ -3,7 +3,14 @@ import { createLog, SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
 import { gitUser } from "@maycombhq/workspace";
 import { basename, join, resolve } from "node:path";
 import { type Output } from "./commands.js";
-import { AiOffError, runtimeForCli, RuntimeConfigError, type AiRuntime } from "@maycombhq/ai";
+import {
+  AiOffError,
+  PromptTooLong,
+  runtimeForCli,
+  RuntimeConfigError,
+  withPromptLimit,
+  type AiRuntime,
+} from "@maycombhq/ai";
 import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
 import { existsSync } from "node:fs";
 
@@ -379,9 +386,9 @@ Usage:
           [--dry-run]                  Show what would change; write nothing
           [--warnings]                 List what the scan left out or couldn't read, not just how many
           [--json]                     Print the result as JSON
-  atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force]
-  atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept]
-  atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m]
+  atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force] [--max-tokens n]
+  atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept] [--max-tokens n]
+  atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
   atticus estate join [--json]         Join each repo's call-outs to the flows their targets start; writes specs/estate.yaml
   atticus estate flow <flow> [--depth 5] [--json]  A flow followed across repos, with the data at each crossing
@@ -410,10 +417,10 @@ Usage:
           [--id <id>] [--path <folder>] [--ref <branch>] [--submodule] [--kind <k,k>] [--framework <f,f>] [--owner <who>] [--save]
   atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
   atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
-  atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
+  atticus knowledge scan [--source s] [--mode m] [--resume run] [--full] [--batch-tokens n] [--max-tokens n]  Your assistant reads the snapshots into patterns, standards, processes, requests, decisions and constraints; every quote checked. A rescan reads only the pages that changed and says what changed
   atticus knowledge list [--tag t] [--kind k] [--unverified] [--json]  The knowledge items, by tag and kind
-  atticus knowledge ask "<question>" [--mode m] [--resume run]  An answer from the knowledge items only, citing them
-  atticus knowledge find "<phrase>"   Search every wiki for a term or phrase; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked [--source s] [--mode m] [--resume run] [--json]
+  atticus knowledge ask "<question>" [--mode m] [--resume run] [--max-tokens n]  An answer from the knowledge items only, citing them
+  atticus knowledge find "<phrase>"   Search every wiki for a term or phrase; your assistant reads the pages that mention it and proposes what isn't a knowledge item yet, each quote checked [--source s] [--mode m] [--resume run] [--json] [--max-tokens n]
   atticus knowledge keep <item>        Keep a found item as a knowledge item you verified [--find <search>] [--as <kind>] [--set <field=value>] [--note <text>]
   atticus knowledge finds [--json]     The searches saved, and how many of each were kept
   atticus knowledge verify <item>      Mark a knowledge item right as read: a green tick wherever it shows [--note <text>]
@@ -462,9 +469,9 @@ Usage:
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
   atticus change new "<title>"         Start a change from a template: --type <type>
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
-  atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context]
-  atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context]
-  atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]
+  atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
+  atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
+  atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m] [--max-tokens n]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
   atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
@@ -476,7 +483,7 @@ Usage:
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
   atticus change estimate <change> [--json]  The change's estimate: its size from the target flows, the org pack's ranges summed, and what drives it, each with its source; never a number nobody stands behind
   atticus change map <change> [--format mermaid|drawio] [--json]  The change's picture: the components, entries and tables its target flows touch, marked + new, ◇ modify or ✕ retire
-  atticus critic <change> [--gate g] [--lens l] [--mode m] [--json]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
+  atticus critic <change> [--gate g] [--lens l] [--mode m] [--json] [--max-tokens n]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
   atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
   atticus findings <change> [--json]   The change's findings by gate and round
@@ -498,8 +505,8 @@ Usage:
   atticus drift <change> [--json]      Compare design, repo plans and code
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
-  atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval] [--context-tokens n] [--whole-context]
-  atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run] [--context-tokens n] [--whole-context]
+  atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval] [--context-tokens n] [--whole-context] [--max-tokens n]
+  atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus needs [--change id] [--all] [--json]  What changes need from the organisation, open ones first, with lead times and who handles each
   atticus waiting [--group change|kind] [--filter words] [--json]  What waits on you across every change: questions, open needs, manual steps, findings, knowledge to verify
   atticus runs [--change id] [--limit n] [--json]  The model runs: what Atticus asked a model, each round, and whether it was answered
@@ -577,6 +584,7 @@ Usage:
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
   atticus <step> --handoff [--json]    On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change draft, plan stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time): print only the prompt, the result file and the commands that finish it
+  atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
   atticus workspace open <change>      Create the change's worktrees, repos.yaml and editor workspaces
@@ -671,7 +679,32 @@ function isMetarepoRoot(root: string): boolean {
   return existsSync(join(root, "org-pack")) || existsSync(join(root, ".atticus", "org-pack"));
 }
 
+/**
+ * `--max-tokens n` on any step (ADR 0112): the model's limit, which the whole prompt must fit.
+ * Every pack built while the command runs is fitted to it (withPromptLimit), and a step whose
+ * smallest useful prompt can't fit says so here, with the numbers, before anything is handed off.
+ */
 async function dispatch(argv: string[], io: Output): Promise<number> {
+  const at = argv.findIndex((a) => a === "--max-tokens" || a.startsWith("--max-tokens="));
+  if (at < 0) return dispatchCommand(argv, io);
+  const raw = argv[at]!.includes("=") ? argv[at]!.slice("--max-tokens=".length) : argv[at + 1];
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1000) {
+    io.err(
+      "--max-tokens is a whole number of 1000 or more: the model's limit, which the whole prompt must fit.",
+    );
+    return 2;
+  }
+  try {
+    return await withPromptLimit(n, () => dispatchCommand(argv, io));
+  } catch (e) {
+    if (!(e instanceof PromptTooLong)) throw e;
+    io.err(e.message);
+    return 2;
+  }
+}
+
+async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
     allowPositionals: true,
@@ -694,6 +727,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       limit: { type: "string" },
       filter: { type: "string" },
       "batch-tokens": { type: "string" },
+      "max-tokens": { type: "string" },
       "context-tokens": { type: "string" },
       "whole-context": { type: "boolean" },
       search: { type: "boolean" },

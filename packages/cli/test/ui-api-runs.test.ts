@@ -214,5 +214,19 @@ describe("model runs (ADR 0106)", () => {
       expect((await post("/api/runs", { args: [] })).status).toBe(400);
       expect(started).toHaveLength(1);
     });
+
+    it("gives the step the configured model's limit when runtime.yaml says it (ADR 0112)", async () => {
+      await setModel(
+        "schemaVersion: 1\nadapters:\n  model: { type: openai-compatible, settings: { model: forge-small, maxInput: 12078 } }\n",
+      );
+      const before = started.length;
+      const r = await post("/api/runs", { args: ["spec", "draft", "forge-ledger"] });
+      expect(r.status).toBe(202);
+      for (let i = 0; i < 50 && started.length === before; i++)
+        await new Promise((x) => setTimeout(x, 20));
+      expect(started.slice(before)).toEqual([
+        ["spec", "draft", "forge-ledger", "--mode", "model", "--max-tokens", "12078"],
+      ]);
+    });
   });
 });

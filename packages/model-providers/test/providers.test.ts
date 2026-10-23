@@ -118,6 +118,25 @@ describe("anthropic", () => {
     expect(requests[0]!.timeoutMs).toBe(60_000);
   });
 
+  it("takes the model's input limit as a setting, which the steps fit their prompts to (ADR 0112)", () => {
+    const p = new AnthropicProvider(
+      { model: "claude-opus-5-5", keyEnv: "ATTICUS_MODEL_KEY", maxInput: 180_000 },
+      { env },
+    );
+    expect(p.maxInputTokens).toBe(180_000);
+    expect(
+      new AnthropicProvider({ model: "claude-opus-5-5", keyEnv: "ATTICUS_MODEL_KEY" }, { env })
+        .maxInputTokens,
+    ).toBeUndefined();
+    expect(
+      () =>
+        new AnthropicProvider(
+          { model: "claude-opus-5-5", keyEnv: "ATTICUS_MODEL_KEY", maxInput: 10 },
+          { env },
+        ),
+    ).toThrow(/maxInput/);
+  });
+
   it("refuses a cut-off or declined answer instead of using it", async () => {
     const cut = scripted([
       { json: { content: [{ type: "text", text: "half" }], stop_reason: "max_tokens" } },

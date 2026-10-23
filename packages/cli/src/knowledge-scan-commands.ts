@@ -9,7 +9,13 @@ import {
   orgPackDirOf,
   type KnowledgeKind,
 } from "@maycombhq/core";
-import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
+import {
+  currentPromptLimit,
+  promptBudget,
+  RuntimeConfigError,
+  runtimeForCli,
+  type AiRuntime,
+} from "@maycombhq/ai";
 import {
   askKnowledge,
   correctableFields,
@@ -39,6 +45,9 @@ import {
 import { prepareKnowledgeBench, runKnowledgeBench, type KnowledgeScore } from "@maycombhq/evals";
 import type { Output } from "./commands.js";
 import { table } from "./index-commands.js";
+
+/** Tokens a batched knowledge scan keeps for its instructions and the items read before. */
+const SCAN_RESERVE = 4000;
 
 /**
  * Knowledge sources tagged, snapshot, scanned and queried (ADR 0083, revamp plan 4.3):
@@ -155,9 +164,14 @@ export async function knowledgeScan(
   // ADR 0101: a rescan reads only the pages that changed since the last scan (--full: all).
   const before = await readKnowledge(root, { raw: true });
   // --batch-tokens: only the pages that fit one prompt of the model (ADR 0106); the rest wait.
+  // Given only the model's limit (--max-tokens, ADR 0112), the batch is what the limit leaves
+  // after the scan's instructions and the items read before.
+  const limit = currentPromptLimit();
+  const batchTokens =
+    o.batchTokens ?? (limit ? Math.max(500, promptBudget(limit) - SCAN_RESERVE) : undefined);
   const plan = planRescan(snapshots, before.report, before.items, {
     full: o.full === true,
-    ...(o.batchTokens ? { batchTokens: o.batchTokens } : {}),
+    ...(batchTokens ? { batchTokens } : {}),
   });
   const left = Object.values(plan.deferred).flat().length;
   const leftLine = () =>

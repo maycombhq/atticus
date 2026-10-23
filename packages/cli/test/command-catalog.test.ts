@@ -47,6 +47,8 @@ describe("the command catalogue (ADR 0096)", () => {
     expect(flags).toEqual([
       ["--attempts", "3", false],
       ["--force", null, false],
+      // ADR 0112: the model's limit, which the whole prompt must fit.
+      ["--max-tokens", "n", false],
     ]);
     for (const id of [
       "scan verify",

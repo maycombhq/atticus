@@ -1019,6 +1019,8 @@ export async function scanKnowledge(
         levels,
         maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
         now,
+        step: "knowledge scan",
+        smaller: "read fewer pages at a time with --batch-tokens n",
       });
       // A page the defences still quarantine as a whole is said aloud, never sent.
       for (const d of pack.manifest.dropped) {

@@ -568,6 +568,9 @@ export async function findNeeds(
         levels,
         maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
         now,
+        // ADR 0112: the brief is the least the step can work from.
+        required: sources.filter((s) => s.origin === `${change}/brief.md`).map((s) => s.id),
+        step: `change needs ${change}`,
       });
       const prepared = await o.runtime.prepare({
         change,

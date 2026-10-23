@@ -63,9 +63,11 @@ class FakeModel implements StepModel {
     private readonly answers: (string | ((token: Cancel) => AsyncIterable<string>))[],
     readonly maxInputTokens = 200_000,
     private readonly refuse = false,
+    /** Characters a token, as this model's tokenizer counts them. */
+    private readonly charsPerToken = 4,
   ) {}
   async countTokens(text: string): Promise<number> {
-    return Math.ceil(text.length / 4);
+    return Math.ceil(text.length / this.charsPerToken);
   }
   async send(messages: string[], token: Cancel): Promise<AsyncIterable<string>> {
     if (this.refuse) throw new ModelRefused("The person said no.");
@@ -160,16 +162,30 @@ describe("the step runner", { timeout: 120_000 }, () => {
     expect(words).toMatch(/stopped for a person: 1 question/);
   });
 
-  it("says plainly when the prompt is longer than the model takes, and sends nothing", async () => {
+  it("says before anything is sent when the step can't fit the model's limit (ADR 0112)", async () => {
     const root = await metarepo();
-    const model = new FakeModel([SETTINGS], 50);
+    const model = new FakeModel([SETTINGS], 1500);
+    const { d } = deps(root, model);
+    const end = await runStep(SURVEY, d, cancelSource());
+    expect(model.prompts).toHaveLength(0);
+    expect(end).toMatchObject({ state: "failed" });
+    if (end.state !== "failed") return;
+    expect(end.errors[0]).toMatch(
+      /^atticus scan survey forge-notes can't fit its smallest useful prompt in the model: it needs about \d+ tokens \(its instructions\), and a model of 1500 tokens leaves 725 for the prompt\./,
+    );
+  });
+
+  it("still checks the model's own count, and sends nothing when it is over (the last check)", async () => {
+    const root = await metarepo();
+    // A tokenizer far denser than the step's count (one character a token).
+    const model = new FakeModel([SETTINGS], 4000, false, 1);
     const { d } = deps(root, model);
     const end = await runStep(SURVEY, d, cancelSource());
     expect(end.state).toBe("too-long");
     expect(model.prompts).toHaveLength(0);
     if (end.state !== "too-long") return;
-    expect(end.tokens).toBeGreaterThan(50);
-    expect(end.max).toBe(50);
+    expect(end.tokens).toBeGreaterThan(4000);
+    expect(end.max).toBe(4000);
     expect(existsSync(join(root, end.resultFile))).toBe(false);
     expect(describeEnd(end).join("\n")).toMatch(/Nothing was cut and nothing was sent/);
   });
@@ -270,7 +286,7 @@ describe("a knowledge scan in batches", () => {
     isCancellationRequested: false,
     onCancellationRequested: () => ({ dispose() {} }),
   } as unknown as Cancel;
-  it("passes the model's room for pages, and runs the next batch while pages are left", async () => {
+  it("passes the model's limit, and runs the next batch while pages are left (ADR 0106, 0112)", async () => {
     const calls: string[][] = [];
     let n = 0;
     const cli = async (argv: string[]) => {
@@ -304,9 +320,10 @@ describe("a knowledge scan in batches", () => {
       },
       never,
     );
+    // The scan sizes its batch from the limit itself (ADR 0112).
     expect(calls.map((c) => c.slice(0, 6))).toEqual([
-      ["knowledge", "scan", "--source", "forge-eng", "--batch-tokens", "8078"],
-      ["knowledge", "scan", "--source", "forge-eng", "--batch-tokens", "8078"],
+      ["knowledge", "scan", "--source", "forge-eng", "--max-tokens", "12078"],
+      ["knowledge", "scan", "--source", "forge-eng", "--max-tokens", "12078"],
     ]);
     expect(end).toMatchObject({ state: "done" });
     expect((end as { messages: string[] }).messages[0]).toBe(
@@ -315,7 +332,7 @@ describe("a knowledge scan in batches", () => {
     expect(progress).toContain("3 pages left to read: batch 2.");
   });
 
-  it("leaves a scan that is resumed, or already batched, as it is", async () => {
+  it("leaves a scan that is already batched as it is, and gives every step the model's limit (ADR 0112)", async () => {
     const calls: string[][] = [];
     const cli = async (argv: string[]) => {
       calls.push(argv);
@@ -333,10 +350,55 @@ describe("a knowledge scan in batches", () => {
     };
     const d = { root: tmpdir(), cli: cli as never, model: async () => new FakeModel([], 12_078) };
     await runStep(["knowledge", "scan", "--batch-tokens", "900"], d, never);
-    await runStep(["survey", "forge-notes"], d, never);
-    expect(calls.map((c) => c.slice(0, 4))).toEqual([
-      ["knowledge", "scan", "--batch-tokens", "900"],
-      ["survey", "forge-notes", "--handoff", "--json"],
+    await runStep(["scan", "survey", "forge-notes"], d, never);
+    await runStep(["change", "needs", "add-fraud-check", "--max-tokens", "4000"], d, never);
+    expect(calls.map((c) => c.slice(0, 8))).toEqual([
+      [
+        "knowledge",
+        "scan",
+        "--batch-tokens",
+        "900",
+        "--max-tokens",
+        "12078",
+        "--handoff",
+        "--json",
+      ],
+      ["scan", "survey", "forge-notes", "--max-tokens", "12078", "--handoff", "--json", "--root"],
+      // A limit already given stays.
+      [
+        "change",
+        "needs",
+        "add-fraud-check",
+        "--max-tokens",
+        "4000",
+        "--handoff",
+        "--json",
+        "--root",
+      ],
     ]);
+  });
+
+  it("says what a step said when its smallest prompt can't fit the model, before any is sent (ADR 0112)", async () => {
+    const message =
+      "atticus spec draft forge-orders can't fit its smallest useful prompt in the model: it needs about 9100 tokens (its instructions and 4-catalog), and a model of 12078 tokens leaves 8658 for the prompt. Use a model with a bigger limit (atticus.model in VS Code, or adapters.model in runtime.yaml).";
+    const cli = async () => ({
+      code: 2,
+      stdout: JSON.stringify({
+        state: "failed",
+        exitCode: 2,
+        messages: [],
+        errors: [message],
+        questions: [],
+      }),
+      stderr: "",
+    });
+    const model = new FakeModel([], 12_078);
+    const end = await runStep(
+      ["spec", "draft", "forge-orders"],
+      { root: tmpdir(), cli: cli as never, model: async () => model },
+      never,
+    );
+    expect(end).toMatchObject({ state: "failed", errors: [message] });
+    expect(model.prompts).toEqual([]);
   });
 });

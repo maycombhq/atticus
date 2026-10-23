@@ -142,7 +142,11 @@ describe("atticus bench", () => {
           "    says: CREATE TABLE entry",
           "    why: made up for the test",
           "    fix: { reader: nothing }",
-          `confirmed: [${id("account")}]`,
+          // ADR 0112: a confirmation cites the line that shows it.
+          "confirmed:",
+          `  - record: ${id("account")}`,
+          '    at: "src/main/resources/db/migration/V1__create_account.sql:1"',
+          "    says: CREATE TABLE account",
         ].join("\n");
       },
       { now: () => new Date("2026-10-21T12:00:00Z") },
