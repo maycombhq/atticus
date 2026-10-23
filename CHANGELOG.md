@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The model searches the code (ADR 0118)
+
+- Three more read-only context tools beside search, show, walk and show_code: `grep` (lines that match a pattern the model chooses, literal or a regular expression, case-insensitive if asked, limited to a glob of paths, in one repo or every clone; each hit `repo:path:line: text`; 30 hits by default, at most 100), `files` (paths a glob matches, at most 500) and `outline` (a file's declarations from the syntax tree the readers parse, nested, with the annotations, decorators or attributes written on each; a Markdown or AsciiDoc file's headings, a YAML or properties file's keys). They read the base clones under `workspace/` only, with the same path guards, and skip `.git/`, links, binary files and everything the repo's `.gitignore` files ignore.
+- A hit is a pointer, never a fact: `show_code` by repo, path and line may now show a line a `grep` or `outline` hit of the same run returned (in a call made elsewhere, the hits are read back from the run record), and facts still cite their file and line, checked at that line. The calls are kept in the run record and shown in Model runs.
+- Offered everywhere the context tools are: the model runtime, the VS Code extension's `vscode.lm` tool calls, the MCP server (`grep`, `files`, `outline`) and the commands `atticus context grep`, `atticus context files` and `atticus context outline`.
+- `atticus scan survey` tells the model to search for the code that sets a prefix, a base or a folder the material doesn't show (an in-house annotation, a wrapper) and to cite the line it found; the survey, dialect draft and scan review offer their repo to the tools by its id even when it was given as a folder. Spec draft and scan verify say the tools may be used where they are offered.
+- Not built: `show_code` through the MCP server still takes an id only; a language without a shipped grammar outlines to nothing.
+
 ### What a live run with Copilot found (ADR 0111 addendum)
 
 - The fast path and the architecture stage check that every field a plan returns comes from somewhere, that a write stores what it sends, and that a read or write names its table under `store`; a column in other casing, a classification outside the org pack's levels and a misnamed Flyway migration are handed back.

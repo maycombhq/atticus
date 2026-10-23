@@ -159,6 +159,54 @@ export const MCP_TOOLS: McpTool[] = [
     args: [s("id", "A record's or a flow step's (flow-id#n) id.")],
     argv: (a) => ["context", "code", String(a.id)],
   },
+  // ADR 0118: the code itself, searched by what the assistant chooses; read-only.
+  {
+    name: "grep",
+    description:
+      "The lines of the workspace's cloned repos that match a pattern you choose, literal or a regular expression, each as repo:path:line; files .gitignore ignores are skipped (atticus context grep). A hit is a pointer, not a fact.",
+    args: [
+      s("pattern", "The text to find, or a regular expression with regex."),
+      { name: "regex", description: "The pattern is a regular expression.", type: "boolean" },
+      { name: "ignore_case", description: "Match regardless of case.", type: "boolean" },
+      s("repo", "Only this repo (default: every cloned repo).", false),
+      s("paths", "Only paths that match this glob, for example src/**/*.java.", false),
+      s("limit", "At most this many hits (default 30, at most 100).", false),
+    ],
+    argv: (a) => [
+      "context",
+      "grep",
+      String(a.pattern),
+      ...(a.regex ? ["--regex"] : []),
+      ...(a.ignore_case ? ["--ignore-case"] : []),
+      ...(a.repo ? ["--repo", String(a.repo)] : []),
+      ...(a.paths ? ["--paths", String(a.paths)] : []),
+      ...(a.limit ? ["--limit", String(a.limit)] : []),
+    ],
+  },
+  {
+    name: "files",
+    description:
+      "The files of the workspace's cloned repos whose paths match a glob, each as repo:path; files .gitignore ignores are left out (atticus context files).",
+    args: [
+      s("glob", "The glob, for example src/**/*.java; with no / it matches at any depth."),
+      s("repo", "Only this repo (default: every cloned repo).", false),
+      s("limit", "At most this many files (default 200, at most 500).", false),
+    ],
+    argv: (a) => [
+      "context",
+      "files",
+      String(a.glob),
+      ...(a.repo ? ["--repo", String(a.repo)] : []),
+      ...(a.limit ? ["--limit", String(a.limit)] : []),
+    ],
+  },
+  {
+    name: "outline",
+    description:
+      "One file's declarations (classes, functions, methods, nested) with the annotations or decorators written on each, from its syntax tree; a document's headings, a YAML or properties file's keys (atticus context outline).",
+    args: [s("repo", "The repo's id."), s("path", "The file's path in the repo.")],
+    argv: (a) => ["context", "outline", String(a.repo), String(a.path)],
+  },
   {
     name: "explain",
     description: "A record, finding, change or command explained in plain words (atticus explain).",
