@@ -20,6 +20,7 @@ import {
   saveFind,
   filterItems,
   planRescan,
+  readReviews,
   reviewItem,
   writeReview,
   type KnowledgeScanResult,
@@ -646,6 +647,15 @@ export async function knowledgeReview(
       fields[field] === "list" || fields[field] === "links"
         ? value.split("|").map((x) => x.trim())
         : value.trim();
+  }
+  // Correcting again keeps what an earlier correction set, unless it is set again (as the app does).
+  if (verdict === "corrected") {
+    const before = (await readReviews(root)).reviews.get(id)?.corrections ?? {};
+    for (const [k, v] of Object.entries(before))
+      if (!(k in set))
+        set[k] = Array.isArray(v)
+          ? v.map((x) => (typeof x === "string" ? x : x.label ? `${x.label}=${x.url}` : x.url))
+          : v;
   }
   const r = reviewItem(item, {
     verdict,

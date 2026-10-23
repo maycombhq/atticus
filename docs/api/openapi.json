@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.6.0",
+    "version": "2.7.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -49,6 +49,9 @@
     },
     {
       "name": "questions"
+    },
+    {
+      "name": "knowledge"
     }
   ],
   "paths": {
@@ -6372,6 +6375,1151 @@
           },
           "401": {
             "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/sources": {
+      "get": {
+        "operationId": "listKnowledgeSources",
+        "summary": "The wikis in sources.yaml with their tags, owner, git ref, path and checkout, and each one's newest snapshot",
+        "tags": [
+          "knowledge"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSourceList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "addKnowledgeSource",
+        "summary": "atticus sources add: check a wiki and write its entry into sources.yaml (save), or return the entry to add",
+        "tags": [
+          "knowledge"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "confluence",
+                      "ado-wiki",
+                      "sharepoint",
+                      "markdown-folder",
+                      "git"
+                    ]
+                  },
+                  "location": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "submodule": {
+                    "type": "boolean"
+                  },
+                  "kinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                    }
+                  },
+                  "frameworks": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                    }
+                  },
+                  "owner": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "save": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "type",
+                  "location"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Added, or the entry to add",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandOutput"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/sources/{sourceId}/sync": {
+      "post": {
+        "operationId": "syncKnowledgeSource",
+        "summary": "atticus sources sync --source: read one wiki (a git wiki is cloned or fetched) into a dated snapshot",
+        "tags": [
+          "knowledge"
+        ],
+        "parameters": [
+          {
+            "name": "sourceId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Synced; code 1 has problems",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommandOutput"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/scan": {
+      "get": {
+        "operationId": "getKnowledgeScan",
+        "summary": "What the last knowledge scan read and changed (scan.yaml), and the reviews to check again",
+        "tags": [
+          "knowledge"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeScanView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/items": {
+      "get": {
+        "operationId": "listKnowledgeItems",
+        "summary": "The knowledge items as people reviewed them, rejected ones included and marked, with the fields each may have corrected",
+        "tags": [
+          "knowledge"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pattern",
+                "standard",
+                "process",
+                "request",
+                "decision",
+                "constraint",
+                "team",
+                "vendor",
+                "product",
+                "project"
+              ]
+            },
+            "description": "Only items of this kind",
+            "required": false
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only items with this tag (a source kind, a framework or a page tag)",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeItemList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/items/{itemId}/review": {
+      "post": {
+        "operationId": "reviewKnowledgeItem",
+        "summary": "Verify, correct or reject a knowledge item as the signed-in person: writes knowledge/reviews/<id>.yaml",
+        "tags": [
+          "knowledge"
+        ],
+        "parameters": [
+          {
+            "name": "itemId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "verdict": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "corrected",
+                      "rejected"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "set": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "url"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "verdict"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reviewed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewedItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/search": {
+      "get": {
+        "operationId": "searchWikis",
+        "summary": "The plain search of every snapshot page for a term or phrase (no AI), with the AI step to copy",
+        "tags": [
+          "knowledge"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "The term or phrase",
+            "required": false
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only this source's snapshot",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WikiSearchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/finds": {
+      "get": {
+        "operationId": "listFinds",
+        "summary": "The saved searches of the wikis (knowledge/finds), newest first, with candidates",
+        "tags": [
+          "knowledge"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedFindList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/finds/{slug}": {
+      "get": {
+        "operationId": "getFind",
+        "summary": "One saved search: the pages it matched and its candidates, new or already known",
+        "tags": [
+          "knowledge"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedFindView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/knowledge/finds/{slug}/keep": {
+      "post": {
+        "operationId": "keepFound",
+        "summary": "Keep a candidate as a knowledge item of the kind chosen, verified (or corrected) by the signed-in person",
+        "tags": [
+          "knowledge"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "item": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  },
+                  "as": {
+                    "type": "string",
+                    "enum": [
+                      "pattern",
+                      "standard",
+                      "process",
+                      "request",
+                      "decision",
+                      "constraint",
+                      "team",
+                      "vendor",
+                      "product",
+                      "project"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "set": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "label": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "url"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "item"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Kept",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeptCandidate"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/needs": {
+      "get": {
+        "operationId": "getChangeNeeds",
+        "summary": "What the change needs from the organisation (needs.yaml), each with its item's review, or the step to find them",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeNeedsView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/needs/{itemId}": {
+      "post": {
+        "operationId": "markChangeNeed",
+        "summary": "Mark a need done (with a note), not needed (with why) or open again, as the signed-in person",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "done",
+                      "not-needed",
+                      "open"
+                    ]
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "for": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Marked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkedNeed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orgpack/draft": {
+      "get": {
+        "operationId": "getOrgPackDraft",
+        "summary": "The org pack drafted from the wikis: each platform's proposed systems (proposals/orgpack), verified or not",
+        "tags": [
+          "orgpack"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgPackDraftView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "draftOrgPack",
+        "summary": "atticus orgpack draft: draft a platform profile's systems from the knowledge items",
+        "tags": [
+          "orgpack"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "platform": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Drafted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrgPackDraftView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orgpack/draft/{platform}/accept": {
+      "post": {
+        "operationId": "acceptOrgPackDraft",
+        "summary": "atticus orgpack accept --only: put the picked systems into profile.yaml; what is taken leaves the draft",
+        "tags": [
+          "orgpack"
+        ],
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "only": {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "required": [
+                  "only"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptedOrgPack"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17221,6 +18369,1625 @@
         "required": [
           "question",
           "rerun"
+        ],
+        "additionalProperties": false
+      },
+      "KnowledgeSourceList": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "kindSuggestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "staleDays": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "location": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "checkout": {
+                  "type": "string",
+                  "enum": [
+                    "clone",
+                    "submodule"
+                  ]
+                },
+                "owner": {
+                  "type": "string"
+                },
+                "tags": {
+                  "type": "object",
+                  "properties": {
+                    "kinds": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "frameworks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "kinds",
+                    "frameworks"
+                  ],
+                  "additionalProperties": false
+                },
+                "snapshot": {
+                  "type": "object",
+                  "properties": {
+                    "date": {
+                      "type": "string"
+                    },
+                    "takenAt": {
+                      "type": "string"
+                    },
+                    "commit": {
+                      "type": "string"
+                    },
+                    "pages": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "skipped": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "ageDays": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "date",
+                    "takenAt",
+                    "pages",
+                    "skipped",
+                    "ageDays"
+                  ],
+                  "additionalProperties": false
+                },
+                "scanned": {
+                  "type": "object",
+                  "properties": {
+                    "date": {
+                      "type": "string"
+                    },
+                    "pages": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "date",
+                    "pages"
+                  ],
+                  "additionalProperties": false
+                },
+                "stale": {
+                  "type": "boolean"
+                },
+                "commands": {
+                  "type": "object",
+                  "properties": {
+                    "sync": {
+                      "type": "string"
+                    },
+                    "scan": {
+                      "type": "string"
+                    },
+                    "slash": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "sync",
+                    "scan",
+                    "slash"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "type",
+                "location",
+                "tags",
+                "stale",
+                "commands"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "file",
+          "types",
+          "kindSuggestions",
+          "staleDays",
+          "sources",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "CommandOutput": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "code",
+          "lines",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "KnowledgeScanView": {
+        "type": "object",
+        "properties": {
+          "scannedAt": {
+            "type": "string"
+          },
+          "snapshots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "date": {
+                  "type": "string"
+                },
+                "pages": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "source",
+                "date",
+                "pages"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "changes": {
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "added": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "changed": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "removed": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "at",
+              "added",
+              "changed",
+              "removed"
+            ],
+            "additionalProperties": false
+          },
+          "checkAgain": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "pattern",
+                    "standard",
+                    "process",
+                    "request",
+                    "decision",
+                    "constraint",
+                    "team",
+                    "vendor",
+                    "product",
+                    "project"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "by": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "title",
+                "by"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "conflicts": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "injections": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "command": {
+            "type": "string"
+          },
+          "slash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshots",
+          "checkAgain",
+          "conflicts",
+          "injections",
+          "failed",
+          "command",
+          "slash"
+        ],
+        "additionalProperties": false
+      },
+      "KnowledgeItemList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "pattern",
+                    "standard",
+                    "process",
+                    "request",
+                    "decision",
+                    "constraint",
+                    "team",
+                    "vendor",
+                    "product",
+                    "project"
+                  ]
+                },
+                "recordKind": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "record": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "review": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "verified",
+                        "corrected",
+                        "rejected",
+                        "stale"
+                      ]
+                    },
+                    "verdict": {
+                      "type": "string",
+                      "enum": [
+                        "verified",
+                        "corrected",
+                        "rejected"
+                      ]
+                    },
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "corrected": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "verdict",
+                    "by",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                },
+                "fields": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "enum": [
+                      "text",
+                      "list",
+                      "links"
+                    ]
+                  }
+                },
+                "conflict": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "recordKind",
+                "title",
+                "record",
+                "fields",
+                "conflict"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "ReviewedItem": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "pattern",
+                  "standard",
+                  "process",
+                  "request",
+                  "decision",
+                  "constraint",
+                  "team",
+                  "vendor",
+                  "product",
+                  "project"
+                ]
+              },
+              "recordKind": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "record": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "review": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "corrected",
+                      "rejected",
+                      "stale"
+                    ]
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "corrected",
+                      "rejected"
+                    ]
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "corrected": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "verdict",
+                  "by",
+                  "at"
+                ],
+                "additionalProperties": false
+              },
+              "fields": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "list",
+                    "links"
+                  ]
+                }
+              },
+              "conflict": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "recordKind",
+              "title",
+              "record",
+              "fields",
+              "conflict"
+            ],
+            "additionalProperties": false
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "WikiSearchResult": {
+        "type": "object",
+        "properties": {
+          "phrase": {
+            "type": "string"
+          },
+          "sources": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "page": {
+                  "type": "string"
+                },
+                "section": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "excerpt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "page",
+                "section",
+                "line",
+                "excerpt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "command": {
+            "type": "string"
+          },
+          "slash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "phrase",
+          "sources",
+          "matches",
+          "pages",
+          "command",
+          "slash"
+        ],
+        "additionalProperties": false
+      },
+      "SavedFindList": {
+        "type": "object",
+        "properties": {
+          "finds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SavedFindView"
+            }
+          }
+        },
+        "required": [
+          "finds"
+        ],
+        "additionalProperties": false
+      },
+      "SavedFindView": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "phrase": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "matches": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "type": "string"
+                },
+                "page": {
+                  "type": "string"
+                },
+                "section": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "excerpt": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "source",
+                "page",
+                "section",
+                "line",
+                "excerpt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "pattern",
+                    "standard",
+                    "process",
+                    "request",
+                    "decision",
+                    "constraint",
+                    "team",
+                    "vendor",
+                    "product",
+                    "project"
+                  ]
+                },
+                "recordKind": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "record": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {}
+                },
+                "known": {
+                  "type": "string"
+                },
+                "kept": {
+                  "type": "object",
+                  "properties": {
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "as": {
+                      "type": "string",
+                      "enum": [
+                        "pattern",
+                        "standard",
+                        "process",
+                        "request",
+                        "decision",
+                        "constraint",
+                        "team",
+                        "vendor",
+                        "product",
+                        "project"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "by",
+                    "at",
+                    "as"
+                  ],
+                  "additionalProperties": false
+                },
+                "keepAs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "pattern",
+                      "standard",
+                      "process",
+                      "request",
+                      "decision",
+                      "constraint",
+                      "team",
+                      "vendor",
+                      "product",
+                      "project"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "recordKind",
+                "title",
+                "record",
+                "keepAs"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "slug",
+          "phrase",
+          "at",
+          "file",
+          "matches",
+          "candidates"
+        ],
+        "additionalProperties": false
+      },
+      "KeptCandidate": {
+        "type": "object",
+        "properties": {
+          "item": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "pattern",
+                  "standard",
+                  "process",
+                  "request",
+                  "decision",
+                  "constraint",
+                  "team",
+                  "vendor",
+                  "product",
+                  "project"
+                ]
+              },
+              "recordKind": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "record": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "review": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "corrected",
+                      "rejected",
+                      "stale"
+                    ]
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "corrected",
+                      "rejected"
+                    ]
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "corrected": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "verdict",
+                  "by",
+                  "at"
+                ],
+                "additionalProperties": false
+              },
+              "fields": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "list",
+                    "links"
+                  ]
+                }
+              },
+              "conflict": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "recordKind",
+              "title",
+              "record",
+              "fields",
+              "conflict"
+            ],
+            "additionalProperties": false
+          },
+          "as": {
+            "type": "string",
+            "enum": [
+              "pattern",
+              "standard",
+              "process",
+              "request",
+              "decision",
+              "constraint",
+              "team",
+              "vendor",
+              "product",
+              "project"
+            ]
+          }
+        },
+        "required": [
+          "item",
+          "as"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeNeedsView": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "present": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string"
+          },
+          "needs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "pattern",
+                    "standard",
+                    "process",
+                    "request",
+                    "decision",
+                    "constraint",
+                    "team",
+                    "vendor",
+                    "product",
+                    "project"
+                  ]
+                },
+                "title": {
+                  "type": "string"
+                },
+                "for": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string"
+                },
+                "because": {
+                  "type": "object",
+                  "properties": {
+                    "file": {
+                      "type": "string"
+                    },
+                    "quote": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "file",
+                    "quote"
+                  ],
+                  "additionalProperties": false
+                },
+                "when": {
+                  "type": "string",
+                  "enum": [
+                    "before-design",
+                    "before-build",
+                    "before-release"
+                  ]
+                },
+                "from": {
+                  "type": "string",
+                  "enum": [
+                    "assistant",
+                    "stories"
+                  ]
+                },
+                "leadTime": {
+                  "type": "string"
+                },
+                "handledBy": {
+                  "type": "string"
+                },
+                "catalogueItem": {
+                  "type": "string"
+                },
+                "inputs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "steps": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "rules": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "urls": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "url": {
+                        "type": "string"
+                      },
+                      "label": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "url"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "page": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "done",
+                    "not-needed"
+                  ]
+                },
+                "note": {
+                  "type": "string"
+                },
+                "by": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "review": {
+                  "type": "object",
+                  "properties": {
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "verified",
+                        "corrected",
+                        "rejected",
+                        "stale"
+                      ]
+                    },
+                    "verdict": {
+                      "type": "string",
+                      "enum": [
+                        "verified",
+                        "corrected",
+                        "rejected"
+                      ]
+                    },
+                    "by": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": "string"
+                    },
+                    "note": {
+                      "type": "string"
+                    },
+                    "corrected": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": [
+                    "state",
+                    "verdict",
+                    "by",
+                    "at"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "item",
+                "kind",
+                "title",
+                "for",
+                "why",
+                "from",
+                "inputs",
+                "steps",
+                "rules",
+                "urls",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "considered": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": {
+                  "type": "string"
+                },
+                "why": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "item",
+                "why"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "command": {
+            "type": "string"
+          },
+          "slash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "change",
+          "file",
+          "present",
+          "needs",
+          "considered",
+          "command",
+          "slash"
+        ],
+        "additionalProperties": false
+      },
+      "MarkedNeed": {
+        "type": "object",
+        "properties": {
+          "need": {
+            "type": "object",
+            "properties": {
+              "item": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "pattern",
+                  "standard",
+                  "process",
+                  "request",
+                  "decision",
+                  "constraint",
+                  "team",
+                  "vendor",
+                  "product",
+                  "project"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "for": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              },
+              "because": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string"
+                  },
+                  "quote": {
+                    "type": "string"
+                  },
+                  "line": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "file",
+                  "quote"
+                ],
+                "additionalProperties": false
+              },
+              "when": {
+                "type": "string",
+                "enum": [
+                  "before-design",
+                  "before-build",
+                  "before-release"
+                ]
+              },
+              "from": {
+                "type": "string",
+                "enum": [
+                  "assistant",
+                  "stories"
+                ]
+              },
+              "leadTime": {
+                "type": "string"
+              },
+              "handledBy": {
+                "type": "string"
+              },
+              "catalogueItem": {
+                "type": "string"
+              },
+              "inputs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rules": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "urls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "url"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "page": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "done",
+                  "not-needed"
+                ]
+              },
+              "note": {
+                "type": "string"
+              },
+              "by": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "review": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "corrected",
+                      "rejected",
+                      "stale"
+                    ]
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "enum": [
+                      "verified",
+                      "corrected",
+                      "rejected"
+                    ]
+                  },
+                  "by": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  },
+                  "note": {
+                    "type": "string"
+                  },
+                  "corrected": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "state",
+                  "verdict",
+                  "by",
+                  "at"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "item",
+              "kind",
+              "title",
+              "for",
+              "why",
+              "from",
+              "inputs",
+              "steps",
+              "rules",
+              "urls",
+              "status"
+            ],
+            "additionalProperties": false
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "need",
+          "file"
+        ],
+        "additionalProperties": false
+      },
+      "OrgPackDraftView": {
+        "type": "object",
+        "properties": {
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "platform": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "present": {
+                  "type": "boolean"
+                },
+                "at": {
+                  "type": "string"
+                },
+                "proposals": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "add",
+                          "update"
+                        ]
+                      },
+                      "system": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "boundary": {
+                            "type": "string",
+                            "enum": [
+                              "product",
+                              "internal",
+                              "vendor"
+                            ]
+                          },
+                          "owner": {
+                            "type": "string"
+                          },
+                          "aliases": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "tags": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "boundary",
+                          "aliases",
+                          "tags"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "adds": {
+                        "type": "object",
+                        "properties": {
+                          "aliases": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "owner": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      "verified": {
+                        "type": "boolean"
+                      },
+                      "verifiedBy": {
+                        "type": "string"
+                      },
+                      "quote": {
+                        "type": "string"
+                      },
+                      "page": {
+                        "type": "string"
+                      },
+                      "notes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "from",
+                      "kind",
+                      "action",
+                      "system",
+                      "verified",
+                      "notes"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "command": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "platform",
+                "file",
+                "present",
+                "proposals",
+                "command"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "platforms"
+        ],
+        "additionalProperties": false
+      },
+      "AcceptedOrgPack": {
+        "type": "object",
+        "properties": {
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "updated": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "left": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "file": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "added",
+          "updated",
+          "left",
+          "file"
         ],
         "additionalProperties": false
       }

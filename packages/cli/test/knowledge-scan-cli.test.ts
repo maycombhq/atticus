@@ -319,4 +319,40 @@ describe("people's reviews and rescans (ADR 0101)", () => {
     expect(await knowledgeReview(root, "verified", "no-such-item", { by: "tom" }, c.io)).toBe(1);
     expect(c.err[0]).toMatch(/There is no knowledge item no-such-item/);
   });
+  it("correcting again keeps the earlier correction, as the app does", async () => {
+    const at = new Date("2026-10-23T10:00:00Z");
+    expect(
+      await knowledgeReview(
+        root,
+        "corrected",
+        "no-cross-service-database",
+        { by: "tom", now: at, set: ["handledBy=Architecture board"] },
+        capture().io,
+      ),
+    ).toBe(0);
+    expect(
+      await knowledgeReview(
+        root,
+        "corrected",
+        "no-cross-service-database",
+        { by: "tom", now: at, set: ["reason=Shared databases couple releases."] },
+        capture().io,
+      ),
+    ).toBe(0);
+    const json = capture();
+    await knowledgeList(root, { json: true }, json.io);
+    const item = (
+      JSON.parse(json.out.join("\n")) as {
+        id: string;
+        handledBy?: string;
+        reason?: string;
+        review?: { corrected?: string[] };
+      }[]
+    ).find((i) => i.id === "no-cross-service-database")!;
+    expect(item).toMatchObject({
+      handledBy: "Architecture board",
+      reason: "Shared databases couple releases.",
+    });
+    expect(item.review!.corrected).toEqual(["handledBy", "reason"]);
+  });
 });

@@ -3,6 +3,7 @@ import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam, setQueryParam, Table } from "../know/common.js";
 import { Architecture } from "../architecture/Architecture.js";
+import { NeedsPanel } from "../knowledge/Needs.js";
 import {
   architectureStep,
   pickChange,
@@ -190,6 +191,8 @@ export function StagePage(p: {
                   )}
                 </Panel>
               )}
+              {/* ADR 0102: what the change needs from the organisation. */}
+              <NeedsPanel change={c.id} />
             </div>
           </>
         );

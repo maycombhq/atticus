@@ -4,6 +4,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Knowledge and needs in the app
+
+- The app has it all (ADR 0102), under More, Know:
+  - **Knowledge sources**: each wiki with its git ref, folder, checkout, tags, owner and newest snapshot (with its commit), Sync for each, the `sources add` form (saved into `sources.yaml`, comments kept), what the last scan changed and the reviews to check again. Reading a source with the AI is given as `atticus knowledge scan --source` and `/atticus-knowledge` to copy.
+  - **Knowledge items**: grouped by kind and searchable, each with its fields, quote, page and links; Verify, Correct (only the fields its kind allows, lists as lists, links as label and address) and Reject (with the reason), as you.
+  - **Search the wikis**: the plain page search runs at once; `/atticus-find` to copy for the AI step; the saved searches, new and known, with Keep as the kind you choose.
+  - **Teams, vendors and products**: what each team owns and uses, who owns each product, and their other names.
+  - **Org pack from the wikis**: the drafted systems, verified or not, Draft and Accept the picked ones.
+- A change's page (Changes, Feature design, Stories, Tasks) shows what it needs from the organisation, grouped as `needs.md`, with lead time, who handles it, links, steps and why, the tick or "not yet verified", and Done, Not needed and Reopen; or `atticus change needs` / `/atticus-needs` to copy before it has run.
+- The local API 2.7.0 (additive): `/api/knowledge/sources`, `/api/knowledge/scan`, `/api/knowledge/items`, `/api/knowledge/search`, `/api/knowledge/finds`, `/api/changes/{id}/needs` and `/api/orgpack/draft`.
+
 ### Knowledge managed in the metarepo
 
 - Wikis kept in git (ADR 0101): `type: git` in `sources.yaml`, an ADO or GitHub wiki or a docs repo, with `ref`, `path` and `checkout: clone` (into local state) or `submodule` (pinned under `knowledge/repos/`). `atticus sources sync` clones or updates it, dates each page by git and records the commit in the snapshot. `atticus sources add git <url> --save` writes the entry for you.

@@ -17,6 +17,12 @@ const SCREENS = [
   "impact?q=ledger-api&incident=1",
   "features",
   "orgpack",
+  // ADR 0102: knowledge in the app.
+  "wikis",
+  "knowledge",
+  "wiki-search?q=transfer",
+  "parties",
+  "orgpack-draft",
   "intake",
   "scans",
   "brief?change=add-transfer-limit",

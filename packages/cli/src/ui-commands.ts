@@ -13,6 +13,7 @@ import { uiGraphRoutes } from "./ui-api-graph.js";
 import { uiOnboardingRoutes } from "./ui-api-onboarding.js";
 import { uiSpecRoutes } from "./ui-api-specs.js";
 import { uiCiteRoutes } from "./ui-api-cites.js";
+import { uiKnowledgeRoutes } from "./ui-api-knowledge.js";
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export function startUi(
@@ -43,29 +44,13 @@ export function startUi(
         else log.debug("request", fields);
       };
     })(),
-    extend: (r, ctx) =>
-      uiCiteRoutes(
-        uiSpecRoutes(
-          uiOnboardingRoutes(
-            uiQuestionRoutes(
-              uiGraphRoutes(
-                uiAcrossRoutes(
-                  uiMeRoutes(
-                    uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx),
-                    ctx,
-                  ),
-                  ctx,
-                ),
-                ctx,
-              ),
-              ctx,
-            ),
-            ctx,
-          ),
-          ctx,
-        ),
-        ctx,
-      ),
+    extend: (r, ctx) => {
+      const base = uiKnowRoutes(uiRunRoutes(uiRoutes(r, ctx, deps), ctx, deps), ctx);
+      const views = uiGraphRoutes(uiAcrossRoutes(uiMeRoutes(base, ctx), ctx), ctx);
+      const specs = uiSpecRoutes(uiOnboardingRoutes(uiQuestionRoutes(views, ctx), ctx), ctx);
+      // ADR 0102: knowledge, a change's needs and the org pack from the wikis.
+      return uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx);
+    },
   });
 }
 

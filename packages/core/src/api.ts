@@ -5,6 +5,7 @@ import {
   Flow,
   FlowCaller,
   FlowData,
+  KNOWLEDGE_KINDS,
   RECORD_KINDS,
   RECORD_SCHEMAS,
   type RecordKind,
@@ -29,8 +30,12 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.3.0 (ADR 0092): the specs API, /api/specs, for the Flows screen.
  * 2.4.0 (ADR 0094): GET /api/cites, the flow steps and records that cite each line of one file.
  * 2.5.0 (ADR 0095): a change's target flows beside today's, /api/changes/{id}/target-flows.
+ * 2.6.0 (ADR 0101): the Product kind in the catalog.
+ * 2.7.0 (ADR 0102): knowledge in the app: /api/knowledge (sources, items and their reviews,
+ *   the last scan, searching the wikis, saved searches), a change's needs and the org pack
+ *   drafted from the wikis.
  */
-export const API_VERSION = "2.6.0";
+export const API_VERSION = "2.7.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -727,6 +732,327 @@ export const AnsweredQuestion = z.object({
   rerun: z.string(),
   skill: z.object({ path: z.string(), written: z.boolean() }).optional(),
 });
+
+// ------------------------------------------------------------------ knowledge (ADR 0101, 0102)
+
+const FileProblem = z.object({ file: z.string(), message: z.string() });
+const KnowledgeKindE = z.enum(KNOWLEDGE_KINDS);
+
+/** The wiki types sources.yaml takes (C6). */
+export const WIKI_TYPES = [
+  "confluence",
+  "ado-wiki",
+  "sharepoint",
+  "markdown-folder",
+  "git",
+] as const;
+
+/** A person's review of a knowledge item (ADR 0101); stale: its page changed since. */
+export const KnowledgeReviewSummary = z.object({
+  state: z.enum(["verified", "corrected", "rejected", "stale"]),
+  verdict: z.enum(["verified", "corrected", "rejected"]),
+  by: z.string(),
+  at: z.string(),
+  note: z.string().optional(),
+  /** The fields a correction set. */
+  corrected: z.array(z.string()).optional(),
+});
+
+/** One knowledge source of sources.yaml, with its newest snapshot. */
+export const KnowledgeSource = z.object({
+  id: z.string(),
+  type: z.string(),
+  location: z.string(),
+  ref: z.string().optional(),
+  path: z.string().optional(),
+  checkout: z.enum(["clone", "submodule"]).optional(),
+  owner: z.string().optional(),
+  tags: z.object({ kinds: z.array(z.string()), frameworks: z.array(z.string()) }),
+  /** The newest snapshot `atticus sources sync` took; none before the first sync. */
+  snapshot: z
+    .object({
+      date: z.string(),
+      takenAt: z.string(),
+      /** A git wiki's commit the pages were read at. */
+      commit: z.string().optional(),
+      pages: z.number().int(),
+      skipped: z.number().int(),
+      ageDays: z.number().int(),
+    })
+    .optional(),
+  /** The snapshot the last knowledge scan read of it. */
+  scanned: z.object({ date: z.string(), pages: z.number().int() }).optional(),
+  /** No snapshot, or the newest is older than staleDays: sync it again. */
+  stale: z.boolean(),
+  /** The commands to read it: sync here, then the AI step in a terminal or Copilot Chat. */
+  commands: z.object({ sync: z.string(), scan: z.string(), slash: z.string() }),
+});
+
+export const KnowledgeSourceList = z.object({
+  file: z.string(),
+  types: z.array(z.string()),
+  kindSuggestions: z.array(z.string()),
+  staleDays: z.number().int(),
+  sources: z.array(KnowledgeSource),
+  problems: z.array(FileProblem),
+});
+
+/** atticus sources add <type> <location> [--id --path --ref --submodule --kind --framework --owner --save]. */
+export const AddSourceRequest = z.strictObject({
+  type: z.enum(WIKI_TYPES),
+  location: z.string().trim().min(1),
+  id: RecordId.optional(),
+  path: z.string().trim().min(1).optional(),
+  ref: z.string().trim().min(1).optional(),
+  submodule: z.boolean().optional(),
+  kinds: z.array(RecordId).optional(),
+  frameworks: z.array(RecordId).optional(),
+  owner: z.string().trim().min(1).optional(),
+  /** Write the entry into sources.yaml; without it, the entry to add is only printed. */
+  save: z.boolean().default(true),
+});
+
+/** What a command printed, and its exit code (0 done, 1 done with problems to read). */
+export const CommandOutput = z.object({
+  code: z.number().int(),
+  lines: z.array(z.string()),
+  problems: z.array(z.string()),
+});
+
+/** A knowledge item as people reviewed it, with what Correct may set. */
+export const KnowledgeItemView = z.object({
+  id: z.string(),
+  kind: KnowledgeKindE,
+  /** The C1 kind it is stored as. */
+  recordKind: z.string(),
+  title: z.string(),
+  /** The record, with any correction applied (C1). */
+  record: z.record(z.string(), z.unknown()),
+  review: KnowledgeReviewSummary.optional(),
+  /** The fields a person may correct and whether each is text, a list or links. */
+  fields: z.record(z.string(), z.enum(["text", "list", "links"])),
+  /** Another page disagrees with it. */
+  conflict: z.boolean(),
+});
+
+export const KnowledgeItemList = z.object({
+  items: z.array(KnowledgeItemView),
+  problems: z.array(FileProblem),
+});
+
+/** What the last knowledge scan read and changed, and the reviews to check again. */
+export const KnowledgeScanView = z.object({
+  scannedAt: z.string().optional(),
+  snapshots: z.array(z.object({ source: z.string(), date: z.string(), pages: z.number().int() })),
+  changes: z
+    .object({
+      at: z.string(),
+      added: z.array(z.string()),
+      changed: z.array(z.string()),
+      removed: z.array(z.string()),
+    })
+    .optional(),
+  checkAgain: z.array(
+    z.object({ id: z.string(), kind: KnowledgeKindE, title: z.string(), by: z.string() }),
+  ),
+  conflicts: z.number().int(),
+  injections: z.number().int(),
+  failed: z.number().int(),
+  command: z.string(),
+  slash: z.string(),
+});
+
+const FieldValue = z.union([
+  z.string(),
+  z.array(z.string()),
+  z.array(z.strictObject({ url: z.string().min(1), label: z.string().optional() })),
+]);
+
+/** atticus knowledge verify|correct|reject <item>, as the signed-in person. */
+export const ReviewItemRequest = z.strictObject({
+  verdict: z.enum(["verified", "corrected", "rejected"]),
+  /** Required to reject: the reason. */
+  note: z.string().trim().min(1).optional(),
+  /** Correct only: field → value; a list takes strings, links take { url, label }. */
+  set: z.record(z.string(), FieldValue).optional(),
+});
+
+export const ReviewedItem = z.object({ item: KnowledgeItemView, file: z.string() });
+
+/** A section of a snapshot page that mentions the phrase searched for. */
+export const PageMatch = z.object({
+  source: z.string(),
+  page: z.string(),
+  section: z.string(),
+  line: z.number().int(),
+  excerpt: z.string(),
+});
+
+export const WikiSearchResult = z.object({
+  phrase: z.string(),
+  /** Sources with a snapshot to search. */
+  sources: z.number().int(),
+  matches: z.array(PageMatch),
+  pages: z.array(z.string()),
+  /** The AI step that reads those pages: the command and the slash command. */
+  command: z.string(),
+  slash: z.string(),
+});
+
+export const FindCandidateView = z.object({
+  id: z.string(),
+  kind: KnowledgeKindE,
+  recordKind: z.string(),
+  title: z.string(),
+  record: z.record(z.string(), z.unknown()),
+  /** The item it already is, when it is one. */
+  known: z.string().optional(),
+  kept: z.object({ by: z.string(), at: z.string(), as: KnowledgeKindE }).optional(),
+  /** The kinds it can be kept as. */
+  keepAs: z.array(KnowledgeKindE),
+});
+
+export const SavedFindView = z.object({
+  slug: z.string(),
+  phrase: z.string(),
+  at: z.string(),
+  file: z.string(),
+  matches: z.array(PageMatch),
+  candidates: z.array(FindCandidateView),
+});
+
+export const SavedFindList = z.object({ finds: z.array(SavedFindView) });
+
+/** atticus knowledge keep <item> --find <slug> [--as kind] [--set f=v] [--note]. */
+export const KeepCandidateRequest = z.strictObject({
+  item: RecordId,
+  as: KnowledgeKindE.optional(),
+  note: z.string().trim().min(1).optional(),
+  set: z.record(z.string(), FieldValue).optional(),
+});
+
+export const KeptCandidate = z.object({ item: KnowledgeItemView, as: KnowledgeKindE });
+
+/** One need of a change (needs.yaml, ADR 0101), with its item's review. */
+export const NeedView = z.object({
+  item: z.string(),
+  kind: KnowledgeKindE,
+  title: z.string(),
+  for: z.string(),
+  why: z.string(),
+  because: z
+    .object({ file: z.string(), quote: z.string(), line: z.number().int().optional() })
+    .optional(),
+  when: z.enum(["before-design", "before-build", "before-release"]).optional(),
+  from: z.enum(["assistant", "stories"]),
+  leadTime: z.string().optional(),
+  handledBy: z.string().optional(),
+  catalogueItem: z.string().optional(),
+  inputs: z.array(z.string()),
+  steps: z.array(z.string()),
+  rules: z.array(z.string()),
+  urls: z.array(z.object({ url: z.string(), label: z.string().optional() })),
+  page: z.string().optional(),
+  status: z.enum(["open", "done", "not-needed"]),
+  note: z.string().optional(),
+  by: z.string().optional(),
+  at: z.string().optional(),
+  review: KnowledgeReviewSummary.optional(),
+});
+
+export const ChangeNeedsView = z.object({
+  change: z.string(),
+  file: z.string(),
+  /** False before atticus change needs has run for the change. */
+  present: z.boolean(),
+  updatedAt: z.string().optional(),
+  needs: z.array(NeedView),
+  considered: z.array(z.object({ item: z.string(), why: z.string() })),
+  command: z.string(),
+  slash: z.string(),
+});
+
+/** atticus needs done|skip|reopen <change> <item> [--for t] [--note]. */
+export const MarkNeedRequest = z.strictObject({
+  status: z.enum(["done", "not-needed", "open"]),
+  /** Required for not-needed: why. For done, the ticket (a CTASK number, say). */
+  note: z.string().trim().min(1).optional(),
+  /** Which target, when the item is needed for more than one. */
+  for: z.string().min(1).optional(),
+});
+
+export const MarkedNeed = z.object({ need: NeedView, file: z.string() });
+
+/** A system the org pack draft proposes for a platform profile (ADR 0101). */
+export const OrgPackProposalView = z.object({
+  from: z.string(),
+  kind: z.string(),
+  action: z.enum(["add", "update"]),
+  system: z.object({
+    id: z.string(),
+    name: z.string(),
+    boundary: z.enum(["product", "internal", "vendor"]),
+    owner: z.string().optional(),
+    aliases: z.array(z.string()),
+    tags: z.array(z.string()),
+  }),
+  adds: z
+    .object({ aliases: z.array(z.string()).optional(), owner: z.string().optional() })
+    .optional(),
+  verified: z.boolean(),
+  verifiedBy: z.string().optional(),
+  quote: z.string().optional(),
+  page: z.string().optional(),
+  notes: z.array(z.string()),
+});
+
+export const OrgPackDraftView = z.object({
+  platforms: z.array(
+    z.object({
+      platform: z.string(),
+      file: z.string(),
+      /** False before atticus orgpack draft has run for the platform. */
+      present: z.boolean(),
+      at: z.string().optional(),
+      proposals: z.array(OrgPackProposalView),
+      command: z.string(),
+    }),
+  ),
+});
+
+export const DraftOrgPackRequest = z.strictObject({ platform: RecordId.optional() });
+
+/** atticus orgpack accept <platform> --only id,id: the picked proposals into profile.yaml. */
+export const AcceptOrgPackRequest = z.strictObject({
+  only: z.array(z.string().min(1)).min(1),
+});
+
+export const AcceptedOrgPack = z.object({
+  added: z.array(z.string()),
+  updated: z.array(z.string()),
+  left: z.number().int(),
+  file: z.string(),
+});
+
+export type KnowledgeSourceListT = z.infer<typeof KnowledgeSourceList>;
+export type KnowledgeSourceT = z.infer<typeof KnowledgeSource>;
+export type KnowledgeItemViewT = z.infer<typeof KnowledgeItemView>;
+export type KnowledgeItemListT = z.infer<typeof KnowledgeItemList>;
+export type KnowledgeScanViewT = z.infer<typeof KnowledgeScanView>;
+export type WikiSearchResultT = z.infer<typeof WikiSearchResult>;
+export type SavedFindViewT = z.infer<typeof SavedFindView>;
+export type SavedFindListT = z.infer<typeof SavedFindList>;
+export type FindCandidateViewT = z.infer<typeof FindCandidateView>;
+export type NeedViewT = z.infer<typeof NeedView>;
+export type ChangeNeedsViewT = z.infer<typeof ChangeNeedsView>;
+export type OrgPackDraftViewT = z.infer<typeof OrgPackDraftView>;
+export type OrgPackProposalViewT = z.infer<typeof OrgPackProposalView>;
+export type KnowledgeReviewSummaryT = z.infer<typeof KnowledgeReviewSummary>;
+export type CommandOutputT = z.infer<typeof CommandOutput>;
+export type AcceptedOrgPackT = z.infer<typeof AcceptedOrgPack>;
+export type MarkedNeedT = z.infer<typeof MarkedNeed>;
+export type ReviewedItemT = z.infer<typeof ReviewedItem>;
+export type KeptCandidateT = z.infer<typeof KeptCandidate>;
 
 // ------------------------------------------------------------------ live events
 
@@ -1900,6 +2226,164 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "OrgPackView", description: "OK" },
     },
   },
+  // ADR 0102: knowledge managed in the metarepo (ADR 0101), in the app.
+  "/api/knowledge/sources": {
+    get: {
+      id: "listKnowledgeSources",
+      summary:
+        "The wikis in sources.yaml with their tags, owner, git ref, path and checkout, and each one's newest snapshot",
+      tag: "knowledge",
+      ok: { status: 200, schema: "KnowledgeSourceList", description: "OK" },
+    },
+    post: {
+      id: "addKnowledgeSource",
+      summary:
+        "atticus sources add: check a wiki and write its entry into sources.yaml (save), or return the entry to add",
+      tag: "knowledge",
+      body: AddSourceRequest,
+      ok: { status: 200, schema: "CommandOutput", description: "Added, or the entry to add" },
+      errors: [400, 422],
+    },
+  },
+  "/api/knowledge/sources/{sourceId}/sync": {
+    post: {
+      id: "syncKnowledgeSource",
+      summary:
+        "atticus sources sync --source: read one wiki (a git wiki is cloned or fetched) into a dated snapshot",
+      tag: "knowledge",
+      params: [p("sourceId")],
+      ok: { status: 200, schema: "CommandOutput", description: "Synced; code 1 has problems" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/knowledge/scan": {
+    get: {
+      id: "getKnowledgeScan",
+      summary:
+        "What the last knowledge scan read and changed (scan.yaml), and the reviews to check again",
+      tag: "knowledge",
+      ok: { status: 200, schema: "KnowledgeScanView", description: "OK" },
+    },
+  },
+  "/api/knowledge/items": {
+    get: {
+      id: "listKnowledgeItems",
+      summary:
+        "The knowledge items as people reviewed them, rejected ones included and marked, with the fields each may have corrected",
+      tag: "knowledge",
+      params: [
+        q("kind", { type: "string", enum: [...KNOWLEDGE_KINDS] }, "Only items of this kind"),
+        q("tag", str, "Only items with this tag (a source kind, a framework or a page tag)"),
+      ],
+      ok: { status: 200, schema: "KnowledgeItemList", description: "OK" },
+      errors: [400],
+    },
+  },
+  "/api/knowledge/items/{itemId}/review": {
+    post: {
+      id: "reviewKnowledgeItem",
+      summary:
+        "Verify, correct or reject a knowledge item as the signed-in person: writes knowledge/reviews/<id>.yaml",
+      tag: "knowledge",
+      params: [p("itemId")],
+      body: ReviewItemRequest,
+      ok: { status: 200, schema: "ReviewedItem", description: "Reviewed" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/knowledge/search": {
+    get: {
+      id: "searchWikis",
+      summary:
+        "The plain search of every snapshot page for a term or phrase (no AI), with the AI step to copy",
+      tag: "knowledge",
+      params: [q("q", str, "The term or phrase"), q("source", str, "Only this source's snapshot")],
+      ok: { status: 200, schema: "WikiSearchResult", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/knowledge/finds": {
+    get: {
+      id: "listFinds",
+      summary: "The saved searches of the wikis (knowledge/finds), newest first, with candidates",
+      tag: "knowledge",
+      ok: { status: 200, schema: "SavedFindList", description: "OK" },
+    },
+  },
+  "/api/knowledge/finds/{slug}": {
+    get: {
+      id: "getFind",
+      summary: "One saved search: the pages it matched and its candidates, new or already known",
+      tag: "knowledge",
+      params: [p("slug")],
+      ok: { status: 200, schema: "SavedFindView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/knowledge/finds/{slug}/keep": {
+    post: {
+      id: "keepFound",
+      summary:
+        "Keep a candidate as a knowledge item of the kind chosen, verified (or corrected) by the signed-in person",
+      tag: "knowledge",
+      params: [p("slug")],
+      body: KeepCandidateRequest,
+      ok: { status: 200, schema: "KeptCandidate", description: "Kept" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/changes/{changeId}/needs": {
+    get: {
+      id: "getChangeNeeds",
+      summary:
+        "What the change needs from the organisation (needs.yaml), each with its item's review, or the step to find them",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ChangeNeedsView", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/changes/{changeId}/needs/{itemId}": {
+    post: {
+      id: "markChangeNeed",
+      summary:
+        "Mark a need done (with a note), not needed (with why) or open again, as the signed-in person",
+      tag: "changes",
+      params: [p("changeId"), p("itemId")],
+      body: MarkNeedRequest,
+      ok: { status: 200, schema: "MarkedNeed", description: "Marked" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/orgpack/draft": {
+    get: {
+      id: "getOrgPackDraft",
+      summary:
+        "The org pack drafted from the wikis: each platform's proposed systems (proposals/orgpack), verified or not",
+      tag: "orgpack",
+      ok: { status: 200, schema: "OrgPackDraftView", description: "OK" },
+    },
+    post: {
+      id: "draftOrgPack",
+      summary: "atticus orgpack draft: draft a platform profile's systems from the knowledge items",
+      tag: "orgpack",
+      body: DraftOrgPackRequest,
+      ok: { status: 200, schema: "OrgPackDraftView", description: "Drafted" },
+      errors: [400, 422],
+    },
+  },
+  "/api/orgpack/draft/{platform}/accept": {
+    post: {
+      id: "acceptOrgPackDraft",
+      summary:
+        "atticus orgpack accept --only: put the picked systems into profile.yaml; what is taken leaves the draft",
+      tag: "orgpack",
+      params: [p("platform")],
+      body: AcceptOrgPackRequest,
+      ok: { status: 200, schema: "AcceptedOrgPack", description: "Accepted" },
+      errors: [400, 404, 422],
+    },
+  },
 };
 
 const ERROR_TEXT: Record<number, string> = {
@@ -1950,6 +2434,19 @@ export function openApiDocument(): Record<string, unknown> {
     Question,
     QuestionList,
     AnsweredQuestion,
+    KnowledgeSourceList,
+    CommandOutput,
+    KnowledgeScanView,
+    KnowledgeItemList,
+    ReviewedItem,
+    WikiSearchResult,
+    SavedFindList,
+    SavedFindView,
+    KeptCandidate,
+    ChangeNeedsView,
+    MarkedNeed,
+    OrgPackDraftView,
+    AcceptedOrgPack,
   };
   for (const k of RECORD_KINDS) reg.add(RECORD_SCHEMAS[k], { id: k });
   for (const [id, s] of Object.entries(components)) reg.add(s, { id });
@@ -2038,6 +2535,7 @@ export function openApiDocument(): Record<string, unknown> {
       "findings",
       "orgpack",
       "questions",
+      "knowledge",
     ].map((name) => ({ name })),
     paths,
     components: {

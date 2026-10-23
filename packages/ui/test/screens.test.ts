@@ -60,7 +60,10 @@ describe("the app's menu (plan 4.5, B1)", () => {
     expect(ids.size).toBe(SCREENS.length);
     expect(BEFORE.filter((id) => !ids.has(id))).toEqual([]);
     // Screens added under More since, each with its ADR.
-    const ADDED = ["flows"]; // ADR 0092
+    const ADDED = [
+      "flows", // ADR 0092
+      ...["wikis", "knowledge", "wiki-search", "parties", "orgpack-draft"], // ADR 0102
+    ];
     expect(MORE.map((s) => s.id).sort()).toEqual(
       [...BEFORE.filter((id) => id !== "architecture"), ...ADDED].sort(),
     );

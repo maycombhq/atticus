@@ -3,6 +3,7 @@ import { api, ApiError, useApi, useLiveEvents, type Loaded } from "../api/client
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { Panel, Ring, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
+import { NeedsPanel } from "./knowledge/Needs.js";
 
 export interface ChangeSummary {
   id: string;
@@ -787,6 +788,9 @@ function Detail({ id }: { id: string }) {
           }
         </View>
       </Panel>
+
+      {/* ADR 0102: what the change needs from the organisation. */}
+      <NeedsPanel change={id} span="span 9" />
     </>
   );
 }

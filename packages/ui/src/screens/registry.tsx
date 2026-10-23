@@ -5,6 +5,7 @@ import { Explore } from "./Explore.js";
 import { Flows } from "./flows/Flows.js";
 import { Questions } from "./Questions.js";
 import { KNOW_SCREENS } from "./know/index.js";
+import { KNOWLEDGE_SCREENS } from "./knowledge/index.js";
 import { RUN_SCREENS } from "./run/index.js";
 import { Dashboard } from "./work/Dashboard.js";
 import { Onboarding } from "./work/Onboarding.js";
@@ -31,5 +32,6 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   flows: Flows,
   questions: Questions,
   ...KNOW_SCREENS,
+  ...KNOWLEDGE_SCREENS,
   ...RUN_SCREENS,
 };

@@ -35,6 +35,12 @@ export const MORE: ScreenDef[] = [
   { id: "impact", label: "Impact explorer", group: "Know" },
   { id: "features", label: "Features", group: "Know" },
   { id: "orgpack", label: "Org pack", group: "Know" },
+  // ADR 0102: knowledge managed in the metarepo.
+  { id: "wikis", label: COPY.knowledge.nav.sources, group: "Know" },
+  { id: "knowledge", label: COPY.knowledge.nav.items, group: "Know" },
+  { id: "wiki-search", label: COPY.knowledge.nav.search, group: "Know" },
+  { id: "parties", label: COPY.knowledge.nav.parties, group: "Know" },
+  { id: "orgpack-draft", label: COPY.knowledge.nav.orgpack, group: "Know" },
   { id: "intake", label: "Intake", group: "Know" },
   { id: "scans", label: "Scans", group: "Know" },
   { id: "brief", label: "Feature brief", group: "Define" },
