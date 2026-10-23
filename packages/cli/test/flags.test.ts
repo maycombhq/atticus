@@ -79,11 +79,26 @@ describe("atticus with a mistake", () => {
     expect(r.out.split("\n").length).toBeLessThan(40);
   });
 
-  it("lists every command for atticus help with no words, as --help does", async () => {
+  it("shows the same help for atticus help with no words as for --help", async () => {
     const help = await run(["help"]);
     const dash = await run(["--help"]);
     expect(help.code).toBe(0);
     expect(help.out).toBe(dash.out);
+  });
+
+  it("groups the help by area, with Atticus's own quality commands only under --all", async () => {
+    const short = await run(["--help"]);
+    const all = await run(["help", "--all"]);
+    expect(short.out).toContain("Set up and keep healthy:");
+    expect(short.out).toContain("Changes, findings and questions:");
+    expect(short.out).not.toContain("atticus bench run");
+    expect(short.out).toContain("atticus help --all");
+    expect(all.out).toContain("For Atticus's own quality:");
+    expect(all.out).toContain("atticus bench run");
+    // Every command the full help names is in the grouped one, once.
+    const lines = (t: string) => t.split("\n").filter((l) => /^ {2}atticus [a-z]/.test(l));
+    const { HELP_TEXT } = await import("../src/main.js");
+    expect(lines(all.out).sort()).toEqual(lines(HELP_TEXT).sort());
   });
 
   it("says when help has nothing for the words, with the nearest command", async () => {

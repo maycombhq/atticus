@@ -619,6 +619,9 @@ Usage:
 
 Every command is described in docs/guide/commands.md; atticus explain <command> says more.`;
 
+/** The full help, every command in the order written: what the catalogue and the docs read. */
+export const HELP_TEXT = HELP;
+
 /** Command groups whose commands record who did something (`by`), so they need the person. */
 const RECORDS_A_PERSON = new Set([
   "knowledge",
@@ -888,13 +891,11 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
   const refused = await checkFlags(argv, positionals, io);
   if (refused !== undefined) return refused;
   // ADR 0119: one command's help, with `atticus help <command>` or `<command> --help`.
-  if (group === "help" || (values.help && group)) {
+  if (group === "help" || values.help || !group) {
     const { helpCommand } = await import("./help-commands.js");
-    return helpCommand(group === "help" ? positionals.slice(1) : positionals, HELP, io);
-  }
-  if (values.help || !group) {
-    io.out(HELP);
-    return 0;
+    return helpCommand(group === "help" ? positionals.slice(1) : positionals, HELP, io, {
+      all: values.all === true,
+    });
   }
   // ADR 0096: every command as data, for an editor.
   if (group === "commands") {

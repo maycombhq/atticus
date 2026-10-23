@@ -13,6 +13,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code: a failed read of a change's tasks says so instead of "no tasks"; lenses that can't be read and a startup check that fails say why in the output. Its app panel also follows proposals, inputs, the model runs and the prompt history.
 - `atticus ui` prints the session token only when an editor started it (`--embed`, `--parent`) or with the new `--show-token`.
 - The command line refuses a flag no command knows, with the nearest one and exit 2, running nothing: `--aprove` says "Did you mean --approve?". Every flag the help names, the editors pass and the slash commands use is known.
+- `atticus --help` groups the commands by area (setting up, repos, knowledge, the catalog, changes, plans, release, every AI step, every command); Atticus's own quality commands (bench, eval, conformance) show only with `atticus help --all`.
 - `atticus help <command>` (and `atticus <command> --help`) prints that command's usage and options instead of the whole help; a misspelled command says the nearest one ("Did you mean atticus change list?") instead of printing all 230 lines.
 
 ### What an adversarial review of the stage loop found (ADR 0115 addendum)

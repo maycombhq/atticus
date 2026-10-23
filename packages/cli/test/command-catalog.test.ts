@@ -18,12 +18,12 @@ describe("the command catalogue (ADR 0096)", () => {
   let all: CommandInfo[] = [];
   let byId = new Map<string, CommandInfo>();
   beforeAll(async () => {
-    all = commandCatalog((await run(["--help"])).out);
+    all = commandCatalog((await run(["help", "--all"])).out);
     byId = new Map(all.map((c) => [c.id, c]));
   });
 
   it("holds every command in atticus --help, each in an area", async () => {
-    const help = (await run(["--help"])).out;
+    const help = (await run(["help", "--all"])).out;
     const lines = help
       .split("\n")
       .filter((l) => /^ {2}atticus [a-z]/.test(l))

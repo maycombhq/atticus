@@ -1,10 +1,10 @@
 import type { Output } from "./commands.js";
-import { commandCatalog } from "./command-catalog.js";
+import { AREAS, commandCatalog } from "./command-catalog.js";
 import { nearestCommand } from "./flags.js";
 
 /**
  * `atticus help [command]` (ADR 0119 item 2): one command's usage and options, as the full help
- * writes them, instead of all 230 lines. With no words it is the full help.
+ * writes them, instead of all 230 lines. With no words, every command grouped by area.
  */
 
 /** The help's blocks: a command's line and the option lines written under it. */
@@ -32,9 +32,57 @@ export function commandOf(words: string[], ids: string[]): string | undefined {
   return best;
 }
 
-export function helpCommand(words: string[], help: string, io: Output): number {
+/**
+ * The help grouped by area (ADR 0119), in the order a person meets them: setting up, repos,
+ * knowledge, the catalog, changes, plans, release. Atticus's own quality commands (bench, eval,
+ * conformance...) only with `all`. The lines are the full help's, unchanged, so each command reads
+ * the same here, in `atticus help <command>` and in the catalogue.
+ */
+export function groupedHelp(help: string, o: { all?: boolean } = {}): string {
+  const lines = help.split("\n");
+  const first = lines.findIndex((l) => /^ {2}atticus /.test(l));
+  const head = lines.slice(0, first);
+  const areaOf = new Map(commandCatalog(help).map((c) => [c.usage, c.area]));
+  const byArea = new Map<string, string[]>();
+  const steps: string[] = [];
+  const general: string[] = [];
+  for (const b of blocks(help)) {
+    const usage = b.line.split(/ {2,}/)[0]!;
+    if (/^atticus (--help|--version)/.test(usage)) general.push(...b.lines);
+    else if (/^atticus <step>/.test(usage)) steps.push(...b.lines);
+    else {
+      const area = areaOf.get(usage) ?? "start";
+      byArea.set(area, [...(byArea.get(area) ?? []), ...b.lines]);
+    }
+  }
+  const globals = lines.filter((l) => /^ {2}--/.test(l));
+  const tail = lines
+    .slice(lines.findLastIndex((l) => /^ {2}\S/.test(l)) + 1)
+    .filter((l) => l.trim());
+  const out = [...head.filter((l) => l.trim() !== "Usage:")];
+  while (out.length && !out.at(-1)!.trim()) out.pop();
+  out.push("");
+  for (const a of AREAS) {
+    if (a.id === "developer" && !o.all) continue;
+    const body = byArea.get(a.id);
+    if (!body?.length) continue;
+    out.push(`${a.title}:`, ...body, "");
+  }
+  if (steps.length) out.push("Every AI step:", ...steps, "");
+  out.push("Every command:", ...globals, ...general, "");
+  if (!o.all) out.push("atticus help --all also lists the commands for Atticus's own quality.");
+  out.push(...tail);
+  return out.join("\n");
+}
+
+export function helpCommand(
+  words: string[],
+  help: string,
+  io: Output,
+  o: { all?: boolean } = {},
+): number {
   if (!words.length) {
-    io.out(help);
+    io.out(groupedHelp(help, o));
     return 0;
   }
   const asked = words.join(" ");

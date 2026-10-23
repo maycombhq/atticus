@@ -105,4 +105,4 @@ Choosing the assistant and the model from the app, branches, and knowledge kept 
 ## Built
 
 - Item 1, all of it.
-- Item 2, in part: unknown flags refused with the nearest one (`packages/cli/src/flags.ts`, checked against the options `main.ts` parses, the questions command's own, `--handoff` and every flag the help names); `atticus help [command]` and `<command> --help` (`help-commands.ts`); the nearest command for a misspelled one. Still to build: grouped help, aliases for one word per thing, the "not a metarepo" check, `next` naming the assistant, and the new `doctor` checks.
+- Item 2, in part: unknown flags refused with the nearest one (`packages/cli/src/flags.ts`, checked against the options `main.ts` parses, the questions command's own, `--handoff` and every flag the help names); `atticus help [command]` and `<command> --help` (`help-commands.ts`); the nearest command for a misspelled one. Grouped help by area, with Atticus's own quality commands under `--all` (`groupedHelp`). Still to build: aliases for one word per thing, the "not a metarepo" check, `next` naming the assistant, and the new `doctor` checks.
