@@ -101,6 +101,19 @@ class CommandFlow(private val project: Project) {
     private fun changes(): List<String> =
         Metarepo.changes(modal("Reading the changes") { cli(Commands.withRoot(listOf("change", "list", "--json"), cwd)) }.stdout).map { it.id }
 
+    /** ADR 0113: a change, picked from those the metarepo has (or typed when it has none). */
+    fun pickChange(title: String, prompt: String): String? = fromList(title, changes(), Copy.NO_CHANGES, prompt)?.trim()?.takeIf { it.isNotEmpty() }
+
+    /** ADR 0113: one of a change's tasks, from its tasks.md. */
+    fun pickTask(change: String): String? {
+        val tasks = metarepo?.let { Lists.tasks(it, change) }.orEmpty()
+        if (tasks.isEmpty()) {
+            Notify.show(project, Copy.noTasks(change), NotificationType.WARNING)
+            return null
+        }
+        return fromPicks(Copy.START_TASK_TITLE, tasks, Copy.noTasks(change), Copy.START_TASK_WHICH_TASK)?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
     /** One value from a list; typed when the list is empty. */
     private fun fromList(title: String, values: List<String>, empty: String, hint: String): String? =
         if (values.isEmpty()) typed(title, "$empty $hint") else pickOrType(title, Copy.PICK_OR_TYPE, values)

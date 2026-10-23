@@ -76,7 +76,7 @@ describe("atticus change", () => {
       await changeNew(root, { title: "X", type: "vulnerability", by: "pat" }, c.io, deps),
     ).toBe(2);
     expect(c.err[0]).toBe(
-      "Unknown change type vulnerability. Use one of: feature, integration, bug-fix, emergency-fix, config-change, tech-debt.",
+      "Unknown change type vulnerability. Use one of: feature, integration, bug-fix, emergency-fix, config-change, tech-debt, small-change.",
     );
 
     c = capture();

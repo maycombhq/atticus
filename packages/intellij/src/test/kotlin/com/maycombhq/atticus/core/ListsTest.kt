@@ -68,4 +68,28 @@ class ListsTest {
         assertEquals(listOf(Pick("s1-refuse-over-limit", "Refuse transfers over the daily limit", "s1-refuse-over-limit")), Lists.stories(root, "add-transfer-limit"))
         assertEquals(emptyList<Pick>(), Lists.stories(root, "no-such-change"))
     }
+
+    @Test
+    fun `reads a change's tasks from its tasks md, each under its repo (ADR 0113)`(@TempDir root: Path) {
+        val f = root.resolve("openspec/changes/return-order-time/tasks.md")
+        Files.createDirectories(f.parent)
+        Files.writeString(
+            f,
+            listOf(
+                "<!-- Generated -->",
+                "# Tasks",
+                "",
+                "## forge-orders",
+                "",
+                "- [ ] 1.1 Change the respond step (story s1-place-order)",
+                "- [x] 1.2 Add a test (story s1-place-order)",
+                "",
+            ).joinToString("\n"),
+        )
+        assertEquals(
+            listOf(Pick("1.1", "Change the respond step", "forge-orders"), Pick("1.2", "Add a test", "forge-orders · done")),
+            Lists.tasks(root, "return-order-time"),
+        )
+        assertEquals(emptyList<Pick>(), Lists.tasks(root, "no-such-change"))
+    }
 }

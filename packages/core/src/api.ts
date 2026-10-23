@@ -764,6 +764,7 @@ export const AttachResult = z.object({
   notes: z.array(z.string()),
 });
 export type ChangeInputT = z.infer<typeof ChangeInput>;
+export type ChangeInputListT = z.infer<typeof ChangeInputList>;
 export type AttachResultT = z.infer<typeof AttachResult>;
 
 export const SaveArtifactRequest = z.strictObject({

@@ -273,6 +273,16 @@ describe("nextSteps (pure)", () => {
       ["atticus task run fix-built 1.1", "/atticus-task fix-built 1.1"],
     ]);
     expect(steps[0]!.why).toMatch(/one step/);
+    // Once its one step is done, a person opens its pull request.
+    const done = nextSteps({
+      ...base,
+      changes: [{ id: "fix-label", state: "plan", tasks: [], fast: true, fastDone: true }],
+    });
+    expect(done[0]).toMatchObject({
+      step: "small-handoff",
+      command: "atticus change handoff fix-label --approve",
+      person: true,
+    });
   });
   it("asks what a placed change needs from the organisation, then has a person raise the open ones (ADR 0101)", () => {
     const find = nextSteps({

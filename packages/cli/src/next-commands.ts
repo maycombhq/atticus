@@ -81,6 +81,8 @@ export interface NextState {
     needs?: { open: number; longest?: string };
     /** ADR 0113: it takes the fast path (its type is small, or its brief says so where allowed). */
     fast?: boolean;
+    /** ADR 0113: its one step is done (stage/small.yaml): the pull request is next. */
+    fastDone?: boolean;
   }[];
   problems: { file: string; message: string }[];
 }
@@ -200,7 +202,18 @@ export async function readNextState(root: string): Promise<NextState> {
           ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
-        ...((await isFast(root, c, types)) ? { fast: true } : {}),
+        ...((await isFast(root, c, types))
+          ? {
+              fast: true,
+              ...(/^state: done$/m.test(
+                await readFile(join(changesDirOf(root), c.id, "stage", "small.yaml"), "utf8").catch(
+                  () => "",
+                ),
+              )
+                ? { fastDone: true }
+                : {}),
+            }
+          : {}),
         ...(needs
           ? {
               needs: {
@@ -302,16 +315,27 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
   const stage = stageOf(c.state);
   // ADR 0113: a small change goes from brief to tasks in one step, before it is built.
   if (c.fast && (stage === "feature" || stage === "architecture" || stage === "stories"))
-    return [
-      {
-        step: "small",
-        command: `atticus change small ${id}`,
-        slash: `/atticus-small ${id}`,
-        where: METAREPO,
-        why: `${id} is a small change: your assistant places it, writes its target flows and words its stories in one step, and Atticus runs every stage's checks and the critic at its gate (ADR 0113). Then a person approves its one pull request.`,
-        change: id,
-      },
-    ];
+    return c.fastDone
+      ? [
+          {
+            step: "small-handoff",
+            command: `atticus change handoff ${id} --approve`,
+            where: METAREPO,
+            why: `${id}'s one step is done and nothing blocks it: a person opens its pull request, and merging it approves the plan (ADR 0113).`,
+            change: id,
+            person: true,
+          },
+        ]
+      : [
+          {
+            step: "small",
+            command: `atticus change small ${id}`,
+            slash: `/atticus-small ${id}`,
+            where: METAREPO,
+            why: `${id} is a small change: your assistant places it, writes its target flows and words its stories in one step, and Atticus runs every stage's checks and the critic at its gate (ADR 0113). Then a person approves its one pull request.`,
+            change: id,
+          },
+        ];
   switch (stage) {
     case "feature":
       return [

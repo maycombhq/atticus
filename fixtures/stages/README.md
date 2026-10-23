@@ -11,4 +11,11 @@ Northwind Pay, and two open changes:
 
 `order-form.figma.json` is a one-screen design export for the Figma entry.
 `expected/requests.md` is the requests file the stories stage writes for the fraud check.
+
+`small/` is the fast path (ADR 0113): `return-order-time/`, a small change (type
+`small-change`) whose order response returns when the order was placed; `answer.yaml`, the one
+answer an assistant gives it; `knowledge.yaml`, a standard the task context finds for its step;
+and `expected/`, the tasks.md it writes and the task context of its task 1.1. The tests copy it
+in themselves, so the stage tests above don't see it.
+
 Everything here is invented.
