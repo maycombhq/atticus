@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { diagramHash } from "./app-panel";
 import type * as Api from "./api-types";
 import type { KnowledgeEntry, NeedEntry } from "./knowledge-data";
+import type { RunEntry } from "./runs-data";
 
 /**
  * What the Atticus sidebar shows (ADR 0093), as plain data: each section's items, what a click
@@ -37,6 +38,8 @@ export type Expand =
   /** A change's needs from the organisation (ADR 0101). */
   | { kind: "needs"; change: string }
   | { kind: "kind"; recordKind: string }
+  /** One model run, opening to its prompt, its answer and the app's screen (ADR 0106). */
+  | { kind: "run"; run: RunEntry }
   | { kind: "evidence"; repo?: string; evidence: Api.Evidence[] };
 
 export interface Item {
@@ -56,6 +59,8 @@ export interface Item {
   open?: Open;
   /** For the view's inline actions (package.json menus). */
   context?: string;
+  /** More words a filter matches (ADR 0105): a change's repos, a question's repo. */
+  words?: string[];
   /** A finding's item carries it, for Act on the finding. */
   finding?: Api.Finding;
   /** A task's item carries its change and id, for Run the task. */
@@ -260,6 +265,7 @@ export function changeItems(cs: Api.ChangeSummary[]): Item[] {
     icon: "git-pull-request",
     expand: { kind: "change", change: c.id },
     context: "atticus.change",
+    words: c.repos ?? [],
   }));
 }
 

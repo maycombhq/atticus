@@ -90,20 +90,44 @@ export function describeEnd(end: StepEnd): string[] {
  * never a dead end. Without a model, that is setting Copilot up (VS Code's own setup signs in, and
  * turns on the Copilot built into VS Code 1.143 and later).
  */
-export function endActions(end: { state: StepEnd["state"] }, o: { copilot: boolean }): string[] {
-  switch (end.state) {
-    case "question":
-      return ["Answer", "Show details"];
-    case "no-model":
-      return o.copilot
-        ? ["Set up Copilot", "Pick a model", "Show details"]
-        : ["Set up Copilot", "Show details"];
-    case "too-long":
-    case "model-error":
-      return ["Pick a model", "Show details"];
-    default:
-      return ["Show details"];
-  }
+export function endActions(
+  end: { state: StepEnd["state"]; files?: StepEnd["files"] },
+  o: { copilot: boolean },
+): string[] {
+  const files = endFiles(end, "").map((f) => f.title);
+  const next = (() => {
+    switch (end.state) {
+      case "question":
+        return ["Answer"];
+      case "no-model":
+        return o.copilot ? ["Set up Copilot", "Pick a model"] : ["Set up Copilot"];
+      case "too-long":
+      case "model-error":
+        return ["Pick a model"];
+      default:
+        return [];
+    }
+  })();
+  return [...next, ...files, "Show details"];
+}
+
+export const OPEN_PROMPT = "Open the prompt";
+export const OPEN_ANSWER = "Open the answer";
+
+/**
+ * The last round's prompt and answer an ending can open (ADR 0106), each with its button's title
+ * and its path under the metarepo; only those the runner found on disk.
+ */
+export function endFiles(
+  end: { files?: StepEnd["files"] },
+  root: string,
+): { title: string; path: string }[] {
+  const at = (rel: string) => (root ? `${root.replace(/[\\/]+$/, "")}/${rel}` : rel);
+  const f = end.files;
+  return [
+    ...(f?.prompt ? [{ title: OPEN_PROMPT, path: at(f.prompt) }] : []),
+    ...(f?.answer ? [{ title: OPEN_ANSWER, path: at(f.answer) }] : []),
+  ];
 }
 
 /** VS Code's own Copilot setup (sign in, turn the built-in Copilot on). */

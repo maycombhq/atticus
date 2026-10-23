@@ -496,6 +496,9 @@ Usage:
   atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]
   atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run]
   atticus needs [--change id] [--all] [--json]  What changes need from the organisation, open ones first, with lead times and who handles each
+  atticus waiting [--group change|kind] [--filter words] [--json]  What waits on you across every change: questions, open needs, manual steps, findings, knowledge to verify
+  atticus runs [--change id] [--limit n] [--json]  The model runs: what Atticus asked a model, each round, and whether it was answered
+  atticus runs show <run> [--json]     One run: its prompt, its answer and the problems handed back to it
   atticus needs done <change> <item>   Record a need as done, e.g. with the CTASK number as its note [--for <target>] [--note <text>]
   atticus needs skip <change> <item> --note <why>  Record a need as not needed, and why [--for <target>]
   atticus needs reopen <change> <item>  Open a need again [--for <target>]
@@ -672,6 +675,7 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       "dry-run": { type: "boolean" },
       json: { type: "boolean" },
       limit: { type: "string" },
+      filter: { type: "string" },
       depth: { type: "string" },
       by: { type: "string" },
       as: { type: "string" },
@@ -863,6 +867,60 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       await import("./needs-commands.js")
     ).needsCli(root, positionals, values, io, who);
     if (handled !== undefined) return handled;
+  }
+  // ADR 0105 and 0106: what waits on a person, and what Atticus asked a model.
+  if (group === "waiting") {
+    // --group repeats for repos discover; waiting takes one.
+    const given = Array.isArray(values.group) ? values.group[0] : values.group;
+    const g = given === undefined ? "change" : String(given);
+    if (g !== "change" && g !== "kind") {
+      io.err(`--group takes change or kind, not ${g}.`);
+      return 2;
+    }
+    const run = async (argv: string[]) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await main(
+        [...argv, "--root", root],
+        { out: (l) => out.push(l), err: (l) => err.push(l) },
+        { quiet: true },
+      );
+      return { code, out: out.join("\n"), err: err.join("\n") };
+    };
+    return (await import("./waiting-commands.js")).waitingCli(
+      {
+        by: g,
+        ...(typeof values.filter === "string" ? { filter: values.filter } : {}),
+        json: values.json === true,
+      },
+      io,
+      run,
+    );
+  }
+  if (group === "runs") {
+    const m = await import("./runs-commands.js");
+    if (command === "show") {
+      const id = positionals[2];
+      if (!id) {
+        io.err("Usage: atticus runs show <run> [--json] (atticus runs lists them)");
+        return 2;
+      }
+      return m.runShowCli(root, id, { json: values.json === true }, io);
+    }
+    if (command !== undefined) {
+      io.err(`runs takes show <run>, or nothing to list them; not ${command}.`);
+      return 2;
+    }
+    const limit = num(values.limit);
+    return m.runsCli(
+      root,
+      {
+        ...(typeof values.change === "string" ? { change: values.change } : {}),
+        ...(limit ? { limit } : {}),
+        json: values.json === true,
+      },
+      io,
+    );
   }
   // ADR 0087: the change lifecycle's stages as loops, and the design bench.
   if (

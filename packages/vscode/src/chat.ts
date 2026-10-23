@@ -9,7 +9,8 @@ import {
 } from "./atticus";
 import type { CommandUi } from "./command-ui";
 import { answersFrom, buildArgv, howToRun, matchCommand } from "./commands";
-import { block, describeEnd } from "./describe";
+import { block, describeEnd, endFiles } from "./describe";
+import type { StepEnd } from "./runner";
 import { stepTitle } from "./words";
 import type { Service } from "./service";
 import type { NextStep, OpenQuestion } from "./types";
@@ -45,6 +46,16 @@ export function showQuestion(stream: vscode.ChatResponseStream, q: OpenQuestion)
     arguments: [q.id],
     title: "In my own words...",
   });
+}
+
+/** Open the prompt and Open the answer: the last round's files, a click away (ADR 0106). */
+export function showFiles(stream: vscode.ChatResponseStream, end: StepEnd, root: string) {
+  for (const f of endFiles(end, root))
+    stream.button({
+      command: "atticus.openItem",
+      arguments: [{ kind: "file", path: f.path }],
+      title: f.title,
+    });
 }
 
 /** The chat command that runs a next step in the chat, when there is one. */
@@ -174,6 +185,7 @@ async function runTyped(
     stream.markdown(`\n**${lines[0]}**`);
     if (end.state === "question") for (const q of end.questions) showQuestion(stream, q);
     else if (lines.length > 1) stream.markdown(block(lines.slice(1)));
+    showFiles(stream, end, root);
     return;
   }
   if (how.mode === "terminal") {
@@ -290,9 +302,11 @@ export function chatHandler(svc: Service, commands?: () => CommandUi): vscode.Ch
     stream.markdown(`\n**${lines[0]}**`);
     if (end.state === "question") {
       for (const q of end.questions) showQuestion(stream, q);
+      showFiles(stream, end, root);
       return;
     }
     if (lines.length > 1) stream.markdown(block(lines.slice(1)));
+    showFiles(stream, end, root);
     if (end.state === "done")
       stream.button({
         command: "workbench.action.chat.open",

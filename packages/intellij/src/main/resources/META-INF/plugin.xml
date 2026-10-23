@@ -39,6 +39,16 @@
                 icon="AllIcons.Actions.Forward">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
+        <action id="Atticus.WaitingOnYou" class="com.maycombhq.atticus.ide.WaitingOnYouAction"
+                text="Atticus: Waiting on You" description="What waits on you across every change, grouped by change, in the Atticus app"
+                icon="AllIcons.General.TodoDefault">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+        <action id="Atticus.ModelRuns" class="com.maycombhq.atticus.ide.ModelRunsAction"
+                text="Atticus: Model Runs" description="What Atticus asked a model, what it answered, and what the checks handed back"
+                icon="AllIcons.Actions.ListFiles">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
         <action id="Atticus.Refresh" class="com.maycombhq.atticus.ide.RefreshAction"
                 text="Atticus: Refresh" description="Show the app again, or check for atticus and the metarepo again"
                 icon="AllIcons.Actions.Refresh"/>

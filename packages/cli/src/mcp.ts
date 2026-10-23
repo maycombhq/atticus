@@ -17,6 +17,8 @@ interface Arg {
   description: string;
   type?: "string" | "boolean";
   required?: boolean;
+  /** The only values it takes. */
+  choices?: string[];
 }
 
 export interface McpTool {
@@ -42,6 +44,47 @@ export const MCP_TOOLS: McpTool[] = [
       { name: "all", description: "Every open step, not only the next one.", type: "boolean" },
     ],
     argv: (a) => ["next", ...(a.all ? ["--all"] : []), "--json"],
+  },
+  {
+    name: "waiting_on_you",
+    description:
+      "What waits on a person across every change: open needs, open findings and manual steps under each change (blocking first), then questions by repo, steps with no change and knowledge no one has verified (atticus waiting).",
+    args: [
+      { name: "group", description: "change (the default) or kind.", choices: ["change", "kind"] },
+      s(
+        "filter",
+        "Words to match in a title, id, change or repo, for example forge-ledger.",
+        false,
+      ),
+    ],
+    argv: (a) => [
+      "waiting",
+      "--group",
+      String(a.group ?? "change"),
+      ...(a.filter ? ["--filter", String(a.filter)] : []),
+      "--json",
+    ],
+  },
+  {
+    name: "open_needs",
+    description:
+      "The open needs: requests and processes to raise, standards to follow, teams and vendors to involve, with lead times and who handles each; every change's, or one change's (atticus needs).",
+    args: [s("change", "Only this change's needs.", false)],
+    argv: (a) => ["needs", ...(a.change ? ["--change", String(a.change)] : []), "--json"],
+  },
+  {
+    name: "model_runs",
+    description:
+      "What Atticus asked a model: every run, newest first, with its step, round, state, whether it was answered and how many problems the checks handed back (atticus runs).",
+    args: [s("change", "Only the runs of this change or step, for example knowledge-scan.", false)],
+    argv: (a) => ["runs", ...(a.change ? ["--change", String(a.change)] : []), "--json"],
+  },
+  {
+    name: "model_run",
+    description:
+      "One model run: its prompt, its answer, the problems each earlier round handed back with the answer that failed them, and every round of its step (atticus runs show).",
+    args: [s("run", "The run's id, as model_runs lists it.")],
+    argv: (a) => ["runs", "show", String(a.run), "--json"],
   },
   {
     name: "catalog_query",
@@ -174,7 +217,14 @@ function schema(t: McpTool) {
   return {
     type: "object",
     properties: Object.fromEntries(
-      t.args.map((a) => [a.name, { type: a.type ?? "string", description: a.description }]),
+      t.args.map((a) => [
+        a.name,
+        {
+          type: a.type ?? "string",
+          description: a.description,
+          ...(a.choices ? { enum: a.choices } : {}),
+        },
+      ]),
     ),
     required: t.args
       .filter((a) => a.required && (a.type ?? "string") === "string")
@@ -237,6 +287,8 @@ export async function handleMcp(
           continue;
         }
         const value = String(v).trim();
+        if (arg.choices && !arg.choices.includes(value))
+          return ok(text(`${arg.name} is ${arg.choices.join(" or ")}.`, true));
         // A value is never an option: "--force" as a change id must not reach the command.
         if (value.startsWith("-"))
           return ok(text(`${arg.name} can't start with "-": it would be read as an option.`, true));

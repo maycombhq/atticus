@@ -35,7 +35,7 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  *   the last scan, searching the wikis, saved searches), a change's needs and the org pack
  *   drafted from the wikis.
  */
-export const API_VERSION = "2.7.0";
+export const API_VERSION = "2.8.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -261,7 +261,7 @@ export const Coverage = z.object({
 export const JobState = z.enum(["queued", "running", "done", "failed", "cancelled"]);
 export const Job = z.object({
   id: z.string(),
-  kind: z.enum(["scan", "sync", "reconcile", "index", "intake"]),
+  kind: z.enum(["scan", "sync", "reconcile", "index", "intake", "step"]),
   state: JobState,
   progress: z.object({ done: z.number().int(), total: z.number().int(), message: z.string() }),
   startedAt: z.string(),
@@ -346,6 +346,54 @@ export const RunView = RunSummary.extend({
   promptPath: z.string().optional(),
   workspaceFile: z.string().optional(),
 });
+
+/** ADR 0106: one run in the list of model runs. */
+export const RunListItem = RunView.extend({
+  /** The round of its step, carried across hand-offs (ADR 0103). */
+  attempt: z.number().int().min(1),
+  /** Whether an answer is there to read. */
+  answered: z.boolean(),
+  /** How many problems the checks handed back to this round. */
+  handedBack: z.number().int().min(0),
+  /** The prompt's size, as the context pack counted it. */
+  promptTokens: z.number().int().min(0).optional(),
+});
+export type RunListItem = z.infer<typeof RunListItem>;
+/** ADR 0106: the AI step to start on the server: its command words and arguments. */
+export const StartStepRequest = z.object({ args: z.array(z.string().min(1)).min(2) });
+export type StartStepRequest = z.infer<typeof StartStepRequest>;
+
+export const RunList = z.object({
+  runs: z.array(RunListItem),
+  /** The model this server can run a step with (runtime.yaml adapters.model), or null: then the app offers the step to copy, or Copilot in a VS Code panel. */
+  serverModel: z.string().nullable().optional(),
+});
+export type RunList = z.infer<typeof RunList>;
+
+/** ADR 0106: what one run was asked and answered, and what the checks handed back to it. */
+export const RunTranscript = z.object({
+  run: RunListItem,
+  prompt: z.string(),
+  /** The answer, when there is one; text, never markup. */
+  answer: z.string().optional(),
+  handedBack: z.array(
+    z.object({
+      attempt: z.number().int().min(1),
+      problems: z.array(z.string()),
+      previousAnswer: z.string().optional(),
+    }),
+  ),
+  /** Every round of the same step, oldest first. */
+  rounds: z.array(
+    z.object({
+      runId: z.string(),
+      attempt: z.number().int().min(1),
+      state: z.string(),
+      startedAt: z.string(),
+    }),
+  ),
+});
+export type RunTranscript = z.infer<typeof RunTranscript>;
 
 export const RepoView = ManifestRepo.extend({
   platform: RecordId,
@@ -1818,6 +1866,43 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [404],
     },
   },
+  "/api/runs": {
+    get: {
+      id: "listModelRuns",
+      summary:
+        "Every model run, newest first: its step, round, state and whether it was answered (ADR 0106)",
+      tag: "ai",
+      params: [
+        q("change", str, "Only the runs of this change or step"),
+        q("limit", { type: "integer", minimum: 1 }, "At most this many (default 200)"),
+      ],
+      ok: { status: 200, schema: "RunList", description: "OK" },
+      errors: [400],
+    },
+    post: {
+      id: "startStep",
+      summary:
+        "Start an AI step on the server with runtime.yaml's model, as a job (ADR 0106); 409 when no model is configured",
+      tag: "ai",
+      body: StartStepRequest,
+      ok: {
+        status: 202,
+        schema: { type: "object", required: ["jobId", "model"] },
+        description: "Started",
+      },
+      errors: [400, 409],
+    },
+  },
+  "/api/runs/{runId}/transcript": {
+    get: {
+      id: "getRunTranscript",
+      summary: "What a run was asked and answered, and the problems handed back to it (ADR 0106)",
+      tag: "ai",
+      params: [p("runId")],
+      ok: { status: 200, schema: "RunTranscript", description: "OK" },
+      errors: [404],
+    },
+  },
   "/api/runs/{runId}/done": {
     post: {
       id: "markRunDone",
@@ -2418,6 +2503,8 @@ export function openApiDocument(): Record<string, unknown> {
     ArtifactContent,
     Task,
     RunView,
+    RunList,
+    RunTranscript,
     RepoView,
     OnboardingView,
     SpecList,

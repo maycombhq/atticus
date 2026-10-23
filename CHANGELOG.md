@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Model runs, and what waits, in every surface
+
+- Model runs (ADR 0106): what Atticus asked a model, what it answered and what the checks handed back, kept under `.runs/` and now shown. `atticus runs [--change id] [--json]` and `atticus runs show <run> [--json]`; the local API's `GET /api/runs` (with the server's model, if any) and `GET /api/runs/{runId}/transcript`; and `POST /api/runs`, which starts an AI step on the server with `runtime.yaml`'s model, as a job, where one is configured (only the AI steps; never an argument that starts with `-`). API 2.8.0.
+- `atticus waiting [--group change|kind] [--filter words] [--json]` (ADR 0105): what waits on a person across every change, grouped by change (blocking first) or by kind, with a filter.
+- The Claude Code plugin's MCP server gains `waiting_on_you`, `open_needs`, `model_runs` and `model_run`; a session in a metarepo starts with how much waits on you.
+- The IntelliJ plugin: **Waiting on You** and **Model Runs** actions (the toolbar and the Tools menu) open those app screens in its tool window, and a hand-off run in the console offers **Open the prompt**.
+- The VS Code extension: Waiting on you grouped by change (or by kind), a filter on Waiting on you, Changes, Knowledge and Model runs, a Model runs section, Open the prompt and Open the answer on a step's ending, and Run with Copilot for the app in its tab; see its changelog.
+
 ### One arrangement in the app and the plugin
 
 - The app's menu follows a working day (ADR 0105): Dashboard, Waiting on you (was Command center), Changes, the phase screens, Knowledge. More is regrouped into Code, Knowledge, Org pack, Define, Design, Plan, Build, Release and Run. Questions is a section of Waiting on you and stays at `#/questions`. No route is removed or renamed.

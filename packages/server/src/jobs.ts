@@ -4,7 +4,7 @@
  * is cooperative: the work checks `cancelled` between steps.
  */
 
-export type JobKind = "scan" | "sync" | "reconcile" | "index" | "intake";
+export type JobKind = "scan" | "sync" | "reconcile" | "index" | "intake" | "step";
 export type JobState = "queued" | "running" | "done" | "failed" | "cancelled";
 
 export interface Job {

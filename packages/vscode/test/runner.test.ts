@@ -126,6 +126,11 @@ describe("the step runner", { timeout: 120_000 }, () => {
     expect(log.some((l) => /^> atticus handoff done run-/.test(l))).toBe(true);
     expect(log.filter((l) => l === "exit 0")).toHaveLength(3);
     expect(describeEnd(end)[0]).toMatch(/^The step is done/);
+    // ADR 0106: the last round's prompt and answer, for Open the prompt and Open the answer.
+    expect(end.files?.runId).toMatch(/^run-/);
+    expect(end.files?.prompt).toMatch(/^\.runs\/survey-forge-notes\/run-[^/]+\/prompt\.md$/);
+    expect(existsSync(join(root, end.files!.prompt!))).toBe(true);
+    expect(await readFile(join(root, end.files!.answer!), "utf8")).toBe(SETTINGS);
   });
 
   it("sends the step's new prompt when Atticus hands the answer back, and passes on the second", async () => {
@@ -137,6 +142,9 @@ describe("the step runner", { timeout: 120_000 }, () => {
     expect(model.prompts).toHaveLength(2);
     expect(model.prompts[1]![1]).toMatch(/failed these checks/);
     if (end.state === "done") expect(end.rounds).toBe(2);
+    // The files are the second round's: its prompt holds what the checks handed back.
+    expect(await readFile(join(root, end.files!.prompt!), "utf8")).toMatch(/failed these checks/);
+    expect(await readFile(join(root, end.files!.answer!), "utf8")).toBe(SETTINGS);
   });
 
   it("stops at a question for a person, and says what it is", async () => {
@@ -209,6 +217,16 @@ describe("the step runner", { timeout: 120_000 }, () => {
     const { d } = deps(root, undefined);
     const end = await runStep(SURVEY, d, cancelSource());
     expect(end.state).toBe("no-model");
+    // The prompt is written; no answer is, so there is none to open.
+    expect(end.files?.prompt).toMatch(/prompt\.md$/);
+    expect(end.files?.answer).toBeUndefined();
+  });
+
+  it("carries no files when the step never handed a prompt off", async () => {
+    const root = await metarepo();
+    const { d } = deps(root, new FakeModel([]));
+    const end = await runStep(["scan", "survey", "no-such-repo"], d, cancelSource());
+    expect(end.files).toBeUndefined();
   });
 });
 

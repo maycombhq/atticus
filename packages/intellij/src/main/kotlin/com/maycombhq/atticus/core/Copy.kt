@@ -48,6 +48,11 @@ object Copy {
     const val NO_CHANGES = "No changes yet: start one with change new."
     const val NO_QUESTIONS = "No question is waiting for an answer."
     const val PICK_OR_TYPE = "Pick one, or type it."
+    const val OPEN_PROMPT = "Open the prompt"
+    const val MODEL_RUNS = "Model runs"
+
+    fun promptWritten(path: String) =
+        "Atticus wrote the step's prompt to $path. Answer it in your assistant (its slash command in Copilot Chat does it for you), then finish the step as the console says."
     const val NO_KNOWLEDGE = "No knowledge items yet: add a wiki, sync it, and read it with /atticus-knowledge in Copilot Chat."
     const val NO_NEEDS = "No needs yet: find them with /atticus-needs <change> in Copilot Chat."
     const val NO_FEATURES = "The catalog has no features yet: run atticus scan."

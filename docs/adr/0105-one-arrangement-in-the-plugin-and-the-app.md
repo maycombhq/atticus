@@ -50,3 +50,12 @@ No route is removed or renamed; only where each sits in the menu, and two labels
 - A person opens either surface and reads, top down, what to do next, what waits on them across every change, then their changes.
 - What waits on a person is in one place in both surfaces, not inside each change.
 - The More menu says which screens are about the code, the wikis and the org pack.
+
+## Addendum: grouped by change, and a filter where lists grow (2026-10-23)
+
+With many changes, a list by kind and an unfiltered list both get too long to use.
+
+- **Grouped by change by default.** Waiting on you lists each change with its open needs, open findings and manual steps under it, in that order, changes with something blocking first. What belongs to no change follows in its own group: questions (by repo), manual steps with no change, and knowledge to verify. In the VS Code extension a title bar button switches between By change and By kind, and the choice is remembered for the workspace. In the app, Waiting on you's list of what needs a person is grouped the same way.
+- **A filter wherever a list grows.** One box, the same words in both surfaces ("Filter: words to match, for example forge-ledger"), matching an item's title, id, change and repo, case-insensitively:
+  - the extension: Waiting on you, Changes and Knowledge, through a Filter… title bar button; the view's description shows the filter, a Clear filter button removes it, and an empty result says what was filtered and offers to clear it;
+  - the app: Questions (with a repo picker beside it), Manual steps, and Waiting on you's list, beside the filters the cross-change views and Knowledge items already have.

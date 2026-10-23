@@ -49,6 +49,24 @@ class AtticusApp(private val project: Project) : Disposable {
     private var handler: KillableProcessHandler? = null
     private val listeners = CopyOnWriteArrayList<(AppState) -> Unit>()
     private val reloads = CopyOnWriteArrayList<() -> Unit>()
+    private val opens = CopyOnWriteArrayList<(String) -> Unit>()
+
+    /** The app screen to show (`#/home`, `#/runs`): the tool window opens it, now or once the app runs. */
+    @Volatile
+    var screen: String? = null
+        private set
+
+    fun listenOpen(parent: Disposable, onOpen: (String) -> Unit) {
+        opens += onOpen
+        Disposer.register(parent) { opens -= onOpen }
+    }
+
+    /** Show a screen of the app in the tool window (ADR 0105, 0106), starting the app if it isn't running. */
+    fun open(hash: String) {
+        screen = hash
+        if (state !is AppState.Running && state != AppState.Starting) refresh()
+        for (f in opens) ApplicationManager.getApplication().invokeLater({ f(hash) }, project.disposed)
+    }
 
     fun listen(parent: Disposable, onState: (AppState) -> Unit, onReload: () -> Unit) {
         listeners += onState

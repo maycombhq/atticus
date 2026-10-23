@@ -1,0 +1,79 @@
+import type { Output } from "./commands.js";
+import { listRuns, runTranscript } from "./runs-view.js";
+
+/**
+ * `atticus runs [--change id] [--limit n] [--json]` and `atticus runs show <run> [--json]`
+ * (ADR 0106): what Atticus asked a model and what came back, from .runs/, the same as the app's
+ * Model runs screen. Read-only.
+ */
+
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const when = (iso: string) => iso.replace("T", " ").slice(0, 16);
+
+export async function runsCli(
+  root: string,
+  o: { change?: string; limit?: number; json?: boolean },
+  io: Output,
+): Promise<number> {
+  const runs = await listRuns(root, {
+    ...(o.change ? { change: o.change } : {}),
+    ...(o.limit ? { limit: o.limit } : {}),
+  });
+  if (o.json) {
+    io.out(JSON.stringify({ runs }, null, 2));
+    return 0;
+  }
+  if (!runs.length) {
+    io.out(
+      o.change ? `No model runs for ${o.change} yet.` : "No model runs yet: an AI step makes one.",
+    );
+    return 0;
+  }
+  for (const r of runs)
+    io.out(
+      [
+        r.runId,
+        r.change,
+        r.agent,
+        `round ${r.attempt}`,
+        r.state,
+        r.answered ? "answered" : "no answer yet",
+        ...(r.handedBack ? [`${plural(r.handedBack, "problem")} handed back`] : []),
+        when(r.startedAt),
+      ].join("  "),
+    );
+  return 0;
+}
+
+export async function runShowCli(
+  root: string,
+  runId: string,
+  o: { json?: boolean },
+  io: Output,
+): Promise<number> {
+  const t = await runTranscript(root, runId);
+  if (!t) {
+    io.err(`There is no run ${runId}. atticus runs lists them.`);
+    return 2;
+  }
+  if (o.json) {
+    io.out(JSON.stringify(t, null, 2));
+    return 0;
+  }
+  const r = t.run;
+  io.out(`${r.runId}: ${r.change}, ${r.agent}, round ${r.attempt}, ${r.state} (${r.runtime})`);
+  io.out(`Prompt: ${r.promptPath}${r.promptTokens ? ` (${r.promptTokens} tokens)` : ""}`);
+  for (const h of t.handedBack) {
+    io.out(`Handed back after round ${h.attempt}:`);
+    for (const p of h.problems) io.out(`  - ${p}`);
+  }
+  if (t.answer === undefined) io.out("Answer: none yet.");
+  else {
+    io.out("Answer:");
+    for (const l of t.answer.trimEnd().split("\n")) io.out(`  ${l}`);
+  }
+  io.out(
+    `Rounds of this step: ${t.rounds.map((x) => `${x.runId} (round ${x.attempt}, ${x.state})`).join(", ")}`,
+  );
+  return 0;
+}

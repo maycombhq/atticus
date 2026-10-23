@@ -76,4 +76,13 @@ class MetarepoTest {
         // Only this machine: an address elsewhere is not shown.
         assertNull(Metarepo.appUrl("Atticus is running at http://10.0.0.5:8080"))
     }
+
+    @Test
+    fun `an app screen's address, from the address the app printed`() {
+        assertEquals("http://127.0.0.1:5123/#/home", Metarepo.screenUrl("http://127.0.0.1:5123", "#/home"))
+        assertEquals("http://127.0.0.1:5123/#/runs?run=run-1-0001", Metarepo.screenUrl("http://127.0.0.1:5123/", "#/runs?run=run-1-0001"))
+        assertEquals("http://127.0.0.1:5123", Metarepo.screenUrl("http://127.0.0.1:5123", null))
+        // Only a screen of the app: anything else opens the app as it is.
+        assertEquals("http://127.0.0.1:5123", Metarepo.screenUrl("http://127.0.0.1:5123", "javascript:alert(1)"))
+    }
 }

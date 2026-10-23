@@ -184,4 +184,11 @@ class CommandsTest {
         assertEquals(listOf("ui", "--port", "0", "--root", "C:/forge-meta"), Commands.uiArgs("C:/forge-meta", old, 4242))
         assertEquals(listOf("ui", "--port", "0", "--root", "C:/forge-meta"), Commands.uiArgs("C:/forge-meta", null, 4242))
     }
+
+    @Test
+    fun `the prompt file a hand-off printed, to open after it`() {
+        val out = "Prompt: .runs/knowledge-scan/run-20261023034002-0001/prompt.md\nResult file: .runs/knowledge-scan/run-20261023034002-0001/knowledge-items.yaml\n"
+        assertEquals(".runs/knowledge-scan/run-20261023034002-0001/prompt.md", Commands.promptPathFrom(out))
+        assertNull(Commands.promptPathFrom("Scanned 7 repos."))
+    }
 }

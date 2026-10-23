@@ -55,6 +55,12 @@ object Metarepo {
         return Files.list(profiles).use { s -> s.filter { Files.isDirectory(it) }.map { it.fileName.toString() }.sorted().toList() }
     }
 
+    /** A screen of the app (`#/home`, `#/runs?run=…`) at the address it printed; the app as it is for anything else. */
+    fun screenUrl(base: String, screen: String?): String {
+        val b = base.trimEnd('/')
+        return if (screen != null && Regex("^#/[\\w/?=&.%-]*$").matches(screen)) "$b/$screen" else b
+    }
+
     /** The address `atticus ui` prints once it is ready; only an address on this machine. */
     fun appUrl(output: String): String? = Regex("Atticus is running at (http://127\\.0\\.0\\.1:\\d+)").find(output)?.groupValues?.get(1)
 }

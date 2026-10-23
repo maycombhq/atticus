@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { copilotSetup, describeEnd, endActions } from "../src/describe";
+import { copilotSetup, describeEnd, endActions, endFiles } from "../src/describe";
 import type { StepEnd } from "../src/runner";
 
 /** What a person can do from the notice a step ends with, so no ending is a dead end. */
@@ -35,6 +35,74 @@ describe("the buttons on a step's ending", () => {
   it("offers to answer when the step stopped for a question", () => {
     expect(endActions({ state: "question" }, { copilot: true })).toEqual([
       "Answer",
+      "Show details",
+    ]);
+  });
+});
+
+describe("a step's prompt and answer, one click from its ending (ADR 0106)", () => {
+  const done = (files?: StepEnd["files"]): StepEnd => ({
+    state: "done",
+    rounds: 1,
+    exitCode: 0,
+    messages: [],
+    errors: [],
+    questions: [],
+    ...(files ? { files } : {}),
+  });
+  const both = {
+    runId: "run-20261023053215-0001",
+    prompt: ".runs/survey-forge-ledger/run-20261023053215-0001/prompt.md",
+    answer: ".runs/survey-forge-ledger/run-20261023053215-0001/scan-settings.yaml",
+  };
+
+  it("opens the last round's prompt and answer when both are there", () => {
+    expect(endActions(done(both), { copilot: true })).toEqual([
+      "Open the prompt",
+      "Open the answer",
+      "Show details",
+    ]);
+    expect(endFiles(done(both), "/meta")).toEqual([
+      {
+        title: "Open the prompt",
+        path: "/meta/.runs/survey-forge-ledger/run-20261023053215-0001/prompt.md",
+      },
+      {
+        title: "Open the answer",
+        path: "/meta/.runs/survey-forge-ledger/run-20261023053215-0001/scan-settings.yaml",
+      },
+    ]);
+  });
+
+  it("offers only the prompt when no answer was written", () => {
+    const { answer: _a, ...prompt } = both;
+    const end: StepEnd = {
+      state: "no-model",
+      runId: both.runId,
+      promptFile: both.prompt,
+      resultFile: both.answer,
+      resumeCommand: "atticus scan survey forge-ledger --resume run-20261023053215-0001",
+      files: prompt,
+    };
+    expect(endActions(end, { copilot: false })).toEqual([
+      "Set up Copilot",
+      "Open the prompt",
+      "Show details",
+    ]);
+    expect(endFiles(end, "/meta").map((f) => f.title)).toEqual(["Open the prompt"]);
+  });
+
+  it("offers no file when the step never handed a prompt off", () => {
+    expect(endActions(done(), { copilot: true })).toEqual(["Show details"]);
+    expect(endFiles(done(), "/meta")).toEqual([]);
+  });
+
+  it("keeps the question's Answer first", () => {
+    const q: StepEnd = { ...(done(both) as object), state: "question" } as StepEnd;
+    expect(endActions(q, { copilot: true })).toEqual([
+      "Answer",
+      "Open the prompt",
+      "Open the answer",
       "Show details",
     ]);
   });

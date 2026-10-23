@@ -223,6 +223,10 @@ describe("the Changes section", () => {
     ]);
   });
 
+  it("gives a filter each change's repos to match (ADR 0105)", () => {
+    expect(changeItems([{ ...change, repos: ["forge-notes"] }])[0]!.words).toEqual(["forge-notes"]);
+  });
+
   it("lists the change's files with their state, then its findings", () => {
     const items = artifactItems(change, paths);
     expect(items.map((i) => [i.label, i.description, i.icon])).toEqual([

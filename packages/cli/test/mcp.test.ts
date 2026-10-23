@@ -85,6 +85,34 @@ describe("atticus mcp (ADR 0104)", () => {
     expect((r as { result: { isError?: boolean } }).result.isError).toBeUndefined();
   });
 
+  it("reads what waits, the open needs and the model runs through their commands (ADR 0106)", async () => {
+    const calls: string[][] = [];
+    const call = (name: string, args: Record<string, unknown>) =>
+      handleMcp(
+        { jsonrpc: "2.0", id: 10, method: "tools/call", params: { name, arguments: args } },
+        fake(calls),
+        "1",
+      );
+    await call("waiting_on_you", {});
+    await call("waiting_on_you", { group: "kind", filter: "northwind pay" });
+    await call("open_needs", {});
+    await call("open_needs", { change: "add-transfer-limit" });
+    await call("model_runs", { change: "knowledge-scan" });
+    await call("model_run", { run: "run-20261023034002-0001" });
+    expect(calls).toEqual([
+      ["waiting", "--group", "change", "--json"],
+      ["waiting", "--group", "kind", "--filter", "northwind pay", "--json"],
+      ["needs", "--json"],
+      ["needs", "--change", "add-transfer-limit", "--json"],
+      ["runs", "--change", "knowledge-scan", "--json"],
+      ["runs", "show", "run-20261023034002-0001", "--json"],
+    ]);
+    const bad = await call("waiting_on_you", { group: "repo" });
+    expect(bad).toMatchObject({
+      result: { isError: true, content: [{ text: "group is change or kind." }] },
+    });
+  });
+
   it("refuses a value that would be read as an option, and a tool it hasn't", async () => {
     const calls: string[][] = [];
     const bad = await handleMcp(

@@ -148,6 +148,9 @@ object Commands {
         return if (ui?.flags?.any { it.name == "--parent" } == true) base + listOf("--parent", idePid.toString()) else base
     }
 
+    /** The prompt file a hand-off printed ("Prompt: <path>"), to open after it. */
+    fun promptPathFrom(out: String): String? = Regex("(?m)^Prompt: (\\S+)").find(out)?.groupValues?.get(1)
+
     /** The AI step's deterministic half (`--handoff`): it writes the prompt for a model run elsewhere. */
     fun handoff(argv: List<String>): List<String> = if ("--handoff" in argv) argv else argv + "--handoff"
 

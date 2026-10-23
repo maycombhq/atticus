@@ -15,8 +15,9 @@ import {
 import { answerApp, bundledHtml } from "./app-bundle";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { chatHandler } from "./chat";
-import { CommandUi, SHOWN_SCHEME, shownDocs } from "./command-ui";
+import { CommandUi, SHOWN_SCHEME, showReadOnly, shownDocs } from "./command-ui";
 import { FlowLenses } from "./codelens";
+import { FILTER_PLACEHOLDER, FILTER_PROMPT, filterDescription } from "./filter";
 import { urlsOf } from "./knowledge-data";
 import { KnowledgeUi } from "./knowledge-ui";
 import type { NextStep, OpenQuestion } from "./types";
@@ -24,13 +25,15 @@ import { SectionTree, type Section } from "./sidebar";
 import { findingActions, flowHash, stepOf, type Item, type Open } from "./sidebar-data";
 import { setupAction } from "./guided";
 import { commandText } from "./cli";
-import { copilotSetup, describeEnd, endActions } from "./describe";
+import { copilotSetup, describeEnd, endActions, endFiles } from "./describe";
 import { aiProgressTitle, runProgressTitle } from "./feedback";
 import { pickLoading } from "./pick";
 import { statusText, stepTitle } from "./words";
 import type { StepEnd } from "./runner";
+import { checkRunStep, runEndMessage, runProgressMessage, runRefusedMessage } from "./run-step";
 import { Service } from "./service";
 import { AtticusView, WaitingView } from "./view";
+import type { WaitingGroup } from "./waiting-data";
 
 /**
  * The Atticus extension (ADR 0090, plan 4.8): a thin runner of Atticus's AI steps with
@@ -65,6 +68,8 @@ export interface AtticusHandles {
   service: Service;
   status: vscode.StatusBarItem;
   commands: CommandUi;
+  /** A run-step message from the app's panel (ADR 0106), its replies posted to `post`. */
+  runFromApp: (m: unknown, post: (reply: object) => void) => Promise<void>;
 }
 
 export function activate(context: vscode.ExtensionContext): AtticusHandles {
@@ -81,16 +86,28 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
     view,
     waiting,
     vscode.window.registerTreeDataProvider("atticus.view", view),
-    vscode.window.registerTreeDataProvider("atticus.questions", waiting),
   );
-  // The sections that read the app's API (ADR 0093), in the sidebar's order (ADR 0105).
-  const SECTIONS: Section[] = ["changes", "knowledge", "repos", "catalog"];
+  // Waiting on you, Changes and Knowledge are filtered, and say so in their description (ADR 0105).
+  const treeViews: Record<string, vscode.TreeView<unknown>> = {};
+  const waitingView = vscode.window.createTreeView("atticus.questions", {
+    treeDataProvider: waiting,
+  });
+  treeViews.questions = waitingView as vscode.TreeView<unknown>;
+  context.subscriptions.push(waitingView);
+  // The sections that read the app's API (ADR 0093), in the sidebar's order (ADR 0105), and the
+  // model runs at the bottom (ADR 0106), read from the command line.
+  const SECTIONS: Section[] = ["changes", "knowledge", "repos", "catalog", "runs"];
   const sections = SECTIONS.map((name) => {
     const tree = new SectionTree(svc, name);
-    context.subscriptions.push(
-      tree,
-      vscode.window.registerTreeDataProvider(`atticus.${name}`, tree),
-    );
+    if (name === "changes" || name === "knowledge" || name === "runs") {
+      const tv = vscode.window.createTreeView(`atticus.${name}`, { treeDataProvider: tree });
+      treeViews[name] = tv as vscode.TreeView<unknown>;
+      context.subscriptions.push(tree, tv);
+    } else
+      context.subscriptions.push(
+        tree,
+        vscode.window.registerTreeDataProvider(`atticus.${name}`, tree),
+      );
     return tree;
   });
   const lenses = new FlowLenses(svc);
@@ -183,6 +200,8 @@ ${view.next.why}`
   /** Show how a step ended: the first line in a notification, all of it in the output. */
   const showEnd = async (end: StepEnd) => {
     const lines = describeEnd(end);
+    // ADR 0106: the last round's prompt and answer, a click away.
+    const files = endFiles(end, svc.root ?? "");
     for (const l of lines) svc.log.appendLine(l);
     const actions = endActions(end, {
       copilot: !!vscode.extensions.getExtension("GitHub.copilot-chat"),
@@ -214,12 +233,17 @@ ${view.next.why}`
     else if (pick === "Pick a model")
       await vscode.commands.executeCommand("workbench.action.openSettings", "atticus.model");
     else if (pick === "Show details") svc.log.show(true);
+    else {
+      const f = files.find((x) => x.title === pick);
+      if (f)
+        await vscode.commands.executeCommand("atticus.openItem", { kind: "file", path: f.path });
+    }
   };
 
   const runAi = async (
     args: string[],
     spec?: string,
-    o: { title?: string; quiet?: boolean } = {},
+    o: { title?: string; quiet?: boolean; progress?: (line: string) => void } = {},
   ) => {
     const root = needRoot();
     if (!root) return;
@@ -234,7 +258,10 @@ ${view.next.why}`
         return svc.run(
           root,
           { args, ...(spec ? { spec } : {}) },
-          (l) => p.report({ message: l }),
+          (l) => {
+            p.report({ message: l });
+            o.progress?.(l);
+          },
           token,
         );
       },
@@ -269,6 +296,62 @@ ${view.next.why}`
   };
 
   reg("atticus.refresh", refreshAll);
+
+  // ADR 0105 addendum: Waiting on you by change (the default) or by kind, remembered for the
+  // workspace; the title bar shows the button for the other.
+  const GROUP_KEY = "atticus.waitingGroup";
+  const setGroup = (g: WaitingGroup) => {
+    waiting.setGroup(g);
+    void context.workspaceState.update(GROUP_KEY, g);
+    void vscode.commands.executeCommand("setContext", GROUP_KEY, g);
+  };
+  setGroup(context.workspaceState.get<WaitingGroup>(GROUP_KEY) === "kind" ? "kind" : "change");
+  reg("atticus.waitingByKind", () => setGroup("kind"));
+  reg("atticus.waitingByChange", () => setGroup("change"));
+
+  // A filter on Waiting on you, Changes and Knowledge, each its own for the session: the view's
+  // description says it, and Clear filter (shown while one is on) removes it.
+  const filtered: Record<string, { setFilter: (w: string) => void; filter: string }> = {
+    questions: waiting,
+    changes: sections[SECTIONS.indexOf("changes")]!,
+    knowledge: sections[SECTIONS.indexOf("knowledge")]!,
+    runs: sections[SECTIONS.indexOf("runs")]!,
+  };
+  const NAMES: Record<string, string> = {
+    questions: "Waiting on you",
+    changes: "Changes",
+    knowledge: "Knowledge",
+    runs: "Model runs",
+  };
+  const setFilter = (view: string, words: string) => {
+    const w = words.trim();
+    filtered[view]!.setFilter(w);
+    const tv = treeViews[view];
+    if (tv) tv.description = filterDescription(w);
+    void vscode.commands.executeCommand("setContext", `atticus.filtered.${view}`, !!w);
+  };
+  for (const [command, view] of [
+    ["atticus.filterWaiting", "questions"],
+    ["atticus.filterChanges", "changes"],
+    ["atticus.filterKnowledge", "knowledge"],
+    ["atticus.filterRuns", "runs"],
+  ] as const)
+    reg(command, async () => {
+      const words = await vscode.window.showInputBox({
+        title: `Filter ${NAMES[view]}`,
+        placeHolder: FILTER_PLACEHOLDER,
+        prompt: FILTER_PROMPT,
+        value: filtered[view]!.filter,
+      });
+      if (words !== undefined) setFilter(view, words);
+    });
+  for (const [command, view] of [
+    ["atticus.clearFilterWaiting", "questions"],
+    ["atticus.clearFilterChanges", "changes"],
+    ["atticus.clearFilterKnowledge", "knowledge"],
+    ["atticus.clearFilterRuns", "runs"],
+  ] as const)
+    reg(command, () => setFilter(view, ""));
 
   // ADR 0096: every command the command line has, from its own catalogue.
   const commands = new CommandUi(svc, { runAi, inTerminal, refreshAll });
@@ -316,6 +399,57 @@ ${view.next.why}`
     if (root && item?.task)
       void commands.pickAndRun(root, "task run", { args: [item.task.change, item.task.id] });
   });
+  /**
+   * A step the app in a panel asks to run (ADR 0106): only the catalogue's AI steps, no argument
+   * that starts with "-", run as the sidebar runs them (runAi: Copilot, consent, the checks), its
+   * progress and its end posted back to the page.
+   */
+  const runFromApp = async (m: unknown, post: (reply: object) => void) => {
+    const root = needRoot();
+    const id = (m as { id?: unknown }).id;
+    if (!root) return post(runEndMessage(id, undefined));
+    let checked;
+    try {
+      checked = checkRunStep(m, await commands.load(root));
+    } catch (e) {
+      return post(
+        runRefusedMessage(
+          id,
+          `The command line's commands couldn't be read: ${(e as Error).message}`,
+        ),
+      );
+    }
+    if (!checked) return;
+    if (!checked.ok) {
+      svc.log.appendLine(`The app asked to run a step, refused: ${checked.reason}`);
+      return post(runRefusedMessage(checked.id, checked.reason));
+    }
+    const { id: runId, args, spec } = checked;
+    svc.log.appendLine(`The app asked to run: atticus ${args.join(" ")}`);
+    const end = await runAi(args, spec, {
+      progress: (line) => post(runProgressMessage(runId, line)),
+    });
+    post(runEndMessage(runId, end));
+  };
+
+  // ADR 0106: an answer the run keeps in its record, not in a file, shown read-only.
+  reg("atticus.openRunAnswer", async (runId?: unknown) => {
+    const root = needRoot();
+    if (!root || typeof runId !== "string") return;
+    const r = await svc.cli(root)(["runs", "show", runId, "--json", "--root", root]);
+    let answer: string | undefined;
+    try {
+      answer = (JSON.parse(r.stdout) as { answer?: string }).answer;
+    } catch {
+      // said below
+    }
+    if (answer === undefined)
+      return void vscode.window.showWarningMessage(
+        `The answer of ${runId} couldn't be read${r.stderr.trim() ? `: ${r.stderr.trim().split("\n")[0]}` : "."}`,
+      );
+    await showReadOnly(`${runId} answer.txt`, answer);
+  });
+
   // ADR 0098: what is set up, as context keys the welcome views and the walkthrough read.
   const updateContext = async () => {
     const at = svc.root ?? svc.folder ?? context.extensionPath;
@@ -1006,6 +1140,9 @@ ${view.next.why}`
       if (mode === "bundled") {
         const web = panel.webview;
         web.onDidReceiveMessage(async (m: unknown) => {
+          // ADR 0106: Run with Copilot, asked from the app (run-step.ts has the messages' shapes).
+          if ((m as { type?: unknown } | null)?.type === "run-step")
+            return void runFromApp(m, (r) => void web.postMessage(r));
           const api = await svc.api(root);
           const reply = await answerApp(m, (method, path, body) => api.request(method, path, body));
           if (reply) void web.postMessage(reply);
@@ -1090,6 +1227,7 @@ ${view.next.why}`
     service: svc,
     status,
     commands,
+    runFromApp,
   };
 }
 

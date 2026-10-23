@@ -166,6 +166,8 @@ describe("what a section shows while it reads, when it fails and when it is empt
     expect(loadingLabel("changes")).toBe("Reading the changes…");
     expect(loadingLabel("knowledge")).toBe("Reading the knowledge…");
     expect(loadingLabel("catalog")).toBe("Reading the catalog…");
+    expect(loadingLabel("runs")).toBe("Reading the runs…");
+    expect(loadingLabel("runs", "run")).toBe("Reading the run…");
     expect(loadingLabel("knowledge", "knowledge-group")).toBe("Reading the items…");
     expect(loadingLabel("changes", "needs")).toBe("Reading what it needs…");
     expect(loadingLabel("knowledge", "finds")).toBe("Reading the searches…");

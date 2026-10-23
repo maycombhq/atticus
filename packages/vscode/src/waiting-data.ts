@@ -185,44 +185,229 @@ function questionRows(qs: OpenQuestion[]): WaitingRow[] {
         markdown: true,
         icon: "question",
         command: { command: "atticus.answerQuestion", args: [q.id] },
+        words: [q.repo],
       };
     }),
   }));
 }
 
 const SEVERITY_ORDER: Record<string, number> = { blocking: 0, gap: 1, risk: 2, idea: 3 };
+const bySeverity = (fs: Api.Finding[]) =>
+  [...fs].sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9));
+
+/** How Waiting on you is laid out (ADR 0105 addendum): by change (the default) or by kind. */
+export type WaitingGroup = "change" | "kind";
+
+/** Each row is built once; by kind it names its change, under its change it doesn't. */
+interface Build {
+  titleOf: (change: string) => string;
+  /** The row is under its change, so its description doesn't name it. */
+  under: boolean;
+}
+
+function needRows(needs: NeedEntry[], w: WaitingRead, b: Build): WaitingRow[] {
+  const by = new Map<string, NeedEntry[]>();
+  for (const n of needs) by.set(n.change, [...(by.get(n.change) ?? []), n]);
+  return [...by].flatMap(([c, ns]) => {
+    const md = w.needsMd[c];
+    return needItems(ns, md?.path ?? "", md?.text ?? "").map((r) => ({
+      ...r,
+      description: b.under
+        ? needDescription(r.need!)
+        : `${b.titleOf(c)} · ${needDescription(r.need!)}`,
+    }));
+  });
+}
+
+function todoRow(t: TodoEntry, b: Build): WaitingRow {
+  const ref = t.change ? `${t.change}/${t.id}` : t.id;
+  const waits = t.waitsFor ?? [];
+  return {
+    id: `todo:${ref}`,
+    label: t.title,
+    description: [
+      t.change && !b.under ? b.titleOf(t.change) : "",
+      t.system ?? "",
+      waits.length ? `after ${waits.join(", ")}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    tooltip: [
+      t.title,
+      t.where ? `Where: ${t.where}` : "",
+      waits.length ? `It waits for ${waits.join(", ")}.` : "",
+      `${ref}. Click to see the step (atticus todo show ${ref}).`,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+    icon: waits.length ? "lock" : "circle-large-outline",
+    command: { command: "atticus.showManualStep", args: [ref] },
+    words: [t.change ?? "", t.system ?? ""].filter(Boolean),
+  };
+}
+
+function findingRow(f: Api.Finding, b: Build): WaitingRow {
+  return {
+    id: `finding:${f.change}:${f.id}`,
+    label: f.summary,
+    description: b.under ? f.severity : `${b.titleOf(f.change)} · ${f.severity}`,
+    tooltip: `${f.summary}\n\nWhy: ${f.why}\n\nFix: ${f.fix?.text ?? ""}\n\n${f.change}, ${f.artifact}. Click to open the change.`,
+    icon: SEVERITY_ICON[f.severity] ?? "circle-small",
+    context: "atticus.finding",
+    finding: f,
+    open: { kind: "app" as const, hash: `#/changes/${encodeURIComponent(f.change)}` },
+  };
+}
+
+const questionsGroup = (questions: OpenQuestion[]): WaitingRow => ({
+  id: "waiting:questions",
+  label: "Questions",
+  description: `${questions.length} to answer`,
+  tooltip: "Questions only a person can answer. Click one to answer it.",
+  icon: "question",
+  rows: questionRows(questions),
+});
+
+const todoGroup = (todo: TodoEntry[], b: Build): WaitingRow => ({
+  id: "waiting:todo",
+  label: "Manual steps",
+  description: `${todo.length} to do`,
+  tooltip: "Steps a person does in systems Atticus can't reach. Click one to see it.",
+  icon: "checklist",
+  rows: todo.map((t) => todoRow(t, b)),
+});
+
+const knowledgeRow = (n: number): WaitingRow => ({
+  id: "waiting:knowledge",
+  label: "Knowledge to verify",
+  description: plural(n, "item"),
+  tooltip: `${plural(n, "knowledge item")} no person has verified. Click to check them against their pages, one after another.`,
+  icon: "pass",
+  command: { command: "atticus.reviewUnverified" },
+});
+
+const NOTHING: WaitingRow = {
+  id: "waiting:none",
+  label: "Nothing waits on you.",
+  tooltip:
+    "No question to answer, no open need, no manual step, no open finding and no knowledge to verify.",
+  icon: "check",
+};
+
+/** The parts that couldn't be read, each said in a row with the output a click away. */
+function errorRows(questions: OpenQuestion[] | string, w: WaitingRead): WaitingRow[] {
+  const rows: WaitingRow[] = [];
+  if (typeof questions === "string") rows.push(errorRow("questions", questions));
+  if (typeof w.needs === "string")
+    rows.push(errorRow("needs", `Couldn't read the needs: ${w.needs}`));
+  if (typeof w.todo === "string")
+    rows.push(errorRow("todo", `Couldn't read the manual steps: ${w.todo}`));
+  if (typeof w.findings === "string")
+    rows.push(errorRow("findings", `Couldn't read the findings: ${w.findings}`));
+  if (typeof w.unverified === "string")
+    rows.push(errorRow("knowledge", `Couldn't read the knowledge items: ${w.unverified}`));
+  return rows;
+}
 
 /**
- * The section's rows: a group for each kind with its count, an empty group left out, a part that
- * couldn't be read said in its place, and one row when nothing waits.
+ * The section's rows. By change (the default, ADR 0105 addendum): each change with something
+ * open, its title, id and count, and under it its open needs, open findings and manual steps, in
+ * that order; changes with a blocking finding first, then by title; then a group of what belongs
+ * to no change (the questions by repo, manual steps with no change, knowledge to verify). By kind:
+ * a group for each kind with its count. Either way an empty group is left out, a part that
+ * couldn't be read is said (by kind in its place, by change first), and one row says when
+ * nothing waits.
  */
-export function waitingRows(questions: OpenQuestion[] | string, w: WaitingRead): WaitingRow[] {
-  const rows: WaitingRow[] = [];
+export function waitingRows(
+  questions: OpenQuestion[] | string,
+  w: WaitingRead,
+  group: WaitingGroup = "change",
+): WaitingRow[] {
   const titleOf = (c: string) => w.titles[c] ?? c;
+  return group === "kind" ? byKind(questions, w, titleOf) : byChange(questions, w, titleOf);
+}
+
+function byChange(
+  questions: OpenQuestion[] | string,
+  w: WaitingRead,
+  titleOf: (c: string) => string,
+): WaitingRow[] {
+  const b: Build = { titleOf, under: true };
+  const needs = Array.isArray(w.needs) ? w.needs : [];
+  const todo = Array.isArray(w.todo) ? w.todo : [];
+  const findings = Array.isArray(w.findings) ? w.findings : [];
+  const changes = [
+    ...new Set([
+      ...needs.map((n) => n.change),
+      ...findings.map((f) => f.change),
+      ...todo.flatMap((t) => (t.change ? [t.change] : [])),
+    ]),
+  ];
+  const rows = changes.map((c) => {
+    const fs = bySeverity(findings.filter((f) => f.change === c));
+    const blocking = fs.filter((f) => f.severity === "blocking").length;
+    const below = [
+      ...needRows(
+        needs.filter((n) => n.change === c),
+        w,
+        b,
+      ),
+      ...fs.map((f) => findingRow(f, b)),
+      ...todo.filter((t) => t.change === c).map((t) => todoRow(t, b)),
+    ];
+    const row: WaitingRow = {
+      id: `waiting:change:${c}`,
+      label: titleOf(c),
+      description: [c, `${below.length} waiting`, blocking ? `${blocking} blocking` : ""]
+        .filter(Boolean)
+        .join(" · "),
+      tooltip: `${titleOf(c)} (${c}): its open needs, then its open findings, then its manual steps.`,
+      icon: blocking ? "error" : "git-pull-request",
+      words: [c],
+      rows: below,
+    };
+    return { blocking, row };
+  });
+  rows.sort(
+    (x, y) => (y.blocking ? 1 : 0) - (x.blocking ? 1 : 0) || x.row.label.localeCompare(y.row.label),
+  );
+
+  // What belongs to no change.
+  const other: WaitingRow[] = [];
+  const qs = Array.isArray(questions) ? questions : [];
+  if (qs.length) other.push(questionsGroup(qs));
+  const alone = todo.filter((t) => !t.change);
+  if (alone.length) other.push(todoGroup(alone, b));
+  const unverified = typeof w.unverified === "number" ? w.unverified : 0;
+  if (unverified) other.push(knowledgeRow(unverified));
+  const out = [...errorRows(questions, w), ...rows.map((r) => r.row)];
+  if (other.length)
+    out.push({
+      id: "waiting:other",
+      label: "Not part of a change",
+      description: `${qs.length + alone.length + unverified} waiting`,
+      tooltip:
+        "What waits on you that belongs to no change: questions about the repos, manual steps with no change, and knowledge to verify.",
+      icon: "inbox",
+      rows: other,
+    });
+  return out.length ? out : [NOTHING];
+}
+
+function byKind(
+  questions: OpenQuestion[] | string,
+  w: WaitingRead,
+  titleOf: (c: string) => string,
+): WaitingRow[] {
+  const b: Build = { titleOf, under: false };
+  const rows: WaitingRow[] = [];
 
   if (typeof questions === "string") rows.push(errorRow("questions", questions));
-  else if (questions.length)
-    rows.push({
-      id: "waiting:questions",
-      label: "Questions",
-      description: `${questions.length} to answer`,
-      tooltip: "Questions only a person can answer. Click one to answer it.",
-      icon: "question",
-      rows: questionRows(questions),
-    });
+  else if (questions.length) rows.push(questionsGroup(questions));
 
   if (typeof w.needs === "string")
     rows.push(errorRow("needs", `Couldn't read the needs: ${w.needs}`));
-  else if (w.needs.length) {
-    const by = new Map<string, NeedEntry[]>();
-    for (const n of w.needs) by.set(n.change, [...(by.get(n.change) ?? []), n]);
-    const needRows = [...by].flatMap(([c, ns]) => {
-      const md = w.needsMd[c];
-      return needItems(ns, md?.path ?? "", md?.text ?? "").map((r) => ({
-        ...r,
-        description: `${titleOf(c)} · ${needDescription(r.need!)}`,
-      }));
-    });
+  else if (w.needs.length)
     rows.push({
       id: "waiting:needs",
       label: "Needs",
@@ -230,45 +415,12 @@ export function waitingRows(questions: OpenQuestion[] | string, w: WaitingRead):
       tooltip:
         "What your changes need from the organisation and is still open. Raise each, then mark it Done or Not needed.",
       icon: "inbox",
-      rows: needRows,
+      rows: needRows(w.needs, w, b),
     });
-  }
 
   if (typeof w.todo === "string")
     rows.push(errorRow("todo", `Couldn't read the manual steps: ${w.todo}`));
-  else if (w.todo.length)
-    rows.push({
-      id: "waiting:todo",
-      label: "Manual steps",
-      description: `${w.todo.length} to do`,
-      tooltip: "Steps a person does in systems Atticus can't reach. Click one to see it.",
-      icon: "checklist",
-      rows: w.todo.map((t) => {
-        const ref = t.change ? `${t.change}/${t.id}` : t.id;
-        const waits = t.waitsFor ?? [];
-        return {
-          id: `todo:${ref}`,
-          label: t.title,
-          description: [
-            t.change ? titleOf(t.change) : "",
-            t.system ?? "",
-            waits.length ? `after ${waits.join(", ")}` : "",
-          ]
-            .filter(Boolean)
-            .join(" · "),
-          tooltip: [
-            t.title,
-            t.where ? `Where: ${t.where}` : "",
-            waits.length ? `It waits for ${waits.join(", ")}.` : "",
-            `${ref}. Click to see the step (atticus todo show ${ref}).`,
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
-          icon: waits.length ? "lock" : "circle-large-outline",
-          command: { command: "atticus.showManualStep", args: [ref] },
-        };
-      }),
-    });
+  else if (w.todo.length) rows.push(todoGroup(w.todo, b));
 
   if (typeof w.findings === "string")
     rows.push(errorRow("findings", `Couldn't read the findings: ${w.findings}`));
@@ -279,39 +431,12 @@ export function waitingRows(questions: OpenQuestion[] | string, w: WaitingRead):
       description: `${w.findings.length} open`,
       tooltip: "The critic's open findings on your changes. Click one to open its change.",
       icon: "warning",
-      rows: [...w.findings]
-        .sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 9) - (SEVERITY_ORDER[b.severity] ?? 9))
-        .map((f) => ({
-          id: `finding:${f.change}:${f.id}`,
-          label: f.summary,
-          description: `${titleOf(f.change)} · ${f.severity}`,
-          tooltip: `${f.summary}\n\nWhy: ${f.why}\n\nFix: ${f.fix?.text ?? ""}\n\n${f.change}, ${f.artifact}. Click to open the change.`,
-          icon: SEVERITY_ICON[f.severity] ?? "circle-small",
-          context: "atticus.finding",
-          finding: f,
-          open: { kind: "app" as const, hash: `#/changes/${encodeURIComponent(f.change)}` },
-        })),
+      rows: bySeverity(w.findings).map((f) => findingRow(f, b)),
     });
 
   if (typeof w.unverified === "string")
     rows.push(errorRow("knowledge", `Couldn't read the knowledge items: ${w.unverified}`));
-  else if (w.unverified)
-    rows.push({
-      id: "waiting:knowledge",
-      label: "Knowledge to verify",
-      description: plural(w.unverified, "item"),
-      tooltip: `${plural(w.unverified, "knowledge item")} no person has verified. Click to check them against their pages, one after another.`,
-      icon: "pass",
-      command: { command: "atticus.reviewUnverified" },
-    });
+  else if (w.unverified) rows.push(knowledgeRow(w.unverified));
 
-  if (!rows.length)
-    rows.push({
-      id: "waiting:none",
-      label: "Nothing waits on you.",
-      tooltip:
-        "No question to answer, no open need, no manual step, no open finding and no knowledge to verify.",
-      icon: "check",
-    });
-  return rows;
+  return rows.length ? rows : [NOTHING];
 }

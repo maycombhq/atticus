@@ -69,6 +69,8 @@ Open **Get started with Atticus** (Help → Welcome, or the link in the Atticus 
 
 Without a repo or change, a step command takes the one `atticus next` names for that step.
 
+When a step ends, its reply has **Open the prompt** and **Open the answer** (ADR 0106): what Atticus asked the model in the last round, and what the model answered, each when its file is there.
+
 ## The sidebar
 
 ## Everything Atticus does
@@ -88,7 +90,9 @@ Without a repo or change, a step command takes the one `atticus next` names for 
 The Atticus icon in the activity bar opens a sidebar with a section for each part of Atticus (ADR 0093, 0096), in the order of a working day (ADR 0105): what is next, what waits on you, your changes, what the organisation knows, then the estate.
 
 - **Next**: the next step in plain words, then the steps after it. Click any of them, or its Run button, to take it; its command is in the tooltip. A step with a part to fill in opens the screen that asks for it. **Raise a change's open needs** lists them to mark one by one. Then **Set up** (the setup checklist until the catalog is accepted; click a step to do it, or the checklist to do the next one) and **Open the app**.
-- **Waiting on you** (ADR 0105; was Questions): what waits on you across every change, a group for each kind with its count. An empty group is left out; when nothing waits, one row says so.
+- **Waiting on you** (ADR 0105; was Questions): what waits on you across every change. An empty group is left out; when nothing waits, one row says so.
+  - **By change** (the default): each change with something open, its title, id and count, and under it its open needs, then its open findings, then its manual steps. Changes with a blocking finding come first, then the rest by title. Last, **Not part of a change**: the questions by repo, manual steps with no change, and knowledge to verify.
+  - **By kind**: a group for each kind with its count, as below. The title bar's **Group by kind** and **Group by change** switch between the two; the choice is remembered for the workspace.
   - **Questions**: the open questions by repo. Click one to answer it: pick an option or write your own words. A repo's button answers its questions one after another.
   - **Needs**: every change's open needs, each naming its change. Click one to open `needs.md` at it; its **Done…** and **Not needed…** buttons are those of a change's needs.
   - **Manual steps**: the steps a person does in systems Atticus can't reach (`atticus todo`), each with its change and system, and what it waits for. Click one to read it (`atticus todo show`) in a tab, with **Record it…**.
@@ -106,6 +110,9 @@ The Atticus icon in the activity bar opens a sidebar with a section for each par
 
 - **Repos**: each repo with its last scan, and its checklist button: **Onboard a repo**. The + button adds repos from a folder of clones or a Git host organisation: it shows what it found and adds them when you say yes. Under it, its flows, then each flow's steps. Click a step to open the code at the line it cites, or use its diagram button to see it in the flow. Click a flow to open its diagram. The repo's scan settings and its place on the canvas are there too. Its menu (…) also has **Onboard a repo…**, **Clone or update the base clones** and **Bring in from another repo…** (moved from Knowledge, ADR 0105).
 - **Catalog**: each kind of record with its count. Under it, its records (click to open the record's YAML), and under each record, the code it was read from.
+- **Model runs** (ADR 0106), collapsed at the bottom: what Atticus asked a model and what came back, from `atticus runs --json`, newest first. Each run shows its step or change, the agent, its round, its state, whether it was answered and how many problems the checks handed back to it. Open one for **Open the prompt**, **Open the answer** (when there is one; an answer kept only in the run's record opens read-only, from `atticus runs show`) and **Open in the app** (the app's Model runs screen on that run, with the prompt, the answer and the problems round by round). It reads again when a step ends.
+
+**Filter…** (ADR 0105), in the title bars of Waiting on you, Changes, Knowledge and Model runs, asks for words to match, for example `forge-ledger`. Each row is matched, case-insensitively, against its title, id, change and repo (and the words beside it); every word must match. A row that matches keeps everything under it, and a row shows when something under it matches: in Knowledge that looks inside sources, items, what the last scan changed and searches; in Changes a change shows when it matches itself (its title, id or repos); in Model runs a run matches its step or change, run id, agent and state. The view's description says `filter: <words>`, and **Clear filter** removes it. When nothing matches, one row says what was filtered; click it to clear the filter. Each view keeps its own filter until the window closes.
 
 The sections read the app's local API on 127.0.0.1, which the extension starts for them; they follow the files as they change, and the Refresh button reads everything again. Each section, and each part of one you open, shows a "Reading…" row until it is read; when it is read again, what it showed stays, with the section's progress bar, until the new rows are in. A part that can't be read says why: click the row to see the Atticus output.
 
@@ -115,7 +122,7 @@ The sections read the app's local API on 127.0.0.1, which the extension starts f
 
 **The status bar** shows the open questions and the next step; click it to open the sidebar.
 
-**Open the app** shows the Atticus app, with its diagrams, in a VS Code tab. The app comes from the extension's own files (ADR 0097): it isn't a page on 127.0.0.1 framed in the tab, so it works where framing a local page is blocked, and over SSH or in a container. Its calls go through the extension to the local API, which the extension starts for the tab and the sidebar (`atticus ui`) and stops when the window closes. The setting `atticus.appIn` set to `frame` uses the framed page instead (ADR 0091). **Atticus: Open the app in the browser** opens it in a browser.
+**Open the app** shows the Atticus app, with its diagrams, in a VS Code tab. The app comes from the extension's own files (ADR 0097): it isn't a page on 127.0.0.1 framed in the tab, so it works where framing a local page is blocked, and over SSH or in a container. Its calls go through the extension to the local API, which the extension starts for the tab and the sidebar (`atticus ui`) and stops when the window closes. **Run with Copilot** on an AI step in the app (ADR 0106) asks the extension, which runs only the command line's AI steps, refuses any argument that starts with `-`, and runs the step as the sidebar does: Copilot, your consent and every check. Its progress shows in the app and in a notification, and its ending as any step's does. The setting `atticus.appIn` set to `frame` uses the framed page instead (ADR 0091). **Atticus: Open the app in the browser** opens it in a browser.
 
 `@atticus /diagram <repo>` (or **Atticus: Open a repo on the Architecture canvas**) opens the tab on that repo's part of the estate. Drag boxes to rearrange them; Keep saves the arrangement in the metarepo. With no repo named it opens the whole estate. `@atticus /diagram <repo> <flow id>` opens one of the repo's flows as a sequence of steps (ADR 0092), and `@atticus /diagram <repo> <words>` lists the flows that match.
 
@@ -136,6 +143,7 @@ The same actions are in the Command Palette under **Atticus:**. Every `atticus` 
 - **To the Copilot model, through VS Code's Language Model API (`vscode.lm`):** a step's prompt file as Atticus wrote it, after one line from the extension that asks for only the result file's content. The prompt holds what the step read from your metarepo and repos. Nothing else is sent to the model, and nothing goes to the model without your consent (VS Code asks the first time).
 - **To the `atticus` command line, on this machine:** the commands in the output. They read and write files in the metarepo, as they do in a terminal.
 - **To the app it started, on `127.0.0.1`:** the sidebar's and the CodeLens's reads of the local API, with the session token the app printed. The one write is a finding's action, when you pick it.
+- **To the app in its tab:** a step's progress and how it ended, when you ran it from the app with **Run with Copilot**.
 - **Nowhere else.** No telemetry. The extension makes no other network call.
 
 A prompt longer than the model takes is never cut: the extension says so and stops, and the run waits, so you can finish it another way. Cancel stops the step; nothing more is sent or written.

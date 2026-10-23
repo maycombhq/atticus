@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { parseJson } from "./cli";
@@ -37,7 +38,17 @@ interface Waiting {
   resumeCommand: string;
 }
 
-export type StepEnd =
+/**
+ * The last round's prompt and answer (ADR 0106), relative to the metarepo, each only when its
+ * file is there: Open the prompt and Open the answer on the step's ending.
+ */
+export interface RunFiles {
+  runId: string;
+  prompt?: string;
+  answer?: string;
+}
+
+export type StepEnd = (
   | {
       state: "done" | "question" | "stopped" | "failed";
       rounds: number;
@@ -51,7 +62,8 @@ export type StepEnd =
   | ({ state: "no-consent"; message: string } & Waiting)
   | ({ state: "no-model" } & Waiting)
   | ({ state: "model-error"; message: string } & Waiting)
-  | ({ state: "too-many-rounds"; rounds: number } & Waiting);
+  | ({ state: "too-many-rounds"; rounds: number } & Waiting)
+) & { files?: RunFiles };
 
 export interface RunnerDeps {
   /** The metarepo; the prompt and result files are relative to it. */
@@ -83,6 +95,25 @@ const failed = (message: string, rounds: number): StepEnd => ({
 
 /** Run one AI step, `args` as `atticus` takes them (e.g. ["scan", "survey", "forge-notes"]). */
 export async function runStep(args: string[], d: RunnerDeps, token: Cancel): Promise<StepEnd> {
+  const last: { round?: Waiting } = {};
+  const end = await loop(args, d, token, last);
+  const w = last.round;
+  if (!w) return end;
+  const there = (f: string) => existsSync(resolve(d.root, f));
+  const files: RunFiles = {
+    runId: w.runId,
+    ...(there(w.promptFile) ? { prompt: w.promptFile } : {}),
+    ...(there(w.resultFile) ? { answer: w.resultFile } : {}),
+  };
+  return files.prompt || files.answer ? { ...end, files } : end;
+}
+
+async function loop(
+  args: string[],
+  d: RunnerDeps,
+  token: Cancel,
+  last: { round?: Waiting },
+): Promise<StepEnd> {
   const say = d.progress ?? (() => undefined);
   const max = d.maxRounds ?? 8;
   let argv = [...args, "--handoff", "--json", "--root", d.root];
@@ -117,6 +148,7 @@ export async function runStep(args: string[], d: RunnerDeps, token: Cancel): Pro
       resultFile: h.resultFile,
       resumeCommand: h.resumeCommand ?? "",
     };
+    last.round = waiting;
     if (rounds >= max) return { state: "too-many-rounds", rounds, ...waiting };
     rounds++;
     say(`Round ${rounds}: Atticus handed off run ${h.runId}.`);

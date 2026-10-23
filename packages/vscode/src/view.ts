@@ -9,7 +9,14 @@ import type { Service } from "./service";
 import { errorLabel } from "./feedback";
 import { Loads } from "./loads";
 import type { NextStep, OpenQuestion } from "./types";
-import { readWaiting, waitingRows, type WaitingRead, type WaitingRow } from "./waiting-data";
+import { filterItems } from "./filter";
+import {
+  readWaiting,
+  waitingRows,
+  type WaitingGroup,
+  type WaitingRead,
+  type WaitingRow,
+} from "./waiting-data";
 
 /**
  * The Next section (ADR 0090, 0098, 0100): the next step in plain words with a Run button, the
@@ -189,6 +196,10 @@ export class WaitingView implements vscode.TreeDataProvider<WNode> {
   private readonly loads = new Loads<WaitingRead | string>();
   /** The questions last read, kept on show while the Next section reads them again. */
   private questions: OpenQuestion[] | string | undefined;
+  /** By change (the default) or by kind (ADR 0105 addendum). */
+  group: WaitingGroup = "change";
+  /** The words the rows are filtered by, for this session; empty shows every row. */
+  filter = "";
 
   constructor(
     private readonly svc: Service,
@@ -203,6 +214,18 @@ export class WaitingView implements vscode.TreeDataProvider<WNode> {
   /** Read again; what is on show stays until the new rows are read. */
   refresh() {
     this.loads.refresh();
+    this.changed.fire(undefined);
+  }
+
+  /** Lay the rows out by change or by kind. */
+  setGroup(group: WaitingGroup) {
+    this.group = group;
+    this.changed.fire(undefined);
+  }
+
+  /** Show only the rows that match these words; empty shows them all. */
+  setFilter(words: string) {
+    this.filter = words.trim();
     this.changed.fire(undefined);
   }
 
@@ -232,7 +255,13 @@ export class WaitingView implements vscode.TreeDataProvider<WNode> {
     if (w === undefined || q === undefined)
       return [{ id: "waiting:loading", state: "loading", message: "Reading what waits on you…" }];
     if (typeof w === "string") return [{ id: "waiting:error", state: "error", message: w }];
-    return waitingRows(q, w);
+    return filterItems(
+      waitingRows(q, w, this.group),
+      this.filter,
+      "Waiting on you",
+      "atticus.clearFilterWaiting",
+      { kids: (r) => r.rows, withKids: (r, rows) => ({ ...r, rows }) },
+    );
   }
 
   /** The section's rows, read (no "Reading…" row): for the tests in VS Code. */

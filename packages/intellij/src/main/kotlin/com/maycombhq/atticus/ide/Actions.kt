@@ -1,5 +1,7 @@
 package com.maycombhq.atticus.ide
 
+import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.project.Project
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -45,5 +47,25 @@ class OpenInBrowserAction : AtticusAction() {
             is AppState.Running -> BrowserUtil.browse(s.url)
             else -> Notify.show(p, Copy.APP_NOT_RUNNING)
         }
+    }
+}
+
+/** Open a screen of the app in the Atticus tool window (ADR 0105, 0106). */
+private fun openScreen(project: Project, hash: String) {
+    ToolWindowManager.getInstance(project).getToolWindow("Atticus")?.show()
+    AtticusApp.of(project).open(hash)
+}
+
+/** What waits on you across every change, grouped by change, in the app (#/home). */
+class WaitingOnYouAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        openScreen(e.project ?: return, "#/home")
+    }
+}
+
+/** What Atticus asked a model and what came back (#/runs). */
+class ModelRunsAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        openScreen(e.project ?: return, "#/runs")
     }
 }

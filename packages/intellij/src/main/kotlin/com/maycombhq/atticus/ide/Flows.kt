@@ -1,5 +1,8 @@
 package com.maycombhq.atticus.ide
 
+import com.intellij.openapi.util.Key
+import com.intellij.execution.process.ProcessListener
+import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.ExecutionException
 import com.intellij.execution.RunContentExecutor
 import com.intellij.execution.process.KillableProcessHandler
@@ -245,11 +248,36 @@ class CommandFlow(private val project: Project) {
                 Notify.show(project, Copy.couldNotRun(e.message ?: ""), NotificationType.ERROR)
                 return
             }
+        // After a hand-off, the prompt it wrote (ADR 0106): open it, then answer it in your assistant.
+        val printed = StringBuilder()
+        h.addProcessListener(
+            object : ProcessListener {
+                override fun onTextAvailable(event: ProcessEvent, outputType: Key<*>) {
+                    printed.append(event.text)
+                }
+
+                override fun processTerminated(event: ProcessEvent) {
+                    val prompt = Commands.promptPathFrom(printed.toString()) ?: return
+                    Notify.show(
+                        project,
+                        Copy.promptWritten(prompt),
+                        NotificationType.INFORMATION,
+                        Notify.action(Copy.OPEN_PROMPT) { openInEditor(prompt) },
+                        Notify.action(Copy.MODEL_RUNS) { AtticusApp.of(project).open("#/runs") },
+                    )
+                }
+            },
+        )
         RunContentExecutor(project, h)
             .withTitle("Atticus: $title")
             .withActivateToolWindow(true)
             .withStop({ h.destroyProcess() }, { !h.isProcessTerminated })
             .run()
+    }
+
+    private fun openInEditor(rel: String) {
+        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Path.of(cwd).resolve(rel)) ?: return
+        FileEditorManager.getInstance(project).openFile(file, true)
     }
 
     fun captured(argv: List<String>, cwdOverride: String? = null, then: (Ran) -> Unit) {

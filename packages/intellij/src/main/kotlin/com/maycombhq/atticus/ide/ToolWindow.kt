@@ -1,5 +1,6 @@
 package com.maycombhq.atticus.ide
 
+import com.maycombhq.atticus.core.Metarepo
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionManager
@@ -51,13 +52,14 @@ class AppPanel(private val project: Project, parent: Disposable) : SimpleToolWin
 
     init {
         val group = DefaultActionGroup()
-        for (id in listOf("Atticus.Refresh", "Atticus.OpenInBrowser", "Atticus.RunCommand", "Atticus.NextStep")) {
+        for (id in listOf("Atticus.Refresh", "Atticus.OpenInBrowser", "Atticus.RunCommand", "Atticus.NextStep", "Atticus.WaitingOnYou", "Atticus.ModelRuns")) {
             ActionManager.getInstance().getAction(id)?.let { group.add(it) }
         }
         val bar = ActionManager.getInstance().createActionToolbar("AtticusToolWindow", group, true)
         bar.targetComponent = this
         toolbar = bar.component
         AtticusApp.of(project).listen(life, { show(it) }, { browser?.cefBrowser?.reload() })
+        AtticusApp.of(project).listenOpen(life) { hash -> browserUrl?.let { browser?.loadURL(Metarepo.screenUrl(it, hash)) } }
         show(AppState.Checking)
     }
 
@@ -137,7 +139,7 @@ class AppPanel(private val project: Project, parent: Disposable) : SimpleToolWin
                 },
             )
         }
-        val b = browser?.takeIf { browserUrl == url } ?: JBCefBrowser.createBuilder().setUrl(url).build().also {
+        val b = browser?.takeIf { browserUrl == url } ?: JBCefBrowser.createBuilder().setUrl(Metarepo.screenUrl(url, AtticusApp.of(project).screen)).build().also {
             dropBrowser()
             Disposer.register(life, it)
             browser = it

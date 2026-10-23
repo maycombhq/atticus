@@ -24,7 +24,8 @@ The Atticus app in a tool window, every `atticus` command from a menu, and the n
   - **Use Atticus in this project** (`atticus adopt`): writes only `.atticus/`.
   - **Try a practice metarepo** (`atticus sandbox create`): invented repos to try Atticus on.
 - **When `atticus` can't be started**, it says how to install it and has a button for the path setting.
-- **The toolbar:** Refresh, Open in browser, Run a command…, Next step.
+- **The toolbar:** Refresh, Open in browser, Run a command…, Next step, **Waiting on you** (what waits on you across every change, grouped by change, with a filter: the app's page) and **Model runs** (what Atticus asked a model, what it answered, and what the checks handed back). Both are in the Tools menu too.
+- **After a hand-off** run in the console, a notification opens the prompt it wrote, or the app's Model runs.
 - **The Output tab** lists every `atticus` command the plugin ran, with what it printed and its exit code. The app's session token is kept out of it.
 
 **Atticus: Run a Command…** (the Tools menu, the tool window's toolbar, or Find Action, Ctrl+Shift+A). It reads `atticus commands --json` and lists every command by area, with what it does first and the command beside it. Atticus's own developer commands are hidden unless you turn them on in the settings.

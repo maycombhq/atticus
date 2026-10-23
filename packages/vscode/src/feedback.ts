@@ -125,7 +125,7 @@ export function findOutcome(messages: string[]): FindOutcome {
   return slug ? { kind: "saved", slug } : { kind: "unknown" };
 }
 
-export type SectionName = "repos" | "changes" | "catalog" | "knowledge";
+export type SectionName = "repos" | "changes" | "catalog" | "knowledge" | "runs";
 
 const READING: Partial<Record<Expand["kind"], string>> = {
   repo: "the repo",
@@ -144,6 +144,7 @@ const READING: Partial<Record<Expand["kind"], string>> = {
   needs: "what it needs",
   kind: "the records",
   evidence: "the citations",
+  run: "the run",
 };
 
 /** The row a section, or a part of one, shows while it reads. */

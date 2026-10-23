@@ -85,6 +85,16 @@ export const shownDocs: vscode.TextDocumentContentProvider = {
   provideTextDocumentContent: (u) => shown.get(u.path) ?? "",
 };
 
+/** Text in a read-only tab, not an untitled file that asks to be saved when it is closed. */
+export async function showReadOnly(name: string, text: string): Promise<void> {
+  const uri = vscode.Uri.from({ scheme: SHOWN_SCHEME, path: `/${name.replace(/[\\/]/g, " ")}` });
+  shown.set(uri.path, text);
+  shownChanged.fire(uri);
+  await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), {
+    preview: true,
+  });
+}
+
 export class CommandUi {
   private catalog: Promise<Catalog> | undefined;
 

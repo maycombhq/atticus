@@ -242,11 +242,11 @@ describe("what waits on a person, read (ADR 0105)", () => {
   });
 });
 
-describe("the Waiting on you rows (ADR 0105)", () => {
+describe("the Waiting on you rows, by kind (ADR 0105)", () => {
   const read = async () => readWaiting(fakeCli().cli, ROOT, files);
 
   it("has a group for each kind, in order, each with its count", async () => {
-    const rows = waitingRows(QUESTIONS, await read());
+    const rows = waitingRows(QUESTIONS, await read(), "kind");
     expect(labels(rows)).toEqual([
       "Questions",
       "Needs",
@@ -264,7 +264,7 @@ describe("the Waiting on you rows (ADR 0105)", () => {
   });
 
   it("keeps the questions by repo, each answered with a click", async () => {
-    const q = group(waitingRows(QUESTIONS, await read()), "questions");
+    const q = group(waitingRows(QUESTIONS, await read(), "kind"), "questions");
     expect(labels(q.rows!)).toEqual(["forge-ledger", "forge-notes"]);
     const repo = q.rows![0]!;
     expect(repo.context).toBe("atticus.questionRepo");
@@ -277,7 +277,7 @@ describe("the Waiting on you rows (ADR 0105)", () => {
   });
 
   it("lists every open need, naming its change, with Done and Not needed on each", async () => {
-    const n = group(waitingRows([], await read()), "needs");
+    const n = group(waitingRows([], await read(), "kind"), "needs");
     expect(labels(n.rows!)).toEqual(["Request a Kafka topic", "Tell Northwind Pay"]);
     const [kafka, northwind] = n.rows!;
     expect(kafka!.description).toBe("Add tags to notes · for the change · 3 days · Platform team");
@@ -296,7 +296,7 @@ describe("the Waiting on you rows (ADR 0105)", () => {
   });
 
   it("lists the manual steps to do, each opening the step", async () => {
-    const t = group(waitingRows([], await read()), "todo");
+    const t = group(waitingRows([], await read(), "kind"), "todo");
     expect(t.rows!.map((r) => [r.label, r.description, r.icon, r.command])).toEqual([
       [
         "Turn on refunds in the Northwind Pay console",
@@ -314,7 +314,7 @@ describe("the Waiting on you rows (ADR 0105)", () => {
   });
 
   it("lists the open findings, blocking first, each opening its change", async () => {
-    const f = group(waitingRows([], await read()), "findings");
+    const f = group(waitingRows([], await read(), "kind"), "findings");
     expect(labels(f.rows!)).toEqual([
       "The tags table has no owner",
       "Who may tag a note isn't said",
@@ -329,7 +329,7 @@ describe("the Waiting on you rows (ADR 0105)", () => {
   });
 
   it("opens Check what no one has verified from the knowledge to verify", async () => {
-    const k = group(waitingRows([], await read()), "knowledge");
+    const k = group(waitingRows([], await read(), "kind"), "knowledge");
     expect(k.rows).toBeUndefined();
     expect(k.command).toEqual({ command: "atticus.reviewUnverified" });
   });
@@ -343,7 +343,7 @@ describe("the Waiting on you rows (ADR 0105)", () => {
       titles: {},
       unverified: 3,
     };
-    expect(labels(waitingRows(QUESTIONS, w))).toEqual(["Questions", "Knowledge to verify"]);
+    expect(labels(waitingRows(QUESTIONS, w, "kind"))).toEqual(["Questions", "Knowledge to verify"]);
   });
 
   it("says so in one row when nothing waits", () => {
@@ -355,7 +355,7 @@ describe("the Waiting on you rows (ADR 0105)", () => {
       titles: {},
       unverified: 0,
     };
-    const rows = waitingRows([], w);
+    const rows = waitingRows([], w, "kind");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ label: "Nothing waits on you.", icon: "check" });
   });
@@ -369,10 +369,161 @@ describe("the Waiting on you rows (ADR 0105)", () => {
       titles: {},
       unverified: 0,
     };
-    const rows = waitingRows("Couldn't read the questions: no metarepo", w);
+    const rows = waitingRows("Couldn't read the questions: no metarepo", w, "kind");
     expect(rows.map((r) => [r.label, r.icon, r.command?.command])).toEqual([
       ["Couldn't read the questions: no metarepo", "warning", "atticus.showLog"],
       ["Couldn't read the needs: needs.yaml is broken", "warning", "atticus.showLog"],
+    ]);
+  });
+});
+
+describe("the Waiting on you rows, by change (ADR 0105 addendum)", () => {
+  // A manual step that belongs to no change.
+  const TODO_ALONE = {
+    id: "step-3",
+    system: "forge-ledger",
+    action: "configure",
+    state: "open",
+    title: "Rotate the forge-ledger signing key",
+    waitsFor: [],
+    record: [],
+    createdAt: "2026-10-21T09:00:00Z",
+  };
+  const todo = JSON.parse(CANNED["todo --json"]!.stdout) as unknown[];
+  const read = async (over: Record<string, CliResult> = {}) =>
+    readWaiting(fakeCli({ "todo --json": ok([...todo, TODO_ALONE]), ...over }).cli, ROOT, files);
+  const kids = (r: WaitingRow) => (r.rows ?? []).map((x) => x.label);
+
+  it("is the default", async () => {
+    const w = await read();
+    expect(waitingRows(QUESTIONS, w)).toEqual(waitingRows(QUESTIONS, w, "change"));
+  });
+
+  it("lists each change with something open, its title, id and count, then what belongs to none", async () => {
+    const rows = waitingRows(QUESTIONS, await read());
+    expect(rows.map((r) => [r.id, r.label, r.description])).toEqual([
+      [
+        "waiting:change:add-note-tags",
+        "Add tags to notes",
+        "add-note-tags · 3 waiting · 1 blocking",
+      ],
+      [
+        "waiting:change:northwind-refunds",
+        "Refunds through Northwind Pay",
+        "northwind-refunds · 3 waiting",
+      ],
+      ["waiting:other", "Not part of a change", "5 waiting"],
+    ]);
+    expect(rows[0]!.icon).toBe("error");
+    expect(rows[1]!.icon).toBe("git-pull-request");
+  });
+
+  it("puts under a change its open needs, then its open findings, then its manual steps", async () => {
+    const [notes, refunds] = waitingRows([], await read());
+    expect(kids(notes!)).toEqual([
+      "Request a Kafka topic",
+      "The tags table has no owner",
+      "Who may tag a note isn't said",
+    ]);
+    expect(kids(refunds!)).toEqual([
+      "Tell Northwind Pay",
+      "Turn on refunds in the Northwind Pay console",
+      "Add the refunds account to forge-ledger",
+    ]);
+  });
+
+  it("keeps each row's actions and context, without naming the change it is under", async () => {
+    const [notes, refunds] = waitingRows([], await read());
+    const [kafka, blocking] = notes!.rows!;
+    expect(kafka).toMatchObject({
+      context: "atticus.need.open",
+      description: "for the change · 3 days · Platform team",
+      open: { kind: "file", line: 3 },
+    });
+    expect(kafka!.need?.item).toBe("request-kafka-topic");
+    expect(blocking).toMatchObject({
+      description: "blocking",
+      context: "atticus.finding",
+      open: { kind: "app", hash: "#/changes/add-note-tags" },
+    });
+    expect(refunds!.rows![2]).toMatchObject({
+      description: "forge-ledger · after step-1",
+      icon: "lock",
+      command: { command: "atticus.showManualStep", args: ["northwind-refunds/step-2"] },
+    });
+  });
+
+  it("puts a change with a blocking finding first, then the rest by title", async () => {
+    const blockingOnRefunds = ok([
+      {
+        gate: "plan",
+        round: 1,
+        open: 1,
+        findings: [
+          {
+            id: "f-9",
+            kind: "rule",
+            change: "northwind-refunds",
+            severity: "blocking",
+            artifact: "plan.md",
+            summary: "The refunds limit isn't said",
+            why: "",
+            fix: { text: "" },
+            state: "open",
+            path: "openspec/changes/northwind-refunds/findings/f-9.yaml",
+          },
+        ],
+      },
+    ]);
+    const rows = waitingRows(
+      [],
+      await read({
+        "findings northwind-refunds --json": blockingOnRefunds,
+        "findings add-note-tags --json": ok([]),
+      }),
+    );
+    expect(labels(rows)).toEqual([
+      "Refunds through Northwind Pay",
+      "Add tags to notes",
+      "Not part of a change",
+    ]);
+  });
+
+  it("puts the questions by repo, manual steps with no change and knowledge to verify in its own group", async () => {
+    const other = waitingRows(QUESTIONS, await read()).at(-1)!;
+    expect(kids(other)).toEqual(["Questions", "Manual steps", "Knowledge to verify"]);
+    const [q, steps, knowledge] = other.rows!;
+    expect(kids(q!)).toEqual(["forge-ledger", "forge-notes"]);
+    expect(q!.rows![0]!.context).toBe("atticus.questionRepo");
+    expect(steps).toMatchObject({ id: "waiting:todo", description: "1 to do" });
+    expect(steps!.rows![0]).toMatchObject({
+      label: "Rotate the forge-ledger signing key",
+      command: { command: "atticus.showManualStep", args: ["step-3"] },
+    });
+    expect(knowledge!.command).toEqual({ command: "atticus.reviewUnverified" });
+  });
+
+  it("leaves out the group of what belongs to no change when it is empty", async () => {
+    const rows = waitingRows(
+      [],
+      await read({ "todo --json": CANNED["todo --json"]!, "knowledge list --json": ok([]) }),
+    );
+    expect(labels(rows)).toEqual(["Add tags to notes", "Refunds through Northwind Pay"]);
+  });
+
+  it("says so in one row when nothing waits, and why a part couldn't be read, first", () => {
+    const none: WaitingRead = {
+      needs: [],
+      needsMd: {},
+      todo: [],
+      findings: [],
+      titles: {},
+      unverified: 0,
+    };
+    expect(labels(waitingRows([], none))).toEqual(["Nothing waits on you."]);
+    const rows = waitingRows([], { ...none, findings: "add-note-tags has no change.yaml" });
+    expect(rows.map((r) => [r.label, r.command?.command])).toEqual([
+      ["Couldn't read the findings: add-note-tags has no change.yaml", "atticus.showLog"],
     ]);
   });
 });

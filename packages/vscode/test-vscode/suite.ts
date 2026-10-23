@@ -101,7 +101,7 @@ export async function run(): Promise<void> {
   });
   // ADR 0105: one arrangement, in the order of a working day.
   await check(
-    "the sidebar reads Next, Waiting on you, Changes, Knowledge, Repos, Catalog",
+    "the sidebar reads Next, Waiting on you, Changes, Knowledge, Repos, Catalog, Model runs",
     async () => {
       const views = (
         ext.packageJSON.contributes.views.atticus as { id: string; name: string }[]
@@ -113,20 +113,75 @@ export async function run(): Promise<void> {
         "Knowledge (atticus.knowledge)",
         "Repos (atticus.repos)",
         "Catalog (atticus.catalog)",
+        "Model runs (atticus.runs)",
       ];
       if (views.join(", ") !== want.join(", ")) throw new Error(views.join(", "));
       return views.map((v) => v.split(" (")[0]).join(", ");
     },
   );
+  // ADR 0105 addendum: by change by default, each change with what is open on it.
+  await check("Waiting on you is by change by default (ADR 0105)", async () => {
+    const w = h.waiting;
+    if (w.group !== "change") throw new Error(`grouped by ${w.group}`);
+    w.reset();
+    const rows = await w.children();
+    const items = rows.map((n) => w.getTreeItem(n));
+    const shown = items.map(label);
+    if (shown.length === 1 && shown[0] === "Nothing waits on you.") return shown[0];
+    const odd = items.filter(
+      (t) =>
+        !/^waiting:(change:|other$|.*:error$)/.test(String(t.id)) ||
+        (/^waiting:change:/.test(String(t.id)) && !/ · \d+ waiting/.test(String(t.description))),
+    );
+    if (odd.length) throw new Error(`not a change or the rest: ${odd.map(label).join(", ")}`);
+    // What belongs to no change comes last.
+    const other = items.findIndex((t) => t.id === "waiting:other");
+    if (other >= 0 && other !== items.length - 1) throw new Error(`order: ${shown.join(", ")}`);
+    return items.map((t) => `${label(t)} (${String(t.description)})`).join(", ");
+  });
+  await check("a filter narrows a section, and says when nothing matches (ADR 0105)", async () => {
+    const t = h.sections.changes!;
+    const all = (await t.children()).map((n) => t.getTreeItem(n));
+    const first = all[0];
+    if (!first || /^No changes/.test(label(first))) throw new Error("no change to filter");
+    const id = String(first.id).replace(/^changes:change:/, "");
+    try {
+      t.setFilter(id.toUpperCase());
+      const some = (await t.children()).map((n) => label(t.getTreeItem(n)));
+      if (!some.includes(label(first)) || some.length > all.length)
+        throw new Error(`filtered by ${id}: ${some.join(", ")}`);
+      t.setFilter("forge-no-such-thing");
+      const none = (await t.children()).map((n) => t.getTreeItem(n));
+      if (none.length !== 1 || !/^Nothing in Changes matches/.test(label(none[0]!)))
+        throw new Error(`nothing matched: ${none.map(label).join(", ")}`);
+      if (none[0]!.command?.command !== "atticus.clearFilterChanges")
+        throw new Error("the row doesn't clear the filter");
+      await vscode.commands.executeCommand("atticus.clearFilterChanges");
+      if (t.filter) throw new Error(`still filtered by ${t.filter}`);
+      // Waiting on you's filter is its own.
+      h.waiting.setFilter("forge-no-such-thing");
+      const w = (await h.waiting.children()).map((n) => label(h.waiting.getTreeItem(n)));
+      if (t.filter) throw new Error("the filters aren't each view's own");
+      if (w.length !== 1 || !/^Nothing in Waiting on you matches/.test(w[0]!))
+        throw new Error(`Waiting on you: ${w.join(", ")}`);
+      return `${id}: ${some.length} of ${all.length} rows; then ${label(none[0]!)}`;
+    } finally {
+      t.setFilter("");
+      await vscode.commands.executeCommand("atticus.clearFilterWaiting");
+    }
+  });
   await check(
     "Waiting on you says it is reading, then what waits, by kind (ADR 0105)",
     async () => {
       const w = h.waiting;
+      await vscode.commands.executeCommand("atticus.waitingByKind");
+      if (w.group !== "kind") throw new Error("Group by kind didn't");
       w.reset();
       const first = w.getChildren().map((n) => label(w.getTreeItem(n)));
       if (!/^Reading what waits on you/.test(first[0] ?? ""))
         throw new Error(`no Reading row: ${first.join(", ")}`);
       const rows = (await w.children()).map((n) => w.getTreeItem(n));
+      await vscode.commands.executeCommand("atticus.waitingByChange");
       const groups = ["Questions", "Needs", "Manual steps", "Findings", "Knowledge to verify"];
       const shown = rows.map(label);
       if (shown.length === 1 && shown[0] === "Nothing waits on you.") return shown[0];
@@ -204,6 +259,44 @@ export async function run(): Promise<void> {
     if (bad.length) throw new Error(`asked wrongly: ${bad.map((c) => c.id).join(", ")}`);
     return `${offered.length} commands`;
   });
+
+  await check(
+    "Model runs reads atticus runs, newest first, each opening to its files (ADR 0106)",
+    async () => {
+      const t = h.sections.runs!;
+      const rows = (await t.children()).map((n) => t.getTreeItem(n));
+      if (!rows.length) throw new Error("no rows");
+      const first = rows[0]!;
+      if (/^Couldn't read/.test(label(first))) throw new Error(label(first));
+      if (/^No model runs yet/.test(label(first))) return label(first);
+      const kids = (await t.children((await t.children())[0])).map((n) => label(t.getTreeItem(n)));
+      if (kids[0] !== "Open the prompt" || kids.at(-1) !== "Open in the app")
+        throw new Error(`a run opens to: ${kids.join(", ")}`);
+      return `${rows.length} runs; the first opens to ${kids.join(", ")}`;
+    },
+  );
+
+  await check(
+    "Run with Copilot from the app refuses what isn't an AI step (ADR 0106)",
+    async () => {
+      const replies: Record<string, unknown>[] = [];
+      const post = (r: object) => void replies.push(r as Record<string, unknown>);
+      await h.runFromApp(
+        { type: "run-step", id: 1, args: ["spec", "check", "forge-ledger"] },
+        post,
+      );
+      await h.runFromApp(
+        { type: "run-step", id: 2, args: ["scan", "survey", "forge-ledger", "--root", "/x"] },
+        post,
+      );
+      const [a, b] = replies;
+      if (replies.length !== 2 || a?.type !== "run-end" || a.state !== "refused" || a.id !== 1)
+        throw new Error(`a local command: ${JSON.stringify(replies)}`);
+      if (b?.state !== "refused" || !/starts with "-"/.test(String((b.lines as string[])[0])))
+        throw new Error(`an option: ${JSON.stringify(b)}`);
+      return String((a.lines as string[])[0]);
+    },
+  );
 
   await check("Set up Copilot uses VS Code's own setup when it has one", async () => {
     const all = await vscode.commands.getCommands(true);

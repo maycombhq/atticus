@@ -201,6 +201,71 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "atticus.waitingByKind",
+        "title": "Group by kind",
+        "category": "Atticus",
+        "icon": "$(list-flat)"
+      },
+      {
+        "command": "atticus.waitingByChange",
+        "title": "Group by change",
+        "category": "Atticus",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "atticus.filterWaiting",
+        "title": "Filter…",
+        "category": "Atticus",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "atticus.clearFilterWaiting",
+        "title": "Clear filter",
+        "category": "Atticus",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "atticus.filterChanges",
+        "title": "Filter…",
+        "category": "Atticus",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "atticus.clearFilterChanges",
+        "title": "Clear filter",
+        "category": "Atticus",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "atticus.filterKnowledge",
+        "title": "Filter…",
+        "category": "Atticus",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "atticus.clearFilterKnowledge",
+        "title": "Clear filter",
+        "category": "Atticus",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "atticus.filterRuns",
+        "title": "Filter…",
+        "category": "Atticus",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "atticus.clearFilterRuns",
+        "title": "Clear filter",
+        "category": "Atticus",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "atticus.openRunAnswer",
+        "title": "Open a model run's answer",
+        "category": "Atticus"
+      },
+      {
         "command": "atticus.showLog",
         "title": "Show the commands run",
         "category": "Atticus"
@@ -579,6 +644,13 @@
           "visibility": "collapsed",
           "when": "atticus.hasMetarepo && !atticus.cliMissing",
           "initialSize": 1
+        },
+        {
+          "id": "atticus.runs",
+          "name": "Model runs",
+          "visibility": "collapsed",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
+          "initialSize": 1
         }
       ]
     },
@@ -591,8 +663,58 @@
         },
         {
           "command": "atticus.refresh",
-          "when": "view =~ /^atticus.(view|questions|repos|changes|knowledge|catalog)$/",
+          "when": "view =~ /^atticus.(view|questions|repos|changes|knowledge|catalog|runs)$/",
           "group": "navigation@9"
+        },
+        {
+          "command": "atticus.waitingByKind",
+          "when": "view == atticus.questions && atticus.waitingGroup != kind",
+          "group": "navigation@6"
+        },
+        {
+          "command": "atticus.waitingByChange",
+          "when": "view == atticus.questions && atticus.waitingGroup == kind",
+          "group": "navigation@6"
+        },
+        {
+          "command": "atticus.filterWaiting",
+          "when": "view == atticus.questions",
+          "group": "navigation@7"
+        },
+        {
+          "command": "atticus.clearFilterWaiting",
+          "when": "view == atticus.questions && atticus.filtered.questions",
+          "group": "navigation@8"
+        },
+        {
+          "command": "atticus.filterChanges",
+          "when": "view == atticus.changes",
+          "group": "navigation@7"
+        },
+        {
+          "command": "atticus.clearFilterChanges",
+          "when": "view == atticus.changes && atticus.filtered.changes",
+          "group": "navigation@8"
+        },
+        {
+          "command": "atticus.filterKnowledge",
+          "when": "view == atticus.knowledge",
+          "group": "navigation@7"
+        },
+        {
+          "command": "atticus.clearFilterKnowledge",
+          "when": "view == atticus.knowledge && atticus.filtered.knowledge",
+          "group": "navigation@8"
+        },
+        {
+          "command": "atticus.filterRuns",
+          "when": "view == atticus.runs",
+          "group": "navigation@7"
+        },
+        {
+          "command": "atticus.clearFilterRuns",
+          "when": "view == atticus.runs && atticus.filtered.runs",
+          "group": "navigation@8"
         },
         {
           "command": "atticus.runCommand",
@@ -1031,6 +1153,50 @@
         {
           "command": "atticus.showManualStep",
           "when": "false"
+        },
+        {
+          "command": "atticus.openRunAnswer",
+          "when": "false"
+        },
+        {
+          "command": "atticus.waitingByKind",
+          "when": "focusedView == atticus.questions && atticus.waitingGroup != kind"
+        },
+        {
+          "command": "atticus.waitingByChange",
+          "when": "focusedView == atticus.questions && atticus.waitingGroup == kind"
+        },
+        {
+          "command": "atticus.filterWaiting",
+          "when": "focusedView == atticus.questions"
+        },
+        {
+          "command": "atticus.clearFilterWaiting",
+          "when": "focusedView == atticus.questions && atticus.filtered.questions"
+        },
+        {
+          "command": "atticus.filterChanges",
+          "when": "focusedView == atticus.changes"
+        },
+        {
+          "command": "atticus.clearFilterChanges",
+          "when": "focusedView == atticus.changes && atticus.filtered.changes"
+        },
+        {
+          "command": "atticus.filterKnowledge",
+          "when": "focusedView == atticus.knowledge"
+        },
+        {
+          "command": "atticus.clearFilterKnowledge",
+          "when": "focusedView == atticus.knowledge && atticus.filtered.knowledge"
+        },
+        {
+          "command": "atticus.filterRuns",
+          "when": "focusedView == atticus.runs"
+        },
+        {
+          "command": "atticus.clearFilterRuns",
+          "when": "focusedView == atticus.runs && atticus.filtered.runs"
         }
       ],
       "atticus.start": [

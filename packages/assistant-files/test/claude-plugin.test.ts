@@ -102,10 +102,14 @@ describe("the Claude Code plugin (ADR 0104)", () => {
       const bin = join(dir, "fake-atticus.js");
       await writeFile(
         bin,
-        `console.log(JSON.stringify({ next: { step: "survey", command: "atticus scan survey forge-ledger", slash: "/atticus-survey forge-ledger", why: "forge-ledger has no scan settings yet." }, steps: [] }));`,
+        [
+          "const w = process.argv[2];",
+          'if (w === "next") console.log(JSON.stringify({ next: { step: "survey", command: "atticus scan survey forge-ledger", slash: "/atticus-survey forge-ledger", why: "forge-ledger has no scan settings yet." }, steps: [] }));',
+          'else if (w === "waiting") console.log(JSON.stringify({ counts: { questions: 0, needs: 2, manualSteps: 1, findings: 0, knowledgeToVerify: 0 } }));',
+        ].join("\n"),
       );
       expect(runHook(dir, join(meta, "org-pack"), bin)).toBe(
-        "This is an Atticus metarepo. Next step: forge-ledger has no scan settings yet. Run /atticus-survey forge-ledger (or atticus scan survey forge-ledger). The atticus MCP tools read its catalog, knowledge, changes and needs.\n",
+        "This is an Atticus metarepo. Next step: forge-ledger has no scan settings yet. Run /atticus-survey forge-ledger (or atticus scan survey forge-ledger). Waiting on you: 2 open needs, 1 manual step (the waiting_on_you tool lists them by change). The atticus MCP tools read its catalog, knowledge, changes, needs and model runs.\n",
       );
     });
 
