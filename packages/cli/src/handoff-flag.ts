@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { HandoffRuntime, TOOL_LIMITS, type Run } from "@maycombhq/ai";
 import { CONTEXT_TOOLS } from "@maycombhq/index";
 import { changesRelOf, listQuestions, runsDirOf, runsRelOf, type Question } from "@maycombhq/core";
+import { lensRunOf } from "@maycombhq/naysayer";
 import type { Output } from "./commands.js";
 
 /**
@@ -15,7 +16,7 @@ import type { Output } from "./commands.js";
  *
  * With --json (ADR 0090) it prints one JSON object instead, for a tool that runs the loop (the
  * VS Code extension): the hand-off (state "handoff", the run, both files, both commands as text
- * and as argv), or the step's end: "done" (exit 0), "question" (it raised or re-asked an open
+ * and as argv, and the lens when the run is one of the critic's AI lenses), or the step's end: "done" (exit 0), "question" (it raised or re-asked an open
  * question), "stopped" (exit 1) or "failed" (exit 2 or more, or it threw), with its messages.
  */
 
@@ -47,6 +48,15 @@ export const isHandoffStep = (group: string | undefined, command: string | undef
  */
 const isCritic = (group: string | undefined, command: string | undefined) =>
   group === "critic" && !!command && command !== "stats";
+
+/**
+ * The stages (ADR 0115): after a draft passes the rules, the critic's AI lenses wait together,
+ * one run each, and the stage offers them as the critic does, one at a time, oldest first.
+ */
+const isStage = (group: string | undefined, command: string | undefined) =>
+  (group === "change" &&
+    (command === "feature" || command === "architecture" || command === "small")) ||
+  (group === "plan" && command === "stories");
 
 type Dispatch = (argv: string[], io: Output) => Promise<number>;
 
@@ -130,8 +140,10 @@ export async function handoffStep(
   const resumed = resume.length ? resume.join("=").split("=").at(-1) : undefined;
   const resumedRun = [...after.values()].find((s) => s.run.runId === resumed)?.run;
   const still = resumedRun?.state === "waiting" ? resumedRun : undefined;
-  const queue = isCritic(args[0], args[1]);
-  // The critic's next lens: a run of the same change, started with or after the one resumed.
+  const critic = isCritic(args[0], args[1]);
+  const queue = critic || isStage(args[0], args[1]);
+  // The critic's next lens: a run of the same change, started with or after the one resumed
+  // (for a stage, a lens run: the stage's next draft is a new run, found above).
   const next =
     queue && resumedRun && !still
       ? [...after.values()]
@@ -141,7 +153,8 @@ export async function handoffStep(
               x.state === "waiting" &&
               x.runId !== resumedRun.runId &&
               x.request.change === resumedRun.request.change &&
-              x.startedAt >= resumedRun.startedAt,
+              x.startedAt >= resumedRun.startedAt &&
+              (critic || !!lensRunOf(x.request)),
           )
           .sort(byStart)[0]
       : undefined;
@@ -214,11 +227,14 @@ async function printJson(
     const runsRel = runsRelOf(root);
     const doneArgs = ["handoff", "done", run.runId, ...rootArgv(argv)];
     const resumeArgs = [...args, "--handoff", "--json", "--resume", run.runId];
+    const lens = lensRunOf(run.request);
     io.out(
       JSON.stringify(
         {
           state: "handoff",
           runId: run.runId,
+          // ADR 0115: one of the critic's AI lenses, reviewing what the step wrote.
+          ...(lens ? { lens } : {}),
           root,
           ...(s.still ? { stillWaiting: true } : {}),
           promptFile: HandoffRuntime.promptRel(run, runsRel),

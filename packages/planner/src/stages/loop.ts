@@ -32,9 +32,13 @@ import {
   type ChangeContext,
 } from "@maycombhq/changes";
 import {
+  completeLensRun,
   fingerprint as criticFingerprint,
+  readRound,
   runCritic,
+  waitingLenses,
   writeQuarantineItems,
+  type StoredFinding,
 } from "@maycombhq/naysayer";
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
@@ -57,8 +61,10 @@ import {
 
 /**
  * The loop every stage runs (ADR 0087, plan principle 4): the assistant drafts through the AI
- * runtime; the stage's own checks and a critic round (its rules, and its AI lenses when the
- * runtime can run them) review the draft; findings go back for another draft, with no cap on
+ * runtime; the stage's own checks and a critic round review the draft: the critic's rules, then,
+ * once the draft passes the rules, its AI lenses on the draft against the estate and the brief
+ * (ADR 0115; in hand-off mode each lens is a further hand-off, offered one at a time, and the
+ * draft's findings wait until every lens is in). Findings go back for another draft, with no cap on
  * model calls. Each finding has a fingerprint of its rule, target and evidence. One that comes
  * back unchanged twice (three drafts in a row), or comes back after it was gone, stops the
  * loop: a finding a person can decide becomes a question (ADR 0078); a drafting finding (the
@@ -131,8 +137,8 @@ export interface StageSpec<A> {
 export interface StageOptions {
   runtime: AiRuntime;
   /**
-   * The runtime for the critic's AI lenses. Default: the stage's runtime, except hand-off,
-   * where the lenses wait for `atticus critic --resume` and the loop runs the critic's rules.
+   * The runtime for the critic's AI lenses. Default: the stage's runtime; in hand-off mode each
+   * lens is handed off in turn (ADR 0115). Null: the critic's rules only.
    */
   criticRuntime?: AiRuntime | null;
   now?: Date;
@@ -158,7 +164,8 @@ export interface StageResult<A> {
   questions: Question[];
   files: string[];
   answer?: A;
-  waiting?: { runId: string };
+  /** The run handed off: a draft, or one of the critic's AI lenses reviewing it (ADR 0115). */
+  waiting?: { runId: string; lens?: string };
   /** The command that opens the stage's PR, once it is done. */
   pr?: string;
   notes: string[];
@@ -292,6 +299,20 @@ export async function runStageLoop<A>(
     };
   };
 
+  // A critic round waiting for its AI lenses: the stage waits for the first one (ADR 0115).
+  const handedToLens = async (
+    w: LensWait,
+    draft: { draft?: string; files: string[]; issues: StageIssue[] },
+    extra: Partial<StageResult<A>> = {},
+  ): Promise<StageResult<A>> => {
+    loop.review = { gate: w.gate, round: w.round, ...draft };
+    loop.state = "waiting";
+    loop.run = w.runId;
+    loop.updatedAt = at;
+    await writeLoop(dir, loop);
+    return result("waiting", { ...extra, waiting: { runId: w.runId, lens: w.lens } });
+  };
+
   // A stage waiting for a person stays stopped until the questions are answered.
   if (!o.resume && loop.state === "questions") {
     const open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
@@ -305,8 +326,16 @@ export async function runStageLoop<A>(
       .then((t) => (JSON.parse(t) as { state?: string }).state)
       .catch(() => undefined);
     if (run === "waiting") {
-      notes.push(`The draft is still with your assistant (run ${loop.run}).`);
-      return result("waiting", { waiting: { runId: loop.run } });
+      const lens = loop.review
+        ? (await waitingLenses(root, change.id, loop.review.gate)).find((w) => w.runId === loop.run)
+            ?.lens
+        : undefined;
+      notes.push(
+        lens
+          ? `The ${lens} lens's review of the draft is still with your assistant (run ${loop.run}).`
+          : `The draft is still with your assistant (run ${loop.run}).`,
+      );
+      return result("waiting", { waiting: { runId: loop.run, ...(lens ? { lens } : {}) } });
     }
     if (run === "validated") {
       // atticus handoff done checked its answer, and nothing read it in: read it in now.
@@ -344,9 +373,13 @@ export async function runStageLoop<A>(
       issues = (await spec.check(cur)).filter((i) => i.blocking);
       if (issues.length === 0) {
         const files = await spec.write(cur);
-        issues = (await criticRound(root, ctx, change, spec, o, loop, notes, kindOf)).filter(
-          (i) => i.blocking,
-        );
+        const c = await criticRound(root, ctx, change, spec, o, loop, notes, kindOf, {
+          files,
+          sources: spec.sources,
+        });
+        if (c.waiting)
+          return handedToLens(c.waiting, { files, issues: [] }, { files, answer: cur });
+        issues = c.issues.filter((i) => i.blocking);
         if (issues.length === 0) {
           loop.state = "done";
           loop.updatedAt = at;
@@ -369,89 +402,120 @@ export async function runStageLoop<A>(
 
   let resume = o.resume ?? carried;
   for (;;) {
-    // ---- draft
-    const answered = (await questionsOf(loop.questions)).filter((q) => q.state === "answered");
-    const decided = new Set(answered.map((q) => q.id));
-    const fix = issues.filter((i) => i.blocking);
-    const sources: SourceInput[] = [
-      {
-        id: "instructions",
-        kind: "instruction",
-        origin: "atticus",
-        text: instructionsWith(spec.instructions, fix, answered),
-        classification: "public",
-        trusted: true,
-      },
-      ...spec.sources,
-    ];
-    const pack = buildContextPack({
-      change: change.id,
-      agent: agent.id,
-      budget: agent.tokenBudget,
-      sources,
-      levels,
-      maxClassification: levels.includes("internal") ? "internal" : levels[0]!,
-      now,
-      step: `${spec.stage === "stories" ? "plan" : "change"} ${spec.stage} ${change.id}`,
-    });
-    let run: Run;
-    if (resume) {
-      run = await o.runtime.result(resume);
-      resume = undefined;
-    } else {
-      const prepared = await o.runtime.prepare({
-        change: change.id,
-        agent,
-        pack,
-        outputPath: spec.output,
-        outputIn: "run",
-      });
-      await writeQuarantineItems(
-        root,
-        change.id,
-        prepared.runId,
-        quarantineItems(pack.defences ?? []),
-      );
-      run = await o.runtime.run(prepared.runId);
-    }
-    runs.push(toRunSummary(run));
-    if (run.state === "waiting" || run.state === "prepared") {
-      loop.state = "waiting";
-      loop.run = run.runId;
-      loop.updatedAt = at;
-      await writeLoop(dir, loop);
-      return result("waiting", { waiting: { runId: run.runId } });
-    }
-    delete loop.run;
-    drafts++;
-    loop.iteration++;
-    const n = loop.iteration;
-    loop.read = [...new Set([...loop.read, ...answered.map((q) => q.id)])].sort();
-
-    // ---- check
+    let answered: Question[];
+    let run: Run | undefined;
     let answer: A | undefined;
     const found: StageIssue[] = [];
     let files: string[] = [];
-    if (run.output === undefined || run.state === "failed" || run.state === "cancelled")
-      found.push({
-        rule: "stage.no-answer",
-        target: spec.stage,
-        message: `The assistant gave no answer (${run.state}${run.errors.length ? `: ${run.errors.join("; ")}` : ""}).`,
-        blocking: true,
+    const review = resume ? loop.review : undefined;
+    if (review) {
+      // ---- the critic's AI lenses on the last draft, handed off one at a time (ADR 0115)
+      const lenses = await lensesIn(root, change.id, review, o, at, kindOf);
+      resume = undefined;
+      if (lenses.waiting) return handedToLens(lenses.waiting, review);
+      delete loop.review;
+      delete loop.run;
+      answered = (await questionsOf(loop.questions)).filter((q) => q.state === "answered");
+      if (review.draft) run = await o.runtime.result(review.draft).catch(() => undefined);
+      answer = await spec.current();
+      files = review.files;
+      found.push(...review.issues, ...lenses.issues);
+    } else {
+      // ---- draft
+      answered = (await questionsOf(loop.questions)).filter((q) => q.state === "answered");
+      const fix = issues.filter((i) => i.blocking);
+      const sources: SourceInput[] = [
+        {
+          id: "instructions",
+          kind: "instruction",
+          origin: "atticus",
+          text: instructionsWith(spec.instructions, fix, answered),
+          classification: "public",
+          trusted: true,
+        },
+        ...spec.sources,
+      ];
+      const pack = buildContextPack({
+        change: change.id,
+        agent: agent.id,
+        budget: agent.tokenBudget,
+        sources,
+        levels,
+        maxClassification: levels.includes("internal") ? "internal" : levels[0]!,
+        now,
+        step: `${spec.stage === "stories" ? "plan" : "change"} ${spec.stage} ${change.id}`,
       });
-    else {
-      // A line cited by the data block it was read in is read as that block's file (cite.ts).
-      const p = spec.parse(citeFiles(run.output, sources));
-      found.push(...p.issues);
-      answer = p.answer;
+      let draftRun: Run;
+      if (resume) {
+        draftRun = await o.runtime.result(resume);
+        resume = undefined;
+      } else {
+        const prepared = await o.runtime.prepare({
+          change: change.id,
+          agent,
+          pack,
+          outputPath: spec.output,
+          outputIn: "run",
+        });
+        await writeQuarantineItems(
+          root,
+          change.id,
+          prepared.runId,
+          quarantineItems(pack.defences ?? []),
+        );
+        draftRun = await o.runtime.run(prepared.runId);
+      }
+      run = draftRun;
+      runs.push(toRunSummary(run));
+      if (run.state === "waiting" || run.state === "prepared") {
+        loop.state = "waiting";
+        loop.run = run.runId;
+        loop.updatedAt = at;
+        await writeLoop(dir, loop);
+        return result("waiting", { waiting: { runId: run.runId } });
+      }
+      delete loop.run;
+      drafts++;
+      loop.iteration++;
+      loop.read = [...new Set([...loop.read, ...answered.map((q) => q.id)])].sort();
+
+      // ---- check
+      if (run.output === undefined || run.state === "failed" || run.state === "cancelled")
+        found.push({
+          rule: "stage.no-answer",
+          target: spec.stage,
+          message: `The assistant gave no answer (${run.state}${run.errors.length ? `: ${run.errors.join("; ")}` : ""}).`,
+          blocking: true,
+        });
+      else {
+        // A line cited by the data block it was read in is read as that block's file (cite.ts).
+        const p = spec.parse(citeFiles(run.output, sources));
+        found.push(...p.issues);
+        answer = p.answer;
+        if (answer !== undefined) {
+          found.push(...(await spec.check(answer)));
+          files = await spec.write(answer);
+        }
+      }
+      // ---- the critic, on every iteration: its rules, and its AI lenses once the draft passes
+      // the stage's checks (ADR 0115)
       if (answer !== undefined) {
-        found.push(...(await spec.check(answer)));
-        files = await spec.write(answer);
+        const c = await criticRound(root, ctx, change, spec, o, loop, notes, kindOf, {
+          files,
+          sources: spec.sources,
+          lenses: !found.some((i) => i.blocking),
+        });
+        if (c.waiting)
+          return handedToLens(
+            c.waiting,
+            { draft: run.runId, files, issues: found },
+            { files, ...(answer !== undefined ? { answer } : {}) },
+          );
+        found.push(...c.issues);
       }
     }
-    // ---- the critic, on every iteration
-    if (answer !== undefined)
-      found.push(...(await criticRound(root, ctx, change, spec, o, loop, notes, kindOf)));
+    const n = loop.iteration;
+    const decided = new Set(answered.map((q) => q.id));
 
     // ---- fingerprints and the end rule
     const toAsk: { f: LoopFinding; issue: StageIssue }[] = [];
@@ -530,7 +594,7 @@ export async function runStageLoop<A>(
             repo,
             command: rerunOf(spec.stage, change.id),
             rerun: rerunOf(spec.stage, change.id),
-            ...(run.runId ? { run: run.runId } : {}),
+            ...(run?.runId ? { run: run.runId } : {}),
             at,
           },
         );
@@ -543,7 +607,7 @@ export async function runStageLoop<A>(
       loop.questions = [...new Set([...loop.questions, ...qs.map((q) => q.id)])].sort();
     }
     // A gap the answer relies on goes to a person (ADR 0107 point 5).
-    if (answer !== undefined && run.output && spec.gaps?.length) {
+    if (answer !== undefined && run?.output && spec.gaps?.length) {
       const asked = await askGaps(root, change.id, spec.gaps, run.output, {
         command: rerunOf(spec.stage, change.id),
         rerun: rerunOf(spec.stage, change.id),
@@ -657,10 +721,82 @@ export async function lineExists(root: string, at: string): Promise<boolean> {
   return n <= text.replace(/\n$/, "").split(/\r?\n/).length;
 }
 
+/** A critic lens handed off and waiting for the person's assistant (ADR 0115). */
+interface LensWait {
+  runId: string;
+  lens: string;
+  gate: string;
+  round: number;
+}
+
+/** The draft the critic's AI lenses review with the artifacts it was drafted from (ADR 0115). */
+interface DraftReview {
+  files: string[];
+  sources: SourceInput[];
+  /** Run the AI lenses: the draft passed the stage's checks. Default: yes. */
+  lenses?: boolean;
+}
+
+/** The runtime the critic's AI lenses run with, or none (rules only; AI off). */
+function lensRuntimeOf(ctx: ChangeContext, o: StageOptions): AiRuntime | undefined {
+  if (o.criticRuntime === null || ctx.orgPack.runtime.ai === "off") return undefined;
+  return o.criticRuntime ?? o.runtime;
+}
+
+/** A round's open blocking findings as the stage's issues, fingerprinted by the critic's own fingerprint. */
+async function criticIssues(
+  root: string,
+  change: string,
+  findings: StoredFinding[],
+  kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
+): Promise<StageIssue[]> {
+  const rel = `${changesRelOf(root)}/${change}`;
+  const out: StageIssue[] = [];
+  for (const f of findings.filter(
+    (x) => x.finding.state === "open" && x.finding.severity === "blocking",
+  ))
+    out.push({
+      rule: `critic:${f.finding.rule}`,
+      target: criticFingerprint(f.finding),
+      evidence: `${rel}/${f.finding.artifact}${f.finding.locator.line ? `:${f.finding.locator.line}` : ""}`,
+      message: `The critic (${f.finding.rule}): ${f.finding.summary}`,
+      blocking: true,
+      kind: await kindOf(f.finding),
+    });
+  return out;
+}
+
 /**
- * One critic round at the stage's gate: its rules, and its AI lenses when the runtime can run
- * them here. Open blocking findings come back as issues, fingerprinted by the critic's own
- * fingerprint, so an unchanged finding is the same finding in every round.
+ * The critic round a draft waits on, after a hand-off resume: a lens answer `atticus handoff
+ * done` validated but didn't read in is read in now; the first lens still out is waited for;
+ * when every lens is in, the round's open blocking findings come back as issues.
+ */
+async function lensesIn(
+  root: string,
+  change: string,
+  review: { gate: string; round: number },
+  o: StageOptions,
+  at: string,
+  kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
+): Promise<{ waiting?: LensWait; issues: StageIssue[] }> {
+  const rt = o.criticRuntime ?? o.runtime;
+  for (const w of await waitingLenses(root, change, review.gate)) {
+    if (w.round !== review.round) continue;
+    const run = await rt.result(w.runId).catch(() => undefined);
+    if (run?.state === "validated") {
+      await completeLensRun(root, run, { now: at });
+      continue;
+    }
+    return { waiting: { ...w, gate: review.gate }, issues: [] };
+  }
+  const { findings } = await readRound(root, change, review.gate, review.round);
+  return { issues: await criticIssues(root, change, findings, kindOf) };
+}
+
+/**
+ * One critic round at the stage's gate: its rules, and its AI lenses on the draft when the
+ * draft passed the stage's checks (ADR 0115). Open blocking findings come back as issues; a
+ * lens handed off to the person's assistant comes back as the one to wait for.
  */
 async function criticRound(
   root: string,
@@ -671,7 +807,8 @@ async function criticRound(
   loop: StageLoop,
   notes: string[],
   kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
-): Promise<StageIssue[]> {
+  draft: DraftReview,
+): Promise<{ issues: StageIssue[]; waiting?: LensWait }> {
   const gate = spec.gate === undefined ? stageGate(ctx, spec.stage) : spec.gate;
   if (!gate) {
     notes.push(
@@ -679,40 +816,26 @@ async function criticRound(
         ? `No gate in gates.yaml is for the ${spec.stage} step's change type, so no critic ran.`
         : `No gate in gates.yaml is for the ${STAGE_PHASE[spec.stage]} phase, so no critic ran.`,
     );
-    return [];
+    return { issues: [] };
   }
-  const lensRuntime =
-    o.criticRuntime === null
-      ? undefined
-      : (o.criticRuntime ?? (o.runtime.kind === "hand-off" ? undefined : o.runtime));
-  if (!lensRuntime && o.criticRuntime === undefined && o.runtime.kind === "hand-off")
-    notes.push(
-      `The critic ran its rules at the ${gate} gate; its AI lenses run with /atticus-critic ${change.id} (atticus critic ${change.id} --mode hand-off) before the stage's PR.`,
-    );
+  const lensRuntime = draft.lenses === false ? undefined : lensRuntimeOf(ctx, o);
   try {
     const r = await runCritic(root, change.id, {
       gate,
       ...(lensRuntime ? { runtime: lensRuntime } : {}),
+      review: { stage: spec.stage, files: draft.files, sources: draft.sources },
       now: (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z"),
     });
     loop.critic = [...loop.critic, { gate, round: r.round }];
-    const rel = `${changesRelOf(root)}/${change.id}`;
-    const open = r.findings.filter(
-      (f) => f.finding.state === "open" && f.finding.severity === "blocking",
-    );
-    const out: StageIssue[] = [];
-    for (const f of open)
-      out.push({
-        rule: `critic:${f.finding.rule}`,
-        target: criticFingerprint(f.finding),
-        evidence: `${rel}/${f.finding.artifact}${f.finding.locator.line ? `:${f.finding.locator.line}` : ""}`,
-        message: `The critic (${f.finding.rule}): ${f.finding.summary}`,
-        blocking: true,
-        kind: await kindOf(f.finding),
-      });
-    return out;
+    const first = r.lenses.find((l) => l.state === "waiting" && l.runId);
+    if (first)
+      return {
+        issues: [],
+        waiting: { runId: first.runId!, lens: first.lens, gate, round: r.round },
+      };
+    return { issues: await criticIssues(root, change.id, r.findings, kindOf) };
   } catch (e) {
     notes.push(`The critic didn't run at the ${gate} gate: ${(e as Error).message}`);
-    return [];
+    return { issues: [] };
   }
 }
