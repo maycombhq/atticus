@@ -108,6 +108,10 @@
             "description": "Write a change's stories and tasks: /stories <change>"
           },
           {
+            "name": "small",
+            "description": "Plan a small change in one step, brief to tasks: /small <change>"
+          },
+          {
             "name": "answer",
             "description": "The open questions, with a button for each answer"
           },
@@ -170,6 +174,11 @@
       {
         "command": "atticus.stories",
         "title": "Write a change's stories",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.small",
+        "title": "Run a small change's fast path",
         "category": "Atticus"
       },
       {
@@ -331,6 +340,18 @@
         "title": "Run the task",
         "category": "Atticus",
         "icon": "$(play)"
+      },
+      {
+        "command": "atticus.startTask",
+        "title": "Start this task in Copilot",
+        "category": "Atticus",
+        "icon": "$(copilot)"
+      },
+      {
+        "command": "atticus.attachToChange",
+        "title": "Attach to Atticus change",
+        "category": "Atticus",
+        "icon": "$(file-add)"
       },
       {
         "command": "atticus.checkHealth",
@@ -893,6 +914,21 @@
           "group": "inline"
         },
         {
+          "command": "atticus.startTask",
+          "when": "view == atticus.changes && viewItem == atticus.task",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.startTask",
+          "when": "view == atticus.changes && viewItem == atticus.task",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.attachToChange",
+          "when": "view == atticus.changes && viewItem == atticus.change",
+          "group": "atticus"
+        },
+        {
           "command": "atticus.answerRepo",
           "when": "view == atticus.questions && viewItem == atticus.questionRepo",
           "group": "inline"
@@ -1270,6 +1306,13 @@
           "command": "atticus.addKnowledge",
           "group": "3_bring@8",
           "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "atticus.attachToChange",
+          "when": "atticus.hasMetarepo && !explorerResourceIsFolder",
+          "group": "7_modification"
         }
       ]
     },

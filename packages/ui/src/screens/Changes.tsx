@@ -4,6 +4,7 @@ import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
 import { escapeCloses, Panel, Ring, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
 import { NeedsPanel } from "./knowledge/Needs.js";
+import { ChangeInputs } from "./ChangeInputs.js";
 import { COPY } from "../copy.js";
 import { Note, useAction } from "./know/common.js";
 
@@ -621,6 +622,8 @@ function Detail({ id }: { id: string }) {
           )}
         </View>
       </Panel>
+
+      <ChangeInputs change={id} />
 
       <Panel
         title={T.openFindings}

@@ -69,6 +69,8 @@ const AI_STEPS = new Set([
   "knowledge scan",
   "change feature",
   "change architecture",
+  // ADR 0113: the fast path's one step.
+  "change small",
   "change draft",
   "plan stories",
   // ADR 0101: what a change needs from the organisation; searching the wikis for a phrase.
@@ -102,6 +104,7 @@ export const STEP_COMMANDS = {
   feature: { args: (t: string) => ["change", "feature", t], target: "change" },
   architecture: { args: (t: string) => ["change", "architecture", t], target: "change" },
   stories: { args: (t: string) => ["plan", "stories", t], target: "change" },
+  small: { args: (t: string) => ["change", "small", t], target: "change" },
 } as const;
 
 export type StepCommand = keyof typeof STEP_COMMANDS;

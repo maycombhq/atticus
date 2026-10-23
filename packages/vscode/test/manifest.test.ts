@@ -31,7 +31,7 @@ describe("the extension's manifest and its code", () => {
     ].map((m) => m[1]!),
   );
   // The step commands are registered in a loop over STEP_COMMANDS.
-  for (const s of ["survey", "verify", "spec", "feature", "architecture", "stories"])
+  for (const s of ["survey", "verify", "spec", "feature", "architecture", "stories", "small"])
     registered.add(`atticus.${s}`);
 
   it("registers every command it declares", () => {

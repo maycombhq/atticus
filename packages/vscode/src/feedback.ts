@@ -39,6 +39,8 @@ export function aiProgressTitle(args: string[]): string {
       return `Placing ${c} on the flows and features, with Copilot`;
     case "change architecture":
       return `The architecture stage of ${c}, with Copilot`;
+    case "change small":
+      return `Planning the small change ${c} in one step, with Copilot`;
     case "change draft":
       return `Drafting ${owner(c ?? "the change")} proposal, spec and interfaces with Copilot`;
     case "plan stories":

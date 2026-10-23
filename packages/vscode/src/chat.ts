@@ -74,6 +74,7 @@ function chatQuery(n: NextStep): string | undefined {
     "change feature": "feature",
     "change architecture": "architecture",
     "plan stories": "stories",
+    "change small": "small",
   };
   return byWords[w] && t ? `@atticus /${byWords[w]} ${t}` : undefined;
 }
@@ -226,7 +227,7 @@ export function chatHandler(svc: Service, commands?: () => CommandUi): vscode.Ch
     if (!cmd || cmd === "next") {
       if (!cmd && request.prompt.trim())
         stream.markdown(
-          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /answer, /diagram [repo], /changemap <change>, /new <title>, /run <command> or /ask <question>.\n\n",
+          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /small <change>, /answer, /diagram [repo], /changemap <change>, /new <title>, /run <command> or /ask <question>.\n\n",
         );
       return next(svc, root, stream, token);
     }
