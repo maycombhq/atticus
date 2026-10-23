@@ -42,15 +42,108 @@ export async function citedLine(repo: RepoHandle, at: string): Promise<string | 
   return text.replace(/\r\n?/g, "\n").split("\n")[n - 1];
 }
 
+/** Code, by extension: the files an exclude must not drop wholesale (ADR 0111). */
+const CODE_EXT = new Set(
+  (
+    "java kt scala groovy ts tsx js jsx mjs cjs py go rb cs fs vb php rs swift m mm c cc cpp h hpp " +
+    "dart ex exs erl clj lua pl"
+  ).split(" "),
+);
+/** Build output and dependencies: never the repo's own code. */
+const NOT_OWN = /(^|\/)(node_modules|\.git|target|bin|obj|dist|build|\.atticus|vendor)\//;
+/** Build and config files, by name or extension: the files that may leave a folder out. */
+const CONFIG_EXT = new Set(
+  "xml json jsonc yaml yml toml properties gradle cfg ini conf csproj sln props targets".split(" "),
+);
+const CONFIG_NAME =
+  /^(makefile|dockerfile|build\.gradle\.kts|settings\.gradle\.kts|\.[a-z]*ignore|\.editorconfig)$/i;
+
+const ext = (f: string) => /\.([^./]+)$/.exec(f)?.[1]?.toLowerCase() ?? "";
+const base = (f: string) => f.slice(f.lastIndexOf("/") + 1);
+export const isCodeFile = (f: string) => !NOT_OWN.test(f) && CODE_EXT.has(ext(f));
+export const isConfigFile = (f: string) => CONFIG_EXT.has(ext(f)) || CONFIG_NAME.test(base(f));
+
+/** The folder name a glob is about: its longest segment with the wildcards taken out. */
+export function globName(glob: string): string {
+  return glob
+    .split("/")
+    .map((s) => s.replace(/[*?[\]{}!]/g, ""))
+    .reduce((a, b) => (b.length > a.length ? b : a), "");
+}
+
+/**
+ * The prefix a cited value gives (ADR 0111): the value with one slash in front and none at the
+ * end, the path of a URL, or the default of a placeholder (${NAME:/default}); quotes around it
+ * are left out. Undefined when the value gives no path.
+ */
+export function prefixOf(value: string): string | undefined {
+  let v = value.trim().replace(/^["'`]|["'`]$/g, "");
+  const dflt = /^\$\{[^:}]+:([^}]*)\}$/.exec(v);
+  if (dflt) v = dflt[1]!;
+  const url = /^https?:\/\/[^/?#\s]+(\/[^?#\s]*)?/.exec(v);
+  if (url) v = url[1] ?? "";
+  if (/[${}\s?#]/.test(v)) return undefined;
+  const p = `/${v.replace(/^\/+/, "").replace(/\/+$/, "")}`;
+  return p === "/" ? undefined : p;
+}
+
+const trimSlash = (p: string) => p.replace(/\/+$/, "") || "/";
+
 export async function checkScanSettings(
   s: ScanSettings,
   repo: RepoHandle,
 ): Promise<CheckedSettings> {
   const out: CheckedSettings = { exclude: [], prefixes: [], clients: [], problems: [] };
+  // ADR 0111: what an exclude would leave out of the repo's own code.
+  const code: string[] = [];
+  if (s.exclude.length)
+    for await (const f of repo.listFiles(["**/*"])) if (isCodeFile(f)) code.push(f);
+  const perTop = new Map<string, number>();
+  for (const f of code)
+    if (f.includes("/")) perTop.set(f.split("/")[0]!, (perTop.get(f.split("/")[0]!) ?? 0) + 1);
+  const most = Math.max(0, ...perTop.values());
+  // The one top-level folder holding more code than any other; none on a tie.
+  const tops = [...perTop].filter(([, n]) => n === most && n > 0).map(([d]) => d);
+  const mainRoots = tops.length === 1 ? tops : [];
   for (const [i, e] of s.exclude.entries()) {
-    if ((await citedLine(repo, e.at)) === undefined)
+    const line = await citedLine(repo, e.at);
+    if (line === undefined) {
       out.problems.push(`exclude.${i}: ${e.at} isn't in the repo, so ${e.path} is still read`);
-    else out.exclude.push(globToRegExp(e.path));
+      continue;
+    }
+    const re = globToRegExp(e.path);
+    const file = e.at.slice(0, e.at.lastIndexOf(":"));
+    const name = globName(e.path);
+    const names = name !== "" && line.includes(name);
+    if (!re.test(file) && !names) {
+      out.problems.push(
+        `exclude.${i}: ${e.at} isn't in ${e.path} and doesn't name it, so ${e.path} is still read`,
+      );
+      continue;
+    }
+    // A build or config file that leaves the folder out itself speaks for it, however big.
+    if (!(isConfigFile(file) && names)) {
+      const dropped = code.filter((f) => re.test(f));
+      const root = mainRoots.find((d) => {
+        const under = code.filter((f) => f.startsWith(`${d}/`));
+        return under.length && under.every((f) => re.test(f));
+      });
+      const why =
+        " so it is still read; only a build or config file that leaves it out itself can say so";
+      if (dropped.length * 2 > code.length) {
+        out.problems.push(
+          `exclude.${i}: ${e.path} leaves out ${dropped.length} of the repo's ${code.length} code files,${why}`,
+        );
+        continue;
+      }
+      if (root) {
+        out.problems.push(
+          `exclude.${i}: ${e.path} leaves out ${root}/, where most of the repo's code is (${most} of ${code.length} code files),${why}`,
+        );
+        continue;
+      }
+    }
+    out.exclude.push(re);
   }
   for (const [i, p] of s.prefixes.entries()) {
     const line = await citedLine(repo, p.at);
@@ -61,6 +154,11 @@ export async function checkScanSettings(
     else if (!line.includes(p.value))
       out.problems.push(
         `prefixes.${i}: ${p.at} doesn't say ${p.value}, so the prefix ${p.prefix} isn't applied`,
+      );
+    else if (prefixOf(p.value) !== trimSlash(p.prefix))
+      // ADR 0111: the prefix is the value on its line, not any path near it.
+      out.problems.push(
+        `prefixes.${i}: the prefix ${p.prefix} isn't the value ${p.value} written at ${p.at}, so it isn't applied`,
       );
     else out.prefixes.push({ paths: p.paths.map(globToRegExp), prefix: p.prefix });
   }

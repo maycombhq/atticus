@@ -24,7 +24,8 @@ import {
   type SourceInput,
 } from "@maycombhq/ai";
 import { linksIn, sectionAt, type PageLink } from "./links.js";
-import { checkQuote, foldQuote } from "./quotes.js";
+import { checkQuote, foldQuote, visibleText } from "./quotes.js";
+import { groundValues } from "./grounding.js";
 import type { Snapshot } from "./snapshot.js";
 import type { KnowledgePage } from "./sources.js";
 
@@ -383,6 +384,9 @@ ${snapshots
   is one or more whole sentences copied word for word from under that heading. Atticus checks every
   quote against the page and hands back any that isn't there.
 - When the same item is stated on another page too, add that page under also_on with its quote.
+- Every lead time, date, owner (handled_by, owned_by) and status you write must be in a quote:
+  when the sentence that states it isn't the source quote, add it under also_on (the same page
+  is fine). Atticus checks each value against the quotes and hands back any that isn't there.
 - When two pages disagree about the same thing (a lead time, a retention period), extract the item
   from the page that owns it and list the disagreement under conflicts, quoting both pages.
 - When a page says it replaces an older page, list it under superseded, and extract nothing from
@@ -559,6 +563,19 @@ function checkItem(
     if (line)
       for (const l of linksIn(sectionAt(text, line)))
         if (!links.some((x) => x.url === l.url)) links.push(l);
+  }
+  // ADR 0111: what the item states as a value is in its quotes.
+  if (page && line && alsoOn.length === item.also_on.length) {
+    const owner = page.page.frontMatter.owner;
+    problems.push(
+      ...groundValues(item, {
+        quotes: [item.source.quote, ...alsoOn.map((a) => a.quote)],
+        pages: [page, ...alsoOn.map((a) => a.page)]
+          .map((p) => visibleText(p.page.text ?? ""))
+          .join("\n"),
+        ...(typeof owner === "string" ? { owner } : {}),
+      }),
+    );
   }
   if (repeatsQuarantined(itemText(item), quarantined))
     problems.push(

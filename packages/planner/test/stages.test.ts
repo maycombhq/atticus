@@ -9,6 +9,9 @@ import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { listQuestions, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import {
   architectureStage,
+  checkDeltas,
+  flowBase,
+  mergeDelta,
   FlowDelta,
   interfaceChanges,
   loadEstate,
@@ -281,7 +284,7 @@ describe("the architecture stage", () => {
     const delta = parse(
       await readFile(join(dir(root), "target-flows/forge-orders.place-order.yaml"), "utf8"),
     );
-    expect(delta.schemaVersion).toBe(1);
+    expect(delta.schemaVersion).toBe(2);
     expect(delta.steps).toHaveLength(3);
     const design = await readFile(join(dir(root), "design.md"), "utf8");
     expect(design).toContain(
@@ -320,6 +323,122 @@ describe("the architecture stage", () => {
         status: "planned-modify",
         fields: ["cardToken"],
       },
+    ]);
+  });
+
+  // ADR 0111: each entry, table and column a delta names is resolved against the catalog.
+  it("resolves a call's entry, a new table and the columns read against the catalog", async () => {
+    const root = await estateRoot();
+    const { loadChangeContext } = await import("@maycombhq/changes");
+    const e = await loadEstate(root, (await loadChangeContext(root)).records);
+    const call = (entry: string, isNew: boolean, component = "forge-stock") => ({
+      op: "add" as const,
+      after: 1,
+      kind: "call-out" as const,
+      what: "A call",
+      to: { component, entry, new: isNew },
+      fields: { sends: ["sku"] },
+    });
+    const d = FlowDelta.parse({
+      schemaVersion: 2,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "x",
+      steps: [
+        call("POST /stock/reserve", false),
+        call("POST /stock/reservations", true),
+        call("POST /stock/reservations", false),
+        call("POST /v1/screenings", true, "northwind-pay"),
+        {
+          op: "add",
+          after: 1,
+          kind: "write",
+          what: "A table",
+          store: {
+            table: "forge-orders-db.orders",
+            columns: ["sku"],
+            new: true,
+            retention: "7 years",
+          },
+        },
+        {
+          op: "add",
+          after: 1,
+          kind: "read",
+          what: "Read back",
+          store: { table: "forge-orders-db.orders", columns: ["sku", "colour", "fraud_verdict"] },
+        },
+        {
+          op: "change",
+          step: 4,
+          kind: "write",
+          what: "Insert",
+          store: {
+            table: "forge-orders-db.orders",
+            columns: ["sku", "fraud_verdict"],
+            types: { fraud_verdict: "varchar(20)" },
+            classification: { fraud_verdict: "internal" },
+            migration: "V4__add_fraud_verdict.sql",
+          },
+        },
+      ],
+    });
+    const p = { flows: [], newFlows: [], change: CHANGE } as unknown as Parameters<
+      typeof checkDeltas
+    >[2];
+    const got = checkDeltas([d], e, p).map((i) => [i.rule, i.target]);
+    expect(got).toEqual([
+      ["delta.unknown-entry", "forge-orders.place-order#1"],
+      ["delta.entry-exists", "forge-orders.place-order#2"],
+      ["delta.table-exists", "forge-orders.place-order#5"],
+      ["delta.unknown-column", "forge-orders.place-order#6:colour"],
+    ]);
+    const msg = checkDeltas([d], e, p).find((i) => i.rule === "delta.unknown-entry")!.message;
+    expect(msg).toBe(
+      "Change 1 to forge-orders.place-order calls POST /stock/reserve on forge-stock, which the catalog doesn't have; it has POST /stock/reservations. Use one of them, or new: true for an entry this change adds.",
+    );
+  });
+
+  // ADR 0111: a target flow is pinned to the version of today's flow it was written against.
+  it("pins each target flow to today's flow, and says when today's flow changed since", async () => {
+    const root = await estateRoot();
+    await featured(root);
+    const r = await architectureStage(root, CHANGE, { runtime: assistant([DELTAS]), now: NOW });
+    expect(r.state).toBe("done");
+    const file = join(dir(root), "target-flows/forge-orders.place-order.yaml");
+    const written = FlowDelta.parse(parse(await readFile(file, "utf8")));
+    const { loadChangeContext } = await import("@maycombhq/changes");
+    const e = await loadEstate(root, (await loadChangeContext(root)).records);
+    const today = e.flowById.get("forge-orders.place-order")!.flow;
+    expect(written.schemaVersion).toBe(2);
+    expect(written.base).toEqual({ steps: flowBase(today) });
+    expect(mergeDelta(written, today).problems).toEqual([]);
+    // The spec is drafted again with a step put in front: the target's step numbers are stale.
+    const redrafted = {
+      ...today,
+      steps: [{ ...today.steps[0]!, what: "The request is logged" }, ...today.steps],
+    };
+    expect(mergeDelta(written, redrafted).problems).toEqual([
+      "Today's flow forge-orders.place-order changed since this target was written, so its step numbers may point at other steps now. Check them, then run atticus change architecture again.",
+    ]);
+    expect(
+      checkDeltas(
+        [written],
+        {
+          ...e,
+          flowById: new Map([
+            ["forge-orders.place-order", { repo: "forge-orders", flow: redrafted }],
+          ]),
+        },
+        { flows: [], newFlows: [] } as never,
+      ).map((i) => i.rule),
+    ).toContain("delta.stale");
+    // A file from before the pin still reads, and says it isn't pinned.
+    const { base: _b, ...old } = written;
+    const v1 = FlowDelta.parse({ ...old, schemaVersion: 1 });
+    expect(mergeDelta(v1, today).problems).toEqual([
+      "This target of forge-orders.place-order was written before target flows were pinned to today's flow, so a change to today's flow can't be seen. Check its step numbers, then run atticus change architecture again to pin it.",
     ]);
   });
 

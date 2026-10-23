@@ -111,7 +111,8 @@ describe("atticus repo-type (ADR 0077)", () => {
     const runtime = new MockRuntime(
       (req: AiRequest) => {
         prompts.push(req.pack.prompt);
-        return "schemaVersion: 1\nrepo: forge-notes\n";
+        // ADR 0111: an empty answer for a repo with entry points goes back; this one says why.
+        return 'schemaVersion: 1\nrepo: forge-notes\nnothing_to_set:\n  why: The type\'s context path is the only prefix and it is already given.\n  checked: ["src/main/resources/application.properties:3"]\n';
       },
       { now: () => NOW },
     );

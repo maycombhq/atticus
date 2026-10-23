@@ -240,7 +240,7 @@ async function checkFix(
   )
     return [`${label}.fix.settings: it has no entry`];
   const sub = "settings" in fix ? "settings" : "question";
-  return (await checkSurvey(stringify(doc), repo, repoId)).problems.map(
+  return (await checkSurvey(stringify(doc), repo, repoId, { emptyCheck: false })).problems.map(
     (p) => `${label}.fix.${sub}.${sub === "question" ? p.replace(/^questions\.0\./, "") : p}`,
   );
 }

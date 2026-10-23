@@ -7,7 +7,8 @@ import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@
 import { readKnowledge } from "@maycombhq/knowledge";
 import { PlannerError } from "../errors.js";
 import { parseYamlAs } from "./answer.js";
-import { columnsOf, estateIndex, loadEstate, type Estate } from "./estate.js";
+import { columnsOf, endpointKey, estateIndex, loadEstate, type Estate } from "./estate.js";
+import { baseProblem, deltaBase, flowBase } from "./merge.js";
 import { readPlacement } from "./feature.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
 import { estateContext } from "./estate-context.js";
@@ -19,7 +20,7 @@ import {
   type StageResult,
   type StageSpec,
 } from "./loop.js";
-import { FlowDelta, STAGE_SCHEMA_VERSION, type FeaturePlacement } from "./schema.js";
+import { FLOW_DELTA_SCHEMA_VERSION, FlowDelta, type FeaturePlacement } from "./schema.js";
 import { z } from "zod";
 
 /**
@@ -141,6 +142,37 @@ const MOVES_DATA = new Set([
   "lookup",
 ]);
 
+type Rec = Estate["records"][number] & Record<string, unknown>;
+
+/** A call's entry as the catalog keys it: "METHOD /path" folded, or a topic as written. */
+const entryKey = (entry: string) =>
+  /^\s*[A-Za-z]+\s+\S/.test(entry) ? endpointKey(entry) : entry.trim();
+
+/**
+ * The entries the catalog has for a component, or for every component of a system (ADR 0111):
+ * the key of each endpoint, mapped to the way it is written.
+ */
+export function entriesOf(e: Estate, id: string): Map<string, string> {
+  const r = e.byId.get(id);
+  const out = new Map<string, string>();
+  if (!r) return out;
+  const parts = new Set(
+    r.kind === "System"
+      ? (e.records as Rec[])
+          .filter((x) => x.kind === "Component" && x.system === id)
+          .map((x) => x.id)
+      : [id],
+  );
+  for (const x of e.records as Rec[]) {
+    if (x.kind !== "Endpoint" || typeof x.component !== "string" || !parts.has(x.component))
+      continue;
+    const path = typeof x.pathOrTopic === "string" ? x.pathOrTopic : "";
+    const written = typeof x.method === "string" && x.method ? `${x.method} ${path}` : path;
+    if (written) out.set(entryKey(written), written);
+  }
+  return out;
+}
+
 export function checkDeltas(
   deltas: FlowDelta[],
   e: Estate,
@@ -211,6 +243,9 @@ export function checkDeltas(
     }
     if (today && today.repo !== d.repo)
       issue("delta.wrong-repo", t, `Flow ${t} is in repo ${today.repo}, not ${d.repo}.`, d.repo);
+    // ADR 0111: a delta pinned to another version of today's flow addresses steps by stale numbers.
+    if (deltaBase(d, today?.flow) === "changed")
+      issue("delta.stale", t, baseProblem(d, "changed")!, d.repo);
     if (isEmptyDelta(d)) out.push(...emptyDeltaIssues([d]));
     const count = today?.flow.steps.length ?? 0;
     d.steps.forEach((s, i) => {
@@ -264,7 +299,33 @@ export function checkDeltas(
           `Change ${i + 1} to ${t} goes to ${s.to.component}, which the catalog doesn't have; use an id from the index, or new: true.`,
           d.repo,
         );
-      if (s.store) {
+      // ADR 0111: the entry is resolved against the callee's endpoints, when the catalog has any.
+      if (s.to) {
+        const have = entriesOf(e, s.to.component);
+        const known = have.has(entryKey(s.to.entry));
+        if (have.size && !s.to.new && !known)
+          issue(
+            "delta.unknown-entry",
+            at,
+            `Change ${i + 1} to ${t} calls ${s.to.entry} on ${s.to.component}, which the catalog doesn't have; it has ${[...have.values()].sort().slice(0, 8).join(", ")}${have.size > 8 ? ` and ${have.size - 8} more` : ""}. Use one of them, or new: true for an entry this change adds.`,
+            d.repo,
+          );
+        if (s.to.new && known)
+          issue(
+            "delta.entry-exists",
+            at,
+            `Change ${i + 1} to ${t} marks ${s.to.entry} on ${s.to.component} new, but the catalog has it; leave new out.`,
+            d.repo,
+          );
+      }
+      if (s.store && s.store.new && e.byId.get(s.store.table)?.kind === "Table") {
+        issue(
+          "delta.table-exists",
+          at,
+          `Change ${i + 1} to ${t} marks table ${s.store.table} new, but the catalog has it; leave new out, and give the columns it adds with their types.`,
+          d.repo,
+        );
+      } else if (s.store) {
         if (!s.store.new && e.byId.get(s.store.table)?.kind !== "Table")
           issue(
             "delta.unknown-table",
@@ -283,7 +344,27 @@ export function checkDeltas(
             d.repo,
           );
         const have = columnsOf(e, s.store.table);
-        const added = s.store.columns.filter((c) => s.store!.new || !have.has(c));
+        const reads = kind === "read" || kind === "lookup";
+        // ADR 0111: a read names columns the table has, or that a write in this change adds.
+        if (reads && !s.store.new && have.size) {
+          const table = s.store.table;
+          const addedHere = new Set(
+            deltas.flatMap((x) =>
+              x.steps.flatMap((y) =>
+                y.store?.table === table ? Object.keys(y.store.types ?? {}) : [],
+              ),
+            ),
+          );
+          for (const c of s.store.columns)
+            if (!have.has(c) && !addedHere.has(c))
+              issue(
+                "delta.unknown-column",
+                `${at}:${c}`,
+                `Change ${i + 1} to ${t} reads column ${c} of ${table}, which the catalog doesn't have; name a column it has (${[...have].sort().join(", ")}), or add it with a write step that gives its type.`,
+                d.repo,
+              );
+        }
+        const added = reads ? [] : s.store.columns.filter((c) => s.store!.new || !have.has(c));
         for (const c of added) {
           if (!s.store.types?.[c])
             issue(
@@ -692,10 +773,11 @@ export async function architectureStage(
         text,
         Answer,
         (d) => ({
-          flows: (Array.isArray(d.flows) ? d.flows : []).map((f: Record<string, unknown>) => ({
-            schemaVersion: STAGE_SCHEMA_VERSION,
-            ...f,
-          })),
+          // The version and the pin are Atticus's (ADR 0111), never the assistant's.
+          flows: (Array.isArray(d.flows) ? d.flows : []).map((f: Record<string, unknown>) => {
+            const { base: _base, schemaVersion: _v, ...rest } = f ?? {};
+            return { ...rest, schemaVersion: FLOW_DELTA_SCHEMA_VERSION };
+          }),
           ...(d.reads !== undefined && d.reads !== null ? { reads: d.reads } : {}),
         }),
         "target-flows",
@@ -717,9 +799,16 @@ export async function architectureStage(
           await rm(join(dir, TARGET_DIR, f), { force: true });
       const files: string[] = [];
       for (const d of a.flows) {
+        // ADR 0111: pinned to the version of today's flow it was written against.
+        const today = d.change === "new" ? undefined : estate.flowById.get(d.flow)?.flow;
+        const pinned: FlowDelta = {
+          ...d,
+          schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
+          ...(today ? { base: { steps: flowBase(today) } } : {}),
+        };
         await writeFileAtomic(
           join(dir, TARGET_DIR, `${d.flow}.yaml`),
-          `# The target of flow ${d.flow} (ADR 0087): the steps this change adds, changes or removes. Drafted by atticus change architecture.\n${stringify(FlowDelta.parse(d), { lineWidth: 0 })}`,
+          `# The target of flow ${d.flow} (ADR 0087): the steps this change adds, changes or removes. Drafted by atticus change architecture; base pins the version of today's flow it was written against (ADR 0111).\n${stringify(FlowDelta.parse(pinned), { lineWidth: 0 })}`,
         );
         files.push(`${TARGET_DIR}/${d.flow}.yaml`);
       }

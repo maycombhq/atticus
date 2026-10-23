@@ -174,8 +174,15 @@ export const DeltaStep = z.strictObject({
 });
 export type DeltaStep = z.infer<typeof DeltaStep>;
 
+/**
+ * The flow delta's own version (ADR 0111): 2 adds `base`, the version of today's flow the delta
+ * was written against. Version 1 files still read; they carry no base and are flagged as not
+ * pinned. The other stage files stay at STAGE_SCHEMA_VERSION 1: they didn't change.
+ */
+export const FLOW_DELTA_SCHEMA_VERSION = 2 as const;
+
 export const FlowDelta = z.strictObject({
-  schemaVersion: V,
+  schemaVersion: z.union([z.literal(1), z.literal(FLOW_DELTA_SCHEMA_VERSION)]),
   /** The flow's id: an existing flow in specs/<repo>/, or the new flow's id (<component>.<name>). */
   flow: Id,
   repo: Id,
@@ -188,6 +195,12 @@ export const FlowDelta = z.strictObject({
     .optional(),
   why: text(),
   steps: z.array(DeltaStep).default([]),
+  /**
+   * Written by Atticus, never the assistant (ADR 0111): the sha-256 of today's flow's steps (each
+   * step's kind, what, to and store, in order) when this delta was written. A spec drafted again
+   * since then gives another hash, so the merge says the step numbers may be stale.
+   */
+  base: z.strictObject({ steps: z.string().regex(/^[0-9a-f]{64}$/) }).optional(),
 });
 export type FlowDelta = z.infer<typeof FlowDelta>;
 

@@ -23,7 +23,7 @@ const PAGE = `# Onboarding a new joiner
 
 ## Getting a laptop
 
-Raise the new starter request in the [service desk](https://servicedesk.example.com/sp?id=new-starter) two weeks before the start date. Handled by: Workplace team.
+Raise the new starter request in the [service desk](https://servicedesk.example.com/sp?id=new-starter). Allow two weeks before the start date. Handled by: Workplace team.
 `;
 
 const ANSWER = `items:
@@ -33,7 +33,7 @@ const ANSWER = `items:
     applies_when: A new joiner needs a laptop and accounts.
     handled_by: Workplace team
     lead_time: two weeks
-    source: { page: joiners.md, section: Getting a laptop, quote: "Handled by: Workplace team." }
+    source: { page: joiners.md, section: Getting a laptop, quote: "Allow two weeks before the start date. Handled by: Workplace team." }
 `;
 
 async function metarepo() {

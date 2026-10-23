@@ -5,10 +5,10 @@ Each step that sent a whole list, run on the Forge fixtures with the whole lists
 
 | Step | Case | Budget | Context | Recall | Precision | Sent / needed | Tokens | Context tokens | Missing |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| needs | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.67 | 3 / 2 | 1332 | 434 | none |
-| needs | shop: add-fraud-check | org pack | engine | 1.00 | 0.67 | 3 / 2 | 1362 | 464 | none |
-| needs | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 1 / 2 | 1029 | 131 | firewall-rule-request, vendor-onboarding |
-| needs | shop: add-fraud-check | tight | engine | 0.50 | 1.00 | 1 / 2 | 998 | 100 | firewall-rule-request |
+| needs | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.67 | 3 / 2 | 1370 | 434 | none |
+| needs | shop: add-fraud-check | org pack | engine | 1.00 | 0.67 | 3 / 2 | 1400 | 464 | none |
+| needs | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 1 / 2 | 1067 | 131 | firewall-rule-request, vendor-onboarding |
+| needs | shop: add-fraud-check | tight | engine | 0.50 | 1.00 | 1 / 2 | 1036 | 100 | firewall-rule-request |
 | feature | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.33 | 12 / 4 | 974 | 366 | none |
 | feature | shop: add-fraud-check | org pack | engine | 1.00 | 0.33 | 12 / 4 | 974 | 366 | none |
 | feature | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 0 / 4 | 608 | 0 | cap-ordering, forge-orders.place-order, forge-stock.reserve-stock, northwind-pay |
