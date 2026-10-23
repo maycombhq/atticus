@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "atticus": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/bin/atticus-mcp.mjs"
+      ]
+    }
+  }
+}

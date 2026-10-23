@@ -6,3 +6,4 @@ export * from "./render.js";
 export * from "./write.js";
 export * from "./smoke.js";
 export * from "./generate.js";
+export * from "./plugin.js";

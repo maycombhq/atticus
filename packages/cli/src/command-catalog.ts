@@ -82,6 +82,7 @@ const AREA_BY_WORD: Record<string, string> = {
   openspec: "start",
   "assistant-files": "start",
   ui: "start",
+  mcp: "start",
   index: "start",
   schema: "start",
   orgpack: "start",
@@ -177,7 +178,7 @@ const KIND_BY_COMMAND: Record<string, ArgKind[]> = {
   trace: ["change"],
 };
 
-const SERVES = new Set(["ui", "stub serve"]);
+const SERVES = new Set(["ui", "stub serve", "mcp"]);
 const APPROVE_FLAGS = ["--approve", "--send"];
 
 /** The command words: up to the first argument, option or quoted part. */

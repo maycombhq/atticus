@@ -61,6 +61,16 @@ const fm = (data: Record<string, unknown>) =>
 
 const ARGS: Record<Assistant, string> = { "claude-code": "$ARGUMENTS", copilot: "${input:args}" };
 
+/** A slash command as Claude Code reads it: front matter, then the body with $ARGUMENTS. */
+export function claudeCommandContent(c: CommandDef): string {
+  return (
+    fm({
+      description: c.description,
+      ...(c.argumentHint ? { "argument-hint": c.argumentHint } : {}),
+    }) + `\n${c.body.replaceAll("{{ARGS}}", ARGS["claude-code"]).trimEnd()}\n`
+  );
+}
+
 function commandFiles(c: CommandDef, a: Assistant[]): RenderedFile[] {
   const out: RenderedFile[] = [];
   if (a.includes("claude-code"))
@@ -69,11 +79,7 @@ function commandFiles(c: CommandDef, a: Assistant[]): RenderedFile[] {
       source: c.source,
       mode: "file",
       style: "html",
-      content:
-        fm({
-          description: c.description,
-          ...(c.argumentHint ? { "argument-hint": c.argumentHint } : {}),
-        }) + `\n${c.body.replaceAll("{{ARGS}}", ARGS["claude-code"]).trimEnd()}\n`,
+      content: claudeCommandContent(c),
     });
   if (a.includes("copilot"))
     out.push({

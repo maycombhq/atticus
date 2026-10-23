@@ -93,6 +93,19 @@ atticus ui --open
 
 **Practice first:** `atticus sandbox create <dir>` makes a throwaway metarepo from the invented Forge ecosystem, with every outside system a mock except the Git host, which is manual: you record its pull request steps with `atticus todo done`, as you would without Git host access.
 
+**In your editor or assistant:**
+
+- **VS Code:** the Atticus extension (`packages/vscode`), with Copilot running the AI steps.
+- **IntelliJ IDEA:** the Atticus plugin (`packages/intellij`); AI steps run as `/atticus-*` slash commands in Copilot Chat.
+- **Claude Code:** the Atticus plugin (ADR 0104). Install it once:
+
+  ```
+  /plugin marketplace add maycombhq/atticus
+  /plugin install atticus@maycombhq
+  ```
+
+  Every step is a slash command (`/atticus-next`, `/atticus-survey`, `/atticus-needs` and the rest), a session in a metarepo starts with its next step, and the read-only `atticus` MCP tools read the catalog, knowledge, changes and needs. `atticus assistant-files` still writes the org pack's own agents, skills and commands into the metarepo.
+
 The app's Home shows the setup checklist until the catalog is accepted. The same list is `atticus setup`. Next: [the admin guide](admin.md).
 
 ## Upgrade

@@ -1,0 +1,16 @@
+{
+  "name": "maycombhq",
+  "owner": {
+    "name": "Maycomb"
+  },
+  "metadata": {
+    "description": "Atticus, the architecture assistant: its Claude Code plugin."
+  },
+  "plugins": [
+    {
+      "name": "atticus",
+      "source": "./plugins/atticus",
+      "description": "Atticus in Claude Code: every step as a slash command, the next step when a session starts, and read-only tools over the catalog, knowledge, changes and needs."
+    }
+  ]
+}

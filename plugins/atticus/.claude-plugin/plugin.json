@@ -1,0 +1,19 @@
+{
+  "name": "atticus",
+  "version": "1.0.0-rc.1",
+  "description": "Atticus in Claude Code: every step as a slash command, the next step when a session starts, and read-only tools over the catalog, knowledge, changes and needs.",
+  "author": {
+    "name": "Maycomb"
+  },
+  "homepage": "https://github.com/maycombhq/atticus",
+  "repository": "https://github.com/maycombhq/atticus",
+  "license": "Apache-2.0",
+  "icon": ".claude-plugin/icon.png",
+  "keywords": [
+    "architecture",
+    "catalog",
+    "openspec",
+    "knowledge",
+    "metarepo"
+  ]
+}

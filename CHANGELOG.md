@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Atticus for Claude Code
+
+- A Claude Code plugin (ADR 0104), in this repository's marketplace: `/plugin marketplace add maycombhq/atticus`, then `/plugin install atticus@maycombhq`. Every step and catalog command as a slash command, the same files `atticus assistant-files` writes; a session in a metarepo starts with its next step; and the read-only `atticus` MCP server. `pnpm claude-plugin` writes `plugins/atticus` from the same commands, and a test fails when it is out of date.
+- `atticus mcp`: read-only tools over MCP (stdio) for an assistant: the next step, catalog queries, explain and impact, knowledge items, changes and their status, needs and findings, open questions, features, triage and manual steps. Each runs the command's own code; a value can never be read as an option; nothing writes.
+
 ### A pair of glasses
 
 - Atticus's mark is Atticus Finch's glasses (`docs/brand/glasses.svg`): two fine round lenses and a straight bridge, with a small curved glint at the outer top of each lens, like an eyebrow. Where the logo stands alone it carries the name below (`docs/brand/atticus-lockup.svg`): the VS Code Marketplace icon and the IntelliJ plugin icon. The app's header keeps the name beside the glasses; the favicon, the VS Code activity bar and the IntelliJ tool window use the glasses alone.

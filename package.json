@@ -21,7 +21,8 @@
     "bundle": "node scripts/bundle/offline-bundle.mjs",
     "bundle:test": "node scripts/bundle/test-bundle.mjs",
     "licences": "node scripts/bundle/check-licences.mjs",
-    "docs:commands": "node scripts/write-command-doc.mjs"
+    "docs:commands": "node scripts/write-command-doc.mjs",
+    "claude-plugin": "node scripts/write-claude-plugin.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

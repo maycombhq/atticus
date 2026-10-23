@@ -258,6 +258,7 @@ const releasePlanCommand: typeof import("./release-commands.js").releasePlanComm
 const releaseSecurityCommand: typeof import("./release-commands.js").releaseSecurityCommand = (
   ...a
 ) => loadReleaseCommands().then((m) => m.releaseSecurityCommand(...a));
+import type { McpRun } from "./mcp.js";
 const loadUiCommands = () => import("./ui-commands.js");
 const uiCommand: typeof import("./ui-commands.js").uiCommand = (...a) =>
   loadUiCommands().then((m) => m.uiCommand(...a));
@@ -572,6 +573,7 @@ Usage:
 
   --root <dir>                         The metarepo (default: the current folder)
   --by <handle>                        Who is acting (default: the metarepo's Git user, git config user.email)
+  atticus mcp                          Serve read-only tools to an assistant over MCP (stdio): next step, catalog, knowledge, changes, needs (the Claude Code plugin starts it)
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
           [--parent pid]               Stop when that process ends (an editor that started it)
@@ -1271,6 +1273,22 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
     return command === "fetch"
       ? benchFetch(b, io)
       : benchRun({ ...b, ...(values.specs === true ? { specs: true } : {}) }, io);
+  }
+  if (group === "mcp") {
+    // stdout carries the protocol only: every command's output is captured for its tool's reply.
+    const run: McpRun = async (argv) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await main(
+        [...argv, "--root", root],
+        { out: (l) => out.push(l), err: (l) => err.push(l) },
+        { quiet: true },
+      );
+      return { code, out: out.join("\n"), err: err.join("\n") };
+    };
+    const { serveMcp } = await import("./mcp.js");
+    await serveMcp(process.stdin, process.stdout, run, VERSION);
+    return 0;
   }
   if (group === "ui") {
     if (values.embed !== undefined && values.embed !== "vscode") {

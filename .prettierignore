@@ -14,3 +14,4 @@ packages/intellij/build/
 packages/intellij/.gradle/
 packages/intellij/.kotlin/
 packages/intellij/.intellijPlatform/
+plugins/atticus/

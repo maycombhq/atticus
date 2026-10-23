@@ -212,6 +212,7 @@ Usage:
 
   --root <dir>                         The metarepo (default: the current folder)
   --by <handle>                        Who is acting (default: the metarepo's Git user, git config user.email)
+  atticus mcp                          Serve read-only tools to an assistant over MCP (stdio): next step, catalog, knowledge, changes, needs (the Claude Code plugin starts it)
   atticus ui [--port n] [--open]       Start the app on this machine (127.0.0.1); Ctrl+C stops it
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
           [--parent pid]               Stop when that process ends (an editor that started it)
