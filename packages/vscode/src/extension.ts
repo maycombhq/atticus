@@ -24,7 +24,7 @@ import { SectionTree, type Section } from "./sidebar";
 import { findingActions, flowHash, stepOf, type Item, type Open } from "./sidebar-data";
 import { setupAction } from "./guided";
 import { commandText } from "./cli";
-import { describeEnd } from "./describe";
+import { describeEnd, endActions } from "./describe";
 import { aiProgressTitle, runProgressTitle } from "./feedback";
 import { pickLoading } from "./pick";
 import { stepTitle } from "./words";
@@ -174,15 +174,37 @@ ${view.next.why}`
   const showEnd = async (end: StepEnd) => {
     const lines = describeEnd(end);
     for (const l of lines) svc.log.appendLine(l);
-    const actions = end.state === "question" ? ["Answer", "Show details"] : ["Show details"];
+    const actions = endActions(end, {
+      copilot: !!vscode.extensions.getExtension("GitHub.copilot-chat"),
+    });
     const show =
       end.state === "done"
         ? vscode.window.showInformationMessage
         : end.state === "failed" || end.state === "model-error"
           ? vscode.window.showErrorMessage
           : vscode.window.showWarningMessage;
-    const pick = await show(lines[0]!, ...actions);
+    // No model stops every AI step, and a notice like one already in the bell isn't shown again:
+    // a dialog, so a second click is never silent.
+    const pick =
+      end.state === "no-model"
+        ? await vscode.window.showWarningMessage(
+            lines[0]!,
+            {
+              modal: true,
+              detail:
+                "Atticus's AI steps run with GitHub Copilot in VS Code. Once Copilot is set up and signed in, run the step again.",
+            },
+            ...actions.filter((a) => a !== "Show details"),
+          )
+        : await show(lines[0]!, ...actions);
     if (pick === "Answer") await vscode.commands.executeCommand("atticus.answerQuestion");
+    else if (pick === "Install Copilot Chat")
+      await vscode.commands.executeCommand("atticus.installCopilot");
+    else if (pick === "Set up Copilot")
+      // VS Code's own Copilot setup: sign in, or turn it on.
+      await vscode.commands.executeCommand("workbench.action.chat.triggerSetup");
+    else if (pick === "Pick a model")
+      await vscode.commands.executeCommand("workbench.action.openSettings", "atticus.model");
     else if (pick === "Show details") svc.log.show(true);
   };
 

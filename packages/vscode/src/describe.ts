@@ -71,3 +71,23 @@ export function describeEnd(end: StepEnd): string[] {
       ];
   }
 }
+
+/**
+ * The buttons on the notice a step ends with: what a person can do next, so that an ending is
+ * never a dead end. Without a model, that is getting Copilot (installed, or set up and signed in).
+ */
+export function endActions(end: { state: StepEnd["state"] }, o: { copilot: boolean }): string[] {
+  switch (end.state) {
+    case "question":
+      return ["Answer", "Show details"];
+    case "no-model":
+      return o.copilot
+        ? ["Set up Copilot", "Pick a model", "Show details"]
+        : ["Install Copilot Chat", "Show details"];
+    case "too-long":
+    case "model-error":
+      return ["Pick a model", "Show details"];
+    default:
+      return ["Show details"];
+  }
+}
