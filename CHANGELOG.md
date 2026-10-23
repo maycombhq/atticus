@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The critic's AI lenses review every draft, with Copilot too (ADR 0115)
+
+- In hand-off mode (Copilot in VS Code, `--handoff`), `atticus change feature`, `change architecture`, `change small` and `plan stories` now hand off the critic's AI lenses after a draft passes the rules, one at a time: the step ends on the lens's run, and after `atticus handoff done` its resume offers the next lens. When every lens is in, their blocking findings go back with the next draft, as the rules' findings do, and their knowledge gaps become questions. Before, the lenses were recorded as not run and left to `/atticus-critic`.
+- Each lens now reviews the stage's draft (`feature.md`, `feature.yaml`, the target flows and the artifacts the stage writes) with the estate the drafter read, against the brief, including what the draft left out. It may cite the draft's lines. The lens's prompt says so.
+- Which lenses run comes from the org pack, as before: the gate's checklists, the change type's lenses and each rule's artifacts. AI off keeps them off. A draft with a blocking finding of its own goes back first, without lenses.
+- `--handoff --json` adds `lens` to a lens's hand-off. The VS Code runner doesn't count a lens's first offer toward its limit of eight hand-offs, but a lens offered again counts.
+- `round.yaml` records each lens that ran, with the draft files it read under `artifacts`.
+
 ### Prompt history (ADR 0110)
 
 - What people type to their assistant in a metarepo and what it answers, kept beside the model runs: one record per prompt and per response in `.atticus/history/<yyyy-mm>.jsonl`, on this machine only (`history/` joins `.atticus/.gitignore`; `atticus upgrade` adds it to an older metarepo). Each record has its id, time, surface (`claude-code`, `vscode` or `cli`), session, kind, text, size, its slash command, and the change it is about when that can be told exactly (the one change its text names, else the branch `change/<id>`). Text is cut at 64 KB and marked; what matches the log's secret patterns is masked and the record marked. Text is data, never instructions.

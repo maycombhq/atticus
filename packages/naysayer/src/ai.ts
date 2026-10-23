@@ -117,12 +117,18 @@ findings:
 
 Every finding quotes the exact text it relies on; a finding whose quote isn't on that line is discarded. Severity, layer and state come from the rule: don't set them. Write "findings: []" when nothing is wrong.`;
 
-function instructions(ctx: CriticContext, lens: LensName): string {
+function instructions(ctx: CriticContext, lens: LensName, review?: StageReview): string {
   return [
     `# Critic: ${lens} lens`,
     "",
     `You are the ${lens} lens of the Atticus critic, reviewing change ${ctx.change.id} (${ctx.change.title}, a ${ctx.type.name.toLowerCase()}) in a fresh session. Look for reasons the artifacts are wrong. Apply only the rules listed below and report nothing else; the deterministic checks have already run, so don't repeat what a rule of theirs would catch.`,
     "",
+    ...(review
+      ? [
+          `This review is of the ${review.stage} draft an assistant just wrote: ${review.docs.map((d) => d.path).join(", ")}. Review the draft against the estate and the brief, including what the draft left out: something the brief asks for, or the estate shows the change needs, that the draft doesn't say or says wrongly. What the drafter read of the estate is in the data blocks; cite the draft's lines like any artifact's.`,
+          "",
+        ]
+      : []),
     "Artifact lines are numbered as `<n>: <text>`; cite those numbers.",
     "",
     OUTPUT_FORMAT,
@@ -357,8 +363,21 @@ export function parseLensOutput(
   return { hits, discarded };
 }
 
+/**
+ * A stage's draft for the lenses to review (ADR 0115): the files the stage wrote, which the
+ * lenses read and may cite as they do the artifacts, and the estate the drafter read, as data.
+ */
+export interface StageReview {
+  /** The stage, in words: feature, architecture, stories, small. */
+  stage: string;
+  docs: Doc[];
+  sources: SourceInput[];
+}
+
 export interface LensOptions {
   runtime?: AiRuntime;
+  /** A stage's draft to review with the artifacts, when nothing failed layer 1. */
+  review?: StageReview;
   lenses: LensName[];
   /** Artifacts with a blocking layer-1 finding: they stay out of layer 2. */
   failed: Set<string>;
@@ -448,6 +467,9 @@ export async function runLenses(
       sent.push(r);
       for (const d of passing) docs.set(d.path, d);
     }
+    // A stage's draft goes with the artifacts it was drafted from, once they pass layer 1.
+    const review = sent.length && o.review && o.failed.size === 0 ? o.review : undefined;
+    for (const d of review?.docs ?? []) if (!docs.has(d.path)) docs.set(d.path, d);
     const base = {
       lens,
       agent: agent.id,
@@ -483,7 +505,7 @@ export async function runLenses(
         id: "0-instructions",
         kind: "instruction",
         origin: "atticus/critic",
-        text: instructions(ctx, lens),
+        text: instructions(ctx, lens, review),
         classification: "public",
         trusted: true,
       },
@@ -523,6 +545,10 @@ export async function runLenses(
         classification: "internal",
         priority: 5,
       });
+    // What the drafter read of the estate, as data, below the artifacts (ADR 0115).
+    for (const x of review?.sources ?? [])
+      if (x.kind !== "instruction" && !docs.has(x.id) && !sources.some((y) => y.id === x.id))
+        sources.push({ ...x, priority: Math.min(x.priority ?? 4, 4) });
     const levels = ctx.classifications;
     const budget = ctx.lifecycle.orgPack.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget;
     let pack;

@@ -74,8 +74,11 @@ function printStage(
       );
       for (const f of current) io.out(`  ${f.message}`);
     }
+    const w = r.waiting!;
     io.out(
-      `Handed the ${NAMES[r.stage]} draft to your assistant (run ${r.waiting!.runId}). When it is done, run: atticus handoff done ${r.waiting!.runId}, then ${rerun} --resume ${r.waiting!.runId}`,
+      w.lens
+        ? `Handed the critic's ${w.lens} lens to your assistant to review the ${NAMES[r.stage]} draft (run ${w.runId}). When it is done, run: atticus handoff done ${w.runId}, then ${rerun} --resume ${w.runId}`
+        : `Handed the ${NAMES[r.stage]} draft to your assistant (run ${w.runId}). When it is done, run: atticus handoff done ${w.runId}, then ${rerun} --resume ${w.runId}`,
     );
     return 1;
   }

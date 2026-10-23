@@ -335,6 +335,36 @@ describe("the critic in hand-off mode", () => {
     expect(lensRunOf(run("tasks/1.2/review-code-and-test.yaml"))).toBeUndefined();
     expect(lensRunOf(run("stories.md"))).toBeUndefined();
   });
+
+  it("keeps a stage's draft from the lenses while an artifact fails layer 1 (ADR 0115)", async () => {
+    const root = await forgeChangeRoot();
+    await writeFile(join(changeDir(root), "feature.md"), "# Feature\n\nA draft placement.\n");
+    const r = await runCritic(root, CHANGE, {
+      now: NOW,
+      runtime: handoff(root),
+      review: {
+        stage: "feature",
+        files: ["feature.md", "../outside.md"],
+        sources: [
+          {
+            id: "estate-index",
+            kind: "catalog",
+            origin: "atticus",
+            text: "flow x",
+            classification: "internal",
+          },
+        ],
+      },
+    });
+    // The fixture's artifacts have blocking layer-1 findings: fix those first.
+    expect(r.failedLayer1.length).toBeGreaterThan(0);
+    for (const l of lensRuns(r)) expect(l.artifacts).not.toContain("feature.md");
+    const prompt = await readFile(
+      join(root, ".runs", CHANGE, lensRuns(r)[0]!.runId!, "prompt.md"),
+      "utf8",
+    );
+    expect(prompt).not.toContain("Review the draft against the estate and the brief");
+  });
 });
 
 /** A lens's only recording, for a round whose prompt differs from the recorded one. */

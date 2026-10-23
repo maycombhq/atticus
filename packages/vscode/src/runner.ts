@@ -27,6 +27,8 @@ export interface HandoffJson {
   state: "handoff" | "done" | "question" | "stopped" | "failed";
   exitCode?: number;
   runId?: string;
+  /** The run is one of the critic's AI lenses, reviewing what the step wrote (ADR 0115). */
+  lens?: string;
   stillWaiting?: boolean;
   promptFile?: string;
   resultFile?: string;
@@ -91,7 +93,10 @@ export interface RunnerDeps {
   model: () => Promise<StepModel | undefined>;
   /** A line of progress for the person. */
   progress?: (line: string) => void;
-  /** At most this many hand-offs in one run (default 8). */
+  /**
+   * At most this many hand-offs in one run (default 8). A critic lens's first offer (ADR 0115)
+   * isn't one: a step has a lens or two per draft, and the drafts are what this bounds.
+   */
   maxRounds?: number;
 }
 
@@ -219,9 +224,15 @@ async function loop(
       resumeCommand: h.resumeCommand ?? "",
     };
     last.round = waiting;
-    if (rounds >= max) return { state: "too-many-rounds", rounds, ...waiting };
-    rounds++;
-    say(`Round ${rounds}: Atticus handed off run ${h.runId}.`);
+    // A lens offered again (its answer didn't pass) counts, so a lens can't loop for ever.
+    const counts = !h.lens || !!h.stillWaiting;
+    if (counts && rounds >= max) return { state: "too-many-rounds", rounds, ...waiting };
+    if (counts) rounds++;
+    say(
+      h.lens
+        ? `The critic's ${h.lens} lens: Atticus handed off run ${h.runId}, to review what the step wrote.`
+        : `Round ${rounds}: Atticus handed off run ${h.runId}.`,
+    );
     model ??= await d.model();
     if (!model) return { state: "no-model", ...waiting };
     const prompt = await readFile(resolve(d.root, h.promptFile), "utf8");

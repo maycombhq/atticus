@@ -18,4 +18,8 @@ answer an assistant gives it; `knowledge.yaml`, a standard the task context find
 and `expected/`, the tasks.md it writes and the task context of its task 1.1. The tests copy it
 in themselves, so the stage tests above don't see it.
 
+`lenses/checklists/stage-review.yaml` holds two AI rules at the define gate, one for the
+business lens and one for the architecture lens (ADR 0115). The hand-off lens tests copy it into
+the org pack so the critic's AI lenses review the feature stage's draft; the other tests don't.
+
 Everything here is invented.

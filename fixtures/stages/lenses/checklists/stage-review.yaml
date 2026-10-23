@@ -1,0 +1,30 @@
+# Two AI rules for the stage tests (ADR 0115): copied into org-pack/checklists/, they give the
+# define gate a business lens and an architecture lens that review the feature stage's draft.
+# Contract C3. Everything here is invented.
+schemaVersion: 1
+name: stage-review
+version: 0.1.0
+description: The define gate's AI lenses, for the stage loop's hand-off tests.
+rules:
+  - id: brief-outcome-placed
+    title: The placement serves the brief's outcome
+    layer: org
+    lens: business
+    appliesTo: { artifacts: [brief] }
+    severity: risk
+    check:
+      type: ai
+      prompt: Read the brief's outcome and the feature placement drafted from it. Report an outcome the placement leaves out.
+    waivable: false
+    source: Forge product review
+  - id: flow-use-matches-estate
+    title: Each flow is changed or read as the estate says
+    layer: org
+    lens: architecture
+    appliesTo: { artifacts: [brief] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: For each flow the placement touches, check against the estate whether the change alters its steps (changed) or only uses what it gives (read). Report a flow marked wrongly.
+    waivable: true
+    source: Forge architecture review

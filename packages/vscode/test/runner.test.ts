@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -481,5 +481,98 @@ describe("a knowledge scan in batches", () => {
     );
     expect(end).toMatchObject({ state: "failed", errors: [message] });
     expect(model.prompts).toEqual([]);
+  });
+});
+
+// ADR 0115: a stage hands its draft off, then each of the critic's AI lenses that reviews it.
+describe("a stage whose critic lenses are handed off too", () => {
+  it("answers each lens in turn; a lens's first offer isn't a round of the step", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-vscode-lens-"));
+    const runs = ["run-draft", "run-business", "run-architecture"];
+    for (const r of runs) {
+      await mkdir(join(root, ".runs/add-fraud-check", r), { recursive: true });
+      await writeFile(join(root, ".runs/add-fraud-check", r, "prompt.md"), `The prompt of ${r}.`);
+    }
+    const handoff = (runId: string, lens?: string) => ({
+      state: "handoff",
+      runId,
+      ...(lens ? { lens } : {}),
+      promptFile: `.runs/add-fraud-check/${runId}/prompt.md`,
+      resultFile: `.runs/add-fraud-check/${runId}/${lens ? `findings-${lens}.yaml` : "feature-answer.yaml"}`,
+      doneArgs: ["handoff", "done", runId],
+      resumeArgs: [
+        "change",
+        "feature",
+        "add-fraud-check",
+        "--handoff",
+        "--json",
+        "--resume",
+        runId,
+      ],
+    });
+    const steps = [
+      handoff("run-draft"),
+      handoff("run-business", "business"),
+      handoff("run-architecture", "architecture"),
+      {
+        state: "done",
+        exitCode: 0,
+        messages: ["The feature stage is done."],
+        errors: [],
+        questions: [],
+      },
+    ];
+    const calls: string[][] = [];
+    const cli = async (argv: string[]) => {
+      calls.push(argv);
+      if (argv[0] === "handoff") return { code: 0, stdout: "", stderr: "", cancelled: false };
+      return { code: 0, stdout: JSON.stringify(steps.shift()), stderr: "", cancelled: false };
+    };
+    const model = new FakeModel(["summary: placed\n", "findings: []\n", "findings: []\n"]);
+    const progress: string[] = [];
+    const end = await runStep(
+      ["change", "feature", "add-fraud-check"],
+      { root, cli, model: async () => model, maxRounds: 1, progress: (p) => progress.push(p) },
+      cancelSource(),
+    );
+    expect(end.state, JSON.stringify(end)).toBe("done");
+    expect(model.prompts.map((p) => p[1])).toEqual(runs.map((r) => `The prompt of ${r}.`));
+    expect(
+      await readFile(
+        join(root, ".runs/add-fraud-check/run-business/findings-business.yaml"),
+        "utf8",
+      ),
+    ).toBe("findings: []\n");
+    expect(calls.filter((c) => c[0] === "handoff").map((c) => c[2])).toEqual(runs);
+    expect(progress).toContain(
+      "The critic's business lens: Atticus handed off run run-business, to review what the step wrote.",
+    );
+  });
+
+  it("a lens offered again counts as a round, so a lens that never passes can't loop for ever", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-vscode-lens-"));
+    await mkdir(join(root, ".runs/c/run-b"), { recursive: true });
+    await writeFile(join(root, ".runs/c/run-b/prompt.md"), "The prompt.");
+    const again = {
+      state: "handoff",
+      runId: "run-b",
+      lens: "business",
+      stillWaiting: true,
+      promptFile: ".runs/c/run-b/prompt.md",
+      resultFile: ".runs/c/run-b/findings-business.yaml",
+      doneArgs: ["handoff", "done", "run-b"],
+      resumeArgs: ["change", "feature", "c", "--handoff", "--json", "--resume", "run-b"],
+    };
+    const cli = async (argv: string[]) =>
+      argv[0] === "handoff"
+        ? { code: 1, stdout: "", stderr: "findings-business.yaml isn't YAML", cancelled: false }
+        : { code: 0, stdout: JSON.stringify(again), stderr: "", cancelled: false };
+    const model = new FakeModel(["x", "x", "x", "x"]);
+    const end = await runStep(
+      ["change", "feature", "c"],
+      { root, cli, model: async () => model, maxRounds: 2 },
+      cancelSource(),
+    );
+    expect(end.state).toBe("too-many-rounds");
   });
 });
