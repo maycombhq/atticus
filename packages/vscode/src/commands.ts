@@ -51,6 +51,35 @@ export interface Catalog {
   commands: CatalogCommand[];
 }
 
+/**
+ * The catalogue as the extension uses it. The command line builds it from its help text, where a
+ * switch at the end of a usage line can take the first word of its help as a value (`--approve
+ * Open the phase's hand-off PR` gave --approve the value "Open"): a flag the usage shows with no
+ * value after it is a switch.
+ */
+export function normaliseCatalog(c: Catalog): Catalog {
+  return { ...c, commands: c.commands.map(normaliseCommand) };
+}
+
+function normaliseCommand(cmd: CatalogCommand): CatalogCommand {
+  const words = cmd.usage.split(/\s+/);
+  const bare = (name: string) => {
+    const i = words.findIndex((w) => w.replace(/^\[/, "").replace(/\]$/, "") === name);
+    if (i < 0) return false;
+    if (words[i]!.endsWith("]")) return true;
+    const next = words[i + 1];
+    return next === undefined || next === "|" || /^\[?--/.test(next);
+  };
+  return {
+    ...cmd,
+    flags: cmd.flags.map((f) => {
+      if (f.value === undefined || !bare(f.name)) return f;
+      const { value: _value, ...rest } = f;
+      return rest;
+    }),
+  };
+}
+
 /** Split a typed line into words, keeping "quoted parts" whole. */
 export function splitWords(line: string): string[] {
   const out: string[] = [];
@@ -217,17 +246,73 @@ export function answersFrom(
   const missing = [
     ...cmd.args.filter((a, i) => !a.optional && args[i] === undefined).map((a) => a.name),
     ...cmd.flags
-      .filter((f) => f.required && !(f.name in flags) && cmd.id !== "questions answer")
+      .filter(
+        (f) =>
+          f.required &&
+          !(f.name in flags) &&
+          f.name !== cmd.approve &&
+          cmd.id !== "questions answer",
+      )
       .map((f) => f.name),
   ];
   return { answers: { args, flags }, missing };
 }
 
-/** Required options that take no value (critic … --resume): set them, never ask. */
+/**
+ * Required options that take no value (critic … --resume): set them, never ask. Not the approve
+ * flag: it is added only after the dry run and the person's yes.
+ */
 export function requiredSwitches(cmd: CatalogCommand): Record<string, true> {
   const out: Record<string, true> = {};
-  for (const f of cmd.flags) if (f.required && !f.value) out[f.name] = true;
+  for (const f of cmd.flags)
+    if (f.required && !f.value && f.name !== cmd.approve) out[f.name] = true;
   return out;
+}
+
+const WHICH: Partial<Record<ArgKind, string>> = {
+  repo: "which repo?",
+  change: "which change?",
+  flow: "which flow?",
+  system: "which system?",
+  question: "which question?",
+  finding: "which finding?",
+  record: "which record?",
+};
+
+/** The lists of the metarepo's own a text argument is picked from, by command and argument. */
+export type ListKind = "knowledge-item" | "need" | "task" | "source" | "absorbed" | "platform";
+
+const LISTS: Record<string, ListKind> = {
+  "knowledge verify item": "knowledge-item",
+  "knowledge correct item": "knowledge-item",
+  "knowledge reject item": "knowledge-item",
+  "needs done item": "need",
+  "needs skip item": "need",
+  "needs reopen item": "need",
+  "task run task": "task",
+  "spec hand-down task": "task",
+  "spec hand-up task": "task",
+  "sources tag source": "source",
+  "absorb accept id": "absorbed",
+  "absorb --refresh --refresh": "absorbed",
+  "orgpack accept platform": "platform",
+};
+
+/** The list an argument (or an option's value) is picked from, when it is an id of the metarepo's. */
+export const listFor = (cmd: Pick<CatalogCommand, "id">, a: Pick<CatalogArg, "name">) =>
+  LISTS[`${cmd.id} ${a.name}`];
+
+/** The title of the box or list that asks for an argument: the command, then what is asked. */
+export function argTitle(cmd: Pick<CatalogCommand, "id">, a: CatalogArg): string {
+  const what = WHICH[a.kind] ?? (listFor(cmd, a) ? `which ${a.name}?` : a.name);
+  return `atticus ${cmd.id}: ${what}${a.optional ? " (optional)" : ""}`;
+}
+
+/** What the box for a typed argument says: what the command does, then what to type. */
+export function argPrompt(cmd: Pick<CatalogCommand, "summary">, a: CatalogArg): string {
+  const does = cmd.summary.replace(/\s*\[--[^\]]*\]/g, "").replace(/[.\s]+$/, "");
+  const type = `Type the ${a.name}${a.many ? "s, split by spaces" : ""}`;
+  return `${does ? `${does}. ` : ""}${type}${a.optional ? ", or leave it empty to leave it out." : "."}`;
 }
 
 const PLACEHOLDER = /^<[^>]*>$/;

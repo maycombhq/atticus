@@ -47,13 +47,18 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
     return Array.isArray(this.questions) ? this.questions.length : undefined;
   }
 
+  /** Which read is the latest: an older one that ends later never overwrites it. */
+  private reads = 0;
+
   refresh(): Promise<void> {
+    const read = ++this.reads;
     this.nodes = [{ kind: "loading" }];
     this.questions = undefined;
     this.changed.fire(undefined);
     this.questionsChanged.fire();
-    this.loading = this.load()
+    this.loading = this.load(read)
       .catch((e: unknown) => {
+        if (read !== this.reads) return;
         // Never left on "Reading…": say why, with the output a click away.
         const message = `Couldn't read the metarepo: ${(e as Error)?.message ?? String(e)}`;
         this.svc.log.appendLine(message);
@@ -61,6 +66,7 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
         if (this.questions === undefined) this.questions = message;
       })
       .finally(() => {
+        if (read !== this.reads) return;
         this.loading = undefined;
         this.changed.fire(undefined);
         this.questionsChanged.fire();
@@ -73,7 +79,7 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
     return this.loading;
   }
 
-  private async load() {
+  private async load(read: number) {
     const root = this.svc.root;
     // No metarepo, or no command line: empty, so VS Code shows the welcome (package.json
     // viewsWelcome) with what to do first (ADR 0098).
@@ -91,6 +97,8 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
         parseJson<{ steps?: SetupStep[]; baselined?: boolean }>(r.stdout),
       ),
     ]);
+    // Read again meanwhile (the command line found missing, another folder): that read wins.
+    if (read !== this.reads) return;
     this.titles.clear();
     const nodes: Node[] = [];
     if (!n.ok) nodes.push({ kind: "error", message: `Couldn't read the next step: ${n.message}` });

@@ -4,6 +4,7 @@ import {
   absorbConfirm,
   acceptConfirm,
   defaultAbsorbId,
+  guidedCommand,
   guidedFor,
   onboardingStages,
   setupAction,
@@ -254,5 +255,21 @@ describe("accepting with nothing to copy", () => {
       sourcesFile: "org-pack/sources.yaml",
     });
     expect(a.detail.startsWith("It adds pricing under absorbed:")).toBe(true);
+  });
+});
+
+describe("Run a command, for a command with a guided screen", () => {
+  it("opens the screen, which asks in plain words and shows what came of it", () => {
+    expect(guidedCommand("knowledge find")).toBe("atticus.searchWikis");
+    expect(guidedCommand("knowledge keep")).toBe("atticus.keepFound");
+    expect(guidedCommand("sources add")).toBe("atticus.addWiki");
+    expect(guidedCommand("orgpack draft")).toBe("atticus.draftOrgPack");
+    expect(guidedCommand("orgpack accept")).toBe("atticus.draftOrgPack");
+    expect(guidedCommand("repos discover")).toBe("atticus.addRepos");
+    expect(guidedCommand("absorb")).toBe("atticus.absorb");
+    expect(guidedCommand("absorb accept")).toBe("atticus.absorbAccept");
+    expect(guidedCommand("questions answer")).toBe("atticus.answerQuestion");
+    expect(guidedCommand("needs")).toBe("atticus.raiseNeeds");
+    expect(guidedCommand("spec check")).toBeUndefined();
   });
 });

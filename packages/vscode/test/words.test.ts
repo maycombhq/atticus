@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandTitle, stepTitle } from "../src/words";
+import { commandTitle, optionHint, statusText, stepTitle } from "../src/words";
 
 /** ADR 0098: the extension speaks in plain words first; the command is beside it, not instead. */
 
@@ -85,5 +85,34 @@ describe("keeping the knowledge current, in plain words (ADR 0101)", () => {
     expect(s("orgpack-draft")).toBe("Draft the org pack's systems from the wikis");
     expect(s("accept-orgpack")).toBe("Accept the systems drafted from the wikis");
     expect(s("verify-knowledge")).toBe("Check the knowledge items your changes use");
+  });
+});
+
+describe("the status bar", () => {
+  it("names the next step in plain words, as the Next section does", () => {
+    expect(
+      statusText(0, {
+        step: "survey",
+        repo: "forge-portal-ui",
+        command: "atticus scan survey forge-portal-ui",
+        why: "",
+      } as never),
+    ).toBe(
+      "$(shield) Atticus: 0 questions · next: Draft forge-portal-ui's scan settings with Copilot",
+    );
+    expect(statusText(1, { step: "x", person: true, command: "", why: "Ask." } as never)).toBe(
+      "$(shield) Atticus: 1 question · next: a person's step",
+    );
+    expect(statusText(undefined, undefined)).toBe("$(shield) Atticus");
+  });
+});
+
+describe("an option's hint in Run a command", () => {
+  it("says an option takes a value, and gives an example only when the help has a real one", () => {
+    expect(optionHint({ value: "s" })).toBe("you give its value");
+    expect(optionHint({ value: "run" })).toBe("you give its value");
+    expect(optionHint({ value: "3" })).toBe("you give its value, such as 3");
+    expect(optionHint({ value: "f.json" })).toBe("you give its value, such as f.json");
+    expect(optionHint({})).toBe("");
   });
 });

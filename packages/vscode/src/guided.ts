@@ -22,6 +22,26 @@ export function guidedFor(command: string): Guided | undefined {
   return undefined;
 }
 
+/**
+ * The guided screen for a command picked from Run a command with nothing given yet: the screen
+ * asks in plain words and shows what came of it (a search's finds to keep, the drafted systems to
+ * accept), where the command alone would only say the step is done.
+ */
+const GUIDED_COMMANDS: Record<string, string> = {
+  "knowledge find": "atticus.searchWikis",
+  "knowledge keep": "atticus.keepFound",
+  "sources add": "atticus.addWiki",
+  "orgpack draft": "atticus.draftOrgPack",
+  "orgpack accept": "atticus.draftOrgPack",
+  "repos discover": "atticus.addRepos",
+  absorb: "atticus.absorb",
+  "absorb accept": "atticus.absorbAccept",
+  "questions answer": "atticus.answerQuestion",
+  needs: "atticus.raiseNeeds",
+};
+
+export const guidedCommand = (id: string): string | undefined => GUIDED_COMMANDS[id];
+
 // ------------------------------------------------------------------ the setup checklist
 
 /** One step of `atticus setup --json`. */

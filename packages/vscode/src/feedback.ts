@@ -103,6 +103,8 @@ export function runProgressTitle(argv: string[]): string {
       return "Setting up Atticus in the repo";
     case "ask":
       return "Asking the catalog";
+    case "digest":
+      return argv.includes("--send") ? "Sending what waits on you" : "Reading what waits on you";
   }
   return `Running ${commandText(argv)}`;
 }
@@ -169,3 +171,13 @@ const EMPTY_BELOW: Partial<Record<Expand["kind"], string>> = {
 
 /** What a part of a section says when it opens to nothing. */
 export const emptyBelow = (kind: Expand["kind"]) => EMPTY_BELOW[kind] ?? "Nothing here yet.";
+
+/** What `atticus upgrade --check` found, as one line for a notice. */
+export function upgradeNotice(stdout: string): string {
+  const lines = stdout.split(/\r?\n/).filter((l) => l.trim());
+  const n = /^(\d+) upgrade steps? to run/.exec(lines[0] ?? "")?.[1];
+  const steps = lines.slice(1).map((l) => l.trim());
+  if (!n || !steps.length) return "The metarepo needs an upgrade";
+  const more = steps.length > 1 ? `, and ${steps.length - 1} more` : "";
+  return `The metarepo needs ${n} upgrade step${n === "1" ? "" : "s"}: ${steps[0]}${more}`;
+}

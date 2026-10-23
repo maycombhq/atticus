@@ -1,5 +1,7 @@
 import { writeFileSync } from "node:fs";
 import * as vscode from "vscode";
+import { pickList, requiredSwitches } from "../src/commands";
+import { COPILOT_SETUP, copilotSetup } from "../src/describe";
 import type { AtticusHandles } from "../src/extension";
 
 /**
@@ -133,6 +135,40 @@ export async function run(): Promise<void> {
     const items = await top("catalog");
     if (!items.length) throw new Error("empty");
     return items.map((i) => `${label(i)} ${String(i.description ?? "")}`).join(", ");
+  });
+
+  await check("the status bar names the next step in plain words, as Next does", async () => {
+    await h.view.refresh();
+    for (let i = 0; i < 40 && !h.status.text.includes("next:"); i++)
+      await new Promise((r) => setTimeout(r, 250));
+    const t = h.status.text;
+    if (!t.includes("next:")) throw new Error(`no next step: ${t}`);
+    // A step's id alone (next: survey) is the command line's word, not a person's.
+    if (/next: [a-z-]+$/.test(t)) throw new Error(`a step id: ${t}`);
+    return t;
+  });
+
+  await check("Run a command offers every command the command line has", async () => {
+    const cat = await h.commands.load(h.service.root!);
+    const offered = pickList(cat, { developer: true }).filter((i) => !i.separator);
+    if (offered.length !== cat.commands.length)
+      throw new Error(`${offered.length} offered of ${cat.commands.length}`);
+    // No approve flag is set before the dry run and the person's yes, and no switch asks a value.
+    const bad = cat.commands.filter(
+      (c) =>
+        (c.approve && c.approve in requiredSwitches(c)) ||
+        c.flags.some((f) => f.required && f.value && /^[A-Z][a-z]+$/.test(f.value)),
+    );
+    if (bad.length) throw new Error(`asked wrongly: ${bad.map((c) => c.id).join(", ")}`);
+    return `${offered.length} commands`;
+  });
+
+  await check("Set up Copilot uses VS Code's own setup when it has one", async () => {
+    const all = await vscode.commands.getCommands(true);
+    const s = copilotSetup(all);
+    if (all.includes(COPILOT_SETUP) && s.command !== COPILOT_SETUP)
+      throw new Error(`would run ${s.command}`);
+    return s.command;
   });
 
   await check("opens the app in a tab, from the extension's own files", async () => {

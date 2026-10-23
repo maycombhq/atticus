@@ -24,10 +24,10 @@ import { SectionTree, type Section } from "./sidebar";
 import { findingActions, flowHash, stepOf, type Item, type Open } from "./sidebar-data";
 import { setupAction } from "./guided";
 import { commandText } from "./cli";
-import { describeEnd, endActions } from "./describe";
+import { copilotSetup, describeEnd, endActions } from "./describe";
 import { aiProgressTitle, runProgressTitle } from "./feedback";
 import { pickLoading } from "./pick";
-import { stepTitle } from "./words";
+import { statusText, stepTitle } from "./words";
 import type { StepEnd } from "./runner";
 import { Service } from "./service";
 import { AtticusView, QuestionsView } from "./view";
@@ -62,6 +62,8 @@ export interface AtticusHandles {
   sections: Record<string, SectionTree>;
   panel: () => vscode.WebviewPanel | undefined;
   service: Service;
+  status: vscode.StatusBarItem;
+  commands: CommandUi;
 }
 
 export function activate(context: vscode.ExtensionContext): AtticusHandles {
@@ -102,6 +104,8 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
     ),
   );
   const refreshAll = () => {
+    // A metarepo made or adopted in this window shows its sections at once, not after a reload.
+    void vscode.commands.executeCommand("setContext", "atticus.hasMetarepo", !!svc.root);
     void view.refresh().then(updateStatus);
     for (const t of sections) t.refresh();
     lenses.refresh();
@@ -113,11 +117,10 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
   context.subscriptions.push(status);
   const updateStatus = () => {
     if (!svc.root) return status.hide();
-    const q = view.openQuestions;
-    const parts = [q === undefined ? "" : `${q} question${q === 1 ? "" : "s"}`];
-    if (view.next)
-      parts.push(view.next.person ? "next: a person's step" : `next: ${view.next.step}`);
-    status.text = `$(shield) Atticus${parts.some(Boolean) ? `: ${parts.filter(Boolean).join(" · ")}` : ""}`;
+    // Without the command line nothing was read: say so, not "0 questions".
+    status.text = svc.cliOk
+      ? statusText(view.openQuestions, view.next, view.changeTitle)
+      : "$(warning) Atticus: no command line";
     status.tooltip = view.next
       ? `Next: ${view.next.command}
 ${view.next.why}`
@@ -126,6 +129,8 @@ ${view.next.why}`
   };
 
   context.subscriptions.push(svc.onChanged(refreshAll));
+  // Whatever read the Next section again, the status bar follows what it read last.
+  context.subscriptions.push(view.onDidChangeTreeData(() => updateStatus()));
   // Specs, changes, the catalog and questions are files: follow them when they change.
   const files = vscode.workspace.createFileSystemWatcher(
     "**/{specs,catalog,openspec,questions,knowledge,org-pack}/**/*.{yaml,md}",
@@ -198,11 +203,9 @@ ${view.next.why}`
           )
         : await show(lines[0]!, ...actions);
     if (pick === "Answer") await vscode.commands.executeCommand("atticus.answerQuestion");
-    else if (pick === "Install Copilot Chat")
-      await vscode.commands.executeCommand("atticus.installCopilot");
     else if (pick === "Set up Copilot")
       // VS Code's own Copilot setup: sign in, or turn it on.
-      await vscode.commands.executeCommand("workbench.action.chat.triggerSetup");
+      await vscode.commands.executeCommand("atticus.installCopilot");
     else if (pick === "Pick a model")
       await vscode.commands.executeCommand("workbench.action.openSettings", "atticus.model");
     else if (pick === "Show details") svc.log.show(true);
@@ -331,6 +334,10 @@ ${view.next.why}`
         }),
     ),
     vscode.extensions.onDidChange(() => void updateContext()),
+    // A new atticus.path: look for the command line again, so the welcome goes or comes at once.
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration("atticus.path")) void updateContext().then(refreshAll);
+    }),
   );
   reg("atticus.checkHealth", async () => {
     await updateContext();
@@ -519,9 +526,12 @@ ${view.next.why}`
     const a = setupAction(id);
     return vscode.commands.executeCommand(a.command, ...(a.args ?? []));
   });
-  reg("atticus.installCopilot", () =>
-    vscode.commands.executeCommand("workbench.extensions.installExtension", "GitHub.copilot-chat"),
-  );
+  // VS Code's own Copilot setup (Copilot is built into VS Code 1.143 and later); installing
+  // Copilot Chat only in an older VS Code without it.
+  reg("atticus.installCopilot", async () => {
+    const s = copilotSetup(await vscode.commands.getCommands(true));
+    return vscode.commands.executeCommand(s.command, ...s.args);
+  });
   // The everyday ones, one click from the sidebar's title bars.
   const shortcut: [string, string][] = [
     ["atticus.scanAll", "scan"],
@@ -882,7 +892,9 @@ ${view.next.why}`
     const root = needRoot();
     if (!root) return;
     const question = await vscode.window.showInputBox({
-      prompt: "Ask the catalog a plain question",
+      title: "Atticus: ask the catalog",
+      prompt:
+        "A plain question, for example: which systems call forge-ledger? The answer shows the query it ran.",
       ignoreFocusOut: true,
     });
     if (!question?.trim()) return;
@@ -1005,6 +1017,7 @@ ${view.next.why}`
     const t =
       target ??
       (await vscode.window.showInputBox({
+        title: "Atticus: open on the Architecture canvas",
         prompt:
           "Which repo? Its name, or a node id such as system:payments; add a flow's id or words to open a flow. Empty: the estate.",
         ignoreFocusOut: true,
@@ -1048,8 +1061,8 @@ ${view.next.why}`
     if (svc.root && !vscode.extensions.getExtension("GitHub.copilot-chat"))
       void vscode.window
         .showWarningMessage(
-          "Atticus's AI steps run with GitHub Copilot Chat, which isn't installed.",
-          "Install Copilot Chat",
+          "Atticus's AI steps run with GitHub Copilot, which isn't set up in this VS Code yet.",
+          "Set up Copilot",
         )
         .then((p) => p && vscode.commands.executeCommand("atticus.installCopilot"));
     if (svc.root && svc.cliOk) void commands.checkHealth(svc.root, true).catch(() => undefined);
@@ -1060,6 +1073,8 @@ ${view.next.why}`
     sections: Object.fromEntries(sections.map((t, i) => [SECTIONS[i]!, t])),
     panel: () => panel,
     service: svc,
+    status,
+    commands,
   };
 }
 

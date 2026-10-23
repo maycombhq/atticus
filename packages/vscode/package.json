@@ -176,7 +176,8 @@
       {
         "command": "atticus.ask",
         "title": "Ask the catalog a question",
-        "category": "Atticus"
+        "category": "Atticus",
+        "icon": "$(comment-discussion)"
       },
       {
         "command": "atticus.showApp",
@@ -354,7 +355,7 @@
       },
       {
         "command": "atticus.installCopilot",
-        "title": "Install GitHub Copilot Chat",
+        "title": "Set up GitHub Copilot",
         "category": "Atticus"
       },
       {
@@ -691,6 +692,11 @@
           "command": "atticus.reviewUnverified",
           "when": "view == atticus.knowledge",
           "group": "more"
+        },
+        {
+          "command": "atticus.ask",
+          "when": "view == atticus.catalog",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -1011,6 +1017,10 @@
         {
           "command": "atticus.keepCandidate",
           "when": "false"
+        },
+        {
+          "command": "atticus.draftSpec",
+          "when": "false"
         }
       ],
       "atticus.start": [
@@ -1148,8 +1158,8 @@
           },
           {
             "id": "copilot",
-            "title": "Install GitHub Copilot Chat",
-            "description": "The AI steps run with Copilot's model.\n[Install Copilot Chat](command:atticus.installCopilot)",
+            "title": "Set up GitHub Copilot",
+            "description": "The AI steps run with Copilot's model.\n[Set up Copilot](command:atticus.installCopilot)",
             "media": {
               "markdown": "media/walkthrough/2-copilot.md"
             },

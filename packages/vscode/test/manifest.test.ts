@@ -78,4 +78,24 @@ describe("the extension's manifest and its code", () => {
       views.filter((v) => !src.includes(`"${v}"`) && !src.includes(`\`atticus.\${name}\``)),
     ).toEqual([]);
   });
+
+  it("offers each step once in the Command Palette: one of two commands that run it is hidden", () => {
+    const hidden = new Set(
+      (pkg.contributes.menus.commandPalette ?? [])
+        .filter((m) => (m as { when?: string }).when === "false")
+        .map((m) => m.command),
+    );
+    // atticus.draftSpec and atticus.spec both draft a repo's spec with Copilot.
+    expect(hidden.has("atticus.draftSpec") && !hidden.has("atticus.spec")).toBe(true);
+  });
+
+  it("asks the catalog from the Catalog section's title bar", () => {
+    expect(
+      pkg.contributes.menus["view/title"]!.some(
+        (m) =>
+          m.command === "atticus.ask" &&
+          (m as { when?: string }).when === "view == atticus.catalog",
+      ),
+    ).toBe(true);
+  });
 });

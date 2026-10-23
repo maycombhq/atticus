@@ -6,7 +6,24 @@ import {
   findOutcome,
   loadingLabel,
   runProgressTitle,
+  upgradeNotice,
 } from "../src/feedback";
+
+describe("the upgrade check when the window opens", () => {
+  it("says what the upgrade does, not a line that ends in a colon", () => {
+    expect(
+      upgradeNotice(
+        "1 upgrade step to run (atticus upgrade):\n  gates.yaml at version 2: the critic round limit written out: 1 file\n",
+      ),
+    ).toBe(
+      "The metarepo needs 1 upgrade step: gates.yaml at version 2: the critic round limit written out: 1 file",
+    );
+    expect(
+      upgradeNotice("3 upgrade steps to run (atticus upgrade):\r\n  a: 1 file\r\n  b\r\n  c\r\n"),
+    ).toBe("The metarepo needs 3 upgrade steps: a: 1 file, and 2 more");
+    expect(upgradeNotice("")).toBe("The metarepo needs an upgrade");
+  });
+});
 
 /**
  * What a person reads between a click and its result (0.3.1): every run says in plain words what
@@ -66,6 +83,8 @@ describe("what a command says while it runs", () => {
       "Copying forge-wiki's pages (a snapshot)",
     );
     expect(runProgressTitle(["sources", "sync"])).toBe("Copying every wiki's pages (a snapshot)");
+    expect(runProgressTitle(["digest"])).toBe("Reading what waits on you");
+    expect(runProgressTitle(["digest", "--send"])).toBe("Sending what waits on you");
     expect(runProgressTitle(["knowledge", "verify", "request-kafka-topic"])).toBe(
       "Recording that request-kafka-topic is right",
     );

@@ -68,3 +68,30 @@ export function commandTitle(summary: string): string {
   const cut = summary.split(/:\s|;\s|\s\(|\s\[/)[0]!.trim();
   return cut.length > 90 ? `${cut.slice(0, 87).trimEnd()}…` : cut;
 }
+
+/** The status bar: the open questions and the next step, in the Next section's words. */
+export function statusText(
+  questions: number | undefined,
+  next: NextStep | undefined,
+  titles?: ChangeTitles,
+): string {
+  const parts: string[] = [];
+  if (questions !== undefined) parts.push(`${questions} question${questions === 1 ? "" : "s"}`);
+  if (next) {
+    const t = next.person ? "a person's step" : stepTitle(next, titles);
+    parts.push(`next: ${t.length > 70 ? `${t.slice(0, 67).trimEnd()}…` : t}`);
+  }
+  return `$(shield) Atticus${parts.length ? `: ${parts.join(" · ")}` : ""}`;
+}
+
+/**
+ * What Run a command says beside an option that takes a value. The help's placeholder is shown as
+ * an example only when it is one (`3`, `f.json`); a letter or a word standing for the value (`s`,
+ * `run`, `<kind>`) means nothing to a person.
+ */
+export function optionHint(f: { value?: string }): string {
+  if (!f.value) return "";
+  const v = f.value.replace(/^<|>$/g, "");
+  const placeholder = /^[a-z]$/.test(v) || /^[a-z][a-z-]*$/.test(v);
+  return placeholder ? "you give its value" : `you give its value, such as ${v}`;
+}

@@ -23,6 +23,13 @@ export function questionLines(q: OpenQuestion): string[] {
   ];
 }
 
+/** "What happened: why", the why being the first line printed, cut short when very long. */
+function because(what: string, printed: string[]): string {
+  const why = printed[0]?.trim();
+  if (!why) return `${what}.`;
+  return `${what}: ${why.length > 200 ? `${why.slice(0, 199).trimEnd()}…` : why}`;
+}
+
 export function describeEnd(end: StepEnd): string[] {
   const finish = (w: { resumeCommand?: string; runId?: string }) =>
     w.resumeCommand
@@ -41,10 +48,16 @@ export function describeEnd(end: StepEnd): string[] {
         `The step stopped for a person: ${plural(end.questions.length, "question")} to answer. Answer with /answer (or Atticus: Answer an open question), then run the step again.`,
         ...end.questions.flatMap(questionLines),
       ];
-    case "stopped":
-      return [`The step stopped without finishing.`, ...end.messages, ...end.errors];
-    case "failed":
-      return [`The step couldn't run.`, ...end.errors, ...end.messages];
+    // The notice shows the first line only: it says why, in the command line's own words; all of
+    // what it printed follows, for the output (Show details).
+    case "stopped": {
+      const all = [...end.messages, ...end.errors].filter((l) => l.trim());
+      return [because("The step stopped without finishing", all), ...all];
+    }
+    case "failed": {
+      const all = [...end.errors, ...end.messages].filter((l) => l.trim());
+      return [because("The step couldn't run", all), ...all];
+    }
     case "too-long":
       return [
         `The prompt is ${end.tokens} tokens, and ${end.model} takes at most ${end.max}. Nothing was cut and nothing was sent. Pick a model that takes more (the setting atticus.model), or run the step in a tool with a larger limit.`,
@@ -74,7 +87,8 @@ export function describeEnd(end: StepEnd): string[] {
 
 /**
  * The buttons on the notice a step ends with: what a person can do next, so that an ending is
- * never a dead end. Without a model, that is getting Copilot (installed, or set up and signed in).
+ * never a dead end. Without a model, that is setting Copilot up (VS Code's own setup signs in, and
+ * turns on the Copilot built into VS Code 1.143 and later).
  */
 export function endActions(end: { state: StepEnd["state"] }, o: { copilot: boolean }): string[] {
   switch (end.state) {
@@ -83,11 +97,25 @@ export function endActions(end: { state: StepEnd["state"] }, o: { copilot: boole
     case "no-model":
       return o.copilot
         ? ["Set up Copilot", "Pick a model", "Show details"]
-        : ["Install Copilot Chat", "Show details"];
+        : ["Set up Copilot", "Show details"];
     case "too-long":
     case "model-error":
       return ["Pick a model", "Show details"];
     default:
       return ["Show details"];
   }
+}
+
+/** VS Code's own Copilot setup (sign in, turn the built-in Copilot on). */
+export const COPILOT_SETUP = "workbench.action.chat.triggerSetup";
+
+/**
+ * How to set Copilot up, from the commands this VS Code has: its own setup when there is one (in
+ * VS Code 1.143 Copilot is built in, and its extension shows only once it is set up), else
+ * installing Copilot Chat, for an older VS Code.
+ */
+export function copilotSetup(commands: readonly string[]): { command: string; args: string[] } {
+  return commands.includes(COPILOT_SETUP)
+    ? { command: COPILOT_SETUP, args: [] }
+    : { command: "workbench.extensions.installExtension", args: ["GitHub.copilot-chat"] };
 }

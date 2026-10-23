@@ -3,14 +3,18 @@ import { join } from "node:path";
 import * as vscode from "vscode";
 import { readOpenQuestions } from "./atticus";
 import type * as Api from "./api-types";
-import { commandText } from "./cli";
+import { commandText, parseJson } from "./cli";
 import {
+  argPrompt,
+  argTitle,
   briefPathFrom,
   buildArgv,
   changeTypesFrom,
   commandsFor,
   howToRun,
+  listFor,
   matchCommand,
+  normaliseCatalog,
   optionsOf,
   presetFrom,
   pickList,
@@ -20,6 +24,7 @@ import {
   type Catalog,
   type CatalogArg,
   type CatalogCommand,
+  type ListKind,
 } from "./commands";
 import type { Service } from "./service";
 import { healthProblems } from "./sidebar-data";
@@ -27,16 +32,20 @@ import {
   absorbConfirm,
   acceptConfirm,
   defaultAbsorbId,
+  guidedCommand,
   guidedFor,
   onboardingStages,
   type AbsorbDry,
   type AcceptDry,
   type Stage,
 } from "./guided";
-import { runProgressTitle } from "./feedback";
+import { runProgressTitle, upgradeNotice } from "./feedback";
+import { itemTitle, reviewLook, type NeedEntry } from "./knowledge-data";
+import { readKnowledgeList } from "./knowledge-read";
 import { pickLoading } from "./pick";
 import type { StepEnd } from "./runner";
 import { discoveredFrom, isMetarepoName } from "./start";
+import { optionHint } from "./words";
 
 /**
  * Every Atticus command in VS Code (ADR 0096). The list comes from `atticus commands --json`, so
@@ -82,7 +91,7 @@ export class CommandUi {
         .cli(root)(["commands", "--json"])
         .then((r) => {
           if (r.code !== 0) throw new Error(r.stderr.trim() || `atticus commands exited ${r.code}`);
-          return JSON.parse(r.stdout) as Catalog;
+          return normaliseCatalog(JSON.parse(r.stdout) as Catalog);
         });
       this.catalog = c;
       c.catch(() => (this.catalog = undefined));
@@ -178,10 +187,13 @@ export class CommandUi {
     before: (string | string[] | undefined)[],
     named?: string,
   ): Promise<string | string[] | undefined | null> {
-    const title = named ?? `atticus ${cmd.id}: ${a.name}${a.optional ? " (optional)" : ""}`;
+    const title = named ?? argTitle(cmd, a);
     const api = () => this.svc.api(root);
     const enc = encodeURIComponent;
     const kind: ArgKind = a.kind;
+    // An id of the metarepo's own (an item, a need, a task, a source…): picked, not typed.
+    const list = listFor(cmd, a);
+    if (list) return (await this.pickOwn(root, list, title, before)) ?? null;
     // Each list shows at once and is read while it is open.
     if (kind === "repo")
       return this.quick(
@@ -295,11 +307,125 @@ export class CommandUi {
     }
     const v = await vscode.window.showInputBox({
       title,
-      prompt: `${cmd.summary}${a.optional ? " Leave it empty to leave it out." : ""}`,
+      prompt: argPrompt(cmd, a),
+      // Enter on an empty box would end the run without a word: say what is needed instead.
+      ...(a.optional
+        ? {}
+        : { validateInput: (x: string) => (x.trim() ? undefined : `Type the ${a.name} first.`) }),
       ignoreFocusOut: true,
     });
     if (v === undefined) return null;
     return v.trim() ? (a.many ? v.trim().split(/\s+/) : v.trim()) : a.optional ? undefined : null;
+  }
+
+  /**
+   * An id from the metarepo's own: its knowledge items, a change's needs or tasks, its wiki
+   * sources, what was brought in, its platforms. Each list says why when it is empty.
+   */
+  private async pickOwn(
+    root: string,
+    list: ListKind,
+    title: string,
+    before: (string | string[] | undefined)[],
+  ): Promise<string | undefined> {
+    const change = typeof before[0] === "string" ? before[0] : undefined;
+    const api = () => this.svc.api(root);
+    const enc = encodeURIComponent;
+    switch (list) {
+      case "knowledge-item":
+        return this.quick(
+          title,
+          async () => {
+            const k = await readKnowledgeList(this.svc.cli(root), root);
+            return k.items.map((i) => ({
+              label: itemTitle(i),
+              description: `${i.knowledgeKind ?? i.kind} · ${i.id}`,
+              detail: reviewLook(i.review).word,
+              value: i.id,
+            }));
+          },
+          "No knowledge items yet: add a wiki, sync it and read it with Copilot (Atticus: Add a wiki or docs repo…).",
+          "Reading the knowledge items…",
+        );
+      case "need":
+        return this.quick(
+          title,
+          async () => {
+            const r = await this.svc.cli(root)([
+              "needs",
+              ...(change ? ["--change", change] : []),
+              "--all",
+              "--json",
+              "--root",
+              root,
+            ]);
+            const j = parseJson<NeedEntry[]>(r.stdout);
+            if (!Array.isArray(j))
+              throw new Error(r.stderr.trim().split("\n")[0] || "Couldn't read the needs.");
+            return j.map((n) => ({
+              label: n.title,
+              description: `${n.status} · ${n.item}`,
+              detail: n.for === "change" ? "for the change" : `for ${n.for}`,
+              value: n.item,
+            }));
+          },
+          `${change ?? "The change"} has no needs yet: find them first (Atticus: Find what a change needs from the organisation).`,
+          "Reading the needs…",
+        );
+      case "task":
+        return this.quick(
+          title,
+          async () => {
+            if (!change) return [];
+            const tasks = await api().then((x) =>
+              x.get<Api.Task[]>(`/api/changes/${enc(change)}/tasks`),
+            );
+            return tasks.map((t) => ({
+              label: t.description,
+              description: `${t.id} · ${t.repo}${t.done ? " · done" : ""}`,
+              value: t.id,
+            }));
+          },
+          `${change ?? "The change"} has no tasks yet: the stories stage writes them (Atticus: Write a change's stories).`,
+          "Reading the tasks…",
+        );
+      case "source":
+        return this.quick(
+          title,
+          async () => {
+            const o = await api().then((x) => x.get<Api.OnboardingView>("/api/onboarding"));
+            return (o.sources?.wikis ?? []).map((w) => ({
+              label: w.id,
+              description: `${w.type} · ${w.location}`,
+              value: w.id,
+            }));
+          },
+          "No wiki or docs repo yet: add one first (Atticus: Add a wiki or docs repo…).",
+          "Reading the knowledge sources…",
+        );
+      case "absorbed":
+        return this.quick(
+          title,
+          async () => {
+            const o = await api()
+              .then((x) => x.get<Api.OnboardingView>("/api/onboarding"))
+              .catch(() => undefined);
+            const ids = new Set([
+              ...this.absorbProposals(root),
+              ...(o?.sources?.absorbed ?? []).map((x) => x.id),
+            ]);
+            return [...ids].sort().map((x) => ({ label: x, value: x }));
+          },
+          "Nothing was brought in yet: Atticus: Bring in from another repo makes a proposal.",
+          "Reading what was brought in…",
+        );
+      case "platform":
+        return this.quick(
+          title,
+          this.platforms(root).map((x) => ({ label: x, value: x })),
+          "The org pack has no platform yet: org-pack/profiles/<platform>/.",
+        );
+    }
   }
 
   /** The change types of the org pack, for change new's --type. */
@@ -312,7 +438,15 @@ export class CommandUi {
     return [];
   }
 
-  private async askFlagValue(root: string, cmd: CatalogCommand, name: string, hint?: string) {
+  /** An option's value: undefined when left empty, null when the person pressed Escape. */
+  private async askFlagValue(
+    root: string,
+    cmd: CatalogCommand,
+    name: string,
+    hint?: string,
+  ): Promise<string | string[] | undefined | null> {
+    const list = listFor(cmd, { name });
+    if (list) return (await this.pickOwn(root, list, `atticus ${cmd.id} ${name}`, [])) ?? null;
     if (cmd.id === "change new" && name === "--type") {
       const types = this.changeTypes(root);
       if (types.length)
@@ -324,28 +458,33 @@ export class CommandUi {
             value: t.id,
           })),
           "",
-        );
+        ).then((v) => v ?? null);
     }
     if (name === "--repo")
-      return this.askArg(
-        root,
-        cmd,
-        { name: "repo", kind: "repo", optional: false, many: false },
-        [],
+      return (
+        (await this.askArg(
+          root,
+          cmd,
+          { name: "repo", kind: "repo", optional: false, many: false },
+          [],
+        )) ?? null
       );
     if (name === "--change")
-      return this.askArg(
-        root,
-        cmd,
-        { name: "change", kind: "change", optional: false, many: false },
-        [],
+      return (
+        (await this.askArg(
+          root,
+          cmd,
+          { name: "change", kind: "change", optional: false, many: false },
+          [],
+        )) ?? null
       );
     const v = await vscode.window.showInputBox({
       title: `atticus ${cmd.id} ${name}`,
       prompt: hint ? `Its value (for example ${hint})` : "Its value",
       ignoreFocusOut: true,
     });
-    return v?.trim() || undefined;
+    if (v === undefined) return null;
+    return v.trim() || undefined;
   }
 
   /** Ask for each argument not given yet, the required options, then any options to add. */
@@ -365,19 +504,27 @@ export class CommandUi {
       ...requiredSwitches(cmd),
       ...(preset.flags ?? {}),
     };
-    for (const f of cmd.flags.filter((x) => x.required && !(x.name in flags))) {
-      // Two required options joined by "|" (questions answer --option | --text): one of them.
+    // The approve flag is not asked: it is added after the dry run and the person's yes.
+    for (const f of cmd.flags.filter(
+      (x) => x.required && !(x.name in flags) && x.name !== cmd.approve,
+    )) {
       const v = await this.askFlagValue(root, cmd, f.name, f.value);
-      if (v === undefined || v === null) continue;
+      // Escape stops it; a run without what it needs would only fail.
+      if (v === null) return undefined;
+      if (v === undefined) {
+        void vscode.window.showWarningMessage(
+          `atticus ${cmd.id} needs ${f.name}: nothing was run.`,
+        );
+        return undefined;
+      }
       flags[f.name] = Array.isArray(v) ? v.join(",") : v;
-      if (cmd.id === "questions answer") break;
     }
     const options = optionsOf(cmd).filter((f) => !(f.name in flags));
     if (options.length) {
       const chosen = await vscode.window.showQuickPick(
         options.map((f) => ({
           label: f.name,
-          description: f.value ? `takes a value, e.g. ${f.value}` : "",
+          description: optionHint(f),
           ...(f.summary ? { detail: f.summary } : {}),
           f,
         })),
@@ -392,7 +539,10 @@ export class CommandUi {
         if (!c.f.value) flags[c.f.name] = true;
         else {
           const v = await this.askFlagValue(root, cmd, c.f.name, c.f.value);
+          // Escape stops the run; an empty value leaves the option out.
+          if (v === null) return undefined;
           if (typeof v === "string") flags[c.f.name] = v;
+          else if (Array.isArray(v)) flags[c.f.name] = v.join(",");
         }
       }
     }
@@ -436,36 +586,75 @@ export class CommandUi {
     });
   }
 
-  /** A shared write: the dry run, then the person's yes, then the run with the approve flag. */
-  async approveAndRun(root: string, argv: string[], flag: string): Promise<Printed | undefined> {
-    const dry = await this.captured(
-      root,
-      argv.filter((a) => a !== flag),
-    );
+  /**
+   * A shared write: the dry run, then the person's yes, then the run with the approve flag. A dry
+   * run that failed is said, and nothing is offered to approve. When the command is whole without
+   * the flag (digest, change sync), what it said comes first and the write is offered after it.
+   */
+  async approveAndRun(
+    root: string,
+    argv: string[],
+    flag: string,
+    o: { optional?: boolean } = {},
+  ): Promise<Printed | undefined> {
+    const plain = argv.filter((a) => a !== flag);
+    const dry = await this.captured(root, plain);
+    if (dry.code !== 0) {
+      this.showPrinted(plain, dry);
+      return undefined;
+    }
+    const said = dry.lines.slice(-25).join("\n") || "(nothing)";
+    const write = commandText([...plain, flag]);
     const ok = await vscode.window.showWarningMessage(
-      `This writes to a shared system: ${commandText([...argv.filter((a) => a !== flag), flag])}`,
+      o.optional
+        ? `${commandText(plain)}: ${dry.lines[0] ?? "done"}`
+        : `This writes to a shared system: ${write}`,
       {
         modal: true,
-        detail: `What the dry run says:\n\n${dry.lines.slice(-25).join("\n") || "(nothing)"}`,
+        detail: o.optional
+          ? `${said}\n\nApprove and run writes to a shared system: ${write}`
+          : `What the dry run says:\n\n${said}`,
       },
       "Approve and run",
     );
     if (ok !== "Approve and run") return undefined;
-    return this.captured(root, [...argv.filter((a) => a !== flag), flag]);
+    return this.captured(root, [...plain, flag]);
+  }
+
+  /**
+   * A question to the knowledge items (an AI step): Copilot answers from the items only, the
+   * command line checks what it cites, and the answer is shown, not only "the step is done".
+   */
+  async askKnowledge(root: string, question: string) {
+    const end = await this.d.runAi(["knowledge", "ask", question], undefined, { quiet: true });
+    if (end?.state !== "done") return;
+    const answer = end.messages.filter((l) => l.trim());
+    this.svc.log.appendLine(`--- The knowledge's answer to “${question}”`);
+    for (const l of answer) this.svc.log.appendLine(l);
+    this.svc.log.show(true);
+    void vscode.window.showInformationMessage(
+      answer.length
+        ? `${answer[0]}${answer.length > 1 ? " (all of it, with what it cites, in the Atticus output)" : ""}`
+        : "The knowledge had no answer to that.",
+    );
   }
 
   /** Run a command as its kind needs. */
   async run(root: string, cmd: CatalogCommand, a: Answers): Promise<void> {
     const argv = buildArgv(cmd, a);
     const how = howToRun(cmd);
-    if (how.mode === "ai") {
+    if (how.mode === "ai" && cmd.id === "knowledge ask" && typeof a.args[0] === "string") {
+      await this.askKnowledge(root, a.args[0]);
+    } else if (how.mode === "ai") {
       const spec = cmd.id === "spec draft" && typeof a.args[0] === "string" ? a.args[0] : undefined;
       await this.d.runAi(argv, spec);
     } else if (how.mode === "terminal") {
       this.d.inTerminal(root, `Atticus ${cmd.id}`, [...argv, "--root", root]);
       return;
     } else if (how.mode === "approve") {
-      const p = await this.approveAndRun(root, argv, how.flag);
+      const p = await this.approveAndRun(root, argv, how.flag, {
+        optional: !cmd.flags.some((f) => f.name === how.flag && f.required),
+      });
       if (p) this.showPrinted(argv, p);
     } else {
       const p = await this.captured(root, argv);
@@ -492,6 +681,25 @@ export class CommandUi {
           void vscode.window.showWarningMessage(
             `This atticus has no command ${id}. It may be older than this extension: upgrade it, then try again.`,
           );
+        return;
+      }
+      // A question's answer: its options to pick, or the person's own words (the guided screen).
+      if (cmd.id === "questions answer" && !Object.keys(preset.flags ?? {}).length) {
+        const id = preset.args?.[0];
+        await vscode.commands.executeCommand(
+          "atticus.answerQuestion",
+          ...(typeof id === "string" ? [id] : []),
+        );
+        return;
+      }
+      // Nothing given yet, and a guided screen for it: the screen asks, and shows what came of it.
+      const guided = guidedCommand(cmd.id);
+      if (
+        guided &&
+        !preset.args?.some((x) => x !== undefined) &&
+        !Object.keys(preset.flags ?? {}).length
+      ) {
+        await vscode.commands.executeCommand(guided);
         return;
       }
       const a = await this.ask(root, cmd, preset);
@@ -1258,11 +1466,7 @@ export class CommandUi {
     // Not awaited: what is said mustn't hold the progress note, or the doctor's check, open.
     if (up.code === 1)
       void vscode.window
-        .showWarningMessage(
-          `Atticus: ${up.stdout.split("\n")[0] ?? "the metarepo needs an upgrade"}`,
-          "Upgrade",
-          "Show what",
-        )
+        .showWarningMessage(`Atticus: ${upgradeNotice(up.stdout)}.`, "Upgrade", "Show what")
         .then((pick) => {
           if (pick === "Upgrade") void this.pickAndRun(root, "upgrade");
           else if (pick === "Show what") {

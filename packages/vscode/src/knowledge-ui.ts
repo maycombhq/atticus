@@ -490,17 +490,7 @@ export class KnowledgeUi {
     });
     if (!q?.trim()) return;
     // An AI step (ADR 0083): Copilot answers from the items only, and the command line checks it.
-    const end = await this.d.runAi(["knowledge", "ask", q.trim()], undefined, { quiet: true });
-    if (end?.state !== "done") return;
-    const answer = end.messages.filter((l) => l.trim());
-    this.svc.log.appendLine(`--- The knowledge's answer to “${q.trim()}”`);
-    for (const l of answer) this.svc.log.appendLine(l);
-    this.svc.log.show(true);
-    void vscode.window.showInformationMessage(
-      answer.length
-        ? `${answer[0]}${answer.length > 1 ? " (all of it, with what it cites, in the Atticus output)" : ""}`
-        : "The knowledge had no answer to that.",
-    );
+    await this.c.askKnowledge(root, q.trim());
   }
 
   // ------------------------------------------------------------------ searching the wikis

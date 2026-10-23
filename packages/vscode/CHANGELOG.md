@@ -20,6 +20,16 @@ Nothing a person clicks leaves them unsure.
 - A command that needs a metarepo, run without one, offers to open or create one; without the command line, it offers to check again.
 - Fixed: Edit the manifest by hand failed silently when the manifest wasn't written yet; a new change whose brief couldn't be opened failed silently; the Next section could stay on "Reading the metarepo..." when reading it threw.
 - A step that can't run for want of a Copilot model says so in a dialog, every time, with **Install Copilot Chat** or **Set up Copilot** and **Pick a model**; before, a second click looked dead, as VS Code doesn't show a notice again while the same one is in the bell. A prompt that is too long, or a model that didn't answer, offers **Pick a model**.
+- **Copilot is set up, not installed.** With no model, Atticus offers **Set up Copilot**, VS Code's own setup (Copilot is built into VS Code 1.143 and later); it installs Copilot Chat only in an older VS Code. **Atticus: Set up GitHub Copilot** does the same.
+- A step that stopped, or couldn't run, says why in its notice, in the command line's own words; all of it is behind Show details.
+- **Run a command** picks what only the metarepo knows: a knowledge item, a change's need or task, a wiki source, what was brought in, a platform. Titles say what is asked ("which change?"), and an option that takes a value says so in words.
+- **Run a command** opens the guided screen for searching the wikis, keeping what a search found, adding a wiki, drafting or accepting the org pack, adding repos, bringing in a repo, answering a question and raising needs.
+- **Ask the knowledge** shows its answer. The Catalog section has an **Ask** button.
+- Escape cancels at every step of Run a command. An empty required box says what it needs, instead of ending without a word.
+- Fixed: a hand-off or return asked a value for `--approve`, and `critic --resume` asked one for `--resume`. The approve flag is added only after the dry run and your yes. A dry run that failed is no longer offered for approval.
+- The status bar names the next step in plain words. Without the command line it says so, and the welcome shows. Changing `atticus.path` checks again at once.
+- Fixed: after Use Atticus in this repo, or making a metarepo, only the Next section showed until a reload.
+- The upgrade notice names what the upgrade does. "What waits on you" shows what it read before offering to send it.
 - Fixed: closing a window, or VS Code ending, left its `atticus ui` server running. On Windows only the shell around it was stopped; now the whole process tree is, and the server also stops by itself when the window that started it goes, even if VS Code is killed.
 
 ## 0.3.0

@@ -6,7 +6,7 @@ Atticus's command line does all the checking. The extension only carries the pro
 
 ## What you need
 
-- VS Code 1.95 or later, with the GitHub Copilot Chat extension, signed in.
+- VS Code 1.95 or later, with GitHub Copilot set up and signed in (built into VS Code 1.143 and later; the GitHub Copilot Chat extension before). **Atticus: Set up GitHub Copilot** opens VS Code's own setup.
 - The `atticus` command line on your PATH (or its path in the setting `atticus.path`), Node 22.13 or later.
 - Your metarepo open in VS Code: the folder with `org-pack/` (or `.atticus/org-pack/`). With none open, the sidebar offers to make or open one.
 
