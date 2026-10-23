@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### One arrangement in the app and the plugin
+
+- The app's menu follows a working day (ADR 0105): Dashboard, Waiting on you (was Command center), Changes, the phase screens, Knowledge. More is regrouped into Code, Knowledge, Org pack, Define, Design, Plan, Build, Release and Run. Questions is a section of Waiting on you and stays at `#/questions`. No route is removed or renamed.
+- Needs across changes: `#/changes?across=needs` lists every open need of every open change, with Done, Not needed and Reopen as on a change's page. Waiting on you shows questions, open needs, manual steps and blocking findings, each with its count and a link.
+- The Dashboard's slash commands card, and every line that named Copilot Chat, say the commands are in Copilot Chat (`atticus assistant-files`) and in Claude Code (the Atticus plugin, ADR 0104).
+- The VS Code sidebar in the same order: Next, Waiting on you (was Questions), Changes, Knowledge, Repos, Catalog; see the extension's changelog.
+
 ### Atticus for Claude Code
 
 - A Claude Code plugin (ADR 0104), in this repository's marketplace: `/plugin marketplace add maycombhq/atticus`, then `/plugin install atticus@maycombhq`. Every step and catalog command as a slash command, the same files `atticus assistant-files` writes; a session in a metarepo starts with its next step; and the read-only `atticus` MCP server. `pnpm claude-plugin` writes `plugins/atticus` from the same commands, and a test fails when it is out of date.

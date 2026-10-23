@@ -15,7 +15,7 @@ import {
 import { answerApp, bundledHtml } from "./app-bundle";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { chatHandler } from "./chat";
-import { CommandUi } from "./command-ui";
+import { CommandUi, SHOWN_SCHEME, shownDocs } from "./command-ui";
 import { FlowLenses } from "./codelens";
 import { urlsOf } from "./knowledge-data";
 import { KnowledgeUi } from "./knowledge-ui";
@@ -30,7 +30,7 @@ import { pickLoading } from "./pick";
 import { statusText, stepTitle } from "./words";
 import type { StepEnd } from "./runner";
 import { Service } from "./service";
-import { AtticusView, QuestionsView } from "./view";
+import { AtticusView, WaitingView } from "./view";
 
 /**
  * The Atticus extension (ADR 0090, plan 4.8): a thin runner of Atticus's AI steps with
@@ -59,6 +59,7 @@ const answers = (url: string) =>
 export interface AtticusHandles {
   ready: Promise<void>;
   view: AtticusView;
+  waiting: WaitingView;
   sections: Record<string, SectionTree>;
   panel: () => vscode.WebviewPanel | undefined;
   service: Service;
@@ -69,6 +70,8 @@ export interface AtticusHandles {
 export function activate(context: vscode.ExtensionContext): AtticusHandles {
   const svc = new Service();
   const view = new AtticusView(svc);
+  // ADR 0105: Waiting on you keeps the Questions view's id, so settings that name it still work.
+  const waiting = new WaitingView(svc, view);
   const reg = (id: string, f: (...a: never[]) => unknown) =>
     context.subscriptions.push(
       vscode.commands.registerCommand(id, f as (...a: unknown[]) => unknown),
@@ -76,11 +79,12 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
   context.subscriptions.push(
     svc,
     view,
+    waiting,
     vscode.window.registerTreeDataProvider("atticus.view", view),
-    vscode.window.registerTreeDataProvider("atticus.questions", new QuestionsView(view)),
+    vscode.window.registerTreeDataProvider("atticus.questions", waiting),
   );
-  // The sections that read the app's API (ADR 0093): Repos, Changes and Catalog.
-  const SECTIONS: Section[] = ["repos", "changes", "knowledge", "catalog"];
+  // The sections that read the app's API (ADR 0093), in the sidebar's order (ADR 0105).
+  const SECTIONS: Section[] = ["changes", "knowledge", "repos", "catalog"];
   const sections = SECTIONS.map((name) => {
     const tree = new SectionTree(svc, name);
     context.subscriptions.push(
@@ -107,6 +111,7 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
     // A metarepo made or adopted in this window shows its sections at once, not after a reload.
     void vscode.commands.executeCommand("setContext", "atticus.hasMetarepo", !!svc.root);
     void view.refresh().then(updateStatus);
+    waiting.refresh();
     for (const t of sections) t.refresh();
     lenses.refresh();
   };
@@ -330,6 +335,7 @@ ${view.next.why}`
       () =>
         void updateContext().then(() => {
           for (const t of sections) t.reset();
+          waiting.reset();
           refreshAll();
         }),
     ),
@@ -710,6 +716,14 @@ ${view.next.why}`
     const root = needRoot();
     if (root) void knowledge.reviewUnverified(root);
   });
+  // A manual step from Waiting on you (ADR 0105): what `atticus todo show` says, in a tab.
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(SHOWN_SCHEME, shownDocs),
+  );
+  reg("atticus.showManualStep", (ref?: unknown) => {
+    const root = needRoot();
+    if (root && typeof ref === "string") void commands.showManualStep(root, ref);
+  });
   reg("atticus.runStep", async (arg?: NextStep | { step?: unknown }) => {
     const root = needRoot();
     if (!root) return;
@@ -1070,6 +1084,7 @@ ${view.next.why}`
   return {
     ready,
     view,
+    waiting,
     sections: Object.fromEntries(sections.map((t, i) => [SECTIONS[i]!, t])),
     panel: () => panel,
     service: svc,

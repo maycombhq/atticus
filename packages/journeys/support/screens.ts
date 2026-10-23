@@ -1,4 +1,4 @@
-/** Every screen by its route, with the Forge change where a screen works on one. */
+/** Every screen by its route (the menu of ADR 0105, then More and the cross-change views), with the Forge change where a screen works on one. */
 export const SCREENS = [
   "dashboard",
   "onboarding",
@@ -40,6 +40,8 @@ export const SCREENS = [
   "changes?across=tests",
   "changes?across=requests",
   "changes?across=releases",
+  // ADR 0105: needs across changes.
+  "changes?across=needs",
   "tasks?change=add-transfer-limit",
   "trace?change=add-transfer-limit",
   "todo",

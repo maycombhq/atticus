@@ -175,15 +175,18 @@ describe("Run next", () => {
 });
 
 describe("the menu", () => {
-  it("lists the six screens, then More, closed while a main screen is shown", () => {
+  it("lists the main screens in the order of a working day, then More, closed while a main screen is shown", () => {
     const out = html(<Nav current={screenOf("#/dashboard")} />);
     const order = [
       "Dashboard",
+      "Waiting on you",
+      "Changes",
       "Onboarding",
       "Feature design",
       "Architecture",
       "Stories",
       "Tasks",
+      "Knowledge",
     ].map((l) => out.indexOf(`>${l}</a>`));
     expect(order.every((i) => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
@@ -199,6 +202,16 @@ describe("the menu", () => {
     expect(out).not.toMatch(/id="nav-more" hidden/);
     expect(out).toContain('href="#/scans" aria-current="page"');
     expect(out).toContain('href="#/tasks"');
+  });
+
+  it("names its groups under More, and marks Waiting on you while Questions is shown", () => {
+    const more = html(<Nav current={screenOf("#/scans")} />);
+    for (const g of ["Code", "Knowledge", "Org pack", "Run"])
+      expect(more).toContain(`<div class="group">${g}</div>`);
+    const out = html(<Nav current={screenOf("#/questions")} />);
+    expect(out).toContain('aria-expanded="false"');
+    expect(out).toContain('href="#/home" aria-current="true"');
+    expect(out).not.toContain('href="#/questions"');
   });
 });
 
@@ -266,6 +279,11 @@ describe("the Dashboard", () => {
     // Onboarding isn't done while a question waits: Run next sends the person to answer it.
     expect(out).toContain("atticus questions list --state open");
     for (const c of R.commands) expect(out).toContain(c.name);
+    // ADR 0105: the commands are in Copilot Chat and, through the plugin, in Claude Code.
+    expect(W.slashTitle).toMatch(/Copilot Chat.*Claude Code/);
+    expect(out).toContain("atticus assistant-files");
+    expect(out).toContain("/plugin marketplace add maycombhq/atticus");
+    expect(out).toContain("/plugin install atticus@maycombhq");
   });
 
   it("says when nothing is in flight or waiting", () => {
@@ -459,5 +477,22 @@ describe("Feature design, Stories and Tasks", () => {
     const out = html(<ArchitectureStep list={{ state: "ready", data: [change("a", "design")] }} />);
     expect(out).toContain(R.title);
     expect(out).toContain("atticus change architecture a");
+  });
+});
+
+describe("where the slash commands are (ADR 0104, 0105)", () => {
+  /** Every string the copy file holds, functions called with a placeholder. */
+  const words = (v: unknown): string[] =>
+    typeof v === "string"
+      ? [v]
+      : typeof v === "function"
+        ? words((v as (...a: string[]) => unknown)("x", "x", "x", "x"))
+        : v && typeof v === "object"
+          ? Object.values(v).flatMap(words)
+          : [];
+
+  it("never says they are only in Copilot Chat: Claude Code has them too", () => {
+    const only = words(COPY).filter((t) => /Copilot Chat/.test(t) && !/Claude Code/.test(t));
+    expect(only).toEqual([]);
   });
 });

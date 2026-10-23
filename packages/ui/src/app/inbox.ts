@@ -1,7 +1,7 @@
 /**
  * What needs a person (ADR 0073): one list for everyone. There are no roles: every change in a
- * phase, every open blocking finding or knowledge gap, triage item, owner question and manual
- * step shows, each linking to the screen where it is acted on. Approving is the Git host's: a
+ * phase, every open blocking finding or knowledge gap, open need of a change (ADR 0105), triage
+ * item, owner question and manual step shows, each linking to the screen where it is acted on. Approving is the Git host's: a
  * gate is approved when its hand-off PR merges, so the list links to the change, not to an
  * approval button.
  */
@@ -20,10 +20,20 @@ export interface InboxData {
   questions: { id: string; question: string; owner?: string; system?: string }[];
   triage: { id: string; kind: string; summary: string }[];
   steps: { id: string; title: string; system: string; change?: string }[];
+  /** Every change's needs (ADR 0101); the open ones show. */
+  needs?: {
+    change: string;
+    item: string;
+    title: string;
+    kind: string;
+    status: string;
+    handledBy?: string;
+    leadTime?: string;
+  }[];
 }
 
 export interface InboxItem {
-  kind: "phase" | "finding" | "triage" | "question" | "step";
+  kind: "phase" | "finding" | "need" | "triage" | "question" | "step";
   title: string;
   detail: string;
   href: string;
@@ -86,6 +96,14 @@ export function inboxOf(d: InboxData): InboxItem[] {
           ARTIFACT_SCREEN.find(([a]) => f.artifact.startsWith(a))?.[1] ?? "changes",
           f.change,
         ),
+      });
+  for (const n of d.needs ?? [])
+    if (n.status === "open")
+      out.push({
+        kind: "need",
+        title: n.title,
+        detail: [n.kind, n.handledBy, n.leadTime, n.change].filter(Boolean).join(" · "),
+        href: "#/changes?across=needs",
       });
   for (const t of d.triage)
     out.push({ kind: "triage", title: t.summary, detail: t.kind, href: "#/intake" });

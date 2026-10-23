@@ -332,7 +332,7 @@ export const changeDirOf = (c: Pick<Api.ChangeDetail, "id" | "artifacts">) => {
   return a ? a.path.slice(0, a.path.indexOf(mark) + mark.length - 1) : `openspec/changes/${c.id}`;
 };
 
-const SEVERITY_ICON: Record<string, string> = {
+export const SEVERITY_ICON: Record<string, string> = {
   blocking: "error",
   gap: "question",
   risk: "warning",

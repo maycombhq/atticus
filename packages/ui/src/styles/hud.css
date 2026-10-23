@@ -336,7 +336,8 @@ a:hover {
   background: var(--hover);
   color: var(--text);
 }
-.nav a[aria-current="page"] {
+.nav a[aria-current="page"],
+.nav a[aria-current="true"] {
   background: var(--picked);
   color: var(--text);
   box-shadow: inset 2px 0 0 var(--accent);

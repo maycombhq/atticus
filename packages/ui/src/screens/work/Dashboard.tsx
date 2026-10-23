@@ -141,6 +141,9 @@ export function SlashCommands() {
       </ul>
       <p className="work-say">{R.install}</p>
       <Command text="atticus assistant-files" label={R.copy} />
+      <p className="work-say">{R.plugin}</p>
+      <Command text="/plugin marketplace add maycombhq/atticus" label={R.copy} />
+      <Command text="/plugin install atticus@maycombhq" label={R.copy} />
     </div>
   );
 }

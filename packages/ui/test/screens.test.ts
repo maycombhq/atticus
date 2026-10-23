@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAIN, MORE_GROUPS, MORE, SCREENS, screenOf } from "../src/app/screens.js";
+import { groupLabel, MAIN, MORE_GROUPS, MORE, SCREENS, screenOf } from "../src/app/screens.js";
 import { SCREEN_COMPONENTS } from "../src/screens/registry.js";
 
 /** Every screen the app had before the six (plan 4.5): none is removed, each stays reachable. */
@@ -35,40 +35,72 @@ const BEFORE = [
   "settings",
 ];
 
-describe("the app's menu (plan 4.5, B1)", () => {
-  it("shows six screens, in the order the work goes", () => {
+describe("the app's menu (plan 4.5, B1; ADR 0105)", () => {
+  it("shows the day's work first: Dashboard, Waiting on you, Changes, the phases, Knowledge", () => {
     expect(MAIN.map((s) => s.label)).toEqual([
       "Dashboard",
+      "Waiting on you",
+      "Changes",
       "Onboarding",
       "Feature design",
       "Architecture",
       "Stories",
       "Tasks",
+      "Knowledge",
     ]);
     expect(MAIN.map((s) => s.id)).toEqual([
       "dashboard",
+      "home",
+      "changes",
       "onboarding",
       "feature-design",
       "architecture",
       "stories",
       "task-list",
+      "knowledge",
     ]);
   });
 
-  it("keeps every other screen under More, in its old group, and removes none", () => {
+  it("groups More by what each page is about (ADR 0105)", () => {
+    expect(MORE_GROUPS.map(groupLabel)).toEqual([
+      "Code",
+      "Knowledge",
+      "Org pack",
+      "Define",
+      "Design",
+      "Plan",
+      "Build",
+      "Release",
+      "Run",
+    ]);
+    const of = (g: string) => MORE.filter((s) => groupLabel(s.group) === g).map((s) => s.id);
+    expect(of("Code")).toEqual(["explore", "flows", "map", "impact", "features", "scans"]);
+    expect(of("Knowledge")).toEqual(["wikis", "wiki-search", "parties"]);
+    expect(of("Org pack")).toEqual(["orgpack", "orgpack-draft", "intake", "settings"]);
+    expect(of("Define")).toEqual(["brief", "ux"]);
+    expect(of("Design")).toEqual(["arch-review", "diagrams", "reconcile", "contracts", "mappings"]);
+    expect(of("Plan")).toEqual(["breakdown", "initiatives"]);
+    expect(of("Build")).toEqual(["tasks", "trace", "todo"]);
+    expect(of("Release")).toEqual(["release", "service-desk"]);
+    expect(of("Run")).toEqual(["governance", "evals", "learning"]);
+  });
+
+  it("keeps every screen reachable and removes none; Questions is a section of Waiting on you", () => {
     const ids = new Set(SCREENS.map((s) => s.id));
     expect(ids.size).toBe(SCREENS.length);
     expect(BEFORE.filter((id) => !ids.has(id))).toEqual([]);
-    // Screens added under More since, each with its ADR.
+    // Screens added since, each with its ADR.
     const ADDED = [
       "flows", // ADR 0092
       ...["wikis", "knowledge", "wiki-search", "parties", "orgpack-draft"], // ADR 0102
     ];
-    expect(MORE.map((s) => s.id).sort()).toEqual(
-      [...BEFORE.filter((id) => id !== "architecture"), ...ADDED].sort(),
+    const menu = [...MAIN, ...MORE].map((s) => s.id);
+    expect(menu).not.toContain("questions");
+    expect([...menu, "questions"].sort()).toEqual(
+      [...new Set([...BEFORE, ...ADDED, ...MAIN.map((s) => s.id)])].sort(),
     );
     expect(MORE.every((s) => (MORE_GROUPS as readonly string[]).includes(s.group))).toBe(true);
-    expect(SCREENS).toHaveLength(MAIN.length + MORE.length);
+    expect(screenOf("#/questions/q-1")).toMatchObject({ id: "questions", under: "home" });
   });
 
   it("routes a hash to its screen, and anything unknown to the dashboard", () => {

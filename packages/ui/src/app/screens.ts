@@ -1,49 +1,65 @@
 import { COPY } from "../copy.js";
 
 /**
- * The app's screens (plan 4.5, B1). Six follow the work and make the menu; every other page,
- * from the design canvas, the Questions page (ADR 0078) and the rest, stays reachable under
- * More in its old group, unchanged until it is reviewed. Nothing is removed.
+ * The app's screens (plan 4.5, B1; ADR 0105). The menu goes in the order of a working day:
+ * the Dashboard, what waits on you, your changes, the phase screens, then Knowledge. Every
+ * other page is under More, grouped by what it is about: the code, the wikis, the org pack,
+ * the phases and running Atticus. Questions is a section of Waiting on you, out of the menu
+ * but still at its address. No route is removed or renamed.
  */
 
-export const MORE_GROUPS = ["Know", "Define", "Design", "Plan", "Build", "Release", "Run"] as const;
+export const MORE_GROUPS = [
+  "Code",
+  "Knowledge",
+  "OrgPack",
+  "Define",
+  "Design",
+  "Plan",
+  "Build",
+  "Release",
+  "Run",
+] as const;
 export type MoreGroup = (typeof MORE_GROUPS)[number];
 
 export interface ScreenDef {
   id: string;
   label: string;
   group: "Main" | MoreGroup;
+  /** A page out of the menu: the menu entry it is a section of. */
+  under?: string;
 }
 
 const N = COPY.nav;
 const S = COPY.nav.screens;
+const K = COPY.knowledge.nav;
 
 export const MAIN: ScreenDef[] = [
   { id: "dashboard", label: N.dashboard, group: "Main" },
+  { id: "home", label: S.home, group: "Main" },
+  { id: "changes", label: S.changes, group: "Main" },
   { id: "onboarding", label: N.onboarding, group: "Main" },
   { id: "feature-design", label: N.feature, group: "Main" },
   { id: "architecture", label: N.architecture, group: "Main" },
   { id: "stories", label: N.stories, group: "Main" },
   { id: "task-list", label: N.tasks, group: "Main" },
+  // ADR 0102: knowledge managed in the metarepo.
+  { id: "knowledge", label: N.knowledge, group: "Main" },
 ];
 
 export const MORE: ScreenDef[] = [
-  { id: "home", label: S.home, group: "Know" },
-  { id: "questions", label: COPY.questions.title, group: "Know" },
-  { id: "explore", label: S.explore, group: "Know" },
-  { id: "flows", label: COPY.flows.title, group: "Know" },
-  { id: "map", label: S.map, group: "Know" },
-  { id: "impact", label: S.impact, group: "Know" },
-  { id: "features", label: S.features, group: "Know" },
-  { id: "orgpack", label: S.orgpack, group: "Know" },
-  // ADR 0102: knowledge managed in the metarepo.
-  { id: "wikis", label: COPY.knowledge.nav.sources, group: "Know" },
-  { id: "knowledge", label: COPY.knowledge.nav.items, group: "Know" },
-  { id: "wiki-search", label: COPY.knowledge.nav.search, group: "Know" },
-  { id: "parties", label: COPY.knowledge.nav.parties, group: "Know" },
-  { id: "orgpack-draft", label: COPY.knowledge.nav.orgpack, group: "Know" },
-  { id: "intake", label: S.intake, group: "Know" },
-  { id: "scans", label: S.scans, group: "Know" },
+  { id: "explore", label: S.explore, group: "Code" },
+  { id: "flows", label: COPY.flows.title, group: "Code" },
+  { id: "map", label: S.map, group: "Code" },
+  { id: "impact", label: S.impact, group: "Code" },
+  { id: "features", label: S.features, group: "Code" },
+  { id: "scans", label: S.scans, group: "Code" },
+  { id: "wikis", label: K.sources, group: "Knowledge" },
+  { id: "wiki-search", label: K.search, group: "Knowledge" },
+  { id: "parties", label: K.parties, group: "Knowledge" },
+  { id: "orgpack", label: S.orgpack, group: "OrgPack" },
+  { id: "orgpack-draft", label: K.orgpack, group: "OrgPack" },
+  { id: "intake", label: S.intake, group: "OrgPack" },
+  { id: "settings", label: S.settings, group: "OrgPack" },
   { id: "brief", label: S.brief, group: "Define" },
   { id: "ux", label: S.ux, group: "Define" },
   { id: "arch-review", label: S.archReview, group: "Design" },
@@ -53,7 +69,6 @@ export const MORE: ScreenDef[] = [
   { id: "mappings", label: S.mappings, group: "Design" },
   { id: "breakdown", label: S.breakdown, group: "Plan" },
   { id: "initiatives", label: S.initiatives, group: "Plan" },
-  { id: "changes", label: S.changes, group: "Build" },
   { id: "tasks", label: S.tasks, group: "Build" },
   { id: "trace", label: S.trace, group: "Build" },
   { id: "todo", label: S.todo, group: "Build" },
@@ -62,10 +77,14 @@ export const MORE: ScreenDef[] = [
   { id: "governance", label: S.governance, group: "Run" },
   { id: "evals", label: S.evals, group: "Run" },
   { id: "learning", label: S.learning, group: "Run" },
-  { id: "settings", label: S.settings, group: "Run" },
 ];
 
-export const SCREENS: ScreenDef[] = [...MAIN, ...MORE];
+/** Pages out of the menu, each a section of a menu entry (ADR 0105). */
+export const SECTIONS: ScreenDef[] = [
+  { id: "questions", label: COPY.questions.title, group: "Main", under: "home" },
+];
+
+export const SCREENS: ScreenDef[] = [...MAIN, ...MORE, ...SECTIONS];
 
 /** A menu group's name as the menu shows it. */
 export const groupLabel = (g: ScreenDef["group"]): string => COPY.nav.groups[g];

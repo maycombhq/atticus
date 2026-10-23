@@ -249,6 +249,59 @@ test("a change's needs: Done, Not needed and Reopen, each named for its need", a
   await accessible(page, "a change's needs");
 });
 
+test("needs across changes: every open need, marked as on a change's page (ADR 0105)", async ({
+  page,
+}) => {
+  // The test above left the firewall rule open and Northwind Pay not needed.
+  await open(page, a(), "changes?across=needs");
+  const panel = page.locator("section", {
+    has: page.getByRole("heading", { name: "Needs across changes", level: 2 }),
+  });
+  const change = panel.locator("section[aria-labelledby=needs-across-add-transfer-limit]");
+  await expect(change.getByRole("link", { name: "Add a daily transfer limit" })).toBeVisible();
+  await expect(panel).toContainText(/1 open need across \d+ open changes?/);
+  await expect(change).toContainText("10 working days");
+  await expect(change).toContainText("Network team");
+  await expect(change.getByRole("link", { name: "Northwind Pay" })).toHaveCount(0);
+  await accessible(page, "needs across changes");
+
+  await change.getByRole("button", { name: "Done: Network firewall rule" }).click();
+  const note = page.locator("#need-add-transfer-limit-firewall-rule-request-change-note");
+  await expect(note).toBeFocused();
+  await page.keyboard.type("CTASK0010002");
+  await page.keyboard.press("Enter");
+  await expect(panel.getByRole("status")).toContainText("Network firewall rule is done");
+  // Marked here, it stays on the page with Reopen, and the keyboard stays on it.
+  await expect(change).toContainText("Done by");
+  await expect(
+    page.locator("#need-add-transfer-limit-firewall-rule-request-change-t"),
+  ).toBeFocused();
+  await expect(panel).toContainText("0 open needs across");
+  await change.getByRole("button", { name: "Reopen: Network firewall rule" }).click();
+  await expect(panel.getByRole("status")).toContainText("Network firewall rule is open again");
+  await expect(panel).toContainText("1 open need across");
+
+  // The ones done or not needed show when asked, each with Reopen.
+  await panel.getByLabel("Show the needs done or not needed too").check();
+  await expect(change.getByRole("button", { name: "Reopen: Northwind Pay" })).toBeVisible();
+  await panel.getByLabel("Filter").fill("card processor");
+  await expect(change).not.toContainText("Network firewall rule");
+  await accessible(page, "needs across changes, every one");
+
+  // Waiting on you counts them and links here; Questions is one of its sections.
+  await open(page, a(), "home");
+  await expect(page.getByRole("heading", { name: "Waiting on you", level: 1 })).toBeAttached();
+  const needs = page.getByRole("link", { name: /^Needs still open 1$/ });
+  await expect(needs).toHaveAttribute("href", "#/changes?across=needs");
+  await expect(page.getByRole("link", { name: /^Questions to answer/ })).toHaveAttribute(
+    "href",
+    "#/questions",
+  );
+  await expect(
+    page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Waiting on you" }),
+  ).toHaveAttribute("aria-current", "page");
+});
+
 test("Escape closes a change's artifact editor and goes back to its Edit button", async ({
   page,
 }) => {

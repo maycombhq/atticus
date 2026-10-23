@@ -524,6 +524,12 @@
         "title": "Check what no one has verified…",
         "category": "Atticus",
         "icon": "$(pass)"
+      },
+      {
+        "command": "atticus.showManualStep",
+        "title": "Show the manual step",
+        "category": "Atticus",
+        "icon": "$(checklist)"
       }
     ],
     "viewsContainers": {
@@ -544,13 +550,7 @@
         },
         {
           "id": "atticus.questions",
-          "name": "Questions",
-          "when": "atticus.hasMetarepo && !atticus.cliMissing",
-          "initialSize": 2
-        },
-        {
-          "id": "atticus.repos",
-          "name": "Repos",
+          "name": "Waiting on you",
           "when": "atticus.hasMetarepo && !atticus.cliMissing",
           "initialSize": 3
         },
@@ -566,6 +566,12 @@
           "visibility": "collapsed",
           "when": "atticus.hasMetarepo && !atticus.cliMissing",
           "initialSize": 1
+        },
+        {
+          "id": "atticus.repos",
+          "name": "Repos",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing",
+          "initialSize": 3
         },
         {
           "id": "atticus.catalog",
@@ -626,7 +632,7 @@
         {
           "command": "atticus.workspaceSync",
           "when": "view == atticus.repos",
-          "group": "more"
+          "group": "more@2"
         },
         {
           "command": "atticus.newChange",
@@ -641,7 +647,12 @@
         {
           "command": "atticus.onboardRepo",
           "when": "view == atticus.repos",
-          "group": "more"
+          "group": "more@1"
+        },
+        {
+          "command": "atticus.absorb",
+          "when": "view == atticus.repos",
+          "group": "more@3"
         },
         {
           "command": "atticus.addWiki",
@@ -666,17 +677,12 @@
         {
           "command": "atticus.knowledgeAsk",
           "when": "view == atticus.knowledge",
-          "group": "more@1"
+          "group": "1_read@1"
         },
         {
           "command": "atticus.keepFound",
           "when": "view == atticus.knowledge",
-          "group": "more@2"
-        },
-        {
-          "command": "atticus.absorb",
-          "when": "view == atticus.knowledge",
-          "group": "more@3"
+          "group": "1_read@2"
         },
         {
           "command": "atticus.raiseNeeds",
@@ -686,12 +692,12 @@
         {
           "command": "atticus.draftOrgPack",
           "when": "view == atticus.knowledge",
-          "group": "more"
+          "group": "3_orgpack@1"
         },
         {
           "command": "atticus.reviewUnverified",
           "when": "view == atticus.knowledge",
-          "group": "more"
+          "group": "2_review@1"
         },
         {
           "command": "atticus.ask",
@@ -717,7 +723,7 @@
         },
         {
           "command": "atticus.findingAction",
-          "when": "view == atticus.changes && viewItem == atticus.finding",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem == atticus.finding",
           "group": "inline"
         },
         {
@@ -837,47 +843,47 @@
         },
         {
           "command": "atticus.needDone",
-          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.open/",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem =~ /^atticus\\.need\\.open/",
           "group": "inline"
         },
         {
           "command": "atticus.needDone",
-          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.open/",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem =~ /^atticus\\.need\\.open/",
           "group": "atticus"
         },
         {
           "command": "atticus.needSkip",
-          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.open/",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem =~ /^atticus\\.need\\.open/",
           "group": "inline"
         },
         {
           "command": "atticus.needSkip",
-          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.open/",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem =~ /^atticus\\.need\\.open/",
           "group": "atticus"
         },
         {
           "command": "atticus.needReopen",
-          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.closed/",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem =~ /^atticus\\.need\\.closed/",
           "group": "inline"
         },
         {
           "command": "atticus.needReopen",
-          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\.closed/",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem =~ /^atticus\\.need\\.closed/",
           "group": "atticus"
         },
         {
           "command": "atticus.openLinks",
-          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\..*\\.urls$/",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem =~ /^atticus\\.need\\..*\\.urls$/",
           "group": "inline"
         },
         {
           "command": "atticus.openLinks",
-          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\..*\\.urls$/",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem =~ /^atticus\\.need\\..*\\.urls$/",
           "group": "atticus"
         },
         {
           "command": "atticus.openNeedPage",
-          "when": "view == atticus.changes && viewItem =~ /^atticus\\.need\\./",
+          "when": "view =~ /^atticus.(changes|questions)$/ && viewItem =~ /^atticus\\.need\\./",
           "group": "atticus"
         },
         {
@@ -1020,6 +1026,10 @@
         },
         {
           "command": "atticus.draftSpec",
+          "when": "false"
+        },
+        {
+          "command": "atticus.showManualStep",
           "when": "false"
         }
       ],

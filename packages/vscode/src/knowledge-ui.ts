@@ -33,6 +33,7 @@ import { parseJson } from "./cli";
 import { findOutcome, runProgressTitle } from "./feedback";
 import { pickLoading, pickManyLoading } from "./pick";
 import type { Service } from "./service";
+import { isUnverified } from "./waiting-data";
 
 /**
  * Knowledge managed in the metarepo, from the editor (ADR 0101): add a wiki or docs repo, sync
@@ -967,17 +968,12 @@ export class KnowledgeUi {
         async () => {
           const { items, problem } = await readKnowledgeList(this.svc.cli(root), root);
           if (!items.length && problem) throw new Error(problem);
-          return items
-            .filter((i) => {
-              const st = i.review?.state;
-              return st !== "verified" && st !== "corrected" && st !== "rejected";
-            })
-            .map((k) => ({
-              label: `${k.review?.state === "stale" ? "$(warning) " : ""}${itemTitle(k)}`,
-              description: `${k.knowledgeKind ?? k.kind}${k.review?.state === "stale" ? " · its page changed: check again" : ""}`,
-              detail: k.quote ? `“${k.quote.text}” (${k.quote.source}/${k.quote.page})` : "",
-              k,
-            }));
+          return items.filter(isUnverified).map((k) => ({
+            label: `${k.review?.state === "stale" ? "$(warning) " : ""}${itemTitle(k)}`,
+            description: `${k.knowledgeKind ?? k.kind}${k.review?.state === "stale" ? " · its page changed: check again" : ""}`,
+            detail: k.quote ? `“${k.quote.text}” (${k.quote.source}/${k.quote.page})` : "",
+            k,
+          }));
         },
       );
       if (!pick) return;

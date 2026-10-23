@@ -7,4 +7,4 @@ With Copilot, you can also:
 - draft a repo's scan settings (**survey**);
 - check a scan against the code (**verify**).
 
-Questions only a person can answer appear in the **Questions** section.
+Questions only a person can answer appear in the **Waiting on you** section, with the open needs, manual steps, findings and knowledge to verify.

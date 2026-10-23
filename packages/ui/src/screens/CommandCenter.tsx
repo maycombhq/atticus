@@ -6,6 +6,7 @@ import type { Graph } from "../app/graph.js";
 import { useMe } from "../app/me.js";
 import { inboxOf, type InboxData } from "../app/inbox.js";
 import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
+import { useNeedsAcross } from "./knowledge/NeedsAcross.js";
 
 const T = COPY.commandCenter;
 
@@ -197,6 +198,49 @@ function DigestButtons() {
   );
 }
 
+/**
+ * What waits on you, by kind (ADR 0105): questions, needs still open across every change,
+ * manual steps and blocking findings, each with its count and a link to where it is acted on.
+ * A count not loaded shows a dash, never a 0 that reads as "none".
+ */
+export function WaitingSections(p: {
+  questions: number | undefined;
+  needs: number | undefined;
+  steps: number | undefined;
+  blocking: number | undefined;
+}) {
+  const rows = [
+    { label: T.waitQuestions, n: p.questions, href: "#/questions" },
+    { label: T.waitNeeds, n: p.needs, href: "#/changes?across=needs" },
+    { label: T.waitSteps, n: p.steps, href: "#/todo" },
+    { label: T.waitBlocking, n: p.blocking, href: "#/changes?across=findings" },
+  ];
+  return (
+    <ul
+      className="row"
+      style={{ listStyle: "none", margin: 0, padding: 0, gap: 8, flexWrap: "wrap" }}
+    >
+      {rows.map((r) => (
+        <li key={r.href}>
+          <a href={r.href} className="btn">
+            {r.label}{" "}
+            <span className={`chip ${r.n ? "warn" : "dim"}`}>
+              {r.n === undefined ? (
+                <>
+                  <span aria-hidden="true">–</span>
+                  <span className="sr">{COPY.app.notLoaded}</span>
+                </>
+              ) : (
+                r.n
+              )}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function CommandCenter() {
   const changes = useApi<ChangeSummary[]>("/api/changes");
   const findings = useApi<Finding[]>("/api/findings?state=open");
@@ -205,8 +249,14 @@ export function CommandCenter() {
   const triage = useApi<{ data: { items?: InboxData["triage"] } | null }>("/api/view/triage");
   const todo = useApi<{ steps: InboxData["steps"] }>("/api/todo");
   const { me } = useMe();
+  const needs = useNeedsAcross(changes);
+  const allNeeds =
+    needs.state === "ready"
+      ? needs.data.flatMap((r) => (r.needs?.needs ?? []).map((n) => ({ ...n, change: r.change })))
+      : [];
   // The same list for everyone: there are no roles (ADR 0073).
   const inbox = inboxOf({
+    needs: allNeeds,
     changes: changes.state === "ready" ? changes.data : [],
     findings: findings.state === "ready" ? findings.data : [],
     questions: qs.state === "ready" ? (qs.data.data?.questions ?? []) : [],
@@ -239,6 +289,11 @@ export function CommandCenter() {
       map.reload();
       changes.reload();
       findings.reload();
+    }
+    if (e.type === "file.changed") {
+      needs.reload();
+      todo.reload();
+      qs.reload();
     }
     if (e.type === "run.changed") findings.reload();
   });
@@ -273,6 +328,23 @@ export function CommandCenter() {
         </span>
       </div>
       <SetupChecklist />
+      <div className="bento">
+        <Panel title={T.waitingOnYou} span="1 / -1">
+          <p className="muted" style={{ margin: "0 0 8px", fontSize: 12.5 }}>
+            {T.waitingIntro}
+          </p>
+          <WaitingSections
+            questions={qs.state === "ready" ? questions : undefined}
+            needs={
+              needs.state === "ready"
+                ? allNeeds.filter((n) => n.status === "open").length
+                : undefined
+            }
+            steps={todo.state === "ready" ? todo.data.steps.length : undefined}
+            blocking={findings.state === "ready" ? blocking.length : undefined}
+          />
+        </Panel>
+      </div>
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
         {T.approvingIsThePull}
       </p>

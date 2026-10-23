@@ -89,6 +89,84 @@ describe("the extension's manifest and its code", () => {
     expect(hidden.has("atticus.draftSpec") && !hidden.has("atticus.spec")).toBe(true);
   });
 
+  // ADR 0105: one arrangement, in the order of a working day.
+  const title = (view: string) =>
+    (pkg.contributes.menus["view/title"] as { command?: string; when?: string; group?: string }[])
+      .filter((m) => m.when === `view == ${view}`)
+      .map((m) => ({ command: m.command!, group: m.group ?? "" }));
+
+  it("orders the sidebar Next, Waiting on you, Changes, Knowledge, Repos, Catalog (ADR 0105)", () => {
+    const views = pkg.contributes.views.atticus! as { id: string; name: string }[];
+    expect(views.map((v) => v.name)).toEqual([
+      "Next",
+      "Waiting on you",
+      "Changes",
+      "Knowledge",
+      "Repos",
+      "Catalog",
+    ]);
+    // The view keeps its id, so settings and keybindings that name it keep working.
+    expect(views[1]!.id).toBe("atticus.questions");
+  });
+
+  it("keeps four buttons in Knowledge's title bar, the rest in three groups of its menu (ADR 0105)", () => {
+    const k = title("atticus.knowledge");
+    expect(k.filter((m) => m.group.startsWith("navigation")).map((m) => m.command)).toEqual([
+      "atticus.addWiki",
+      "atticus.searchWikis",
+      "atticus.knowledgeScan",
+      "atticus.sourcesSync",
+    ]);
+    const menu = k.filter((m) => !m.group.startsWith("navigation"));
+    const groupOf = (c: string) => menu.find((m) => m.command === c)?.group.split("@")[0];
+    expect(groupOf("atticus.knowledgeAsk")).toBeDefined();
+    expect(groupOf("atticus.keepFound")).toBe(groupOf("atticus.knowledgeAsk"));
+    const groups = [
+      groupOf("atticus.knowledgeAsk"),
+      groupOf("atticus.reviewUnverified"),
+      groupOf("atticus.draftOrgPack"),
+    ];
+    expect(new Set(groups).size).toBe(3);
+    // VS Code sorts a menu's groups by name: reading, then reviewing, then the org pack.
+    expect([...groups].sort()).toEqual(groups);
+    expect(menu.map((m) => m.command).sort()).toEqual(
+      [
+        "atticus.draftOrgPack",
+        "atticus.keepFound",
+        "atticus.knowledgeAsk",
+        "atticus.reviewUnverified",
+      ].sort(),
+    );
+  });
+
+  it("brings in from another repo from the Repos menu, not Knowledge's (ADR 0105)", () => {
+    expect(title("atticus.repos").find((m) => m.command === "atticus.absorb")?.group).toMatch(
+      /^more/,
+    );
+    expect(title("atticus.knowledge").some((m) => m.command === "atticus.absorb")).toBe(false);
+  });
+
+  it("offers a need's and a finding's buttons in Waiting on you as in Changes (ADR 0105)", () => {
+    const item = pkg.contributes.menus["view/item/context"] as {
+      command?: string;
+      when?: string;
+    }[];
+    const inWaiting = (c: string) =>
+      item.some(
+        (m) =>
+          m.command === c &&
+          /atticus\\?\.\(?[a-z|]*questions/.test(m.when ?? "") &&
+          /changes/.test(m.when ?? ""),
+      );
+    for (const c of [
+      "atticus.needDone",
+      "atticus.needSkip",
+      "atticus.openNeedPage",
+      "atticus.findingAction",
+    ])
+      expect(inWaiting(c), c).toBe(true);
+  });
+
   it("asks the catalog from the Catalog section's title bar", () => {
     expect(
       pkg.contributes.menus["view/title"]!.some(

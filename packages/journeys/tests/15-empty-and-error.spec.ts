@@ -12,14 +12,16 @@ import { accessible, expect, startApp, stopApp, test, type App } from "../suppor
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../cli/dist/bin.js");
 const ROUTES = [
-  // The six screens that follow the work (plan 4.5).
+  // The menu, in the order of a working day (ADR 0105).
   "dashboard",
+  "home",
+  "changes",
   "onboarding",
   "feature-design",
   "architecture",
   "stories",
   "task-list",
-  "home",
+  "knowledge",
   "questions",
   "explore",
   "flows",
@@ -30,7 +32,6 @@ const ROUTES = [
   "intake",
   // ADR 0102: knowledge in the app.
   "wikis",
-  "knowledge",
   "wiki-search",
   "parties",
   "orgpack-draft",
@@ -44,8 +45,8 @@ const ROUTES = [
   "mappings",
   "breakdown",
   "initiatives",
-  "changes",
   "changes?across=findings",
+  "changes?across=needs",
   "tasks",
   "trace",
   "todo",
@@ -83,7 +84,16 @@ for (const route of ROUTES)
     await accessible(page, `${route} (empty)`);
   });
 
-for (const route of ["home", "dashboard", "map", "changes", "release", "knowledge", "settings"])
+for (const route of [
+  "home",
+  "dashboard",
+  "map",
+  "changes",
+  "changes?across=needs",
+  "release",
+  "knowledge",
+  "settings",
+])
   test(`#/${route} says so when the server can't be reached, and how to fix it`, async ({
     page,
   }) => {

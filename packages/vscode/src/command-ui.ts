@@ -76,6 +76,15 @@ export interface Printed {
   lines: string[];
 }
 
+/** What a command printed, shown in a read-only tab (ADR 0105: a manual step). */
+export const SHOWN_SCHEME = "atticus-shown";
+const shown = new Map<string, string>();
+const shownChanged = new vscode.EventEmitter<vscode.Uri>();
+export const shownDocs: vscode.TextDocumentContentProvider = {
+  onDidChange: shownChanged.event,
+  provideTextDocumentContent: (u) => shown.get(u.path) ?? "",
+};
+
 export class CommandUi {
   private catalog: Promise<Catalog> | undefined;
 
@@ -744,6 +753,28 @@ export class CommandUi {
   }
 
   /**
+   * A manual step (ADR 0105): what `atticus todo show` says, in a tab to read; recording it is a
+   * button away, through Run a command, so its result fields are asked for.
+   */
+  async showManualStep(root: string, ref: string): Promise<void> {
+    const argv = ["todo", "show", ref];
+    const p = await this.captured(root, argv);
+    if (p.code !== 0) return this.showPrinted(argv, p);
+    // A read-only tab, not an untitled file that asks to be saved when it is closed.
+    const uri = vscode.Uri.from({ scheme: SHOWN_SCHEME, path: `/${ref.replace(/\//g, " ")}.txt` });
+    shown.set(uri.path, `${p.lines.join("\n")}\n`);
+    shownChanged.fire(uri);
+    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(uri), {
+      preview: true,
+    });
+    void vscode.window
+      .showInformationMessage(`The manual step ${ref}. Record it once it is done.`, "Record it…")
+      .then((pick) => {
+        if (pick) void this.pickAndRun(root, "todo done", { args: [ref] });
+      });
+  }
+
+  /**
    * Say what a run printed, without waiting for the person: a notification's promise settles only
    * when it is closed, and it can sit in the bell for good, so what comes after (the sections
    * read again, the next stage) never waits on it.
@@ -1168,7 +1199,7 @@ export class CommandUi {
             .map((r) => `${r.id}: ${r.type}${r.evidence ? ` (${r.evidence})` : ""}`)
             .join("\n") +
           (found.questions
-            ? `\n\n${found.questions} questions will need a person (the Questions section).`
+            ? `\n\n${found.questions} questions will need a person (Waiting on you).`
             : ""),
       },
       "Add them",

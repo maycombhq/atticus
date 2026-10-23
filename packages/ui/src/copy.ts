@@ -63,7 +63,7 @@ export const COPY = {
     filterHint: "Name, id or what starts it",
     listTitle: "Flows",
     noSpecs:
-      "No repo has a spec yet. Draft one with atticus spec draft <repo>, or /atticus-spec in Copilot Chat.",
+      "No repo has a spec yet. Draft one with atticus spec draft <repo>, or /atticus-spec in Copilot Chat or Claude Code.",
     noFlows: "This repo's spec has no flows yet.",
     noMatch: "No flow matches. Try part of its name or what starts it.",
     pick: "Pick a flow from the list to see its steps.",
@@ -130,7 +130,7 @@ export const COPY = {
     changeIntro:
       "The flows this change adds, changes or removes, each drawn beside today's: added steps say Added, changed ones say Changed with what they did before, removed ones say Removed and are struck through.",
     noTargets: (change: string) =>
-      `${change} has no target flows yet. Run atticus change architecture ${change}, or /atticus-architecture in Copilot Chat.`,
+      `${change} has no target flows yet. Run atticus change architecture ${change}, or /atticus-architecture in Copilot Chat or Claude Code.`,
     targetsTitle: "Target flows",
     targetCounts: (added: number, changed: number, removed: number) =>
       [
@@ -257,7 +257,7 @@ export const COPY = {
     ai: {
       intro:
         "This step needs your assistant, so the app doesn't run it. Run the command in a terminal at the metarepo:",
-      slash: "Or type this in Copilot Chat:",
+      slash: "Or type this in Copilot Chat or Claude Code:",
       copy: "Copy the command",
       copySlash: "Copy the slash command",
     },
@@ -482,7 +482,7 @@ export const COPY = {
       openCount: (n: number) => `${n} open`,
     },
   },
-  /** The menu and the six screens that follow the work (plan 4.5, B1). */
+  /** The menu, in the order of a working day (plan 4.5, B1; ADR 0105). */
   nav: {
     main: "Main",
     dashboard: "Dashboard",
@@ -491,12 +491,15 @@ export const COPY = {
     architecture: "Architecture",
     stories: "Stories",
     tasks: "Tasks",
+    knowledge: "Knowledge",
     more: "More",
-    moreHint: "Every other page, unchanged until it is reviewed",
+    moreHint: "Every other page, grouped by what it is about",
     /** The groups under More, by their id in screens.ts. */
     groups: {
       Main: "Main",
-      Know: "Know",
+      Code: "Code",
+      Knowledge: "Knowledge",
+      OrgPack: "Org pack",
       Define: "Define",
       Design: "Design",
       Plan: "Plan",
@@ -506,7 +509,7 @@ export const COPY = {
     },
     /** The pages under More, by screen id. */
     screens: {
-      home: "Command center",
+      home: "Waiting on you",
       explore: "Knowledge explorer",
       map: "Ecosystem map",
       impact: "Impact explorer",
@@ -540,12 +543,17 @@ export const COPY = {
     copy: "Copy the command",
     copySlash: "Copy the slash command",
     terminal: "In a terminal, at the metarepo:",
-    slash: "Or type this in Copilot Chat:",
-    slashIn: (where: string) => `Or type this in Copilot Chat in ${where}:`,
+    slash: "Or type this in Copilot Chat or Claude Code:",
+    slashIn: (where: string) => `Or type this in Copilot Chat or Claude Code in ${where}:`,
     noSlash: "No slash command does this step yet. Run the command in a terminal.",
-    whatNext: "Not sure what comes next? Type /atticus-next in Copilot Chat, or run atticus next.",
+    whatNext:
+      "Not sure what comes next? Type /atticus-next in Copilot Chat or Claude Code, or run atticus next.",
     after: "After that",
-    install: "atticus assistant-files writes the slash commands into the metarepo.",
+    install:
+      "atticus assistant-files writes the slash commands into the metarepo, where Copilot Chat and Claude Code both read them:",
+    /** ADR 0104: the Atticus plugin for Claude Code. */
+    plugin:
+      "For Claude Code, add the Atticus plugin: it carries the metarepo's slash commands, and says the next step when a session starts in a metarepo.",
     /** The slash commands `atticus assistant-files` writes today, and what each does. */
     commands: [
       {
@@ -680,9 +688,9 @@ export const COPY = {
     openQuestions: "Open questions",
     noQuestions: "No questions are waiting.",
     allQuestions: (n: number) => `See all ${n} on the Questions page`,
-    slashTitle: "Slash commands in Copilot Chat",
+    slashTitle: "Slash commands in Copilot Chat and Claude Code",
     slashIntro:
-      "These are the slash commands atticus assistant-files writes. In each AI step, Copilot does the model work and Atticus checks it. The architecture stage has no slash command yet; use the terminal command its page shows.",
+      "These slash commands are in Copilot Chat once atticus assistant-files has written them, and in Claude Code through the Atticus plugin. In each AI step your assistant does the model work and Atticus checks it.",
     slashWhere: { metarepo: "the metarepo", repo: "a code repo" },
     // Onboarding
     onbIntro:
@@ -846,7 +854,7 @@ export const COPY = {
     steps: {
       home: {
         title: "Your home",
-        body: "Home shows what needs a person (changes in each phase, blocking findings, questions and manual steps) and the changes in flight. Everyone sees the same screens; Ctrl+K jumps anywhere.",
+        body: "Waiting on you shows what needs a person across every change (changes in each phase, blocking findings, open needs, questions and manual steps) and the changes in flight. Everyone sees the same screens; Ctrl+K jumps anywhere.",
       },
       ask: {
         title: "Ask in plain words",
@@ -874,6 +882,7 @@ export const COPY = {
     tests: "Tests",
     requests: "Requests",
     releases: "Releases",
+    needs: "Needs",
     change: "Change",
     severity: "Severity",
     finding: "Finding",
@@ -916,6 +925,19 @@ export const COPY = {
     acrossOpenChanges: (label: string | number) => `${label} across open changes`,
     nothingMatches: (text: string | number) => `Nothing matches “${text}”.`,
     acrossChanges2: (label: string | number) => `${label} across changes`,
+    // ADR 0105: needs across changes.
+    needsIntro:
+      "Every open need of every open change: the requests to raise, the standards to follow and the teams to involve. Done, Not needed and Reopen work as on a change's page.",
+    needsShowAll: "Show the needs done or not needed too",
+    needsCount: (open: number, changes: number) =>
+      `${open} open need${open === 1 ? "" : "s"} across ${changes} open change${changes === 1 ? "" : "s"}`,
+    needsNone: "No open needs on any change.",
+    needsNoChanges: "No open changes.",
+    needsOf: (title: string) => `Needs of ${title}`,
+    needsNotYet: (n: number) =>
+      `${n} change${n === 1 ? " hasn't" : "s haven't"} been looked at for needs yet`,
+    needsCantRead: (change: string, error: string) =>
+      `Couldn't read the needs of ${change}: ${error}`,
   },
   changes: {
     define: "Define",
@@ -1040,6 +1062,14 @@ export const COPY = {
     nothingNeedsAPerson: "Nothing needs a person right now.",
     andMore: (v: string | number) => `and ${v} more`,
     needsAPerson: "Needs a person",
+    // ADR 0105: what waits on you, by kind, each linking to where it is acted on.
+    waitingOnYou: "Waiting on you",
+    waitingIntro: "What waits on a person across every change, by kind.",
+    waitQuestions: "Questions to answer",
+    waitNeeds: "Needs still open",
+    waitSteps: "Manual steps to do",
+    waitBlocking: "Blocking findings",
+    openNeeds: "Open needs",
     findings: (lens: string | number) => `${lens} findings`,
     noOpenFindings: "No open findings.",
     findingsByLens: "Findings by lens",

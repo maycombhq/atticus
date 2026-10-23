@@ -2,13 +2,14 @@ import { useState, type ReactNode } from "react";
 import { useApi } from "../api/client.js";
 import { ExternalLink, Panel, View } from "../app/ui.js";
 import { Table } from "./know/common.js";
+import { NeedsAcross } from "./knowledge/NeedsAcross.js";
 import { COPY } from "../copy.js";
 
 const T = COPY.across;
 
 /**
  * One list across every open change (ADR 0048): findings, tasks, stories, tests, service
- * requests or releases, with a filter. Each row links to its change.
+ * requests, releases or needs (ADR 0105), with a filter. Each row links to its change.
  */
 
 export const ACROSS = [
@@ -18,8 +19,11 @@ export const ACROSS = [
   { id: "tests", label: T.tests },
   { id: "requests", label: T.requests },
   { id: "releases", label: T.releases },
+  { id: "needs", label: T.needs },
 ] as const;
 export type AcrossId = (typeof ACROSS)[number]["id"];
+/** The views the server lists as rows; needs come from each change's own needs call. */
+type RowsId = Exclude<AcrossId, "needs">;
 
 export interface AcrossRow {
   change: string;
@@ -28,7 +32,7 @@ export interface AcrossRow {
   [field: string]: unknown;
 }
 interface Across {
-  view: AcrossId;
+  view: RowsId;
   changes: number;
   rows: AcrossRow[];
 }
@@ -45,7 +49,7 @@ const chip = (text: string, kind = "") => (
 
 type Col = { label: string; cell: (r: AcrossRow) => ReactNode; mono?: boolean; width?: string };
 
-const COLS: Record<AcrossId, Col[]> = {
+const COLS: Record<RowsId, Col[]> = {
   findings: [
     { label: T.change, cell: changeCell, width: "18%" },
     {
@@ -117,7 +121,7 @@ const COLS: Record<AcrossId, Col[]> = {
   ],
 };
 
-const EMPTY: Record<AcrossId, string> = {
+const EMPTY: Record<RowsId, string> = {
   findings: T.noFindingsOnAny,
   tasks: T.noTasksYetTasks,
   stories: T.noStoriesYetWrite,
@@ -137,7 +141,7 @@ export function filterRows(rows: AcrossRow[], text: string): AcrossRow[] {
 }
 
 export function AcrossPanel({ view }: { view: AcrossId }) {
-  const data = useApi<Across>(`/api/across?view=${view}`);
+  const data = useApi<Across>(view === "needs" ? undefined : `/api/across?view=${view}`);
   const [text, setText] = useState("");
   const label = ACROSS.find((a) => a.id === view)!.label;
   return (
@@ -170,6 +174,24 @@ export function AcrossPanel({ view }: { view: AcrossId }) {
           onChange={(e) => setText(e.target.value)}
         />
       </div>
+      {view === "needs" ? (
+        <NeedsAcross text={text} />
+      ) : (
+        <AcrossRows data={data} view={view} text={text} label={label} />
+      )}
+    </Panel>
+  );
+}
+
+function AcrossRows(p: {
+  data: ReturnType<typeof useApi<Across>>;
+  view: RowsId;
+  text: string;
+  label: string;
+}) {
+  const { data, view, text, label } = p;
+  return (
+    <>
       <View of={data} empty={(d) => d.rows.length === 0} emptyText={EMPTY[view]}>
         {(d) => {
           const rows = filterRows(d.rows, text);
@@ -199,6 +221,6 @@ export function AcrossPanel({ view }: { view: AcrossId }) {
           );
         }}
       </View>
-    </Panel>
+    </>
   );
 }

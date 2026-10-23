@@ -99,6 +99,48 @@ export async function run(): Promise<void> {
       throw new Error(items.join(", ") || "empty");
     return items.join(", ");
   });
+  // ADR 0105: one arrangement, in the order of a working day.
+  await check(
+    "the sidebar reads Next, Waiting on you, Changes, Knowledge, Repos, Catalog",
+    async () => {
+      const views = (
+        ext.packageJSON.contributes.views.atticus as { id: string; name: string }[]
+      ).map((v) => `${v.name} (${v.id})`);
+      const want = [
+        "Next (atticus.view)",
+        "Waiting on you (atticus.questions)",
+        "Changes (atticus.changes)",
+        "Knowledge (atticus.knowledge)",
+        "Repos (atticus.repos)",
+        "Catalog (atticus.catalog)",
+      ];
+      if (views.join(", ") !== want.join(", ")) throw new Error(views.join(", "));
+      return views.map((v) => v.split(" (")[0]).join(", ");
+    },
+  );
+  await check(
+    "Waiting on you says it is reading, then what waits, by kind (ADR 0105)",
+    async () => {
+      const w = h.waiting;
+      w.reset();
+      const first = w.getChildren().map((n) => label(w.getTreeItem(n)));
+      if (!/^Reading what waits on you/.test(first[0] ?? ""))
+        throw new Error(`no Reading row: ${first.join(", ")}`);
+      const rows = (await w.children()).map((n) => w.getTreeItem(n));
+      const groups = ["Questions", "Needs", "Manual steps", "Findings", "Knowledge to verify"];
+      const shown = rows.map(label);
+      if (shown.length === 1 && shown[0] === "Nothing waits on you.") return shown[0];
+      const odd = shown.filter((l) => !groups.includes(l));
+      if (odd.length) throw new Error(`not a group: ${odd.join(", ")}`);
+      // In order, and each with its count.
+      const order = shown.map((l) => groups.indexOf(l));
+      if (order.some((x, i) => i && x < order[i - 1]!))
+        throw new Error(`order: ${shown.join(", ")}`);
+      const uncounted = rows.filter((r) => !/^\d+ /.test(String(r.description ?? "")));
+      if (uncounted.length) throw new Error(`no count: ${uncounted.map(label).join(", ")}`);
+      return rows.map((r) => `${label(r)} (${String(r.description)})`).join(", ");
+    },
+  );
   await check("every step in Next runs when clicked", async () => {
     const rows = h.view.getChildren().map((n) => h.view.getTreeItem(n));
     const steps = rows.filter((r) => r.contextValue === "atticus.next");

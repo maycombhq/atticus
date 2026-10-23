@@ -92,6 +92,41 @@ describe("what needs a person", () => {
     for (const i of items) expect(ids.has(/^#\/([a-z-]+)/.exec(i.href)![1]!), i.href).toBe(true);
   });
 
+  it("lists open needs across changes, each linking to the Needs view (ADR 0105)", () => {
+    const items = inboxOf({
+      ...data,
+      needs: [
+        {
+          change: "add-transfer-limit",
+          item: "firewall-rule-request",
+          title: "Network firewall rule",
+          kind: "request",
+          status: "open",
+          handledBy: "Network team",
+          leadTime: "10 working days",
+        },
+        {
+          change: "add-transfer-limit",
+          item: "json-logging",
+          title: "Log as JSON",
+          kind: "standard",
+          status: "done",
+        },
+      ],
+    });
+    const needs = items.filter((i) => i.kind === "need");
+    expect(needs).toEqual([
+      {
+        kind: "need",
+        title: "Network firewall rule",
+        detail: "request · Network team · 10 working days · add-transfer-limit",
+        href: "#/changes?across=needs",
+      },
+    ]);
+    // After the findings, before the queues.
+    expect(items.map((i) => i.kind).indexOf("need")).toBe(4);
+  });
+
   it("is empty when nothing needs a person", () => {
     expect(inboxOf({ changes: [], findings: [], questions: [], triage: [], steps: [] })).toEqual(
       [],

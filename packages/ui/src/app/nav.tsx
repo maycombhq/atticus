@@ -33,16 +33,20 @@ function Logo() {
 
 function Link({ s, current }: { s: ScreenDef; current: ScreenDef }) {
   return (
-    <a href={`#/${s.id}`} aria-current={s.id === current.id ? "page" : undefined}>
+    <a
+      href={`#/${s.id}`}
+      aria-current={s.id === current.id ? "page" : s.id === current.under ? "true" : undefined}
+    >
       {s.label}
     </a>
   );
 }
 
 /**
- * One navigation for everyone (ADR 0073, plan 4.5): the six screens that follow the work, then
- * More, a button that opens every other page in its old group. More is open when the page
- * shown is one of its pages, so the current page is always visible in the menu.
+ * One navigation for everyone (ADR 0073, plan 4.5, ADR 0105): the main screens in the order of a
+ * working day, then More, a button that opens every other page in its group. More is open when
+ * the page shown is one of its pages, so the current page is always visible in the menu; a
+ * page out of the menu (Questions) marks the entry it is a section of.
  */
 export function Nav({ current }: { current: ScreenDef }) {
   const inMore = current.group !== "Main";

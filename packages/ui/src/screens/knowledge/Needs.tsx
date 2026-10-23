@@ -74,17 +74,23 @@ function Facts({ n }: { n: Need }) {
   );
 }
 
-function NeedRow(p: {
+/** One need with its facts, tick and actions; the needs across changes (ADR 0105) use it too. */
+export function NeedRow(p: {
   n: Need;
   onMark?: (n: Need, body: Record<string, unknown>) => void;
   busy?: boolean;
+  /** Keeps the row's ids unique when needs of several changes share a page. */
+  scope?: string;
 }) {
   const n = p.n;
   const [open, setOpen] = useState<"done" | "not-needed" | undefined>();
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | undefined>();
   const tick = needTick(n);
-  const base = `need-${n.item}-${n.for}`.replace(/[^a-z0-9-]/gi, "-");
+  const base = `need-${p.scope ? `${p.scope}-` : ""}${n.item}-${n.for}`.replace(
+    /[^a-z0-9-]/gi,
+    "-",
+  );
   // The keyboard follows the form: into its box when it opens; back to the need once it is
   // saved, or to the button that opened it when Cancel or Escape closes it.
   const title = useRef<HTMLAnchorElement>(null);
