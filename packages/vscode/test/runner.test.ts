@@ -278,6 +278,10 @@ describe("the step runner", { timeout: 120_000 }, () => {
       "show",
       "walk",
       "show_code",
+      // ADR 0118: the model's code search, offered to Copilot's model through vscode.lm too.
+      "grep",
+      "files",
+      "outline",
     ]);
     // The second request carried the first call's result back as a tool result, wrapped as data.
     const back = model.requests[1]!.messages.at(-1)!;

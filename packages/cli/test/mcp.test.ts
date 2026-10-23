@@ -325,4 +325,69 @@ describe("atticus mcp (ADR 0104)", () => {
     expect(r.result.isError).toBeUndefined();
     expect(JSON.parse(r.result.content[0]!.text)).toHaveProperty("steps");
   }, 60_000);
+
+  it("searches the code the assistant chooses: grep, files and outline (ADR 0118)", async () => {
+    const calls: string[][] = [];
+    const call = (name: string, args: Record<string, unknown>, run: McpRun = fake(calls)) =>
+      handleMcp(
+        { jsonrpc: "2.0", id: 12, method: "tools/call", params: { name, arguments: args } },
+        run,
+        "1",
+      ) as Promise<{ result: { content: { text: string }[]; isError?: boolean } }>;
+    await call("grep", {
+      pattern: "@ForgeServiceBase",
+      regex: true,
+      ignore_case: true,
+      repo: "forge-vault",
+      paths: "src/**",
+      limit: "5",
+    });
+    await call("files", { glob: "**/*.java" });
+    await call("outline", { repo: "forge-vault", path: "README.md" });
+    expect(calls).toEqual([
+      [
+        "context",
+        "grep",
+        "@ForgeServiceBase",
+        "--regex",
+        "--ignore-case",
+        "--repo",
+        "forge-vault",
+        "--paths",
+        "src/**",
+        "--limit",
+        "5",
+      ],
+      ["context", "files", "**/*.java"],
+      ["context", "outline", "forge-vault", "README.md"],
+    ]);
+    // The real command, on a metarepo with the repo cloned.
+    const root = await mkdtemp(join(tmpdir(), "atticus-mcp-grep-"));
+    await cp(join(FORGE, "../code-search/repos/forge-vault"), join(root, "workspace/forge-vault"), {
+      recursive: true,
+    });
+    const run: McpRun = async (argv) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await main(
+        [...argv, "--root", root],
+        { out: (l) => out.push(l), err: (l) => err.push(l) },
+        { quiet: true },
+      );
+      return { code, out: out.join("\n"), err: err.join("\n") };
+    };
+    const grep = await call("grep", { pattern: "@ForgeServiceBase" }, run);
+    expect(grep.result.isError).toBeUndefined();
+    expect(grep.result.content[0]!.text).toContain(
+      'forge-vault:src/main/java/forge/vault/VaultApplication.java:7: @ForgeServiceBase("/vault-api")',
+    );
+    const outline = await call(
+      "outline",
+      { repo: "forge-vault", path: "src/main/java/forge/vault/web/SecretController.java" },
+      run,
+    );
+    expect(outline.result.content[0]!.text).toContain(
+      '15:   @VaultRoute(path = "/rotate", verb = "POST")',
+    );
+  }, 120_000);
 });
