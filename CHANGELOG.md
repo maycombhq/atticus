@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### What a live run with Copilot found (ADR 0111 addendum)
+
+- The fast path and the architecture stage check that every field a plan returns comes from somewhere, that a write stores what it sends, and that a read or write names its table under `store`; a column in other casing, a classification outside the org pack's levels and a misnamed Flyway migration are handed back.
+- A citation of a data block (`atticus-data:brief.md:5`) is read as that block's file: the block's id is Atticus's own. Mistakes about meaning are handed back with hints the catalog gives (the flow an endpoint starts, the nearest entries, the `store` form), never rewritten.
+- Questions: one that cites no file and line isn't asked; reference errors are the draft's to fix, not a person's; a column's classification is asked plainly with the org pack's levels as choices; every question is filed under its own repo.
+- A stage run again while its hand-off waits offers the same run again; one whose run is gone drafts again; one whose answer was checked but never read in reads it in.
+- The task context puts a new migration in the folder the store's migrations are in; an estimate of one unit says "1 unit of work".
+
 ### Prompt history (ADR 0110)
 
 - What people type to their assistant in a metarepo and what it answers, kept beside the model runs: one record per prompt and per response in `.atticus/history/<yyyy-mm>.jsonl`, on this machine only (`history/` joins `.atticus/.gitignore`; `atticus upgrade` adds it to an older metarepo). Each record has its id, time, surface (`claude-code`, `vscode` or `cli`), session, kind, text, size, its slash command, and the change it is about when that can be told exactly (the one change its text names, else the branch `change/<id>`). Text is cut at 64 KB and marked; what matches the log's secret patterns is masked and the record marked. Text is data, never instructions.

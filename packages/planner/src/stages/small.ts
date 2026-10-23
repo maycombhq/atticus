@@ -19,11 +19,13 @@ import { instructionSource, wholeLists, type ContextReport } from "../engine.js"
 import { parseYamlAs } from "./answer.js";
 import {
   checkDeltas,
+  classificationLevels,
   emptyDeltaIssues,
   ReadFlow,
   splitAnswer,
   writeTargetFlows,
 } from "./architecture.js";
+import { dropUncitedQuestions } from "./uncited.js";
 import { estateContext } from "./estate-context.js";
 import { estateIndex, loadEstate, type Estate } from "./estate.js";
 import { checkPlacement, writePlacement } from "./feature.js";
@@ -147,7 +149,7 @@ targetFlows:         # one per flow it adds, changes or removes a step of, or ad
     repo: <its repo>
     change: modify | new | remove
     name: <new flows only>
-    trigger: <new flows only> { kind: endpoint | action | page | listener | job, what: <plain words>, entry: <"METHOD /path" or a topic> }
+    trigger: <new flows only> { kind: endpoint | action | page | listener | job, what: <plain words>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic> }
     why: <one sentence>
     steps:
       - op: add | change | remove
@@ -155,12 +157,12 @@ targetFlows:         # one per flow it adds, changes or removes a step of, or ad
         after: <add: the number of the step it goes after; 0 for first>
         kind: <entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry>
         what: <one sentence: what the step does once the change is in>
-        to: { component: <id>, entry: <"METHOD /path" or topic>, new: <true when it doesn't exist yet> }   # call-out and publish
-        store: { table: <table id>, columns: [..], new: <true for a new table>, types: {..}, classification: {..}, migration: <file>, retention: <new tables> }   # read, lookup, write
+        to: { component: <id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
+        store: { table: <table id>, columns: [..], new: <true for a new table>, types: {..}, classification: {..}, migration: <file>, retention: <new tables> }   # read, lookup and write: the table goes here, never under to
         fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..] }
         why: <one sentence>
 reads:               # flows it only reads or relies on
-  - flow: <flow id>
+  - flow: <a flow id from the specs, never an endpoint id>
     why: <one sentence>
 stories:             # one per target flow: Atticus makes a task of each step you list under steps
   - flow: <the target flow's id>
@@ -169,7 +171,7 @@ stories:             # one per target flow: Atticus makes a task of each step yo
     iWant: <what>
     soThat: <why>
     tasks:
-      - step: <the step's item number in that flow's steps above, from 1>
+      - step: <its place in that flow's steps list above: 1 for the first item, 2 for the second; not today's step number>
         criteria:
           - "Given <situation>, when <action>, then <what can be checked, naming the fields>"
 questions:           # what only a person can answer; never answer them yourself
@@ -409,25 +411,35 @@ export async function smallStage(
     sources,
     gate: size.gate ?? null,
     parse: (t) => {
+      let repairs: StageIssue[] = [];
       const r = parseYamlAs(
         t,
         SmallAnswer,
-        (d) => ({
-          ...d,
-          targetFlows: (Array.isArray(d.targetFlows) ? d.targetFlows : []).map(
-            (f: Record<string, unknown>) => ({ schemaVersion: STAGE_SCHEMA_VERSION, ...f }),
-          ),
-        }),
+        (d) => {
+          // A question that cites no file and line can't be raised (uncited.ts).
+          repairs = dropUncitedQuestions(d);
+          return {
+            ...d,
+            targetFlows: (Array.isArray(d.targetFlows) ? d.targetFlows : []).map(
+              (f: Record<string, unknown>) => ({ schemaVersion: STAGE_SCHEMA_VERSION, ...f }),
+            ),
+          };
+        },
         "small",
       );
-      if (!r.value) return { issues: r.issues };
-      return { answer: r.value, issues: [...r.issues, ...emptyDeltaIssues(r.value.targetFlows)] };
+      if (!r.value) return { issues: [...repairs, ...r.issues] };
+      return {
+        answer: r.value,
+        issues: [...repairs, ...r.issues, ...emptyDeltaIssues(r.value.targetFlows)],
+      };
     },
     check: async (a) => {
       const d = derive(a);
       const out = [
         ...checkPlacement(d.placement, estate),
-        ...checkDeltas(d.deltas, estate, d.placement, d.reads),
+        ...checkDeltas(d.deltas, estate, d.placement, d.reads, {
+          levels: classificationLevels(ctx),
+        }),
       ];
       if (!d.deltas.length)
         out.push({

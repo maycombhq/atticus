@@ -94,6 +94,8 @@ export async function estimateOf(
   };
 }
 
+const units = (n: number) => `${n} unit${n === 1 ? "" : "s"} of work`;
+
 const range = (d: { p20: number; p50: number; p80: number }) =>
   `${d.p20}-${d.p80} days (p50 ${d.p50})`;
 
@@ -123,8 +125,8 @@ export async function changeEstimateCommand(
   io.out(`Estimate for ${change}: ${e.title}`);
   io.out(
     e.effort
-      ? `Effort: ${range(e.effort)}, from ${e.units.length - e.needsClass} of ${e.units.length} units of work.`
-      : `Size: ${e.units.length} units of work. No days: ${e.table ? "no class in the org pack's estimates.yaml matches them" : "the org pack has no estimates.yaml"}.`,
+      ? `Effort: ${range(e.effort)}, from ${e.units.length - e.needsClass} of ${units(e.units.length)}.`
+      : `Size: ${units(e.units.length)}. No days: ${e.table ? "no class in the org pack's estimates.yaml matches them" : "the org pack has no estimates.yaml"}.`,
   );
   if (e.calendar.waitDays !== undefined)
     io.out(

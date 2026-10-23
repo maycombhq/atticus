@@ -145,16 +145,24 @@ export async function handoffStep(
           )
           .sort(byStart)[0]
       : undefined;
-  const run = (queue ? waiting[0] : waiting.at(-1)) ?? still ?? next;
+  // Run again while its hand-off waits (a runner that lost its place, a person who ran it twice):
+  // the step names the run it is waiting on, and that run is offered again.
+  const named = [...out, ...err].join("\n").match(/\(run (run-[0-9a-z-]+)\)/)?.[1];
+  const waitedOn =
+    !resume.length && !waiting.length && named
+      ? [...after.values()].find((s) => s.run.runId === named && s.run.state === "waiting")?.run
+      : undefined;
+  const run = (queue ? waiting[0] : waiting.at(-1)) ?? still ?? next ?? waitedOn;
   if (json)
     return printJson(
       root,
       argv,
       args,
-      { run, still: !!run && run === still, code, out, err, asked },
+      { run, still: !!run && (run === still || run === waitedOn), code, out, err, asked },
       io,
     );
-  if (run && run === still) io.out(`Run ${run.runId} is still waiting for its result file.`);
+  if (run && (run === still || run === waitedOn))
+    io.out(`Run ${run.runId} is still waiting for its result file.`);
   if (!run) {
     for (const l of out) io.out(l);
     for (const l of err) io.err(l);

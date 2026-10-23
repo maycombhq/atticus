@@ -8,6 +8,7 @@ import {
   changesRelOf,
   raiseQuestions,
   readQuestion,
+  runsDirOf,
   toCanonicalYaml,
   type Question,
   type QuestionDraft,
@@ -37,6 +38,7 @@ import {
 } from "@maycombhq/naysayer";
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
+import { citeFiles } from "./cite.js";
 import type { ContextOptions, ContextReport } from "../engine.js";
 import { askGaps, type ContextGap } from "../gaps.js";
 import {
@@ -78,6 +80,10 @@ export interface StageIssue {
   repo?: string;
   /** decision (a person can decide it) or drafting (finding-kind.ts). Left out: by its rule. */
   kind?: FindingKind;
+  /** A decision's choices, when the check knows them (the org pack's classification levels). */
+  options?: { label: string; means: string; changes: string }[];
+  /** The question to ask a person, in plain words, when the check knows it. */
+  ask?: string;
 }
 
 export const issueFingerprint = (rule: string, target: string, evidence = "") =>
@@ -162,6 +168,14 @@ export interface StageResult<A> {
 }
 
 const loopRel = (stage: Stage) => `stage/${stage}.yaml`;
+
+/** What a person calls each stage's answer, for the questions the loop asks them. */
+const STAGE_WORDS: Partial<Record<string, string>> = {
+  feature: "feature placement",
+  architecture: "target flows",
+  stories: "stories",
+  small: "small change's plan",
+};
 
 async function readLoop(dir: string, change: string, stage: Stage): Promise<StageLoop> {
   const text = await readFile(join(dir, loopRel(stage)), "utf8").catch(() => undefined);
@@ -283,9 +297,27 @@ export async function runStageLoop<A>(
     const open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
     if (open.length) return result("questions");
   }
+  let carried: string | undefined;
   if (!o.resume && loop.state === "waiting" && loop.run) {
-    notes.push(`The draft is still with your assistant (run ${loop.run}).`);
-    return result("waiting", { waiting: { runId: loop.run } });
+    // Still waiting only while its run is: a run deleted, or finished without --resume, is
+    // drafted again rather than waited on for ever.
+    const run = await readFile(join(runsDirOf(root), change.id, loop.run, "run.json"), "utf8")
+      .then((t) => (JSON.parse(t) as { state?: string }).state)
+      .catch(() => undefined);
+    if (run === "waiting") {
+      notes.push(`The draft is still with your assistant (run ${loop.run}).`);
+      return result("waiting", { waiting: { runId: loop.run } });
+    }
+    if (run === "validated") {
+      // atticus handoff done checked its answer, and nothing read it in: read it in now.
+      carried = loop.run;
+      notes.push(`Run ${loop.run} was checked; reading its answer in.`);
+    } else
+      notes.push(
+        run === undefined
+          ? `Run ${loop.run} is no longer there, so the draft is handed off again.`
+          : `Run ${loop.run} ended ${run} without being read in, so the draft is handed off again.`,
+      );
   }
 
   // Issues to hand back with the next draft.
@@ -335,7 +367,7 @@ export async function runStageLoop<A>(
     );
   }
 
-  let resume = o.resume;
+  let resume = o.resume ?? carried;
   for (;;) {
     // ---- draft
     const answered = (await questionsOf(loop.questions)).filter((q) => q.state === "answered");
@@ -408,7 +440,8 @@ export async function runStageLoop<A>(
         blocking: true,
       });
     else {
-      const p = spec.parse(run.output);
+      // A line cited by the data block it was read in is read as that block's file (cite.ts).
+      const p = spec.parse(citeFiles(run.output, sources));
       found.push(...p.issues);
       answer = p.answer;
       if (answer !== undefined) {
@@ -456,36 +489,53 @@ export async function runStageLoop<A>(
     loop.state = "drafting";
     await writeLoop(dir, loop);
 
-    const drafted: QuestionDraft[] = [];
+    // The loop's own questions are about the repo a finding names; the assistant's are the
+    // change's. Each is raised for its own repo, so an answered one is found again (a question
+    // filed under another repo was asked a third time on NadiEngine).
+    const drafted: { repo: string; q: QuestionDraft }[] = [];
     const evidenceFor = async (e: string | undefined) =>
       e && (await lineExists(root, e)) ? e : `${rel}/${loopRel(spec.stage)}:1`;
     for (const { f, issue } of toAsk)
       drafted.push({
-        question: `${f.seenIn.at(-2)! < n - 1 ? "This came back after a draft had fixed it" : "Three drafts in a row had this problem"}: ${issue.message} What should the ${spec.stage} say?`,
-        options: [],
-        evidence: [await evidenceFor(f.evidence)],
-        scope: "repo",
+        repo: issue.repo ?? change.id,
+        q: {
+          // A check that knows the question to ask asks it plainly, so its answer reads as one
+          // in the next prompt; else the finding, and what the stage's answer should say.
+          question:
+            issue.ask ??
+            `${f.seenIn.at(-2)! < n - 1 ? "This came back after a draft had fixed it" : "Three drafts in a row had this problem"}: ${issue.message} What should the ${STAGE_WORDS[spec.stage] ?? spec.stage} say?`,
+          options: issue.options ?? [],
+          evidence: [await evidenceFor(f.evidence)],
+          scope: "repo",
+        },
       });
     const own = answer !== undefined && spec.questions ? spec.questions(answer) : [];
     for (const q of own) {
       const ok: string[] = [];
       for (const e of q.evidence) if (await lineExists(root, e)) ok.push(e);
-      if (ok.length) drafted.push({ ...q, evidence: ok });
+      if (ok.length) drafted.push({ repo: change.id, q: { ...q, evidence: ok } });
       else
         notes.push(
           `Left out the assistant's question "${q.question}": none of its evidence (${q.evidence.join(", ")}) is a line in the metarepo.`,
         );
     }
     if (drafted.length) {
-      const raised = await raiseQuestions(root, drafted, {
-        step: `change-${spec.stage}`,
-        repo: toAsk[0]?.issue.repo ?? change.id,
-        command: rerunOf(spec.stage, change.id),
-        rerun: rerunOf(spec.stage, change.id),
-        ...(run.runId ? { run: run.runId } : {}),
-        at,
-      });
-      const qs = [...raised.raised, ...raised.known];
+      const qs: Question[] = [];
+      for (const repo of [...new Set(drafted.map((x) => x.repo))]) {
+        const raised = await raiseQuestions(
+          root,
+          drafted.filter((x) => x.repo === repo).map((x) => x.q),
+          {
+            step: `change-${spec.stage}`,
+            repo,
+            command: rerunOf(spec.stage, change.id),
+            rerun: rerunOf(spec.stage, change.id),
+            ...(run.runId ? { run: run.runId } : {}),
+            at,
+          },
+        );
+        qs.push(...raised.raised, ...raised.known);
+      }
       for (const { f } of toAsk) {
         const q = qs.find((x) => x.question.includes(f.message.slice(0, 40)));
         if (q) f.question = q.id;

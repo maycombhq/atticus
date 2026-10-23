@@ -9,7 +9,7 @@ import { readKnowledge } from "@maycombhq/knowledge";
 import { PlannerError } from "../errors.js";
 import { parseYamlAs } from "./answer.js";
 import { columnsOf, endpointKey, estateIndex, loadEstate, type Estate } from "./estate.js";
-import { baseProblem, deltaBase, flowBase } from "./merge.js";
+import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
 import { readPlacement } from "./feature.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
 import { estateContext } from "./estate-context.js";
@@ -46,7 +46,7 @@ flows:
     repo: <its repo>
     change: modify | new | remove
     name: <new flows only: what a person calls it>
-    trigger: <new flows only> { kind: endpoint | action | page | listener | job, what: <plain words>, entry: <"METHOD /path" or a topic> }
+    trigger: <new flows only> { kind: endpoint | action | page | listener | job, what: <plain words>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic> }
     why: <one sentence: why this flow changes>
     steps:
       - op: add | change | remove
@@ -54,12 +54,12 @@ flows:
         after: <add: the number of the step it goes after; 0 for first>
         kind: <add, or when the kind changes: entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry>
         what: <one sentence: what the step does once the change is in>
-        to: { component: <component or system id>, entry: <"METHOD /path" or topic>, new: <true when it doesn't exist yet> }   # call-out and publish
-        store: { table: <table id>, columns: [<columns>], new: <true for a new table>, types: { <each column it adds>: <database type> }, classification: { <each column it adds>: <classification> }, migration: <migration file, when it adds columns or a table>, retention: <new tables: how long rows are kept> }   # read, lookup, write
+        to: { component: <component or system id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
+        store: { table: <table id>, columns: [<columns>], new: <true for a new table>, types: { <each column it adds>: <database type> }, classification: { <each column it adds>: <classification> }, migration: <migration file, when it adds columns or a table>, retention: <new tables: how long rows are kept> }   # read, lookup and write: the table goes here, never under to
         fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..] }   # field names as the code names them
         why: <one sentence>
 reads:
-  - flow: <flow id of a flow the change reads or relies on but doesn't change>
+  - flow: <the flow id (from the specs, never an endpoint id) of a flow the change reads or relies on but doesn't change>
     why: <one sentence: what the change relies on in it, e.g. its membership check at step 2>
 
 Rules:
@@ -176,11 +176,106 @@ export function entriesOf(e: Estate, id: string): Map<string, string> {
   return out;
 }
 
+/**
+ * Why a read names no flow, in words a model can act on: an endpoint named as a flow is told
+ * the flow it starts (its trigger names it), exactly, from today's specs.
+ */
+function unknownReadMessage(id: string, e: Estate): string {
+  if (e.byId.get(id)?.kind !== "Endpoint")
+    return `Flow ${id} under reads isn't in any repo's spec.`;
+  const starts = [...e.flowById.values()]
+    .filter((f) => (f.flow.trigger as { ref?: string }).ref === id)
+    .map((f) => f.flow.id)
+    .sort();
+  return starts.length
+    ? `${id} under reads is an endpoint, not a flow: the flow it starts is ${starts.join(" or ")}. Name that flow, or leave the read out.`
+    : `${id} under reads is an endpoint, not a flow, and no flow in the specs starts at it. Name a flow from the index, or leave the read out.`;
+}
+
+/** At most eight of a component's entries, those sharing the most of the written path first. */
+function nearestEntries(written: string, have: string[]): string[] {
+  const segs = (x: string) => (x.split(/\s+/).at(-1) ?? "").split("/").filter(Boolean);
+  const want = segs(written);
+  const score = (x: string) => {
+    const s = segs(x);
+    let n = 0;
+    while (n < s.length && n < want.length && s[n] === want[n]) n++;
+    return n;
+  };
+  return [...have].sort((a, b) => score(b) - score(a) || a.localeCompare(b)).slice(0, 8);
+}
+
+/**
+ * The fields a changed or added step newly returns that nothing in the flow gives (a recall
+ * check: seen with a small model, whose plan returned a new field it never stored). A field is
+ * given when a step of the target flow receives, reads, writes, sends or works it out, a call or
+ * lookup returns it, or a table a step uses has it as a column; a respond step gives nothing.
+ * Names are compared without case, `_` or `-`.
+ */
+function fieldsFromNowhere(
+  d: FlowDelta,
+  today: { steps: { kind: string; data?: Record<string, string[] | undefined> }[] },
+  e: Estate,
+): { change: number; field: string }[] {
+  const fold = (c: string) => c.replace(/[_-]/g, "").toLowerCase();
+  const m = mergeDelta(d, today as never);
+  const given = new Set<string>();
+  for (const s of m.steps) {
+    if (s.mark === "removed" || s.kind === "respond") continue;
+    const data = (s.data ?? {}) as Record<string, string[] | undefined>;
+    // Only a call, a lookup or a read gets data back; a write's "returns" isn't a source.
+    const back = ["call-out", "lookup", "read"].includes(s.kind) ? ["returns"] : [];
+    for (const k of ["reads", "sends", "to", "from", "checks", ...back])
+      for (const f of data[k] ?? []) given.add(fold(f.split(".").at(-1)!));
+    for (const c of s.store?.columns ?? []) given.add(fold(c));
+    if (s.store) for (const c of columnsOf(e, s.store.table)) given.add(fold(c));
+  }
+  const out: { change: number; field: string }[] = [];
+  d.steps.forEach((s, i) => {
+    if (s.op === "remove") return;
+    const was =
+      s.op === "change" && s.step ? (today.steps[s.step - 1]?.data?.returns ?? []).map(fold) : [];
+    for (const f of s.fields?.returns ?? [])
+      if (!was.includes(fold(f)) && !given.has(fold(f))) out.push({ change: i + 1, field: f });
+  });
+  return out;
+}
+
+/** "a, b, c or d". */
+const words = (xs: string[]) =>
+  xs.length > 1 ? `${xs.slice(0, -1).join(", ")} or ${xs.at(-1)}` : (xs[0] ?? "");
+
+/**
+ * What is wrong with a migration's name, from how the table's store names its migrations
+ * today: a file name, and with Flyway `V<next>__<words>.sql`. Undefined when it reads right.
+ */
+function migrationProblem(name: string, table: string, e: Estate): string | undefined {
+  const file = name.split(/[\\/]/).at(-1)!;
+  const store = (e.byId.get(table) as { dataStore?: string } | undefined)?.dataStore;
+  const theirs = (e.records as { kind: string; dataStore?: string; file?: string; tool?: string }[])
+    .filter((r) => r.kind === "Migration" && r.dataStore === store)
+    .map((r) => ({ tool: r.tool, n: Number(/(?:^|[\\/])V(\d+)__/.exec(r.file ?? "")?.[1]) }));
+  const flyway = theirs.filter((m) => m.tool === "flyway" && Number.isFinite(m.n));
+  if (flyway.length) {
+    const newest = Math.max(...flyway.map((m) => m.n));
+    const v = /^V(\d+)__\w+\.sql$/.exec(file);
+    const stem = file.replace(/^V\d+__/, "").replace(/\.\w+$/, "");
+    if (!v || Number(v[1]) <= newest)
+      return `names the migration ${name}, which isn't how ${store}'s migrations are named (Flyway, the newest V${newest}): name the file V${newest + 1}__${stem}.sql.`;
+    return undefined;
+  }
+  if (!/\.\w+$/.test(file))
+    return `names the migration ${name}, which isn't a file name: name the migration file, with its extension.`;
+  return undefined;
+}
+
 export function checkDeltas(
   deltas: FlowDelta[],
   e: Estate,
   p: FeaturePlacement,
   reads: ReadFlow[] = [],
+  /** The org pack's data classification levels (pack.yaml), lowest first. */
+  o: { levels?: string[] } = {},
 ): StageIssue[] {
   const out: StageIssue[] = [];
   for (const r of reads) {
@@ -188,7 +283,7 @@ export function checkDeltas(
       out.push({
         rule: "delta.unknown-read",
         target: r.flow,
-        message: `Flow ${r.flow} under reads isn't in any repo's spec.`,
+        message: unknownReadMessage(r.flow, e),
         blocking: true,
       });
     if (deltas.some((d) => d.flow === r.flow && !isEmptyDelta(d)))
@@ -284,6 +379,14 @@ export function checkDeltas(
         );
       if (s.op === "remove") return;
       const kind = s.kind ?? (s.step ? today?.flow.steps[s.step - 1]?.kind : undefined);
+      // A read, lookup or write reaches a table (store), never a component (to).
+      if (s.to && (kind === "read" || kind === "lookup" || kind === "write"))
+        issue(
+          "delta.to-on-store-step",
+          at,
+          `Change ${i + 1} to ${t} is a ${kind} step: it names the table it ${kind === "write" ? "writes" : "reads"} under store: { table, columns }, and has no to (to is for call-out and publish steps).`,
+          d.repo,
+        );
       if ((kind === "call-out" || kind === "publish") && s.op === "add" && !s.to)
         issue(
           "delta.no-target",
@@ -299,7 +402,9 @@ export function checkDeltas(
         issue(
           "delta.unknown-component",
           at,
-          `Change ${i + 1} to ${t} goes to ${s.to.component}, which the catalog doesn't have; use an id from the index, or new: true.`,
+          ["Table", "DataStore"].includes(e.byId.get(s.to.component)?.kind ?? "")
+            ? `Change ${i + 1} to ${t} goes to ${s.to.component}, which is a ${e.byId.get(s.to.component)!.kind === "Table" ? "table" : "data store"}, not a component: a step that reads or writes it names it under store, as store: { table: ${s.to.component}, columns: [the columns] }, and has no to.`
+            : `Change ${i + 1} to ${t} goes to ${s.to.component}, which the catalog doesn't have; use an id from the index, or new: true.`,
           d.repo,
         );
       // ADR 0111: the entry is resolved against the callee's endpoints, when the catalog has any.
@@ -310,7 +415,7 @@ export function checkDeltas(
           issue(
             "delta.unknown-entry",
             at,
-            `Change ${i + 1} to ${t} calls ${s.to.entry} on ${s.to.component}, which the catalog doesn't have; it has ${[...have.values()].sort().slice(0, 8).join(", ")}${have.size > 8 ? ` and ${have.size - 8} more` : ""}. Use one of them, or new: true for an entry this change adds.`,
+            `Change ${i + 1} to ${t} calls ${s.to.entry} on ${s.to.component}${/^METHOD\s/i.test(s.to.entry) ? `: write the HTTP method itself (GET, POST, PUT, PATCH or DELETE), not METHOD. ${s.to.component} has` : ", which the catalog doesn't have; it has"} ${nearestEntries(s.to.entry, [...have.values()]).join(", ")}${have.size > 8 ? ` and ${have.size - 8} more` : ""}. Use one of them, or new: true for an entry this change adds.`,
             d.repo,
           );
         if (s.to.new && known)
@@ -368,7 +473,50 @@ export function checkDeltas(
               );
         }
         const added = reads ? [] : s.store.columns.filter((c) => s.store!.new || !have.has(c));
-        for (const c of added) {
+        // A column "added" that is one the table has in other casing (updatedAt for updated_at).
+        const fold = (c: string) => c.replace(/[_-]/g, "").toLowerCase();
+        const twins = new Map(
+          added.flatMap((c) => {
+            const t = [...have].find((h) => fold(h) === fold(c));
+            return t ? [[c, t] as const] : [];
+          }),
+        );
+        for (const [c, own] of twins)
+          issue(
+            "delta.column-name",
+            `${at}:${c}`,
+            `Change ${i + 1} to ${t} adds column ${c} to ${s.store.table}, but the table has ${own}: name the column as the table does.`,
+            d.repo,
+          );
+        // ADR 0111: what a step says of the data is the org pack's to name.
+        if (o.levels?.length)
+          for (const [c, level] of Object.entries(s.store.classification ?? {}))
+            if (!o.levels.includes(level))
+              issue(
+                "delta.bad-classification",
+                `${at}:${c}`,
+                `Change ${i + 1} to ${t} classifies column ${c} as ${level}, which isn't one of the org pack's levels: ${words(o.levels)}.`,
+                d.repo,
+              );
+        // A write that sends a field it stores nowhere has left a column out (seen with a small
+        // model: the new column the brief asked for was sent but never added).
+        if (kind === "write")
+          for (const f of s.fields?.sends ?? [])
+            if (
+              !s.store.columns.some((c) => fold(c) === fold(f)) &&
+              ![...have].some((h) => fold(h) === fold(f))
+            )
+              issue(
+                "delta.sent-not-stored",
+                `${at}:${f}`,
+                `Change ${i + 1} to ${t} sends ${f} to ${s.store.table} but stores it in no column: add it to store.columns, with its type, classification and migration if the table hasn't it, or leave it out of sends.`,
+                d.repo,
+              );
+        if (s.store.migration?.trim()) {
+          const why = migrationProblem(s.store.migration.trim(), s.store.table, e);
+          if (why) issue("delta.bad-migration", at, `Change ${i + 1} to ${t} ${why}`, d.repo);
+        }
+        for (const c of added.filter((x) => !twins.has(x))) {
           if (!s.store.types?.[c])
             issue(
               "delta.no-type",
@@ -377,12 +525,24 @@ export function checkDeltas(
               d.repo,
             );
           if (!s.store.classification?.[c])
-            issue(
-              "delta.no-classification",
-              `${at}:${c}`,
-              `Change ${i + 1} to ${t} adds column ${c} to ${s.store.table} without its classification: give it under store.classification.`,
-              d.repo,
-            );
+            out.push({
+              rule: "delta.no-classification",
+              target: `${at}:${c}`,
+              message: `Change ${i + 1} to ${t} adds column ${c} to ${s.store.table} without its classification: give it under store.classification.`,
+              blocking: true,
+              repo: d.repo,
+              // A person decides how a column is classified: from the org pack's levels.
+              ask: `How is the new column ${c} of ${s.store.table} classified?`,
+              ...(o.levels?.length
+                ? {
+                    options: o.levels.map((l) => ({
+                      label: l,
+                      means: `${c} is ${l} data`,
+                      changes: `The plan classifies ${s.store!.table}.${c} as ${l}`,
+                    })),
+                  }
+                : {}),
+            });
         }
         if (added.length && !s.store.migration?.trim())
           issue(
@@ -408,6 +568,14 @@ export function checkDeltas(
           d.repo,
         );
     });
+    if (today && d.change === "modify")
+      for (const x of fieldsFromNowhere(d, today.flow, e))
+        issue(
+          "delta.field-from-nowhere",
+          `${t}#${x.change}:${x.field}`,
+          `Change ${x.change} to ${t} returns ${x.field}, but no step of the flow receives, reads, writes or works it out, and no table the flow uses has it: add the step that gives it (a write with the new column, its type and its migration), or leave it out.`,
+          d.repo,
+        );
   }
   for (const f of p.flows)
     if (f.how === "changed" && !seen.has(f.id) && !reads.some((r) => r.flow === f.id))
@@ -863,7 +1031,8 @@ export async function architectureStage(
       const { deltas, reads } = splitAnswer(r.value);
       return { answer: { flows: deltas, reads }, issues };
     },
-    check: async (a) => checkDeltas(a.flows, estate, placement, a.reads),
+    check: async (a) =>
+      checkDeltas(a.flows, estate, placement, a.reads, { levels: classificationLevels(ctx) }),
     write: (answer) => writeTargetFlows(dir, answer, estate),
     current: () => readTargetFlows(dir),
   };
@@ -875,3 +1044,7 @@ export async function architectureStage(
     );
   return res;
 }
+
+/** The org pack's data classification levels (pack.yaml), or the built-in four without one. */
+export const classificationLevels = (ctx: { orgPack: { pack?: { classification: string[] } } }) =>
+  ctx.orgPack.pack?.classification ?? ["public", "internal", "confidential", "restricted"];

@@ -278,6 +278,26 @@ export type StoriesAnswer = z.infer<typeof Answer>;
 /** The story writer's answer's schema, for the fast path (ADR 0113). */
 export const StoriesAnswerSchema = Answer;
 
+/**
+ * A criterion names a field when it holds it as written (renamedAt), or every word of three
+ * letters or more in it (renamedAt, renamed_at: "renamed") as a word of the criterion ("the
+ * renamed timestamp"): a test can check either. A small model wrote the words, never the name.
+ */
+export function namesField(criterion: string, field: string): boolean {
+  const lower = criterion.toLowerCase();
+  if (lower.includes(field.toLowerCase())) return true;
+  const words = field
+    .split(".")
+    .at(-1)!
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[\s_-]+/)
+    .map((w) => w.toLowerCase())
+    .filter((w) => w.length >= 3);
+  if (!words.length) return false;
+  const said = new Set(lower.split(/[^a-z0-9]+/));
+  return words.every((w) => said.has(w));
+}
+
 export function checkStories(
   a: StoriesAnswer,
   stories: DeltaStory[],
@@ -326,10 +346,7 @@ export function checkStories(
           `Task ${t.id} (${t.title}) has no acceptance criteria.`,
           t.repo,
         );
-      else if (
-        t.fields.length &&
-        !c.some((x) => t.fields.some((f) => x.toLowerCase().includes(f.toLowerCase())))
-      )
+      else if (t.fields.length && !c.some((x) => t.fields.some((f) => namesField(x, f))))
         issue(
           "stories.fields-not-named",
           t.id,

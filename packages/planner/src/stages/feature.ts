@@ -22,6 +22,7 @@ import {
   type StageSpec,
 } from "./loop.js";
 import { FeaturePlacement, STAGE_SCHEMA_VERSION } from "./schema.js";
+import { dropUncitedQuestions } from "./uncited.js";
 
 /**
  * `atticus change feature <change>` (ADR 0087, plan 4.4): the feature placed against the
@@ -54,7 +55,7 @@ export const DESIGN_FORMAT = `design:
         - figmaId: <action id>
           label: <button label>
           does: <what it does>
-          endpoint: <"METHOD /path" the estate serves today, or "none" for navigation; leave out when nothing serves it>
+          endpoint: <the HTTP method and the path the estate serves today, such as "GET /orders/{id}", or "none" for navigation; leave out when nothing serves it>
           gap: <when nothing serves it: the endpoint or route to add>
   ignored:
     - figmaId: <an id the reader found that is not data or an action, e.g. a static title>
@@ -457,8 +458,18 @@ export async function featureStage(
     ...(context.gaps?.length ? { gaps: context.gaps } : {}),
     sources,
     parse: (text) => {
-      const r = parseYamlAs(text, FeaturePlacement, fill, "feature.yaml");
-      return { ...(r.value ? { answer: r.value } : {}), issues: r.issues };
+      let repairs: StageIssue[] = [];
+      const r = parseYamlAs(
+        text,
+        FeaturePlacement,
+        (d) => {
+          // A question that cites no file and line can't be raised (uncited.ts).
+          repairs = dropUncitedQuestions(d);
+          return fill(d);
+        },
+        "feature.yaml",
+      );
+      return { ...(r.value ? { answer: r.value } : {}), issues: [...repairs, ...r.issues] };
     },
     check: async (p) => checkPlacement(p, estate, design),
     write: (p) => writePlacement(root, change, p, estate),

@@ -11,7 +11,7 @@ nodes:
   Endpoint: 4
   DataStore: 1
   Table: 1
-  Column: 3
+  Column: 4
   Capability: 1
   ProcessDefinition: 3
   Decision: 1

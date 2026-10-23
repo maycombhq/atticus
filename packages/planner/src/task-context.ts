@@ -9,7 +9,7 @@ import { PlannerError } from "./errors.js";
 import { selectFor } from "./engine.js";
 import { readNeeds } from "./needs.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./stages/architecture.js";
-import { loadEstate } from "./stages/estate.js";
+import { loadEstate, type Estate } from "./stages/estate.js";
 import {
   readStoriesAnswer,
   storiesFromDeltas,
@@ -162,6 +162,24 @@ async function worktreeOf(dir: string, repo: string): Promise<string | undefined
   }
 }
 
+/**
+ * Where a new migration goes: in the folder the store's migrations are in today, when they are
+ * all in one (V45__x.sql → nadiengine-api/src/main/resources/db/migration/V45__x.sql); as named
+ * when it names a folder itself, or the store's migrations are in none or several.
+ */
+export function migrationPath(named: string, table: string, estate: Estate): string {
+  if (named.includes("/")) return named;
+  const store = (estate.byId.get(table) as { dataStore?: string } | undefined)?.dataStore;
+  const folders = [
+    ...new Set(
+      (estate.records as { kind: string; dataStore?: string; file?: string }[])
+        .filter((r) => r.kind === "Migration" && r.dataStore === store && r.file)
+        .map((r) => r.file!.split("/").slice(0, -1).join("/")),
+    ),
+  ];
+  return folders.length === 1 && folders[0] ? `${folders[0]}/${named}` : named;
+}
+
 export async function taskContext(
   root: string,
   changeId: string,
@@ -261,11 +279,10 @@ export async function taskContext(
     for (const s of todaySteps) for (const c of s.cites) add(c, `step ${s.n} of the same flow`);
     for (const c of cite(today.repo, today.flow.trigger.evidence)) add(c, "the flow's trigger");
   }
-  if (step?.store?.migration)
-    files.push({
-      path: `${line.repo}:${step.store.migration}`,
-      why: "the migration the step names (new)",
-    });
+  if (step?.store?.migration) {
+    const path = migrationPath(step.store.migration, step.store.table, estate);
+    files.push({ path: `${line.repo}:${path}`, why: "the migration the step names (new)" });
+  }
   if (dt && !files.length)
     notes.push(
       "This is new code: nothing today cites it; follow the repo's patterns for its neighbours.",

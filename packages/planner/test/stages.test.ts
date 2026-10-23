@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import { listQuestions, parseRecord, recordPath, serializeRecord } from "@maycom
 import {
   architectureStage,
   checkDeltas,
+  stageRuleKind,
   flowBase,
   mergeDelta,
   FlowDelta,
@@ -255,6 +256,39 @@ describe("the loop in hand-off mode", () => {
     expect(third.notes.join("\n")).toContain(
       "its AI lenses run with /atticus-critic add-fraud-check",
     );
+  });
+});
+
+describe("a stage whose hand-off was lost", () => {
+  it("reads in an answer that was checked but never read in, rather than drafting again", async () => {
+    const root = await estateRoot();
+    const rt = () => new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
+    const first = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
+    const run1 = first.waiting!.runId;
+    await writeFile(join(root, ".runs", CHANGE, run1, "feature-answer.yaml"), PLACED);
+    await rt().done(run1);
+    // The step run again without --resume, as a runner that lost its place would.
+    const again = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
+    expect(again.state).toBe("done");
+    expect(again.notes.join("\n")).toContain(`Run ${run1} was checked; reading its answer in.`);
+  });
+
+  it("says the draft is still with the assistant while its run waits, and drafts again once the run is gone", async () => {
+    const root = await estateRoot();
+    const rt = () => new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
+    const first = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
+    const run1 = first.waiting!.runId;
+    const again = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
+    expect(again).toMatchObject({ state: "waiting", waiting: { runId: run1 } });
+    // The run's folder is deleted (a cleaned .runs/, another machine): hand off a new draft.
+    await rm(join(root, ".runs", CHANGE, run1), { recursive: true, force: true });
+    const fresh = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
+    expect(fresh.state).toBe("waiting");
+    // A new run: its prompt is there again (the test's clock is fixed, so its id may repeat).
+    expect(
+      await readFile(join(root, ".runs", CHANGE, fresh.waiting!.runId, "prompt.md"), "utf8"),
+    ).toContain("Feature");
+    expect(fresh.notes.join("\n")).toContain(`Run ${run1} is no longer there`);
   });
 });
 
@@ -519,5 +553,370 @@ describe("readFigma", () => {
     expect(pets.fields.find((f) => f.figmaId === "I20:6;2:1")?.control).toBe("tab");
     expect(d.ids.has("40:6")).toBe(true);
     expect(d.unread).toEqual([]);
+  });
+});
+
+// What a small model got wrong on a real estate, said so it can fix it (and never asked of a person).
+describe("hand-backs a small model can act on", () => {
+  const p = { flows: [], newFlows: [], change: CHANGE } as unknown as Parameters<
+    typeof checkDeltas
+  >[2];
+  const estate = async () => {
+    const root = await estateRoot();
+    const { loadChangeContext } = await import("@maycombhq/changes");
+    return loadEstate(root, (await loadChangeContext(root)).records);
+  };
+  const delta = (steps: unknown[]) =>
+    FlowDelta.parse({
+      schemaVersion: 1,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "The order is screened.",
+      steps,
+    });
+
+  it("names the flow an endpoint starts when an endpoint is named as a flow it reads", async () => {
+    const e = await estate();
+    const issues = checkDeltas([], e, p, [
+      { flow: "forge-orders.post-orders", why: "It reads it." },
+    ]);
+    const read = issues.find((i) => i.rule === "delta.unknown-read")!;
+    expect(read.message).toBe(
+      "forge-orders.post-orders under reads is an endpoint, not a flow: the flow it starts is forge-orders.place-order. Name that flow, or leave the read out.",
+    );
+    expect(stageRuleKind("delta.unknown-read")).toBe("drafting");
+  });
+
+  it("says a table is a table when it is written where a component goes", async () => {
+    const e = await estate();
+    const issues = checkDeltas(
+      [
+        delta([
+          {
+            op: "change",
+            step: 4,
+            kind: "write",
+            what: "Saved",
+            to: { component: "forge-orders-db.orders", entry: "write" },
+          },
+        ]),
+      ],
+      e,
+      p,
+    );
+    expect(issues.find((i) => i.rule === "delta.unknown-component")!.message).toBe(
+      "Change 1 to forge-orders.place-order goes to forge-orders-db.orders, which is a table, not a component: a step that reads or writes it names it under store, as store: { table: forge-orders-db.orders, columns: [the columns] }, and has no to.",
+    );
+  });
+
+  it("says to write the HTTP method itself when an entry starts with METHOD, and lists the nearest entries first", async () => {
+    const e = await estate();
+    const issues = checkDeltas(
+      [
+        delta([
+          {
+            op: "add",
+            after: 1,
+            kind: "call-out",
+            what: "Stock is held",
+            to: { component: "forge-stock", entry: "METHOD /stock/reservations" },
+          },
+        ]),
+      ],
+      e,
+      p,
+    );
+    expect(issues.find((i) => i.rule === "delta.unknown-entry")!.message).toBe(
+      "Change 1 to forge-orders.place-order calls METHOD /stock/reservations on forge-stock: write the HTTP method itself (GET, POST, PUT, PATCH or DELETE), not METHOD. forge-stock has POST /stock/reservations. Use one of them, or new: true for an entry this change adds.",
+    );
+  });
+
+  it("treats a thing that already exists, or the wrong repo, as the draft's to fix, not a person's to decide", () => {
+    for (const r of [
+      "delta.exists",
+      "delta.entry-exists",
+      "delta.table-exists",
+      "delta.wrong-repo",
+      "delta.stale",
+      "delta.unknown-column",
+    ])
+      expect(stageRuleKind(r), r).toBe("drafting");
+    // Whether something is new is still a person's call when the draft keeps saying so.
+    for (const r of ["delta.unknown-component", "delta.unknown-entry", "delta.unknown-flow"])
+      expect(stageRuleKind(r), r).toBe("decision");
+  });
+});
+
+describe("the values a write step adds, checked against the catalog and the org pack", () => {
+  const p = { flows: [], newFlows: [], change: CHANGE } as unknown as Parameters<
+    typeof checkDeltas
+  >[2];
+  const estate = async () => {
+    const root = await estateRoot();
+    const { loadChangeContext } = await import("@maycombhq/changes");
+    const { estateOf } = await import("../src/index.js");
+    const e = await loadEstate(root, (await loadChangeContext(root)).records);
+    const extra = [
+      {
+        kind: "Column",
+        schemaVersion: 2,
+        id: "forge-orders-db.orders.created-at",
+        status: "current",
+        confidence: "verified",
+        evidence: [
+          { source: "code", repo: "forge-orders", path: "src/main/resources/schema.sql", line: 5 },
+        ],
+        table: "forge-orders-db.orders",
+        name: "created_at",
+        type: "TIMESTAMP",
+      },
+      {
+        kind: "Migration",
+        schemaVersion: 2,
+        id: "forge-orders-db.v3",
+        status: "current",
+        confidence: "verified",
+        evidence: [
+          {
+            source: "migration",
+            repo: "forge-orders",
+            path: "src/main/resources/db/migration/V3__add_sku.sql",
+            line: 1,
+          },
+        ],
+        dataStore: "forge-orders-db",
+        file: "src/main/resources/db/migration/V3__add_sku.sql",
+        operations: ["alter table orders add column sku"],
+        tool: "flyway",
+        version: "3",
+      },
+    ].map((r) => {
+      const x = parseRecord(r);
+      if (!x.ok) throw new Error(JSON.stringify(x.issues));
+      return x.record;
+    });
+    return estateOf([...e.byId.values(), ...extra] as never, [...e.flowById.values()], []);
+  };
+  const write = (store: Record<string, unknown>) =>
+    FlowDelta.parse({
+      schemaVersion: 1,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "The verdict is kept.",
+      steps: [
+        {
+          op: "change",
+          step: 4,
+          kind: "write",
+          what: "Saved",
+          store: { table: "forge-orders-db.orders", ...store },
+        },
+      ],
+    });
+  const levels = ["public", "internal", "confidential", "restricted"];
+  const messages = async (store: Record<string, unknown>) =>
+    checkDeltas([write(store)], await estate(), p, [], { levels }).map((i) => [i.rule, i.message]);
+
+  it("says a column added in other casing is the table's own column", async () => {
+    const got = await messages({
+      columns: ["sku", "createdAt"],
+      types: { createdAt: "timestamp" },
+      classification: { createdAt: "internal" },
+      migration: "V4__created.sql",
+    });
+    expect(got).toContainEqual([
+      "delta.column-name",
+      "Change 1 to forge-orders.place-order adds column createdAt to forge-orders-db.orders, but the table has created_at: name the column as the table does.",
+    ]);
+  });
+
+  it("refuses a classification that isn't one of the org pack's levels", async () => {
+    const got = await messages({
+      columns: ["fraud_verdict"],
+      types: { fraud_verdict: "varchar(20)" },
+      classification: { fraud_verdict: "nullable" },
+      migration: "V4__add_fraud_verdict.sql",
+    });
+    expect(got).toContainEqual([
+      "delta.bad-classification",
+      "Change 1 to forge-orders.place-order classifies column fraud_verdict as nullable, which isn't one of the org pack's levels: public, internal, confidential or restricted.",
+    ]);
+  });
+
+  it("asks for a migration file named as the store's migrations are, with the next number", async () => {
+    const got = await messages({
+      columns: ["fraud_verdict"],
+      types: { fraud_verdict: "varchar(20)" },
+      classification: { fraud_verdict: "internal" },
+      migration: "add_fraud_verdict_to_orders",
+    });
+    expect(got).toContainEqual([
+      "delta.bad-migration",
+      "Change 1 to forge-orders.place-order names the migration add_fraud_verdict_to_orders, which isn't how forge-orders-db's migrations are named (Flyway, the newest V3): name the file V4__add_fraud_verdict_to_orders.sql.",
+    ]);
+    const ok = await messages({
+      columns: ["fraud_verdict"],
+      types: { fraud_verdict: "varchar(20)" },
+      classification: { fraud_verdict: "internal" },
+      migration: "V4__add_fraud_verdict.sql",
+    });
+    expect(ok.map((x) => x[0])).not.toContain("delta.bad-migration");
+  });
+});
+
+describe("a write that sends what it doesn't store", () => {
+  it("is handed back, naming the field; one the table has, in other casing, is stored", async () => {
+    const root = await estateRoot();
+    const { loadChangeContext } = await import("@maycombhq/changes");
+    const e = await loadEstate(root, (await loadChangeContext(root)).records);
+    const d = FlowDelta.parse({
+      schemaVersion: 1,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "The verdict is kept.",
+      steps: [
+        {
+          op: "change",
+          step: 4,
+          kind: "write",
+          what: "Saved",
+          store: { table: "forge-orders-db.orders", columns: ["sku"] },
+          fields: { sends: ["sku", "Quantity", "fraudVerdict"] },
+        },
+      ],
+    });
+    const got = checkDeltas([d], e, { flows: [], newFlows: [] } as never).filter(
+      (i) => i.rule === "delta.sent-not-stored",
+    );
+    expect(got.map((i) => i.target)).toEqual(["forge-orders.place-order#1:fraudVerdict"]);
+  });
+});
+
+describe("a classification a person decides", () => {
+  it("offers the org pack's levels as the question's choices", async () => {
+    const root = await estateRoot();
+    const { loadChangeContext } = await import("@maycombhq/changes");
+    const e = await loadEstate(root, (await loadChangeContext(root)).records);
+    const d = FlowDelta.parse({
+      schemaVersion: 1,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "The verdict is kept.",
+      steps: [
+        {
+          op: "change",
+          step: 4,
+          kind: "write",
+          what: "Saved",
+          store: {
+            table: "forge-orders-db.orders",
+            columns: ["fraud_verdict"],
+            types: { fraud_verdict: "varchar(20)" },
+            migration: "V4__add_fraud_verdict.sql",
+          },
+        },
+      ],
+    });
+    const levels = ["public", "internal", "confidential", "restricted"];
+    const i = checkDeltas([d], e, { flows: [], newFlows: [] } as never, [], { levels }).find(
+      (x) => x.rule === "delta.no-classification",
+    )!;
+    expect(i.options?.map((o) => o.label)).toEqual(levels);
+    expect(i.options?.[1]).toEqual({
+      label: "internal",
+      means: "fraud_verdict is internal data",
+      changes: "The plan classifies forge-orders-db.orders.fraud_verdict as internal",
+    });
+    expect(stageRuleKind("delta.no-classification")).toBe("decision");
+    expect(stageRuleKind("delta.no-type")).toBe("drafting");
+  });
+});
+
+describe("a field a changed step returns that no step gives", () => {
+  const p = { flows: [], newFlows: [] } as never;
+  const respond = {
+    op: "change",
+    step: 5,
+    kind: "respond",
+    what: "201 with the order and its verdict",
+    fields: { returns: ["id", "sku", "quantity", "fraudVerdict"] },
+  };
+  const delta = (steps: unknown[]) =>
+    FlowDelta.parse({
+      schemaVersion: 1,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "The verdict comes back.",
+      steps,
+    });
+  const from = async (steps: unknown[]) => {
+    const root = await estateRoot();
+    const { loadChangeContext } = await import("@maycombhq/changes");
+    const e = await loadEstate(root, (await loadChangeContext(root)).records);
+    return checkDeltas([delta(steps)], e, p).filter((i) => i.rule === "delta.field-from-nowhere");
+  };
+
+  it("is handed back: the plan returns what it never stores, reads or receives", async () => {
+    const got = await from([respond]);
+    expect(got.map((i) => [i.target, i.message])).toEqual([
+      [
+        "forge-orders.place-order#1:fraudVerdict",
+        "Change 1 to forge-orders.place-order returns fraudVerdict, but no step of the flow receives, reads, writes or works it out, and no table the flow uses has it: add the step that gives it (a write with the new column, its type and its migration), or leave it out.",
+      ],
+    ]);
+    expect(stageRuleKind("delta.field-from-nowhere")).toBe("drafting");
+  });
+
+  it("is fine once a step stores it, in whatever casing", async () => {
+    const got = await from([
+      {
+        op: "change",
+        step: 4,
+        kind: "write",
+        what: "The order is saved with its verdict",
+        store: {
+          table: "forge-orders-db.orders",
+          columns: ["sku", "quantity", "fraud_verdict"],
+          types: { fraud_verdict: "varchar(20)" },
+          classification: { fraud_verdict: "internal" },
+          migration: "V4__add_fraud_verdict.sql",
+        },
+      },
+      respond,
+    ]);
+    expect(got).toEqual([]);
+  });
+});
+
+describe("a write step that names a component", () => {
+  it("is handed back, and its own returns don't vouch for a field", async () => {
+    const root = await estateRoot();
+    const { loadChangeContext } = await import("@maycombhq/changes");
+    const e = await loadEstate(root, (await loadChangeContext(root)).records);
+    const d = FlowDelta.parse({
+      schemaVersion: 1,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "The verdict is kept.",
+      steps: [
+        {
+          op: "change",
+          step: 4,
+          kind: "write",
+          what: "Saved",
+          to: { component: "forge-stock", entry: "POST /stock/reservations" },
+          fields: { sends: ["sku"], returns: ["fraudVerdict"] },
+        },
+      ],
+    });
+    const rules = checkDeltas([d], e, { flows: [], newFlows: [] } as never).map((i) => i.rule);
+    expect(rules).toContain("delta.to-on-store-step");
+    expect(rules).toContain("delta.field-from-nowhere");
   });
 });

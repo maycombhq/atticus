@@ -141,6 +141,29 @@ describe("atticus change feature", () => {
   });
 });
 
+describe("a stage run again while its hand-off waits (--handoff --json)", () => {
+  it("hands the same run off again, so a runner that lost its place carries on", async () => {
+    const root = await estate();
+    const step = async () => {
+      const out: string[] = [];
+      await main(
+        ["change", "feature", CHANGE, "--handoff", "--json", "--root", root],
+        { out: (l) => out.push(l), err: () => {} },
+        { quiet: true },
+      );
+      return JSON.parse(out.join("\n")) as {
+        state: string;
+        runId?: string;
+        stillWaiting?: boolean;
+      };
+    };
+    const first = await step();
+    expect(first.state).toBe("handoff");
+    const again = await step();
+    expect(again).toMatchObject({ state: "handoff", runId: first.runId, stillWaiting: true });
+  });
+});
+
 describe("atticus bench design", () => {
   it("scores the bench's design with the assistant's mapping", async () => {
     const cache = await mkdtemp(join(tmpdir(), "atticus-design-bench-"));

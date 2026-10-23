@@ -27,3 +27,14 @@
   entryPoints: [forge-orders.post-orders]
   records: [forge-orders, forge-stock, forge-orders-db.orders]
   namedBy: person
+# The time each order was saved: the table keeps it (a person says so; the fixture repo's
+# schema.sql predates it), and today's response doesn't return it.
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.orders.created-at
+  status: current
+  confidence: asserted
+  evidence: [{ source: manual, by: forge-architecture }]
+  table: forge-orders-db.orders
+  name: created_at
+  type: TIMESTAMP
