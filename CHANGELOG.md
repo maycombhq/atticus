@@ -6,7 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### A mockingbird
 
-- Atticus's mark is a mockingbird built from geometry (`docs/brand/mockingbird.svg`): a half-circle body, a wing of nested quarter circles, a round head, a triangle beak and a long tail wedge, each part apart by a thin gap. It is the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
+- Atticus's mark is a mockingbird made of one circle in parts (`docs/brand/mockingbird.svg`): a quarter-circle wing, a quarter-circle head with its beak, a half-circle body and a tail wedge, apart by thin gaps. It is the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
 
 ### Every screen says what is happening
 
