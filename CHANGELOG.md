@@ -4,6 +4,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A mockingbird
+
+- Atticus's mark is a mockingbird (`docs/brand/mockingbird.svg`): the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
+
 ### Every screen says what is happening
 
 - Verify, Correct, Reject, Keep, Done, Not needed and Reopen keep the keyboard on the item or need you acted on, and say "Working on it…" while they save.
