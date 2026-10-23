@@ -1,0 +1,53 @@
+# The forge-orders records after add-fraud-check's code merged and the repo was rescanned: the
+# change's own migration (V4), its new column and its new table are now in the catalog, beside
+# the migration that was there before it (V3). Invented, as everything here.
+- kind: Migration
+  schemaVersion: 2
+  id: forge-orders-db.v3
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V3__order_notes.sql, line: 1 }]
+  dataStore: forge-orders-db
+  version: "3"
+  tool: flyway
+  file: src/main/resources/db/migration/V3__order_notes.sql
+  operations: [alter table orders]
+- kind: Migration
+  schemaVersion: 2
+  id: forge-orders-db.v4
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V4__add_fraud_verdict.sql, line: 1 }]
+  dataStore: forge-orders-db
+  version: "4"
+  tool: flyway
+  file: src/main/resources/db/migration/V4__add_fraud_verdict.sql
+  operations: [alter table orders, create table screenings]
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.orders.fraud_verdict
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V4__add_fraud_verdict.sql, line: 1 }]
+  table: forge-orders-db.orders
+  name: fraud_verdict
+  type: VARCHAR(20)
+- kind: Table
+  schemaVersion: 2
+  id: forge-orders-db.screenings
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V4__add_fraud_verdict.sql, line: 3 }]
+  dataStore: forge-orders-db
+  name: screenings
+  tableKind: table
+  ownerComponent: forge-orders
+- kind: Column
+  schemaVersion: 2
+  id: forge-orders-db.screenings.verdict
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/db/migration/V4__add_fraud_verdict.sql, line: 4 }]
+  table: forge-orders-db.screenings
+  name: verdict
+  type: VARCHAR(20)

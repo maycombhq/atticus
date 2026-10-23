@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { HandoffRuntime, ReplayRuntime, type Run } from "@maycombhq/ai";
+import { HandoffRuntime, MockRuntime, ReplayRuntime, type Run } from "@maycombhq/ai";
 import {
   BUILT_IN_CHECKS,
   CriticError,
@@ -270,6 +270,52 @@ describe("the critic in hand-off mode", () => {
     expect((await roundMeta(root)).lenses.find((l) => l.lens === first!.lens)!.state).toBe(
       "failed",
     );
+  });
+
+  it("reads an empty answer or a refusal as a lens that failed, never a clean review, and the gate stays closed", async () => {
+    const root = await forgeChangeRoot();
+    const rt = handoff(root);
+    const r = await runCritic(root, CHANGE, { now: NOW, runtime: rt });
+    const runs = lensRuns(r);
+    const [empty, refusal] = runs;
+    const a = await completeLensRun(root, await answer(root, rt, empty!, ""), { now: LATER });
+    expect(a.lens).toMatchObject({ state: "failed" });
+    expect(a.lens.reason).toContain("has no findings list");
+    const b = await completeLensRun(
+      root,
+      await answer(root, rt, refusal!, "I'm sorry, but I can't help with that."),
+      { now: LATER },
+    );
+    expect(b.lens.state).toBe("failed");
+    for (const l of runs.slice(2))
+      await completeLensRun(root, await answer(root, rt, l, "findings: []\n"), { now: LATER });
+    const meta = await roundMeta(root);
+    expect(meta.lenses.filter((l) => l.state === "failed").map((l) => l.lens)).toEqual([
+      empty!.lens,
+      refusal!.lens,
+    ]);
+    // Nothing is waiting, and nothing open blocks, but two lenses never reviewed.
+    const s = await gateStatus(root, CHANGE, "plan");
+    expect(s.waiting).toEqual([]);
+    expect(s.mayProceed).toBe(false);
+    expect(s.reasons.join("\n")).toContain(
+      `The ${empty!.lens} lens on the plan gate (round 1) didn't review`,
+    );
+  });
+
+  it("records a model's empty answer as a lens that failed, not one that ran", async () => {
+    const root = await forgeChangeRoot();
+    const r = await runCritic(root, CHANGE, {
+      now: NOW,
+      runtime: new MockRuntime(() => "", { now: () => new Date(NOW) }),
+    });
+    const runs = lensRuns(r);
+    expect(runs.length).toBeGreaterThan(0);
+    for (const l of runs) {
+      expect(l.state, l.lens).toBe("failed");
+      expect(l.reason).toContain("has no findings list");
+    }
+    expect(r.status.mayProceed).toBe(false);
   });
 
   it("carries a person's earlier decision on an AI finding into the next round, and an old answer is not taken for the new one", async () => {

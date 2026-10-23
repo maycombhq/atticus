@@ -10,6 +10,7 @@ export type ReasonCode =
   | "bad-finding"
   | "critic-round-missing"
   | "lens-waiting"
+  | "lens-failed"
   | "pr-not-merged"
   | "approval-missing"
   | "self-approval"

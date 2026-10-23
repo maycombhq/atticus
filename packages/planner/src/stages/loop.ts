@@ -33,8 +33,11 @@ import {
 } from "@maycombhq/changes";
 import {
   completeLensRun,
+  CriticError,
+  failLens,
   fingerprint as criticFingerprint,
   readRound,
+  readRoundMeta,
   runCritic,
   waitingLenses,
   writeQuarantineItems,
@@ -114,8 +117,12 @@ export interface StageSpec<A> {
   sources: SourceInput[];
   /** Read the assistant's answer; problems are blocking issues. */
   parse(text: string): { answer?: A; issues: StageIssue[] };
-  /** The stage's deterministic checks of a parsed answer. */
-  check(answer: A): Promise<StageIssue[]>;
+  /**
+   * The stage's deterministic checks of a parsed answer. `onFile`: the answer is the stage's
+   * result on file, checked again after the stage was done, against a catalog that may since
+   * hold what the change itself adds (its own code, merged and scanned).
+   */
+  check(answer: A, o?: { onFile?: boolean }): Promise<StageIssue[]>;
   /** Write the answer's files into the change folder; change-folder-relative paths. */
   write(answer: A): Promise<string[]>;
   /** The stage's result as it is in the change folder now, for a rerun with nothing to draft. */
@@ -318,18 +325,44 @@ export async function runStageLoop<A>(
     const open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
     if (open.length) return result("questions");
   }
+  // A stop a person must deal with: the loop says so, and a rerun starts from what is on file.
+  const stopNow = async (message: string, lines: string[] = []): Promise<never> => {
+    loop.state = "stopped";
+    delete loop.review;
+    delete loop.run;
+    loop.updatedAt = at;
+    await writeLoop(dir, loop);
+    throw new PlannerError("stopped", [message, ...lines].join("\n"), lines);
+  };
+
   let carried: string | undefined;
+  // The critic's lenses on the draft are read in again: a lens run gone or cancelled (ADR 0115).
+  let reviewAgain = false;
   if (!o.resume && loop.state === "waiting" && loop.run) {
     // Still waiting only while its run is: a run deleted, or finished without --resume, is
-    // drafted again rather than waited on for ever.
+    // drafted again rather than waited on for ever. A run.json that doesn't read is one being
+    // written (`handoff done` in another process): still waiting, never drafted twice.
     const run = await readFile(join(runsDirOf(root), change.id, loop.run, "run.json"), "utf8")
-      .then((t) => (JSON.parse(t) as { state?: string }).state)
+      .then(
+        (t) => {
+          try {
+            return (JSON.parse(t) as { state?: string }).state ?? "unreadable";
+          } catch {
+            return "unreadable";
+          }
+        },
+        (e: NodeJS.ErrnoException) => (e.code === "ENOENT" ? undefined : "unreadable"),
+      )
       .catch(() => undefined);
-    if (run === "waiting") {
-      const lens = loop.review
-        ? (await waitingLenses(root, change.id, loop.review.gate)).find((w) => w.runId === loop.run)
-            ?.lens
-        : undefined;
+    // While the critic's lenses review the draft, the run waited on is a lens's.
+    const lens = loop.review
+      ? ((await readRoundMeta(root, change.id, loop.review.gate, loop.review.round))?.lenses.find(
+          (l) => l.runId === loop.run,
+        )?.lens ?? "AI")
+      : undefined;
+    // A lens whose answer failed its check is offered again, to be fixed (M6).
+    const out = ["waiting", "prepared", "produced", "unreadable", ...(lens ? ["failed"] : [])];
+    if (run !== undefined && out.includes(run)) {
       notes.push(
         lens
           ? `The ${lens} lens's review of the draft is still with your assistant (run ${loop.run}).`
@@ -337,7 +370,16 @@ export async function runStageLoop<A>(
       );
       return result("waiting", { waiting: { runId: loop.run, ...(lens ? { lens } : {}) } });
     }
-    if (run === "validated") {
+    if (lens) {
+      // The lenses on the same draft are read in again; a lens with no run left didn't review.
+      reviewAgain = true;
+      if (run !== "validated")
+        notes.push(
+          run === undefined
+            ? `Run ${loop.run} is no longer there, so the ${lens} lens didn't review the draft.`
+            : `Run ${loop.run} ended ${run}, so the ${lens} lens didn't review the draft.`,
+        );
+    } else if (run === "validated" && o.runtime.kind === "hand-off") {
       // atticus handoff done checked its answer, and nothing read it in: read it in now.
       carried = loop.run;
       notes.push(`Run ${loop.run} was checked; reading its answer in.`);
@@ -345,7 +387,9 @@ export async function runStageLoop<A>(
       notes.push(
         run === undefined
           ? `Run ${loop.run} is no longer there, so the draft is handed off again.`
-          : `Run ${loop.run} ended ${run} without being read in, so the draft is handed off again.`,
+          : run === "validated"
+            ? `Run ${loop.run} was a hand-off and this run isn't, so the stage drafts again.`
+            : `Run ${loop.run} ended ${run} without being read in, so the draft is handed off again.`,
       );
   }
 
@@ -358,7 +402,7 @@ export async function runStageLoop<A>(
   if (!o.resume && !o.force && loop.state === "done" && unread.length === 0) {
     const cur = await spec.current();
     if (cur !== undefined) {
-      issues = (await spec.check(cur)).filter((i) => i.blocking);
+      issues = (await spec.check(cur, { onFile: true })).filter((i) => i.blocking);
       if (issues.length === 0) return result("done", { answer: cur });
       notes.push("The stage's files changed since it was done; drafting again.");
     }
@@ -377,6 +421,7 @@ export async function runStageLoop<A>(
           files,
           sources: spec.sources,
         });
+        if (c.stop) await stopNow(c.stop.message, c.stop.lines);
         if (c.waiting)
           return handedToLens(c.waiting, { files, issues: [] }, { files, answer: cur });
         issues = c.issues.filter((i) => i.blocking);
@@ -407,12 +452,23 @@ export async function runStageLoop<A>(
     let answer: A | undefined;
     const found: StageIssue[] = [];
     let files: string[] = [];
-    const review = resume ? loop.review : undefined;
+    let review = resume || reviewAgain ? loop.review : undefined;
+    reviewAgain = false;
+    // A resume names a lens of the round the draft waits on; a draft run resumed while an older
+    // round's review is still on file starts a fresh draft's check, and the stale review goes.
+    if (review && resume && !(await isLensOf(root, change.id, review, resume))) {
+      delete loop.review;
+      review = undefined;
+    }
     if (review) {
       // ---- the critic's AI lenses on the last draft, handed off one at a time (ADR 0115)
       const lenses = await lensesIn(root, change.id, review, o, at, kindOf);
       resume = undefined;
       if (lenses.waiting) return handedToLens(lenses.waiting, review);
+      if (lenses.failed.length) {
+        const stop = lensStop(spec.stage, change.id, loop.iteration, lenses.failed);
+        await stopNow(stop.message, stop.lines);
+      }
       delete loop.review;
       delete loop.run;
       answered = (await questionsOf(loop.questions)).filter((q) => q.state === "answered");
@@ -421,9 +477,11 @@ export async function runStageLoop<A>(
       files = review.files;
       found.push(...review.issues, ...lenses.issues);
     } else {
-      // ---- draft
+      // ---- draft (a review of an earlier draft no longer applies)
+      delete loop.review;
       answered = (await questionsOf(loop.questions)).filter((q) => q.state === "answered");
       const fix = issues.filter((i) => i.blocking);
+      const back = handBacks(fix, answered);
       const sources: SourceInput[] = [
         {
           id: "instructions",
@@ -433,6 +491,20 @@ export async function runStageLoop<A>(
           classification: "public",
           trusted: true,
         },
+        // What the last draft got wrong and what people answered quote model-written and
+        // ingested text, so they go as data, screened by the defences, never as instructions.
+        ...(back
+          ? [
+              {
+                id: HAND_BACKS,
+                kind: "artifact" as const,
+                origin: "atticus (the last draft's findings and people's answers)",
+                text: back,
+                classification: "public",
+                priority: 1000,
+              },
+            ]
+          : []),
         ...spec.sources,
       ];
       const pack = buildContextPack({
@@ -448,6 +520,13 @@ export async function runStageLoop<A>(
       let draftRun: Run;
       if (resume) {
         draftRun = await o.runtime.result(resume);
+        // Only this stage's own draft is read in as its draft (two steps at once hand off two
+        // runs; another change's answer must never be written as this change's).
+        if (draftRun.request.change !== change.id || draftRun.request.outputPath !== spec.output)
+          throw new PlannerError(
+            "refused",
+            `Run ${resume} isn't a draft or a lens of ${change.id}'s ${spec.stage} stage: resume with the run the stage handed off${loop.run ? ` (${loop.run})` : ""}.`,
+          );
         resume = undefined;
       } else {
         const prepared = await o.runtime.prepare({
@@ -497,14 +576,15 @@ export async function runStageLoop<A>(
           files = await spec.write(answer);
         }
       }
-      // ---- the critic, on every iteration: its rules, and its AI lenses once the draft passes
-      // the stage's checks (ADR 0115)
-      if (answer !== undefined) {
+      // ---- the critic, on each draft that passes the stage's own checks: its rules and its AI
+      // lenses (ADR 0115). A draft with a blocking finding of its own goes back first, using no
+      // critic round (a gate's round limit counts reviews of drafts worth reviewing).
+      if (answer !== undefined && !found.some((i) => i.blocking)) {
         const c = await criticRound(root, ctx, change, spec, o, loop, notes, kindOf, {
           files,
           sources: spec.sources,
-          lenses: !found.some((i) => i.blocking),
         });
+        if (c.stop) await stopNow(c.stop.message, c.stop.lines);
         if (c.waiting)
           return handedToLens(
             c.waiting,
@@ -520,6 +600,9 @@ export async function runStageLoop<A>(
     // ---- fingerprints and the end rule
     const toAsk: { f: LoopFinding; issue: StageIssue }[] = [];
     const toStop: LoopFinding[] = [];
+    // A finding a person answered, back in a draft that was given the answer: the assistant
+    // doesn't follow it, and drafting again won't change that.
+    const ignored: LoopFinding[] = [];
     const byFp = new Map(loop.findings.map((f) => [f.fingerprint, f]));
     for (const i of found) {
       const fp = issueFingerprint(i.rule, i.target, i.evidence ?? "");
@@ -540,6 +623,10 @@ export async function runStageLoop<A>(
       f.kind = i.kind ?? (f.source === "critic" ? "decision" : stageRuleKind(i.rule));
       f.seenIn = [...f.seenIn, n];
       byFp.set(fp, f);
+      if (f.blocking && f.question && loop.read.includes(f.question)) {
+        ignored.push(f);
+        continue;
+      }
       // Sightings up to a stop a person has since dealt with don't count again.
       const seen = f.seenIn.filter((x) => x > (f.stoppedAt ?? 0));
       const repeated = seen.length >= 3 && seen.at(-3) === n - 2 && seen.at(-2) === n - 1;
@@ -556,11 +643,12 @@ export async function runStageLoop<A>(
     // The loop's own questions are about the repo a finding names; the assistant's are the
     // change's. Each is raised for its own repo, so an answered one is found again (a question
     // filed under another repo was asked a third time on NadiEngine).
-    const drafted: { repo: string; q: QuestionDraft }[] = [];
+    const drafted: { repo: string; q: QuestionDraft; f?: LoopFinding }[] = [];
     const evidenceFor = async (e: string | undefined) =>
       e && (await lineExists(root, e)) ? e : `${rel}/${loopRel(spec.stage)}:1`;
     for (const { f, issue } of toAsk)
       drafted.push({
+        f,
         repo: issue.repo ?? change.id,
         q: {
           // A check that knows the question to ask asks it plainly, so its answer reads as one
@@ -586,9 +674,10 @@ export async function runStageLoop<A>(
     if (drafted.length) {
       const qs: Question[] = [];
       for (const repo of [...new Set(drafted.map((x) => x.repo))]) {
+        const mine = drafted.filter((x) => x.repo === repo);
         const raised = await raiseQuestions(
           root,
-          drafted.filter((x) => x.repo === repo).map((x) => x.q),
+          mine.map((x) => x.q),
           {
             step: `change-${spec.stage}`,
             repo,
@@ -599,10 +688,11 @@ export async function runStageLoop<A>(
           },
         );
         qs.push(...raised.raised, ...raised.known);
-      }
-      for (const { f } of toAsk) {
-        const q = qs.find((x) => x.question.includes(f.message.slice(0, 40)));
-        if (q) f.question = q.id;
+        // Each finding asked is linked to its question by the id it was raised as, never by
+        // its words (a check's own question doesn't hold the finding's message).
+        mine.forEach((x, i) => {
+          if (x.f && raised.ids[i]) x.f.question = raised.ids[i];
+        });
       }
       loop.questions = [...new Set([...loop.questions, ...qs.map((q) => q.id)])].sort();
     }
@@ -622,6 +712,14 @@ export async function runStageLoop<A>(
 
     // ---- stop, or go round again
     const open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
+    if (ignored.length && !open.length) {
+      for (const f of ignored) f.stoppedAt = n;
+      const stop = stopMessage(spec, rel, n, ignored, rerunOf(spec.stage, change.id));
+      await stopNow(
+        `The ${spec.stage} stage stopped after ${n} draft${n === 1 ? "" : "s"}: a person answered ${[...new Set(ignored.map((f) => f.question!))].join(", ")}, and your assistant's draft still doesn't follow the answer.`,
+        stop.lines,
+      );
+    }
     if (toStop.length) {
       for (const f of toStop) f.stoppedAt = n;
       const stop = stopMessage(spec, rel, n, toStop, rerunOf(spec.stage, change.id));
@@ -692,21 +790,45 @@ export function rerunOf(stage: Stage, change: string): string {
     : `atticus change ${stage} ${change}`;
 }
 
+/** The data block that carries what the last draft got wrong and what people answered. */
+export const HAND_BACKS = "hand-backs";
+
+/**
+ * Atticus's own instructions for the next draft: what to do with the hand-backs, in Atticus's
+ * words only. The findings and answers themselves quote what a model wrote and what was read
+ * from the repos and attachments, so they go in the hand-backs data block (handBacks), where
+ * the defences screen them (rule 6), never in the trusted instructions.
+ */
 function instructionsWith(base: string, fix: StageIssue[], answered: Question[]): string {
   const out = [base];
   if (fix.length)
     out.push(
       "",
-      "Your last draft had these problems. Fix every one; a problem that comes back unchanged goes to a person:",
-      ...fix.map((i) => `- ${i.message}${i.evidence ? ` (${i.evidence})` : ""}`),
+      `Your last draft had problems; the "${HAND_BACKS}" data block lists them. Fix every one; a problem that comes back unchanged goes to a person.`,
     );
   if (answered.length)
     out.push(
       "",
-      "People answered these questions. Follow their answers:",
-      ...answered.map((q) => `- ${q.question} Answer: ${answerWords(q) ?? ""}`),
+      `People answered questions; the "${HAND_BACKS}" data block lists each question with its answer. Follow their answers.`,
     );
   return out.join("\n");
+}
+
+/** The hand-backs data block's text: the last draft's problems and people's answers. */
+function handBacks(fix: StageIssue[], answered: Question[]): string | undefined {
+  const out: string[] = [];
+  if (fix.length)
+    out.push(
+      "Problems in the last draft:",
+      ...fix.map((i) => `- ${i.message}${i.evidence ? ` (${i.evidence})` : ""}`),
+    );
+  if (answered.length)
+    out.push(
+      ...(out.length ? [""] : []),
+      "Questions people answered:",
+      ...answered.map((q) => `- ${q.question} Answer: ${answerWords(q) ?? ""}`),
+    );
+  return out.length ? out.join("\n") : undefined;
 }
 
 /** Whether "path:line" is a line of a file under the metarepo. */
@@ -733,8 +855,36 @@ interface LensWait {
 interface DraftReview {
   files: string[];
   sources: SourceInput[];
-  /** Run the AI lenses: the draft passed the stage's checks. Default: yes. */
-  lenses?: boolean;
+}
+
+/** A lens of a round that didn't review: no answer, or an answer that isn't a review. */
+interface LensFailed {
+  lens: string;
+  reason: string;
+}
+
+/** Whether a run is one of the lenses of the round a draft waits on. */
+async function isLensOf(
+  root: string,
+  change: string,
+  review: { gate: string; round: number },
+  runId: string,
+): Promise<boolean> {
+  const meta = await readRoundMeta(root, change, review.gate, review.round);
+  return !!meta?.lenses.some((l) => l.runId === runId);
+}
+
+/** The lenses of a round that failed, with why. */
+async function failedLenses(
+  root: string,
+  change: string,
+  gate: string,
+  round: number,
+): Promise<LensFailed[]> {
+  const meta = await readRoundMeta(root, change, gate, round);
+  return (meta?.lenses ?? [])
+    .filter((l) => l.state === "failed")
+    .map((l) => ({ lens: l.lens, reason: l.reason ?? "it gave no review" }));
 }
 
 /** The runtime the critic's AI lenses run with, or none (rules only; AI off). */
@@ -768,8 +918,11 @@ async function criticIssues(
 
 /**
  * The critic round a draft waits on, after a hand-off resume: a lens answer `atticus handoff
- * done` validated but didn't read in is read in now; the first lens still out is waited for;
- * when every lens is in, the round's open blocking findings come back as issues.
+ * done` validated but didn't read in is read in now; the first lens still out is waited for
+ * (one whose answer failed its check too: it is offered again, to be fixed); a lens whose run
+ * is gone or was cancelled is recorded as failed. When every lens is in, the round's open
+ * blocking findings come back as issues, and the lenses that didn't review as `failed`. The
+ * round is the draft's own, whatever round ran at the gate since.
  */
 async function lensesIn(
   root: string,
@@ -778,25 +931,39 @@ async function lensesIn(
   o: StageOptions,
   at: string,
   kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
-): Promise<{ waiting?: LensWait; issues: StageIssue[] }> {
+): Promise<{ waiting?: LensWait; issues: StageIssue[]; failed: LensFailed[] }> {
   const rt = o.criticRuntime ?? o.runtime;
-  for (const w of await waitingLenses(root, change, review.gate)) {
-    if (w.round !== review.round) continue;
+  for (const w of await waitingLenses(root, change, review.gate, review.round)) {
     const run = await rt.result(w.runId).catch(() => undefined);
     if (run?.state === "validated") {
       await completeLensRun(root, run, { now: at });
       continue;
     }
-    return { waiting: { ...w, gate: review.gate }, issues: [] };
+    if (!run || run.state === "cancelled") {
+      await failLens(
+        root,
+        change,
+        review.gate,
+        review.round,
+        w.runId,
+        run ? `its run ${w.runId} was cancelled` : `its run ${w.runId} is no longer there`,
+      );
+      continue;
+    }
+    return { waiting: { ...w, gate: review.gate }, issues: [], failed: [] };
   }
   const { findings } = await readRound(root, change, review.gate, review.round);
-  return { issues: await criticIssues(root, change, findings, kindOf) };
+  return {
+    issues: await criticIssues(root, change, findings, kindOf),
+    failed: await failedLenses(root, change, review.gate, review.round),
+  };
 }
 
 /**
- * One critic round at the stage's gate: its rules, and its AI lenses on the draft when the
- * draft passed the stage's checks (ADR 0115). Open blocking findings come back as issues; a
- * lens handed off to the person's assistant comes back as the one to wait for.
+ * One critic round at the stage's gate on a draft that passed the stage's checks: its rules and
+ * its AI lenses (ADR 0115). Open blocking findings come back as issues; a lens handed off to the
+ * person's assistant comes back as the one to wait for. A stop comes back when no review can
+ * be had: the gate's critic rounds are used up (a person decides now), or a lens didn't review.
  */
 async function criticRound(
   root: string,
@@ -808,7 +975,11 @@ async function criticRound(
   notes: string[],
   kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
   draft: DraftReview,
-): Promise<{ issues: StageIssue[]; waiting?: LensWait }> {
+): Promise<{
+  issues: StageIssue[];
+  waiting?: LensWait;
+  stop?: { message: string; lines: string[] };
+}> {
   const gate = spec.gate === undefined ? stageGate(ctx, spec.stage) : spec.gate;
   if (!gate) {
     notes.push(
@@ -818,24 +989,62 @@ async function criticRound(
     );
     return { issues: [] };
   }
-  const lensRuntime = draft.lenses === false ? undefined : lensRuntimeOf(ctx, o);
+  const lensRuntime = lensRuntimeOf(ctx, o);
+  const draftNo = loop.iteration;
+  let r;
   try {
-    const r = await runCritic(root, change.id, {
+    r = await runCritic(root, change.id, {
       gate,
       ...(lensRuntime ? { runtime: lensRuntime } : {}),
       review: { stage: spec.stage, files: draft.files, sources: draft.sources },
       now: (o.now ?? new Date()).toISOString().replace(/\.\d{3}Z$/, "Z"),
     });
-    loop.critic = [...loop.critic, { gate, round: r.round }];
-    const first = r.lenses.find((l) => l.state === "waiting" && l.runId);
-    if (first)
+  } catch (e) {
+    // The gate's rounds are used up: the draft on file has had no review, so the stage can't
+    // say nothing blocks. A person decides, as the critic says.
+    if (e instanceof CriticError && e.code === "round-limit")
       return {
         issues: [],
-        waiting: { runId: first.runId!, lens: first.lens, gate, round: r.round },
+        stop: {
+          message: `The ${spec.stage} stage stopped: draft ${draftNo} can't have a critic round. ${e.message}`,
+          lines: [
+            `  - Draft ${draftNo} is in the change folder without a review at the ${gate} gate; atticus findings ${change.id} shows the newest round's.`,
+          ],
+        },
       };
-    return { issues: await criticIssues(root, change.id, r.findings, kindOf) };
-  } catch (e) {
     notes.push(`The critic didn't run at the ${gate} gate: ${(e as Error).message}`);
     return { issues: [] };
   }
+  loop.critic = [...loop.critic, { gate, round: r.round }];
+  const first = r.lenses.find((l) => l.state === "waiting" && l.runId);
+  if (first)
+    return {
+      issues: [],
+      waiting: { runId: first.runId!, lens: first.lens, gate, round: r.round },
+    };
+  // A lens that didn't review (its model failed, or answered with no review) leaves the draft
+  // unreviewed: the stage stops rather than count it as clean.
+  const failed = r.lenses
+    .filter((l) => l.state === "failed")
+    .map((l) => ({ lens: l.lens, reason: l.reason ?? "it gave no review" }));
+  if (failed.length) return { issues: [], stop: lensStop(spec.stage, change.id, draftNo, failed) };
+  return { issues: await criticIssues(root, change.id, r.findings, kindOf) };
+}
+
+/** The stop when a lens didn't review a draft: which, why, and that a rerun reviews it again. */
+function lensStop(
+  stage: Stage,
+  change: string,
+  draft: number,
+  failed: LensFailed[],
+): { message: string; lines: string[] } {
+  return {
+    message: `The ${stage} stage stopped: the critic's ${failed.map((l) => l.lens).join(" and ")} ${failed.length === 1 ? "lens" : "lenses"} didn't review draft ${draft}, so nothing says it is sound.`,
+    lines: [
+      ...failed.map(
+        (l) => `  - The critic's ${l.lens} lens didn't review draft ${draft}: ${l.reason}`,
+      ),
+      `Run ${rerunOf(stage, change)} again: the lenses review the same draft in a new critic round.`,
+    ],
+  };
 }

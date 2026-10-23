@@ -75,6 +75,8 @@ function printStage(
       for (const f of current) io.out(`  ${f.message}`);
     }
     const w = r.waiting!;
+    // The run the stage waits on, as data: a runner offers exactly this run (ADR 0115).
+    io.report?.({ handoff: { runId: w.runId, ...(w.lens ? { lens: w.lens } : {}) } });
     io.out(
       w.lens
         ? `Handed the critic's ${w.lens} lens to your assistant to review the ${NAMES[r.stage]} draft (run ${w.runId}). When it is done, run: atticus handoff done ${w.runId}, then ${rerun} --resume ${w.runId}`

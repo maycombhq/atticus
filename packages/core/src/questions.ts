@@ -221,20 +221,24 @@ export function sameQuestion(
  * as it is and returned in `known`: an answered question is not asked again. A question
  * another step already asked about the same repo, open or answered, with a line in common or
  * near-identical words, is reused (ADR 0089): the step is added to its `alsoAskedBy`, so it
- * reads the same answer, and the question is returned in `reused` (and in `known`).
+ * reads the same answer, and the question is returned in `reused` (and in `known`). `ids` is
+ * the id each draft ended up as, in the drafts' order, so a caller links a draft to its
+ * question by id, never by its words.
  */
 export async function raiseQuestions(
   root: string,
   drafts: QuestionDraft[],
   by: AskedBy,
-): Promise<{ raised: Question[]; known: Question[]; reused: Question[] }> {
+): Promise<{ raised: Question[]; known: Question[]; reused: Question[]; ids: string[] }> {
   const raised: Question[] = [];
   const known: Question[] = [];
   const reused: Question[] = [];
+  const ids: string[] = [];
   let others: Question[] | undefined;
   for (const d of drafts) {
     const q = questionFromDraft(d, by);
     const existing = await readQuestion(root, q.id).catch(() => undefined);
+    ids.push(q.id);
     if (existing) {
       if (!known.some((k) => k.id === existing.id)) known.push(existing);
       continue;
@@ -268,12 +272,13 @@ export async function raiseQuestions(
       }
       if (!reused.some((k) => k.id === kept.id)) reused.push(kept);
       if (!known.some((k) => k.id === kept.id)) known.push(kept);
+      ids[ids.length - 1] = kept.id;
       continue;
     }
     await write(root, q);
     raised.push(q);
   }
-  return { raised, known, reused };
+  return { raised, known, reused, ids };
 }
 
 /** What a step says of a question it reused: who asked it first, and that it waits on it. */

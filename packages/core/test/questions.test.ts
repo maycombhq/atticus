@@ -130,6 +130,11 @@ describe("questions as files (ADR 0078)", () => {
     const again = await raiseQuestions(root, [QuestionDraft.parse(draft)], asked);
     expect(again.raised).toEqual([]);
     expect(again.known.map((q) => q.id)).toEqual([id]);
+    // Each draft's question by id, in the drafts' order, so a step links them without words.
+    expect(first.ids).toEqual([id]);
+    const other = QuestionDraft.parse({ ...draft, question: "Which queue does it read?" });
+    const both = await raiseQuestions(root, [other, QuestionDraft.parse(draft)], asked);
+    expect(both.ids).toEqual([both.raised[0]!.id, id]);
   });
 
   it("lists questions by state and says which files it can't read", async () => {

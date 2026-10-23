@@ -158,9 +158,9 @@ describe("the feature stage", () => {
       "bulk-orders (design) also changes forge-orders.place-order",
     );
     expect(r.pr).toBe("atticus change handoff add-fraud-check --approve");
-    // The critic ran in every iteration.
+    // The critic ran on the draft that passed the stage's checks; the first went back first.
     const loop = parse(await readFile(join(dir(root), "stage/feature.yaml"), "utf8"));
-    expect(loop.critic.length).toBe(2);
+    expect(loop.critic.length).toBe(1);
     expect(loop.state).toBe("done");
   });
 
@@ -414,7 +414,8 @@ describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
     const second = await featureStage(root, CHANGE, { runtime: rt(), now: NOW, resume: run1 });
     expect(second.state).toBe("waiting");
     expect(second.waiting!.lens).toBeUndefined();
-    expect((await roundMeta(root, 1)).lenses.every((l) => l.state === "skipped")).toBe(true);
+    // Nor does it use a critic round (H3: a gate's round limit counts reviews of drafts).
+    await expect(roundMeta(root, 1)).rejects.toThrow();
   });
 });
 
