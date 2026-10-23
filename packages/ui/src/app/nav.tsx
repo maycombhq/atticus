@@ -26,7 +26,7 @@ function Logo() {
         <circle cx="17.5" cy="12.4" r="4.5" />
         <path d="M11 11.4 H13" />
       </g>
-      <path strokeWidth="1.05" d="M6.5 12.7 L8.5 10.2 M17.5 12.7 L15.5 10.2" />
+      <path strokeWidth="1.05" d="M3.6 12.7 L5.6 10.2 M20.4 12.7 L18.4 10.2" />
     </svg>
   );
 }

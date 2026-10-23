@@ -6,7 +6,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### A pair of glasses
 
-- Atticus's mark is Atticus Finch's glasses (`docs/brand/glasses.svg`): two fine round lenses and a straight bridge, with a glint in each lens leaning toward the other so the two glints are the legs of an A. It is the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
+- Atticus's mark is Atticus Finch's glasses (`docs/brand/glasses.svg`): two fine round lenses and a straight bridge, with a glint at the outer side of each lens, leaning in, so the two glints are the legs of an A. It is the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
 
 ### Every screen says what is happening
 
