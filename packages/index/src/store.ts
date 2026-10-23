@@ -1,9 +1,16 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { CatalogRecord } from "@maycombhq/core";
+import { splitForms, type CatalogRecord } from "@maycombhq/core";
 import type { Db } from "./db.js";
-import { foldName, labelOf, readSource, type FileRead, type SourceFile } from "./sources.js";
+import {
+  documentNodes,
+  foldName,
+  labelOf,
+  readSource,
+  type FileRead,
+  type SourceFile,
+} from "./sources.js";
 
 /**
  * The index's tables and how they are kept up to date (ADR 0002, 0107). Each file the index
@@ -15,7 +22,7 @@ import { foldName, labelOf, readSource, type FileRead, type SourceFile } from ".
  */
 
 /** Bumped when the index's tables change; an index of another version is rebuilt once. */
-export const INDEX_VERSION = 2;
+export const INDEX_VERSION = 3;
 
 export const SCHEMA = `
 CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -53,7 +60,7 @@ CREATE INDEX links_file ON links (file);
 CREATE TABLE reviews (item TEXT NOT NULL, verdict TEXT NOT NULL, by TEXT NOT NULL, at TEXT NOT NULL, file TEXT NOT NULL);
 CREATE INDEX reviews_item ON reviews (item);
 CREATE INDEX reviews_file ON reviews (file);
-CREATE VIRTUAL TABLE fts USING fts5(key UNINDEXED, name, ids, body, tokenize = 'porter unicode61');
+CREATE VIRTUAL TABLE fts USING fts5(key UNINDEXED, name, ids, body, words, tokenize = 'porter unicode61');
 CREATE TABLE selections (key TEXT PRIMARY KEY, json TEXT NOT NULL);
 `;
 
@@ -248,12 +255,22 @@ export async function updateIndex(
   });
   const result: UpdateResult = { changed: [], removed, problems: [], rematched: false };
   if (!stale.length && !removed.length) return result;
-  const reads: { f: SourceFile; text: string; hash: string }[] = [];
+  const reads: { f: SourceFile; text: string; bytes: Buffer; hash: string }[] = [];
   for (const f of stale) {
-    const text = await readFile(join(root, ...f.path.split("/")), "utf8").catch(() => undefined);
-    if (text === undefined) continue;
-    reads.push({ f, text, hash: sha(text) });
+    const bytes = await readFile(join(root, ...f.path.split("/"))).catch(() => undefined);
+    if (bytes === undefined) continue;
+    reads.push({
+      f,
+      bytes,
+      text: bytes.toString("utf8"),
+      hash: createHash("sha256").update(bytes).digest("hex"),
+    });
   }
+  // Documents are read from their bytes, before the transaction (the ingestors load lazily).
+  const documents = new Map<string, FileRead>();
+  for (const r of reads)
+    if (r.f.source === "document" && (o.force || known.get(r.f.path)?.hash !== r.hash))
+      documents.set(r.f.path, await documentNodes(r.f.path, r.bytes));
   const touched = new Set(
     reads.filter((r) => o.force || known.get(r.f.path)?.hash !== r.hash).map((r) => r.f.path),
   );
@@ -283,7 +300,9 @@ export async function updateIndex(
     const insName = db.prepare("INSERT INTO names VALUES (?, ?, ?, ?, ?)");
     const insLink = db.prepare("INSERT INTO links VALUES (?, ?, ?, ?, ?, ?, ?)");
     const insReview = db.prepare("INSERT INTO reviews VALUES (?, ?, ?, ?, ?)");
-    const insFts = db.prepare("INSERT INTO fts (key, name, ids, body) VALUES (?, ?, ?, ?)");
+    const insFts = db.prepare(
+      "INSERT INTO fts (key, name, ids, body, words) VALUES (?, ?, ?, ?, ?)",
+    );
     const delFtsKey = db.prepare("DELETE FROM fts WHERE key = ?");
     const upFile = db.prepare("INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?, ?)");
     let catalogChanged = removed.some((p) => known.has(p));
@@ -296,7 +315,7 @@ export async function updateIndex(
       }
       dropFts.run(f.path);
       drop(f.path);
-      const r: FileRead = readSource(root, f, text);
+      const r: FileRead = documents.get(f.path) ?? readSource(root, f, text);
       if (r.problem) result.problems.push({ file: f.path, message: r.problem });
       if (f.source === "catalog") catalogChanged = true;
       if (r.record) {
@@ -340,7 +359,14 @@ export async function updateIndex(
           n.mentions ? 1 : 0,
           n.json ?? null,
         );
-        insFts.run(n.key, n.names, n.ids, n.body);
+        // ADR 0116: the words its identifiers are made of (renamedAt → renamed at), searched too.
+        insFts.run(
+          n.key,
+          n.names,
+          n.ids,
+          n.body,
+          splitForms(`${n.name}\n${n.names}\n${n.ids}\n${n.body}`).join("\n"),
+        );
       }
       for (const n of r.names) insName.run(n.name, n.id, n.kind, n.how, f.path);
       for (const l of r.links) insLink.run(l.from, l.to, l.by, l.type, l.how, f.path, 0);

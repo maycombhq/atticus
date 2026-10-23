@@ -1,0 +1,11 @@
+# The index's WikiSection nodes for knowledge/snapshots/forge-wiki/2026-10-01/ledger-operations.md
+# (ADR 0116): each section's name is its heading path (page title › parent › heading), and a
+# section over about 400 tokens is cut at paragraph boundaries into parts (id#2, ...), each with
+# the line it starts on, so a citation stays exact. Written by hand.
+- { id: "forge-wiki/ledger-operations.md#Ledger operations", name: Ledger operations, line: 1 }
+- { id: "forge-wiki/ledger-operations.md#Words we use", name: Ledger operations › Words we use, line: 5 }
+- { id: "forge-wiki/ledger-operations.md#Reconciliation", name: Ledger operations › Month end › Reconciliation, line: 13 }
+- { id: "forge-wiki/ledger-operations.md#Reconciliation#2", name: Ledger operations › Month end › Reconciliation, line: 21 }
+- { id: "forge-wiki/ledger-operations.md#Closing the books", name: Ledger operations › Month end › Closing the books, line: 27 }
+- { id: "forge-wiki/ledger-operations.md#Retries", name: Ledger operations › Northwind Pay › Retries, line: 33 }
+- { id: "forge-wiki/ledger-operations.md#Cut-over windows", name: Ledger operations › Northwind Pay › Cut-over windows, line: 37 }

@@ -643,8 +643,25 @@ export function renderContextTable(rows: ContextRow[]): string {
  * case and budget.
  */
 
-export type RetrievalMode = "lexical" | "+expansion" | "+rerank" | "+embeddings";
-export const RETRIEVAL_MODES: RetrievalMode[] = ["lexical", "+expansion", "+rerank", "+embeddings"];
+/**
+ * The modes: "words" (the words only: no identifier words, no synonyms), "+split" (an
+ * identifier's words too), "lexical" (and the other names of what the input names: the engine
+ * with no model), then the model's expansion, its rerank, and a local embedding model's
+ * similarity, each on top of the lexical engine.
+ */
+export type RetrievalMode =
+  "words" | "+split" | "lexical" | "+expansion" | "+rerank" | "+embeddings";
+export const RETRIEVAL_MODES: RetrievalMode[] = [
+  "words",
+  "+split",
+  "lexical",
+  "+expansion",
+  "+rerank",
+  "+embeddings",
+];
+
+/** The modes that are layers of the lexical engine, measured to show what each adds. */
+const LAYERS: RetrievalMode[] = ["words", "+split"];
 
 export type RetrievalGroup =
   | "identifier"
@@ -755,7 +772,12 @@ export interface RetrievalModeRun {
 export type RetrievalModes = Partial<Record<RetrievalMode, RetrievalModeRun>>;
 
 export function defaultRetrievalModes(): RetrievalModes {
-  return { lexical: { open: (root) => openIndex(root) } };
+  const open = (root: string) => openIndex(root);
+  return {
+    words: { open, options: () => ({ lexical: { split: false, synonyms: false } }) },
+    "+split": { open, options: () => ({ lexical: { split: true, synonyms: false } }) },
+    lexical: { open },
+  };
 }
 
 /** What each pick put in the context, in pick order: full detail, or its one line. */
@@ -844,7 +866,7 @@ export function retrievalSwitches(rows: RetrievalRow[]): Partial<Record<Retrieva
   const lexical = new Map(
     rows.filter((r) => r.mode === "lexical").map((r) => [`${r.case}|${r.budget}`, r.recall]),
   );
-  for (const r of rows.filter((x) => x.mode !== "lexical"))
+  for (const r of rows.filter((x) => x.mode !== "lexical" && !LAYERS.includes(x.mode)))
     out[r.mode] = (out[r.mode] ?? true) && r.recall >= (lexical.get(`${r.case}|${r.budget}`) ?? 0);
   return out;
 }
@@ -888,20 +910,22 @@ export function renderRetrievalTable(rows: RetrievalRow[], notes: string[] = [])
     "A mode becomes a step's default only where its recall is at least the lexical engine's on every case and budget:",
     "",
     ...built
-      .filter((m) => m !== "lexical")
+      .filter((m) => m !== "lexical" && !LAYERS.includes(m))
       .map(
         (m) =>
           `- ${m}: ${sw[m] ? "recall holds on every case" : "recall drops on some case, so it stays off"}`,
       ),
-    ...(built.length === 1 ? ["- only the lexical engine is built"] : []),
+    ...(built.every((m) => m === "lexical" || LAYERS.includes(m))
+      ? ["- only the lexical engine is built"]
+      : []),
     "",
     "### Per case (normal budget): the rank of the first needed pick, 0 when it isn't picked",
     "",
-    `| Case | Group | ${built.join(" | ")} | Missing (${built[0] ?? "lexical"}) |`,
+    `| Case | Group | ${built.join(" | ")} | Missing (lexical) |`,
     `| --- | --- | ${built.map(() => "---").join(" | ")} | --- |`,
     ...[...new Set(rows.map((r) => r.case))].map((id) => {
       const rs = rows.filter((r) => r.case === id && r.budget === "normal");
-      const first = rs.find((r) => r.mode === built[0]);
+      const first = rs.find((r) => r.mode === "lexical");
       return `| ${id} | ${rs[0]!.group} | ${built
         .map((m) => {
           const r = rs.find((x) => x.mode === m);
@@ -925,7 +949,13 @@ export interface ContextEval {
 export async function runContextEval(fixtures: string): Promise<ContextEval> {
   const steps = await runContextBench({ fixtures });
   const retrieval = await runRetrievalBench({ fixtures });
-  return { steps, retrieval, notes: [] };
+  return {
+    steps,
+    retrieval,
+    notes: [
+      "Before ADR 0116 (the engine of ADR 0107 point 3: BM25 sums, whole wiki sections, no documents; measured at commit 464b758), all answered cases scored 0.72 / 0.03 / 0.28 at the normal budget and 0.49 / 0.06 / 0.27 at the tight one.",
+    ],
+  };
 }
 
 export function renderContextEval(e: ContextEval): string {

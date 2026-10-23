@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { identifierWords } from "@maycombhq/core";
 import type { CatalogIndex } from "./catalog-index.js";
 import { endpointName, foldName } from "./sources.js";
 import { namesIn } from "./store.js";
@@ -22,6 +23,8 @@ export interface SearchOptions {
   /** Only nodes of these kinds (System, Flow, ProcessDefinition, WikiSection...). */
   kinds?: string[];
   limit?: number;
+  /** Look for an identifier's words too (ADR 0116). Default true; false is the eval's "words" mode. */
+  split?: boolean;
 }
 
 export interface SearchHit {
@@ -46,29 +49,37 @@ const STOP = new Set(
   ).split(/\s+/),
 );
 
-/** The words a search looks for: lower case, three letters or more, common words left out. */
-export function queryWords(text: string, max = 200): string[] {
+/**
+ * The words a search looks for: lower case, three letters or more, common words left out. An
+ * identifier gives its words too (ADR 0116): `renamedAt` is looked for as renamedat and renamed.
+ */
+export function queryWords(text: string, max = 200, o: { split?: boolean } = {}): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const m of text.toLowerCase().matchAll(/[a-z0-9]+/g)) {
-    const w = m[0];
-    if (w.length < 3 || STOP.has(w) || /^\d+$/.test(w) || seen.has(w)) continue;
+  const push = (w: string) => {
+    if (w.length < 3 || STOP.has(w) || /^\d+$/.test(w) || seen.has(w)) return;
     seen.add(w);
     out.push(w);
+  };
+  for (const m of text.matchAll(/[A-Za-z0-9]+/g)) {
+    push(m[0].toLowerCase());
+    if (o.split !== false) for (const w of identifierWords(m[0])) push(w);
     if (out.length >= max) break;
   }
-  return out;
+  return out.slice(0, max);
 }
 
 export function searchIndex(ix: CatalogIndex, text: string, o: SearchOptions = {}): SearchHit[] {
-  const words = queryWords(text);
+  const words = queryWords(text, 200, { split: o.split !== false });
   if (!words.length) return [];
   const match = words.map((w) => `"${w}"`).join(" OR ");
   const kinds = o.kinds?.length ? o.kinds : undefined;
+  // ADR 0116: the words of a node's identifiers weigh 6, below its names (10) and ids (8).
+  const wordsWeight = o.split === false ? 0 : 6;
   const rows = prep(
     ix,
     `SELECT f.key AS key, n.kind AS kind, n.id AS id, n.name AS name, n.file AS file,
-              bm25(fts, 0.0, 10.0, 8.0, 1.0) AS rank
+              bm25(fts, 0.0, 10.0, 8.0, 1.0, ${wordsWeight.toFixed(1)}) AS rank
        FROM fts f JOIN nodes n ON n.key = f.key
        WHERE fts MATCH ?${kinds ? ` AND n.kind IN (${kinds.map(() => "?").join(", ")})` : ""}
        ORDER BY rank, f.key LIMIT ?`,
@@ -207,7 +218,103 @@ export interface ContextInput {
   title?: string;
   /** Ids the step already knows it needs (seeds, exact). */
   ids?: string[];
+  /**
+   * More rankings to fuse with the searches (ADR 0116): a search phrase (a model's expansion of
+   * the input) or an ordered list of node keys (nodes similar in meaning). Each only ranks what
+   * goes in the pack; none makes a link, a name or a fact.
+   */
+  rankings?: { name: string; text?: string; keys?: string[] }[];
 }
+
+/** One ordered list of node keys, best first, with what it is (for a seed's `via`). */
+export interface Ranking {
+  name: string;
+  keys: string[];
+}
+
+/**
+ * The default k of reciprocal rank fusion, chosen on the retrieval cases (ADR 0116): k 0 to 60
+ * were tried; 1 gave the best recall at the normal budget and kept every exact name first.
+ */
+export const RRF_K = 1;
+
+/** A search hit enters a ranking only with at least this share of the best hit's BM25. */
+export const RANK_FLOOR = 0.3;
+
+/**
+ * Reciprocal rank fusion (ADR 0116): each ranking gives a key 1 / (k + its rank); the sums are
+ * scaled so the best is 0.95. Each key's way in names the rankings that found it, best first.
+ * The same rankings give the same scores, ties broken by key where they are used.
+ */
+export function fuse(rankings: Ranking[], k = RRF_K): Map<string, { score: number; via: string }> {
+  const sum = new Map<
+    string,
+    { score: number; parts: { name: string; rank: number; v: number }[] }
+  >();
+  for (const r of rankings)
+    r.keys.forEach((key, i) => {
+      const v = 1 / (k + i + 1);
+      const s = sum.get(key) ?? { score: 0, parts: [] };
+      s.score += v;
+      s.parts.push({ name: r.name, rank: i + 1, v });
+      sum.set(key, s);
+    });
+  const best = Math.max(0, ...[...sum.values()].map((s) => s.score));
+  const out = new Map<string, { score: number; via: string }>();
+  for (const [key, s] of [...sum].sort((a, b) => cmp(a[0], b[0]))) {
+    const parts = [...s.parts].sort((a, b) => b.v - a.v || cmp(a.name, b.name)).slice(0, 3);
+    out.set(key, {
+      score: round((0.95 * s.score) / best),
+      via: `search (${parts.map((p) => `${p.name} #${p.rank}`).join(", ")})`,
+    });
+  }
+  return out;
+}
+
+/**
+ * The other names of what the input names (ADR 0116): for each glossary term the input uses by
+ * its term or an alias, its other names and the words of the columns and fields it defines; for
+ * each alias it uses (curated, the org pack's, an item's), the other names of what it names.
+ * They are searched as one more ranking; they never resolve a name or make a link.
+ */
+function synonymsOf(
+  ix: CatalogIndex,
+  names: Map<string, string[]>,
+  text: string,
+  maxWords: number,
+): { name: string; words: string[] }[] {
+  const out: { name: string; words: string[] }[] = [];
+  const seen = new Set<string>();
+  const namesOfId = prep(ix, "SELECT DISTINCT name, how FROM names WHERE id = ? ORDER BY name");
+  for (const m of namesIn(text, names, maxWords)) {
+    if (seen.has(m.name)) continue;
+    seen.add(m.name);
+    const words = new Set<string>();
+    for (const id of names.get(m.name) ?? []) {
+      const all = namesOfId.all(id) as { name: string; how: string }[];
+      const nodes = nodesById(ix, id);
+      const term = nodes.find((n) => n.kind === "GlossaryTerm");
+      const alias = all.some((r) => r.name === m.name && r.how.startsWith("alias:"));
+      if (!term && !alias) continue;
+      for (const r of all) if (r.name !== m.name) words.add(r.name);
+      if (term) {
+        const x = (term.json ?? {}) as { term?: string; fields?: unknown[] };
+        if (x.term) words.add(x.term.toLowerCase());
+        for (const f of x.fields ?? [])
+          if (typeof f === "string")
+            for (const n of nodesById(ix, f)) words.add(identifierWords(n.name).join(" "));
+      }
+    }
+    if (words.size) out.push({ name: m.name, words: [...words].sort() });
+  }
+  return out;
+}
+
+/**
+ * How far a group's text is trusted: an ingested document ranks below a record (ADR 0116; a
+ * document never overrides a fact verified from code).
+ */
+const trust = (key: string) => (key.startsWith("document:") ? 0.8 : 1);
 
 export interface SelectOptions {
   /** Tokens for the selected context (characters ÷ 4, as buildContextPack counts). */
@@ -218,8 +325,15 @@ export interface SelectOptions {
   groups?: string[];
   /** The kinds the walk goes through. Default: every kind. */
   through?: string[];
-  /** A weight per kind (default 1). */
-  kindWeights?: Record<string, number>;
+  /**
+   * The lexical layers (ADR 0116), for the eval: an identifier's words (split) and the other
+   * names of what the input names (synonyms). Both on by default.
+   */
+  lexical?: { split?: boolean; synonyms?: boolean };
+  /** The k of reciprocal rank fusion: a hit at rank r adds 1 / (k + r). Default RRF_K. */
+  rrfK?: number;
+  /** A search hit enters a ranking only with this share of the best hit's BM25. Default RANK_FLOOR. */
+  rankFloor?: number;
   /** How far the walk goes from a seed. Default 2. */
   hops?: number;
   /** At most this many links followed from one node. Default 24. */
@@ -290,7 +404,16 @@ interface Candidate {
   via: string;
 }
 
-const GROUP_ORDER = ["catalog", "flow", "knowledge", "change", "question", "wiki", "org-pack"];
+const GROUP_ORDER = [
+  "catalog",
+  "flow",
+  "knowledge",
+  "change",
+  "question",
+  "wiki",
+  "document",
+  "org-pack",
+];
 
 /** Words that say what an exactly named node is, added to the search: a vendor, a product. */
 function describe(n: GraphNodeRow): string[] {
@@ -445,7 +568,7 @@ function knownName(
     for (let i = hit.at; i < hit.at + n && i < toks.length; i++) covered[i] = true;
   }
   if (covered.some(Boolean) && toks.every((t, i) => covered[i] || GENERIC.has(t))) return true;
-  const words = queryWords(candidate);
+  const words = queryWords(candidate, 200, { split: false });
   if (words.length < 2 || words.length !== toks.length) return false;
   const phrase = `"${words.join(" ")}"`;
   return !!prep(
@@ -473,7 +596,6 @@ function candidatesOf(
           ).all() as { item: string }[]
         ).map((r) => r.item),
   );
-  const weight = (kind: string) => o.kindWeights?.[kind] ?? 1;
   const through = o.through?.length ? new Set(o.through) : undefined;
 
   // ---- seeds: exact names and ids, then search hits
@@ -496,27 +618,55 @@ function candidatesOf(
       expansion.push(...describe(n));
     }
   const limit = o.searchLimit ?? 30;
+  const split = o.lexical?.split !== false;
   const hitScore = new Map<string, number>();
-  const top = (hs: SearchHit[]) => hs[0]?.score ?? 1;
-  // Hits among every kind (for the walk to start from), and among the kinds asked for, each
-  // scored against the best of its own search, so the kinds asked for compete among themselves.
-  // What the exactly named records are (a vendor, a gateway) is a search of its own: the words
-  // say what kind of thing the input is about, which its prose may not.
+  const hitVia = new Map<string, string>();
+  // Hits among every kind (for the walk to start from), and among the kinds asked for, so the
+  // kinds asked for compete among themselves. What the exactly named records are (a vendor, a
+  // gateway) is a search of its own: the words say what kind of thing the input is about, which
+  // its prose may not. ADR 0116: the other names of what the input names (a glossary term's
+  // aliases and the columns it defines, an alias's system) are a search of their own too, and
+  // the searches are fused by their ranks, not their scores (reciprocal rank fusion).
   const query = `${text}\n${expansion.join(" ")}`;
   const about = [...new Set(expansion)].join(" ");
+  const synonyms =
+    o.lexical?.synonyms === false ? [] : synonymsOf(ix, names, `${title}\n${text}`, maxWords);
+  const extra = input.rankings ?? [];
+  // A ranking keeps the hits whose BM25 is at least a share of its best: a weak match (one
+  // common word) doesn't enter it, so rank alone doesn't lift it.
+  const floor = o.rankFloor ?? RANK_FLOOR;
+  const ranked = (q: string, k: SearchOptions) => {
+    const hs = searchIndex(ix, q, k);
+    const best = hs[0]?.score ?? 0;
+    return hs.filter((h) => h.score >= best * floor).map((h) => h.key);
+  };
   for (const kinds of o.kinds?.length ? [undefined, o.kinds] : [undefined]) {
-    const k = { limit, ...(kinds ? { kinds } : {}) };
-    const s = new Map<string, number>();
-    const add = (hs: SearchHit[], w: number) => {
-      for (const h of hs) s.set(h.key, (s.get(h.key) ?? 0) + w * (h.score / top(hs)));
-    };
-    add(searchIndex(ix, query, k), 0.7);
-    if (title) add(searchIndex(ix, title, k), 0.3);
-    if (about) add(searchIndex(ix, about, k), 0.3);
-    for (const [key, v] of s) hitScore.set(key, Math.max(hitScore.get(key) ?? 0, v));
+    const k = { limit, split, ...(kinds ? { kinds } : {}) };
+    const rankings: Ranking[] = [{ name: "words", keys: ranked(query, k) }];
+    if (title) rankings.push({ name: "title", keys: ranked(title, k) });
+    if (about) rankings.push({ name: "what is named", keys: ranked(about, k) });
+    for (const syn of synonyms)
+      rankings.push({
+        name: `synonyms of "${syn.name}"`,
+        keys: ranked(syn.words.join(" "), k),
+      });
+    for (const r of extra)
+      rankings.push({
+        name: r.name,
+        keys: (r.keys ?? ranked(r.text ?? "", k))
+          .filter((key) => !kinds || kinds.includes(key.split(":")[1]!))
+          .slice(0, limit),
+      });
+    for (const [key, v] of fuse(rankings, o.rrfK ?? RRF_K)) {
+      if (v.score > (hitScore.get(key) ?? 0)) {
+        hitScore.set(key, v.score);
+        hitVia.set(key, v.via);
+      }
+    }
   }
   for (const [key, s] of [...hitScore].sort((a, b) => cmp(a[0], b[0])))
-    if (!rejected.has(key.split(":").slice(2).join(":"))) seed(key, Math.min(0.95, s), "search");
+    if (!rejected.has(key.split(":").slice(2).join(":")))
+      seed(key, Math.min(0.95, s), hitVia.get(key) ?? "search");
 
   // ---- the walk
   const kindOf = new Map<string, { kind: string; id: string }>();
@@ -540,10 +690,7 @@ function candidatesOf(
         .filter((x) => !rejected.has(x.id))
         .filter((x) => (seen.has(x.key) ? false : (seen.add(x.key), true)))
         .sort(
-          (a, b) =>
-            (hitScore.get(b.key) ?? 0) - (hitScore.get(a.key) ?? 0) ||
-            weight(b.kind) - weight(a.kind) ||
-            cmp(a.key, b.key),
+          (a, b) => (hitScore.get(b.key) ?? 0) - (hitScore.get(a.key) ?? 0) || cmp(a.key, b.key),
         )
         .slice(0, fanout);
       near.set(key, l);
@@ -602,7 +749,7 @@ function candidatesOf(
     if (groups && !groups.has(key.split(":")[0]!)) continue;
     const sorted = [...cs].sort((a, b) => b.score - a.score || cmp(a.via, b.via));
     const text = 1 - sorted.reduce((p, c) => p * (1 - Math.min(1, c.score)), 1);
-    const score = round(text * weight(i.kind) * (verified.get(key) ? 1.2 : 1));
+    const score = round(text * trust(key) * (verified.get(key) ? 1.2 : 1));
     if (score < (o.minScore ?? 0.1)) continue;
     const grp = key.split(":")[0]!;
     const k = `${i.kind}|${i.id}`;
@@ -645,7 +792,9 @@ export function selectContext(
     kinds: o.kinds ?? null,
     groups: o.groups ?? null,
     through: o.through ?? null,
-    kindWeights: o.kindWeights ?? null,
+    lexical: o.lexical ?? null,
+    rrfK: o.rrfK ?? RRF_K,
+    rankFloor: o.rankFloor ?? RANK_FLOOR,
     hops: o.hops ?? 2,
     fanout: o.fanout ?? 24,
     searchLimit: o.searchLimit ?? 30,

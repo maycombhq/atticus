@@ -1,0 +1,7 @@
+# The index's DocumentSection nodes for inputs/documents/settlement-runbook.docx (ADR 0116): an
+# ingested document, read by the document ingestor, one node per section (group document),
+# named by its heading path and cited by file and section. Written by hand.
+- { id: "inputs/documents/settlement-runbook.docx#Settlement runbook", name: Settlement runbook }
+- { id: "inputs/documents/settlement-runbook.docx#Cut-off times", name: Settlement runbook › Cut-off times }
+- { id: "inputs/documents/settlement-runbook.docx#Duplicate payments", name: Settlement runbook › Duplicate payments }
+- { id: "inputs/documents/settlement-runbook.docx#Freezing an account", name: Settlement runbook › Freezing an account }

@@ -65,6 +65,14 @@ describe("the retrieval cases (ADR 0116)", () => {
     // An exact name is found by the lexical engine at once.
     for (const r of lexical.filter((x) => x.group === "exact" && x.budget === "normal"))
       expect(r.recall, r.case).toBe(1);
+    // The miss the cases reproduce: the identifier's words find renamedAt near the top.
+    const renamed = (mode: string) =>
+      e.retrieval.find(
+        (r) => r.case === "forge-show-renamed-time" && r.mode === mode && r.budget === "tight",
+      )!;
+    expect(renamed("lexical").rank).toBeGreaterThan(0);
+    expect(renamed("lexical").rank).toBeLessThanOrEqual(3);
+    expect(renamed("words").rank === 0 || renamed("words").rank > 3).toBe(true);
   }, 300_000);
 });
 
