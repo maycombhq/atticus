@@ -351,14 +351,18 @@ export const StoriesAnswerSchema = Answer;
 const foldName = (s: string) => s.toLowerCase().replace(/[_-]/g, "");
 
 /**
- * Whether a criterion writes a field's name (its last part: renamedAt for chat.renamedAt), as a
- * word of its own, case and underscores aside (renamed_at is renamedAt). A fact a test can
- * see; anything else, such as "the time it was renamed", is the model's claim, judged.
+ * Whether a criterion's then clause (the words after its first "then"; the whole criterion when
+ * it has none) writes a field's name (its last part: renamedAt for chat.renamedAt), as a word
+ * of its own, case and underscores aside (renamed_at is renamedAt). A fact a test can see; a
+ * field named only in the given, or in other words ("the time it was renamed"), is the model's
+ * claim, judged.
  */
 export function writesField(criterion: string, field: string): boolean {
   const name = foldName(field.split(".").at(-1)!);
   if (!name) return false;
+  const then = /\bthen\b/i.exec(criterion);
   return criterion
+    .slice(then ? then.index + then[0].length : 0)
     .split(/[^A-Za-z0-9_.-]+/)
     .flatMap((w) => [w, ...w.split(".")])
     .some((w) => foldName(w.replace(/^[.-]+|[.-]+$/g, "")) === name);

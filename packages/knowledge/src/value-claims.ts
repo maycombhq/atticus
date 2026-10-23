@@ -116,7 +116,7 @@ export async function settleClaims(
       });
   }
   for (const c of items) {
-    let daysBy: JudgmentConfirmer = { by: "check", rule: "numbers-in-span" };
+    let daysBy: JudgmentConfirmer | undefined;
     for (const cl of c.claims) {
       const v = verdicts.get(judgmentKey(STATES_VALUE_SPEC.kind, inputsOf(c.item.id, cl)));
       if (v?.verdict === "yes") {
@@ -131,7 +131,7 @@ export async function settleClaims(
       );
     }
     const days = c.item.lead_time_days;
-    if (days && c.item.lead_time && !out.has(c.item.id))
+    if (days && daysBy && c.item.lead_time && !out.has(c.item.id))
       await o.store.put(
         makeJudgment({
           kind: LEAD_TIME,

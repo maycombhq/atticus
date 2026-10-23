@@ -69,6 +69,13 @@ describe("a criterion that writes a field's name (ADR 0117)", () => {
     expect(writesField("Given a valid request, then the order is saved", "id")).toBe(false);
     expect(writesField("then the order's id comes back", "id")).toBe(true);
     expect(writesField("then I can see the renamed timestamp", "renamedAt")).toBe(false);
+    // Named in the given only: the then clause doesn't assert it.
+    expect(
+      writesField(
+        "Given an order of quantity 3, when it is placed, then it is accepted",
+        "quantity",
+      ),
+    ).toBe(false);
   });
 });
 

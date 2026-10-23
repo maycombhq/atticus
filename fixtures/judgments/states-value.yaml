@@ -1,0 +1,82 @@
+# States-value cases (ADR 0111, 0117): does the quote a knowledge item cites state the value it
+# gives? `truth` is what a person reading the page says. `quote` is the item's source quote;
+# `span` is the words the model cites for the value (lead_time_quote, status_quote,
+# date_quotes). The new rule settles a value written as one run of the span's words, and asks the
+# judge of the rest; `recorded` is the judge's recorded answer. The old token-anywhere and
+# stance-word rules are scored on the same items, and for lead_time_days (the lead time's
+# reading, `words` as the page says them) the old lead-time parser of needs.ts. The audit's
+# failing examples are here.
+cases:
+  - id: three-days-in-approvers
+    field: lead_time
+    value: 3 days
+    quote: Requests need 3 approvers and take 15 days.
+    span: Requests need 3 approvers and take 15 days.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: span, text: take 15 days }] }
+  - id: fifteen-days
+    field: lead_time
+    value: 15 days
+    quote: Requests need 3 approvers and take 15 days.
+    truth: yes
+  - id: five-in-words
+    field: lead_time
+    value: 5 working days
+    quote: "Lead time: five working days."
+    truth: yes
+  - id: a-fortnight
+    field: lead_time_days
+    words: a fortnight
+    value: 10 working-days
+    quote: Allow a fortnight for the request.
+    span: Allow a fortnight for the request.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: span, text: a fortnight }] }
+  - id: calendar-not-working
+    field: lead_time_days
+    words: 10 days
+    value: 10 working-days
+    quote: Allow 10 days.
+    span: Allow 10 days.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: span, text: Allow 10 days }] }
+  - id: no-sign-off-is-not-a-ban
+    field: status
+    value: banned
+    quote: No sign-off is needed for internal tools.
+    span: No sign-off is needed for internal tools.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: span, text: No sign-off is needed }] }
+  - id: must-not-is-not-a-mandate
+    field: status
+    value: mandated
+    quote: Services must not call the ledger's database directly.
+    span: must not call the ledger's database directly
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: span, text: must not call }] }
+  - id: move-off-is-retiring
+    field: status
+    value: retiring
+    quote: Teams should move off the Northwind Pay v1 API by Q3.
+    span: move off the Northwind Pay v1 API by Q3
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: span, text: move off the Northwind Pay v1 API }] }
+  - id: never-is-a-ban
+    field: status
+    value: banned
+    quote: A service never reads another service's database.
+    span: never reads another service's database
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: span, text: never reads }] }
+  - id: date-scattered
+    field: dates.pilot
+    value: "2027-03-01"
+    quote: In March 2027 we run 1 pilot.
+    span: In March 2027 we run 1 pilot.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: span, text: In March 2027 }] }
+  - id: date-written
+    field: dates.switched_off
+    value: "2027-03-31"
+    quote: It is switched off on 31 March 2027.
+    truth: yes

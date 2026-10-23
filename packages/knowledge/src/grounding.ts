@@ -14,8 +14,9 @@
  *   tokens ("five working days" in "within five working days"; "3 days" is not in "3 approvers
  *   and take 15 days"). Else a claim, when every number of the value is in the span; else refused.
  *   An owner may also be the page's own owner.
- * - lead_time_days, the model's normalised lead time { min, max, unit }: settled when min and max
- *   are numbers of the span; else a claim ("a fortnight" is 10 working days).
+ * - lead_time_days, the model's normalised lead time { min, max, unit }: always a claim (whether
+ *   "10 days" are working days is meaning; "a fortnight" is 10 working days), refused when its
+ *   words give numbers and min or max isn't one of them.
  * - dates: settled when the span holds the date as written (2027-03-31), or as one run of its
  *   day, month name and year ("31 March 2027", "March 31, 2027"); else a claim.
  * - status: always a claim (a ban, a mandate or a retirement is meaning), its span on the page.
@@ -216,8 +217,14 @@ export function groundValues(
         if (at === undefined)
           problems.push(`lead_time_days: give lead_time_quote, the words it is read from`);
         else {
+          // The floor: words that give numbers give these ones. Whether 10 days are 10 working
+          // days is meaning, so the reading is always a claim.
           const have = new Set(numbersOf(valueTokens(at)));
-          if (!have.has(String(days.min)) || !have.has(String(days.max)))
+          if (have.size && (!have.has(String(days.min)) || !have.has(String(days.max))))
+            problems.push(
+              `lead_time_days: ${days.min} to ${days.max} isn't a number "${at}" gives: read it from those words`,
+            );
+          else
             claims.push({
               field: "lead_time_days",
               value: `${days.min === days.max ? days.min : `${days.min} to ${days.max}`} ${days.unit}`,
@@ -245,13 +252,10 @@ export function groundValues(
     else problems.push(notInQuote(`dates.${k}`, v));
   }
   if (item.status) {
+    // Its own words, or else the item's source quote: the claim is on words on the page.
     const own = item.status_quote?.trim();
-    if (!own)
-      problems.push(
-        `status "${item.status}": give status_quote, the words on the page that state it, copied exactly`,
-      );
-    else if (spansFor("status_quote", own))
-      claims.push({ field: "status", value: item.status, span: own });
+    const span = own ? (spansFor("status_quote", own) ? own : undefined) : g.quotes[0];
+    if (span) claims.push({ field: "status", value: item.status, span });
   }
   const onPages = new Set(g.pages.match(/\d+/g) ?? []);
   const said: [string, string[]][] = [

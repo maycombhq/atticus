@@ -71,7 +71,8 @@ describe("groundValues", () => {
     ]);
   });
 
-  it("settles a normalised lead time whose numbers are in the words, and claims one that isn't", () => {
+  it("makes a normalised lead time a claim, refusing numbers the words don't give", () => {
+    // Whether 10 days are 10 working days is meaning: a claim, even with the number there.
     expect(
       groundValues(
         {
@@ -80,7 +81,23 @@ describe("groundValues", () => {
         },
         quote("Lead time: 10 working days."),
       ),
-    ).toEqual({ problems: [], claims: [] });
+    ).toEqual({
+      problems: [],
+      claims: [
+        { field: "lead_time_days", value: "10 working-days", span: "Lead time: 10 working days." },
+      ],
+    });
+    expect(
+      problems(
+        {
+          lead_time: "10 working days",
+          lead_time_days: { min: 12, max: 12, unit: "working-days" },
+        },
+        quote("Lead time: 10 working days."),
+      ),
+    ).toEqual([
+      'lead_time_days: 12 to 12 isn\'t a number "Lead time: 10 working days." gives: read it from those words',
+    ]);
     expect(
       groundValues(
         {
@@ -135,9 +152,17 @@ describe("groundValues", () => {
   it("makes a status a claim on the words that state it, never a word list", () => {
     // The old list read "no" as a ban and missed "move off ... by Q3" as a retirement.
     const q = quote("Teams should move off the Northwind Pay v1 API by Q3.");
-    expect(problems({ status: "retiring" }, q)).toEqual([
-      'status "retiring": give status_quote, the words on the page that state it, copied exactly',
-    ]);
+    // Without its own words, the claim is on the item's quote.
+    expect(groundValues({ status: "retiring" }, q)).toEqual({
+      problems: [],
+      claims: [
+        {
+          field: "status",
+          value: "retiring",
+          span: "Teams should move off the Northwind Pay v1 API by Q3.",
+        },
+      ],
+    });
     expect(
       groundValues(
         { status: "retiring", status_quote: "move off the Northwind Pay v1 API by Q3" },

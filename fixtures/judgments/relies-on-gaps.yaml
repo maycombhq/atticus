@@ -1,0 +1,27 @@
+# Relies-on-gaps cases (ADR 0107 point 5, 0117): does a step's answer rely on a gap, a name
+# nothing Atticus has read says anything about? `truth` is what a reviewer says. `answer` is the
+# step's answer as the recorded model gave it: the new rule reads its relies_on_gaps; the old one
+# looked for the name anywhere in it.
+gap: Quillfeather Risk
+cases:
+  - id: named-to-leave-out
+    answer: |
+      gaps:
+        - { what: "Quillfeather Risk is not in the catalog, so the plan leaves it out", why: out of scope }
+    truth: no
+  - id: paraphrased
+    answer: |
+      gaps:
+        - { what: The risk vendor scores each order before stock is reserved, why: no flow calls it }
+      relies_on_gaps: [Quillfeather Risk]
+    truth: yes
+  - id: relied-and-named
+    answer: |
+      gaps:
+        - { what: Quillfeather Risk scores the order, why: no flow calls it }
+      relies_on_gaps: [Quillfeather Risk]
+    truth: yes
+  - id: not-mentioned
+    answer: |
+      gaps: []
+    truth: no

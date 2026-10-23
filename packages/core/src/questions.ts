@@ -430,6 +430,39 @@ export async function raiseQuestions(
   return { raised, known, reused, of };
 }
 
+/**
+ * Rewrite questions/<id>.yaml files written at question schema version 1 at version 2 (ADR
+ * 0117): only the version changes, since what version 2 adds is optional. Returns the files,
+ * relative to the root; with dryRun, the files it would rewrite.
+ */
+export async function migrateQuestions(
+  root: string,
+  o: { dryRun?: boolean } = {},
+): Promise<string[]> {
+  const rel = questionsRelOf(root);
+  const out: string[] = [];
+  let names: string[];
+  try {
+    names = (await readdir(questionsDirOf(root))).filter((n) => n.endsWith(".yaml")).sort();
+  } catch {
+    return out;
+  }
+  for (const n of names) {
+    let data: unknown;
+    try {
+      data = parse(await readFile(join(questionsDirOf(root), n), "utf8"));
+    } catch {
+      continue;
+    }
+    if ((data as { schemaVersion?: unknown } | null)?.schemaVersion !== 1) continue;
+    const q = Question.safeParse(data);
+    if (!q.success) continue;
+    if (!o.dryRun) await write(root, q.data);
+    out.push(`${rel}/${n}`);
+  }
+  return out;
+}
+
 /** What a step says of a question it reused: who asked it first, and that it waits on it. */
 export const reusedLine = (q: Question): string =>
   `${q.id} was already asked by ${q.askedBy.command}: "${q.question.trim()}" This step ${q.state === "answered" ? "reads its answer" : "waits on the same answer"} instead of asking again.`;

@@ -123,7 +123,7 @@ const STORIES = `stories:
             checks: [sku, quantity, cardToken, verdict]
       - id: "1.2"
         criteria:
-          - text: "Given a rejected verdict, when the order is placed, then it is refused with 422 and no stock is reserved"
+          - text: "Given a rejected verdict, when the order is placed, then the verdict refuses it with 422 and no stock is reserved"
             checks: [verdict]
       - id: "1.3"
         criteria:

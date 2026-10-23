@@ -35,7 +35,7 @@ import {
 } from "@maycombhq/scanner";
 import type { RepoHandle } from "@maycombhq/sdk";
 import { citationsOf, codeExcerpts, excerptSources } from "./excerpts.js";
-import type { SurveyRepoType } from "./scan-survey.js";
+import { SAME_AS_LINE, type SurveyRepoType } from "./scan-survey.js";
 
 /**
  * atticus spec draft (ADR 0079): the assistant reads a repo's catalog records, the spec
@@ -545,14 +545,15 @@ function askedBefore(questions: readonly Question[]): SourceInput[] {
     );
     for (const q of answered)
       lines.push(
-        `- ${q.question} (${q.evidence.join(", ")})`,
+        `- ${q.id}: ${q.question} (${q.evidence.join(", ")})`,
         `  Answer (${q.answer!.by}): ${answerWords(q)}`,
       );
   }
   if (open.length) {
     lines.push("Questions already asked and waiting for a person. Don't ask them again:");
-    for (const q of open) lines.push(`- ${q.question} (${q.evidence.join(", ")})`);
+    for (const q of open) lines.push(`- ${q.id}: ${q.question} (${q.evidence.join(", ")})`);
   }
+  lines.push(SAME_AS_LINE);
   return [
     {
       id: "3-questions",
