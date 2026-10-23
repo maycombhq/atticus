@@ -24,7 +24,8 @@ const all: ChangeType["lenses"] = [
 ];
 
 export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
-  schemaVersion: 1,
+  // Version 2 (ADR 0113): a small type takes the fast path; the others stay standard.
+  schemaVersion: 2,
   types: [
     {
       id: "feature",
@@ -101,6 +102,8 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
       artifacts: ["proposal", "tasks", "snow"],
       lenses: ["architecture", "release"],
       approvals: { plan: ["team-lead"], release: ["delivery-lead"] },
+      // ADR 0113: a brief that says "Size: small" takes the fast path.
+      smallWhenBriefSays: true,
     },
     {
       id: "tech-debt",
@@ -109,6 +112,17 @@ export const DEFAULT_CHANGE_TYPES = ChangeTypes.parse({
       artifacts: ["proposal", "design", "tasks"],
       lenses: ["architecture", "code-and-test"],
       approvals: { design: ["architect"], plan: ["team-lead"] },
+      smallWhenBriefSays: true,
+    },
+    {
+      id: "small-change",
+      name: "Small change",
+      description:
+        "One AI step from brief to tasks (ADR 0113): placed on the flows, its target flows and its stories drafted together, checked and criticised at the plan gate, and handed off once.",
+      size: "small",
+      phases: ["plan", "build", "release"],
+      artifacts: ["brief", "proposal", "design", "stories", "tasks"],
+      lenses: ["architecture", "story", "code-and-test", "release"],
     },
   ],
 });

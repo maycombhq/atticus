@@ -86,6 +86,17 @@ export const BUILT_IN_TEMPLATES: readonly ChangeTemplate[] = [
       ["Follow-up", "What the post-release review should look at."],
     ],
   ),
+  builtIn(
+    "small-change",
+    "Small change",
+    "small-change",
+    "A small change: one step from brief to tasks, checked and criticised at one gate (ADR 0113).",
+    [
+      ["Change", "What changes, for whom, in two or three sentences."],
+      ["Where", "The flow, screen, endpoint or table it is in, if you know. Leave it if unsure."],
+      ["Done when", "What a test can check when it is done."],
+    ],
+  ),
   builtIn("tech-debt", "Technical debt", "tech-debt", "Work that makes later change cheaper.", [
     ["Debt", "What is wrong with the code, design or platform today."],
     ["Cost of leaving it", "What it slows down or puts at risk, with examples."],

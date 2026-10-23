@@ -8,6 +8,7 @@ import {
   LOCAL_ONLY,
   MetarepoStamp,
   migrateCatalog,
+  migrateChangeTypesText,
   migrateGatesText,
   specsDirOf,
   specsRelOf,
@@ -120,10 +121,33 @@ export const MIGRATIONS: Migration[] = [
       return rel(specsRelOf(root), r.migrated);
     },
   },
+  {
+    id: "change-types-v2",
+    summary:
+      "change-types.yaml at version 2: a type can be small and take the fast path; every type stays standard until a person marks it (ADR 0113)",
+    async pending(root) {
+      const rel = packRel(root, "change-types.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      return text !== undefined && migrateChangeTypesText(text).changed ? [rel] : [];
+    },
+    async apply(root) {
+      const rel = packRel(root, "change-types.yaml");
+      const text = await readFile(join(root, rel), "utf8").catch(() => undefined);
+      if (text === undefined) return [];
+      const r = migrateChangeTypesText(text);
+      if (!r.changed) return [];
+      await writeFileAtomic(join(root, rel), r.text);
+      return [rel];
+    },
+  },
 ];
 
+function packRel(root: string, file: string): string {
+  return `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/${file}`;
+}
+
 function gatesRel(root: string): string {
-  return `${isAdopted(root) ? ".atticus/org-pack" : "org-pack"}/gates.yaml`;
+  return packRel(root, "gates.yaml");
 }
 
 export async function readStamp(root: string): Promise<MetarepoStamp | undefined> {

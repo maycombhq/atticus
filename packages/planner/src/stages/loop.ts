@@ -108,6 +108,11 @@ export interface StageSpec<A> {
   current(): Promise<A | undefined>;
   /** The questions the assistant raised in its answer. */
   questions?(answer: A): QuestionDraft[];
+  /**
+   * The gate the critic runs at, when the stage doesn't take its phase's first gate: the fast
+   * path's gate from its change type (ADR 0113). Null: no gate in gates.yaml is for it.
+   */
+  gate?: string | null;
 }
 
 export interface StageOptions {
@@ -297,7 +302,7 @@ export async function runStageLoop<A>(
       issues = (await spec.check(cur)).filter((i) => i.blocking);
       if (issues.length === 0) {
         const files = await spec.write(cur);
-        issues = (await criticRound(root, ctx, change, spec.stage, o, loop, notes, kindOf)).filter(
+        issues = (await criticRound(root, ctx, change, spec, o, loop, notes, kindOf)).filter(
           (i) => i.blocking,
         );
         if (issues.length === 0) {
@@ -402,7 +407,7 @@ export async function runStageLoop<A>(
     }
     // ---- the critic, on every iteration
     if (answer !== undefined)
-      found.push(...(await criticRound(root, ctx, change, spec.stage, o, loop, notes, kindOf)));
+      found.push(...(await criticRound(root, ctx, change, spec, o, loop, notes, kindOf)));
 
     // ---- fingerprints and the end rule
     const toAsk: { f: LoopFinding; issue: StageIssue }[] = [];
@@ -587,15 +592,19 @@ async function criticRound(
   root: string,
   ctx: ChangeContext,
   change: ChangeLifecycle,
-  stage: Stage,
+  spec: { stage: Stage; gate?: string | null },
   o: StageOptions,
   loop: StageLoop,
   notes: string[],
   kindOf: (f: { rule: string; kind: "issue" | "knowledge-gap" }) => Promise<FindingKind>,
 ): Promise<StageIssue[]> {
-  const gate = stageGate(ctx, stage);
+  const gate = spec.gate === undefined ? stageGate(ctx, spec.stage) : spec.gate;
   if (!gate) {
-    notes.push(`No gate in gates.yaml is for the ${STAGE_PHASE[stage]} phase, so no critic ran.`);
+    notes.push(
+      spec.gate === null
+        ? `No gate in gates.yaml is for the ${spec.stage} step's change type, so no critic ran.`
+        : `No gate in gates.yaml is for the ${STAGE_PHASE[spec.stage]} phase, so no critic ran.`,
+    );
     return [];
   }
   const lensRuntime =

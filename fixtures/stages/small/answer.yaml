@@ -1,0 +1,29 @@
+summary: A new order's response says when the order was placed, so the checkout page can show it.
+features:
+  - id: cap-ordering
+    why: Placing an order is the feature whose response gains the time.
+flows:
+  - id: forge-orders.place-order
+    how: changed
+    why: Its respond step returns createdAt too.
+targetFlows:
+  - flow: forge-orders.place-order
+    repo: forge-orders
+    change: modify
+    why: The response carries the time the order was saved.
+    steps:
+      - op: change
+        step: 5
+        kind: respond
+        what: 201 Created with the saved order and when it was placed
+        fields: { returns: [id, sku, quantity, createdAt] }
+stories:
+  - flow: forge-orders.place-order
+    title: Show when an order was placed
+    asA: shopper
+    iWant: the order I placed to say when it was placed
+    soThat: I can see my order went through just now
+    tasks:
+      - step: 1
+        criteria:
+          - "Given a new order, when it is placed, then the 201 response holds id, sku, quantity and createdAt"

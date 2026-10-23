@@ -4,6 +4,7 @@ import { parse, stringify } from "yaml";
 import { changesRelOf, type ChangeLifecycle } from "@maycombhq/core";
 import type { SourceInput } from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
+import { changeInputSources } from "@maycombhq/intake";
 import { PlannerError } from "../errors.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
 import { estateContext } from "./estate-context.js";
@@ -161,6 +162,32 @@ async function conflictsOf(
   return out;
 }
 
+/**
+ * Write feature.yaml and feature.md: the placement with the conflicts Atticus finds and the
+ * design's gaps added. Shared by the feature stage and the fast path (ADR 0113).
+ */
+export async function writePlacement(
+  root: string,
+  change: ChangeLifecycle,
+  p: FeaturePlacement,
+  estate: Estate,
+  by = "atticus change feature",
+): Promise<string[]> {
+  const dir = changeFolder(root, change.id);
+  const conflicts = await conflictsOf(root, change, p, estate);
+  const gaps = [...p.gaps];
+  if (p.design)
+    for (const g of designGaps(p.design))
+      if (!gaps.some((x) => x.from === g.from || x.what === g.what)) gaps.push(g);
+  const full = FeaturePlacement.parse({ ...p, gaps, conflicts, questions: [] });
+  await writeFileAtomic(
+    join(dir, FEATURE_FILE),
+    `# The feature placed against the estate (ADR 0087). Drafted by ${by}; review it in the feature PR.\n${stringify(full, { lineWidth: 0 })}`,
+  );
+  await writeFileAtomic(join(dir, "feature.md"), renderFeature(full));
+  return [FEATURE_FILE, "feature.md"];
+}
+
 export function checkPlacement(p: FeaturePlacement, e: Estate, design?: DesignRead): StageIssue[] {
   const out: StageIssue[] = [];
   const issue = (rule: string, target: string, message: string, repo?: string) =>
@@ -310,12 +337,14 @@ export async function featureStage(
   }
   const brief = await readFile(join(dir, "brief.md"), "utf8").catch(() => "");
   const stories = await personStories(dir);
+  // ADR 0113: the files attached to the change, each cited by file and line or page.
+  const attached = await changeInputSources(dir, rel);
   const hasBrief = !!brief.trim() && !isTemplate(brief);
   const entry: Entry = design ? "figma" : hasBrief ? "brief" : stories.length ? "stories" : "brief";
-  if (!design && !hasBrief && !stories.length)
+  if (!design && !hasBrief && !stories.length && !attached.length)
     throw new PlannerError(
       "refused",
-      `${change.id} has nothing to place yet: write brief.md, put the existing stories in stories/, or start from a design with --from-figma <file.json>.`,
+      `${change.id} has nothing to place yet: write brief.md, put the existing stories in stories/, attach a spec or document with atticus change attach, or start from a design with --from-figma <file.json>.`,
     );
 
   const sources: SourceInput[] = [];
@@ -346,6 +375,15 @@ export async function featureStage(
       classification: "internal",
       priority: 98,
     });
+  for (const s of attached)
+    sources.push({
+      id: s.id,
+      kind: "document",
+      origin: s.origin,
+      text: s.text,
+      classification: "internal",
+      priority: 94,
+    });
 
   const instructions = [
     "# Feature placer",
@@ -369,9 +407,12 @@ export async function featureStage(
     root,
     "feature",
     {
-      text: [brief, ...stories.map((s) => s.text), ...(design ? [designText(design)] : [])].join(
-        "\n\n",
-      ),
+      text: [
+        brief,
+        ...stories.map((s) => s.text),
+        ...(design ? [designText(design)] : []),
+        ...attached.map((s) => s.text),
+      ].join("\n\n"),
       title: change.title,
     },
     {
@@ -418,20 +459,7 @@ export async function featureStage(
       return { ...(r.value ? { answer: r.value } : {}), issues: r.issues };
     },
     check: async (p) => checkPlacement(p, estate, design),
-    write: async (p) => {
-      const conflicts = await conflictsOf(root, change, p, estate);
-      const gaps = [...p.gaps];
-      if (p.design)
-        for (const g of designGaps(p.design))
-          if (!gaps.some((x) => x.from === g.from || x.what === g.what)) gaps.push(g);
-      const full = FeaturePlacement.parse({ ...p, gaps, conflicts, questions: [] });
-      await writeFileAtomic(
-        join(dir, FEATURE_FILE),
-        `# The feature placed against the estate (ADR 0087). Drafted by atticus change feature; review it in the feature PR.\n${stringify(full, { lineWidth: 0 })}`,
-      );
-      await writeFileAtomic(join(dir, "feature.md"), renderFeature(full));
-      return [FEATURE_FILE, "feature.md"];
-    },
+    write: (p) => writePlacement(root, change, p, estate),
     current: () => readPlacement(dir),
     questions: (p) => p.questions,
   };

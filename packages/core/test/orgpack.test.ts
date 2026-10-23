@@ -24,7 +24,7 @@ const msgs = (r: { success: boolean; error?: { issues: { message: string }[] } }
   r.success ? [] : r.error!.issues.map((i) => i.message);
 
 describe("built-in defaults", () => {
-  it("cover the thirteen roles, six change types and a gate per phase", () => {
+  it("cover the thirteen roles, seven change types and a gate per phase", () => {
     expect(BUILT_IN_ROLES).toHaveLength(13);
     expect(DEFAULT_CHANGE_TYPES.types.map((t) => t.id)).toEqual([
       "feature",
@@ -33,6 +33,8 @@ describe("built-in defaults", () => {
       "emergency-fix",
       "config-change",
       "tech-debt",
+      // ADR 0113: the fast path's type.
+      "small-change",
     ]);
     expect(DEFAULT_GATES.gates.map((g) => g.phase)).toEqual([
       "define",
