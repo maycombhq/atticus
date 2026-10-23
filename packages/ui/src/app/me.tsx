@@ -1,5 +1,8 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { api, useApi } from "../api/client.js";
+import { COPY } from "../copy.js";
+
+const T = COPY.me;
 
 /** Who is using the app: the metarepo's Git user (ADR 0073). There are no roles or views. */
 export interface Me {
@@ -43,5 +46,4 @@ export const useMe = () => useContext(Ctx);
 export const useAiOn = () => useMe().me?.ai !== "off";
 
 /** What to do instead of an AI step when AI is off. */
-export const AI_OFF_TEXT =
-  "AI is off here, so write it yourself: the critic's rule checks still review it.";
+export const AI_OFF_TEXT = T.aiIsOffHere;

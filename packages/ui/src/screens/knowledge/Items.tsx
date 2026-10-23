@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
-import { Panel, View } from "../../app/ui.js";
+import { escapeCloses, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message, Note, queryParam } from "../know/common.js";
 import { Problems } from "../work/RunNext.js";
@@ -250,7 +250,14 @@ export function CorrectForm(p: {
   const base = `fix-${p.item.id}`;
   const ref = useFocusFirst<HTMLFormElement>();
   return (
-    <form ref={ref} onSubmit={submit} className="stack" style={{ gap: 10 }} aria-label={I.correct}>
+    <form
+      ref={ref}
+      onSubmit={submit}
+      onKeyDown={escapeCloses(p.onCancel)}
+      className="stack"
+      style={{ gap: 10 }}
+      aria-label={I.correct}
+    >
       <p className="work-say">{I.correctIntro}</p>
       {Object.entries(p.item.fields).map(([f, t]) =>
         t === "text" ? (
@@ -307,6 +314,7 @@ function RejectForm(p: { onSave: (note: string) => void; onCancel: () => void; b
       className="stack"
       style={{ gap: 8 }}
       aria-label={I.reject}
+      onKeyDown={escapeCloses(p.onCancel)}
       onSubmit={(e) => {
         e.preventDefault();
         if (!note.trim()) {

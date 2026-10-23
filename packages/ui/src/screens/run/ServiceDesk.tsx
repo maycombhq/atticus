@@ -12,6 +12,8 @@ import {
   withForceHint,
 } from "./shared.js";
 
+const T = COPY.serviceDesk;
+
 interface Request {
   change: string;
   heading: string;
@@ -42,8 +44,8 @@ interface ChangeSummary {
 
 type Filter = "to-file" | "waiting" | "filed" | "all";
 const STATE: Record<Request["state"], { label: string; cls: string }> = {
-  "to-file": { label: "TO FILE", cls: "warn" },
-  waiting: { label: "WAITING FOR YOU", cls: "ai" },
+  "to-file": { label: T.toFile2, cls: "warn" },
+  waiting: { label: T.waitingForYou, cls: "ai" },
   filed: { label: "FILED", cls: "done" },
 };
 const keyOf = (r: Request) => `${r.change}|${r.heading}`;
@@ -54,7 +56,7 @@ function DraftForm({ done }: { done: () => void }) {
   const [force, setForce] = useState(false);
   const act = useAction();
   return (
-    <View of={changes} empty={(l) => l.length === 0} emptyText="No changes to draft requests for.">
+    <View of={changes} empty={(l) => l.length === 0} emptyText={T.noChangesToDraft}>
       {(l) => (
         <form
           className="stack"
@@ -72,13 +74,13 @@ function DraftForm({ done }: { done: () => void }) {
                     return r;
                   })
                   .catch(withForceHint(COPY.app.forceSnow)),
-              (r) => (r as { lines: string[] }).lines.join("\n") || "Drafted.",
+              (r) => (r as { lines: string[] }).lines.join("\n") || T.drafted,
             );
           }}
         >
           <div className="row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
             <label className="run-label" htmlFor="draft-change">
-              Draft the requests a change needs
+              {T.draftTheRequestsA}
               <select
                 id="draft-change"
                 className="run-select"
@@ -99,10 +101,10 @@ function DraftForm({ done }: { done: () => void }) {
                 checked={force}
                 onChange={(e) => setForce(e.target.checked)}
               />
-              Replace a snow.md a person edited
+              {T.replaceASnowMd}
             </label>
             <button type="submit" className="btn" disabled={act.busy}>
-              Draft from the org pack's templates
+              {T.draftFromTheOrg}
             </button>
           </div>
           <Note note={act.note} />
@@ -123,48 +125,48 @@ function RequestDetail({ r, done }: { r: Request; done: () => void }) {
           {r.change}
         </a>
         {r.template ? (
-          <span className="chip dim">TEMPLATE {r.template}</span>
+          <span className="chip dim">{T.template(r.template)}</span>
         ) : (
-          <span className="chip blocking">NO TEMPLATE MATCHES</span>
+          <span className="chip blocking">{T.noTemplateMatches}</span>
         )}
       </div>
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-        {r.leadTimeDays !== undefined ? `Lead time ${r.leadTimeDays} days. ` : ""}
-        Approvers: {r.approvers.join(", ") || "none named"}. Values come from snow.md; edit them
-        there.
+        {T.approversValuesComeFrom(
+          r.leadTimeDays !== undefined ? T.leadTimeDays(r.leadTimeDays) : "",
+          r.approvers.join(", ") || T.noneNamed,
+        )}
       </p>
       <div>
         <div className="row between" style={{ marginBottom: 4 }}>
           <span className="hud" style={{ fontSize: 10 }}>
-            Fields
+            {T.fields}
           </span>
-          <CopyButton text={all} label="Copy all fields" />
+          <CopyButton text={all} label={T.copyAllFields} />
         </div>
         {r.fields.map((f) => (
           <div key={f.name} className="run-field">
             <span className="hud" style={{ fontSize: 10 }}>
               {f.name}
-              {f.required ? " · required" : ""}
+              {f.required ? T.required : ""}
             </span>
             <span className={`value ${f.value ? "" : "empty"}`}>
-              {f.value || (f.required ? "Missing: fill it in snow.md" : "Empty")}
+              {f.value || (f.required ? T.missingFillItIn : T.empty)}
             </span>
-            {f.value ? <CopyButton text={f.value} label={`Copy ${f.name}`} /> : <span />}
+            {f.value ? <CopyButton text={f.value} label={T.copy(f.name)} /> : <span />}
           </div>
         ))}
       </div>
       {r.state === "to-file" && (
         <div className="stack">
           <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-            Atticus never calls the desk from here. Filing makes a step in To-do with every field
-            ready to copy; you submit it in the desk and record the number.
+            {T.atticusNeverCallsThe}
           </p>
           <div className="row">
             <button
               type="button"
               className="btn primary"
               disabled={act.busy || r.missing.length > 0}
-              title={r.missing.length ? `Fill ${r.missing.join(", ")} first` : undefined}
+              title={r.missing.length ? T.fillFirst(r.missing.join(", ")) : undefined}
               onClick={() =>
                 void act.run(
                   () =>
@@ -175,31 +177,33 @@ function RequestDetail({ r, done }: { r: Request; done: () => void }) {
                       done();
                       return x;
                     }),
-                  (x) => (x as { lines: string[] }).lines.join("\n") || "Filed as a step.",
+                  (x) => (x as { lines: string[] }).lines.join("\n") || T.filedAsAStep,
                 )
               }
             >
-              File {r.change}'s complete drafts as steps
+              {T.fileSCompleteDrafts(r.change)}
             </button>
           </div>
           {r.missing.length > 0 && (
-            <p className="run-note bad">Fill {r.missing.join(", ")} in snow.md before filing.</p>
+            <p className="run-note bad">{T.fillInSnowMd(r.missing.join(", "))}</p>
           )}
         </div>
       )}
       {r.state === "waiting" && (
         <p style={{ margin: 0, fontSize: 12.5 }}>
-          Filed as step <span className="mono">{r.step}</span>. Submit it in the desk, then{" "}
-          <a href="#/todo">record the request number in To-do</a>.
+          {T.filedAsStep}
+          <span className="mono">{r.step}</span>
+          {T.submitItInThe}
+          <a href="#/todo">{T.recordTheRequestNumber}</a>.
         </p>
       )}
       {r.state === "filed" && (
         <p className="run-note ok">
-          Filed as {r.number}
+          {T.filedAs(r.number ?? "")}
           {r.url ? (
             <>
               {" "}
-              (<ExternalLink href={r.url}>open</ExternalLink>)
+              (<ExternalLink href={r.url}>{T.open}</ExternalLink>)
             </>
           ) : null}
           .
@@ -227,13 +231,13 @@ export function ServiceDesk() {
       <div className="row between" style={{ flexWrap: "wrap" }}>
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
           {q.state !== "ready"
-            ? "Service desk queue"
+            ? T.serviceDeskQueue
             : n("to-file")
-              ? `${plural(n("to-file"), "request")} to file.`
-              : "Nothing to file."}
+              ? T.toFile(plural(n("to-file"), "request"))
+              : T.nothingToFile}
         </p>
         <Choice
-          label="Show"
+          label={T.show}
           value={filter}
           onChange={setFilter}
           options={[
@@ -245,26 +249,27 @@ export function ServiceDesk() {
         />
       </div>
       <p className="muted" style={{ margin: 0 }}>
-        Drafts only: you file them. Next: the <a href="#/release">release plan</a>.
+        {T.draftsOnlyYouFile}
+        <a href="#/release">{T.releasePlan}</a>.
       </p>
 
       <div className="bento">
-        <Panel title="Queue" span="span 4">
-          <View of={q} empty={() => all.length === 0} emptyText="No drafts yet.">
+        <Panel title={T.queue} span="span 4">
+          <View of={q} empty={() => all.length === 0} emptyText={T.noDraftsYet}>
             {() => (
               <Donut
-                title="Requests"
+                title={T.requests}
                 parts={[
-                  { label: "To file", value: n("to-file"), color: "var(--amber)" },
-                  { label: "Waiting for you", value: n("waiting"), color: "var(--violet)" },
-                  { label: "Filed", value: n("filed"), color: "var(--green)" },
+                  { label: T.toFile3, value: n("to-file"), color: "var(--amber)" },
+                  { label: T.waitingForYou2, value: n("waiting"), color: "var(--violet)" },
+                  { label: T.filed, value: n("filed"), color: "var(--green)" },
                 ]}
               />
             )}
           </View>
         </Panel>
 
-        <Panel title="Service desk adapter" span="span 4">
+        <Panel title={T.serviceDeskAdapter} span="span 4">
           <View of={q}>
             {(d) => (
               <div className="stack">
@@ -272,21 +277,25 @@ export function ServiceDesk() {
                   <AdapterChip type={d.adapter.configured} />
                 </div>
                 <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                  Writes from the app become steps you perform. Reads come from an export you load
-                  into inputs/.
+                  {T.writesFromTheApp}
                 </p>
                 <p style={{ margin: 0, fontSize: 12.5 }}>
-                  {d.exports.files.length
-                    ? `${plural(d.exports.requests, "past request")} from ${plural(d.exports.files.length, "export")}.`
-                    : "No desk export loaded yet."}{" "}
-                  {plural(d.templates.length, "request template")} in the org pack.
+                  {T.inTheOrgPack(
+                    d.exports.files.length
+                      ? T.from(
+                          plural(d.exports.requests, T.pastRequest),
+                          plural(d.exports.files.length, "export"),
+                        )
+                      : T.noDeskExportLoaded,
+                    plural(d.templates.length, T.requestTemplate),
+                  )}
                 </p>
               </div>
             )}
           </View>
         </Panel>
 
-        <Panel title="Local automation tool" span="span 4">
+        <Panel title={T.localAutomationTool} span="span 4">
           <View of={q}>
             {(d) => (
               <div className="stack">
@@ -294,34 +303,32 @@ export function ServiceDesk() {
                   {d.executors.length ? (
                     d.executors.map((x) => (
                       <span key={x} className="chip ai">
-                        {x} · APPROVE EACH WRITE
+                        {T.approveEachWrite(x)}
                       </span>
                     ))
                   ) : (
-                    <span className="chip dim">NONE ALLOWED HERE</span>
+                    <span className="chip dim">{T.noneAllowedHere}</span>
                   )}
                 </div>
                 <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                  Called through the common step spec from <a href="#/todo">To-do</a>. No
-                  credentials pass to the tool. <a href="#/settings">Executors allow-list</a>
+                  {T.calledThroughTheCommon}
+                  <a href="#/todo">{T.toDo}</a>
+                  {T.noCredentialsPassTo}
+                  <a href="#/settings">{T.executorsAllowList}</a>
                 </p>
               </div>
             )}
           </View>
         </Panel>
 
-        <Panel title="Requests" meta={shown.length} span="span 4" rows="span 2">
+        <Panel title={T.requests} meta={shown.length} span="span 4" rows="span 2">
           <View
             of={q}
             empty={() => shown.length === 0}
-            emptyText={
-              all.length
-                ? "None in this view."
-                : "No service-desk drafts. Draft them for a change below."
-            }
+            emptyText={all.length ? T.noneInThisView : T.noServiceDeskDrafts}
           >
             {() => (
-              <nav aria-label="Requests" className="stack" style={{ gap: 2 }}>
+              <nav aria-label={T.requests} className="stack" style={{ gap: 2 }}>
                 {Object.entries(
                   shown.reduce<Record<string, Request[]>>((a, r) => {
                     (a[r.requestType] ??= []).push(r);
@@ -344,7 +351,7 @@ export function ServiceDesk() {
                           <span style={{ fontSize: 12.5 }}>{r.record || r.heading}</span>
                           <span className="hud" style={{ fontSize: 9.5 }}>
                             {r.change}
-                            {r.missing.length ? ` · ${r.missing.length} to fill` : ""}
+                            {r.missing.length ? T.toFill(r.missing.length) : ""}
                           </span>
                         </span>
                         <span className={`chip ${STATE[r.state].cls}`}>{STATE[r.state].label}</span>
@@ -357,17 +364,13 @@ export function ServiceDesk() {
           </View>
         </Panel>
 
-        <Panel
-          title={selected ? selected.heading : "No request selected"}
-          span="span 8"
-          kind="hero"
-        >
-          <View of={q} empty={() => !selected} emptyText="Pick a request on the left.">
+        <Panel title={selected ? selected.heading : T.noRequestSelected} span="span 8" kind="hero">
+          <View of={q} empty={() => !selected} emptyText={T.pickARequestOn}>
             {() => <RequestDetail key={keyOf(selected!)} r={selected!} done={() => q.reload()} />}
           </View>
         </Panel>
 
-        <Panel title="Draft requests" span="span 8">
+        <Panel title={T.draftRequests} span="span 8">
           <DraftForm done={() => q.reload()} />
         </Panel>
       </div>

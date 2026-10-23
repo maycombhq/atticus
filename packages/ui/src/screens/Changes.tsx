@@ -1,11 +1,13 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, useApi, useLiveEvents, type Loaded } from "../api/client.js";
 import { AI_OFF_TEXT, useAiOn } from "../app/me.js";
-import { Panel, Ring, View } from "../app/ui.js";
+import { escapeCloses, Panel, Ring, View } from "../app/ui.js";
 import { ACROSS, AcrossPanel, type AcrossId } from "./Across.js";
 import { NeedsPanel } from "./knowledge/Needs.js";
 import { COPY } from "../copy.js";
 import { Note, useAction } from "./know/common.js";
+
+const T = COPY.changes;
 
 export interface ChangeSummary {
   id: string;
@@ -88,12 +90,12 @@ export interface Artifact {
 
 const PHASES = ["define", "design", "plan", "build", "qa", "release-ready"];
 const LABEL: Record<string, string> = {
-  define: "Define",
-  design: "Design",
-  plan: "Plan",
-  build: "Build",
+  define: T.define,
+  design: T.design,
+  plan: T.plan,
+  build: T.build,
   qa: "QA",
-  "release-ready": "Release",
+  "release-ready": T.release,
 };
 
 // One button that runs an action and shows its outcome in words: know/common.tsx.
@@ -110,12 +112,8 @@ function ChangeList({
   const [text, setText] = useState("");
   const [state, setState] = useState("");
   return (
-    <Panel title="Changes" span="span 3" rows="span 3">
-      <View
-        of={list}
-        empty={(l) => l.length === 0}
-        emptyText="No changes yet. Start one with atticus change new."
-      >
+    <Panel title={T.changes} span="span 3" rows="span 3">
+      <View of={list} empty={(l) => l.length === 0} emptyText={T.noChangesYetStart}>
         {(all) => {
           const states = [...new Set(all.map((c) => c.state))];
           const l = filterChanges(all, text, state);
@@ -123,17 +121,17 @@ function ChangeList({
             <div className="stack" style={{ gap: 8 }}>
               <div className="stack" style={{ gap: 4 }}>
                 <label htmlFor="change-filter" className="hud" style={{ fontSize: 10 }}>
-                  Find a change
+                  {T.findAChange}
                 </label>
                 <input
                   id="change-filter"
                   className="field"
                   value={text}
-                  placeholder="Id, title or repo"
+                  placeholder={T.idTitleOrRepo}
                   onChange={(e) => setText(e.target.value)}
                 />
                 <label htmlFor="change-state" className="sr">
-                  State
+                  {T.state}
                 </label>
                 <select
                   id="change-state"
@@ -141,8 +139,8 @@ function ChangeList({
                   value={state}
                   onChange={(e) => setState(e.target.value)}
                 >
-                  <option value="">Every state</option>
-                  <option value="blocked">Blocked</option>
+                  <option value="">{T.everyState}</option>
+                  <option value="blocked">{T.blocked}</option>
                   {states.map((x) => (
                     <option key={x} value={x}>
                       {LABEL[x] ?? x}
@@ -150,7 +148,7 @@ function ChangeList({
                   ))}
                 </select>
               </div>
-              <nav aria-label="Changes" className="stack" style={{ gap: 2 }}>
+              <nav aria-label={T.changes} className="stack" style={{ gap: 2 }}>
                 {l.map((c) => (
                   <a
                     key={c.id}
@@ -174,14 +172,14 @@ function ChangeList({
                     </span>
                     <span className={`chip ${c.openFindings.blocking ? "blocking" : ""}`}>
                       {c.openFindings.blocking
-                        ? "BLOCKED"
+                        ? T.blocked2
                         : (LABEL[c.state] ?? c.state).toUpperCase()}
                     </span>
                   </a>
                 ))}
                 {l.length === 0 && (
                   <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                    No change matches.
+                    {T.noChangeMatches}
                   </p>
                 )}
               </nav>
@@ -190,7 +188,7 @@ function ChangeList({
                 style={{ gap: 4, borderTop: "1px solid var(--line)", paddingTop: 8 }}
               >
                 <span className="hud" style={{ fontSize: 10 }}>
-                  Across all changes
+                  {T.acrossAllChanges}
                 </span>
                 <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
                   {ACROSS.map((a) => (
@@ -220,7 +218,7 @@ export function Pipeline({ state }: { state: string }) {
     <ol
       className="row between"
       style={{ listStyle: "none", margin: 0, padding: 0 }}
-      aria-label="Phases"
+      aria-label={T.phases}
     >
       {PHASES.map((p, i) => (
         <li
@@ -234,12 +232,12 @@ export function Pipeline({ state }: { state: string }) {
               value={i + 1}
               max={PHASES.length}
               size={46}
-              label={`${LABEL[p]}: current phase`}
+              label={T.currentPhase(LABEL[p] ?? "")}
             />
           ) : (
             <span
               role="img"
-              aria-label={`${LABEL[p]}: ${i < at ? "done" : "to come"}`}
+              aria-label={`${LABEL[p]}: ${i < at ? T.done : T.toCome}`}
               style={{
                 width: 42,
                 height: 42,
@@ -277,9 +275,15 @@ export function ArtifactEditor({
   const a = useApi<Artifact>(`/api/changes/${change}/artifacts/${artifact}`);
   const [text, setText] = useState<string | undefined>();
   const act = useAction();
+  // The keyboard goes into the text once it loads, so Escape (or Close) can close it at once.
+  const box = useRef<HTMLTextAreaElement>(null);
+  const ready = a.state === "ready";
+  useEffect(() => {
+    if (ready) box.current?.focus();
+  }, [ready]);
   return (
     <Panel
-      title={`Edit ${artifact}`}
+      title={T.edit(artifact)}
       span="1 / -1"
       meta={a.state === "ready" ? a.data.path : undefined}
     >
@@ -297,12 +301,14 @@ export function ArtifactEditor({
                 `Saved ${d.path}.`,
               );
             }}
+            onKeyDown={escapeCloses(onClose)}
             className="stack"
           >
             <label htmlFor="artifact-text" className="sr">
-              {artifact} text
+              {T.text(artifact)}
             </label>
             <textarea
+              ref={box}
               id="artifact-text"
               value={text ?? d.content}
               onChange={(e) => setText(e.target.value)}
@@ -320,13 +326,13 @@ export function ArtifactEditor({
             />
             <div className="row">
               <button type="submit" className="btn primary" disabled={act.busy}>
-                Save
+                {T.save}
               </button>
               <button type="button" className="btn" onClick={onClose}>
-                Close
+                {T.close}
               </button>
               <span className="muted" style={{ fontSize: 12 }}>
-                If someone saved meanwhile, Atticus refuses the save and asks you to reload.
+                {T.ifSomeoneSavedMeanwhile}
               </span>
             </div>
             <Note note={act.note} />
@@ -363,13 +369,13 @@ export function FindingActions({
   return (
     <div className="stack" style={{ gap: 6 }}>
       <label className="sr" htmlFor={`reason-${f.id}`}>
-        Reason
+        {T.reason}
       </label>
       <input
         id={`reason-${f.id}`}
         value={reason}
         onChange={(e) => setReason(e.target.value)}
-        placeholder="Reason (needed to waive or dismiss)"
+        placeholder={T.reasonNeededToWaive}
         style={{
           height: 30,
           background: "var(--box)",
@@ -381,11 +387,11 @@ export function FindingActions({
       />
       <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
         <button type="button" className="btn" disabled={act.busy} onClick={() => void go("apply")}>
-          Apply fix
+          {T.applyFix}
         </button>
         {f.question && (
           <button type="button" className="btn" disabled={act.busy} onClick={() => void go("ask")}>
-            Ask {f.question.owner ?? "owner"}
+            {T.ask(f.question.owner ?? T.owner)}
           </button>
         )}
         <button
@@ -396,7 +402,7 @@ export function FindingActions({
           aria-describedby={reason ? undefined : `why-${f.id}`}
           onClick={() => void go("not-relevant")}
         >
-          Not relevant
+          {T.notRelevant}
         </button>
         <button
           type="button"
@@ -406,7 +412,7 @@ export function FindingActions({
           aria-describedby={!f.waivable || !reason ? `why-${f.id}` : undefined}
           onClick={() => void go("waive")}
         >
-          Waive
+          {T.waive}
         </button>
       </div>
       {(!reason || !f.waivable) && (
@@ -429,6 +435,13 @@ function Detail({ id }: { id: string }) {
   const runs = useApi<Run[]>(`/api/changes/${id}/runs`);
   const findings = useApi<Finding[]>(`/api/findings?change=${id}&state=open`);
   const [editing, setEditing] = useState<string | undefined>();
+  // Each artifact's Edit button, so closing the editor puts the keyboard back on the one used.
+  const editBtns = useRef(new Map<string, HTMLButtonElement>());
+  const closeEditor = () => {
+    const was = editing;
+    setEditing(undefined);
+    if (was) editBtns.current.get(was)?.focus();
+  };
   const handoff = useAction();
   const critic = useAction();
   const runAct = useAction();
@@ -459,7 +472,7 @@ function Detail({ id }: { id: string }) {
                   <div className="stack">
                     <p style={{ margin: 0, fontSize: 14 }}>
                       <span className="hud" style={{ marginRight: 8 }}>
-                        Next
+                        {T.next}
                       </span>
                       {s.nextStep}
                     </p>
@@ -467,13 +480,16 @@ function Detail({ id }: { id: string }) {
                       <span
                         className={`chip ${s.risk.level === "high" ? "blocking" : s.risk.level === "medium" ? "warn" : ""}`}
                       >
-                        RISK {s.risk.level.toUpperCase()}
+                        {T.risk(s.risk.level.toUpperCase())}
                       </span>
 
                       {d.handoff && (
                         <span className="chip">
-                          {d.handoff.phase.toUpperCase()} HAND-OFF · {d.handoff.state.toUpperCase()}
-                          {d.handoff.pr ? ` · ${d.handoff.pr}` : ""}
+                          {T.handOff(
+                            d.handoff.phase.toUpperCase(),
+                            d.handoff.state.toUpperCase(),
+                            d.handoff.pr ? ` · ${d.handoff.pr}` : "",
+                          )}
                         </span>
                       )}
                     </div>
@@ -485,7 +501,7 @@ function Detail({ id }: { id: string }) {
                           color: "var(--text-2)",
                           lineHeight: 1.6,
                         }}
-                        aria-label="What blocks the hand-off"
+                        aria-label={T.whatBlocksTheHand}
                       >
                         {s.blockers.map((b) => (
                           <li key={b.message}>{b.message}</li>
@@ -503,11 +519,11 @@ function Detail({ id }: { id: string }) {
                               api(`/api/changes/${id}/handoff`, { method: "POST", body: {} }).then(
                                 reloadAll,
                               ),
-                            "Hand-off PR opened. Reviewers approve it on the Git host; merging it approves the gate.",
+                            T.handOffPrOpened,
                           )
                         }
                       >
-                        Raise hand-off
+                        {T.raiseHandOff}
                       </button>
                       <button
                         type="button"
@@ -519,11 +535,11 @@ function Detail({ id }: { id: string }) {
                               api(`/api/changes/${id}/sync`, { method: "POST", body: {} }).then(
                                 reloadAll,
                               ),
-                            "Synced with the Git host.",
+                            T.syncedWithTheGit,
                           )
                         }
                       >
-                        Sync and merge when approved
+                        {T.syncAndMergeWhen}
                       </button>
                       <button
                         type="button"
@@ -535,13 +551,11 @@ function Detail({ id }: { id: string }) {
                               api(`/api/changes/${id}/critic`, { method: "POST", body: {} }).then(
                                 reloadAll,
                               ),
-                            aiOn
-                              ? "Critic round started: the rule checks ran and any AI lens is with your assistant. Mark each run done below."
-                              : "The rule checks ran. AI is off here, so no lens waits.",
+                            aiOn ? T.criticRoundStartedThe : T.theRuleChecksRan,
                           )
                         }
                       >
-                        {aiOn ? "Run the critic (your assistant)" : "Run the rule checks"}
+                        {aiOn ? T.runTheCriticYour : T.runTheRuleChecks}
                       </button>
                     </div>
                     <Note note={handoff.note} />
@@ -554,21 +568,19 @@ function Detail({ id }: { id: string }) {
         </View>
       </Panel>
 
-      {editing && (
-        <ArtifactEditor change={id} artifact={editing} onClose={() => setEditing(undefined)} />
-      )}
+      {editing && <ArtifactEditor change={id} artifact={editing} onClose={closeEditor} />}
 
-      <Panel title="Artifacts" span="span 5">
+      <Panel title={T.artifacts} span="span 5">
         <View of={detail} empty={(d) => d.artifacts.length === 0}>
           {(d) => (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr className="hud" style={{ textAlign: "left", fontSize: 10 }}>
-                  <th style={{ padding: "4px 0", fontWeight: 400 }}>Artifact</th>
-                  <th style={{ fontWeight: 400 }}>Status</th>
-                  <th style={{ fontWeight: 400 }}>Findings</th>
+                  <th style={{ padding: "4px 0", fontWeight: 400 }}>{T.artifact}</th>
+                  <th style={{ fontWeight: 400 }}>{T.status}</th>
+                  <th style={{ fontWeight: 400 }}>{T.findings}</th>
                   <th style={{ fontWeight: 400 }}>
-                    <span className="sr">Actions</span>
+                    <span className="sr">{T.actions}</span>
                   </th>
                 </tr>
               </thead>
@@ -591,10 +603,14 @@ function Detail({ id }: { id: string }) {
                         <button
                           type="button"
                           className="btn"
+                          ref={(b) => {
+                            if (b) editBtns.current.set(a.artifact, b);
+                            else editBtns.current.delete(a.artifact);
+                          }}
                           onClick={() => setEditing(a.artifact)}
-                          aria-label={`Edit ${a.artifact}`}
+                          aria-label={T.edit(a.artifact)}
                         >
-                          Edit
+                          {T.edit2}
                         </button>
                       )}
                     </td>
@@ -607,15 +623,11 @@ function Detail({ id }: { id: string }) {
       </Panel>
 
       <Panel
-        title="Open findings"
+        title={T.openFindings}
         span="span 4"
         meta={findings.state === "ready" ? findings.data.length : undefined}
       >
-        <View
-          of={findings}
-          empty={(f) => f.length === 0}
-          emptyText="No open findings on this change."
-        >
+        <View of={findings} empty={(f) => f.length === 0} emptyText={T.noOpenFindingsOn}>
           {(list) => (
             <div className="stack" style={{ gap: 12 }}>
               {list.map((f) => (
@@ -631,7 +643,7 @@ function Detail({ id }: { id: string }) {
                       {f.severity.toUpperCase()}
                     </span>
                     <span className="hud" style={{ fontSize: 10 }}>
-                      {f.gate} · {f.lens ?? "checks"} · {f.artifact}
+                      {f.gate} · {f.lens ?? T.checks} · {f.artifact}
                     </span>
                   </div>
                   <div style={{ fontSize: 13 }}>{f.question?.text ?? f.summary}</div>
@@ -646,12 +658,8 @@ function Detail({ id }: { id: string }) {
         </View>
       </Panel>
 
-      <Panel title="Tasks" span="span 5">
-        <View
-          of={tasks}
-          empty={(t) => t.length === 0}
-          emptyText="No tasks yet: they come with the plan."
-        >
+      <Panel title={T.tasks} span="span 5">
+        <View of={tasks} empty={(t) => t.length === 0} emptyText={T.noTasksYetThey}>
           {(list) =>
             list.map((t) => (
               <div key={t.id} className="list-row">
@@ -665,10 +673,10 @@ function Detail({ id }: { id: string }) {
                   </span>
                 </span>
                 {t.done ? (
-                  <span className="chip done">DONE</span>
+                  <span className="chip done">{T.done2}</span>
                 ) : !aiOn ? (
                   <span className="chip dim" title={AI_OFF_TEXT}>
-                    BY HAND
+                    {T.byHand}
                   </span>
                 ) : (
                   <button
@@ -691,7 +699,7 @@ function Detail({ id }: { id: string }) {
                       )
                     }
                   >
-                    Run with AI
+                    {T.runWithAi}
                   </button>
                 )}
               </div>
@@ -701,8 +709,8 @@ function Detail({ id }: { id: string }) {
         <Note note={runAct.note} />
       </Panel>
 
-      <Panel title="AI runs" span="span 4">
-        <View of={runs} empty={(r) => r.length === 0} emptyText="No AI runs yet.">
+      <Panel title={T.aiRuns} span="span 4">
+        <View of={runs} empty={(r) => r.length === 0} emptyText={T.noAiRunsYet}>
           {(list) =>
             list
               .slice()
@@ -736,11 +744,11 @@ function Detail({ id }: { id: string }) {
                               api(`/api/runs/${r.runId}/done`, { method: "POST", body: {} }).then(
                                 reloadAll,
                               ),
-                            "Checked the answer.",
+                            T.checkedTheAnswer,
                           )
                         }
                       >
-                        Mark done
+                        {T.markDone}
                       </button>
                     )}
                     {r.state === "failed" && (
@@ -753,11 +761,11 @@ function Detail({ id }: { id: string }) {
                               api(`/api/runs/${r.runId}/retry`, { method: "POST", body: {} }).then(
                                 reloadAll,
                               ),
-                            "Ready to try again.",
+                            T.readyToTryAgain,
                           )
                         }
                       >
-                        Retry
+                        {T.retry}
                       </button>
                     )}
                   </span>
@@ -788,10 +796,10 @@ export function Changes({ hash }: { hash: string }) {
       ) : current ? (
         <Detail key={current} id={current} />
       ) : (
-        <Panel title="No change selected" span="span 9">
+        <Panel title={T.noChangeSelected} span="span 9">
           <p className="muted" style={{ margin: 0 }}>
-            Pick a change on the left, or start one with{" "}
-            <code className="mono">atticus change new</code>.
+            {T.pickAChangeOn}
+            <code className="mono">{T.atticusChangeNew}</code>.
           </p>
         </Panel>
       )}

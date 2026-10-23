@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import { COPY } from "../copy.js";
+
+const T = COPY.flowView;
 
 /** A catalog view as `atticus diagram render <view> --format json` gives it (diagrams' FlowView). */
 export interface FlowViewData {
@@ -233,7 +236,12 @@ export function FlowCanvas({
         {/* A group, not an image: its boxes are buttons (an image can hold no control). */}
         <svg
           role="group"
-          aria-label={`${view.title}: ${view.nodes.length} nodes in ${view.groups.length} groups, ${view.edges.length} edges.`}
+          aria-label={T.nodesInGroupsEdges(
+            view.title,
+            view.nodes.length,
+            view.groups.length,
+            view.edges.length,
+          )}
           width={l.width}
           height={l.height}
           viewBox={`0 0 ${l.width} ${l.height}`}
@@ -354,14 +362,18 @@ export function FlowCanvas({
       </div>
       <p className="muted" style={{ fontSize: 12, margin: 0 }} aria-live="polite">
         {hot
-          ? `${label(hot)}: ${hotEdges.length} edge${hotEdges.length === 1 ? "" : "s"}${
+          ? T.edgePointAtAnother(
+              label(hot),
+              hotEdges.length,
+              hotEdges.length === 1 ? "" : "s",
               hotEdges.length
                 ? ` (${edgeSummary([...new Set(hotEdges.map((e) => e.label).filter(Boolean))])})`
-                : ""
-            }${l.inside.get(hot) ? `, ${l.inside.get(hot)} calls inside it` : ""}. Point at another box, or click it again to clear.`
+                : "",
+              l.inside.get(hot) ? T.callsInsideIt(l.inside.get(hot) ?? 0) : "",
+            )
           : view.type === "context" && view.nodes.length === 1
-            ? "Everything here is one system: open Container to see its components and how they connect."
-            : `${l.edges.length} edges. Point at a box to light its edges; dashed lines are asynchronous.`}
+            ? T.everythingHereIsOne
+            : T.edgesPointAtA(l.edges.length)}
       </p>
     </div>
   );

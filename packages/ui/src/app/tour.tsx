@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { COPY } from "../copy.js";
 
+const T = COPY.tour;
+
 /**
  * First-run tour: a few steps through Home, the sidebar, asking and the hand-off PR. It is the
  * same for everyone (there are no roles, ADR 0073), opens once per browser, can be skipped, and
@@ -18,18 +20,15 @@ const link = (screen: string) => `.nav a[href="#/${screen}"]`;
 
 export const TOUR: Step[] = [
   {
-    title: "Your home",
-    body: "Home shows what needs a person (changes in each phase, blocking findings, questions and manual steps) and the changes in flight. Everyone sees the same screens; Ctrl+K jumps anywhere.",
+    ...T.steps.home,
     target: link("home"),
   },
   {
-    title: "Ask in plain words",
-    body: "Type a question such as “who calls ledger-api?” in the box at the top. Atticus answers from the catalog and always shows the query it ran.",
+    ...T.steps.ask,
     target: ".ask-form",
   },
   {
-    title: "Approving is the pull request",
-    body: "Each phase ends with a hand-off PR in the metarepo. Merging it approves the gate; your Git host's rules decide who may approve. Atticus records you by your Git user.",
+    ...T.steps.approve,
     target: link("changes"),
   },
 ];
@@ -101,7 +100,7 @@ export function Tour() {
   return (
     <div role="dialog" aria-modal="false" aria-labelledby="tour-title" className="tour panel hero">
       <div className="hud" style={{ fontSize: 10 }}>
-        Tour · {i + 1} of {TOUR.length} · {COPY.app.tourEscape}
+        {T.tourOf(i + 1, TOUR.length, COPY.app.tourEscape)}
       </div>
       <h2 id="tour-title" className="h" style={{ margin: "6px 0" }}>
         {step.title}
@@ -109,21 +108,21 @@ export function Tour() {
       <p style={{ margin: "0 0 12px", lineHeight: 1.55, fontSize: 13 }}>{step.body}</p>
       <div className="row between">
         <button type="button" className="btn" onClick={close}>
-          Skip the tour
+          {T.skipTheTour}
         </button>
         <div className="row" style={{ gap: 6 }}>
           {i > 0 && (
             <button type="button" className="btn" onClick={() => setI(i - 1)}>
-              Back
+              {T.back}
             </button>
           )}
           {i < TOUR.length - 1 ? (
             <button type="button" className="btn primary" onClick={() => setI(i + 1)}>
-              Next
+              {T.next}
             </button>
           ) : (
             <button type="button" className="btn primary" onClick={close}>
-              Done
+              {T.done}
             </button>
           )}
         </div>

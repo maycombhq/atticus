@@ -2,6 +2,9 @@ import { useState, type ReactNode } from "react";
 import { useApi } from "../api/client.js";
 import { ExternalLink, Panel, View } from "../app/ui.js";
 import { Table } from "./know/common.js";
+import { COPY } from "../copy.js";
+
+const T = COPY.across;
 
 /**
  * One list across every open change (ADR 0048): findings, tasks, stories, tests, service
@@ -9,12 +12,12 @@ import { Table } from "./know/common.js";
  */
 
 export const ACROSS = [
-  { id: "findings", label: "Findings" },
-  { id: "tasks", label: "Tasks" },
-  { id: "stories", label: "Stories" },
-  { id: "tests", label: "Tests" },
-  { id: "requests", label: "Requests" },
-  { id: "releases", label: "Releases" },
+  { id: "findings", label: T.findings },
+  { id: "tasks", label: T.tasks },
+  { id: "stories", label: T.stories },
+  { id: "tests", label: T.tests },
+  { id: "requests", label: T.requests },
+  { id: "releases", label: T.releases },
 ] as const;
 export type AcrossId = (typeof ACROSS)[number]["id"];
 
@@ -44,70 +47,70 @@ type Col = { label: string; cell: (r: AcrossRow) => ReactNode; mono?: boolean; w
 
 const COLS: Record<AcrossId, Col[]> = {
   findings: [
-    { label: "Change", cell: changeCell, width: "18%" },
+    { label: T.change, cell: changeCell, width: "18%" },
     {
-      label: "Severity",
+      label: T.severity,
       cell: (r) => chip(s(r.severity), r.severity === "blocking" ? "blocking" : ""),
     },
-    { label: "Finding", cell: (r) => s(r.summary) },
-    { label: "Where", cell: (r) => `${s(r.gate)} · ${s(r.artifact)}`, mono: true },
-    { label: "State", cell: (r) => s(r.state) },
+    { label: T.finding, cell: (r) => s(r.summary) },
+    { label: T.where, cell: (r) => `${s(r.gate)} · ${s(r.artifact)}`, mono: true },
+    { label: T.state, cell: (r) => s(r.state) },
   ],
   tasks: [
-    { label: "Change", cell: changeCell, width: "18%" },
-    { label: "Task", cell: (r) => s(r.id), mono: true },
-    { label: "Repo", cell: (r) => s(r.repo), mono: true },
-    { label: "What", cell: (r) => s(r.description) },
-    { label: "Done", cell: (r) => (r.done ? chip("done", "done") : chip("open")) },
+    { label: T.change, cell: changeCell, width: "18%" },
+    { label: T.task, cell: (r) => s(r.id), mono: true },
+    { label: T.repo, cell: (r) => s(r.repo), mono: true },
+    { label: T.what, cell: (r) => s(r.description) },
+    { label: T.done, cell: (r) => (r.done ? chip("done", "done") : chip("open")) },
   ],
   stories: [
-    { label: "Change", cell: changeCell, width: "18%" },
-    { label: "Story", cell: (r) => s(r.id), mono: true },
-    { label: "Title", cell: (r) => s(r.title) },
-    { label: "Repos", cell: (r) => (r.repos as string[]).join(", "), mono: true },
+    { label: T.change, cell: changeCell, width: "18%" },
+    { label: T.story, cell: (r) => s(r.id), mono: true },
+    { label: T.title, cell: (r) => s(r.title) },
+    { label: T.repos, cell: (r) => (r.repos as string[]).join(", "), mono: true },
     {
-      label: "Written",
+      label: T.written,
       cell: (r) =>
-        r.written ? `${s(r.criteria)} criteria` : <span className="muted">not yet</span>,
+        r.written ? `${s(r.criteria)} criteria` : <span className="muted">{T.notYet}</span>,
     },
   ],
   tests: [
-    { label: "Change", cell: changeCell, width: "18%" },
-    { label: "Requirements tested", cell: (r) => `${s(r.tested)} of ${s(r.rows)}` },
+    { label: T.change, cell: changeCell, width: "18%" },
+    { label: T.requirementsTested, cell: (r) => `${s(r.tested)} of ${s(r.rows)}` },
     {
-      label: "Gaps",
+      label: T.gaps,
       cell: (r) => (r.gaps ? chip(`${s(r.gaps)} gaps`, "warn") : chip("none", "done")),
     },
-    { label: "First gaps", cell: (r) => (r.topGaps as string[]).join("; ") },
+    { label: T.firstGaps, cell: (r) => (r.topGaps as string[]).join("; ") },
   ],
   requests: [
-    { label: "Change", cell: changeCell, width: "18%" },
-    { label: "Request", cell: (r) => s(r.heading) },
-    { label: "For", cell: (r) => s(r.record), mono: true },
+    { label: T.change, cell: changeCell, width: "18%" },
+    { label: T.request, cell: (r) => s(r.heading) },
+    { label: T.for, cell: (r) => s(r.record), mono: true },
     {
-      label: "State",
+      label: T.state,
       cell: (r) =>
         chip(s(r.state), r.state === "filed" ? "done" : r.state === "to-file" ? "warn" : ""),
     },
     {
-      label: "Missing",
+      label: T.missing,
       cell: (r) =>
         (r.missing as string[]).length ? (r.missing as string[]).join(", ") : "nothing",
     },
   ],
   releases: [
-    { label: "Change", cell: changeCell, width: "18%" },
-    { label: "State", cell: (r) => chip(r.changeState, r.atRelease ? "done" : "") },
-    { label: "Risk", cell: (r) => s(r.risk) },
-    { label: "Next", cell: (r) => s(r.nextStep) },
+    { label: T.change, cell: changeCell, width: "18%" },
+    { label: T.state, cell: (r) => chip(r.changeState, r.atRelease ? "done" : "") },
+    { label: T.risk, cell: (r) => s(r.risk) },
+    { label: T.next, cell: (r) => s(r.nextStep) },
     {
-      label: "Hand-off",
+      label: T.handOff,
       cell: (r) => {
         const h = r.handoff as { phase: string; pr: string; state: string } | undefined;
         return h ? (
           <ExternalLink href={h.pr}>{`${h.phase} · ${h.state}`}</ExternalLink>
         ) : (
-          <span className="muted">none open</span>
+          <span className="muted">{T.noneOpen}</span>
         );
       },
     },
@@ -115,12 +118,12 @@ const COLS: Record<AcrossId, Col[]> = {
 };
 
 const EMPTY: Record<AcrossId, string> = {
-  findings: "No findings on any open change. Run the critic on a change to review it.",
-  tasks: "No tasks yet: tasks come with a change's plan.",
-  stories: "No stories yet: write them on a change's Breakdown.",
-  tests: "No open changes to trace.",
-  requests: "No service requests drafted on any open change.",
-  releases: "No open changes.",
+  findings: T.noFindingsOnAny,
+  tasks: T.noTasksYetTasks,
+  stories: T.noStoriesYetWrite,
+  tests: T.noOpenChangesTo,
+  requests: T.noServiceRequestsDrafted,
+  releases: T.noOpenChanges,
 };
 
 /** Rows whose words contain every word of the filter, case aside. */
@@ -138,9 +141,9 @@ export function AcrossPanel({ view }: { view: AcrossId }) {
   const [text, setText] = useState("");
   const label = ACROSS.find((a) => a.id === view)!.label;
   return (
-    <Panel title={`${label} across changes`} span="span 9" rows="span 3">
+    <Panel title={T.acrossChanges2(label)} span="span 9" rows="span 3">
       <nav
-        aria-label="Across changes"
+        aria-label={T.acrossChanges}
         className="row"
         style={{ gap: 6, flexWrap: "wrap", marginBottom: 10 }}
       >
@@ -157,13 +160,13 @@ export function AcrossPanel({ view }: { view: AcrossId }) {
       </nav>
       <div className="stack" style={{ gap: 4, marginBottom: 10 }}>
         <label htmlFor="across-filter" className="hud" style={{ fontSize: 10 }}>
-          Filter
+          {T.filter}
         </label>
         <input
           id="across-filter"
           className="field"
           value={text}
-          placeholder="Words to match, for example forge-ledger open"
+          placeholder={T.wordsToMatchFor}
           onChange={(e) => setText(e.target.value)}
         />
       </div>
@@ -173,19 +176,23 @@ export function AcrossPanel({ view }: { view: AcrossId }) {
           return (
             <div className="stack" style={{ gap: 8 }}>
               <p className="muted" role="status" style={{ margin: 0, fontSize: 12 }}>
-                {rows.length} of {d.rows.length} across {d.changes} open change
-                {d.changes === 1 ? "" : "s"}
+                {T.ofAcrossOpenChange(
+                  rows.length,
+                  d.rows.length,
+                  d.changes,
+                  d.changes === 1 ? "" : "s",
+                )}
               </p>
               {rows.length ? (
                 <Table
                   rows={rows}
                   cols={COLS[view]}
                   rowKey={(r) => `${r.change}|${s(r.id ?? r.heading ?? "")}|${rows.indexOf(r)}`}
-                  caption={`${label} across open changes`}
+                  caption={T.acrossOpenChanges(label)}
                 />
               ) : (
                 <p className="muted" style={{ margin: 0 }}>
-                  Nothing matches “{text}”.
+                  {T.nothingMatches(text)}
                 </p>
               )}
             </div>

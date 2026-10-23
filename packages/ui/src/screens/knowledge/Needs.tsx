@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
-import { View } from "../../app/ui.js";
+import { escapeCloses, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message, Note } from "../know/common.js";
 import { AiStep, groupItems, kindLabel, Links, pageText } from "./shared.js";
@@ -85,15 +85,27 @@ function NeedRow(p: {
   const [err, setErr] = useState<string | undefined>();
   const tick = needTick(n);
   const base = `need-${n.item}-${n.for}`.replace(/[^a-z0-9-]/gi, "-");
-  // The keyboard follows the form: into its box when it opens, back to the need when it closes.
+  // The keyboard follows the form: into its box when it opens; back to the need once it is
+  // saved, or to the button that opened it when Cancel or Escape closes it.
   const title = useRef<HTMLAnchorElement>(null);
   const box = useRef<HTMLInputElement>(null);
+  const doneBtn = useRef<HTMLButtonElement>(null);
+  const skipBtn = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
+  const back = useRef<"title" | "done" | "not-needed">("title");
   useEffect(() => {
     if (open) box.current?.focus();
-    else if (wasOpen.current) title.current?.focus();
+    else if (wasOpen.current) {
+      const to = { title, done: doneBtn, "not-needed": skipBtn }[back.current];
+      (to.current ?? title.current)?.focus();
+    }
     wasOpen.current = !!open;
   }, [open]);
+  const cancel = () => {
+    back.current = open ?? "title";
+    setErr(undefined);
+    setOpen(undefined);
+  };
   const save = (status: "done" | "not-needed" | "open") => {
     const b = markBody(status, note, n.for);
     if ("error" in b) {
@@ -102,6 +114,7 @@ function NeedRow(p: {
       return;
     }
     setErr(undefined);
+    back.current = "title";
     setOpen(undefined);
     setNote("");
     // Reopen has no form: its button goes while the call runs, so the keyboard waits on the need.
@@ -202,6 +215,7 @@ function NeedRow(p: {
                 type="button"
                 className="btn primary"
                 disabled={p.busy}
+                ref={doneBtn}
                 aria-label={N.markDoneOf(n.title)}
                 onClick={() => setOpen("done")}
               >
@@ -211,6 +225,7 @@ function NeedRow(p: {
                 type="button"
                 className="btn"
                 disabled={p.busy}
+                ref={skipBtn}
                 aria-label={N.markSkipOf(n.title)}
                 onClick={() => setOpen("not-needed")}
               >
@@ -234,6 +249,7 @@ function NeedRow(p: {
         <form
           className="stack"
           style={{ gap: 6, marginTop: 6 }}
+          onKeyDown={escapeCloses(cancel)}
           onSubmit={(e) => {
             e.preventDefault();
             save(open);
@@ -255,7 +271,7 @@ function NeedRow(p: {
             <button type="submit" className="btn primary" disabled={p.busy}>
               {N.save}
             </button>
-            <button type="button" className="btn" onClick={() => setOpen(undefined)}>
+            <button type="button" className="btn" onClick={cancel}>
               {N.cancel}
             </button>
           </div>

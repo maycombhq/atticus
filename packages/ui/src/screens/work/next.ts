@@ -1,6 +1,8 @@
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../../copy.js";
 
+const T = COPY.nextStep;
+
 /**
  * What to run next, worked out from files the API returns (plan 4.5, principle 8). The app
  * never runs a step: each page shows the command, and the slash command for Copilot Chat
@@ -70,7 +72,7 @@ export const STAGE_SCREEN: Record<Stage, { id: string; label: string } | undefin
   architecture: { id: "architecture", label: COPY.nav.architecture },
   stories: { id: "stories", label: COPY.nav.stories },
   tasks: { id: "task-list", label: COPY.nav.tasks },
-  release: { id: "release", label: "Release plan" },
+  release: { id: "release", label: T.releasePlan },
   done: undefined,
 };
 

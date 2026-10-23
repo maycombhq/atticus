@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client.js";
-import { SCREENS } from "./screens.js";
+import { groupLabel, SCREENS } from "./screens.js";
+import { COPY } from "../copy.js";
+
+const T = COPY.palette;
 
 interface Item {
   kind: "screen" | "change" | "record" | "ask";
@@ -21,7 +24,7 @@ export function paletteItems(
     ...SCREENS.filter((s) => hit(s.label) || hit(s.id)).map((s) => ({
       kind: "screen" as const,
       label: s.label,
-      detail: s.group,
+      detail: groupLabel(s.group),
       href: `#/${s.id}`,
     })),
     ...changes
@@ -45,8 +48,8 @@ export function paletteItems(
   if (t)
     out.push({
       kind: "ask",
-      label: `Ask: ${text.trim()}`,
-      detail: "answer from the catalog, with the query shown",
+      label: T.askItem(text.trim()),
+      detail: T.askDetail,
       href: `#/explore?ask=${encodeURIComponent(text.trim())}`,
     });
   return out.slice(0, 14);
@@ -116,7 +119,7 @@ export function CommandPalette() {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Go to anything"
+        aria-label={T.goToAnything}
         className="palette panel"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
@@ -134,7 +137,7 @@ export function CommandPalette() {
         }}
       >
         <label htmlFor="palette-input" className="sr">
-          Go to a screen, change or record, or ask a question
+          {T.goToAScreen}
         </label>
         <input
           id="palette-input"
@@ -144,14 +147,14 @@ export function CommandPalette() {
             setText(e.target.value);
             setSel(0);
           }}
-          placeholder="Go to a screen, change or record… or ask a question"
+          placeholder={T.goToAScreen2}
           role="combobox"
           aria-expanded="true"
           aria-controls="palette-list"
           aria-activedescendant={items[sel] ? `palette-${sel}` : undefined}
           autoComplete="off"
         />
-        <ul id="palette-list" role="listbox" aria-label="Results">
+        <ul id="palette-list" role="listbox" aria-label={T.results}>
           {items.map((i, k) => (
             <li
               key={`${i.kind}/${i.href}`}
@@ -167,10 +170,10 @@ export function CommandPalette() {
               </span>
             </li>
           ))}
-          {items.length === 0 && <li className="muted">Nothing matches.</li>}
+          {items.length === 0 && <li className="muted">{T.nothingMatches}</li>}
         </ul>
         <div className="hud" style={{ fontSize: 9.5, marginTop: 8 }}>
-          ↑ ↓ to move · Enter to open · Esc to close
+          {T.toMoveEnterTo}
         </div>
       </div>
     </div>

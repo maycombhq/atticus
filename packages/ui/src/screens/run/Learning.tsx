@@ -4,6 +4,8 @@ import { Bar, Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Choice, CopyButton, Note, plural, useAction } from "./shared.js";
 
+const T = COPY.learning;
+
 interface LessonStep {
   id: string;
   n: number;
@@ -47,7 +49,7 @@ interface CheckResult {
 
 const STATE = {
   "not-started": { label: "NEW", cls: "dim" },
-  "in-progress": { label: "IN PROGRESS", cls: "warn" },
+  "in-progress": { label: T.inProgress, cls: "warn" },
   done: { label: "DONE", cls: "done" },
 } as const;
 
@@ -59,7 +61,7 @@ function Exercise({ cur, reload }: { cur: NonNullable<Learning["current"]>; relo
   if (!step)
     return (
       <div className="stack">
-        <p className="run-note ok">You have finished this lesson.</p>
+        <p className="run-note ok">{T.youHaveFinishedThis}</p>
         <p className="run-text">{cur.outro}</p>
       </div>
     );
@@ -89,7 +91,7 @@ function Exercise({ cur, reload }: { cur: NonNullable<Learning["current"]>; relo
       }}
     >
       <span className="hud" style={{ fontSize: 10 }}>
-        Step {step.n} of {cur.steps}
+        {T.stepOf(step.n, cur.steps)}
       </span>
       <p className="n" style={{ margin: 0, fontSize: 18 }}>
         {step.title}
@@ -98,7 +100,7 @@ function Exercise({ cur, reload }: { cur: NonNullable<Learning["current"]>; relo
       {step.commands.length > 0 && (
         <div className="stack" style={{ gap: 4 }}>
           <span className="hud" style={{ fontSize: 10 }}>
-            Try in the sandbox
+            {T.tryInTheSandbox}
           </span>
           {step.commands.map((c) => (
             <div
@@ -107,7 +109,7 @@ function Exercise({ cur, reload }: { cur: NonNullable<Learning["current"]>; relo
               style={{ gridTemplateColumns: "1fr auto" }}
             >
               <code className="value">{c}</code>
-              <CopyButton text={c} label={`Copy ${c}`} />
+              <CopyButton text={c} label={T.copy(c)} />
             </div>
           ))}
         </div>
@@ -125,7 +127,7 @@ function Exercise({ cur, reload }: { cur: NonNullable<Learning["current"]>; relo
       )}
       <div className="row" style={{ flexWrap: "wrap" }}>
         <button type="submit" className="btn primary" disabled={act.busy}>
-          Check my work
+          {T.checkMyWork}
         </button>
         <button
           type="button"
@@ -133,12 +135,12 @@ function Exercise({ cur, reload }: { cur: NonNullable<Learning["current"]>; relo
           aria-expanded={hint}
           onClick={() => setHint((h) => !h)}
         >
-          {hint ? "Hide the hint" : "Show a hint"}
+          {hint ? T.hideTheHint : T.showAHint}
         </button>
       </div>
       {hint && (
         <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-          Hint: {step.hint}
+          {T.hint(step.hint)}
         </p>
       )}
       <Note note={act.note} />
@@ -169,13 +171,11 @@ function SandboxForm() {
       }}
     >
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-        Lessons run only in a practice sandbox: a throwaway copy of the invented Forge estate. No
-        network, no real systems, no real data. This metarepo isn't one, so lessons are read-only
-        here.
+        {T.lessonsRunOnlyIn}
       </p>
       <div className="row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
         <label className="run-label" htmlFor="sandbox-dir" style={{ flex: "1 1 260px" }}>
-          A new, empty folder for the sandbox
+          {T.aNewEmptyFolder}
           <input
             id="sandbox-dir"
             className="run-input"
@@ -185,11 +185,11 @@ function SandboxForm() {
               setBlank(false);
             }}
             aria-describedby={blank ? "sandbox-dir-blank" : undefined}
-            placeholder="/home/you/atticus-sandbox"
+            placeholder={T.homeYouAtticusSandbox}
           />
         </label>
         <button type="submit" className="btn primary" disabled={act.busy}>
-          Make a sandbox
+          {T.makeASandbox}
         </button>
       </div>
       {blank && (
@@ -221,21 +221,20 @@ export function Learning() {
     <>
       <div className="row between" style={{ flexWrap: "wrap" }}>
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
-          Learning
+          {T.learning}
         </p>
         {l.state === "ready" && (
           <span className={`chip ${l.data.sandbox ? "done" : "dim"}`}>
-            {l.data.sandbox ? "PRACTICE SANDBOX · OFFLINE FORGE" : "NOT A SANDBOX"}
+            {l.data.sandbox ? T.practiceSandboxOfflineForge : T.notASandbox}
           </span>
         )}
       </div>
       <p className="muted" style={{ margin: 0 }}>
-        Lessons built on the Forge estate, with a sandbox to practise in. Nothing here touches a
-        real system.
+        {T.lessonsBuiltOnThe}
       </p>
 
       <div className="bento">
-        <Panel title="Progress" span="span 4">
+        <Panel title={T.progress} span="span 4">
           <View of={l}>
             {() => (
               <div className="row" style={{ alignItems: "flex-start" }}>
@@ -244,18 +243,18 @@ export function Learning() {
                   max={totals.all}
                   size={72}
                   text={totals.all ? `${Math.round((totals.done / totals.all) * 100)}%` : "0%"}
-                  label={`${totals.done} of ${totals.all} lessons done`}
+                  label={T.ofLessonsDone(totals.done, totals.all)}
                 />
                 <span style={{ fontSize: 12.5 }}>
-                  {totals.done} of {plural(totals.all, "lesson")} done.
+                  {T.ofDone(totals.done, plural(totals.all, "lesson"))}
                 </span>
               </div>
             )}
           </View>
         </Panel>
 
-        <Panel title="Progress by kind of work" meta="lessons done" span="span 8">
-          <View of={l} empty={() => roles.length === 0} emptyText="No lessons are installed.">
+        <Panel title={T.progressByKindOf} meta={T.lessonsDone2} span="span 8">
+          <View of={l} empty={() => roles.length === 0} emptyText={T.noLessonsAreInstalled}>
             {() => (
               <div
                 style={{
@@ -272,7 +271,7 @@ export function Learning() {
                         {r.done}/{r.lessons}
                       </span>
                     </div>
-                    <Bar value={r.done} max={r.lessons} label={`${r.role} lessons done`} />
+                    <Bar value={r.done} max={r.lessons} label={T.lessonsDone(r.role)} />
                   </div>
                 ))}
               </div>
@@ -281,15 +280,15 @@ export function Learning() {
         </Panel>
 
         {l.state === "ready" && !l.data.sandbox && (
-          <Panel title="Practise in a sandbox" span="span 12">
+          <Panel title={T.practiseInASandbox} span="span 12">
             <SandboxForm />
           </Panel>
         )}
 
         {l.state === "ready" && l.data.current && (
           <Panel
-            title={`Exercise · ${l.data.current.title}`}
-            meta={l.data.current.completed ? "done" : undefined}
+            title={T.exercise(l.data.current.title)}
+            meta={l.data.current.completed ? T.done : undefined}
             span="span 12"
             kind="hero"
           >
@@ -297,23 +296,19 @@ export function Learning() {
           </Panel>
         )}
 
-        <Panel title="Lessons" span="span 12">
+        <Panel title={T.lessons} span="span 12">
           <div style={{ marginBottom: 10 }}>
             <Choice
-              label="Written for"
+              label={T.writtenFor}
               value={role}
               onChange={setRole}
               options={[
-                { value: "all", label: "Everyone" },
+                { value: "all", label: T.everyone },
                 ...roles.map((r) => ({ value: r.role, label: r.role })),
               ]}
             />
           </div>
-          <View
-            of={l}
-            empty={() => lessons.length === 0}
-            emptyText="No lessons written for this kind of work."
-          >
+          <View of={l} empty={() => lessons.length === 0} emptyText={T.noLessonsWrittenFor}>
             {(d) => (
               <div className="stack" style={{ gap: 0 }}>
                 {lessons.map((x) => (
@@ -330,15 +325,15 @@ export function Learning() {
                         {x.summary}
                       </span>
                       <span className="hud" style={{ fontSize: 9.5 }}>
-                        {x.role} · {x.minutes} min · {plural(x.steps, "step")}
+                        {T.min(x.role, x.minutes, plural(x.steps, "step"))}
                       </span>
                     </span>
                     <button
                       type="button"
                       className="btn"
                       disabled={!d.sandbox || start.busy || x.state === "done"}
-                      title={d.sandbox ? undefined : "Lessons run in a practice sandbox"}
-                      aria-label={`${x.state === "in-progress" ? "Continue" : "Start"} ${x.title}`}
+                      title={d.sandbox ? undefined : T.lessonsRunInA}
+                      aria-label={`${x.state === "in-progress" ? T.continue : T.start} ${x.title}`}
                       onClick={() =>
                         void start.run(
                           () =>
@@ -355,10 +350,10 @@ export function Learning() {
                       }
                     >
                       {x.state === "in-progress"
-                        ? "Continue"
+                        ? T.continue
                         : x.state === "done"
-                          ? "Done"
-                          : "Start"}
+                          ? T.done2
+                          : T.start}
                     </button>
                   </article>
                 ))}
@@ -367,8 +362,7 @@ export function Learning() {
           </View>
           <Note note={start.note} />
           <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
-            Lessons and exercises use only the invented Forge ecosystem. A check passes from what
-            the sandbox's files say, never from a model.
+            {T.lessonsAndExercisesUse}
           </p>
         </Panel>
       </div>

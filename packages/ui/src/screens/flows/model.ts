@@ -1,4 +1,7 @@
 import type { Api } from "@maycombhq/core";
+import { COPY } from "../../copy.js";
+
+const T = COPY.flowsModel;
 
 /**
  * A flow (ADR 0079) as a sequence diagram (ADR 0092): a lane for who starts it, the gateway it
@@ -163,9 +166,7 @@ function build(f: FlowIn): Sequence {
   const gaps: string[] = [];
   const known = t.caller?.who;
   const callerLabel =
-    known ??
-    CALLER_BY_KIND[t.kind] ??
-    (gaps.push("Who calls this entry point isn't known yet."), "Caller not known");
+    known ?? CALLER_BY_KIND[t.kind] ?? (gaps.push(T.whoCallsThisEntry), T.callerNotKnown);
   const lanes: Lane[] = [{ id: "caller", label: callerLabel, kind: "caller" }];
   const via = t.caller?.via && t.caller.via !== "direct" ? t.caller.via : undefined;
   if (via) lanes.push({ id: "gateway", label: via, kind: "gateway" });
@@ -180,7 +181,7 @@ function build(f: FlowIn): Sequence {
   const rows: Row[] = [
     {
       n: 0,
-      shown: "Start",
+      shown: T.start,
       kind: t.kind,
       what: t.what,
       from: "caller",

@@ -10,6 +10,9 @@ import { CommandPalette } from "./palette.js";
 import { replayTour, Tour } from "./tour.js";
 import { Nav } from "./nav.js";
 import { screenOf } from "./screens.js";
+import { inEditor, THEME_CHOICES, useTheme, type ThemeChoice } from "./theme.js";
+
+const T = COPY.shell;
 
 interface Health {
   version: string;
@@ -32,15 +35,8 @@ function AiChip() {
   const { me } = useMe();
   if (!me || me.ai === "on") return null;
   return (
-    <span
-      className="chip warn"
-      title={
-        me.ai === "off"
-          ? "AI is off in this organisation: no AI step runs; people write and the rule checks review."
-          : "Image reading is off: pictures go to a person in Intake."
-      }
-    >
-      {me.ai === "off" ? "AI OFF" : "TEXT-ONLY AI"}
+    <span className="chip warn" title={me.ai === "off" ? T.aiIsOffIn : T.imageReadingIsOff}>
+      {me.ai === "off" ? T.aiOff : T.textOnlyAi}
     </span>
   );
 }
@@ -53,16 +49,42 @@ function Person({ health }: { health: Health }) {
     <>
       {me?.warning && (
         <span className="chip warn" title={me.warning} role="note" aria-label={me.warning}>
-          SET YOUR GIT USER
+          {T.setYourGitUser}
         </span>
       )}
       <span
         className="chip dim"
-        title={`${health.root}${me?.email ? ` · ${me.email}` : ""} · recorded as ${health.user}`}
+        title={T.recordedAs(health.root, me?.email ? ` · ${me.email}` : "", health.user)}
       >
         {who} · v{health.version}
       </span>
     </>
+  );
+}
+
+/** System, light or dark, remembered in this browser. A VS Code panel follows the editor. */
+function ThemeSwitch() {
+  const [choice, setChoice] = useTheme();
+  return (
+    <span className="row" style={{ gap: 6 }}>
+      <label htmlFor="theme" className="hud" style={{ fontSize: 9.5 }}>
+        {COPY.theme.label}
+      </label>
+      <select
+        id="theme"
+        className="field"
+        style={{ height: 28, fontSize: 12 }}
+        title={COPY.theme.hint}
+        value={choice}
+        onChange={(e) => setChoice(e.target.value as ThemeChoice)}
+      >
+        {THEME_CHOICES.map((c) => (
+          <option key={c} value={c}>
+            {COPY.theme.choices[c]}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }
 
@@ -83,7 +105,7 @@ function TopBar({ health }: { health?: Health }) {
     <header className="topbar">
       <form role="search" className="ask-form" onSubmit={submit}>
         <label htmlFor="ask" className="sr">
-          Ask Atticus
+          {T.askAtticus}
         </label>
         <input
           id="ask"
@@ -93,21 +115,22 @@ function TopBar({ health }: { health?: Health }) {
             setBlank(false);
           }}
           aria-describedby={blank ? "ask-blank" : undefined}
-          placeholder="Ask: what breaks if ledger-db.account changes?"
+          placeholder={T.askWhatBreaksIf}
         />
-        <button type="submit" className="btn" aria-label="Ask">
-          Ask
+        <button type="submit" className="btn" aria-label={T.ask}>
+          {T.ask}
         </button>
         <span id="ask-blank" role="status" className={blank ? "chip warn" : "sr"}>
           {blank ? COPY.app.askEmpty : ""}
         </span>
       </form>
       <AiChip />
-      <button type="button" className="btn" onClick={replayTour} title="Replay the tour">
-        Help
+      {!hostBridge() && !inEditor() && <ThemeSwitch />}
+      <button type="button" className="btn" onClick={replayTour} title={T.replayTheTour}>
+        {T.help}
       </button>
       <span className="hud" style={{ fontSize: 9.5, whiteSpace: "nowrap" }} aria-hidden="true">
-        Ctrl K
+        {T.ctrlK}
       </span>
       {health && <Person health={health} />}
     </header>
@@ -172,7 +195,7 @@ export function App() {
     <MeProvider>
       <div className="shell">
         <a className="skip" href="#main">
-          Skip to content
+          {T.skipToContent}
         </a>
         <Nav current={current} />
         <CommandPalette />

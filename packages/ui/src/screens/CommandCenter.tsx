@@ -7,6 +7,8 @@ import { useMe } from "../app/me.js";
 import { inboxOf, type InboxData } from "../app/inbox.js";
 import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
 
+const T = COPY.commandCenter;
+
 interface ChangeSummary {
   id: string;
   title: string;
@@ -37,12 +39,12 @@ interface KindCount {
 
 const PHASES = ["define", "design", "plan", "build", "qa", "release-ready"] as const;
 const PHASE_LABEL: Record<string, string> = {
-  define: "Define",
-  design: "Design",
-  plan: "Plan",
-  build: "Build",
+  define: T.define,
+  design: T.design,
+  plan: T.plan,
+  build: T.build,
   qa: "QA",
-  "release-ready": "Release",
+  "release-ready": T.release,
 };
 const ACTIVE = new Set<string>([...PHASES, "returned", "post-release-review"]);
 
@@ -79,7 +81,7 @@ function SetupChecklist() {
       await api("/api/baseline", { method: "POST", body: {} });
       setNote({
         ok: true,
-        text: "The catalog is accepted as the baseline, with your name, in catalog/baseline.yaml. Commit it and open a pull request: merging it makes it the baseline on main.",
+        text: T.theCatalogIsAccepted,
       });
       setup.reload();
     } catch (e) {
@@ -91,12 +93,7 @@ function SetupChecklist() {
   };
   return (
     <div className="bento">
-      <Panel
-        title="Set up Atticus"
-        kind="hero"
-        span="1 / -1"
-        meta={`${done} of ${s.steps.length} done`}
-      >
+      <Panel title={T.setUpAtticus} kind="hero" span="1 / -1" meta={T.ofDone(done, s.steps.length)}>
         <ol style={{ listStyle: "none", margin: 0, padding: 0 }} className="stack">
           {s.steps.map((x) => (
             <li key={x.id} className="row" style={{ alignItems: "flex-start", gap: 10 }}>
@@ -110,11 +107,11 @@ function SetupChecklist() {
               <span className="stack" style={{ gap: 2 }}>
                 <span style={{ fontSize: 13 }}>
                   {x.label}
-                  <span className="sr">{x.done ? " (done)" : " (to do)"}</span>
+                  <span className="sr">{x.done ? T.done : T.toDo}</span>
                   <span className="muted" style={{ fontSize: 12 }}>
                     {" "}
                     · {x.detail}
-                    {x.optional ? " · optional" : ""}
+                    {x.optional ? T.optional : ""}
                   </span>
                 </span>
                 {!x.done && x.fix && (
@@ -129,12 +126,10 @@ function SetupChecklist() {
         {scanned && (
           <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: "wrap" }}>
             <button type="button" className="btn primary" onClick={() => void accept()}>
-              Accept the catalog as the baseline
+              {T.acceptTheCatalogAs}
             </button>
             <span className="muted" style={{ fontSize: 12 }}>
-              After walking the ecosystem map with the architect. Every later scan, document and
-              change is compared with it. It is a file in the metarepo, so it reaches main through a
-              pull request.
+              {T.afterWalkingTheEcosystem}
             </span>
           </div>
         )}
@@ -175,10 +170,10 @@ function DigestButtons() {
     <div className="stack" style={{ gap: 6, marginTop: 10 }}>
       <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
         <button type="button" className="btn" disabled={busy} onClick={() => void go(false)}>
-          Show my digest
+          {T.showMyDigest}
         </button>
         <button type="button" className="btn" disabled={busy} onClick={() => void go(true)}>
-          Send it to me
+          {T.sendItToMe}
         </button>
       </div>
       {error && (
@@ -194,7 +189,7 @@ function DigestButtons() {
               {l}
             </span>
           ))}
-          {d.sent && <span style={{ color: "var(--green)" }}>Sent to {d.sent.channel}.</span>}
+          {d.sent && <span style={{ color: "var(--green)" }}>{T.sentTo(d.sent.channel)}</span>}
           {d.notSent && <span className="muted">{d.notSent}</span>}
         </div>
       )}
@@ -270,39 +265,38 @@ export function CommandCenter() {
             : changes.state !== "ready" || findings.state !== "ready"
               ? COPY.app.ccReading
               : blocking.length + gaps.length > 0
-                ? `${blocking.length + gaps.length} things need attention.`
-                : "Nothing is blocked right now."}
+                ? T.thingsNeedAttention(blocking.length + gaps.length)
+                : T.nothingIsBlockedRight}
         </p>
         <span className="hud">
-          {me ? `Live from your metarepo · you are ${me.user}` : "Live from your metarepo"}
+          {me ? T.liveFromYourMetarepo(me.user) : T.liveFromYourMetarepo2}
         </span>
       </div>
       <SetupChecklist />
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-        Approving is the pull request: each phase ends with a hand-off PR, and merging it approves
-        the gate. Your Git host decides who may approve.
+        {T.approvingIsThePull}
       </p>
 
-      <div className="bento" role="list" aria-label="Key numbers">
+      <div className="bento" role="list" aria-label={T.keyNumbers}>
         {[
           // A count not loaded shows a dash, never a 0 that reads as "none".
           {
-            label: "Changes in flight",
+            label: T.changesInFlight2,
             value: changes.state === "ready" ? inFlight.length : undefined,
             color: "var(--text)",
           },
           {
-            label: "Blocking findings",
+            label: T.blockingFindings,
             value: findings.state === "ready" ? blocking.length : undefined,
             color: blocking.length ? "var(--magenta)" : "var(--text)",
           },
           {
-            label: "Open owner questions",
+            label: T.openOwnerQuestions,
             value: qs.state === "ready" ? questions : undefined,
             color: questions ? "var(--amber)" : "var(--text)",
           },
           {
-            label: "Facts in the catalog",
+            label: T.factsInTheCatalog,
             value: kinds.state === "ready" ? facts : undefined,
             color: "var(--accent)",
           },
@@ -326,12 +320,8 @@ export function CommandCenter() {
       </div>
 
       <div className="bento">
-        <Panel title={focus ? `Gate pipeline · ${focus.id}` : "Gate pipeline"} span="span 5">
-          <View
-            of={changes}
-            empty={() => !focus}
-            emptyText="No change in flight. Start one with atticus change new."
-          >
+        <Panel title={focus ? T.gatePipeline(focus.id) : T.gatePipeline2} span="span 5">
+          <View of={changes} empty={() => !focus} emptyText={T.noChangeInFlight}>
             {() => {
               const at = PHASES.indexOf(focus!.state as (typeof PHASES)[number]);
               return (
@@ -343,11 +333,11 @@ export function CommandCenter() {
                           value={i + 1}
                           max={PHASES.length}
                           size={48}
-                          label={`${PHASE_LABEL[p]}: current phase`}
+                          label={T.currentPhase(PHASE_LABEL[p] ?? "")}
                         />
                       ) : (
                         <span
-                          aria-label={`${PHASE_LABEL[p]}: ${i < at ? "done" : "to come"}`}
+                          aria-label={`${PHASE_LABEL[p]}: ${i < at ? T.done2 : T.toCome}`}
                           role="img"
                           style={{
                             width: 44,
@@ -377,8 +367,8 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel title="Changes in flight" meta={`${inFlight.length}`} span="span 4">
-          <View of={changes} empty={() => inFlight.length === 0} emptyText="No changes in flight.">
+        <Panel title={T.changesInFlight} meta={`${inFlight.length}`} span="span 4">
+          <View of={changes} empty={() => inFlight.length === 0} emptyText={T.noChangesInFlight}>
             {() =>
               inFlight.map((c) => {
                 const s = stateChip(c);
@@ -399,13 +389,13 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel title="Interfaces" kind="dark" span="span 3">
+        <Panel title={T.interfaces} kind="dark" span="span 3">
           <View of={kinds}>
             {() => (
               <div className="stack">
                 <span className="big">{interfaces}</span>
                 <span className="hud" style={{ fontSize: 10 }}>
-                  Interfaces in the catalog
+                  {T.interfacesInTheCatalog}
                 </span>
               </div>
             )}
@@ -413,22 +403,18 @@ export function CommandCenter() {
         </Panel>
 
         <Panel
-          title="System map"
+          title={T.systemMap}
           kind="hero"
           span="span 8"
           rows="span 2"
-          meta={<a href="#/explore">Explore</a>}
+          meta={<a href="#/explore">{T.explore}</a>}
         >
-          <View
-            of={graph}
-            empty={(g) => g.nodes.length === 0}
-            emptyText="The catalog is empty. Run a scan to map your repos."
-          >
+          <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
             {() => (
               <View
                 of={map}
                 empty={(m) => m.view.nodes.length === 0}
-                emptyText="The catalog is empty. Run a scan to map your repos."
+                emptyText={T.theCatalogIsEmpty}
               >
                 {(m) => <FlowCanvas view={m.view} height={420} />}
               </View>
@@ -436,18 +422,17 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel title="Needs a person" span="span 4" meta={inbox.length || undefined}>
+        <Panel title={T.needsAPerson} span="span 4" meta={inbox.length || undefined}>
           {changes.state === "loading" || findings.state === "loading" ? (
             <div className="state" role="status">
-              Loading…
+              {T.loading}
             </div>
           ) : changes.state === "error" || findings.state === "error" ? (
             <div className="state" role="alert">
-              Couldn't load what needs a person. Check that atticus ui is still running, then
-              reload.
+              {T.couldntLoadWhatNeeds}
             </div>
           ) : inbox.length === 0 ? (
-            <div className="state">Nothing needs a person right now.</div>
+            <div className="state">{T.nothingNeedsAPerson}</div>
           ) : (
             <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
               {inbox.slice(0, 5).map((x, k) => (
@@ -475,7 +460,7 @@ export function CommandCenter() {
               ))}
               {inbox.length > 5 && (
                 <li className="muted" style={{ fontSize: 12, paddingTop: 6 }}>
-                  and {inbox.length - 5} more
+                  {T.andMore(inbox.length - 5)}
                 </li>
               )}
             </ul>
@@ -483,8 +468,8 @@ export function CommandCenter() {
           {me && <DigestButtons />}
         </Panel>
 
-        <Panel title="Findings by lens" span="span 4">
-          <View of={findings} empty={(f) => f.length === 0} emptyText="No open findings.">
+        <Panel title={T.findingsByLens} span="span 4">
+          <View of={findings} empty={(f) => f.length === 0} emptyText={T.noOpenFindings}>
             {() => (
               <div className="stack">
                 {[...byLens.entries()]
@@ -495,7 +480,7 @@ export function CommandCenter() {
                         {lens}
                       </span>
                       <div style={{ flex: 1 }}>
-                        <Bar value={n} max={lensMax} label={`${lens} findings`} />
+                        <Bar value={n} max={lensMax} label={T.findings(lens)} />
                       </div>
                       <span className="n" style={{ fontSize: 14 }}>
                         {n}
@@ -507,19 +492,19 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel title="Where findings come from" kind="dark" span="span 4">
-          <View of={findings} empty={(f) => f.length === 0} emptyText="No open findings.">
+        <Panel title={T.whereFindingsComeFrom} kind="dark" span="span 4">
+          <View of={findings} empty={(f) => f.length === 0} emptyText={T.noOpenFindings}>
             {(f) => (
               <Donut
-                title="Open findings by source"
+                title={T.openFindingsBySource}
                 parts={[
                   {
-                    label: "Checks from code",
+                    label: T.checksFromCode,
                     value: f.filter((x) => x.layer !== "ai").length,
                     color: "var(--accent)",
                   },
                   {
-                    label: "AI lenses",
+                    label: T.aiLenses,
                     value: f.filter((x) => x.layer === "ai").length,
                     color: "var(--magenta)",
                   },
@@ -529,8 +514,8 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel title="Catalog" span="span 4">
-          <View of={kinds} empty={(k) => k.length === 0} emptyText="No facts yet.">
+        <Panel title={T.catalog} span="span 4">
+          <View of={kinds} empty={(k) => k.length === 0} emptyText={T.noFactsYet}>
             {(k) => {
               const top = [...k].sort((a, b) => b.count - a.count).slice(0, 5);
               const max = Math.max(1, ...top.map((x) => x.count));
@@ -542,7 +527,7 @@ export function CommandCenter() {
                         {x.kind}
                       </span>
                       <div style={{ flex: 1 }}>
-                        <Bar value={x.count} max={max} label={`${x.kind} records`} />
+                        <Bar value={x.count} max={max} label={T.records(x.kind)} />
                       </div>
                       <span className="n" style={{ fontSize: 14 }}>
                         {x.count}
@@ -556,8 +541,7 @@ export function CommandCenter() {
         </Panel>
       </div>
       <p className="hud" style={{ textAlign: "center", fontSize: 10, color: "var(--faint)" }}>
-        A person approves every write · Atticus never touches live systems · every fact keeps its
-        evidence
+        {T.aPersonApprovesEvery}
       </p>
     </>
   );

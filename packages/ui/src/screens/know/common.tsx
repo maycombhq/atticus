@@ -3,6 +3,8 @@ import { ApiError, useApi, type Loaded } from "../../api/client.js";
 import { LoadError, Panel } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 
+const TX = COPY.knowCommon;
+
 /** A read-only view (`/api/view/<name>[/<id>]`): the JSON an `atticus … --json` command prints. */
 export function useView<T>(
   name: string,
@@ -327,7 +329,7 @@ export function Table<R>(p: {
       style={{ overflowX: "auto", position: "relative" }}
       tabIndex={0}
       role="region"
-      aria-label={p.caption ?? "Table"}
+      aria-label={p.caption ?? TX.table}
     >
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 480 }}>
         {p.caption && <caption className="sr">{p.caption}</caption>}

@@ -1,24 +1,35 @@
 import { useEffect, useState } from "react";
 import { COPY } from "../copy.js";
 import "../screens/work/work.css";
-import { MAIN, MORE, MORE_GROUPS, type ScreenDef } from "./screens.js";
+import { groupLabel, MAIN, MORE, MORE_GROUPS, type ScreenDef } from "./screens.js";
+
+const T = COPY.menu;
+
+/**
+ * Atticus's mark: a mockingbird built from geometry (docs/brand/mockingbird.svg), each part apart
+ * by a thin gap, in the theme's accent.
+ */
+const MOCKINGBIRD = [
+  "M7.4 12.6 H19.4 A6 6 0 0 1 7.4 12.6 Z",
+  "M13.4 11.8 H7.8 A5.6 5.6 0 0 1 13.4 6.2 V8.7 A3.1 3.1 0 0 0 10.3 11.8 Z",
+  "M13.4 11.8 H11.2 A2.2 2.2 0 0 1 13.4 9.6 Z",
+  "M17.1 6.6 a2.5 2.5 0 1 1 0 5 a2.5 2.5 0 1 1 0 -5 Z M17.6 8.45 a0.62 0.62 0 1 0 0 1.24 a0.62 0.62 0 1 0 0 -1.24 Z",
+  "M19.4 8.3 L23 9.1 L19.4 9.9 Z",
+  "M0.6 12.6 H6.6 V15.2 Z",
+];
 
 function Logo() {
   return (
-    <svg aria-hidden="true" width="26" height="26" viewBox="0 0 26 26">
-      <polygon
-        points="13,2 24,8 24,18 13,24 2,18 2,8"
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="1.5"
-        style={{ filter: "drop-shadow(0 0 var(--glow-size) var(--accent))" }}
-      />
-      <path
-        d="M8 18 L13 7 L18 18 M10 14 H16"
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="1.5"
-      />
+    <svg
+      aria-hidden="true"
+      width="26"
+      height="26"
+      viewBox="0 0 24 24"
+      style={{ filter: "drop-shadow(0 0 var(--glow-size) var(--accent))" }}
+    >
+      {MOCKINGBIRD.map((d) => (
+        <path key={d} d={d} fill="var(--accent)" fillRule="evenodd" />
+      ))}
     </svg>
   );
 }
@@ -43,10 +54,10 @@ export function Nav({ current }: { current: ScreenDef }) {
     if (inMore) setOpen(true);
   }, [inMore]);
   return (
-    <nav aria-label="Main" className="nav">
+    <nav aria-label={COPY.nav.main} className="nav">
       <div className="brand">
         <Logo />
-        ATTICUS
+        {T.atticus}
       </div>
       <div role="group" aria-label={COPY.nav.main}>
         {MAIN.map((s) => (
@@ -66,8 +77,8 @@ export function Nav({ current }: { current: ScreenDef }) {
       </button>
       <div id="nav-more" hidden={!open}>
         {MORE_GROUPS.map((g) => (
-          <div key={g} role="group" aria-label={g}>
-            <div className="group">{g}</div>
+          <div key={g} role="group" aria-label={groupLabel(g)}>
+            <div className="group">{groupLabel(g)}</div>
             {MORE.filter((s) => s.group === g).map((s) => (
               <Link key={s.id} s={s} current={current} />
             ))}
@@ -85,7 +96,7 @@ export function Nav({ current }: { current: ScreenDef }) {
             boxShadow: "0 0 8px var(--accent)",
           }}
         />
-        Ask Atticus
+        {T.askAtticus}
       </a>
     </nav>
   );

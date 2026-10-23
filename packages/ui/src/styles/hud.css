@@ -3,7 +3,8 @@
    amber for needs-you, green for done, violet for AI. Text keeps 4.5:1 on every panel.
 
    Every colour in the app is one of these tokens, so a theme is only a different set of values
-   (ADR 0098). The browser always gets the dark set below. Inside a VS Code panel the webview's
+   (ADR 0098). The browser gets the dark set below, or the light set after it when the theme
+   switch or the system asks for light. Inside a VS Code panel the webview's
    <body> carries vscode-light, vscode-dark, vscode-high-contrast or vscode-high-contrast-light,
    and the blocks after :root swap the values to follow the editor. */
 
@@ -112,9 +113,12 @@
   --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
-/* VS Code light and high-contrast light: a plain light ground, no grid or glow, and accents
-   darkened until text keeps 4.5:1 and marks and control borders 3:1 on every light panel. The
-   html:has() selector carries the tokens to the page background behind <body> as well. */
+/* The light theme: the browser app's (data-theme="light" on <html>, set by app/theme.ts from the
+   theme switch or the system's light preference), VS Code light and high-contrast light share
+   this one block. A plain light ground, no grid or glow, and accents darkened until text keeps
+   4.5:1 and marks and control borders 3:1 on every light panel. The html:has() selector carries
+   the tokens to the page background behind <body> as well. */
+:root[data-theme="light"],
 html:has(> body.vscode-light),
 html:has(> body.vscode-high-contrast-light),
 body.vscode-light,

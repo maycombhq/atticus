@@ -9,6 +9,9 @@ import {
   SecurityPanel,
 } from "./ReleaseViews.js";
 import { Note, plural, useAction } from "./shared.js";
+import { COPY } from "../../copy.js";
+
+const T = COPY.release;
 
 interface ReleaseItem {
   id: string;
@@ -64,17 +67,17 @@ interface ReleaseDetail {
 }
 
 const STATE_LABEL: Record<string, string> = {
-  "release-ready": "AT GO / NO-GO",
+  "release-ready": T.atGoNoGo,
   released: "RELEASED",
-  "post-release-review": "POST-RELEASE REVIEW",
+  "post-release-review": T.postReleaseReview,
 };
 
 function List({ list, current }: { list: Loaded<ReleaseItem[]>; current?: string }) {
   return (
-    <Panel title="Changes" span="span 3" rows="span 3">
-      <View of={list} empty={(l) => l.length === 0} emptyText="No changes in flight.">
+    <Panel title={T.changes} span="span 3" rows="span 3">
+      <View of={list} empty={(l) => l.length === 0} emptyText={T.noChangesInFlight}>
         {(l) => (
-          <nav aria-label="Changes" className="stack" style={{ gap: 2 }}>
+          <nav aria-label={T.changes} className="stack" style={{ gap: 2 }}>
             {l.map((c) => (
               <a
                 key={c.id}
@@ -155,27 +158,27 @@ function Detail({ id }: { id: string }) {
               <div className="stack" style={{ gap: 12 }}>
                 <p style={{ margin: 0, fontSize: 14 }}>
                   <span className="hud" style={{ marginRight: 8 }}>
-                    Next
+                    {T.next}
                   </span>
                   {r.status.nextStep}
                 </p>
                 <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
-                  <span className="chip dim">TYPE {r.change.type.toUpperCase()}</span>
+                  <span className="chip dim">{T.type(r.change.type.toUpperCase())}</span>
                   <span
                     className={`chip ${r.status.risk.level === "high" ? "blocking" : r.status.risk.level === "medium" ? "warn" : ""}`}
                   >
-                    RISK {r.status.risk.level.toUpperCase()}
+                    {T.risk(r.status.risk.level.toUpperCase())}
                   </span>
                   <span className="chip">
                     {(STATE_LABEL[r.change.state] ?? r.change.state).toUpperCase()}
                   </span>
                 </div>
-                <ul className="run-gates" aria-label="Gates to go-live">
+                <ul className="run-gates" aria-label={T.gatesToGoLive}>
                   <Gate
-                    label="Requests"
+                    label={T.requests}
                     value={
                       r.requests.total === 0
-                        ? "NONE NEEDED"
+                        ? T.noneNeeded
                         : r.requests.toFile
                           ? `${r.requests.toFile} NOT FILED`
                           : `${r.requests.filed} FILED`
@@ -183,48 +186,53 @@ function Detail({ id }: { id: string }) {
                     ok={r.requests.toFile === 0}
                     detail={
                       r.requests.total === 0
-                        ? "snow.md lists no service-desk request."
-                        : `${r.requests.filed} of ${r.requests.total} filed.`
+                        ? T.snowMdListsNo
+                        : T.ofFiled(r.requests.filed, r.requests.total)
                     }
                   />
                   <Gate
-                    label="Findings"
+                    label={T.findings}
                     value={blockingFindings ? `${blockingFindings} OPEN` : "CLEAR"}
                     ok={blockingFindings === 0}
-                    detail={`${r.openFindings.blocking} blocking, ${plural(r.openFindings.gap, "knowledge gap")}.`}
+                    detail={T.blocking(
+                      r.openFindings.blocking,
+                      plural(r.openFindings.gap, T.knowledgeGap),
+                    )}
                   />
                   <Gate
-                    label="Go / no-go PR"
+                    label={T.goNoGoPr}
                     value={
                       r.handoff
                         ? r.handoff.state === "merged"
                           ? "MERGED"
                           : approvers.length
-                            ? "APPROVED, NOT MERGED"
+                            ? T.approvedNotMerged
                             : r.handoff.state.toUpperCase()
                         : r.change.state === "release-ready"
-                          ? "NOT RAISED"
+                          ? T.notRaised
                           : "LATER"
                     }
                     ok={r.handoff?.state === "merged"}
                     warn={!r.handoff}
                     detail={
                       r.handoff
-                        ? `Merging ${r.handoff.pr} is the go${approvers.length ? `; approved by ${approvers.join(", ")}` : ""}.`
-                        : "Go / no-go is the release hand-off PR: merging it is the go."
+                        ? T.mergingIsTheGo(
+                            r.handoff.pr,
+                            approvers.length ? T.approvedBy(approvers.join(", ")) : "",
+                          )
+                        : T.goNoGoIs
                     }
                   />
                   <Gate
-                    label="Archive gate"
+                    label={T.archiveGate}
                     value={r.archive.pass ? "OPEN" : `${r.archive.blockers.length} BLOCKERS`}
                     ok={r.archive.pass}
                     warn={!r.archive.pass && r.change.state !== "released"}
-                    detail="Opens once released, merged, built and the catalog matches."
+                    detail={T.opensOnceReleasedMerged}
                   />
                 </ul>
                 <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  A person approves every gate by merging its hand-off PR; the Git host decides who
-                  may approve, and the person who raised a PR can't be its only approver.
+                  {T.aPersonApprovesEvery}
                 </p>
                 <div className="row" style={{ flexWrap: "wrap" }}>
                   <button
@@ -235,29 +243,19 @@ function Detail({ id }: { id: string }) {
                       r.change.state !== "release-ready" ||
                       (!!r.handoff && r.handoff.state === "open")
                     }
-                    title={
-                      r.change.state !== "release-ready"
-                        ? "The change reaches go / no-go after QA"
-                        : undefined
-                    }
-                    onClick={() =>
-                      post(
-                        `/api/changes/${id}/handoff`,
-                        {},
-                        "Go / no-go PR opened. Reviewers decide on the Git host; merging it is the go.",
-                      )
-                    }
+                    title={r.change.state !== "release-ready" ? T.theChangeReachesGo : undefined}
+                    onClick={() => post(`/api/changes/${id}/handoff`, {}, T.goNoGoPr2)}
                   >
-                    Ask for go / no-go
+                    {T.askForGoNo}
                   </button>
                   <button
                     type="button"
                     className="btn"
                     disabled={act.busy || !r.handoff}
-                    title="Reads the PR; merges it as you once it is approved and the Git host's checks pass"
-                    onClick={() => post(`/api/changes/${id}/sync`, {}, "Synced with the Git host.")}
+                    title={T.readsThePrMerges}
+                    onClick={() => post(`/api/changes/${id}/sync`, {}, T.syncedWithTheGit)}
                   >
-                    Sync and merge when approved
+                    {T.syncAndMergeWhen}
                   </button>
                   <button
                     type="button"
@@ -265,12 +263,10 @@ function Detail({ id }: { id: string }) {
                     disabled={
                       act.busy || !["released", "post-release-review"].includes(r.change.state)
                     }
-                    title="Archives the change and rescans its repos"
-                    onClick={() =>
-                      post(`/api/release/${id}/archive`, {}, "Archived. Its repos were rescanned.")
-                    }
+                    title={T.archivesTheChangeAnd}
+                    onClick={() => post(`/api/release/${id}/archive`, {}, T.archivedItsReposWere)}
                   >
-                    Archive
+                    {T.archive}
                   </button>
                 </div>
                 <Note note={act.note} />
@@ -282,11 +278,11 @@ function Detail({ id }: { id: string }) {
 
       <PlanPanels id={id} tick={tick} />
 
-      <Panel title="What stops it" span="span 6">
+      <Panel title={T.whatStopsIt} span="span 6">
         <View
           of={d}
           empty={(r) => r.status.blockers.length + r.status.reasons.length === 0}
-          emptyText="Nothing stops this change right now."
+          emptyText={T.nothingStopsThisChange}
         >
           {(r) => (
             <ul className="run-steps">
@@ -300,11 +296,11 @@ function Detail({ id }: { id: string }) {
         </View>
       </Panel>
 
-      <Panel title="Archive gate" span="span 6">
+      <Panel title={T.archiveGate} span="span 6">
         <View of={d}>
           {(r) =>
             r.archive.pass ? (
-              <p className="run-note ok">The change may be archived.</p>
+              <p className="run-note ok">{T.theChangeMayBe}</p>
             ) : (
               <div className="stack">
                 <ul className="run-steps">
@@ -323,12 +319,8 @@ function Detail({ id }: { id: string }) {
         </View>
       </Panel>
 
-      <Panel title="Conflicts with other changes" span="span 6">
-        <View
-          of={d}
-          empty={(r) => r.conflicts.length === 0}
-          emptyText="No other open change touches the same things."
-        >
+      <Panel title={T.conflictsWithOtherChanges} span="span 6">
+        <View of={d} empty={(r) => r.conflicts.length === 0} emptyText={T.noOtherOpenChange}>
           {(r) =>
             r.conflicts.map((c) => (
               <div key={c.with} className="list-row" style={{ alignItems: "flex-start" }}>
@@ -337,15 +329,15 @@ function Detail({ id }: { id: string }) {
                     {c.with}
                   </a>
                   <span className="muted" style={{ fontSize: 12 }}>
-                    Also touches{" "}
-                    {Object.entries(c.overlap)
-                      .filter(([, v]) => v.length)
-                      .map(([k, v]) => `${k} ${v.join(", ")}`)
-                      .join("; ")}
-                    . Agree an order before release.
+                    {T.alsoTouchesAgreeAn(
+                      Object.entries(c.overlap)
+                        .filter(([, v]) => v.length)
+                        .map(([k, v]) => `${k} ${v.join(", ")}`)
+                        .join("; "),
+                    )}
                   </span>
                 </span>
-                <span className="chip warn">OVERLAP</span>
+                <span className="chip warn">{T.overlap}</span>
               </div>
             ))
           }
@@ -353,22 +345,20 @@ function Detail({ id }: { id: string }) {
       </Panel>
 
       <Panel
-        title="Evidence pack"
+        title={T.evidencePack}
         meta={d.state === "ready" ? plural(d.data.evidence.length, "file") : undefined}
         span="span 6"
       >
-        <View of={d} empty={(r) => r.evidence.length === 0} emptyText="The change folder is empty.">
+        <View of={d} empty={(r) => r.evidence.length === 0} emptyText={T.theChangeFolderIs}>
           {(r) => (
             <div className="stack">
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                For the approval board or an audit: one Markdown document generated from the change
-                folder (summary, every file with its sha-256, critic rounds and waivers, approvals,
-                trace, requests and steps, drift and AI runs), each item with its source.
+                {T.forTheApprovalBoard}
               </p>
               <ExportEvidence id={id} />
               <ul
                 tabIndex={0}
-                aria-label="Evidence files"
+                aria-label={T.evidenceFiles}
                 style={{
                   listStyle: "none",
                   margin: 0,
@@ -383,7 +373,7 @@ function Detail({ id }: { id: string }) {
                       {f.path}
                     </span>
                     <span className="hud" style={{ fontSize: 9.5 }}>
-                      {f.bytes < 1024 ? `${f.bytes} B` : `${Math.round(f.bytes / 1024)} KB`}
+                      {f.bytes < 1024 ? `${f.bytes} B` : T.kb(Math.round(f.bytes / 1024))}
                     </span>
                   </li>
                 ))}
@@ -410,9 +400,9 @@ export function Release({ hash }: { hash: string }) {
       {current ? (
         <Detail key={current} id={current} />
       ) : (
-        <Panel title="No change selected" span="span 9">
+        <Panel title={T.noChangeSelected} span="span 9">
           <p className="muted" style={{ margin: 0 }}>
-            Pick a change on the left. Changes reach go / no-go after QA.
+            {T.pickAChangeOn}
           </p>
         </Panel>
       )}

@@ -11,6 +11,9 @@ import {
   plural,
   useAction,
 } from "./shared.js";
+import { COPY } from "../../copy.js";
+
+const T = COPY.todo;
 
 interface ResultField {
   name: string;
@@ -89,7 +92,7 @@ function ResultInput(p: {
     const opts = p.f.format === "yes-no" ? ["yes", "no"] : (p.f.choices ?? []);
     return (
       <select {...common} className="run-select" onChange={(e) => p.onChange(e.target.value)}>
-        <option value="">Choose</option>
+        <option value="">{T.choose}</option>
         {opts.map((o) => (
           <option key={o}>{o}</option>
         ))}
@@ -108,7 +111,7 @@ function ResultInput(p: {
     <input
       {...common}
       type={type}
-      placeholder={p.f.help ?? (p.f.format === "handles" ? "pat, dana" : "")}
+      placeholder={p.f.help ?? (p.f.format === "handles" ? T.patDana : "")}
       onChange={(e) => p.onChange(e.target.value)}
     />
   );
@@ -122,15 +125,12 @@ function LocalTool({ step, done }: { step: Step; done: () => void }) {
   return (
     <div className="stack" style={{ borderTop: "1px solid var(--rule)", paddingTop: 10 }}>
       <div className="row" style={{ flexWrap: "wrap" }}>
-        <span className="chip ai">LOCAL TOOL</span>
-        <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>
-          A tool on the allow-list can do this step for you. You approve the exact inputs; it gets
-          no credentials.
-        </span>
+        <span className="chip ai">{T.localTool}</span>
+        <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>{T.aToolOnThe}</span>
       </div>
       <div className="row" style={{ flexWrap: "wrap" }}>
         <label className="run-label" htmlFor={`exec-${step.id}`}>
-          Tool
+          {T.tool}
           <select
             id={`exec-${step.id}`}
             className="run-select"
@@ -156,24 +156,24 @@ function LocalTool({ step, done }: { step: Step; done: () => void }) {
                 api<Preview>(
                   `/api/todo/${step.id}/run?with=${encodeURIComponent(executor)}${step.change ? `&change=${encodeURIComponent(step.change)}` : ""}`,
                 ).then(setPreview),
-              "These are the exact inputs the tool gets. Approve them to run it.",
+              T.theseAreTheExact,
             )
           }
         >
-          Show the inputs
+          {T.showTheInputs}
         </button>
       </div>
       {preview && (
         <>
           <pre
             className="run-inert"
-            aria-label="Inputs the tool gets"
+            aria-label={T.inputsTheToolGets}
             style={{ borderStyle: "solid" }}
           >
             {JSON.stringify(preview.inputs, null, 2)}
           </pre>
           <span className="hud" style={{ fontSize: 10 }}>
-            sha-256 {preview.inputsSha256.slice(0, 16)}…
+            {T.sha256(preview.inputsSha256.slice(0, 16))}
           </span>
           <button
             type="button"
@@ -197,7 +197,7 @@ function LocalTool({ step, done }: { step: Step; done: () => void }) {
               )
             }
           >
-            Run with {executor}, I approve these inputs
+            {T.runWithIApprove(executor)}
           </button>
         </>
       )}
@@ -228,8 +228,8 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
     <div className="stack" style={{ gap: 12 }}>
       <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
         <span className="chip">{(SYSTEM_LABEL[step.system] ?? step.system).toUpperCase()}</span>
-        <span className="chip warn">MANUAL</span>
-        {step.procedure && <span className="chip dim">PROCEDURE {step.procedure}</span>}
+        <span className="chip warn">{T.manual}</span>
+        {step.procedure && <span className="chip dim">{T.procedure(step.procedure)}</span>}
         {step.change && (
           <a className="chip" href={`#/changes/${step.change}`}>
             {step.change}
@@ -238,13 +238,11 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
       </div>
       <p style={{ margin: 0, fontSize: 15 }}>{step.title}</p>
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-        Where: {step.where}. {step.reason ? `Why this is manual: ${step.reason}. ` : ""}
-        Every value comes from the change files. Nothing is sent until you do it.
+        {T.whereEveryValueComes(step.where, step.reason ? T.whyThisIsManual(step.reason) : "")}
       </p>
       {step.waitsFor.length > 0 && (
         <p className="run-note bad" role="note">
-          Do {step.waitsFor.join(", ")} first: this step depends on{" "}
-          {step.waitsFor.length === 1 ? "it" : "them"}.
+          {T.doFirstThisStep(step.waitsFor.join(", "), step.waitsFor.length === 1 ? T.it : T.them)}
         </p>
       )}
       {step.instructions.length > 0 && (
@@ -258,10 +256,10 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
         <div>
           <div className="row between" style={{ marginBottom: 4 }}>
             <span className="hud" style={{ fontSize: 10 }}>
-              Fields to copy
+              {T.fieldsToCopy}
             </span>
             <span className="row" style={{ gap: 6 }}>
-              <CopyButton text={allText} label="Copy all fields" />
+              <CopyButton text={allText} label={T.copyAllFields} />
               <button
                 type="button"
                 className="btn run-copy"
@@ -278,11 +276,11 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
                           );
                         return navigator.clipboard.writeText(r.text);
                       }),
-                    "Copied the fields as CSV, ready to import.",
+                    T.copiedTheFieldsAs,
                   )
                 }
               >
-                Copy as CSV
+                {T.copyAsCsv}
               </button>
             </span>
           </div>
@@ -291,8 +289,8 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
               <span className="hud" style={{ fontSize: 10 }}>
                 {f.name}
               </span>
-              <span className={`value ${f.value ? "" : "empty"}`}>{f.value || "Empty"}</span>
-              {f.value ? <CopyButton text={f.value} label={`Copy ${f.name}`} /> : <span />}
+              <span className={`value ${f.value ? "" : "empty"}`}>{f.value || T.empty}</span>
+              {f.value ? <CopyButton text={f.value} label={T.copy(f.name)} /> : <span />}
             </div>
           ))}
           <Note note={copyAll.note} />
@@ -301,13 +299,13 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
       {step.state === "open" ? (
         <form onSubmit={submit} className="stack">
           <span className="hud" style={{ fontSize: 10 }}>
-            When it's done, record
+            {T.whenItsDoneRecord}
           </span>
           <div className="row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
             {step.result.map((f) => (
               <label key={f.name} className="run-label" htmlFor={`r-${step.id}-${f.name}`}>
                 {f.label}
-                {f.required ? "" : " (optional)"}
+                {f.required ? "" : T.optional}
                 <ResultInput
                   f={f}
                   id={`r-${step.id}-${f.name}`}
@@ -317,12 +315,12 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
               </label>
             ))}
             <button type="submit" className="btn primary" disabled={act.busy}>
-              Mark done
+              {T.markDone}
             </button>
           </div>
           <div className="row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
             <label className="run-label" htmlFor={`skip-${step.id}`} style={{ flex: "1 1 240px" }}>
-              Reason to skip
+              {T.reasonToSkip}
               <input
                 id={`skip-${step.id}`}
                 className="run-input"
@@ -345,7 +343,7 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
                 )
               }
             >
-              Skip with this reason
+              {T.skipWithThisReason}
             </button>
           </div>
           <Note note={act.note} />
@@ -353,13 +351,16 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
         </form>
       ) : (
         <p className="run-note ok">
-          {step.state === "done" ? "Done" : "Skipped"} by {step.recorded?.by} on{" "}
-          {day(step.recorded?.at)}
-          {step.recorded?.via === "executor" ? " (by a local tool)" : ""}.
-          {step.recorded?.note ? ` ${step.recorded.note}` : ""}
-          {Object.entries(step.recorded?.values ?? {})
-            .map(([k, v]) => ` ${k}: ${String(v)}.`)
-            .join("")}
+          {T.byOn(
+            step.state === "done" ? T.done : T.skipped,
+            step.recorded?.by ?? "",
+            day(step.recorded?.at),
+            step.recorded?.via === "executor" ? T.byALocalTool : "",
+            step.recorded?.note ? ` ${step.recorded.note}` : "",
+            Object.entries(step.recorded?.values ?? {})
+              .map(([k, v]) => ` ${k}: ${String(v)}.`)
+              .join(""),
+          )}
         </p>
       )}
     </div>
@@ -397,45 +398,44 @@ export function Todo() {
       <div className="row between" style={{ flexWrap: "wrap" }}>
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
           {todo.state !== "ready"
-            ? "To-do and manual steps"
+            ? T.toDoAndManual
             : open.length
-              ? `${plural(open.length, "step")} wait for a person.`
-              : "Nothing to do: every manual step is done."}
+              ? T.waitForAPerson(plural(open.length, "step"))
+              : T.nothingToDoEvery}
         </p>
         {changes.length > 1 && (
           <Choice
-            label="Change"
+            label={T.change}
             value={change}
             onChange={setChange}
             options={[
-              { value: "all", label: "All changes" },
-              ...changes.map((c) => ({ value: c, label: c === "none" ? "No change" : c })),
+              { value: "all", label: T.allChanges },
+              ...changes.map((c) => ({ value: c, label: c === "none" ? T.noChange2 : c })),
             ]}
           />
         )}
       </div>
       <p className="muted" style={{ margin: 0 }}>
-        Steps a person does in the work tracker, service desk or Git host when Atticus can't reach
-        them.
+        {T.stepsAPersonDoes}
       </p>
 
       <div className="bento">
-        <Panel title="Progress" span="span 3">
-          <View of={todo} empty={() => steps.length === 0} emptyText="No manual steps yet.">
+        <Panel title={T.progress} span="span 3">
+          <View of={todo} empty={() => steps.length === 0} emptyText={T.noManualStepsYet}>
             {() => (
               <div className="stack" style={{ alignItems: "flex-start" }}>
                 <Ring
                   value={closed.length}
                   max={steps.length}
                   size={72}
-                  label={`${closed.length} of ${steps.length} steps done`}
+                  label={T.ofStepsDone(closed.length, steps.length)}
                 />
                 <Donut
-                  title="Steps"
+                  title={T.steps}
                   parts={[
-                    { label: "Done", value: closed.length, color: "var(--green)" },
-                    { label: "Open", value: open.length - waiting.length, color: "var(--accent)" },
-                    { label: "Waiting on others", value: waiting.length, color: "var(--amber)" },
+                    { label: T.done2, value: closed.length, color: "var(--green)" },
+                    { label: T.open2, value: open.length - waiting.length, color: "var(--accent)" },
+                    { label: T.waitingOnOthers, value: waiting.length, color: "var(--amber)" },
                   ]}
                 />
               </div>
@@ -443,7 +443,7 @@ export function Todo() {
           </View>
         </Panel>
 
-        <Panel title="Where steps come from" span="span 4">
+        <Panel title={T.whereStepsComeFrom} span="span 4">
           <View of={todo}>
             {(d) => (
               <div className="stack" style={{ gap: 2 }}>
@@ -453,28 +453,31 @@ export function Todo() {
                     <div key={s.system} className="list-row">
                       <span>{SYSTEM_LABEL[s.system] ?? s.system}</span>
                       <span className="row" style={{ gap: 6 }}>
-                        {s.open > 0 && <span className="chip warn">{s.open} OPEN</span>}
+                        {s.open > 0 && <span className="chip warn">{T.open(s.open)}</span>}
                         <AdapterChip type={s.configured} />
                       </span>
                     </div>
                   ))}
                 <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
                   {d.exports.files.length
-                    ? `Exports in inputs/: ${plural(d.exports.workItems, "work item")}, ${plural(d.exports.requests, "request")}.`
-                    : "No exports in inputs/ yet: drop a tracker or desk export there so Atticus can check results."}
+                    ? T.exportsInInputs(
+                        plural(d.exports.workItems, T.workItem),
+                        plural(d.exports.requests, "request"),
+                      )
+                    : T.noExportsInInputs}
                 </p>
               </div>
             )}
           </View>
         </Panel>
 
-        <Panel title="Local automation" span="span 5">
+        <Panel title={T.localAutomation} span="span 5">
           <View of={todo}>
             {(d) => (
               <div className="stack">
                 <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                  Allow-listed tools can do a step for you. A person approves each write and no
-                  credentials are passed. <a href="#/settings">Executors allow-list</a>
+                  {T.allowListedToolsCan}
+                  <a href="#/settings">{T.executorsAllowList}</a>
                 </p>
                 <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
                   {d.executors.configured.length ? (
@@ -485,7 +488,7 @@ export function Todo() {
                     ))
                   ) : (
                     <span className="muted" style={{ fontSize: 12.5 }}>
-                      No tools set up on this machine (.atticus/executors.yaml).
+                      {T.noToolsSetUp}
                     </span>
                   )}
                 </div>
@@ -499,10 +502,10 @@ export function Todo() {
           </View>
         </Panel>
 
-        <Panel title="Open steps" meta={open.length} span="span 4" rows="span 2">
-          <View of={todo} empty={() => open.length === 0} emptyText="No open steps.">
+        <Panel title={T.openSteps} meta={open.length} span="span 4" rows="span 2">
+          <View of={todo} empty={() => open.length === 0} emptyText={T.noOpenSteps}>
             {() => (
-              <nav aria-label="Open steps" className="stack" style={{ gap: 2 }}>
+              <nav aria-label={T.openSteps} className="stack" style={{ gap: 2 }}>
                 {Object.entries(
                   open.reduce<Record<string, Step[]>>((a, s) => {
                     (a[s.system] ??= []).push(s);
@@ -524,11 +527,11 @@ export function Todo() {
                         <span className="stack" style={{ gap: 2, minWidth: 0 }}>
                           <span style={{ fontSize: 12.5 }}>{s.title}</span>
                           <span className="hud" style={{ fontSize: 9.5 }}>
-                            {s.change ?? "no change"} · {s.id}
+                            {s.change ?? T.noChange} · {s.id}
                           </span>
                         </span>
                         <span className={`chip ${s.waitsFor.length ? "warn" : ""}`}>
-                          {s.waitsFor.length ? "WAITS" : "TO DO"}
+                          {s.waitsFor.length ? T.waits : T.toDo}
                         </span>
                       </button>
                     ))}
@@ -539,13 +542,8 @@ export function Todo() {
           </View>
         </Panel>
 
-        <Panel
-          title={selected ? "Step" : "No step selected"}
-          span="span 8"
-          rows="span 2"
-          kind="hero"
-        >
-          <View of={todo} empty={() => !selected} emptyText="Pick a step on the left.">
+        <Panel title={selected ? T.step : T.noStepSelected} span="span 8" rows="span 2" kind="hero">
+          <View of={todo} empty={() => !selected} emptyText={T.pickAStepOn}>
             {() => (
               <StepDetail
                 key={`${selected!.change}/${selected!.id}`}
@@ -556,20 +554,16 @@ export function Todo() {
           </View>
         </Panel>
 
-        <Panel title="Procedures a local tool can run" span="span 7">
-          <View
-            of={todo}
-            empty={(d) => d.procedures.length === 0}
-            emptyText="The org pack has no procedures yet (process/procedures)."
-          >
+        <Panel title={T.proceduresALocalTool} span="span 7">
+          <View of={todo} empty={(d) => d.procedures.length === 0} emptyText={T.theOrgPackHas}>
             {(d) => (
               <table className="run-table">
                 <thead>
                   <tr>
-                    <th>Procedure</th>
-                    <th>Tools allowed</th>
-                    <th>Writes</th>
-                    <th>Last run</th>
+                    <th>{T.procedure2}</th>
+                    <th>{T.toolsAllowed}</th>
+                    <th>{T.writes}</th>
+                    <th>{T.lastRun}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -583,21 +577,17 @@ export function Todo() {
                       </td>
                       <td>
                         {p.allowed.length === 0 ? (
-                          <span className="muted">none (off)</span>
+                          <span className="muted">{T.noneOff}</span>
                         ) : (
                           p.allowed.map((x) => (
                             <span
                               key={x}
                               className={`chip ${p.configured.includes(x) ? "ai" : "dim"}`}
-                              title={
-                                p.configured.includes(x)
-                                  ? "Set up here"
-                                  : "Not set up on this machine"
-                              }
+                              title={p.configured.includes(x) ? T.setUpHere : T.notSetUpOn}
                               style={{ marginRight: 4 }}
                             >
                               {x}
-                              {p.configured.includes(x) ? "" : " · not here"}
+                              {p.configured.includes(x) ? "" : T.notHere}
                             </span>
                           ))
                         )}
@@ -606,7 +596,7 @@ export function Todo() {
                       <td>
                         {p.lastRun
                           ? `${day(p.lastRun.at)} · ${p.lastRun.status} · ${p.lastRun.executor}`
-                          : "never run"}
+                          : T.neverRun}
                       </td>
                     </tr>
                   ))}
@@ -615,13 +605,12 @@ export function Todo() {
             )}
           </View>
           <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
-            Each run shows the exact inputs first, waits for your approval, and logs what happened.
-            Protected branches and deploys are never touched.
+            {T.eachRunShowsThe}
           </p>
         </Panel>
 
-        <Panel title="Done" meta={closed.length} span="span 5">
-          <View of={todo} empty={() => closed.length === 0} emptyText="Nothing done yet.">
+        <Panel title={T.done} meta={closed.length} span="span 5">
+          <View of={todo} empty={() => closed.length === 0} emptyText={T.nothingDoneYet}>
             {() =>
               closed.map((s) => (
                 <button
@@ -641,11 +630,11 @@ export function Todo() {
           </View>
         </Panel>
 
-        <Panel title="Owner questions waiting" meta={questions.length || undefined} span="span 12">
+        <Panel title={T.ownerQuestionsWaiting} meta={questions.length || undefined} span="span 12">
           <View
             of={findings}
             empty={() => questions.length === 0}
-            emptyText="No owner questions waiting."
+            emptyText={T.noOwnerQuestionsWaiting}
           >
             {() => (
               <div className="stack" style={{ gap: 0 }}>
@@ -654,14 +643,14 @@ export function Todo() {
                     <span className="stack" style={{ gap: 2, minWidth: 0 }}>
                       <span style={{ fontSize: 12.5 }}>{f.question!.text}</span>
                       <span className="hud" style={{ fontSize: 9.5 }}>
-                        {f.question!.owner ?? "owner not known"} · {f.change} · {f.gate}
+                        {f.question!.owner ?? T.ownerNotKnown} · {f.change} · {f.gate}
                       </span>
                     </span>
                     <span className="row" style={{ gap: 6 }}>
                       <span className={`chip ${f.state === "asked" ? "ai" : "warn"}`}>
                         {f.state.toUpperCase()}
                       </span>
-                      <CopyButton text={f.question!.text} label="Copy question text" />
+                      <CopyButton text={f.question!.text} label={T.copyQuestionText} />
                       <a
                         className="btn"
                         href={`#/changes/${f.change}`}
@@ -671,14 +660,13 @@ export function Todo() {
                           textDecoration: "none",
                         }}
                       >
-                        Open change
+                        {T.openChange}
                       </a>
                     </span>
                   </div>
                 ))}
                 <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
-                  Each question is asked once and the answer is reused at every gate. Asking happens
-                  outside Atticus: copy the text, then record the answer on the change.
+                  {T.eachQuestionIsAsked}
                 </p>
               </div>
             )}

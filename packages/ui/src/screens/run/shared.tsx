@@ -3,6 +3,8 @@ import { ApiError } from "../../api/client.js";
 import { COPY } from "../../copy.js";
 import "./run.css";
 
+const TX = COPY.runShared;
+
 /** Pieces the Release and Run screens share: actions that say what happened, copy buttons, chips. */
 
 export function message(e: unknown): string {
@@ -76,7 +78,7 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
         setTimeout(() => setDone(undefined), 2000);
       }}
     >
-      {done === "copied" ? "Copied" : done === "failed" ? "Select and copy" : "Copy"}
+      {done === "copied" ? TX.copied : done === "failed" ? TX.selectAndCopy : TX.copy}
     </button>
   );
 }
@@ -121,19 +123,19 @@ export function Choice<T extends string>(p: {
 
 /** How an outside system is reached, as a chip with words. */
 export function AdapterChip({ type }: { type: string | null }) {
-  if (!type) return <span className="chip dim">NOT SET</span>;
-  if (type === "manual") return <span className="chip warn">MANUAL</span>;
-  if (type === "mock") return <span className="chip dim">MOCK</span>;
-  return <span className="chip done">CONNECTED · {type.toUpperCase()}</span>;
+  if (!type) return <span className="chip dim">{TX.notSet}</span>;
+  if (type === "manual") return <span className="chip warn">{TX.manual}</span>;
+  if (type === "mock") return <span className="chip dim">{TX.mock}</span>;
+  return <span className="chip done">{TX.connected(type.toUpperCase())}</span>;
 }
 
 export const SYSTEM_LABEL: Record<string, string> = {
-  "work-tracker": "Work tracker",
-  "service-desk": "Service desk",
-  "git-host": "Git host",
-  wiki: "Wiki",
-  notify: "Notifications",
-  design: "Design tool",
+  "work-tracker": TX.workTracker,
+  "service-desk": TX.serviceDesk,
+  "git-host": TX.gitHost,
+  wiki: TX.wiki,
+  notify: TX.notifications,
+  design: TX.designTool,
 };
 
 export const day = (iso?: string) => (iso ? iso.slice(0, 10) : "");

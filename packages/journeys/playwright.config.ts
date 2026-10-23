@@ -19,6 +19,9 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     viewport: { width: 1440, height: 900 },
+    // The app follows the system's theme. The journeys run dark, as the app was built; the light
+    // theme has its own pass over every screen (17-light-theme).
+    colorScheme: "dark",
     launchOptions: chromium ? { executablePath: chromium } : {},
     trace: "retain-on-failure",
   },

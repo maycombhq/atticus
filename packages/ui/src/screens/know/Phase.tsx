@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError, useApi, useLiveEvents } from "../../api/client.js";
 import { Bar, Donut, ExternalLink, Panel, Ring, View } from "../../app/ui.js";
 import {
@@ -17,6 +17,8 @@ import { COPY } from "../../copy.js";
 import { withForceHint } from "../run/shared.js";
 import { NoChangeYet } from "../work/RunNext.js";
 import { ChangeWaiting, Markdown, Note, Table, useAction, useChange, useView } from "./common.js";
+
+const T = COPY.phase;
 
 const SEV_CHIP: Record<string, string> = {
   blocking: "blocking",
@@ -52,7 +54,7 @@ function GateHeader(p: {
               <span style={{ fontSize: 18, fontWeight: 600 }}>{d.title}</span>
               <span className="hud" style={{ fontSize: 10 }}>
                 {d.id} · {d.type}
-                {d.handoff ? ` · hand-off ${d.handoff.phase} ${d.handoff.state}` : ""}
+                {d.handoff ? T.handOff(d.handoff.phase, d.handoff.state) : ""}
               </span>
             </div>
             <Pipeline state={d.state} />
@@ -62,7 +64,7 @@ function GateHeader(p: {
     </Panel>
   );
   const gate = (
-    <Panel title="Gate" kind="dark">
+    <Panel title={T.gate} kind="dark">
       <View of={status}>
         {(s) => (
           <div className="stack" style={{ gap: 10 }}>
@@ -78,13 +80,15 @@ function GateHeader(p: {
             )}
             {s.handoff ? (
               <span className="muted" style={{ fontSize: 12 }}>
-                Approval: merge{" "}
-                <ExternalLink href={s.handoff.pr.url}>PR #{s.handoff.pr.number}</ExternalLink> on
-                the Git host; that approves the gate.
+                {T.approvalMerge}
+                <ExternalLink href={s.handoff.pr.url}>
+                  {T.pr(s.handoff.pr.number)}
+                </ExternalLink>{" "}
+                {T.onTheGitHost}
               </span>
             ) : (
               <span className="muted" style={{ fontSize: 12 }}>
-                Approval: raise the hand-off; merging its PR approves the gate.
+                {T.approvalRaiseTheHand}
               </span>
             )}
             <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
@@ -97,13 +101,11 @@ function GateHeader(p: {
                     void act.run(
                       () =>
                         api(`/api/changes/${p.id}/critic`, { method: "POST", body: {} }).then(done),
-                      aiOn
-                        ? "The rule checks ran; any AI lens is with your assistant. Finish each with atticus handoff done."
-                        : "The rule checks ran. AI is off here, so no lens waits.",
+                      aiOn ? T.theRuleChecksRan : T.theRuleChecksRan2,
                     )
                   }
                 >
-                  {aiOn ? "Run the critic" : "Run the rule checks"}
+                  {aiOn ? T.runTheCritic : T.runTheRuleChecks}
                 </button>
               )}
               <button
@@ -114,11 +116,11 @@ function GateHeader(p: {
                   void act.run(
                     () =>
                       api(`/api/changes/${p.id}/handoff`, { method: "POST", body: {} }).then(done),
-                    "Hand-off PR raised. A person approves and merges it.",
+                    T.handOffPrRaised,
                   )
                 }
               >
-                Raise hand-off
+                {T.raiseHandOff}
               </button>
               <button
                 type="button"
@@ -127,11 +129,11 @@ function GateHeader(p: {
                 onClick={() =>
                   void act.run(
                     () => api(`/api/changes/${p.id}/sync`, { method: "POST", body: {} }).then(done),
-                    "Synced with the hand-off PR.",
+                    T.syncedWithTheHand,
                   )
                 }
               >
-                Sync and merge when approved
+                {T.syncAndMergeWhen}
               </button>
             </div>
             <Note note={act.note} />
@@ -155,6 +157,13 @@ function ArtifactPanel({
 }) {
   const a = useApi<Artifact & { artifact: string }>(`/api/changes/${change}/artifacts/${artifact}`);
   const [edit, setEdit] = useState(false);
+  // Closing the editor puts the keyboard back on Edit, which comes back with the panel.
+  const editBtn = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (!edit && wasEditing.current) editBtn.current?.focus();
+    wasEditing.current = edit;
+  }, [edit]);
   if (edit)
     return (
       <ArtifactEditor
@@ -173,17 +182,14 @@ function ArtifactPanel({
       span={span}
       meta={
         missing ? undefined : (
-          <button type="button" className="btn" onClick={() => setEdit(true)}>
-            Edit
+          <button ref={editBtn} type="button" className="btn" onClick={() => setEdit(true)}>
+            {T.edit}
           </button>
         )
       }
     >
       {missing ? (
-        <div className="state">
-          Not written yet for this change. It is drafted when the change reaches this phase, or by
-          its agent.
-        </div>
+        <div className="state">{T.notWrittenYetFor}</div>
       ) : (
         <View of={a}>
           {(d) => (
@@ -194,7 +200,7 @@ function ArtifactPanel({
               <div
                 tabIndex={0}
                 role="region"
-                aria-label={`${artifact} text`}
+                aria-label={T.text(artifact)}
                 style={{ maxHeight: 520, overflowY: "auto", paddingRight: 6 }}
               >
                 <Markdown text={d.content} />
@@ -236,16 +242,12 @@ function FindingsPanel({
       : [];
   return (
     <Panel
-      title="Critic findings"
+      title={T.criticFindings}
       span={span}
       {...(rows ? { rows } : {})}
-      meta={f.state === "ready" ? `${mine.length} open` : undefined}
+      meta={f.state === "ready" ? T.open(mine.length) : undefined}
     >
-      <View
-        of={f}
-        empty={() => mine.length === 0}
-        emptyText="No open findings on this. Run the critic to check it."
-      >
+      <View of={f} empty={() => mine.length === 0} emptyText={T.noOpenFindingsOn}>
         {() => (
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }} className="stack">
             {mine.map((x) => (
@@ -281,8 +283,10 @@ function FindingsPanel({
                     </p>
                     {x.question && (
                       <p style={{ margin: 0, fontSize: 12.5 }}>
-                        Question{x.question.owner ? ` for ${x.question.owner}` : ""}:{" "}
-                        {x.question.text}
+                        {T.question(
+                          x.question.owner ? T.for(x.question.owner) : "",
+                          x.question.text,
+                        )}
                       </p>
                     )}
                     <FindingActions change={change} f={x} done={() => f.reload()} />
@@ -352,7 +356,7 @@ export function Brief({ hash }: { hash: string }) {
     <PhaseScreen
       hash={hash}
       screen="brief"
-      title="Feature brief"
+      title={T.featureBrief}
       artifacts={["brief", "proposal"]}
       critic="business-critic"
     />
@@ -364,17 +368,15 @@ export function UX({ hash }: { hash: string }) {
     <PhaseScreen
       hash={hash}
       screen="ux"
-      title="Prototypes and UX"
+      title={T.prototypesAndUx}
       artifacts={["ux"]}
       critic="ux-critic"
       extra={() => (
-        <Panel title="Bring in a prototype" span="span 4">
+        <Panel title={T.bringInAPrototype} span="span 4">
           <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>
-            Drop a design export (frames as images or PDF, or a prototype link file) into{" "}
-            <span className="mono">inputs/</span> from the <a href="#/intake">Intake</a> screen.
-            Atticus reads the screens and states as data, drafts requirements from them into the UX
-            artifact, and the UX lens checks loading, empty, error and done states and WCAG 2.1 AA
-            contrast.
+            {T.dropADesignExport}
+            <span className="mono">{T.inputs}</span> {T.fromThe}
+            <a href="#/intake">{T.intake}</a> {T.screenAtticusReadsThe}
           </p>
         </Panel>
       )}
@@ -393,20 +395,18 @@ interface Drift {
 function DriftPanel({ change }: { change: string }) {
   const d = useView<Drift>("drift", change);
   return (
-    <Panel title="Design vs plans vs code" span="span 4">
+    <Panel title={T.designVsPlansVs} span="span 4">
       <View of={d}>
         {(x) => {
           const open = x.findings.filter((f) => f.state === "open");
           return (
             <div className="stack" style={{ gap: 8 }}>
               <span className="hud" style={{ fontSize: 10 }}>
-                {x.plans.length
-                  ? `${x.plans.length} repo plans compared`
-                  : "No repo plans yet: design compared with code"}
+                {x.plans.length ? T.repoPlansCompared(x.plans.length) : T.noRepoPlansYet}
               </span>
               {open.length === 0 ? (
                 <span className="chip done" style={{ width: "fit-content" }}>
-                  IN SYNC
+                  {T.inSync}
                 </span>
               ) : (
                 <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6, fontSize: 12.5 }}>
@@ -434,18 +434,18 @@ export function ArchReview({ hash }: { hash: string }) {
     <PhaseScreen
       hash={hash}
       screen="arch-review"
-      title="Architecture review"
+      title={T.architectureReview}
       artifacts={["design", "interfaces"]}
       critic="architecture-critic"
       extra={(id) => (
         <>
           <DriftPanel change={id} />
-          <Panel title="Integration patterns" span="span 4" meta={<a href="#/orgpack">Org pack</a>}>
-            <View
-              of={op}
-              empty={(o) => !o.patterns?.length}
-              emptyText="The org pack has no patterns yet."
-            >
+          <Panel
+            title={T.integrationPatterns}
+            span="span 4"
+            meta={<a href="#/orgpack">{T.orgPack}</a>}
+          >
+            <View of={op} empty={(o) => !o.patterns?.length} emptyText={T.theOrgPackHas}>
               {(o) => (
                 <div className="stack" style={{ gap: 4 }}>
                   {o.patterns!.map((p) => (
@@ -455,18 +455,19 @@ export function ArchReview({ hash }: { hash: string }) {
                     </div>
                   ))}
                   <p className="muted" style={{ margin: "6px 0 0", fontSize: 11.5 }}>
-                    Every hop in design.md carries a pattern code; the critic checks each against
-                    the code. Code wins over a diagram; conflicts go to triage.
+                    {T.everyHopInDesign}
                   </p>
                 </div>
               )}
             </View>
           </Panel>
-          <Panel title="Your material" span="span 4">
+          <Panel title={T.yourMaterial} span="span 4">
             <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>
-              Vendor specs, whiteboard photos and standards go in through{" "}
-              <a href="#/intake">Intake</a>; diagrams are compared edge by edge on{" "}
-              <a href="#/reconcile">Reconcile</a>. Ingested content is data, never instructions.
+              {T.vendorSpecsWhiteboardPhotos}
+              <a href="#/intake">{T.intake}</a>
+              {T.diagramsAreComparedEdge}
+              <a href="#/reconcile">{T.reconcile}</a>
+              {T.ingestedContentIsData}
             </p>
           </Panel>
         </>
@@ -490,12 +491,8 @@ function MappingGrid({ change }: { change: string }) {
     `/api/changes/${encodeURIComponent(change)}/mappings`,
   );
   return (
-    <Panel title="Field mappings" meta="by hop, with the catalog">
-      <View
-        of={g}
-        empty={(d) => d.hops.length === 0}
-        emptyText="No hops in mappings.md yet. Add a section per new or modified hop: source field, target field, rule, and what happens when it is missing."
-      >
+    <Panel title={T.fieldMappings} meta={T.byHopWithThe}>
+      <View of={g} empty={(d) => d.hops.length === 0} emptyText={T.noHopsInMappings}>
         {(d) => (
           <div className="stack" style={{ gap: 14 }}>
             {d.hops.map((h) => (
@@ -505,9 +502,9 @@ function MappingGrid({ change }: { change: string }) {
                     {h.heading}
                   </h3>
                   {h.noChange ? (
-                    <span className="chip">NO MAPPING CHANGE</span>
+                    <span className="chip">{T.noMappingChange}</span>
                   ) : (
-                    <span className="chip">{h.rows.length} FIELDS</span>
+                    <span className="chip">{T.fields(h.rows.length)}</span>
                   )}
                 </div>
                 {h.note && (
@@ -519,34 +516,34 @@ function MappingGrid({ change }: { change: string }) {
                   <Table
                     rows={h.rows}
                     rowKey={(r) => String(r.line)}
-                    caption={`Field mappings for ${h.heading}`}
+                    caption={T.fieldMappingsFor(h.heading)}
                     cols={[
-                      { label: "Source field", cell: (r) => r.source, mono: true },
-                      { label: "Target field", cell: (r) => r.target, mono: true },
-                      { label: "Rule", cell: (r) => r.rule },
-                      { label: "When missing or invalid", cell: (r) => r.whenMissing },
+                      { label: T.sourceField, cell: (r) => r.source, mono: true },
+                      { label: T.targetField, cell: (r) => r.target, mono: true },
+                      { label: T.rule, cell: (r) => r.rule },
+                      { label: T.whenMissingOrInvalid, cell: (r) => r.whenMissing },
                     ]}
                   />
                 )}
                 {!h.noChange && h.rows.length === 0 && (
                   <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                    No field rows yet for this hop.
+                    {T.noFieldRowsYet}
                   </p>
                 )}
                 {h.asIs.length > 0 && (
                   <details>
                     <summary className="hud" style={{ fontSize: 10, cursor: "pointer" }}>
-                      Mapped today in the catalog · {h.asIs.length}
+                      {T.mappedTodayInThe(h.asIs.length)}
                     </summary>
                     <Table
                       rows={h.asIs}
                       rowKey={(r) => r.id}
-                      caption={`Catalog field mappings for ${h.heading}`}
+                      caption={T.catalogFieldMappingsFor(h.heading)}
                       cols={[
-                        { label: "Source field", cell: (r) => r.source, mono: true },
-                        { label: "Target field", cell: (r) => r.target, mono: true },
-                        { label: "Transform", cell: (r) => r.transform ?? "" },
-                        { label: "Record", cell: (r) => r.id, mono: true },
+                        { label: T.sourceField, cell: (r) => r.source, mono: true },
+                        { label: T.targetField, cell: (r) => r.target, mono: true },
+                        { label: T.transform, cell: (r) => r.transform ?? "" },
+                        { label: T.record, cell: (r) => r.id, mono: true },
                       ]}
                     />
                   </details>
@@ -555,7 +552,7 @@ function MappingGrid({ change }: { change: string }) {
             ))}
             {d.catalogMappings === 0 && (
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                The catalog has no field mappings yet, so there is nothing to compare with.
+                {T.theCatalogHasNo}
               </p>
             )}
           </div>
@@ -570,17 +567,15 @@ export function Mappings({ hash }: { hash: string }) {
     <PhaseScreen
       hash={hash}
       screen="mappings"
-      title="API mappings"
+      title={T.apiMappings}
       artifacts={["mappings"]}
       critic="architecture-critic"
       main={(id) => <MappingGrid change={id} />}
       extra={() => (
-        <Panel title="How mappings are checked" span="span 4">
+        <Panel title={T.howMappingsAreChecked} span="span 4">
           <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.6 }}>
-            Each hop's source field, transform and target field are checked against the catalog's
-            columns and schemas: a required target with no source, a narrowing type (80 to 40
-            characters) or personal data leaving the estate is a finding. Tests generated from the
-            stories trace back to these rows on <a href="#/trace">Test trace</a>.
+            {T.eachHopsSourceField}
+            <a href="#/trace">{T.testTrace}</a>.
           </p>
         </Panel>
       )}
@@ -601,12 +596,8 @@ interface StoryBar {
 function StoryBarPanel({ change }: { change: string }) {
   const bar = useView<StoryBar>("story-bar", change);
   return (
-    <Panel title="Story bar" span="span 4" kind="dark">
-      <View
-        of={bar}
-        empty={(b) => !b || b.stories.length === 0}
-        emptyText="No stories yet. Write them with AI from the approved design."
-      >
+    <Panel title={T.storyBar} span="span 4" kind="dark">
+      <View of={bar} empty={(b) => !b || b.stories.length === 0} emptyText={T.noStoriesYetWrite}>
         {(b) => (
           <div className="stack" style={{ gap: 10 }}>
             <div className="row">
@@ -614,10 +605,10 @@ function StoryBarPanel({ change }: { change: string }) {
                 value={b.ready.passed}
                 max={Math.max(b.ready.total, 1)}
                 size={64}
-                label={`${b.ready.passed} of ${b.ready.total} stories ready`}
+                label={T.ofStoriesReady(b.ready.passed, b.ready.total)}
               />
               <span className={`chip ${b.met ? "done" : "warn"}`}>
-                {b.met ? "BAR MET" : `NEEDS ${Math.round(b.ready.min * 100)}%`}
+                {b.met ? T.barMet : T.needs(Math.round(b.ready.min * 100))}
               </span>
             </div>
             {b.stories
@@ -631,7 +622,7 @@ function StoryBarPanel({ change }: { change: string }) {
               .filter((g) => !g.covered)
               .map((g) => (
                 <div key={g.id} style={{ fontSize: 12.5, color: "var(--amber-text)" }}>
-                  No story covers: {g.what}
+                  {T.noStoryCovers(g.what)}
                 </div>
               ))}
           </div>
@@ -645,11 +636,10 @@ function StoryWriter({ change }: { change: string }) {
   const act = useAction();
   const aiOn = useAiOn();
   return (
-    <Panel title="Stories and tasks" span="span 4">
+    <Panel title={T.storiesAndTasks} span="span 4">
       <div className="stack" style={{ gap: 8 }}>
         <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-          The story writer drafts stories, acceptance criteria and repo tasks from the approved
-          design. You edit them before the plan gate.
+          {T.theStoryWriterDrafts}
         </p>
         {aiOn ? (
           <button
@@ -663,11 +653,11 @@ function StoryWriter({ change }: { change: string }) {
                     method: "POST",
                     body: { agent: "story-writer", runtime: "hand-off" },
                   }).catch(withForceHint(COPY.app.forceStories(change))),
-                "The story writer's prompt is ready for your assistant.",
+                T.theStoryWritersPrompt,
               )
             }
           >
-            Write stories with AI
+            {T.writeStoriesWithAi}
           </button>
         ) : (
           <p style={{ margin: 0, fontSize: 12.5 }}>{AI_OFF_TEXT}</p>
@@ -683,7 +673,7 @@ export function Breakdown({ hash }: { hash: string }) {
     <PhaseScreen
       hash={hash}
       screen="breakdown"
-      title="Breakdown"
+      title={T.breakdown}
       artifacts={["stories", "tasks"]}
       critic="story-critic"
       extra={(id) => (
@@ -731,15 +721,11 @@ function TasksByRepo({
   };
   return (
     <Panel
-      title={compact ? "Hand-down preview" : "Tasks by repo"}
+      title={compact ? T.handDownPreview : T.tasksByRepo}
       span={span}
-      meta={tasks.state === "ready" ? `${tasks.data.length} tasks` : undefined}
+      meta={tasks.state === "ready" ? T.tasks(tasks.data.length) : undefined}
     >
-      <View
-        of={tasks}
-        empty={(t) => t.length === 0}
-        emptyText="No tasks yet: they come from tasks.md once the stories are written."
-      >
+      <View of={tasks} empty={(t) => t.length === 0} emptyText={T.noTasksYetThey}>
         {(t) => {
           const repos = [...new Set(t.map((x) => x.repo))].sort();
           return (
@@ -754,13 +740,13 @@ function TasksByRepo({
                         {r}
                       </span>
                       <span className="hud" style={{ fontSize: 10 }}>
-                        {done}/{mine.length} done
+                        {T.done(done, mine.length)}
                       </span>
                     </div>
                     <Bar
                       value={done}
                       max={mine.length}
-                      label={`${r}: ${done} of ${mine.length} tasks done`}
+                      label={T.ofTasksDone(r, done, mine.length)}
                     />
                     {!compact &&
                       mine.map((x) => (
@@ -778,7 +764,7 @@ function TasksByRepo({
                               <span className="mono muted">{x.id}</span> {x.description}
                             </span>
                             {x.done ? (
-                              <span className="chip done">DONE</span>
+                              <span className="chip done">{T.done2}</span>
                             ) : aiOn ? (
                               <button
                                 type="button"
@@ -786,17 +772,17 @@ function TasksByRepo({
                                 disabled={running[x.id]}
                                 onClick={() => void run(x)}
                               >
-                                Run with AI
+                                {T.runWithAi}
                               </button>
                             ) : (
                               <span className="chip dim" title={AI_OFF_TEXT}>
-                                BY HAND
+                                {T.byHand}
                               </span>
                             )}
                           </div>
                           <span className="mono muted" style={{ fontSize: 10.5 }}>
                             {x.branch}
-                            {x.story ? ` · story ${x.story}` : ""}
+                            {x.story ? T.story(x.story) : ""}
                           </span>
                           {ran[x.id] && (
                             <span role="status" style={{ fontSize: 12 }}>
@@ -824,8 +810,8 @@ function RunsPanel({ change }: { change: string }) {
   const passed =
     runs.state === "ready" ? runs.data.filter((r) => r.state === "validated").length : 0;
   return (
-    <Panel title="AI task runs" span="span 4" kind="dark">
-      <View of={runs} empty={(r) => r.length === 0} emptyText="No runs yet.">
+    <Panel title={T.aiTaskRuns} span="span 4" kind="dark">
+      <View of={runs} empty={(r) => r.length === 0} emptyText={T.noRunsYet}>
         {(r) => (
           <div className="stack" style={{ gap: 8 }}>
             <div className="row">
@@ -833,10 +819,10 @@ function RunsPanel({ change }: { change: string }) {
                 value={passed}
                 max={r.length}
                 size={60}
-                label={`${passed} of ${r.length} runs finished`}
+                label={T.ofRunsFinished(passed, r.length)}
               />
               <span className="muted" style={{ fontSize: 12 }}>
-                Every write is approved by a person; AI never pushes to protected branches.
+                {T.everyWriteIsApproved}
               </span>
             </div>
             {r.slice(-8).map((x) => (
@@ -866,14 +852,12 @@ function RunsPanel({ change }: { change: string }) {
 export function Tasks({ hash }: { hash: string }) {
   const c = useChange(hash, "tasks");
   if (c.none) return <NoChange />;
-  if (!c.id) return <ChangeWaiting list={c.list} title="Task board" />;
+  if (!c.id) return <ChangeWaiting list={c.list} title={T.taskBoard} />;
   return (
     <div className="bento" key={c.id}>
-      <Panel title="Task board" span="1 / -1" meta={c.picker}>
+      <Panel title={T.taskBoard} span="1 / -1" meta={c.picker}>
         <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-          Tasks in cross-repo order. Run a ready task with AI: Atticus hands the Spec Kit feature
-          down to the repo, prepares the prompt for your assistant and reads the result back at the
-          PR.
+          {T.tasksInCrossRepo}
         </p>
       </Panel>
       <TasksByRepo change={c.id} span="span 8" />
@@ -913,32 +897,27 @@ export function TestTrace({ hash }: { hash: string }) {
     c.id ? `/api/changes/${c.id}/status` : undefined,
   );
   if (c.none) return <NoChange />;
-  if (!c.id) return <ChangeWaiting list={c.list} title="Test trace" />;
+  if (!c.id) return <ChangeWaiting list={c.list} title={T.testTrace} />;
   const covered = t.state === "ready" ? t.data.rows.filter((r) => r.tests.length > 0).length : 0;
   const total = t.state === "ready" ? t.data.rows.length : 0;
   return (
     <div className="bento">
       <div className="column" style={{ gridColumn: "span 8" }}>
-        <Panel title="Test trace" kind="hero" meta={c.picker}>
+        <Panel title={T.testTrace} kind="hero" meta={c.picker}>
           <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5 }}>
-            Every requirement should reach a story, a test, code and a release. Gaps are flagged
-            before QA sign-off.
+            {T.everyRequirementShouldReach}
           </p>
-          <View
-            of={t}
-            empty={(d) => d.rows.length === 0}
-            emptyText="Nothing to trace yet: the change has no requirements with scenarios."
-          >
+          <View of={t} empty={(d) => d.rows.length === 0} emptyText={T.nothingToTraceYet}>
             {(d) => (
               <Table
-                caption="Requirement to code"
+                caption={T.requirementToCode}
                 rows={d.rows}
                 rowKey={(r) =>
                   `${r.requirement?.key ?? ""}/${r.story ?? ""}/${r.criterion?.n ?? ""}`
                 }
                 cols={[
                   {
-                    label: "Requirement",
+                    label: T.requirement,
                     cell: (r) =>
                       r.requirement ? (
                         <span className="stack" style={{ gap: 2 }}>
@@ -952,7 +931,7 @@ export function TestTrace({ hash }: { hash: string }) {
                       ) : (
                         <span className="stack" style={{ gap: 2 }}>
                           <span className="chip warn" style={{ width: "fit-content" }}>
-                            NO REQUIREMENT
+                            {T.noRequirement}
                           </span>
                           {r.criterion && (
                             <span className="muted" style={{ fontSize: 11.5 }}>
@@ -963,47 +942,43 @@ export function TestTrace({ hash }: { hash: string }) {
                       ),
                   },
                   {
-                    label: "Story",
-                    cell: (r) => r.story ?? <span className="chip warn">NO STORY</span>,
+                    label: T.story2,
+                    cell: (r) => r.story ?? <span className="chip warn">{T.noStory}</span>,
                     mono: true,
                   },
                   {
-                    label: "Test",
+                    label: T.test,
                     cell: (r) =>
                       r.tests.length ? (
                         r.tests.join(", ")
                       ) : (
-                        <span className="chip blocking">NO TEST</span>
+                        <span className="chip blocking">{T.noTest}</span>
                       ),
                     mono: true,
                   },
-                  { label: "Code", cell: (r) => r.code.slice(0, 3).join(", "), mono: true },
+                  { label: T.code, cell: (r) => r.code.slice(0, 3).join(", "), mono: true },
                 ]}
               />
             )}
           </View>
         </Panel>
         <Panel
-          title="Gaps before QA sign-off"
+          title={T.gapsBeforeQaSign}
           meta={t.state === "ready" ? t.data.gaps.length : undefined}
         >
-          <View
-            of={t}
-            empty={(d) => d.gaps.length === 0}
-            emptyText="No gaps: every requirement reaches a story and a test."
-          >
+          <View of={t} empty={(d) => d.gaps.length === 0} emptyText={T.noGapsEveryRequirement}>
             {(d) => (
               <Table
-                caption="Trace gaps"
+                caption={T.traceGaps}
                 rows={d.gaps}
                 rowKey={(g) => `${g.kind}/${g.subject}`}
                 cols={[
                   {
-                    label: "Gap",
+                    label: T.gap,
                     cell: (g) => <span className="chip warn">{g.kind}</span>,
                     width: "190px",
                   },
-                  { label: "What", cell: (g) => g.summary },
+                  { label: T.what, cell: (g) => g.summary },
                 ]}
               />
             )}
@@ -1011,7 +986,7 @@ export function TestTrace({ hash }: { hash: string }) {
         </Panel>
       </div>
       <div className="column" style={{ gridColumn: "span 4" }}>
-        <Panel title="Scenario coverage" kind="dark">
+        <Panel title={T.scenarioCoverage} kind="dark">
           <View of={t}>
             {(d) => (
               <div className="stack" style={{ gap: 10 }}>
@@ -1020,15 +995,15 @@ export function TestTrace({ hash }: { hash: string }) {
                     value={covered}
                     max={Math.max(total, 1)}
                     size={72}
-                    label={`${covered} of ${total} rows have a test`}
+                    label={T.ofRowsHaveA(covered, total)}
                     text={total ? `${Math.round((covered / total) * 100)}%` : "–"}
                   />
                   <span className="muted" style={{ fontSize: 12.5 }}>
-                    {covered} of {total} traced to a test
+                    {T.ofTracedToA(covered, total)}
                   </span>
                 </div>
                 <Donut
-                  title="Gaps by kind"
+                  title={T.gapsByKind}
                   parts={[...new Set(d.gaps.map((g) => g.kind))].map((k, i) => ({
                     label: k,
                     value: d.gaps.filter((g) => g.kind === k).length,
@@ -1041,11 +1016,11 @@ export function TestTrace({ hash }: { hash: string }) {
             )}
           </View>
         </Panel>
-        <Panel title="Test kinds this change needs">
+        <Panel title={T.testKindsThisChange}>
           <View
             of={status}
             empty={(s) => !s.tests?.required?.length}
-            emptyText="The test strategy asks for nothing extra here."
+            emptyText={T.theTestStrategyAsks}
           >
             {(s) => (
               <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
@@ -1063,8 +1038,7 @@ export function TestTrace({ hash }: { hash: string }) {
             )}
           </View>
           <p className="muted" style={{ margin: "10px 0 0", fontSize: 11.5 }}>
-            Required kinds come from the change type and risk in the org pack's test strategy. Tests
-            are generated from story scenarios, then reviewed by a person.
+            {T.requiredKindsComeFrom}
           </p>
         </Panel>
       </div>

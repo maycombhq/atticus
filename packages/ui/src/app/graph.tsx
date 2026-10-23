@@ -1,5 +1,8 @@
 import { useMemo } from "react";
 import { FlowCanvas, type FlowViewData } from "./flow.js";
+import { COPY } from "../copy.js";
+
+const T = COPY.graph;
 
 export interface Graph {
   nodes: { id: string; kind: string; label: string; status: string; system?: string }[];
@@ -26,7 +29,7 @@ const KIND: Record<string, FlowViewData["nodes"][number]["kind"]> = {
  * draws: a system with components is a group around them, a system without is a node, and
  * every link is an edge labelled with how it travels. The same catalog draws the same picture.
  */
-export function graphView(g: Graph, title = "Map"): FlowViewData {
+export function graphView(g: Graph, title = T.map): FlowViewData {
   const members = new Set(g.nodes.map((n) => n.system).filter((s): s is string => !!s));
   const groups = g.nodes
     .filter((n) => n.kind === "System" && members.has(n.id))

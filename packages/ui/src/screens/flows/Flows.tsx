@@ -8,6 +8,8 @@ import { CopyButton } from "../run/shared.js";
 import { sequence, targetSequence, type Lane, type Row, type Sequence } from "./model.js";
 import "./flows.css";
 
+const T = COPY.flowsScreen;
+
 /**
  * The Flows screen (ADR 0092): a repo's spec flows (ADR 0079), and the picked one drawn as a
  * sequence of steps across lanes. It reads the specs API only; it changes nothing. A call that
@@ -160,7 +162,7 @@ export function SequenceDiagram({
         style={cols}
         tabIndex={0}
         role="region"
-        aria-label={C.diagram(name ?? "this flow")}
+        aria-label={C.diagram(name ?? T.thisFlow)}
       >
         <div className="seq-row seq-head" aria-hidden="true">
           {seq.lanes.map((l, i) => (
@@ -177,7 +179,7 @@ export function SequenceDiagram({
             </div>
           ))}
         </div>
-        <ol className="seq-steps" aria-label={C.diagram(name ?? "this flow")}>
+        <ol className="seq-steps" aria-label={C.diagram(name ?? T.thisFlow)}>
           {seq.rows.map((r) => (
             <Step key={r.n} r={r} lanes={seq.lanes} now={r.n === current} />
           ))}

@@ -4,6 +4,9 @@ import { FlowCanvas, type FlowViewData } from "../../app/flow.js";
 import { GraphView, type Graph } from "../../app/graph.js";
 import { Bar, CheckAgain, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { Table, queryParam, setQueryParam, useView } from "./common.js";
+import { COPY } from "../../copy.js";
+
+const T = COPY.design;
 
 // ------------------------------------------------------------------ Contracts
 
@@ -54,7 +57,7 @@ function ContractList({
       <View
         of={l}
         empty={(d) => d.items.length === 0}
-        emptyText={`No ${title.toLowerCase()} in the catalog.`}
+        emptyText={T.noInTheCatalog(title.toLowerCase())}
       >
         {(d) => (
           <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
@@ -105,11 +108,11 @@ function ContractDetail({ r }: { r: Rec }) {
           <div className="stack" style={{ gap: 12 }}>
             <div>
               <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
-                Evidence
+                {T.evidence}
               </div>
               {(d.evidence ?? []).length === 0 ? (
                 <p className="muted" style={{ margin: 0 }}>
-                  No evidence: treat it as unconfirmed.
+                  {T.noEvidenceTreatIt}
                 </p>
               ) : (
                 (d.evidence ?? []).map((e, i) => (
@@ -128,12 +131,12 @@ function ContractDetail({ r }: { r: Rec }) {
             </div>
             <div>
               <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
-                Consumers and dependants
+                {T.consumersAndDependants}
               </div>
               <View
                 of={imp}
                 empty={(x) => x.affected.length === 0}
-                emptyText="Nothing in the catalog depends on it."
+                emptyText={T.nothingInTheCatalog}
               >
                 {(x) => (
                   <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
@@ -144,14 +147,14 @@ function ContractDetail({ r }: { r: Rec }) {
                           {a.id}
                         </span>
                       ))}
-                    <a href={`#/impact?q=${encodeURIComponent(r.id)}`}>See impact</a>
+                    <a href={`#/impact?q=${encodeURIComponent(r.id)}`}>{T.seeImpact}</a>
                   </div>
                 )}
               </View>
             </div>
             <details>
               <summary className="hud" style={{ fontSize: 10, cursor: "pointer" }}>
-                Record
+                {T.record}
               </summary>
               <pre
                 className="mono"
@@ -186,62 +189,59 @@ export function Contracts() {
   const total = iface.state === "ready" ? iface.data.items.length : 0;
   return (
     <div className="bento">
-      <Panel title="Contracts" span="span 4" rows="span 2">
+      <Panel title={T.contracts} span="span 4" rows="span 2">
         <div
           className="stack"
           tabIndex={0}
           role="region"
-          aria-label="Contracts list"
+          aria-label={T.contractsList}
           style={{ gap: 14, maxHeight: 640, overflowY: "auto" }}
         >
           <ContractList
             kind="Endpoint"
-            title="APIs"
+            title={T.apis}
             pick={setPicked}
             {...(picked ? { picked: picked.id } : {})}
           />
           <ContractList
             kind="Interface"
-            title="Interfaces and events"
+            title={T.interfacesAndEvents}
             pick={setPicked}
             {...(picked ? { picked: picked.id } : {})}
           />
           <ContractList
             kind="Table"
-            title="Data stores"
+            title={T.dataStores}
             pick={setPicked}
             {...(picked ? { picked: picked.id } : {})}
           />
           <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-            Data stores come from DDL, migrations, ORM mappings and DBA exports, never live
-            databases.
+            {T.dataStoresComeFrom}
           </p>
         </div>
       </Panel>
       {picked ? (
         <ContractDetail key={`${picked.kind}/${picked.id}`} r={picked} />
       ) : (
-        <Panel title="Pick a contract" span="span 5" rows="span 2">
-          <div className="state">
-            Choose an API, an interface or a table to see its evidence and who depends on it.
-          </div>
+        <Panel title={T.pickAContract} span="span 5" rows="span 2">
+          <div className="state">{T.chooseAnApiAn}</div>
         </Panel>
       )}
-      <Panel title="Contract mix" span="span 3" kind="dark">
+      <Panel title={T.contractMix} span="span 3" kind="dark">
         <View of={kinds}>
           {() => (
             <Donut
-              title="Contracts by kind"
+              title={T.contractsByKind}
               parts={[
                 { label: "APIs", value: n("Endpoint"), color: "var(--accent)" },
-                { label: "Interfaces", value: n("Interface"), color: "var(--violet)" },
-                { label: "Tables", value: n("Table"), color: "var(--amber)" },
+                { label: T.interfaces, value: n("Interface"), color: "var(--violet)" },
+                { label: T.tables, value: n("Table"), color: "var(--amber)" },
               ]}
             />
           )}
         </View>
       </Panel>
-      <Panel title="Verified from code" span="span 3">
+      <Panel title={T.verifiedFromCode} span="span 3">
         <View of={iface}>
           {() => (
             <div className="stack">
@@ -249,12 +249,12 @@ export function Contracts() {
                 value={verified}
                 max={Math.max(total, 1)}
                 size={64}
-                label={`${verified} of ${total} interfaces verified from code`}
+                label={T.ofInterfacesVerifiedFrom(verified, total)}
               />
               <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-                A vendor spec is a document until its caller is scanned; code wins when they differ.
+                {T.aVendorSpecIs}
               </p>
-              <a href="#/mappings">Field mappings</a>
+              <a href="#/mappings">{T.fieldMappings}</a>
             </div>
           )}
         </View>
@@ -301,11 +301,12 @@ export function Reconcile({ hash }: { hash: string }) {
   if (r.state === "error" && noDiagrams(r.error))
     return (
       <div className="bento">
-        <Panel title="Reconcile a diagram against the catalog" span="1 / -1">
+        <Panel title={T.reconcileADiagramAgainst} span="1 / -1">
           <div className="state">
-            No diagrams yet. Put draw.io, Visio, Lucid CSV or Mermaid files under{" "}
-            <span className="mono">inputs/diagrams/</span> (or add them on{" "}
-            <a href="#/intake">Intake</a>), then come back.
+            {T.noDiagramsYetPut}
+            <span className="mono">{T.inputsDiagrams}</span> {T.orAddThemOn}
+            <a href="#/intake">{T.intake}</a>
+            {T.thenComeBack}
           </div>
         </Panel>
       </div>
@@ -316,8 +317,8 @@ export function Reconcile({ hash }: { hash: string }) {
   const items = d ? d.items.filter((i) => filter === "all" || i.type === filter) : [];
   return (
     <div className="bento">
-      <Panel title="Diagrams" span="span 4">
-        <View of={r} empty={() => diagrams.length === 0} emptyText="No diagrams could be read.">
+      <Panel title={T.diagrams} span="span 4">
+        <View of={r} empty={() => diagrams.length === 0} emptyText={T.noDiagramsCouldBe}>
           {() => (
             <div className="stack" style={{ gap: 8 }}>
               {diagrams.map((x) => (
@@ -338,15 +339,15 @@ export function Reconcile({ hash }: { hash: string }) {
                       {x.file.replace(/^inputs\/diagrams\//, "")}
                     </span>
                     <span className="hud" style={{ fontSize: 9.5 }}>
-                      {x.matches.length}/{x.edges} edges match code
+                      {T.edgesMatchCode(x.matches.length, x.edges)}
                     </span>
                   </span>
                   <span className={`chip ${x.items.length ? "warn" : "done"}`}>
-                    {x.items.length ? `${x.items.length} TO RESOLVE` : "IN SYNC"}
+                    {x.items.length ? T.toResolve(x.items.length) : T.inSync}
                   </span>
                 </a>
               ))}
-              <CheckAgain of={r} label="Check again" />
+              <CheckAgain of={r} label={T.checkAgain} />
               {d && (
                 <div className="stack" style={{ gap: 12, marginTop: 10 }}>
                   <div className="row">
@@ -354,14 +355,14 @@ export function Reconcile({ hash }: { hash: string }) {
                       value={d.matches.length}
                       max={Math.max(d.edges, 1)}
                       size={72}
-                      label={`${d.matches.length} of ${d.edges} drawn edges agree with code`}
+                      label={T.ofDrawnEdgesAgree(d.matches.length, d.edges)}
                     />
                     <span className="muted" style={{ fontSize: 12.5 }}>
-                      drawn edges agree with the code
+                      {T.drawnEdgesAgreeWith}
                     </span>
                   </div>
                   <Donut
-                    title="Items to resolve by kind"
+                    title={T.itemsToResolveBy}
                     parts={types.map((t, i) => ({
                       label: t,
                       value: d.items.filter((x) => x.type === t).length,
@@ -377,8 +378,7 @@ export function Reconcile({ hash }: { hash: string }) {
                   />
                   {d.names.length > 0 && (
                     <span className="hud" style={{ fontSize: 10 }}>
-                      {d.names.filter((x) => x.id).length}/{d.names.length} labels matched to the
-                      catalog
+                      {T.labelsMatchedToThe(d.names.filter((x) => x.id).length, d.names.length)}
                     </span>
                   )}
                 </div>
@@ -388,26 +388,26 @@ export function Reconcile({ hash }: { hash: string }) {
         </View>
       </Panel>
       <Panel
-        title={d ? `Edge by edge · ${d.file.split("/").pop()}` : "Edge by edge"}
+        title={d ? T.edgeByEdge(d.file.split("/").pop() ?? "") : T.edgeByEdge2}
         span="span 8"
         meta={
           d ? (
             <Bar
               value={d.matches.length}
               max={Math.max(d.edges, 1)}
-              label={`${d.matches.length} of ${d.edges} edges agree with code`}
+              label={T.ofEdgesAgreeWith(d.matches.length, d.edges)}
             />
           ) : undefined
         }
       >
         {!d ? (
-          <div className="state">Pick a diagram.</div>
+          <div className="state">{T.pickADiagram}</div>
         ) : (
           <div className="stack" style={{ gap: 10 }}>
             <div
               className="row"
               role="group"
-              aria-label="Filter items"
+              aria-label={T.filterItems}
               style={{ flexWrap: "wrap", gap: 6 }}
             >
               {["all", ...types].map((t) => (
@@ -419,21 +419,21 @@ export function Reconcile({ hash }: { hash: string }) {
                   onClick={() => setFilter(t)}
                 >
                   {t === "all"
-                    ? `All ${d.items.length}`
+                    ? T.all(d.items.length)
                     : `${t} ${d.items.filter((i) => i.type === t).length}`}
                 </button>
               ))}
             </div>
             {items.length === 0 ? (
-              <div className="state">Every drawn edge agrees with the code.</div>
+              <div className="state">{T.everyDrawnEdgeAgrees}</div>
             ) : (
               <Table
-                caption="Items to resolve"
+                caption={T.itemsToResolve}
                 rows={items}
                 rowKey={(i) => i.id}
                 cols={[
                   {
-                    label: "Result",
+                    label: T.result,
                     cell: (i) => (
                       <span
                         className={`chip ${/mismatch|conflict|unknown/.test(i.type) ? "blocking" : "warn"}`}
@@ -443,43 +443,43 @@ export function Reconcile({ hash }: { hash: string }) {
                     ),
                     width: "150px",
                   },
-                  { label: "What", cell: (i) => i.summary },
-                  { label: "Next", cell: (i) => i.suggestion?.text ?? "" },
+                  { label: T.what, cell: (i) => i.summary },
+                  { label: T.next, cell: (i) => i.suggestion?.text ?? "" },
                 ]}
               />
             )}
             <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-              Code wins over a diagram: a conflict goes to <a href="#/intake">triage</a> until a
-              person decides.
+              {T.codeWinsOverA}
+              <a href="#/intake">{T.triage}</a> {T.untilAPersonDecides}
             </p>
           </div>
         )}
       </Panel>
       {d && d.names.some((n) => !n.id || n.how !== "exact") && (
-        <Panel title="Name matching" span="1 / -1">
+        <Panel title={T.nameMatching} span="1 / -1">
           <Table
-            caption="Diagram labels"
+            caption={T.diagramLabels}
             rows={d.names.filter((n) => !n.id || n.how !== "exact")}
             rowKey={(n) => n.name}
             cols={[
-              { label: "Diagram label", cell: (n) => n.name },
+              { label: T.diagramLabel, cell: (n) => n.name },
               {
-                label: "Matched",
+                label: T.matched,
                 cell: (n) =>
                   n.id ? (
                     <span className="mono">{n.id}</span>
                   ) : (
-                    <span className="chip warn">NO MATCH</span>
+                    <span className="chip warn">{T.noMatch}</span>
                   ),
               },
-              { label: "How", cell: (n) => n.how ?? "" },
-              { label: "Similar", cell: (n) => n.similar.slice(0, 3).join(", "), mono: true },
+              { label: T.how, cell: (n) => n.how ?? "" },
+              { label: T.similar, cell: (n) => n.similar.slice(0, 3).join(", "), mono: true },
             ]}
           />
           <p className="muted" style={{ margin: "8px 0 0", fontSize: 12 }}>
-            Confirm a name with{" "}
-            <span className="mono">atticus alias "&lt;label&gt;" &lt;id&gt;</span>; it is saved to
-            the alias table.
+            {T.confirmANameWith}
+            <span className="mono">{T.atticusAliasLabelId}</span>
+            {T.itIsSavedTo}
           </p>
         </Panel>
       )}
@@ -490,11 +490,11 @@ export function Reconcile({ hash }: { hash: string }) {
 // ------------------------------------------------------------------ Diagrams
 
 const VIEWS = [
-  { id: "context", label: "Context", focus: false },
-  { id: "data", label: "Data", focus: false },
-  { id: "event", label: "Events", focus: false },
-  { id: "container", label: "Container", focus: true },
-  { id: "sequence", label: "Sequence", focus: true },
+  { id: "context", label: T.context, focus: false },
+  { id: "data", label: T.data, focus: false },
+  { id: "event", label: T.events, focus: false },
+  { id: "container", label: T.container, focus: true },
+  { id: "sequence", label: T.sequence, focus: true },
 ];
 
 export function Diagrams({ hash }: { hash: string }) {
@@ -523,9 +523,9 @@ export function Diagrams({ hash }: { hash: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="bento">
-      <Panel title="Generated views" span="1 / -1">
+      <Panel title={T.generatedViews} span="1 / -1">
         <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
-          <div role="tablist" aria-label="View" className="row" style={{ gap: 6 }}>
+          <div role="tablist" aria-label={T.view} className="row" style={{ gap: 6 }}>
             {VIEWS.map((x) => (
               <button
                 key={x.id}
@@ -542,7 +542,7 @@ export function Diagrams({ hash }: { hash: string }) {
           {v.focus && (
             <label className="row" style={{ gap: 6 }}>
               <span className="hud" style={{ fontSize: 10 }}>
-                System
+                {T.system}
               </span>
               <select
                 value={f ?? ""}
@@ -564,32 +564,27 @@ export function Diagrams({ hash }: { hash: string }) {
             </label>
           )}
           <span className="muted" style={{ fontSize: 12 }}>
-            Drawn from the catalog; rebuilt on every scan. Edits happen in draw.io and come back
-            through the metarepo.
+            {T.drawnFromTheCatalog}
           </span>
         </div>
       </Panel>
-      <Panel title={`${v.label} view`} kind="hero" span="span 7" rows="span 2">
+      <Panel title={T.view2(v.label)} kind="hero" span="span 7" rows="span 2">
         {canvas ? (
           <View
             of={flow}
             empty={(x) => x.view.nodes.length === 0}
-            emptyText={`Nothing to draw: the catalog has nothing for the ${v.label.toLowerCase()} view.`}
+            emptyText={T.nothingToDrawThe(v.label.toLowerCase())}
           >
             {(x) => <FlowCanvas view={x.view} height={460} />}
           </View>
         ) : (
-          <View
-            of={graph}
-            empty={(g) => g.nodes.length === 0}
-            emptyText="The catalog is empty. Run a scan first."
-          >
+          <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
             {(g) => <GraphView g={g} {...(v.focus && f ? { focus: f } : {})} height={460} />}
           </View>
         )}
       </Panel>
       <Panel
-        title="Mermaid"
+        title={T.mermaid}
         span="span 5"
         rows="span 2"
         meta={
@@ -601,21 +596,17 @@ export function Diagrams({ hash }: { hash: string }) {
                 void navigator.clipboard?.writeText(text.data.text).then(() => setCopied(true));
               }}
             >
-              {copied ? "Copied" : "Copy"}
+              {copied ? T.copied : T.copy}
             </button>
           ) : undefined
         }
       >
-        <View
-          of={text}
-          empty={(t) => !t.text.trim()}
-          emptyText="Nothing to draw for this view yet."
-        >
+        <View of={text} empty={(t) => !t.text.trim()} emptyText={T.nothingToDrawFor}>
           {(t) => (
             <pre
               className="mono"
               tabIndex={0}
-              aria-label="Mermaid source"
+              aria-label={T.mermaidSource}
               style={{
                 margin: 0,
                 fontSize: 11.5,
@@ -631,17 +622,17 @@ export function Diagrams({ hash }: { hash: string }) {
           )}
         </View>
       </Panel>
-      <Panel title="Diagrams in the metarepo" span="span 7">
+      <Panel title={T.diagramsInTheMetarepo} span="span 7">
         <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-          Diagrams under <span className="mono">inputs/diagrams/</span> are compared with the
-          catalog on <a href="#/reconcile">Reconcile</a>.
+          {T.diagramsUnder}
+          <span className="mono">{T.inputsDiagrams}</span> {T.areComparedWithThe}
+          <a href="#/reconcile">{T.reconcile}</a>.
         </p>
       </Panel>
-      <Panel title="Catalog shape library" span="span 5">
+      <Panel title={T.catalogShapeLibrary} span="span 5">
         <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-          Write the draw.io shape library with{" "}
-          <span className="mono">atticus diagram library &lt;file&gt;</span> and load it in draw.io,
-          or in the draw.io integration for IntelliJ or VS Code: boxes keep their catalog ids.
+          {T.writeTheDrawIo}
+          <span className="mono">{T.atticusDiagramLibraryFile}</span> {T.andLoadItIn}
         </p>
       </Panel>
     </div>
@@ -695,7 +686,7 @@ const STATUS_COLOR: Record<string, string> = {
 function Timeline({ s }: { s: InitiativeStatus }) {
   const day = (d: string) => Date.parse(`${d}T00:00:00Z`) / 86400000;
   const items = s.items;
-  if (items.length === 0) return <div className="state">Nothing planned yet.</div>;
+  if (items.length === 0) return <div className="state">{T.nothingPlannedYet}</div>;
   const lo = Math.min(day(s.today), ...items.map((i) => day(i.start)));
   const hi = Math.max(...items.map((i) => Math.max(day(i.due), day(i.projectedFinish))), lo + 1);
   const W = 760;
@@ -705,7 +696,7 @@ function Timeline({ s }: { s: InitiativeStatus }) {
   return (
     <svg
       role="img"
-      aria-label={`Timeline of ${items.length} plan items from ${items[0]!.start}; today ${s.today}`}
+      aria-label={T.timelineOfPlanItems(items.length, items[0]!.start, s.today)}
       viewBox={`0 0 ${W} ${H}`}
       style={{ width: "100%", display: "block" }}
     >
@@ -759,7 +750,7 @@ function Timeline({ s }: { s: InitiativeStatus }) {
         fontSize={10}
         fontFamily="JetBrains Mono, monospace"
       >
-        today {s.today}
+        {T.today(s.today)}
       </text>
       {s.targetRelease && (
         <text
@@ -770,7 +761,7 @@ function Timeline({ s }: { s: InitiativeStatus }) {
           fontSize={10}
           fontFamily="JetBrains Mono, monospace"
         >
-          target {s.targetRelease}
+          {T.target(s.targetRelease)}
         </text>
       )}
     </svg>
@@ -793,8 +784,8 @@ export function Initiatives({ hash }: { hash: string }) {
     all.state === "ready" ? (all.data.find((i) => i.initiative === id) ?? all.data[0]) : undefined;
   return (
     <div className="bento">
-      <Panel title="Initiatives" span="span 4">
-        <View of={all} empty={(a) => a.length === 0} emptyText="No initiatives yet.">
+      <Panel title={T.initiatives} span="span 4">
+        <View of={all} empty={(a) => a.length === 0} emptyText={T.noInitiativesYet}>
           {(a) => (
             <div className="stack" style={{ gap: 6 }}>
               {a.map((i) => (
@@ -820,8 +811,11 @@ export function Initiatives({ hash }: { hash: string }) {
                     </span>
                   </span>
                   <span className="hud" style={{ fontSize: 9.5 }}>
-                    {i.journey} · {i.changes.length} changes ·{" "}
-                    {new Set(i.commitments.map((c) => c.party)).size} parties
+                    {T.changesParties(
+                      i.journey,
+                      i.changes.length,
+                      new Set(i.commitments.map((c) => c.party)).size,
+                    )}
                   </span>
                 </a>
               ))}
@@ -829,9 +823,8 @@ export function Initiatives({ hash }: { hash: string }) {
           )}
         </View>
         <p className="muted" style={{ margin: "10px 0 0", fontSize: 12 }}>
-          Start one from a guided journey:{" "}
-          <span className="mono">atticus initiative new "&lt;title&gt;" --journey new-feature</span>
-          .
+          {T.startOneFromA}
+          <span className="mono">{T.atticusInitiativeNewTitle}</span>.
         </p>
       </Panel>
       {one ? (
@@ -842,7 +835,10 @@ export function Initiatives({ hash }: { hash: string }) {
             span="span 8"
             meta={
               one.targetRelease
-                ? `Target ${one.targetRelease}${one.projectedRelease ? ` · forecast ${one.projectedRelease}` : ""}`
+                ? T.target2(
+                    one.targetRelease,
+                    one.projectedRelease ? T.forecast(one.projectedRelease) : "",
+                  )
                 : undefined
             }
           >
@@ -850,7 +846,7 @@ export function Initiatives({ hash }: { hash: string }) {
               {one.criticalPath.length > 0 && (
                 <div className="row" style={{ flexWrap: "wrap", gap: 6 }}>
                   <span className="hud" style={{ fontSize: 10 }}>
-                    Critical path
+                    {T.criticalPath}
                   </span>
                   {one.criticalPath.map((k, i) => (
                     <span key={k} className="row" style={{ gap: 6 }}>
@@ -861,19 +857,19 @@ export function Initiatives({ hash }: { hash: string }) {
                 </div>
               )}
               <Table
-                caption="Plan items"
+                caption={T.planItems}
                 rows={one.items}
                 rowKey={(i) => i.key}
                 cols={[
                   {
-                    label: "Item",
+                    label: T.item,
                     cell: (i) => <span className={i.critical ? "" : "muted"}>{i.what}</span>,
                   },
-                  { label: "Party", cell: (i) => i.party ?? "" },
-                  { label: "Due", cell: (i) => i.due, mono: true },
-                  { label: "Forecast", cell: (i) => i.projectedFinish, mono: true },
+                  { label: T.party, cell: (i) => i.party ?? "" },
+                  { label: T.due, cell: (i) => i.due, mono: true },
+                  { label: T.forecast2, cell: (i) => i.projectedFinish, mono: true },
                   {
-                    label: "Status",
+                    label: T.status,
                     cell: (i) => (
                       <span className={`chip ${STATUS_CHIP[i.status] ?? ""}`} title={i.why}>
                         {i.status.toUpperCase()}
@@ -884,23 +880,23 @@ export function Initiatives({ hash }: { hash: string }) {
               />
             </div>
           </Panel>
-          <Panel title="Timeline" span="span 8" kind="dark">
+          <Panel title={T.timeline} span="span 8" kind="dark">
             <Timeline s={one} />
           </Panel>
-          <Panel title="Who owes what" span="span 8">
+          <Panel title={T.whoOwesWhat} span="span 8">
             {one.commitments.length === 0 ? (
-              <div className="state">No commitments yet.</div>
+              <div className="state">{T.noCommitmentsYet}</div>
             ) : (
               <Table
-                caption="Commitments"
+                caption={T.commitments}
                 rows={one.commitments}
                 rowKey={(c) => c.id}
                 cols={[
-                  { label: "Party", cell: (c) => c.party },
-                  { label: "Commitment", cell: (c) => c.what },
-                  { label: "Needed by", cell: (c) => c.neededBy, mono: true },
+                  { label: T.party, cell: (c) => c.party },
+                  { label: T.commitment, cell: (c) => c.what },
+                  { label: T.neededBy, cell: (c) => c.neededBy, mono: true },
                   {
-                    label: "Status",
+                    label: T.status,
                     cell: (c) => (
                       <span className={`chip ${STATUS_CHIP[c.status] ?? ""}`} title={c.why}>
                         {c.status.toUpperCase()}

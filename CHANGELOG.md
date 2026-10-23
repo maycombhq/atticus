@@ -6,10 +6,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### A mockingbird
 
-- Atticus's mark is a mockingbird, singing (`docs/brand/mockingbird.svg`; the bird alone in icons of 24 px and smaller): the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
+- Atticus's mark is a mockingbird built from geometry (`docs/brand/mockingbird.svg`): a half-circle body, a wing of nested quarter circles, a round head, a triangle beak and a long tail wedge, each part apart by a thin gap. It is the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
 
 ### Every screen says what is happening
 
+- The browser app has a light theme. It follows your computer's light or dark setting by default; a Theme switch in the top bar (System, Light, Dark) is remembered in the browser. It uses the same colours as VS Code's light mode, and every screen passes WCAG 2.1 AA in both themes.
+- Escape closes the Correct and Reject forms on Knowledge items, the Done and Not needed notes on a change's needs, and the artifact editor, and puts the keyboard back on the button that opened them.
+- The app's words, screen names, menu groups, the tour and the Ask box among them, come from the copy file; a test fails when a screen has English typed straight into it.
 - Verify, Correct, Reject, Keep, Done, Not needed and Reopen keep the keyboard on the item or need you acted on, and say "Working on it…" while they save.
 - A need whose knowledge item was rejected says so; each need's buttons are named for the need; a reopened need is "open again".
 - Opening a saved search keeps the search you typed; each Keep button names its candidate.

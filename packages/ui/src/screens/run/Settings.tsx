@@ -5,6 +5,8 @@ import { CheckAgain, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Facts, Note, useAction } from "./shared.js";
 
+const T = COPY.settings;
+
 interface Settings {
   runtime: {
     assistants: { allowed: string[]; default: string };
@@ -60,54 +62,54 @@ interface Check {
 const MODES: { id: string; name: string; what: string }[] = [
   {
     id: "hand-off",
-    name: "Hand-off",
-    what: "Your own assistant (Copilot or Claude Code) does the work. Atticus builds the context pack, watches the branch, then checks the result.",
+    name: T.handOff,
+    what: T.yourOwnAssistantCopilot,
   },
   {
     id: "model",
-    name: "Model",
-    what: "Direct model access through an approved gateway. Unlocks draft-and-PR runs and model comparisons.",
+    name: T.model,
+    what: T.directModelAccessThrough,
   },
   {
     id: "headless-claude-code",
-    name: "Headless Claude Code",
-    what: "Claude Code runs a task on its own in the change's worktree; a person still approves every write.",
+    name: T.headlessClaudeCode,
+    what: T.claudeCodeRunsA,
   },
 ];
 
 const KIND_LABEL: Record<string, string> = {
-  workTracker: "Work tracker",
-  serviceDesk: "Service desk",
-  gitHost: "Git host",
-  wiki: "Wiki",
-  notify: "Notifications",
-  design: "Design tool",
-  model: "Model provider",
+  workTracker: T.workTracker,
+  serviceDesk: T.serviceDesk,
+  gitHost: T.gitHost,
+  wiki: T.wiki,
+  notify: T.notifications,
+  design: T.designTool,
+  model: T.modelProvider,
 };
 const MODE_CHIP: Record<string, { cls: string; label: string; what: string }> = {
   live: {
     cls: "done",
     label: "CONNECTED",
-    what: "live; falls back to steps for a person when it can't be reached",
+    what: T.liveFallsBackTo,
   },
   manual: {
     cls: "warn",
     label: "MANUAL",
-    what: "writes become steps in To-do; reads come from exports",
+    what: T.writesBecomeStepsIn,
   },
-  mock: { cls: "dim", label: "MOCK", what: "in-memory, for tests and demos" },
-  "not-set": { cls: "dim", label: "NOT SET", what: "not configured" },
+  mock: { cls: "dim", label: "MOCK", what: T.inMemoryForTests },
+  "not-set": { cls: "dim", label: T.notSet, what: T.notConfigured },
 };
 
 const AI_MODE: Record<string, { label: string; what: string }> = {
-  on: { label: "ON", what: "Every AI step may run, in the modes allowed below." },
+  on: { label: "ON", what: T.everyAiStepMay },
   "text-only": {
-    label: "TEXT ONLY",
-    what: "No AI step is given a picture; pictures go to a person in Intake.",
+    label: T.textOnly,
+    what: T.noAiStepIs,
   },
   off: {
     label: "OFF",
-    what: "No AI step runs. People write what agents would draft, the rule checks review it, and no gate waits for an AI lens.",
+    what: T.noAiStepRuns,
   },
 };
 
@@ -129,11 +131,11 @@ function MachinePanel() {
   const chip = { ok: "done", warn: "warn", fail: "blocking" } as const;
   return (
     <Panel
-      title="This machine"
-      meta={d.state === "ready" ? (d.data.ok ? "READY" : "NEEDS FIXING") : undefined}
+      title={T.thisMachine}
+      meta={d.state === "ready" ? (d.data.ok ? T.ready : T.needsFixing) : undefined}
       span="span 12"
     >
-      <View of={d} empty={(x) => x.checks.length === 0} emptyText="No checks ran.">
+      <View of={d} empty={(x) => x.checks.length === 0} emptyText={T.noChecksRan}>
         {(x) => (
           <div className="stack" style={{ gap: 6 }}>
             {x.checks.map((c) => (
@@ -152,10 +154,11 @@ function MachinePanel() {
               </div>
             ))}
             <div className="row" style={{ gap: 8 }}>
-              <CheckAgain of={d} label="Check again" run={() => setFresh(fresh + 1)} />
+              <CheckAgain of={d} label={T.checkAgain} run={() => setFresh(fresh + 1)} />
               <span className="muted" style={{ fontSize: 12 }}>
-                The same checks as <code className="mono">atticus doctor</code>. Nothing leaves this
-                machine, and no secret is shown.
+                {T.theSameChecksAs}
+                <code className="mono">{T.atticusDoctor}</code>
+                {T.nothingLeavesThisMachine}
               </span>
             </div>
           </div>
@@ -174,10 +177,10 @@ function NotifyPanel() {
   const d = digest ?? me?.notify?.digest ?? "off";
   const c = channel ?? me?.notify?.channel ?? "";
   return (
-    <Panel title="Your notifications" meta=".atticus/me.yaml" span="span 12">
+    <Panel title={T.yourNotifications} meta={T.atticusMeYaml} span="span 12">
       {!me ? (
         <div className="stack" aria-busy="true">
-          <span className="sr">Loading</span>
+          <span className="sr">{T.loading}</span>
           <div className="skeleton" style={{ width: "70%" }} />
         </div>
       ) : (
@@ -188,23 +191,21 @@ function NotifyPanel() {
             e.preventDefault();
             void act.run(
               () => saveNotify({ digest: d, ...(c.trim() ? { channel: c.trim() } : {}) }),
-              "Saved.",
+              T.saved,
             );
           }}
         >
           <p className="muted" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55 }}>
-            Your digest lists the hand-offs waiting on your review and the blocking findings on
-            changes you own. Atticus sends it only when you press Send it to me on Home, or when
-            your own scheduled job runs{" "}
+            {T.yourDigestListsThe}
             <code className="mono" style={{ whiteSpace: "nowrap" }}>
-              atticus digest --as {me.user} --send
+              {T.atticusDigestAsSend(me.user)}
             </code>
             .
           </p>
           <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div className="stack" style={{ gap: 4 }}>
               <label htmlFor="notify-digest" className="hud" style={{ fontSize: 10 }}>
-                How often
+                {T.howOften}
               </label>
               <select
                 id="notify-digest"
@@ -212,25 +213,25 @@ function NotifyPanel() {
                 value={d}
                 onChange={(e) => setDigest(e.target.value)}
               >
-                <option value="off">Off</option>
-                <option value="daily">Daily</option>
-                <option value="weekly">Weekly</option>
+                <option value="off">{T.off}</option>
+                <option value="daily">{T.daily}</option>
+                <option value="weekly">{T.weekly}</option>
               </select>
             </div>
             <div className="stack" style={{ gap: 4, flex: 1, minWidth: 180 }}>
               <label htmlFor="notify-channel" className="hud" style={{ fontSize: 10 }}>
-                Where it goes
+                {T.whereItGoes}
               </label>
               <input
                 id="notify-channel"
                 className="field"
                 value={c}
-                placeholder={`@${me.user} (a direct message)`}
+                placeholder={T.aDirectMessage(me.user)}
                 onChange={(e) => setChannel(e.target.value)}
               />
             </div>
             <button type="submit" className="btn primary" disabled={act.busy}>
-              Save
+              {T.save}
             </button>
           </div>
           <Note note={act.note} />
@@ -248,19 +249,19 @@ export function Settings() {
     <>
       <div className="row between" style={{ flexWrap: "wrap" }}>
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
-          Settings
+          {T.settings}
         </p>
-        <span className="hud">Read-only · set by the org pack, changed by PR</span>
+        <span className="hud">{T.readOnlySetBy}</span>
       </div>
 
       <div className="bento">
-        <Panel title="Runtime modes" meta="runtime.yaml" span="span 7">
+        <Panel title={T.runtimeModes} meta={T.runtimeYaml} span="span 7">
           <View of={s}>
             {(d) => (
               <div className="stack" style={{ gap: 10 }}>
                 <div className="list-row" style={{ alignItems: "flex-start" }}>
                   <span className="stack" style={{ gap: 2 }}>
-                    <span style={{ fontSize: 13 }}>AI in this organisation</span>
+                    <span style={{ fontSize: 13 }}>{T.aiInThisOrganisation}</span>
                     <span className="muted" style={{ fontSize: 12 }}>
                       {AI_MODE[ai]!.what}
                     </span>
@@ -281,27 +282,25 @@ export function Settings() {
                         </span>
                       </span>
                       <span className={`chip ${active ? "" : allowed ? "done" : "dim"}`}>
-                        {active ? "DEFAULT" : allowed ? "ALLOWED" : "NOT APPROVED"}
+                        {active ? T.default : allowed ? T.allowed : T.notApproved}
                       </span>
                     </div>
                   );
                 })}
                 <div className="run-safety" role="note">
-                  <strong style={{ color: "var(--green)" }}>Safety, in every mode:</strong> a person
-                  approves every write, AI never pushes to protected branches or deploys, scans
-                  never call the network or a model, and ingested content is data, never
-                  instructions. These rules can't be configured.
+                  <strong style={{ color: "var(--green)" }}>{T.safetyInEveryMode}</strong>{" "}
+                  {T.aPersonApprovesEvery}
                 </div>
                 <Facts
                   rows={[
                     [
-                      "Assistants",
+                      T.assistants,
                       `${d.runtime.assistants.allowed.join(", ")} (default ${d.runtime.assistants.default})`,
                     ],
-                    ["Editors", d.runtime.editors.join(", ")],
-                    ["Models", d.runtime.models.allowed.join(", ") || "none approved"],
+                    [T.editors, d.runtime.editors.join(", ")],
+                    [T.models, d.runtime.models.allowed.join(", ") || T.noneApproved],
                     [
-                      "Autonomy",
+                      T.autonomy,
                       `${d.runtime.autonomy.default} by default; at most ${d.runtime.autonomy.maxFixRounds} build-fix rounds${
                         Object.keys(d.runtime.autonomy.capPerRepo).length
                           ? `; capped: ${Object.entries(d.runtime.autonomy.capPerRepo)
@@ -311,15 +310,15 @@ export function Settings() {
                       }`,
                     ],
                     [
-                      "Context budget",
+                      T.contextBudget,
                       `${d.runtime.budgets.defaultTokens.toLocaleString()} tokens per pack`,
                     ],
                     [
-                      "Run records",
+                      T.runRecords,
                       `kept ${d.runtime.retention.runsDays} days in .runs/ (git-ignored)`,
                     ],
-                    ["Build engine", d.runtime.buildEngine.default],
-                    ["Telemetry", d.runtime.telemetry.enabled ? "on" : "off"],
+                    [T.buildEngine, d.runtime.buildEngine.default],
+                    [T.telemetry, d.runtime.telemetry.enabled ? "on" : "off"],
                   ]}
                 />
               </div>
@@ -327,19 +326,18 @@ export function Settings() {
           </View>
         </Panel>
 
-        <Panel title="Adapters" span="span 5">
+        <Panel title={T.adapters} span="span 5">
           <View of={s}>
             {(d) => (
               <div className="stack">
                 <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                  Every outside system sits behind an adapter. When one can't be reached, a manual
-                  adapter turns writes into steps a person does.
+                  {T.everyOutsideSystemSits}
                 </p>
                 <table className="run-table">
                   <thead>
                     <tr>
-                      <th>System</th>
-                      <th>Adapter</th>
+                      <th>{T.system}</th>
+                      <th>{T.adapter}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -362,8 +360,7 @@ export function Settings() {
                   </tbody>
                 </table>
                 <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  Tests always use the mock. Atticus never connects to live databases, consoles or
-                  monitoring.
+                  {T.testsAlwaysUseThe}
                 </p>
               </div>
             )}
@@ -372,13 +369,13 @@ export function Settings() {
 
         <ExecutorsPanel s={s} check={check} />
 
-        <Panel title="Org pack" span="span 5">
+        <Panel title={T.orgPack} span="span 5">
           <View of={s}>
             {(d) => (
               <div className="stack">
                 <Facts
                   rows={[
-                    ["Platforms", d.orgPack.platforms.join(", ") || "none"],
+                    [T.platforms, d.orgPack.platforms.join(", ") || "none"],
                     ...Object.entries(d.orgPack.counts).map(
                       ([k, v]) =>
                         [k.replace(/([A-Z])/g, " $1").toLowerCase(), String(v)] as [string, string],
@@ -387,7 +384,7 @@ export function Settings() {
                 />
                 {d.orgPack.defaulted.length > 0 && (
                   <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                    Built-in defaults for: {d.orgPack.defaulted.join(", ")}.
+                    {T.builtInDefaultsFor(d.orgPack.defaulted.join(", "))}
                   </p>
                 )}
                 {d.orgPack.problems.map((p) => (
@@ -397,7 +394,7 @@ export function Settings() {
                   </p>
                 ))}
                 <a href="#/orgpack" style={{ fontSize: 12.5 }}>
-                  Open the org pack
+                  {T.openTheOrgPack}
                 </a>
               </div>
             )}
@@ -408,23 +405,21 @@ export function Settings() {
 
         <NotifyPanel />
 
-        <Panel title="Gates" meta="gates.yaml" span="span 12">
-          <View of={s} empty={(d) => d.gates.length === 0} emptyText="No gates.">
+        <Panel title={T.gates} meta={T.gatesYaml} span="span 12">
+          <View of={s} empty={(d) => d.gates.length === 0} emptyText={T.noGates}>
             {(d) => (
               <div className="stack">
                 <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                  The critic runs at every gate; the org pack can add checks, never remove lenses.
-                  Constitution rules can't be waived. A gate is approved when its hand-off PR
-                  merges; your Git host decides who may approve.
+                  {T.theCriticRunsAt}
                 </p>
                 <table className="run-table">
                   <thead>
                     <tr>
-                      <th>Gate</th>
-                      <th>Phase</th>
-                      <th>Checklists</th>
-                      <th>Checks</th>
-                      <th>Author rounds</th>
+                      <th>{T.gate}</th>
+                      <th>{T.phase}</th>
+                      <th>{T.checklists}</th>
+                      <th>{T.checks}</th>
+                      <th>{T.authorRounds}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -434,7 +429,7 @@ export function Settings() {
                         <td>{g.phase}</td>
                         <td>{g.checklists.join(", ") || "-"}</td>
                         <td>{g.checks.join(", ") || "-"}</td>
-                        <td>{g.maxAuthorRounds ?? "no limit"}</td>
+                        <td>{g.maxAuthorRounds ?? T.noLimit}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -457,28 +452,26 @@ function ExecutorsPanel({
 }) {
   return (
     <Panel
-      title="Executors allow-list"
-      meta={s.state === "ready" ? `${s.data.executors.configured.length} set up` : undefined}
+      title={T.executorsAllowList}
+      meta={s.state === "ready" ? T.setUp(s.data.executors.configured.length) : undefined}
       span="span 7"
     >
       <View of={s}>
         {(d) => (
           <div className="stack">
             <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-              Procedures call local automation tools through one step spec. A tool the org pack
-              doesn't allow doesn't run, and no credentials are passed to a tool. Tools are set up
-              per machine in .atticus/executors.yaml.
+              {T.proceduresCallLocalAutomation}
             </p>
             {d.executors.configured.length === 0 ? (
-              <p className="state">No tools are set up on this machine.</p>
+              <p className="state">{T.noToolsAreSet}</p>
             ) : (
               <table className="run-table">
                 <thead>
                   <tr>
-                    <th>Executor</th>
-                    <th>Kind</th>
-                    <th>Allowed for</th>
-                    <th>Approval</th>
+                    <th>{T.executor}</th>
+                    <th>{T.kind}</th>
+                    <th>{T.allowedFor}</th>
+                    <th>{T.approval}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -495,10 +488,10 @@ function ExecutorsPanel({
                         {x.allowedFor.length ? (
                           x.allowedFor.join(", ")
                         ) : (
-                          <span className="chip dim">NOTHING (OFF)</span>
+                          <span className="chip dim">{T.nothingOff}</span>
                         )}
                       </td>
-                      <td>each write</td>
+                      <td>{T.eachWrite}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -510,7 +503,7 @@ function ExecutorsPanel({
                 className="muted"
                 style={{ margin: 0, fontSize: 12 }}
               >
-                Procedure {m.procedure} allows {m.executor}, which isn't set up here.
+                {T.procedureAllowsWhichIsnt(m.procedure, m.executor)}
               </p>
             ))}
             {d.executors.problems.map((p) => (
@@ -540,7 +533,7 @@ function ExecutorsPanel({
                   )
                 }
               >
-                Check they answer
+                {T.checkTheyAnswer}
               </button>
               {d.executors.configured.length === 0 && (
                 <span id="no-executors" className="muted" style={{ fontSize: 12 }}>
@@ -550,7 +543,7 @@ function ExecutorsPanel({
             </div>
             <Note note={check.note} />
             <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-              Adding a tool to the allow-list is an org-pack PR that its owners review.
+              {T.addingAToolTo}
             </p>
           </div>
         )}

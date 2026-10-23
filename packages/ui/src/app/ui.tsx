@@ -1,8 +1,24 @@
-import { useState, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { isOffline, type Loaded } from "../api/client.js";
 import { COPY } from "../copy.js";
 
+const TX = COPY.common;
+
 /** Shared pieces: panels, the loading/empty/error states every screen needs, and HUD charts. */
+
+/**
+ * Escape closes an inline form as its Cancel (or Close) button does: put it on the form's
+ * onKeyDown. The key goes no further, so the tour or the palette behind the form stays as it
+ * is. The form's owner puts the keyboard back on the button that opened it.
+ */
+export function escapeCloses(close: () => void) {
+  return (e: KeyboardEvent<HTMLElement>) => {
+    if (e.key !== "Escape" || e.defaultPrevented || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    close();
+  };
+}
 
 export function Panel(p: {
   title?: string;
@@ -60,7 +76,7 @@ export function View<T>(p: {
     return p.emptyContent !== undefined ? (
       <>{p.emptyContent}</>
     ) : (
-      <div className="state">{p.emptyText ?? "Nothing here yet."}</div>
+      <div className="state">{p.emptyText ?? TX.nothingHereYet}</div>
     );
   return <>{p.children(p.of.data)}</>;
 }
@@ -238,7 +254,7 @@ export function Donut(p: {
 export function Bar(p: { value: number; max: number; color?: string; label: string }) {
   const pct = p.max > 0 ? Math.round((p.value / p.max) * 100) : 0;
   return (
-    <div role="img" aria-label={`${p.label}: ${p.value} of ${p.max}`} className="track">
+    <div role="img" aria-label={TX.of(p.label, p.value, p.max)} className="track">
       <span
         style={{
           width: `${pct}%`,

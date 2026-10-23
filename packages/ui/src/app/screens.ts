@@ -16,6 +16,7 @@ export interface ScreenDef {
 }
 
 const N = COPY.nav;
+const S = COPY.nav.screens;
 
 export const MAIN: ScreenDef[] = [
   { id: "dashboard", label: N.dashboard, group: "Main" },
@@ -27,44 +28,47 @@ export const MAIN: ScreenDef[] = [
 ];
 
 export const MORE: ScreenDef[] = [
-  { id: "home", label: "Command center", group: "Know" },
+  { id: "home", label: S.home, group: "Know" },
   { id: "questions", label: COPY.questions.title, group: "Know" },
-  { id: "explore", label: "Knowledge explorer", group: "Know" },
+  { id: "explore", label: S.explore, group: "Know" },
   { id: "flows", label: COPY.flows.title, group: "Know" },
-  { id: "map", label: "Ecosystem map", group: "Know" },
-  { id: "impact", label: "Impact explorer", group: "Know" },
-  { id: "features", label: "Features", group: "Know" },
-  { id: "orgpack", label: "Org pack", group: "Know" },
+  { id: "map", label: S.map, group: "Know" },
+  { id: "impact", label: S.impact, group: "Know" },
+  { id: "features", label: S.features, group: "Know" },
+  { id: "orgpack", label: S.orgpack, group: "Know" },
   // ADR 0102: knowledge managed in the metarepo.
   { id: "wikis", label: COPY.knowledge.nav.sources, group: "Know" },
   { id: "knowledge", label: COPY.knowledge.nav.items, group: "Know" },
   { id: "wiki-search", label: COPY.knowledge.nav.search, group: "Know" },
   { id: "parties", label: COPY.knowledge.nav.parties, group: "Know" },
   { id: "orgpack-draft", label: COPY.knowledge.nav.orgpack, group: "Know" },
-  { id: "intake", label: "Intake", group: "Know" },
-  { id: "scans", label: "Scans", group: "Know" },
-  { id: "brief", label: "Feature brief", group: "Define" },
-  { id: "ux", label: "Prototypes and UX", group: "Define" },
-  { id: "arch-review", label: "Architecture review", group: "Design" },
-  { id: "diagrams", label: "Diagrams", group: "Design" },
-  { id: "reconcile", label: "Reconcile", group: "Design" },
-  { id: "contracts", label: "Contracts", group: "Design" },
-  { id: "mappings", label: "API mappings", group: "Design" },
-  { id: "breakdown", label: "Breakdown", group: "Plan" },
-  { id: "initiatives", label: "Initiatives", group: "Plan" },
-  { id: "changes", label: "Changes", group: "Build" },
-  { id: "tasks", label: "Task board", group: "Build" },
-  { id: "trace", label: "Test trace", group: "Build" },
-  { id: "todo", label: "To-do and manual steps", group: "Build" },
-  { id: "release", label: "Release plan", group: "Release" },
-  { id: "service-desk", label: "Service desk queue", group: "Release" },
-  { id: "governance", label: "Governance", group: "Run" },
-  { id: "evals", label: "AI quality", group: "Run" },
-  { id: "learning", label: "Learning", group: "Run" },
-  { id: "settings", label: "Settings", group: "Run" },
+  { id: "intake", label: S.intake, group: "Know" },
+  { id: "scans", label: S.scans, group: "Know" },
+  { id: "brief", label: S.brief, group: "Define" },
+  { id: "ux", label: S.ux, group: "Define" },
+  { id: "arch-review", label: S.archReview, group: "Design" },
+  { id: "diagrams", label: S.diagrams, group: "Design" },
+  { id: "reconcile", label: S.reconcile, group: "Design" },
+  { id: "contracts", label: S.contracts, group: "Design" },
+  { id: "mappings", label: S.mappings, group: "Design" },
+  { id: "breakdown", label: S.breakdown, group: "Plan" },
+  { id: "initiatives", label: S.initiatives, group: "Plan" },
+  { id: "changes", label: S.changes, group: "Build" },
+  { id: "tasks", label: S.tasks, group: "Build" },
+  { id: "trace", label: S.trace, group: "Build" },
+  { id: "todo", label: S.todo, group: "Build" },
+  { id: "release", label: S.release, group: "Release" },
+  { id: "service-desk", label: S.serviceDesk, group: "Release" },
+  { id: "governance", label: S.governance, group: "Run" },
+  { id: "evals", label: S.evals, group: "Run" },
+  { id: "learning", label: S.learning, group: "Run" },
+  { id: "settings", label: S.settings, group: "Run" },
 ];
 
 export const SCREENS: ScreenDef[] = [...MAIN, ...MORE];
+
+/** A menu group's name as the menu shows it. */
+export const groupLabel = (g: ScreenDef["group"]): string => COPY.nav.groups[g];
 
 export function screenOf(hash: string): ScreenDef {
   const id = hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "dashboard";

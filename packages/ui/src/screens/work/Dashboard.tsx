@@ -15,6 +15,8 @@ import {
 } from "./next.js";
 import { Command, Problems, RunNextPanel } from "./RunNext.js";
 
+const T = COPY.dashboardExtra;
+
 /**
  * The Dashboard (plan 4.5): what is onboarded and scanned, the changes in flight and their
  * stage, the open questions, and the one command to run next. Read from the onboarding view
@@ -48,12 +50,7 @@ export function CoverageView({ v }: { v: OnboardingData }) {
       <div className="row" style={{ gap: 18, flexWrap: "wrap" }}>
         {rings.map(([n, label]) => (
           <div key={label} className="stack" style={{ alignItems: "center", gap: 4 }}>
-            <Ring
-              value={n}
-              max={max}
-              label={`${n} of ${p.listed} ${label}`}
-              text={`${n}/${p.listed}`}
-            />
+            <Ring value={n} max={max} label={T.of(n, p.listed, label)} text={`${n}/${p.listed}`} />
             <span className="muted" style={{ fontSize: 11.5 }}>
               {label}
             </span>

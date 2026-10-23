@@ -14,8 +14,8 @@ import {
 /**
  * The knowledge screens end to end against the local API (ADR 0102), as a person with a
  * keyboard uses them: Verify, Correct and Reject an item; Keep a candidate from a saved
- * search; mark a change's needs Done, Not needed and Reopen; and the sources page at phone
- * width. Everything is the invented Forge estate (CLAUDE.md rule 3).
+ * search; mark a change's needs Done, Not needed and Reopen; Escape on each inline form (and
+ * a change's artifact editor); and the sources page at phone width. Everything is the invented Forge estate (CLAUDE.md rule 3).
  */
 
 const quote = (page: string, section: string, line: number, text: string) => `quote:
@@ -157,6 +157,12 @@ test("Verify, Correct and Reject keep the keyboard on the item", async ({ page }
   await accessible(page, "correcting an item");
   await detail.getByRole("button", { name: "Cancel" }).click();
   await expect(detail.getByRole("button", { name: "Correct" })).toBeFocused();
+  // Escape closes it as Cancel does, and the keyboard goes back to Correct.
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#fix-firewall-rule-request-title")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#fix-firewall-rule-request-title")).toHaveCount(0);
+  await expect(detail.getByRole("button", { name: "Correct" })).toBeFocused();
 
   await detail.getByRole("button", { name: "Verify" }).click();
   await expect(detail.locator(".chip.done").first()).toContainText("Verified by");
@@ -164,6 +170,11 @@ test("Verify, Correct and Reject keep the keyboard on the item", async ({ page }
   await expect(detail.getByRole("button", { name: "Verify" })).toBeFocused();
 
   await detail.getByRole("button", { name: "Reject" }).click();
+  await expect(page.locator("#reject-why")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#reject-why")).toHaveCount(0);
+  await expect(detail.getByRole("button", { name: "Reject", exact: true })).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(page.locator("#reject-why")).toBeFocused();
   await detail.getByRole("button", { name: "Reject it" }).click();
   await expect(detail.getByRole("alert")).toHaveText("Say why it is wrong.");
@@ -207,6 +218,15 @@ test("a change's needs: Done, Not needed and Reopen, each named for its need", a
   // The firewall item was rejected above: the need says so.
   await expect(needs.locator(".chip.blocking").first()).toContainText("Rejected by");
 
+  // Escape closes a need's note form, and the keyboard goes back to the button that opened it.
+  for (const name of ["Done: Network firewall rule", "Not needed: Network firewall rule"]) {
+    await needs.getByRole("button", { name }).click();
+    await expect(page.locator("#need-firewall-rule-request-change-note")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#need-firewall-rule-request-change-note")).toHaveCount(0);
+    await expect(needs.getByRole("button", { name })).toBeFocused();
+  }
+
   await needs.getByRole("button", { name: "Done: Network firewall rule" }).click();
   await expect(page.locator("#need-firewall-rule-request-change-note")).toBeFocused();
   await page.keyboard.type("CTASK0010001");
@@ -227,6 +247,20 @@ test("a change's needs: Done, Not needed and Reopen, each named for its need", a
   await expect(needs.getByRole("status")).toContainText("Network firewall rule is open again");
   await expect(needs).toContainText("1 OPEN", { ignoreCase: true });
   await accessible(page, "a change's needs");
+});
+
+test("Escape closes a change's artifact editor and goes back to its Edit button", async ({
+  page,
+}) => {
+  await open(page, a(), "changes/add-transfer-limit");
+  const edit = page.getByRole("button", { name: /^Edit / }).first();
+  const name = (await edit.getAttribute("aria-label")) ?? "";
+  await edit.click();
+  const text = page.locator("#artifact-text");
+  await expect(text).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(text).toHaveCount(0);
+  await expect(page.getByRole("button", { name, exact: true })).toBeFocused();
 });
 
 test("at phone width the knowledge screens don't scroll sideways", async ({ page }) => {

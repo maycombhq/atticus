@@ -2,6 +2,9 @@ import { useState } from "react";
 import { api, useApi, useLiveEvents } from "../../api/client.js";
 import { Bar, Panel, View } from "../../app/ui.js";
 import { Note, day, plural, useAction } from "./shared.js";
+import { COPY } from "../../copy.js";
+
+const T = COPY.evals;
 
 interface Evals {
   quality: {
@@ -93,7 +96,7 @@ export function Evals() {
     <>
       <div className="row between" style={{ flexWrap: "wrap" }}>
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
-          Test a skill before anyone relies on it.
+          {T.testASkillBefore}
         </p>
         <form
           className="row"
@@ -116,46 +119,46 @@ export function Evals() {
                 const rep = (r as { report: { runId: string; results?: { pass: boolean }[] } })
                   .report;
                 const failed = rep.results?.filter((x) => !x.pass).length ?? 0;
-                return `Eval run ${rep.runId} finished: ${failed ? `${plural(failed, "case")} failed` : "every case passed"}.`;
+                return `Eval run ${rep.runId} finished: ${failed ? `${plural(failed, "case")} failed` : T.everyCasePassed}.`;
               },
             );
           }}
         >
           <label className="run-label" htmlFor="eval-mode">
-            Mode
+            {T.mode}
             <select
               id="eval-mode"
               className="run-select"
               value={mode}
               onChange={(ev) => setMode(ev.target.value as "mock" | "replay")}
             >
-              <option value="mock">Mock (no model)</option>
-              <option value="replay">Replay saved answers</option>
+              <option value="mock">{T.mockNoModel}</option>
+              <option value="replay">{T.replaySavedAnswers}</option>
             </select>
           </label>
           <label className="run-label" htmlFor="eval-agent">
-            Agent
+            {T.agent}
             <select
               id="eval-agent"
               className="run-select"
               value={agent}
               onChange={(ev) => setAgent(ev.target.value)}
             >
-              <option value="">Every agent</option>
+              <option value="">{T.everyAgent}</option>
               {agents.map((a) => (
                 <option key={a.agent}>{a.agent}</option>
               ))}
             </select>
           </label>
           <button type="submit" className="btn primary" disabled={act.busy}>
-            {act.busy ? "Running…" : "New eval run"}
+            {act.busy ? T.running : T.newEvalRun}
           </button>
         </form>
       </div>
       <Note note={act.note} />
 
       <div className="bento">
-        <Panel title="Quality signals" span="span 5">
+        <Panel title={T.qualitySignals} span="span 5">
           <View of={e}>
             {(x) => {
               const resolved = x.findings.applied + x.findings.dismissed + x.findings.waived;
@@ -163,25 +166,23 @@ export function Evals() {
               return (
                 <div className="row between" style={{ flexWrap: "wrap", alignItems: "flex-start" }}>
                   <Signal
-                    label="Findings kept by people"
+                    label={T.findingsKeptByPeople}
                     value={resolved ? pct(x.findings.applied / resolved) : "–"}
                     sub={
-                      resolved
-                        ? `${x.findings.applied} of ${resolved} acted on`
-                        : "no findings resolved yet"
+                      resolved ? T.actedOn(x.findings.applied, resolved) : T.noFindingsResolvedYet
                     }
                   />
                   <Signal
-                    label="Agents passing"
+                    label={T.agentsPassing}
                     value={agents.length ? `${passing}/${agents.length}` : "–"}
-                    sub={agents.length ? "every case, latest run" : "no eval run yet"}
+                    sub={agents.length ? T.everyCaseLatestRun : T.noEvalRunYet}
                   />
                   <Signal
-                    label="Hidden instructions held"
+                    label={T.hiddenInstructionsHeld}
                     value={
                       d.state === "ready" ? String(quarantined.length + d.data.items.length) : "–"
                     }
-                    sub="quarantined, never sent to a model"
+                    sub={T.quarantinedNeverSentTo}
                   />
                 </div>
               );
@@ -189,12 +190,8 @@ export function Evals() {
           </View>
         </Panel>
 
-        <Panel title="Pass rate by agent" span="span 7">
-          <View
-            of={e}
-            empty={() => agents.length === 0}
-            emptyText="No eval runs yet. Start one above (mock or replay)."
-          >
+        <Panel title={T.passRateByAgent} span="span 7">
+          <View of={e} empty={() => agents.length === 0} emptyText={T.noEvalRunsYet}>
             {() => (
               <div className="stack" style={{ gap: 8 }}>
                 {agents.map((a) => (
@@ -207,13 +204,16 @@ export function Evals() {
                         <span className="chip dim">{a.mode.toUpperCase()}</span>
                         {a.liveBar && (
                           <span className={`chip ${a.liveBar.pass ? "done" : "blocking"}`}>
-                            LIVE {a.liveBar.min}/{a.liveBar.runs}{" "}
-                            {a.liveBar.pass ? "MET" : "NOT MET"}
+                            {T.live(
+                              a.liveBar.min,
+                              a.liveBar.runs,
+                              a.liveBar.pass ? T.met : T.notMet,
+                            )}
                           </span>
                         )}
                         {a.regressed.length > 0 && (
                           <span className="chip blocking" title={a.regressed.join(", ")}>
-                            {a.regressed.length} REGRESSED
+                            {T.regressed(a.regressed.length)}
                           </span>
                         )}
                         <span style={{ fontSize: 12 }}>{pct(a.passRate)}</span>
@@ -223,7 +223,7 @@ export function Evals() {
                       value={Math.round(a.passRate * 100)}
                       max={100}
                       color={a.passRate < 1 ? "var(--amber)" : undefined}
-                      label={`${a.agent} pass rate`}
+                      label={T.passRate(a.agent)}
                     />
                   </div>
                 ))}
@@ -233,24 +233,22 @@ export function Evals() {
         </Panel>
 
         <Panel
-          title="Ingested-content defences"
+          title={T.ingestedContentDefences}
           meta={
             d.state === "ready"
-              ? `${quarantined.length + d.data.items.length} quarantined`
+              ? T.quarantined3(quarantined.length + d.data.items.length)
               : undefined
           }
           span="span 7"
           rows="span 2"
         >
           <p className="muted" style={{ margin: "0 0 8px", fontSize: 12.5 }}>
-            Ingested content is data, never instructions. A document with hidden or imperative text
-            aimed at an AI reader is left out of every context pack until a person cleans the
-            source. Facts verified from code are never overridden by a document.
+            {T.ingestedContentIsData}
           </p>
           <View
             of={d}
             empty={(x) => x.files.length === 0 && x.items.length === 0}
-            emptyText="Nothing risky in inputs/ or the wiki folders."
+            emptyText={T.nothingRiskyInInputs}
           >
             {(x) => (
               <div className="stack" style={{ gap: 12 }}>
@@ -265,7 +263,7 @@ export function Evals() {
                         {f.path}
                       </span>
                       <span className={`chip ${f.risk === "high" ? "blocking" : "warn"}`}>
-                        {f.risk === "high" ? "QUARANTINED" : "MARKED"}
+                        {f.risk === "high" ? T.quarantined : T.marked}
                       </span>
                     </div>
                     <span className="muted" style={{ fontSize: 12 }}>
@@ -275,10 +273,14 @@ export function Evals() {
                       <code
                         key={`${s.line}${s.rule}`}
                         className="run-inert"
-                        aria-label={`Flagged text on line ${s.line}, shown inert`}
+                        aria-label={T.flaggedTextOnLine(s.line)}
                       >
-                        line {s.line} · {s.rule}
-                        {s.hidden ? " · hidden" : s.encoded ? " · encoded" : ""}: {s.excerpt}
+                        {T.line(
+                          s.line,
+                          s.rule,
+                          s.hidden ? T.hidden : s.encoded ? T.encoded : "",
+                          s.excerpt,
+                        )}
                       </code>
                     ))}
                   </article>
@@ -291,7 +293,7 @@ export function Evals() {
                   >
                     <div className="row between" style={{ flexWrap: "wrap" }}>
                       <span style={{ fontSize: 12.5 }}>{q.origin}</span>
-                      <span className="chip blocking">QUARANTINED · {q.change}</span>
+                      <span className="chip blocking">{T.quarantined2(q.change)}</span>
                     </div>
                     <span className="muted" style={{ fontSize: 12 }}>
                       {q.summary}
@@ -300,8 +302,7 @@ export function Evals() {
                   </article>
                 ))}
                 <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  Atticus never lets a quarantined source through on its own: clean or replace it,
-                  then scan again. Scanned {plural(x.scanned, "file")}.
+                  {T.atticusNeverLetsA(plural(x.scanned, "file"))}
                 </p>
               </div>
             )}
@@ -314,17 +315,17 @@ export function Evals() {
               onClick={() =>
                 void scan.run(async () => {
                   d.reload();
-                }, "Scanning inputs/ and the wiki folders again.")
+                }, T.scanningInputsAndThe)
               }
             >
-              Scan again
+              {T.scanAgain}
             </button>
           </div>
           <Note note={scan.note} />
         </Panel>
 
-        <Panel title="Eval runs" span="span 5">
-          <View of={e} empty={(x) => x.runs.length === 0} emptyText="No eval runs yet.">
+        <Panel title={T.evalRuns} span="span 5">
+          <View of={e} empty={(x) => x.runs.length === 0} emptyText={T.noEvalRunsYet2}>
             {(x) =>
               x.runs
                 .slice()
@@ -338,11 +339,11 @@ export function Evals() {
                       </span>
                       <span className="hud" style={{ fontSize: 9.5 }}>
                         {day(r.startedAt)} · {plural(r.agents.length, "agent")}
-                        {r.skipped ? ` · ${r.skipped} skipped` : ""}
+                        {r.skipped ? T.skipped(r.skipped) : ""}
                       </span>
                     </span>
                     <span className={`chip ${r.failed ? "blocking" : "done"}`}>
-                      {r.failed ? `${r.failed} FAILED` : "ALL PASSED"}
+                      {r.failed ? T.failed(r.failed) : T.allPassed}
                     </span>
                   </div>
                 ))
@@ -350,23 +351,21 @@ export function Evals() {
           </View>
         </Panel>
 
-        <Panel title="Compare models" span="span 5">
+        <Panel title={T.compareModels} span="span 5">
           <View of={e}>
             {(x) =>
               x.modes.allowed.includes("model") && x.models.length > 1 ? (
                 <p style={{ margin: 0, fontSize: 12.5 }}>
-                  Approved models: {x.models.join(", ")}. Live evals call a real model, so run them
-                  from a terminal: <code className="mono">atticus eval run --mode live</code>.
+                  {T.approvedModelsLiveEvals(x.models.join(", "))}
+                  <code className="mono">{T.atticusEvalRunMode}</code>.
                 </p>
               ) : (
                 <div className="stack">
                   <span className="chip dim" style={{ alignSelf: "flex-start" }}>
-                    LOCKED
+                    {T.locked}
                   </span>
                   <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                    Available once model mode is approved in runtime.yaml. It runs the same eval
-                    suite on each model and shows pass rate side by side. Not available in{" "}
-                    {x.modes.default} mode.
+                    {T.availableOnceModelMode(x.modes.default)}
                   </p>
                 </div>
               )

@@ -2,6 +2,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useApi } from "../api/client.js";
 import { GraphView, type Graph } from "../app/graph.js";
 import { Panel, View } from "../app/ui.js";
+import { COPY } from "../copy.js";
+
+const T = COPY.explore;
 
 interface Row {
   kind: string;
@@ -107,11 +110,11 @@ function Detail({ row }: { row: Row }) {
               </dl>
               <div>
                 <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
-                  Evidence
+                  {T.evidence}
                 </div>
                 {(r.evidence ?? []).length === 0 ? (
                   <p className="muted" style={{ margin: 0 }}>
-                    No evidence recorded: treat this fact as unconfirmed.
+                    {T.noEvidenceRecordedTreat}
                   </p>
                 ) : (
                   <ul
@@ -151,7 +154,7 @@ function Detail({ row }: { row: Row }) {
                   width: "fit-content",
                 }}
               >
-                What breaks if this changes
+                {T.whatBreaksIfThis}
               </a>
             </div>
           );
@@ -201,7 +204,7 @@ export function Explore({ hash }: { hash: string }) {
   return (
     <div className="bento">
       {askText && (
-        <Panel title={`Ask: ${askText}`} kind="hero" span="1 / -1">
+        <Panel title={T.ask(askText)} kind="hero" span="1 / -1">
           <View of={asked}>
             {(a) => (
               <div className="stack" style={{ gap: 6 }}>
@@ -210,22 +213,23 @@ export function Explore({ hash }: { hash: string }) {
                   <p style={{ margin: 0, fontSize: 18 }}>
                     {a.owner ? (
                       <>
-                        <span className="mono">{a.id}</span> is owned by{" "}
+                        <span className="mono">{a.id}</span> {T.isOwnedBy}
                         <span className="chip done">{a.owner}</span>
                       </>
                     ) : (
                       <>
-                        The catalog doesn't know who owns <span className="mono">{a.id}</span> yet.
+                        {T.theCatalogDoesntKnow}
+                        <span className="mono">{a.id}</span> {T.yet}
                       </>
                     )}
                   </p>
                 )}
                 <span className="hud" style={{ fontSize: 10 }}>
-                  Query run:{" "}
+                  {T.queryRun}
                   <span className="mono" style={{ color: "var(--accent)" }}>
                     {a.query}
-                  </span>{" "}
-                  · edit it below to refine
+                  </span>
+                  {T.editItBelowTo}
                 </span>
                 {a.error && (
                   <span role="alert" style={{ color: "var(--magenta-text)" }}>
@@ -237,16 +241,16 @@ export function Explore({ hash }: { hash: string }) {
           </View>
         </Panel>
       )}
-      <Panel title="Search the catalog" span="1 / -1">
+      <Panel title={T.searchTheCatalog} span="1 / -1">
         <form role="search" onSubmit={submit} className="row" style={{ flexWrap: "wrap" }}>
           <label htmlFor="kq" className="sr">
-            Search
+            {T.search}
           </label>
           <input
             id="kq"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder='Try: daily limit · kind:interface via:gateway · "ledger-db"'
+            placeholder={T.tryDailyLimitKind}
             style={{
               flex: "1 1 360px",
               height: 40,
@@ -259,33 +263,34 @@ export function Explore({ hash }: { hash: string }) {
             }}
           />
           <button type="submit" className="btn primary">
-            Search
+            {T.search}
           </button>
           <span className="muted" style={{ fontSize: 12 }}>
-            Words match ids and names; <span className="mono">kind:</span>,{" "}
-            <span className="mono">system:</span>, <span className="mono">status:</span> narrow it.
+            {T.wordsMatchIdsAnd}
+            <span className="mono">{T.kind}</span>, <span className="mono">{T.system}</span>,{" "}
+            <span className="mono">{T.status}</span> {T.narrowIt}
           </span>
         </form>
       </Panel>
 
       <Panel
-        title="Results"
+        title={T.results}
         span="span 3"
         rows="span 2"
         meta={results.state === "ready" ? results.data.total : undefined}
       >
         {!q ? (
           <p className="muted" style={{ margin: 0 }}>
-            Search for a service, a table, a topic, a term or a feature.
+            {T.searchForAService}
           </p>
         ) : (
           <View
             of={results}
             empty={(r) => r.rows.length === 0}
-            emptyText="Nothing matches. Try fewer words."
+            emptyText={T.nothingMatchesTryFewer}
           >
             {(r) => (
-              <ul style={{ listStyle: "none", margin: 0, padding: 0 }} aria-label="Search results">
+              <ul style={{ listStyle: "none", margin: 0, padding: 0 }} aria-label={T.searchResults}>
                 {r.rows.map((row) => (
                   <li key={`${row.kind}/${row.id}`}>
                     <button
@@ -326,16 +331,12 @@ export function Explore({ hash }: { hash: string }) {
       </Panel>
 
       <Panel
-        title={focusId ? `Around ${focusId}` : "The whole estate"}
+        title={focusId ? T.around(focusId) : T.theWholeEstate}
         kind="hero"
         span={picked ? "span 5" : "span 9"}
         rows="span 2"
       >
-        <View
-          of={graph}
-          empty={(g) => g.nodes.length === 0}
-          emptyText="The catalog is empty. Run a scan first."
-        >
+        <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
           {(g) => (
             <GraphView
               g={g}

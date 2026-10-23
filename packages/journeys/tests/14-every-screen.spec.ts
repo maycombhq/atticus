@@ -1,60 +1,11 @@
 import { accessible, expect, forgeJourney, open, test } from "../support/app.js";
+import { SCREENS } from "../support/screens.js";
 
-/** WCAG 2.1 AA on all 27 screens: axe reports no serious or critical violation on any of them. */
+/**
+ * WCAG 2.1 AA on every screen in the dark theme: axe reports no serious or critical violation
+ * on any of them. 17-light-theme does the same in the light theme.
+ */
 const app = forgeJourney();
-
-const SCREENS = [
-  "dashboard",
-  "onboarding",
-  "feature-design?change=add-transfer-limit",
-  "stories?change=add-transfer-limit",
-  "task-list?change=add-transfer-limit",
-  "home",
-  "questions",
-  "explore",
-  "flows",
-  "map",
-  "impact?q=ledger-api",
-  "impact?q=ledger-api&incident=1",
-  "features",
-  "orgpack",
-  // ADR 0102: knowledge in the app.
-  "wikis",
-  "knowledge",
-  "wiki-search?q=transfer",
-  "parties",
-  "orgpack-draft",
-  "intake",
-  "scans",
-  "brief?change=add-transfer-limit",
-  "ux?change=add-transfer-limit",
-  "arch-review?change=add-transfer-limit",
-  "diagrams",
-  "architecture",
-  "reconcile",
-  "contracts",
-  "mappings?change=add-transfer-limit",
-  "breakdown?change=add-transfer-limit",
-  "initiatives",
-  "changes",
-  "changes/add-transfer-limit",
-  "changes?across=findings",
-  "changes?across=tasks",
-  "changes?across=stories",
-  "changes?across=tests",
-  "changes?across=requests",
-  "changes?across=releases",
-  "tasks?change=add-transfer-limit",
-  "trace?change=add-transfer-limit",
-  "todo",
-  "release",
-  "release/add-transfer-limit",
-  "service-desk",
-  "governance",
-  "evals",
-  "learning",
-  "settings",
-];
 
 for (const s of SCREENS)
   test(`#/${s} is accessible`, async ({ page }) => {

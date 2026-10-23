@@ -5,6 +5,8 @@ import { Bar, Donut, Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Markdown, Note, Table, list, queryParam, useAction, useView } from "./common.js";
 
+const T = COPY.know;
+
 interface Coverage {
   systems: {
     system: string;
@@ -36,8 +38,8 @@ interface Questions {
 }
 
 const CELL: Record<string, { bg: string; label: string }> = {
-  verified: { bg: "var(--cov-verified)", label: "verified from code" },
-  "document-only": { bg: "var(--cov-doc)", label: "from documents only" },
+  verified: { bg: "var(--cov-verified)", label: T.verifiedFromCode },
+  "document-only": { bg: "var(--cov-doc)", label: T.fromDocumentsOnly },
   unknown: { bg: "var(--cov-unknown)", label: "unknown" },
 };
 
@@ -46,13 +48,13 @@ function SystemGuide({ system }: { system: string }) {
     `/api/guide/${encodeURIComponent(system)}`,
   );
   return (
-    <Panel title={`Guide · ${system}`} span="1 / -1" meta="Generated from the catalog">
+    <Panel title={T.guide(system)} span="1 / -1" meta={T.generatedFromTheCatalog}>
       <View of={g}>
         {(d) => (
           <div
             tabIndex={0}
             role="region"
-            aria-label={`Guide to ${system}`}
+            aria-label={T.guideTo(system)}
             style={{ maxHeight: 560, overflowY: "auto", paddingRight: 6 }}
           >
             <Markdown text={d.markdown} />
@@ -71,30 +73,26 @@ export function EcosystemMap() {
   return (
     <div className="bento">
       <Panel
-        title={focus ? `Around ${focus}` : "Ecosystem map"}
+        title={focus ? T.around(focus) : T.ecosystemMap}
         kind="hero"
         span="span 8"
         rows="span 2"
         meta={
           focus ? (
             <button type="button" className="btn" onClick={() => setFocus(undefined)}>
-              Show all
+              {T.showAll}
             </button>
           ) : (
-            "Click a node to centre it"
+            T.clickANodeTo
           )
         }
       >
-        <View
-          of={graph}
-          empty={(g) => g.nodes.length === 0}
-          emptyText="The catalog is empty. Run a scan from the Scans screen."
-        >
+        <View of={graph} empty={(g) => g.nodes.length === 0} emptyText={T.theCatalogIsEmpty}>
           {(g) => <GraphView g={g} {...(focus ? { focus } : {})} onPick={setFocus} height={520} />}
         </View>
       </Panel>
-      <Panel title="Systems" span="span 4" rows="span 2">
-        <View of={cov} empty={(c) => c.systems.length === 0} emptyText="No systems yet.">
+      <Panel title={T.systems} span="span 4" rows="span 2">
+        <View of={cov} empty={(c) => c.systems.length === 0} emptyText={T.noSystemsYet}>
           {(c) => (
             <div className="stack">
               {c.systems.map((s) => {
@@ -122,13 +120,13 @@ export function EcosystemMap() {
                         {s.system}
                       </span>
                       <span className="hud" style={{ fontSize: 9.5 }}>
-                        {s.verified}/{total} verified{s.gaps ? ` · ${s.gaps} gaps` : ""}
+                        {T.verified(s.verified, total, s.gaps ? T.gaps(s.gaps) : "")}
                       </span>
                     </span>
                     <Bar
                       value={s.verified}
                       max={Math.max(total, 1)}
-                      label={`${s.system}: facts verified from code`}
+                      label={T.factsVerifiedFromCode(s.system)}
                     />
                   </button>
                 );
@@ -140,8 +138,8 @@ export function EcosystemMap() {
       {focus && cov.state === "ready" && cov.data.systems.some((x) => x.system === focus) && (
         <SystemGuide system={focus} />
       )}
-      <Panel title="What the catalog knows" span="span 8">
-        <View of={cov} empty={(c) => c.systems.length === 0} emptyText="No systems yet.">
+      <Panel title={T.whatTheCatalogKnows} span="span 8">
+        <View of={cov} empty={(c) => c.systems.length === 0} emptyText={T.noSystemsYet}>
           {(c) => {
             const areas = [...new Set(c.systems.flatMap((x) => x.areas.map((a) => a.area)))];
             // Positioned, so the hidden words in its cells scroll with it instead of widening the page.
@@ -150,7 +148,7 @@ export function EcosystemMap() {
                 style={{ overflowX: "auto", position: "relative" }}
                 tabIndex={0}
                 role="region"
-                aria-label={COPY.app.scrollTable("Coverage by system and area")}
+                aria-label={COPY.app.scrollTable(T.coverageBySystemAnd2)}
               >
                 <table
                   style={{
@@ -160,7 +158,7 @@ export function EcosystemMap() {
                     fontSize: 11,
                   }}
                 >
-                  <caption className="sr">Coverage by system and area</caption>
+                  <caption className="sr">{T.coverageBySystemAnd}</caption>
                   <thead>
                     <tr>
                       <th />
@@ -188,8 +186,8 @@ export function EcosystemMap() {
                           const a = s.areas.find((x) => x.area === name);
                           if (!a)
                             return (
-                              <td key={name} title={`${s.system} · ${name}: not expected`}>
-                                <span className="sr">not expected</span>
+                              <td key={name} title={T.notExpected2(s.system, name)}>
+                                <span className="sr">{T.notExpected}</span>
                               </td>
                             );
                           const cell = CELL[a.state] ?? CELL.unknown!;
@@ -239,19 +237,15 @@ export function EcosystemMap() {
         </View>
       </Panel>
       <Panel
-        title="Questions for owners"
+        title={T.questionsForOwners}
         span="span 4"
         meta={qs.state === "ready" ? qs.data.questions.length : undefined}
       >
-        <View
-          of={qs}
-          empty={(q) => q.questions.length === 0}
-          emptyText="No open questions: every gap has an answer."
-        >
+        <View of={qs} empty={(q) => q.questions.length === 0} emptyText={T.noOpenQuestionsEvery}>
           {(q) => (
             <ul
               tabIndex={0}
-              aria-label="Questions for owners"
+              aria-label={T.questionsForOwners}
               style={{
                 listStyle: "none",
                 margin: 0,
@@ -270,7 +264,7 @@ export function EcosystemMap() {
                   <span style={{ fontSize: 12.5 }}>{x.question}</span>
                   <span className="hud" style={{ fontSize: 9.5 }}>
                     {x.system ?? ""}
-                    {x.owner ? ` · ask ${x.owner}` : " · owner unknown"}
+                    {x.owner ? T.ask(x.owner) : T.ownerUnknown}
                   </span>
                 </li>
               ))}
@@ -311,7 +305,7 @@ function blastGraph(d: Impact): Graph {
       if (!nodes.has(from))
         nodes.set(from, {
           id: from,
-          kind: kindOf.get(from) ?? "Component",
+          kind: kindOf.get(from) ?? T.component,
           label: from,
           status: "current",
         });
@@ -360,10 +354,10 @@ export function ImpactExplorer({ hash }: { hash: string }) {
   const blast: Graph | undefined = imp.state === "ready" ? blastGraph(imp.data) : undefined;
   return (
     <div className="bento">
-      <Panel title="What breaks if this changes" span="1 / -1">
+      <Panel title={T.whatBreaksIfThis} span="1 / -1">
         <form onSubmit={submit} className="row" style={{ flexWrap: "wrap" }}>
           <label htmlFor="impact-id" className="sr">
-            Record id
+            {T.recordId}
           </label>
           <input
             id="impact-id"
@@ -373,7 +367,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
               setBlank(false);
             }}
             aria-describedby={blank ? "impact-blank" : undefined}
-            placeholder="A component, interface, table, column or topic id, e.g. ledger-db.account"
+            placeholder={T.aComponentInterfaceTable}
             style={{
               flex: "1 1 360px",
               height: 40,
@@ -386,7 +380,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
             }}
           />
           <button type="submit" className="btn primary">
-            Show impact
+            {T.showImpact}
           </button>
           <button
             type="button"
@@ -396,10 +390,10 @@ export function ImpactExplorer({ hash }: { hash: string }) {
               (location.hash = `#/impact?q=${encodeURIComponent(text.trim())}${incident ? "" : "&incident=1"}`)
             }
           >
-            {incident ? "Incident mode on" : "Incident mode"}
+            {incident ? T.incidentModeOn : T.incidentMode}
           </button>
           <a href="#/explore" className="muted" style={{ fontSize: 12 }}>
-            Find an id in the Knowledge explorer
+            {T.findAnIdIn}
           </a>
         </form>
         {blank && (
@@ -410,7 +404,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
       </Panel>
       {q && incident && (
         <>
-          <Panel title="Owners to call" span="span 4" kind="dark">
+          <Panel title={T.ownersToCall} span="span 4" kind="dark">
             <View of={inc}>
               {(d) => (
                 <div className="stack" style={{ gap: 8 }}>
@@ -424,23 +418,18 @@ export function ImpactExplorer({ hash }: { hash: string }) {
                   ))}
                   {d.ownerUnknown.length > 0 && (
                     <p style={{ margin: 0, fontSize: 12.5, color: "var(--amber-text)" }}>
-                      No owner recorded for {d.ownerUnknown.join(", ")}.
+                      {T.noOwnerRecordedFor(d.ownerUnknown.join(", "))}
                     </p>
                   )}
                   <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-                    From the last scan. Atticus never connects to live systems, consoles or
-                    monitoring.
+                    {T.fromTheLastScan}
                   </p>
                 </div>
               )}
             </View>
           </Panel>
-          <Panel title="What watches it" span="span 4">
-            <View
-              of={inc}
-              empty={(d) => d.watch.length === 0}
-              emptyText="No alerts, dashboards or runbooks in the catalog for what it reaches."
-            >
+          <Panel title={T.whatWatchesIt} span="span 4">
+            <View of={inc} empty={(d) => d.watch.length === 0} emptyText={T.noAlertsDashboardsOr}>
               {(d) => (
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.6 }}>
                   {d.watch.map((w, i) => (
@@ -453,11 +442,11 @@ export function ImpactExplorer({ hash }: { hash: string }) {
               )}
             </View>
           </Panel>
-          <Panel title="Recent nearby changes" span="span 4">
+          <Panel title={T.recentNearbyChanges} span="span 4">
             <View
               of={inc}
               empty={(d) => d.recentChanges.length === 0}
-              emptyText="No change touches what it reaches."
+              emptyText={T.noChangeTouchesWhat}
             >
               {(d) => (
                 <div className="stack" style={{ gap: 6 }}>
@@ -485,35 +474,31 @@ export function ImpactExplorer({ hash }: { hash: string }) {
       )}
       {!q ? null : (
         <>
-          <Panel title={`Blast radius of ${q}`} kind="hero" span="span 9">
-            <View
-              of={imp}
-              empty={(d) => d.affected.length === 0}
-              emptyText="Nothing depends on it."
-            >
+          <Panel title={T.blastRadiusOf(q)} kind="hero" span="span 9">
+            <View of={imp} empty={(d) => d.affected.length === 0} emptyText={T.nothingDependsOnIt}>
               {() => <GraphView g={blast!} focus={q} height={380} />}
             </View>
           </Panel>
-          <Panel title="Blast radius" span="span 3" kind="dark">
+          <Panel title={T.blastRadius} span="span 3" kind="dark">
             <View of={imp}>
               {(d) => (
                 <div className="stack">
                   <span className="big">{d.affected.length}</span>
                   <span className="hud" style={{ fontSize: 10 }}>
-                    Records affected by {d.root}
+                    {T.recordsAffectedBy(d.root)}
                   </span>
                   {[...byHop.entries()]
                     .sort((a, b) => a[0] - b[0])
                     .map(([hop, n]) => (
                       <div key={hop} className="row" style={{ gap: 8 }}>
                         <span className="hud" style={{ width: 56, fontSize: 10 }}>
-                          {hop} hop{hop === 1 ? "" : "s"}
+                          {T.hop(hop, hop === 1 ? "" : "s")}
                         </span>
                         <div style={{ flex: 1 }}>
                           <Bar
                             value={n}
                             max={Math.max(...byHop.values())}
-                            label={`${n} records ${hop} hops away`}
+                            label={T.recordsHopsAway(n, hop)}
                           />
                         </div>
                         <span className="n">{n}</span>
@@ -523,30 +508,26 @@ export function ImpactExplorer({ hash }: { hash: string }) {
               )}
             </View>
           </Panel>
-          <Panel title="Affected" span="span 8">
-            <View
-              of={imp}
-              empty={(d) => d.affected.length === 0}
-              emptyText="Nothing depends on it in the catalog."
-            >
+          <Panel title={T.affected} span="span 8">
+            <View of={imp} empty={(d) => d.affected.length === 0} emptyText={T.nothingDependsOnIt2}>
               {(d) => (
                 <Table
-                  caption="Affected records"
+                  caption={T.affectedRecords}
                   rows={d.affected}
                   rowKey={(a) => `${a.kind}/${a.id}`}
                   cols={[
-                    { label: "Record", cell: (a) => a.id, mono: true },
-                    { label: "Kind", cell: (a) => <span className="chip dim">{a.kind}</span> },
-                    { label: "Why", cell: (a) => a.reason },
+                    { label: T.record, cell: (a) => a.id, mono: true },
+                    { label: T.kind, cell: (a) => <span className="chip dim">{a.kind}</span> },
+                    { label: T.why, cell: (a) => a.reason },
                     {
-                      label: "Owner",
+                      label: T.owner,
                       cell: (a) =>
                         a.owner ? (
                           <span className="chip dim" style={{ whiteSpace: "nowrap" }}>
                             {a.owner}
                           </span>
                         ) : (
-                          <span className="chip warn">UNKNOWN</span>
+                          <span className="chip warn">{T.unknown}</span>
                         ),
                     },
                   ]}
@@ -554,12 +535,8 @@ export function ImpactExplorer({ hash }: { hash: string }) {
               )}
             </View>
           </Panel>
-          <Panel title="What would sharpen this" span="span 4">
-            <View
-              of={imp}
-              empty={(d) => d.gaps.length === 0}
-              emptyText="No gaps: the catalog knows every hop."
-            >
+          <Panel title={T.whatWouldSharpenThis} span="span 4">
+            <View of={imp} empty={(d) => d.gaps.length === 0} emptyText={T.noGapsTheCatalog}>
               {(d) => (
                 <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
                   {d.gaps.map((g) => (
@@ -571,7 +548,7 @@ export function ImpactExplorer({ hash }: { hash: string }) {
               )}
             </View>
             <p className="muted" style={{ fontSize: 11.5, margin: "10px 0 0" }}>
-              Read-only. Atticus never connects to live systems; this is the catalog's view.
+              {T.readOnlyAtticusNever}
             </p>
           </Panel>
         </>
@@ -635,35 +612,31 @@ export function Features({ hash }: { hash: string }) {
   return (
     <div className="bento">
       <Panel
-        title="Features found in code"
+        title={T.featuresFoundInCode}
         span="span 4"
         rows="span 2"
         meta={all.state === "ready" ? all.data.features.length : undefined}
       >
-        <View
-          of={all}
-          empty={(d) => d.features.length === 0}
-          emptyText="No features found yet. Scan the repos first."
-        >
+        <View of={all} empty={(d) => d.features.length === 0} emptyText={T.noFeaturesFoundYet}>
           {(d) => (
             <div className="stack" style={{ gap: 10 }}>
               <Donut
-                title="Features by how they were named"
+                title={T.featuresByHowThey}
                 parts={[
                   {
-                    label: "Confirmed by people",
+                    label: T.confirmedByPeople,
                     value: d.coverage.confirmed.length,
                     color: "var(--green)",
                   },
                   {
-                    label: "Found in code only",
+                    label: T.foundInCodeOnly,
                     value: d.coverage.detectedOnly.length,
                     color: "var(--accent)",
                   },
-                  { label: "Unknown", value: d.coverage.unknown.length, color: "var(--amber)" },
+                  { label: T.unknown2, value: d.coverage.unknown.length, color: "var(--amber)" },
                 ]}
               />
-              <nav aria-label="Features" className="stack" style={{ gap: 2 }}>
+              <nav aria-label={T.features} className="stack" style={{ gap: 2 }}>
                 {d.features.map((f) => (
                   <a
                     key={f.id}
@@ -680,7 +653,7 @@ export function Features({ hash }: { hash: string }) {
                     <span className="stack" style={{ gap: 2 }}>
                       <span>{f.name ?? f.id}</span>
                       <span className="hud" style={{ fontSize: 9.5 }}>
-                        {f.entryPoints.length} entry points
+                        {T.entryPoints(f.entryPoints.length)}
                       </span>
                     </span>
                     <span
@@ -696,13 +669,13 @@ export function Features({ hash }: { hash: string }) {
         </View>
       </Panel>
       <Panel
-        title={one.state === "ready" ? (one.data.feature.name ?? one.data.feature.id) : "Feature"}
+        title={one.state === "ready" ? (one.data.feature.name ?? one.data.feature.id) : T.feature}
         span="span 8"
         rows="span 2"
         meta={one.state === "ready" ? one.data.system : undefined}
       >
         {!id ? (
-          <p className="muted">Pick a feature.</p>
+          <p className="muted">{T.pickAFeature}</p>
         ) : (
           <View of={one}>
             {(d) => (
@@ -715,18 +688,18 @@ export function Features({ hash }: { hash: string }) {
                     </span>
                   ))}
                   {d.feature.externalRefs.length === 0 ? (
-                    <span className="chip warn">NO WORK ITEMS LINKED</span>
+                    <span className="chip warn">{T.noWorkItemsLinked}</span>
                   ) : (
                     d.feature.externalRefs.map((r, i) => (
                       <span key={i} className="chip done">
-                        {r.system ?? "item"} {r.id ?? ""}
+                        {r.system ?? T.item} {r.id ?? ""}
                       </span>
                     ))
                   )}
                 </div>
                 <div>
                   <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
-                    Entry points
+                    {T.entryPoints2}
                   </div>
                   <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }} className="mono">
                     {d.feature.entryPoints.map((e) => (
@@ -737,7 +710,7 @@ export function Features({ hash }: { hash: string }) {
                 <FeatureGraph records={[...d.feature.records, ...d.feature.entryPoints]} />
                 <div>
                   <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
-                    Records in the flow ({d.feature.records.length})
+                    {T.recordsInTheFlow(d.feature.records.length)}
                   </div>
                   <p
                     className="mono"
@@ -748,11 +721,11 @@ export function Features({ hash }: { hash: string }) {
                 </div>
                 <div>
                   <div className="hud" style={{ fontSize: 10, marginBottom: 6 }}>
-                    Knowledge gaps
+                    {T.knowledgeGaps}
                   </div>
                   {d.looseEnds.length === 0 ? (
                     <p className="muted" style={{ margin: 0 }}>
-                      None: every hop is known.
+                      {T.noneEveryHopIs}
                     </p>
                   ) : (
                     <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
@@ -765,10 +738,11 @@ export function Features({ hash }: { hash: string }) {
                   )}
                 </div>
                 <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  Name, tag or link it with{" "}
-                  <span className="mono">atticus feature name {d.feature.id} …</span>,{" "}
-                  <span className="mono">feature tag</span> or{" "}
-                  <span className="mono">feature link</span>: the change goes in by PR.
+                  {T.nameTagOrLink}
+                  <span className="mono">{T.atticusFeatureName(d.feature.id)}</span>,{" "}
+                  <span className="mono">{T.featureTag}</span> {T.or}
+                  <span className="mono">{T.featureLink}</span>
+                  {T.theChangeGoesIn}
                 </p>
               </div>
             )}
@@ -805,7 +779,7 @@ export function OrgPackScreen() {
   const g = useView<Glossary>("glossary");
   return (
     <div className="bento">
-      <Panel title="Org pack" span="span 4" kind="dark">
+      <Panel title={T.orgPack} span="span 4" kind="dark">
         <View of={op}>
           {(d) => (
             <div className="stack">
@@ -821,46 +795,48 @@ export function OrgPackScreen() {
               ))}
               {d.problems.length ? (
                 <p role="alert" style={{ color: "var(--magenta-text)", margin: 0 }}>
-                  {d.problems.length} problems:{" "}
-                  {d.problems.map((p) => `${p.file}: ${p.message}`).join("; ")}
+                  {T.problems(
+                    d.problems.length,
+                    d.problems.map((p) => `${p.file}: ${p.message}`).join("; "),
+                  )}
                 </p>
               ) : (
                 <span className="chip done" style={{ width: "fit-content" }}>
-                  VALID
+                  {T.valid}
                 </span>
               )}
               {d.defaulted.length > 0 && (
                 <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                  Using built-in defaults for {d.defaulted.join(", ")}.
+                  {T.usingBuiltInDefaults(d.defaulted.join(", "))}
                 </p>
               )}
             </div>
           )}
         </View>
       </Panel>
-      <Panel title="Integration patterns" span="span 8">
-        <View of={op} empty={(d) => !d.patterns?.length} emptyText="No patterns yet.">
+      <Panel title={T.integrationPatterns} span="span 8">
+        <View of={op} empty={(d) => !d.patterns?.length} emptyText={T.noPatternsYet}>
           {(d) => (
             <Table
-              caption="Integration patterns"
+              caption={T.integrationPatterns}
               rows={d.patterns ?? []}
               rowKey={(p) => p.code}
               cols={[
                 {
-                  label: "Code",
+                  label: T.code,
                   cell: (p) => <span className="chip">{p.code}</span>,
                   width: "130px",
                 },
-                { label: "Pattern", cell: (p) => <span title={p.definition}>{p.name}</span> },
-                { label: "Interaction", cell: (p) => p.interaction },
-                { label: "Route", cell: (p) => p.route },
-                { label: "Target", cell: (p) => p.targetType },
+                { label: T.pattern, cell: (p) => <span title={p.definition}>{p.name}</span> },
+                { label: T.interaction, cell: (p) => p.interaction },
+                { label: T.route, cell: (p) => p.route },
+                { label: T.target, cell: (p) => p.targetType },
               ]}
             />
           )}
         </View>
       </Panel>
-      <Panel title="Checklists and procedures" span="span 4">
+      <Panel title={T.checklistsAndProcedures} span="span 4">
         <View of={op}>
           {(d) => (
             <div className="stack">
@@ -868,7 +844,7 @@ export function OrgPackScreen() {
                 <div key={c.name} className="list-row">
                   <span>{c.name}</span>
                   <span className="hud" style={{ fontSize: 10 }}>
-                    {c.rules} rules · v{c.version}
+                    {T.rulesV(c.rules, c.version)}
                   </span>
                 </div>
               ))}
@@ -876,7 +852,7 @@ export function OrgPackScreen() {
                 <div key={p.id} className="list-row">
                   <span>{p.title ?? p.id}</span>
                   <span className="hud" style={{ fontSize: 10 }}>
-                    {p.steps} steps
+                    {T.steps(p.steps)}
                   </span>
                 </div>
               ))}
@@ -884,19 +860,19 @@ export function OrgPackScreen() {
           )}
         </View>
       </Panel>
-      <Panel title="Glossary" span="span 8">
-        <View of={g} empty={(d) => d.terms.length === 0} emptyText="No terms yet.">
+      <Panel title={T.glossary} span="span 8">
+        <View of={g} empty={(d) => d.terms.length === 0} emptyText={T.noTermsYet}>
           {(d) => (
             <Table
-              caption="Glossary"
+              caption={T.glossary}
               rows={d.terms}
               rowKey={(t) => t.id}
               cols={[
-                { label: "Term", cell: (t) => t.term, width: "180px" },
+                { label: T.term, cell: (t) => t.term, width: "180px" },
                 {
-                  label: "Definition",
+                  label: T.definition,
                   cell: (t) =>
-                    t.definition ?? <span className="chip warn">NEEDS A DEFINITION</span>,
+                    t.definition ?? <span className="chip warn">{T.needsADefinition}</span>,
                 },
               ]}
             />
@@ -991,26 +967,26 @@ export function IntakeScreen() {
   const facts = docs.reduce((a, d) => a + d.records.length, 0);
   return (
     <div className="bento">
-      <Panel title="Files" span="span 3" kind="dark">
+      <Panel title={T.files} span="span 3" kind="dark">
         <View of={intake}>
           {() => (
             <div className="stack">
               <span className="big">{docs.length}</span>
               <span className="hud" style={{ fontSize: 10 }}>
-                files in inputs/
+                {T.filesInInputs}
               </span>
             </div>
           )}
         </View>
       </Panel>
-      <Panel title="Facts taken" span="span 2" kind="dark">
+      <Panel title={T.factsTaken} span="span 2" kind="dark">
         <span className="big">{facts}</span>
       </Panel>
-      <Panel title="What happened to them" span="span 3">
-        <View of={intake} empty={() => docs.length === 0} emptyText="Nothing yet.">
+      <Panel title={T.whatHappenedToThem} span="span 3">
+        <View of={intake} empty={() => docs.length === 0} emptyText={T.nothingYet}>
           {() => (
             <Donut
-              title="Files by status"
+              title={T.filesByStatus}
               parts={byStatus.map((st) => ({
                 label: st,
                 value: docs.filter((d) => d.status === st).length,
@@ -1020,14 +996,13 @@ export function IntakeScreen() {
           )}
         </View>
       </Panel>
-      <Panel title="Defences" span="span 4">
+      <Panel title={T.defences} span="span 4">
         <View of={intake}>
           {() => {
             const flagged = docs.filter((d) => d.defences && d.defences.risk !== "cleared");
             return flagged.length === 0 ? (
               <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
-                Nothing hidden or aimed at an AI reader. Ingested content is data, never
-                instructions.
+                {T.nothingHiddenOrAimed}
               </p>
             ) : (
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5 }}>
@@ -1041,31 +1016,27 @@ export function IntakeScreen() {
           }}
         </View>
       </Panel>
-      <Panel title="Intake" span="span 8" meta="inputs/">
-        <View
-          of={intake}
-          empty={(d) => d.documents.length === 0}
-          emptyText="Nothing in inputs/ yet. Drop diagrams, documents, API specs and exports there (or run atticus intake add <file>)."
-        >
+      <Panel title={T.intake} span="span 8" meta={T.inputs}>
+        <View of={intake} empty={(d) => d.documents.length === 0} emptyText={T.nothingInInputsYet}>
           {(d) => (
             <Table
-              caption="Files read from inputs/"
+              caption={T.filesReadFromInputs}
               rows={d.documents}
               rowKey={(x) => x.path}
               cols={[
-                { label: "File", cell: (x) => x.path, mono: true },
-                { label: "Read as", cell: (x) => x.classification },
+                { label: T.file, cell: (x) => x.path, mono: true },
+                { label: T.readAs, cell: (x) => x.classification },
                 {
-                  label: "About",
-                  cell: (x) => list(x.systems) || <span className="muted">no system named</span>,
+                  label: T.about,
+                  cell: (x) => list(x.systems) || <span className="muted">{T.noSystemNamed}</span>,
                 },
-                { label: "Facts", cell: (x) => x.records.length },
+                { label: T.facts, cell: (x) => x.records.length },
                 {
-                  label: "Status",
+                  label: T.status,
                   cell: (x) =>
                     x.defences?.risk === "high" ? (
                       <span className="chip blocking" title={x.defences.reason}>
-                        QUARANTINED
+                        {T.quarantined}
                       </span>
                     ) : (
                       <span
@@ -1081,11 +1052,11 @@ export function IntakeScreen() {
         </View>
       </Panel>
       <Panel
-        title="Needs you"
+        title={T.needsYou}
         span="span 4"
         meta={triage.state === "ready" ? triage.data.items.length : undefined}
       >
-        <View of={triage} empty={(d) => d.items.length === 0} emptyText="Nothing to triage.">
+        <View of={triage} empty={(d) => d.items.length === 0} emptyText={T.nothingToTriage}>
           {(d) => (
             <div className="stack">
               {decided && <Note note={{ ok: true, text: decided }} />}
@@ -1116,8 +1087,7 @@ export function IntakeScreen() {
                 </div>
               ))}
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-                Each choice is saved as a curated decision in your name. Code always wins over a
-                document until a person decides.
+                {T.eachChoiceIsSaved}
               </p>
             </div>
           )}
@@ -1172,17 +1142,17 @@ export function Scans() {
   const total = repos.state === "ready" ? repos.data.length : 0;
   return (
     <div className="bento">
-      <Panel title="Scan" span="span 4" kind="dark">
+      <Panel title={T.scan} span="span 4" kind="dark">
         <div className="stack">
           <div className="row">
             <Ring
               value={present}
               max={Math.max(total, 1)}
               size={64}
-              label={`${present} of ${total} repos cloned`}
+              label={T.ofReposCloned(present, total)}
             />
             <span className="muted" style={{ fontSize: 12.5 }}>
-              repos cloned locally
+              {T.reposClonedLocally}
             </span>
           </div>
           <div className="row" style={{ flexWrap: "wrap" }}>
@@ -1190,17 +1160,17 @@ export function Scans() {
               type="button"
               className="btn"
               disabled={act.busy}
-              onClick={() => void start("/api/workspace/sync", "Sync")}
+              onClick={() => void start("/api/workspace/sync", T.sync)}
             >
-              Sync repos
+              {T.syncRepos}
             </button>
             <button
               type="button"
               className="btn primary"
               disabled={act.busy}
-              onClick={() => void start("/api/scan", "Scan")}
+              onClick={() => void start("/api/scan", T.scan2)}
             >
-              Scan now
+              {T.scanNow}
             </button>
           </div>
           {job && (
@@ -1212,7 +1182,7 @@ export function Scans() {
               <Bar
                 value={job.progress.done}
                 max={Math.max(job.progress.total, 1)}
-                label="Job progress"
+                label={T.jobProgress}
               />
               {job.errors.length > 0 && (
                 <span style={{ color: "var(--magenta-text)" }}>{job.errors.join("; ")}</span>
@@ -1221,26 +1191,26 @@ export function Scans() {
           )}
           <Note note={act.note} />
           <p className="muted" style={{ margin: 0, fontSize: 11.5 }}>
-            Scans read files only: no network, no AI.
+            {T.scansReadFilesOnly}
           </p>
         </div>
       </Panel>
-      <Panel title="Repos" span="span 8">
-        <View of={repos} empty={(r) => r.length === 0} emptyText="No repos in any manifest yet.">
+      <Panel title={T.repos} span="span 8">
+        <View of={repos} empty={(r) => r.length === 0} emptyText={T.noReposInAny}>
           {(r) => (
             <Table
-              caption="Repos"
+              caption={T.repos}
               rows={r}
               rowKey={(x) => x.id}
               cols={[
-                { label: "Repo", cell: (x) => x.id, mono: true },
-                { label: "Platform", cell: (x) => x.platform },
-                { label: "Type", cell: (x) => x.type ?? "" },
+                { label: T.repo, cell: (x) => x.id, mono: true },
+                { label: T.platform, cell: (x) => x.platform },
+                { label: T.type, cell: (x) => x.type ?? "" },
                 {
-                  label: "Base clone",
+                  label: T.baseClone,
                   cell: (x) => (
                     <span className={`chip ${x.baseClone.present ? "done" : "dim"}`}>
-                      {x.baseClone.present ? "CLONED" : "NOT YET"}
+                      {x.baseClone.present ? T.cloned : T.notYet}
                     </span>
                   ),
                 },
@@ -1249,8 +1219,8 @@ export function Scans() {
           )}
         </View>
       </Panel>
-      <Panel title="Catalog" span="1 / -1">
-        <View of={kinds} empty={(k) => k.length === 0} emptyText="No facts yet.">
+      <Panel title={T.catalog} span="1 / -1">
+        <View of={kinds} empty={(k) => k.length === 0} emptyText={T.noFactsYet}>
           {(k) => (
             <div
               style={{
