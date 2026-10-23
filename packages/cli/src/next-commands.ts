@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import {
   changesDirOf,
+  fastPathOf,
   listQuestions,
   proposalsDirOf,
   loadOrgPack,
@@ -78,6 +79,10 @@ export interface NextState {
     /** ADR 0101: whether its feature is placed, and what it needs from the organisation. */
     feature?: boolean;
     needs?: { open: number; longest?: string };
+    /** ADR 0113: it takes the fast path (its type is small, or its brief says so where allowed). */
+    fast?: boolean;
+    /** ADR 0113: its one step is done (stage/small.yaml): the pull request is next. */
+    fastDone?: boolean;
   }[];
   problems: { file: string; message: string }[];
 }
@@ -170,6 +175,11 @@ export async function readNextState(root: string): Promise<NextState> {
   }
   const changes: NextState["changes"] = [];
   let unverifiedNeeds = 0;
+  // ADR 0113: the change types, to tell a small change from a standard one.
+  const types = await loadOrgPack(orgPackDirOf(root)).then(
+    (op) => op.changeTypes.types,
+    () => [],
+  );
   try {
     for (const c of await changeStore(root).list()) {
       const files = await readChangeFiles(join(changesDirOf(root), c.id)).catch(() => undefined);
@@ -192,6 +202,18 @@ export async function readNextState(root: string): Promise<NextState> {
           ? readChangeTasks(files).map((t) => ({ id: t.id, repo: t.repo, done: t.done }))
           : [],
         feature: existsSync(join(changesDirOf(root), c.id, "feature.yaml")),
+        ...((await isFast(root, c, types))
+          ? {
+              fast: true,
+              ...(/^state: done$/m.test(
+                await readFile(join(changesDirOf(root), c.id, "stage", "small.yaml"), "utf8").catch(
+                  () => "",
+                ),
+              )
+                ? { fastDone: true }
+                : {}),
+            }
+          : {}),
         ...(needs
           ? {
               needs: {
@@ -215,6 +237,18 @@ export async function readNextState(root: string): Promise<NextState> {
     ...(orgpack ? { orgpack } : {}),
     ...(unverifiedNeeds ? { unverifiedNeeds } : {}),
   };
+}
+
+/** Whether a change takes the fast path (ADR 0113), from its type and its brief. */
+async function isFast(
+  root: string,
+  c: { id: string; type: string },
+  types: { id: string; size?: "standard" | "small"; smallWhenBriefSays?: boolean }[],
+): Promise<boolean> {
+  const type = types.find((t) => t.id === c.type);
+  if (!type || (type.size !== "small" && !type.smallWhenBriefSays)) return false;
+  const brief = await readFile(join(changesDirOf(root), c.id, "brief.md"), "utf8").catch(() => "");
+  return fastPathOf(type, brief).fast;
 }
 
 /** The stage a change's state puts it at (plan 4.4), as the app's Work pages read it. */
@@ -278,7 +312,31 @@ function changeSteps(c: NextState["changes"][number]): NextStep[] {
 
 function stageSteps(c: NextState["changes"][number]): NextStep[] {
   const id = c.id;
-  switch (stageOf(c.state)) {
+  const stage = stageOf(c.state);
+  // ADR 0113: a small change goes from brief to tasks in one step, before it is built.
+  if (c.fast && (stage === "feature" || stage === "architecture" || stage === "stories"))
+    return c.fastDone
+      ? [
+          {
+            step: "small-handoff",
+            command: `atticus change handoff ${id} --approve`,
+            where: METAREPO,
+            why: `${id}'s one step is done and nothing blocks it: a person opens its pull request, and merging it approves the plan (ADR 0113).`,
+            change: id,
+            person: true,
+          },
+        ]
+      : [
+          {
+            step: "small",
+            command: `atticus change small ${id}`,
+            slash: `/atticus-small ${id}`,
+            where: METAREPO,
+            why: `${id} is a small change: your assistant places it, writes its target flows and words its stories in one step, and Atticus runs every stage's checks and the critic at its gate (ADR 0113). Then a person approves its one pull request.`,
+            change: id,
+          },
+        ];
+  switch (stage) {
     case "feature":
       return [
         {
@@ -328,9 +386,9 @@ function stageSteps(c: NextState["changes"][number]): NextStep[] {
         {
           step: "task",
           command: `atticus task run ${id} ${t.id}`,
-          slash: `/atticus-task ${t.id}`,
-          where: t.repo,
-          why: `Task ${t.id} of ${id} in ${t.repo} is the first one not done. For the slash command, first run atticus assistant-files --repo ${t.repo} --change ${id}.`,
+          slash: `/atticus-task ${id} ${t.id}`,
+          where: METAREPO,
+          why: `Task ${t.id} of ${id} in ${t.repo} is the first one not done. /atticus-task gives your assistant its context (atticus task context ${id} ${t.id}): the story, the criteria, the step with today's code and the files to change (ADR 0113).`,
           repo: t.repo,
           change: id,
         },

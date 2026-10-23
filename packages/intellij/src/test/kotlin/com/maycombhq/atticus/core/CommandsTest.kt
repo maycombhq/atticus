@@ -114,6 +114,12 @@ class CommandsTest {
     @Test
     fun `an AI step's slash command in Copilot Chat, with its repo or change`() {
         assertEquals("/atticus-survey forge-web", Commands.slashFor(listOf("scan", "survey", "forge-web")))
+        // ADR 0113: the fast path, and a task's context in Copilot Chat.
+        assertEquals("/atticus-small fix-label", Commands.slashFor(listOf("change", "small", "fix-label")))
+        assertTrue(Commands.isAiStep(listOf("change", "small", "fix-label")))
+        assertEquals("/atticus-task fix-label 1.1", Commands.taskSlash("fix-label", "1.1"))
+        assertEquals(listOf("task", "context", "fix-label", "1.1", "--markdown"), Commands.taskContextArgv("fix-label", "1.1"))
+        assertEquals(listOf("change", "attach", "fix-label", "a.pdf", "b.png"), Commands.attachArgv("fix-label", listOf("a.pdf", "b.png")))
         assertEquals("/atticus-verify forge-web", Commands.slashFor(listOf("scan", "verify", "forge-web", "--force")))
         assertEquals("/atticus-spec forge-web", Commands.slashFor(listOf("spec", "draft", "forge-web")))
         assertEquals("/atticus-knowledge", Commands.slashFor(listOf("knowledge", "scan")))

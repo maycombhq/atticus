@@ -61,6 +61,7 @@ Open **Get started with Atticus** (Help → Welcome, or the link in the Atticus 
 | `@atticus /feature <change>`      | The change's feature stage (`atticus change feature`)                                    |
 | `@atticus /architecture <change>` | The change's architecture stage (`atticus change architecture`)                          |
 | `@atticus /stories <change>`      | The change's stories and tasks (`atticus plan stories`)                                  |
+| `@atticus /small <change>`        | A small change, brief to tasks in one step (`atticus change small`, ADR 0113)            |
 | `@atticus /answer`                | Each open question with its options as buttons; a click runs `atticus questions answer`  |
 | `@atticus /diagram [repo] [flow]` | The repo on the Architecture canvas, or one of its flows, in the Atticus tab             |
 | `@atticus /new <title>`           | Start a change: pick its type, then write its brief                                      |
@@ -74,6 +75,12 @@ When a step ends, its reply has **Open the prompt** and **Open the answer** (ADR
 **The prompt history** (ADR 0110): every `@atticus` request and the reply it streamed are recorded through `atticus history add`, in `.atticus/history/` on your machine (never committed). A chat's requests share a session while the chat goes on; a new chat starts another. **Atticus: Open the prompt history** opens the app's Prompt history screen in the Atticus tab. Only `@atticus` is recorded: VS Code gives extensions no access to Copilot's other chats, so what you ask Copilot directly isn't. `atticus history off` stops recording on your machine; the org pack can turn it off for everyone (`history: { record: false }` in `runtime.yaml`).
 
 ## The sidebar
+
+## Small changes, files and tasks (ADR 0113)
+
+- **A small change** (its change type is small, or its brief says `Size: small` where the type allows it) has one step before its tasks: **Run a small change's fast path** in the palette, `@atticus /small <change>`, or Next's **Run it**. Copilot places it, writes its target flows and words its stories in one answer; Atticus checks it as the three stages would.
+- **Attach to Atticus change**: right-click one or more files in the Explorer, or a change in the sidebar, or use the palette. You pick the change; `atticus change attach` copies the files into its `inputs/`, and its steps read them as data, citing each by line or page.
+- **Start this task in Copilot**: on a task in the Changes section (or the palette). It reads `atticus task context` and opens Copilot Chat in agent mode with `/atticus-task <change> <task>` (or, before `atticus assistant-files` has written that prompt file, the task's context itself), left in the box for you to send. Agent mode needs VS Code 1.99 or later; an older one opens the chat in its usual mode. If the chat can't be opened, the context is put on the clipboard and the notification says so.
 
 ## Everything Atticus does
 

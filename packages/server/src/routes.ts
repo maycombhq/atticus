@@ -1,7 +1,8 @@
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   API_VERSION,
+  fastPathOf,
   Lens,
   RECORD_KINDS,
   SCHEMA_VERSION,
@@ -12,7 +13,7 @@ import {
   type ChangeLifecycle,
   type Finding,
 } from "@maycombhq/core";
-import { changeStore } from "@maycombhq/changes";
+import { changeFolder, changeStore } from "@maycombhq/changes";
 import {
   graph,
   impact,
@@ -81,7 +82,7 @@ async function latestFindings(root: string, change: string): Promise<Finding[]> 
   return out;
 }
 
-function summary(c: ChangeLifecycle, findings: Finding[]) {
+function summary(c: ChangeLifecycle, findings: Finding[], fast = false) {
   const open = { blocking: 0, gap: 0, risk: 0, idea: 0 };
   for (const f of findings) if (f.state === "open") open[f.severity] += 1;
   const last = c.history[c.history.length - 1];
@@ -93,6 +94,7 @@ function summary(c: ChangeLifecycle, findings: Finding[]) {
     repos: c.touches.repos,
     openFindings: open,
     updatedAt: last?.at ?? c.createdAt,
+    ...(fast ? { fastPath: true } : {}),
   };
 }
 
@@ -288,8 +290,22 @@ export function apiRoutes(r: Router, ctx: Context): Router {
       const state = strParam(query, "state");
       const changes = (await changeStore(root).list()).filter((c) => !state || c.state === state);
       const body = [];
-      for (const c of changes.sort((a, b) => a.id.localeCompare(b.id)))
-        body.push(summary(c, await latestFindings(root, c.id)));
+      // ADR 0113: whether each takes the fast path, from its type and its brief.
+      const types = await loadOrgPack(orgPackDirOf(root)).then(
+        (op) => op.changeTypes.types,
+        () => [],
+      );
+      for (const c of changes.sort((a, b) => a.id.localeCompare(b.id))) {
+        const type = types.find((t) => t.id === c.type);
+        const fast =
+          !!type &&
+          (type.size === "small" || !!type.smallWhenBriefSays) &&
+          fastPathOf(
+            type,
+            await readFile(join(changeFolder(root, c.id), "brief.md"), "utf8").catch(() => ""),
+          ).fast;
+        body.push(summary(c, await latestFindings(root, c.id), fast));
+      }
       return { status: 200, body };
     })
     .add("GET", "/api/findings", async ({ query }) => {

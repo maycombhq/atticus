@@ -150,11 +150,13 @@ describe("new changes", () => {
 });
 
 describe("change templates", () => {
-  it("has the eight built-in templates, each an empty skeleton", () => {
+  it("has the nine built-in templates, each an empty skeleton", () => {
     expect(BUILT_IN_TEMPLATES.map((t) => t.id)).toEqual([
       "feature",
       "defect-fix",
       "emergency-fix",
+      // ADR 0113: the fast path's brief.
+      "small-change",
       "tech-debt",
       "vulnerability-fix",
       "config-flag",
@@ -170,7 +172,7 @@ describe("change templates", () => {
     expect(forge.templates.find((t) => t.id === "feature")!.source).toBe(
       "process/change-templates/feature.md",
     );
-    expect(forge.templates.filter((t) => t.source === "built-in")).toHaveLength(7);
+    expect(forge.templates.filter((t) => t.source === "built-in")).toHaveLength(8);
 
     const root = await forgeMetarepo();
     const dir = join(root, "org-pack/process/change-templates");

@@ -153,7 +153,29 @@ object Lists {
             Pick(name, name, "")
         }
 
+    private val REPO_HEADING = Regex("""^##\s+(.+?)\s*$""")
+    private val TASK_LINE = Regex("""^\s*[-*]\s+\[([ xX]?)]\s+(\S+)\s+(.*)$""")
+    private val STORY_NOTE = Regex("""\s*\((?:story|stories)\b[^)]*\)\s*$""")
+
+    /** ADR 0113: a change's tasks from its tasks.md, each checkbox line under a repo's heading. */
+    fun tasks(root: Path, change: String): List<Pick> {
+        val file =
+            listOf(root.resolve("openspec/changes/$change/tasks.md"), root.resolve(".atticus/openspec/changes/$change/tasks.md"))
+                .firstOrNull { Files.isRegularFile(it) } ?: return emptyList()
+        var repo = ""
+        val out = mutableListOf<Pick>()
+        for (line in Files.readAllLines(file)) {
+            REPO_HEADING.find(line)?.let { repo = it.groupValues[1].replace("`", "").replace("*", "").trim().split(Regex("""\s+""")).first() }
+            val m = TASK_LINE.find(line) ?: continue
+            if (repo.isEmpty()) continue
+            val title = m.groupValues[3].replace(STORY_NOTE, "").trim()
+            out += Pick(m.groupValues[2], title, if (m.groupValues[1].isBlank()) repo else "$repo · done")
+        }
+        return out
+    }
+
     /** A change's stories: `openspec/changes/<change>/stories/<id>.md`, titled by their first heading. */
+
     fun stories(root: Path, change: String): List<Pick> {
         val dir = listOf(root.resolve("openspec/changes/$change/stories"), root.resolve(".atticus/openspec/changes/$change/stories")).firstOrNull { Files.isDirectory(it) } ?: return emptyList()
         return Files.list(dir).use { s -> s.filter { it.fileName.toString().endsWith(".md") }.sorted().toList() }.map { f ->

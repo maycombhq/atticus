@@ -101,6 +101,7 @@ describe("atticus upgrade", () => {
       "state-folders-ignored",
       "gates-v2",
       "flow-schema-v2",
+      "change-types-v2",
     ]);
     expect(
       await readFile(join(root, "specs/forge-web/forge-web.save-customer.yaml"), "utf8"),
@@ -114,6 +115,33 @@ describe("atticus upgrade", () => {
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
     expect(await upgradeCommand(root, { check: true }, io().io, "1.0.0")).toBe(0);
     expect(await readdir(join(root, ".atticus/backups"))).toEqual(["20261019-100000"]);
+  });
+
+  it("moves a version 1 change-types.yaml to version 2, every type still standard (ADR 0113)", async () => {
+    const root = await oldMetarepo();
+    await writeFile(
+      join(root, "org-pack/change-types.yaml"),
+      [
+        "# The Forge pack's change types",
+        "schemaVersion: 1",
+        "types:",
+        "  - id: config-change",
+        "    name: Configuration change",
+        "    phases: [define, plan, build, release]",
+        "    artifacts: [proposal, tasks]",
+        "",
+      ].join("\n"),
+    );
+    const c = await upgradeCheck(root, "1.0.0");
+    expect(c.pending.find((p) => p.id === "change-types-v2")?.files).toEqual([
+      "org-pack/change-types.yaml",
+    ]);
+    expect(await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0")).toBe(0);
+    const text = await readFile(join(root, "org-pack/change-types.yaml"), "utf8");
+    expect(text).toMatch(/^# The Forge pack's change types/);
+    expect(parse(text)).toMatchObject({ schemaVersion: 2, types: [{ id: "config-change" }] });
+    expect(parse(text).types[0].size).toBeUndefined();
+    expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
   });
 
   it("refuses when a newer Atticus upgraded the metarepo, and doctor says so", async () => {

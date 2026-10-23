@@ -4,6 +4,7 @@ import { parse, stringify } from "yaml";
 import { changesRelOf, serializeRecord } from "@maycombhq/core";
 import type { SourceInput } from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
+import { changeInputSources } from "@maycombhq/intake";
 import { readKnowledge } from "@maycombhq/knowledge";
 import { PlannerError } from "../errors.js";
 import { parseYamlAs } from "./answer.js";
@@ -82,6 +83,8 @@ const Answer = z.strictObject({
   reads: z.array(ReadFlow).default([]),
 });
 export type ArchitectureAnswer = z.infer<typeof Answer>;
+/** The architecture answer's schema, for the fast path (ADR 0113). */
+export const TargetFlowsAnswer = Answer;
 
 /** A modify delta that adds, changes and removes nothing: context, not a delta. */
 export const isEmptyDelta = (d: FlowDelta) => d.change === "modify" && d.steps.length === 0;
@@ -639,6 +642,67 @@ export function renderArchitecture(deltas: FlowDelta[], e: Estate, reads: ReadFl
   return lines.join("\n");
 }
 
+/**
+ * Write the target flows (one flow delta per file), design.md and data.md (unless a person wrote
+ * them) and the flows only read. Shared by the architecture stage and the fast path (ADR 0113).
+ */
+export async function writeTargetFlows(
+  dir: string,
+  answer: { flows: FlowDelta[]; reads?: ReadFlow[] },
+  estate: Estate,
+  by = "atticus change architecture",
+): Promise<string[]> {
+  const readsFile = join(dir, ...READS_FILE.split("/"));
+  const a = splitAnswer(answer);
+  const keep = new Set(a.deltas.map((d) => `${d.flow}.yaml`));
+  for (const f of await readdir(join(dir, TARGET_DIR)).catch(() => [] as string[]))
+    if (f.endsWith(".yaml") && !keep.has(f)) await rm(join(dir, TARGET_DIR, f), { force: true });
+  const files: string[] = [];
+  for (const d of a.deltas) {
+    // ADR 0111: pinned to the version of today's flow it was written against.
+    const today = d.change === "new" ? undefined : estate.flowById.get(d.flow)?.flow;
+    const pinned: FlowDelta = {
+      ...d,
+      schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
+      ...(today ? { base: { steps: flowBase(today) } } : {}),
+    };
+    await writeFileAtomic(
+      join(dir, TARGET_DIR, `${d.flow}.yaml`),
+      `# The target of flow ${d.flow} (ADR 0087): the steps this change adds, changes or removes. Drafted by ${by}; base pins the version of today's flow it was written against (ADR 0111).\n${stringify(FlowDelta.parse(pinned), { lineWidth: 0 })}`,
+    );
+    files.push(`${TARGET_DIR}/${d.flow}.yaml`);
+  }
+  // design.md carries the target flows for people and the critic, unless a person wrote it.
+  const own = await readFile(join(dir, "design.md"), "utf8").catch(() => undefined);
+  if (own === undefined || own.startsWith(MARK)) {
+    await writeFileAtomic(join(dir, "design.md"), renderArchitecture(a.deltas, estate, a.reads));
+    files.push("design.md");
+  }
+  if (a.reads.length)
+    await writeFileAtomic(
+      readsFile,
+      `# The flows the change reads without changing a step (ADR 0087): context, not target flows. Atticus writes this file.\n${stringify({ reads: a.reads }, { lineWidth: 0 })}`,
+    );
+  else await rm(readsFile, { force: true });
+  // data.md too, from the data changes, unless a person wrote it.
+  const data = renderData(a.deltas, estate);
+  const ownData = await readFile(join(dir, "data.md"), "utf8").catch(() => undefined);
+  if (data && (ownData === undefined || ownData.startsWith(MARK))) {
+    await writeFileAtomic(join(dir, "data.md"), data);
+    files.push("data.md");
+  } else if (!data && ownData?.startsWith(MARK)) await rm(join(dir, "data.md"), { force: true });
+  return files;
+}
+
+/** The target flows and the flows only read, as they are in the change folder. */
+export async function readTargetFlows(dir: string): Promise<ArchitectureAnswer | undefined> {
+  const r = await readDeltas(dir);
+  if (!r.deltas.length) return undefined;
+  const t = await readFile(join(dir, ...READS_FILE.split("/")), "utf8").catch(() => undefined);
+  const reads = t === undefined ? undefined : z.array(ReadFlow).safeParse(parse(t)?.reads);
+  return { flows: r.deltas, reads: reads?.success ? reads.data : [] };
+}
+
 export async function architectureStage(
   root: string,
   changeId: string,
@@ -686,6 +750,15 @@ export async function architectureStage(
       classification: "internal",
       priority: 95,
     },
+    // ADR 0113: the files attached to the change, each cited by file and line or page.
+    ...(await changeInputSources(dir, rel)).map((s): SourceInput => ({
+      id: s.id,
+      kind: "document",
+      origin: s.origin,
+      text: s.text,
+      classification: "internal",
+      priority: 85,
+    })),
   ];
   const patternLine = (i: (typeof patterns)[number]) =>
     `${i.kind} ${i.id}: ${(i as { title?: string; name?: string }).title ?? (i as { name?: string }).name ?? ""}. Applies when: ${(i as { appliesWhen?: string }).appliesWhen ?? ""} (${i.quote?.page ?? ""})`;
@@ -759,7 +832,6 @@ export async function architectureStage(
   }
   const approved = change.handoffs.some((h) => h.phase === "define" && h.state === "merged");
 
-  const readsFile = join(dir, ...READS_FILE.split("/"));
   const spec: StageSpec<ArchitectureAnswer> = {
     stage: "architecture",
     agent: ARCHITECTURE_AGENT,
@@ -792,57 +864,8 @@ export async function architectureStage(
       return { answer: { flows: deltas, reads }, issues };
     },
     check: async (a) => checkDeltas(a.flows, estate, placement, a.reads),
-    write: async (answer) => {
-      const { deltas, reads } = splitAnswer(answer);
-      const a = { flows: deltas, reads };
-      const keep = new Set(a.flows.map((d) => `${d.flow}.yaml`));
-      for (const f of await readdir(join(dir, TARGET_DIR)).catch(() => [] as string[]))
-        if (f.endsWith(".yaml") && !keep.has(f))
-          await rm(join(dir, TARGET_DIR, f), { force: true });
-      const files: string[] = [];
-      for (const d of a.flows) {
-        // ADR 0111: pinned to the version of today's flow it was written against.
-        const today = d.change === "new" ? undefined : estate.flowById.get(d.flow)?.flow;
-        const pinned: FlowDelta = {
-          ...d,
-          schemaVersion: FLOW_DELTA_SCHEMA_VERSION,
-          ...(today ? { base: { steps: flowBase(today) } } : {}),
-        };
-        await writeFileAtomic(
-          join(dir, TARGET_DIR, `${d.flow}.yaml`),
-          `# The target of flow ${d.flow} (ADR 0087): the steps this change adds, changes or removes. Drafted by atticus change architecture; base pins the version of today's flow it was written against (ADR 0111).\n${stringify(FlowDelta.parse(pinned), { lineWidth: 0 })}`,
-        );
-        files.push(`${TARGET_DIR}/${d.flow}.yaml`);
-      }
-      // design.md carries the target flows for people and the critic, unless a person wrote it.
-      const own = await readFile(join(dir, "design.md"), "utf8").catch(() => undefined);
-      if (own === undefined || own.startsWith(MARK)) {
-        await writeFileAtomic(join(dir, "design.md"), renderArchitecture(a.flows, estate, a.reads));
-        files.push("design.md");
-      }
-      if (a.reads.length)
-        await writeFileAtomic(
-          readsFile,
-          `# The flows the change reads without changing a step (ADR 0087): context, not target flows. Atticus writes this file.\n${stringify({ reads: a.reads }, { lineWidth: 0 })}`,
-        );
-      else await rm(readsFile, { force: true });
-      // data.md too, from the data changes, unless a person wrote it.
-      const data = renderData(a.flows, estate);
-      const ownData = await readFile(join(dir, "data.md"), "utf8").catch(() => undefined);
-      if (data && (ownData === undefined || ownData.startsWith(MARK))) {
-        await writeFileAtomic(join(dir, "data.md"), data);
-        files.push("data.md");
-      } else if (!data && ownData?.startsWith(MARK))
-        await rm(join(dir, "data.md"), { force: true });
-      return files;
-    },
-    current: async () => {
-      const r = await readDeltas(dir);
-      if (!r.deltas.length) return undefined;
-      const t = await readFile(readsFile, "utf8").catch(() => undefined);
-      const reads = t === undefined ? undefined : z.array(ReadFlow).safeParse(parse(t)?.reads);
-      return { flows: r.deltas, reads: reads?.success ? reads.data : [] };
-    },
+    write: (answer) => writeTargetFlows(dir, answer, estate),
+    current: () => readTargetFlows(dir),
   };
   const res = await runStageLoop(root, change.id, spec, o);
   res.context = context;

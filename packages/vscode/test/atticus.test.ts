@@ -110,6 +110,11 @@ describe("what a next step becomes", { timeout: 120_000 }, () => {
       kind: "ai",
       args: ["knowledge", "scan", "--source", "wiki"],
     });
+    // ADR 0113: the fast path's one step runs with Copilot like the stages.
+    expect(actionFor(step({ step: "small", command: "atticus change small fix-label" }))).toEqual({
+      kind: "ai",
+      args: ["change", "small", "fix-label"],
+    });
     // The critic's AI lenses, one at a time; its stats and --resume aren't AI steps.
     expect(
       actionFor(step({ step: "critic", command: "atticus critic add-transfer-limit" })),

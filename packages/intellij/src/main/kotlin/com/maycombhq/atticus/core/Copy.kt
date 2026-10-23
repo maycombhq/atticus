@@ -54,6 +54,22 @@ object Copy {
     const val CHANGE_DIAGRAM_ASK = "Which change? Its id, such as add-transfer-limit."
     const val MODEL_RUNS = "Model runs"
 
+    // ADR 0113: files into a change, and a task's context where the code is written
+    const val ATTACH_TITLE = "Atticus: Attach to Change"
+    const val ATTACH_WHICH_CHANGE = "Attach to which change?"
+    const val ATTACH_NO_FILES = "Pick one or more files in the Project view first."
+    const val START_TASK_TITLE = "Atticus: Start a Task in Copilot"
+    const val START_TASK_WHICH_CHANGE = "Start a task of which change?"
+    const val START_TASK_WHICH_TASK = "Which task?"
+
+    fun noTasks(change: String) = "$change has no tasks yet: plan its stories first (Atticus: Next Step says how)."
+
+    fun taskContextCopied(task: String, slash: String) =
+        "Task $task's context is on the clipboard. Open Copilot Chat in agent mode and paste it, or type <b>$slash</b> there " +
+            "to have Copilot read it itself. Copilot in IntelliJ offers plugins no way to open its chat, so the plugin can't do it for you."
+
+    fun couldNotReadTask(why: String) = "Couldn't read the task's context: $why"
+
     fun promptWritten(path: String) =
         "Atticus wrote the step's prompt to $path. Answer it in your assistant (its slash command in Copilot Chat does it for you), then finish the step as the console says."
     const val NO_KNOWLEDGE = "No knowledge items yet: add a wiki, sync it, and read it with /atticus-knowledge in Copilot Chat."

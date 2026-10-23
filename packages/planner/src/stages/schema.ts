@@ -16,15 +16,20 @@ const Id = z
   .string()
   .regex(/^[a-z0-9][a-z0-9._-]*$/, "an id is lower case: letters, digits, . _ -");
 
-export const STAGES = ["feature", "architecture", "stories"] as const;
+/** The three stages, and the fast path's one step that does all three (ADR 0113). */
+export const STAGES = ["feature", "architecture", "stories", "small"] as const;
 export const Stage = z.enum(STAGES);
 export type Stage = z.infer<typeof Stage>;
 
-/** The change phase each stage belongs to, and so the gate its critic runs at. */
+/**
+ * The change phase each stage belongs to, and so the gate its critic runs at. The fast path's
+ * gate comes from its change type (fastGateOf); plan is where it lands when the type says nothing.
+ */
 export const STAGE_PHASE: Record<Stage, "define" | "design" | "plan"> = {
   feature: "define",
   architecture: "design",
   stories: "plan",
+  small: "plan",
 };
 
 // ------------------------------------------------------------------ feature.yaml

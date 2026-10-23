@@ -1,0 +1,16 @@
+schemaVersion: 1
+id: return-order-time
+title: Return when an order was placed
+type: small-change
+template: small-change
+state: plan
+createdAt: 2026-10-23T09:00:00Z
+createdBy: pat
+systems:
+  - forge
+history:
+  - from: draft
+    to: plan
+    at: 2026-10-23T09:00:00Z
+    by: pat
+    reason: Created from the small-change template

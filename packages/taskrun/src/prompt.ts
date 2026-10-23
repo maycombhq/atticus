@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { AgentDefinition, changesRelOf, taskBranch } from "@maycombhq/core";
 import { buildContextPack, type ContextPack, type SourceInput } from "@maycombhq/ai";
+import { renderTaskContext, taskContext } from "@maycombhq/planner";
 import type { TaskContext } from "@maycombhq/speckit";
 import type { GitRunner } from "@maycombhq/workspace";
 import { FILE_FORMAT } from "./apply.js";
@@ -10,8 +11,9 @@ import type { RunLevel } from "./store.js";
 /**
  * The task runner's agent and context pack (C5). Trusted text first: Atticus's instructions
  * for the level, the skills that apply to the repo type and the safety rules. Everything else
- * (the change's story, design, interfaces, mappings and data, the handed-down Spec Kit
- * feature, the repo's file list, a build log) is wrapped as data, never instructions.
+ * (the task context `atticus task context` builds (ADR 0113), the change's story, design,
+ * interfaces, mappings and data, the handed-down Spec Kit feature, the repo's file list, a build
+ * log) is wrapped as data, never instructions.
  */
 
 export const TASK_RUNNER = "task-runner";
@@ -153,6 +155,18 @@ export async function taskPack(p: PackInput): Promise<ContextPack> {
         priority,
       });
   };
+  // ADR 0113: the same task context the assistants get (atticus task context): the story and
+  // criteria, the step with today's code, what applies and the files likely to change.
+  const context = await taskContext(t.root, t.change.id, t.task.id).catch(() => undefined);
+  if (context)
+    sources.push({
+      id: "task-context",
+      kind: "artifact",
+      origin: `atticus task context ${t.change.id} ${t.task.id}`,
+      text: renderTaskContext(context).replace(/\r\n/g, "\n"),
+      classification: "internal",
+      priority: 35,
+    });
   for (const s of t.task.stories) artifact(`stories/${s}.md`, 30);
   for (const a of ["design.md", "interfaces.md", "mappings.md", "data.md"]) artifact(a, 20);
   // ADR 0101: what the organisation needs of the change: the standards to follow, the requests

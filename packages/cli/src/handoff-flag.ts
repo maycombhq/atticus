@@ -28,6 +28,8 @@ const STEPS = new Set([
   // ADR 0087: the feature and architecture stages (plan stories already takes it).
   "change feature",
   "change architecture",
+  // ADR 0113: the fast path's one step.
+  "change small",
   "change draft",
   "plan stories",
   // ADR 0101: what a change needs from the organisation.

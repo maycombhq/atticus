@@ -1,0 +1,21 @@
+# A standard from the invented Forge wiki, for the task context (ADR 0113): the context engine
+# finds it for a respond step that returns a time.
+- kind: Pattern
+  schemaVersion: 2
+  id: api-times-utc
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/api-standards.md, line: 8, side: document }]
+  code: api-times-utc
+  name: Times in API responses are UTC
+  patternKind: standard
+  patternStatus: to-review
+  rules:
+    - "Every time an API response returns, such as createdAt, is ISO 8601 in UTC."
+  quote:
+    source: forge-wiki
+    page: api-standards.md
+    section: Times
+    text: "Every time an API response returns, such as createdAt, is ISO 8601 in UTC."
+    snapshot: 2026-10-01
+    line: 8

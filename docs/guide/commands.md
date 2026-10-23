@@ -107,6 +107,8 @@ Usage:
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
+  atticus change small <change>        The fast path for a small change (ADR 0113): your assistant places it on the flows, writes its target flows and words its stories in one step; every stage's checks, and the critic at the change type's gate [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context]
+  atticus change attach <change> <files...>  Attach a spec, screenshot, PDF, email export or document to a change: copied into its inputs/, read and cited by line or page, read by its steps [--json]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m] [--max-tokens n]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
@@ -135,6 +137,7 @@ Usage:
   atticus feature suggest-links [--json]  Suggest links between features and work items
   atticus feature spec <id>            Draft an OpenSpec capability spec from a confirmed feature
   atticus catalog migrate [--dry-run]  Rewrite catalog files to the current schema version
+  atticus task context <change> <task> [--json|--markdown]  The task's context for an assistant: its story and criteria, the step it implements with today's code, what applies, the files attached and the files likely to change
   atticus task run <change> <task>     Run a task with AI [--level plan|draft|pr] [--mode m] [--approve]
   atticus spec hand-down <change> <task>  Create the task's Spec Kit feature in its repo [--force]
   atticus spec hand-up <change> <task>  Read the Spec Kit feature back at the PR [--pr n --pr-url url]
@@ -219,7 +222,7 @@ Usage:
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
-  atticus <step> --handoff [--json]    On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change draft, plan stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time): print only the prompt, the result file and the commands that finish it
+  atticus <step> --handoff [--json]    On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, plan stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time): print only the prompt, the result file and the commands that finish it
   atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos

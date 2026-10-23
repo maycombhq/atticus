@@ -142,6 +142,27 @@ Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and, for temporary credentials,
 
 An organisation with its own client can register a provider in code (`registerModelProvider` from `@maycombhq/ai`) under a type runtime.yaml accepts, replacing the built-in one; a new type name needs a change to contract C6. There is no loader yet that picks a provider plugin up from configuration. See ADR 0065.
 
+### Small changes (the fast path)
+
+A change type marked small in `change-types.yaml` (version 2) goes from brief to tasks in one AI step, `atticus change small <change>`, with every check the feature, architecture and stories stages run and the critic at one gate (ADR 0113):
+
+```yaml
+schemaVersion: 2
+types:
+  - id: small-change
+    name: Small change
+    size: small
+    phases: [plan, build, release]
+    artifacts: [brief, proposal, design, stories, tasks]
+  - id: config-change
+    name: Configuration change
+    smallWhenBriefSays: true # a brief with the line "Size: small" takes the fast path
+    phases: [define, plan, build, release]
+    artifacts: [proposal, tasks, snow]
+```
+
+A small type has at most one phase before build, so its plan is one hand-off PR; the gates it keeps are the gates of its phases, and `fastGate: <gate id>` picks the one whose critic reviews the step (by default the gate of its last phase before build). A brief that says `Size: standard` takes the full path whatever the type. A version 1 file still reads, every type standard; `atticus upgrade` moves it to version 2 without changing what any type does. The built-in types include `small-change`.
+
 ### Outside systems
 
 `runtime.yaml` `adapters` names the work tracker, service desk, Git host, wiki, notifications and design tool. Each can be a live adapter (a plugin), `manual` (Atticus writes a step a person does, with every field ready to copy, and records the result) or left out. A live adapter that can't be reached falls back to manual steps on its own (ADR 0032). Every write to a shared system needs a person's approval, whatever the adapter.
@@ -162,6 +183,8 @@ Every write to a shared outside system (the Git host, the work tracker, the serv
 | -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Keep the catalog current               | `atticus scan` (incremental; `--full` ignores the cache). One scan runs at a time per metarepo        |
 | Bring in documents                     | `atticus intake add <files>`, then decide what needs a person: `atticus triage`, or the Intake screen |
+| Give one change its documents          | `atticus change attach <change> <files...>`, or Attach a file on the change's page (ADR 0113)         |
+| Start a task with its context          | `/atticus-task <change> <task>` in Copilot or Claude Code, or `atticus task context <change> <task>`  |
 | Answer owner questions                 | `atticus questions`, or the questions on the Ecosystem map                                            |
 | Check the pipeline matches the catalog | `atticus ci snippet <github\|azure\|gitlab\|jenkins>` adds the drift check to a repo's pipeline       |
 | Watch AI quality                       | `atticus eval report`, or the AI quality screen                                                       |

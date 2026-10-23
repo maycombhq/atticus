@@ -275,6 +275,8 @@ const Answer = z.strictObject({
     .default([]),
 });
 export type StoriesAnswer = z.infer<typeof Answer>;
+/** The story writer's answer's schema, for the fast path (ADR 0113). */
+export const StoriesAnswerSchema = Answer;
 
 export function checkStories(
   a: StoriesAnswer,
@@ -483,6 +485,82 @@ function renderRequests(requests: RequestTask[]): string {
   return lines.join("\n");
 }
 
+/** Atticus's matches, then the assistant's extra ones that cite a real item and step. */
+export function mergeRequests(
+  matched: RequestTask[],
+  a: StoriesAnswer,
+  deltas: FlowDelta[],
+  items: Process[],
+): RequestTask[] {
+  const all = [...matched];
+  for (const r of a.requests) {
+    const p = items.find((x) => x.id === r.item);
+    const d = deltas.find((x) => x.flow === r.flow);
+    const s = d?.steps[r.step - 1];
+    if (
+      !p ||
+      !d ||
+      !s ||
+      all.some((x) => x.item === r.item && x.flow === r.flow && x.step === r.step)
+    )
+      continue;
+    all.push(requestTask(p, d, r.step, s, r.why, "assistant"));
+  }
+  return all.map((r, i) => ({ ...r, id: `R${i + 1}` }));
+}
+
+/**
+ * Write the stories, stories.md, tasks.md, requests.md and the needs they add, and keep the
+ * story writer's answer. Shared by the stories stage and the fast path (ADR 0113).
+ */
+export async function writeStories(
+  root: string,
+  change: string,
+  stories: DeltaStory[],
+  a: StoriesAnswer,
+  requests: RequestTask[],
+  now: Date,
+): Promise<string[]> {
+  const dir = changeFolder(root, change);
+  const keep = new Set(stories.map((s) => `${s.id}.md`));
+  for (const f of await readdir(join(dir, "stories")).catch(() => [] as string[])) {
+    if (keep.has(f) || !f.endsWith(".md")) continue;
+    if ((await readFile(join(dir, "stories", f), "utf8")).startsWith(GENERATED_MARK))
+      await rm(join(dir, "stories", f));
+  }
+  const files: string[] = [];
+  for (const s of stories) {
+    const w = a.stories.find((x) => x.id === s.id) ?? {
+      id: s.id,
+      title: s.name,
+      asA: "user",
+      iWant: s.name,
+      soThat: "the change works",
+      tasks: [],
+    };
+    await writeFileAtomic(join(dir, "stories", `${s.id}.md`), renderStoryFile(change, s, w));
+    files.push(`stories/${s.id}.md`);
+  }
+  await writeFileAtomic(join(dir, "stories.md"), renderIndex(stories, a));
+  await writeFileAtomic(join(dir, "tasks.md"), renderTasks(stories, requests));
+  await writeFileAtomic(join(dir, "requests.md"), renderRequests(requests));
+  // ADR 0101: the same requests join the change's needs, beside what change needs found.
+  await mergeStoryRequests(root, change, requests, now);
+  await writeFileAtomic(
+    join(dir, ...ANSWER_FILE.split("/")),
+    `# The story writer's last answer (ADR 0087).\n${stringify(a, { lineWidth: 0 })}`,
+  );
+  return [...files, "stories.md", "tasks.md", "requests.md", "needs.yaml", "needs.md"];
+}
+
+/** The story writer's last answer, as kept in the change folder. */
+export async function readStoriesAnswer(dir: string): Promise<StoriesAnswer | undefined> {
+  const t = await readFile(join(dir, ...ANSWER_FILE.split("/")), "utf8").catch(() => undefined);
+  if (t === undefined) return undefined;
+  const r = Answer.safeParse(parse(t));
+  return r.success ? r.data : undefined;
+}
+
 export interface StoriesStageResult extends StageResult<StoriesAnswer> {
   stories: DeltaStory[];
   requests: RequestTask[];
@@ -536,24 +614,7 @@ export async function storiesStage(
   const stories = storiesFromDeltas(deltas, estate);
   const matched = suggestRequests(deltas, estate, items);
   let requests = matched;
-  /** Atticus's matches, then the assistant's extra ones that cite a real item and step. */
-  const merge = (a: StoriesAnswer): RequestTask[] => {
-    const all = [...matched];
-    for (const r of a.requests) {
-      const p = items.find((x) => x.id === r.item);
-      const d = deltas.find((x) => x.flow === r.flow);
-      const s = d?.steps[r.step - 1];
-      if (
-        !p ||
-        !d ||
-        !s ||
-        all.some((x) => x.item === r.item && x.flow === r.flow && x.step === r.step)
-      )
-        continue;
-      all.push(requestTask(p, d, r.step, s, r.why, "assistant"));
-    }
-    return all.map((r, i) => ({ ...r, id: `R${i + 1}` }));
-  };
+  const merge = (a: StoriesAnswer) => mergeRequests(matched, a, deltas, items);
 
   const skeletonText = stories
     .map((s) =>
@@ -694,42 +755,9 @@ Rules:
     check: async (a) => checkStories(a, stories, deltas, items),
     write: async (a) => {
       requests = merge(a);
-      const keep = new Set(stories.map((s) => `${s.id}.md`));
-      for (const f of await readdir(join(dir, "stories")).catch(() => [] as string[])) {
-        if (keep.has(f) || !f.endsWith(".md")) continue;
-        if ((await readFile(join(dir, "stories", f), "utf8")).startsWith(GENERATED_MARK))
-          await rm(join(dir, "stories", f));
-      }
-      const files: string[] = [];
-      for (const s of stories) {
-        const w = a.stories.find((x) => x.id === s.id) ?? {
-          id: s.id,
-          title: s.name,
-          asA: "user",
-          iWant: s.name,
-          soThat: "the change works",
-          tasks: [],
-        };
-        await writeFileAtomic(join(dir, "stories", `${s.id}.md`), renderStoryFile(change.id, s, w));
-        files.push(`stories/${s.id}.md`);
-      }
-      await writeFileAtomic(join(dir, "stories.md"), renderIndex(stories, a));
-      await writeFileAtomic(join(dir, "tasks.md"), renderTasks(stories, requests));
-      await writeFileAtomic(join(dir, "requests.md"), renderRequests(requests));
-      // ADR 0101: the same requests join the change's needs, beside what change needs found.
-      await mergeStoryRequests(root, change.id, requests, o.now ?? new Date());
-      await writeFileAtomic(
-        join(dir, ...ANSWER_FILE.split("/")),
-        `# The story writer's last answer (ADR 0087).\n${stringify(a, { lineWidth: 0 })}`,
-      );
-      return [...files, "stories.md", "tasks.md", "requests.md", "needs.yaml", "needs.md"];
+      return writeStories(root, change.id, stories, a, requests, o.now ?? new Date());
     },
-    current: async () => {
-      const t = await readFile(join(dir, ...ANSWER_FILE.split("/")), "utf8").catch(() => undefined);
-      if (t === undefined) return undefined;
-      const r = Answer.safeParse(parse(t));
-      return r.success ? r.data : undefined;
-    },
+    current: () => readStoriesAnswer(dir),
   };
   const res = await runStageLoop(root, change.id, spec, o);
   res.context = context;

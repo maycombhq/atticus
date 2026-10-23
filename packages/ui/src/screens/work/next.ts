@@ -19,6 +19,8 @@ export interface ChangeRow {
   id: string;
   title: string;
   state: string;
+  /** ADR 0113: it takes the fast path, one step from brief to tasks. */
+  fastPath?: boolean;
 }
 
 export interface TaskRow {
@@ -93,15 +95,18 @@ const handoff = (id: string) => ({
   why: W.why.handoff,
 });
 
-/** The next open task, the way `atticus task run` and `/atticus-task` take it. */
+/**
+ * The next open task, the way `atticus task run` and `/atticus-task` take it: the slash command
+ * loads the task's context in the metarepo (ADR 0113), and `atticus task context` prints it.
+ */
 export function taskStep(change: string, t: TaskRow): Step {
   return {
     command: `atticus task run ${change} ${t.id}`,
     why: W.why.task(t.id, t.repo),
-    slash: { command: `/atticus-task ${t.id}`, where: t.repo },
+    slash: metarepo(`/atticus-task ${change} ${t.id}`),
     after: [
       {
-        command: `atticus assistant-files --repo ${t.repo} --change ${change}`,
+        command: `atticus task context ${change} ${t.id}`,
         why: W.taskInRepo(t.repo),
       },
     ],
@@ -111,6 +116,14 @@ export function taskStep(change: string, t: TaskRow): Step {
 /** The step for a change at its own stage. */
 export function changeStep(c: ChangeRow, tasks?: TaskRow[]): Step {
   const stage = stageOf(c.state);
+  // ADR 0113: a small change goes from brief to tasks in one step.
+  if (c.fastPath && (stage === "feature" || stage === "architecture" || stage === "stories"))
+    return {
+      command: `atticus change small ${c.id}`,
+      why: W.why.small,
+      slash: metarepo(`/atticus-small ${c.id}`),
+      after: [handoff(c.id)],
+    };
   switch (stage) {
     case "feature":
       return {
@@ -151,6 +164,9 @@ export function changeStep(c: ChangeRow, tasks?: TaskRow[]): Step {
 export function stageStep(page: Stage, c: ChangeRow, tasks?: TaskRow[]): Step {
   const at = stageOf(c.state);
   if (at === page) return changeStep(c, tasks);
+  // ADR 0113: every planning page shows a small change's one step.
+  const planning = (s: Stage) => s === "feature" || s === "architecture" || s === "stories";
+  if (c.fastPath && planning(at) && planning(page)) return changeStep(c, tasks);
   const screen = STAGE_SCREEN[at];
   return {
     command: `atticus change status ${c.id}`,

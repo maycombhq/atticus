@@ -44,6 +44,8 @@ object Commands {
             "knowledge scan" to "/atticus-knowledge",
             "change feature" to "/atticus-feature",
             "change architecture" to "/atticus-architecture",
+            // ADR 0113: the fast path's one step.
+            "change small" to "/atticus-small",
             "plan stories" to "/atticus-stories",
             "change draft" to "/atticus-plan",
             "change needs" to "/atticus-needs",
@@ -135,6 +137,15 @@ object Commands {
         val n = Regex.escape(flag.name)
         return Regex("$n[^|-]*\\|").containsMatchIn(cmd.usage) || Regex("\\|\\s*$n").containsMatchIn(cmd.usage)
     }
+
+    /** ADR 0113: attach files to a change, as `atticus change attach` takes them. */
+    fun attachArgv(change: String, paths: List<String>): List<String> = listOf("change", "attach", change) + paths
+
+    /** ADR 0113: a task's context for an assistant, as Markdown. */
+    fun taskContextArgv(change: String, task: String): List<String> = listOf("task", "context", change, task, "--markdown")
+
+    /** ADR 0113: the slash command that loads a task's context in Copilot Chat. */
+    fun taskSlash(change: String, task: String) = "/atticus-task $change $task"
 
     /** The slash command that runs an AI step in Copilot Chat, with its repo or change. */
     fun slashFor(argv: List<String>): String? {

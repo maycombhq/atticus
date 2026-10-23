@@ -119,7 +119,20 @@ describe("what to run next (plan 4.5)", () => {
     expect(stories.slash?.command).toBe("/atticus-stories add-limit");
     const task = stageStep("tasks", change("add-limit", "build"), tasks);
     expect(task.command).toBe("atticus task run add-limit 1.2");
-    expect(task.slash).toEqual({ command: "/atticus-task 1.2", where: "forge-ledger" });
+    // ADR 0113: /atticus-task loads the task's context in the metarepo.
+    expect(task.slash).toEqual({ command: "/atticus-task add-limit 1.2", where: "the metarepo" });
+  });
+
+  it("gives a small change the fast path's one step until it is built (ADR 0113)", () => {
+    const small = { ...change("fix-label", "plan"), fastPath: true };
+    const s = stageStep("stories", small);
+    expect(s.command).toBe("atticus change small fix-label");
+    expect(s.slash?.command).toBe("/atticus-small fix-label");
+    expect(s.after?.map((a) => a.command)).toEqual(["atticus change handoff fix-label --approve"]);
+    // Every planning page shows it, wherever the change's state is among them.
+    expect(stageStep("feature", small).command).toBe("atticus change small fix-label");
+    const built = stageStep("tasks", { ...change("fix-label", "build"), fastPath: true }, tasks);
+    expect(built.command).toBe("atticus task run fix-label 1.2");
   });
 
   it("points a stage page at the page a change is really at", () => {
@@ -458,10 +471,9 @@ describe("Feature design, Stories and Tasks", () => {
       />,
     );
     expect(out).toContain("atticus task run add-limit 1.1");
-    expect(out).toContain("/atticus-task 1.1");
+    expect(out).toContain("/atticus-task add-limit 1.1");
     expect(out).toContain("atticus task run add-limit 1.2");
-    expect(out).toContain("atticus assistant-files --repo forge-ledger --change add-limit");
-    expect(out).toContain(R.slashIn("forge-ledger"));
+    expect(out).toContain("/atticus-task add-limit 1.2");
   });
 
   it("says when a change has no tasks yet", () => {

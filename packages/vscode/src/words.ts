@@ -24,6 +24,8 @@ const STEP_TITLES: Record<string, (s: NextStep, c: (id?: string) => string) => s
   feature: (s, c) => `Place ${c(s.change)} on the flows and features`,
   architecture: (s, c) => `Design ${c(s.change)}'s target flows`,
   stories: (s, c) => `Write ${c(s.change)}'s stories and tasks`,
+  // ADR 0113: a small change, brief to tasks in one step.
+  small: (s, c) => `Plan ${c(s.change)}, a small change, in one step`,
   // ADR 0101: what a change needs from the organisation, then raising each.
   needs: (s, c) => `Find what ${c(s.change)} needs from the organisation`,
   "raise-needs": (s, c) => `Raise ${c(s.change)}'s open needs`,

@@ -33,7 +33,9 @@ import { pickLoading } from "./pick";
 import { statusText, stepTitle } from "./words";
 import type { StepEnd } from "./runner";
 import { checkRunStep, runEndMessage, runProgressMessage, runRefusedMessage } from "./run-step";
+import type * as Api from "./api-types";
 import { Service } from "./service";
+import { attachPaths, START_WORDS, startTaskChat, TASK_PROMPT_FILE } from "./task-start";
 import { AtticusView, WaitingView } from "./view";
 import type { WaitingGroup } from "./waiting-data";
 
@@ -400,6 +402,73 @@ ${view.next.why}`
     const root = needRoot();
     if (root && item?.task)
       void commands.pickAndRun(root, "task run", { args: [item.task.change, item.task.id] });
+  });
+  // ADR 0113: a task started in Copilot's agent mode with its context, nothing pasted.
+  reg("atticus.startTask", async (item?: Item) => {
+    const root = needRoot();
+    if (!root) return;
+    const change =
+      item?.task?.change ?? (await commands.pickTarget(root, "change", START_WORDS.pickChange));
+    if (!change) return;
+    let task = item?.task?.id;
+    if (!task) {
+      const tasks = await svc
+        .api(root)
+        .then((x) => x.get<Api.Task[]>(`/api/changes/${encodeURIComponent(change)}/tasks`))
+        .catch(() => [] as Api.Task[]);
+      if (!tasks.length) {
+        void vscode.window.showWarningMessage(START_WORDS.noTasks(change));
+        return;
+      }
+      task = (
+        await vscode.window.showQuickPick(
+          tasks.map((t) => ({
+            label: `${t.id} ${t.description}`,
+            description: `${t.repo}${t.done ? " · done" : ""}`,
+            value: t.id,
+          })),
+          { title: START_WORDS.pickTask },
+        )
+      )?.value;
+      if (!task) return;
+    }
+    const r = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: START_WORDS.reading(task) },
+      () => svc.cli(root)(["task", "context", change, task!, "--markdown", "--root", root]),
+    );
+    if (r.code !== 0) {
+      void vscode.window.showErrorMessage(
+        START_WORDS.failed(r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`),
+      );
+      return;
+    }
+    const chat = startTaskChat(
+      change,
+      task,
+      r.stdout,
+      existsSync(join(root, ...TASK_PROMPT_FILE.split("/"))),
+    );
+    try {
+      await vscode.commands.executeCommand("workbench.action.chat.open", chat);
+      void vscode.window.showInformationMessage(START_WORDS.opened(task));
+    } catch (e) {
+      await vscode.env.clipboard.writeText(r.stdout);
+      void vscode.window.showWarningMessage(START_WORDS.copied(task, (e as Error).message));
+    }
+  });
+  // ADR 0113: files into a change, from the palette, a change in the sidebar or the Explorer.
+  reg("atticus.attachToChange", (target?: vscode.Uri | Item, selected?: vscode.Uri[]) => {
+    const root = needRoot();
+    if (!root) return;
+    const uri = target instanceof vscode.Uri ? target : undefined;
+    const change =
+      !uri && (target as Item | undefined)?.expand?.kind === "change"
+        ? ((target as Item).expand as { change: string }).change
+        : undefined;
+    const paths = attachPaths(uri, selected);
+    void commands.pickAndRun(root, "change attach", {
+      args: [change, ...(paths.length ? [paths] : [])],
+    });
   });
   /**
    * A step the app in a panel asks to run (ADR 0106): only the catalogue's AI steps, no argument

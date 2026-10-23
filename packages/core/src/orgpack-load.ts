@@ -336,6 +336,22 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
             message: `unknown role ${r}`,
           });
     }
+    // ADR 0113: the fast path's gate is a gate, on one of the type's phases.
+    if (t.fastGate) {
+      const g = gates.gates.find((x) => x.id === t.fastGate);
+      if (!g)
+        problems.push({
+          file: "change-types.yaml",
+          path: `${t.id}.fastGate`,
+          message: `there is no gate ${t.fastGate} in gates.yaml`,
+        });
+      else if (!t.phases.includes(g.phase))
+        problems.push({
+          file: "change-types.yaml",
+          path: `${t.id}.fastGate`,
+          message: `the ${g.id} gate is for the ${g.phase} phase, which ${t.id} doesn't have`,
+        });
+    }
   });
   gates.gates.forEach((g) => {
     for (const r of g.approvers)

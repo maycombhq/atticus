@@ -149,6 +149,8 @@ export type Roles = z.infer<typeof Roles>;
 
 export const PHASES = ["define", "design", "plan", "build", "qa", "release"] as const;
 export const Phase = z.enum(PHASES);
+/** The phases a change is planned in, before it is built (ADR 0113). */
+const PRE_BUILD: readonly string[] = ["define", "design", "plan"];
 /** Artifacts of the org-flow schema plus Atticus's own change files. */
 export const ChangeArtifact = z.enum([
   "brief",
@@ -179,8 +181,30 @@ export const ChangeType = z
     approvals: z.partialRecord(Phase, Ids.min(1)).default({}),
     /** Emergency fixes: build and release first, then run the skipped lenses. */
     postReleaseReview: z.boolean().default(false),
+    /**
+     * ADR 0113 (version 2): small takes the fast path, one AI step from brief to tasks. Left
+     * out, the type is standard: the feature, architecture and stories stages, each in turn.
+     */
+    size: z.enum(["standard", "small"]).optional(),
+    /**
+     * ADR 0113 (version 2): a standard type whose brief says "Size: small" takes the fast path.
+     * Left out: false; a brief's size is read only on a type that allows it.
+     */
+    smallWhenBriefSays: z.boolean().optional(),
+    /**
+     * ADR 0113 (version 2): the gate from gates.yaml whose critic reviews the fast path's step.
+     * Left out: the first gate of the type's last phase before build, else of its first phase.
+     */
+    fastGate: RecordId.optional(),
   })
   .superRefine((t, ctx) => {
+    if (t.size === "small" && t.phases.filter((p) => PRE_BUILD.includes(p)).length > 1)
+      ctx.addIssue({
+        code: "custom",
+        path: ["phases"],
+        message:
+          "a small type has at most one phase before build (define, design or plan), so its plan is one hand-off",
+      });
     const order = t.phases.map((p) => PHASES.indexOf(p));
     if (order.some((v, i) => i > 0 && v <= order[i - 1]!)) {
       ctx.addIssue({
@@ -214,9 +238,81 @@ export const ChangeType = z
   });
 export type ChangeType = z.infer<typeof ChangeType>;
 
+/**
+ * change-types.yaml's own schema version (ADR 0113). Version 2 adds a type's size, whether a
+ * brief may say it is small, and the fast path's gate. Version 1 files still read, every type
+ * standard; `atticus upgrade` moves them to version 2 (`change-types-v2`), changing nothing else.
+ */
+export const CHANGE_TYPES_SCHEMA_VERSION = 2 as const;
+
+const V2_FIELDS = ["size", "smallWhenBriefSays", "fastGate"] as const;
+
 export const ChangeTypes = z
-  .strictObject({ schemaVersion: V, types: z.array(ChangeType).min(1) })
-  .superRefine((c, ctx) => unique(c.types, (t) => t.id, ctx, "types"));
+  .strictObject({
+    schemaVersion: z.union([V, z.literal(CHANGE_TYPES_SCHEMA_VERSION)]),
+    types: z.array(ChangeType).min(1),
+  })
+  .superRefine((c, ctx) => {
+    unique(c.types, (t) => t.id, ctx, "types");
+    if (c.schemaVersion === 1)
+      c.types.forEach((t, i) => {
+        for (const f of V2_FIELDS)
+          if (t[f] !== undefined)
+            ctx.addIssue({
+              code: "custom",
+              path: ["types", i, f],
+              message: `${f} needs schemaVersion 2 (ADR 0113): run atticus upgrade`,
+            });
+      });
+  });
+
+/**
+ * The size a brief states (ADR 0113): a line "Size: small" or "Size: standard" (bold, quoted or
+ * in a list is fine), or `size:` in its front matter. Comments are left out, so a template's
+ * own hint never counts. Undefined when the brief says nothing.
+ */
+export function briefSize(brief: string): "small" | "standard" | undefined {
+  const text = brief.replace(/<!--[\s\S]*?-->/g, "");
+  const m = /^[\s>*-]*\**size\**\s*:\s*\**\s*(small|standard)\b\**\s*$/im.exec(text);
+  return m ? (m[1]!.toLowerCase() as "small" | "standard") : undefined;
+}
+
+/**
+ * Whether a change of this type, with this brief, takes the fast path (ADR 0113), and why: its
+ * type is small (unless its brief says standard), or its brief says small and the type allows
+ * that. A brief can always ask for the full path; it can ask for the fast one only where the
+ * org pack lets it.
+ */
+export function fastPathOf(
+  type: { size?: "standard" | "small" | undefined; smallWhenBriefSays?: boolean | undefined },
+  brief = "",
+): { fast: boolean; why: "type" | "brief" | "brief-standard" | "brief-not-allowed" | "standard" } {
+  const said = briefSize(brief);
+  if (type.size === "small")
+    return said === "standard"
+      ? { fast: false, why: "brief-standard" }
+      : { fast: true, why: "type" };
+  if (said === "small")
+    return type.smallWhenBriefSays
+      ? { fast: true, why: "brief" }
+      : { fast: false, why: "brief-not-allowed" };
+  return { fast: false, why: "standard" };
+}
+
+/**
+ * The gate whose critic reviews the fast path's step (ADR 0113): the type's fastGate, else the
+ * first gate of its last phase before build, else of its first phase. Undefined when gates.yaml
+ * has no gate on that phase.
+ */
+export function fastGateOf(
+  type: { phases: readonly string[]; fastGate?: string | undefined },
+  gates: { gates: { id: string; phase: string }[] },
+): string | undefined {
+  if (type.fastGate) return type.fastGate;
+  const before = type.phases.filter((p) => PRE_BUILD.includes(p));
+  const phase = before.at(-1) ?? type.phases[0];
+  return gates.gates.find((g) => g.phase === phase)?.id;
+}
 
 // ------------------------------------------------------------------ gates.yaml
 

@@ -845,7 +845,7 @@ export const COPY = {
     taskDone: "DONE",
     taskOpen: "OPEN",
     taskInRepo: (repo: string) =>
-      `Writes the task files into ${repo}, so /atticus-task can read them there.`,
+      `Prints the same context for any assistant, to read before coding in ${repo}.`,
     stage: {
       feature: "feature",
       architecture: "architecture",
@@ -871,7 +871,10 @@ export const COPY = {
       architecture:
         "Your assistant writes the target flows; Atticus checks and criticises every draft until nothing blocks.",
       stories: "Writes the stories, stories.md and tasks.md from the approved design.",
-      task: (task: string, repo: string) => `Task ${task} in ${repo} is the next open one.`,
+      task: (task: string, repo: string) =>
+        `Task ${task} in ${repo} is the next open one. /atticus-task gives your assistant its context: the story, the criteria, the step with today's code and the files to change.`,
+      small:
+        "A small change: your assistant places it, writes its target flows and words its stories in one step; Atticus runs every stage's checks and the critic at its gate.",
       later: "The change is past this stage; its status says what it needs now.",
       refresh: "The diagram reads the catalog: scan again when the code has changed.",
       critic: "Reviews the change's files against the checklists.",
@@ -1104,6 +1107,23 @@ export const COPY = {
     done2: "DONE",
     byHand: "BY HAND",
     runWithAi: "Run with AI",
+    // ADR 0113: files attached to a change.
+    inputs: "Files attached",
+    attachLabel: "Attach a file",
+    attachHelp:
+      "A spec, screenshot, PDF, email export or document. It is copied into the change's inputs/, and the change's steps read it as data, citing it by line or page.",
+    noInputs: "No file is attached yet.",
+    attached: (name: string) => `Attached ${name}. The change's steps read it from now on.`,
+    attachTooLarge: (mb: number) =>
+      `That file is ${mb} MB; the app attaches files up to 15 MB. For a larger one, run atticus change attach in a terminal.`,
+    inputFile: "File",
+    inputKind: "What it is",
+    inputWho: "Attached",
+    inputWhen: (by: string, at: string) => `${by}, ${at.slice(0, 10)}`,
+    inputRead: (how: string, citeBy?: string) =>
+      how === "text" ? `Read, cited by ${citeBy ?? "line"}` : "Not read: open it to see it",
+    inputOlder: (by: string) => `Older version: ${by} replaces it`,
+    inputHidden: "Hides instructions: kept out of every AI step until a person decides",
     noTasksYetThey: "No tasks yet: they come with the plan.",
     tasks: "Tasks",
     markDone: "Mark done",

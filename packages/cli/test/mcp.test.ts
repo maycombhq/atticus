@@ -87,6 +87,32 @@ describe("atticus mcp (ADR 0104)", () => {
     expect((r as { result: { isError?: boolean } }).result.isError).toBeUndefined();
   });
 
+  it("gives a task's context through atticus task context, read-only (ADR 0113)", async () => {
+    const calls: string[][] = [];
+    const call = (args: Record<string, unknown>) =>
+      handleMcp(
+        {
+          jsonrpc: "2.0",
+          id: 8,
+          method: "tools/call",
+          params: { name: "task_context", arguments: args },
+        },
+        fake(calls),
+        "1",
+      );
+    await call({ change: "return-order-time", task: "1.1" });
+    await call({ change: "return-order-time", task: "1.1", json: true });
+    expect(calls).toEqual([
+      ["task", "context", "return-order-time", "1.1", "--markdown"],
+      ["task", "context", "return-order-time", "1.1", "--json"],
+    ]);
+    const missing = (await call({ change: "return-order-time" })) as {
+      result: { isError?: boolean; content: { text: string }[] };
+    };
+    expect(missing.result.isError).toBe(true);
+    expect(missing.result.content[0]!.text).toBe("task_context needs task.");
+  });
+
   it("searches the index by words through atticus query --search (ADR 0107)", async () => {
     const calls: string[][] = [];
     const call = (args: Record<string, unknown>) =>

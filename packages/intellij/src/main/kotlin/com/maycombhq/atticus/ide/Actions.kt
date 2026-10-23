@@ -5,7 +5,11 @@ import com.intellij.openapi.project.Project
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.notification.NotificationType
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.DumbAwareAction
+import java.awt.datatransfer.StringSelection
 import com.maycombhq.atticus.core.Commands
 import com.maycombhq.atticus.core.Copy
 import com.maycombhq.atticus.core.Metarepo
@@ -108,5 +112,63 @@ class ModelRunsAction : AtticusAction() {
 class PromptHistoryAction : AtticusAction() {
     override fun actionPerformed(e: AnActionEvent) {
         openScreen(e.project ?: return, Metarepo.PROMPT_HISTORY_SCREEN)
+    }
+}
+
+/** The files picked in the Project view that can be attached: files on this machine, not folders. */
+private fun pickedFiles(e: AnActionEvent): List<String> =
+    e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY)
+        ?.filter { !it.isDirectory && it.isInLocalFileSystem }
+        ?.map { it.toNioPath().toString() }
+        .orEmpty()
+
+/**
+ * ADR 0113: the files picked in the Project view, attached to a change (atticus change attach).
+ * Asks which change; the change's steps then read them as data, cited by line or page.
+ */
+class AttachToChangeAction : AtticusAction() {
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible = e.project != null && pickedFiles(e).isNotEmpty()
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val paths = pickedFiles(e)
+        if (paths.isEmpty()) {
+            Notify.show(project, Copy.ATTACH_NO_FILES)
+            return
+        }
+        val flow = CommandFlow(project)
+        val change = flow.pickChange(Copy.ATTACH_TITLE, Copy.ATTACH_WHICH_CHANGE) ?: return
+        val argv = Commands.attachArgv(change, paths)
+        flow.captured(argv) { r -> flow.said(argv, r) }
+    }
+}
+
+/**
+ * ADR 0113: a task's context where the code is written. Asks the change and the task, reads
+ * atticus task context, and puts it on the clipboard for Copilot Chat in agent mode, with the
+ * slash command that reads it itself: Copilot in IntelliJ gives plugins no way to open its chat.
+ */
+class StartTaskAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val flow = CommandFlow(project)
+        val change = flow.pickChange(Copy.START_TASK_TITLE, Copy.START_TASK_WHICH_CHANGE) ?: return
+        val task = flow.pickTask(change) ?: return
+        flow.captured(Commands.taskContextArgv(change, task)) { r ->
+            if (!r.ok) {
+                Notify.show(project, Copy.couldNotReadTask(Copy.firstLine(r.lines, r.code)), NotificationType.WARNING, Notify.showOutput(project))
+                return@captured
+            }
+            val slash = Commands.taskSlash(change, task)
+            CopyPasteManager.getInstance().setContents(StringSelection(r.stdout))
+            Notify.show(
+                project,
+                Copy.taskContextCopied(task, slash),
+                NotificationType.INFORMATION,
+                Notify.action(Copy.copy(slash)) { CopyPasteManager.getInstance().setContents(StringSelection(slash)) },
+            ).also { it.setTitle(Copy.START_TASK_TITLE) }
+        }
     }
 }

@@ -40,8 +40,10 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.11.0 (ADR 0110): the prompt and response history, GET /api/history and /api/history/{id}.
  * 2.12.0 (ADR 0107 addendum): what a model run's tools were asked and gave back: toolCalls in
  *   GET /api/runs and tools in the transcript; run records are at version 2.
+ * 2.13.0 (ADR 0113): files attached to a change, GET and POST /api/changes/{id}/inputs, and
+ *   whether a change takes the fast path (fastPath on a change).
  */
-export const API_VERSION = "2.12.0";
+export const API_VERSION = "2.13.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -314,6 +316,8 @@ export const ChangeSummary = z.object({
     idea: z.number().int(),
   }),
   updatedAt: z.string(),
+  /** ADR 0113: it takes the fast path, one step from brief to tasks (its type is small, or its brief says so). */
+  fastPath: z.boolean().optional(),
 });
 
 export const ChangeDetail = ChangeSummary.extend({
@@ -837,6 +841,49 @@ export const NewChangeRequest = z.strictObject({
   systems: z.array(z.string()).optional(),
   template: z.string().optional(),
 });
+
+/** ADR 0113: a file attached to a change, as inputs/index.yaml lists it. */
+export const ChangeInput = z.object({
+  path: z.string(),
+  name: z.string(),
+  kind: z.string(),
+  format: z.string(),
+  sha256: z.string(),
+  bytes: z.number().int(),
+  addedBy: z.string(),
+  addedAt: z.string(),
+  /** text: a reader read it, cited by line or page; needs-reading: a picture or a file no reader takes. */
+  read: z.enum(["text", "needs-reading"]),
+  readAs: z.string().optional(),
+  citeBy: z.enum(["line", "page", "section"]).optional(),
+  version: z.string().optional(),
+  date: z.string().optional(),
+  supersedes: z.string().optional(),
+  supersededBy: z.string().optional(),
+  defences: z
+    .object({ risk: z.enum(["medium", "high"]), reason: z.string(), rules: z.array(z.string()) })
+    .optional(),
+});
+export const ChangeInputList = z.object({ files: z.array(ChangeInput) });
+
+/** ADR 0113: one file to attach, its bytes in base64; at most 15 MB of file. */
+export const AttachFileRequest = z.strictObject({
+  name: z.string().min(1).max(200),
+  content: z
+    .string()
+    .min(1)
+    .max(20 * 1024 * 1024)
+    .regex(/^[A-Za-z0-9+/]+={0,2}$/, "base64"),
+});
+
+export const AttachResult = z.object({
+  added: z.array(ChangeInput),
+  refused: z.array(z.object({ name: z.string(), why: z.string() })),
+  notes: z.array(z.string()),
+});
+export type ChangeInputT = z.infer<typeof ChangeInput>;
+export type ChangeInputListT = z.infer<typeof ChangeInputList>;
+export type AttachResultT = z.infer<typeof AttachResult>;
 
 export const SaveArtifactRequest = z.strictObject({
   content: z.string(),
@@ -1809,6 +1856,27 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/changes/{changeId}/inputs": {
+    get: {
+      id: "listChangeInputs",
+      summary:
+        "The files attached to a change: what each is, who attached it and when, and how it is cited (ADR 0113)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ChangeInputList", description: "OK" },
+      errors: [400, 404],
+    },
+    post: {
+      id: "attachChangeInput",
+      summary:
+        "Attach a file to a change (its bytes in base64): copied into its inputs/, read and cited by its steps, as data (ADR 0113)",
+      tag: "changes",
+      params: [p("changeId")],
+      body: AttachFileRequest,
+      ok: { status: 201, schema: "AttachResult", description: "Attached, or refused with why" },
+      errors: [400, 404, 413, 422],
+    },
+  },
   "/api/changes/{changeId}/map": {
     get: {
       id: "getChangeMap",
@@ -2701,6 +2769,7 @@ const ERROR_TEXT: Record<number, string> = {
   403: "You can't do this; the problem says who can",
   404: "Not found",
   409: "Conflict: the file changed since you read it, or the state doesn't allow this",
+  413: "Too large: the upload is over the limit the problem names",
   422: "Atticus refused: the problem carries the command's own words (ADR 0043)",
 };
 
@@ -2741,6 +2810,9 @@ export function openApiDocument(): Record<string, unknown> {
     TargetFlowView,
     ChangeMap,
     ChangeEstimate,
+    ChangeInput,
+    ChangeInputList,
+    AttachResult,
     OrgPackView,
     Health,
     Finding,

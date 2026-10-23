@@ -117,7 +117,7 @@ const DATE = /(?:^|[-_ .])((\d{4})-?(\d{2})-?(\d{2}))(?=$|[-_ .])/;
 const VERSION = /(?:^|[-_ .])v(\d+(?:[._]\d+)*)(?=$|[-_ .])/i;
 
 /** Version and date tokens in a file name, and the name without them (its family). */
-function nameParts(stem: string): { base: string; version?: string; date?: string } {
+export function nameParts(stem: string): { base: string; version?: string; date?: string } {
   let rest = stem;
   let date: string | undefined;
   const d = DATE.exec(rest);
@@ -137,7 +137,7 @@ function nameParts(stem: string): { base: string; version?: string; date?: strin
   return { base: slug(rest), ...(version ? { version } : {}), ...(date ? { date } : {}) };
 }
 
-function compareVersions(a: string, b: string): number {
+export function compareVersions(a: string, b: string): number {
   const pa = a.split(/[.\-+]/).map((x) => (/^\d+$/.test(x) ? Number(x) : x));
   const pb = b.split(/[.\-+]/).map((x) => (/^\d+$/.test(x) ? Number(x) : x));
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {

@@ -15,3 +15,4 @@ export * from "./new-change.js";
 export * from "./publish.js";
 export * from "./handoff.js";
 export * from "./conflicts.js";
+export * from "./size.js";
