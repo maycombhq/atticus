@@ -14,9 +14,9 @@ flowchart LR
   bff -.->|"A.EB.PUB payments.initiated"| ledger
   bff -.->|"A.EB.PUB notifications.requested"| notify
   subgraph legend["Legend"]
-    legend_new["New"]
-    legend_modify["Modify"]
-    legend_retire["Retire"]
+    legend_new["+ New"]
+    legend_modify["◇ Modify"]
+    legend_retire["✕ Retire"]
   end
   classDef plannedNew stroke:#2e7d32,stroke-width:3px,stroke-dasharray:6 3
   classDef plannedModify stroke:#ed6c02,stroke-width:3px

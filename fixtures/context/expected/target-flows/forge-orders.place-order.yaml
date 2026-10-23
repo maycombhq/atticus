@@ -1,0 +1,29 @@
+# The fraud check's target of flow forge-orders.place-order (ADR 0087), as a person approved it:
+# the steps the change adds and changes. Hand-written, the same as the stage tests' answer.
+schemaVersion: 1
+flow: forge-orders.place-order
+repo: forge-orders
+change: modify
+why: The order is screened before stock is reserved.
+steps:
+  - op: add
+    after: 1
+    kind: call-out
+    what: Northwind Pay screens the order for fraud
+    to: { component: northwind-pay, entry: "POST /v1/screenings", new: true }
+    fields: { sends: [sku, quantity, cardToken], returns: [verdict] }
+  - op: add
+    after: 1
+    kind: branch
+    what: A rejected order is refused with 422 and nothing is reserved
+    fields: { reads: [verdict] }
+  - op: change
+    step: 4
+    kind: write
+    what: The order is inserted with the screen's verdict
+    store:
+      table: forge-orders-db.orders
+      columns: [sku, quantity, fraud_verdict]
+      types: { fraud_verdict: varchar(20) }
+      classification: { fraud_verdict: internal }
+      migration: V4__add_fraud_verdict.sql

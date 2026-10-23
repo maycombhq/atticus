@@ -2,8 +2,9 @@ import { readdir } from "node:fs/promises";
 import { changesDirOf, changesRelOf, loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
 import { readKnowledge } from "@maycombhq/knowledge";
-import { findNeeds, markNeed, readNeeds, type Need } from "@maycombhq/planner";
+import { findNeeds, markNeed, readNeeds, type ContextOptions, type Need } from "@maycombhq/planner";
 import type { Output } from "./commands.js";
+import { contextFlags, contextLines } from "./context-flags.js";
 import { table } from "./index-commands.js";
 
 /**
@@ -29,7 +30,13 @@ export interface NeedsDeps {
 export async function changeNeeds(
   root: string,
   change: string,
-  o: { attempts?: number; resume?: string; json?: boolean; mode?: string },
+  o: {
+    attempts?: number;
+    resume?: string;
+    json?: boolean;
+    mode?: string;
+    context?: ContextOptions;
+  },
   deps: NeedsDeps,
   io: Output,
 ): Promise<number> {
@@ -58,6 +65,7 @@ export async function changeNeeds(
     ...(deps.now ? { now: deps.now } : {}),
     ...(o.resume ? { resume: o.resume } : {}),
     maxAttempts: o.attempts ?? 3,
+    ...(o.context ? { context: o.context } : {}),
   }).catch((e: Error) => {
     io.err(e.message);
     return undefined;
@@ -79,6 +87,7 @@ export async function changeNeeds(
     );
     return 1;
   }
+  for (const l of contextLines(r.context)) io.out(l);
   const f = r.file!;
   const open = f.needs.filter((n) => n.status === "open");
   io.out(
@@ -175,12 +184,18 @@ export async function needsCli(
       io.err("--attempts is a whole number from 1 to 10.");
       return 2;
     }
+    const flags = contextFlags(values);
+    if ("error" in flags) {
+      io.err(flags.error);
+      return 2;
+    }
     return changeNeeds(
       root,
       a,
       {
         attempts,
         json,
+        context: flags.context,
         ...(str(values.resume) ? { resume: str(values.resume)! } : {}),
         ...(str(values.mode) ? { mode: str(values.mode)! } : {}),
       },

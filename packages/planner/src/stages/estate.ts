@@ -100,43 +100,54 @@ export function flowLine(f: SpecFlow): string {
   return `flow ${fl.id} (repo ${f.repo}, component ${fl.component}) "${fl.name}": ${fl.trigger.kind} ${fl.trigger.what}. Steps: ${steps}`;
 }
 
+/** One record or flow of the estate, as the compact index writes it; undefined for other kinds. */
+export function estateLine(e: Estate, kind: string, id: string, rec?: Rec): string | undefined {
+  if (kind === "Flow") {
+    const f = e.flowById.get(id);
+    return f ? flowLine(f) : undefined;
+  }
+  const r = rec ?? (e.records as Rec[]).find((x) => x.kind === kind && x.id === id);
+  if (!r) return undefined;
+  if (kind === "System")
+    return `system ${r.id}${str(r.name) ? ` "${str(r.name)}"` : ""}${str(r.boundary) ? ` (${str(r.boundary)})` : ""}`;
+  if (kind === "Component")
+    return `component ${r.id}: system ${str(r.system) ?? "?"}${str(r.repo) ? `, repo ${str(r.repo)}` : ""}${str(r.type) ? `, ${str(r.type)}` : ""}`;
+  if (kind === "Capability")
+    return `feature ${r.id} "${str(r.name) ?? r.id}": entry points ${arr(r.entryPoints).join(", ") || "none"}`;
+  if (kind === "Endpoint")
+    return `endpoint ${r.id}: ${str(r.component) ?? "?"} serves ${str(r.method) ?? ""} ${str(r.pathOrTopic) ?? ""}`.replace(
+      / {2,}/g,
+      " ",
+    );
+  if (kind === "Table") {
+    const cols = (e.records as Rec[])
+      .filter((x) => x.kind === "Column" && str(x.table) === r.id)
+      .map((x) => str(x.name) ?? x.id.split(".").pop()!)
+      .sort();
+    return `table ${r.id}: columns ${cols.join(", ") || "unknown"}`;
+  }
+  return undefined;
+}
+
+/** The kinds the compact index lists. */
+export const ESTATE_KINDS = ["System", "Component", "Capability", "Flow", "Endpoint", "Table"];
+
+/** The compact index's heading. */
+export const ESTATE_HEADING =
+  "The estate, from the repos' specs and the scanned catalog. Ids are exact: name only these, or say something is new.";
+
 /** The compact index: features, flows, components and systems, endpoints, tables. */
 export function estateIndex(e: Estate): string {
   const recs = e.records as Rec[];
   const of = (k: string) =>
     recs.filter((r) => r.kind === k).sort((a, b) => a.id.localeCompare(b.id));
-  const lines = [
-    "The estate, from the repos' specs and the scanned catalog. Ids are exact: name only these, or say something is new.",
-    "",
-  ];
-  for (const s of of("System"))
-    lines.push(
-      `system ${s.id}${str(s.name) ? ` "${str(s.name)}"` : ""}${str(s.boundary) ? ` (${str(s.boundary)})` : ""}`,
-    );
-  for (const c of of("Component"))
-    lines.push(
-      `component ${c.id}: system ${str(c.system) ?? "?"}${str(c.repo) ? `, repo ${str(c.repo)}` : ""}${str(c.type) ? `, ${str(c.type)}` : ""}`,
-    );
-  for (const f of of("Capability"))
-    lines.push(
-      `feature ${f.id} "${str(f.name) ?? f.id}": entry points ${arr(f.entryPoints).join(", ") || "none"}`,
-    );
+  const lines = [ESTATE_HEADING, ""];
+  for (const k of ["System", "Component", "Capability"])
+    for (const r of of(k)) lines.push(estateLine(e, k, r.id, r)!);
   for (const f of [...e.flows].sort((a, b) => a.flow.id.localeCompare(b.flow.id)))
     lines.push(flowLine(f));
-  for (const x of of("Endpoint"))
-    lines.push(
-      `endpoint ${x.id}: ${str(x.component) ?? "?"} serves ${str(x.method) ?? ""} ${str(x.pathOrTopic) ?? ""}`.replace(
-        / {2,}/g,
-        " ",
-      ),
-    );
-  for (const t of of("Table")) {
-    const cols = recs
-      .filter((r) => r.kind === "Column" && str(r.table) === t.id)
-      .map((r) => str(r.name) ?? r.id.split(".").pop()!)
-      .sort();
-    lines.push(`table ${t.id}: columns ${cols.join(", ") || "unknown"}`);
-  }
+  for (const k of ["Endpoint", "Table"])
+    for (const r of of(k)) lines.push(estateLine(e, k, r.id, r)!);
   if (lines.length === 2) lines.push("Nothing is scanned or specified yet.");
   return lines.join("\n");
 }

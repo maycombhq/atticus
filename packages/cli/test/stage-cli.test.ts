@@ -75,6 +75,52 @@ describe("atticus change feature", () => {
     );
   });
 
+  it("says what context it selected; --whole-context sends the whole estate; --context-tokens is checked (ADR 0107)", async () => {
+    const root = await estate();
+    const prompts: string[] = [];
+    const mock = () =>
+      new MockRuntime(
+        (req) => {
+          if (req.agent.id.endsWith("-critic")) return "findings: []";
+          prompts.push(req.pack.prompt);
+          return PLACED;
+        },
+        { now: () => NOW },
+      );
+    const a = io();
+    expect(
+      await stageCli(root, ["change", "feature", CHANGE], {}, a.io, { runtime: mock(), now: NOW }),
+    ).toBe(0);
+    expect(a.out.find((l) => l.startsWith("Context: "))).toMatch(
+      /^Context: \d+ records selected from the index \(\d+ in full\), \d+ of \d+ tokens/,
+    );
+    expect(prompts[0]).toContain('origin="atticus change feature (context engine)"');
+
+    const b = io();
+    expect(
+      await stageCli(
+        root,
+        ["change", "feature", CHANGE],
+        { "whole-context": true, force: true },
+        b.io,
+        { runtime: mock(), now: NOW },
+      ),
+    ).toBe(0);
+    expect(b.out.some((l) => l.startsWith("Context: "))).toBe(false);
+    expect(prompts.at(-1)).toContain('origin="atticus change feature (deterministic)"');
+
+    const c = io();
+    expect(
+      await stageCli(root, ["change", "feature", CHANGE], { "context-tokens": "12" }, c.io, {
+        runtime: mock(),
+        now: NOW,
+      }),
+    ).toBe(2);
+    expect(c.err).toEqual([
+      "--context-tokens is a whole number of 100 or more: the room for the context.",
+    ]);
+  });
+
   it("with --handoff prints only the prompt, the result file and the commands that finish it", async () => {
     const root = await estate();
     const out: string[] = [];

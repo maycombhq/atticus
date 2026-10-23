@@ -19,7 +19,10 @@ export function openDb(file: string): Db {
     const { DatabaseSync } = createRequire(import.meta.url)(
       "node:sqlite",
     ) as typeof import("node:sqlite");
-    return new DatabaseSync(file);
+    const db = new DatabaseSync(file);
+    // Another process updating the same index: wait for it rather than fail (ADR 0107).
+    db.exec("PRAGMA busy_timeout = 5000");
+    return db;
   } finally {
     process.emitWarning = emit;
   }

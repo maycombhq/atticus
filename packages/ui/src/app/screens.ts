@@ -64,6 +64,8 @@ export const MORE: ScreenDef[] = [
   { id: "ux", label: S.ux, group: "Define" },
   { id: "arch-review", label: S.archReview, group: "Design" },
   { id: "diagrams", label: S.diagrams, group: "Design" },
+  // ADR 0108: a change's picture, from its target flows.
+  { id: "change-diagram", label: S.changeDiagram, group: "Design" },
   { id: "reconcile", label: S.reconcile, group: "Design" },
   { id: "contracts", label: S.contracts, group: "Design" },
   { id: "mappings", label: S.mappings, group: "Design" },

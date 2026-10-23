@@ -88,6 +88,44 @@ export async function queryCommand(
   });
 }
 
+/**
+ * atticus query "<words>" --search: full-text search over everything the index holds (ADR
+ * 0107): catalog records, knowledge items, flows and their steps, changes, answered questions
+ * and wiki sections; names and ids rank above prose. Each hit names the file it was read from.
+ */
+export async function searchCommand(
+  root: string,
+  text: string,
+  o: { json?: boolean; limit?: number; kind?: string },
+  io: Output,
+): Promise<number> {
+  return withIndex(root, io, (ix) => {
+    const kinds = o.kind
+      ? o.kind
+          .split(",")
+          .map((k) => k.trim())
+          .filter(Boolean)
+      : undefined;
+    const hits = ix.search(text, { limit: o.limit ?? 20, ...(kinds ? { kinds } : {}) });
+    if (o.json) {
+      io.out(JSON.stringify({ total: hits.length, hits }, null, 2));
+      return 0;
+    }
+    if (hits.length > 0)
+      for (const l of table(
+        ["KIND", "ID", "NAME", "FILE"],
+        hits.map((h) => [h.kind, h.id, h.name.slice(0, 60), h.file]),
+      ))
+        io.out(l);
+    io.out(
+      hits.length
+        ? `${hits.length} hit${hits.length === 1 ? "" : "s"}, best first`
+        : "Nothing in the index matches those words.",
+    );
+    return 0;
+  });
+}
+
 /** atticus impact <id>: what a change to the record reaches. Exit 1 when the id isn't in the catalog. */
 export async function impactCommand(
   root: string,

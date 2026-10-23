@@ -47,6 +47,8 @@ const indexRebuild: typeof import("./index-commands.js").indexRebuild = (...a) =
   loadIndexCommands().then((m) => m.indexRebuild(...a));
 const queryCommand: typeof import("./index-commands.js").queryCommand = (...a) =>
   loadIndexCommands().then((m) => m.queryCommand(...a));
+const searchCommand: typeof import("./index-commands.js").searchCommand = (...a) =>
+  loadIndexCommands().then((m) => m.searchCommand(...a));
 const loadSiteCommands = () => import("./site-commands.js");
 const guideCommand: typeof import("./site-commands.js").guideCommand = (...a) =>
   loadSiteCommands().then((m) => m.guideCommand(...a));
@@ -388,6 +390,7 @@ Usage:
   atticus repo-type new <id> --from <repo> [--force]   Draft a repo type from a repo (its build files, dependencies, markers, folders) for you to edit
   atticus scan review <repo>           What the last scan couldn't read: your assistant gives a verdict on each gap and a rule for code it can read; checked [--gaps] [--attempts 3]
   atticus query "<query>"              Find records, e.g. "kind:interface via:gateway -has:pattern"
+  atticus query "<words>" --search     Search everything the index holds (records, knowledge items, flows, changes, answered questions, wiki sections), names and ids first [--kind k,k] [--limit n] [--json]
           [--limit n] [--json]         (see docs/query-language.md)
   atticus impact <id>                  What a change to a record reaches, with owners and open questions
   atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
@@ -459,8 +462,8 @@ Usage:
   atticus frameworks kit [dir]         Export the framework-model kit for an assistant
   atticus change new "<title>"         Start a change from a template: --type <type>
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
-  atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force]
-  atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run]
+  atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context]
+  atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
@@ -471,6 +474,7 @@ Usage:
   atticus change archive <id> [--no-rescan]  Archive a released change and rescan its repos
   atticus change list [--json]         Every change and its state
   atticus change conflicts [--json]    Open changes that touch the same systems, records or repos
+  atticus change map <change> [--format mermaid|drawio] [--json]  The change's picture: the components, entries and tables its target flows touch, marked + new, ◇ modify or ✕ retire
   atticus critic <change> [--gate g] [--lens l] [--mode m] [--json]  Review a change at a gate: rule checks, then AI lenses (--mode runs them)
   atticus critic <change> [--gate g] --resume  Read in the AI lens answers your assistant wrote (hand-off); handoff done does it per lens
   atticus critic stats [--json]        How often each rule's findings are dismissed or waived
@@ -493,8 +497,8 @@ Usage:
   atticus drift <change> [--json]      Compare design, repo plans and code
   atticus assistant-files [--repo id [--change id]] [--force] [--check]  Generate Copilot and Claude Code files
   atticus feature suggest-names [--mode m]  Ask AI to propose names for detected features
-  atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval]
-  atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run]
+  atticus plan stories <change>        Write stories, stories.md and tasks.md from the approved design [--force] [--mode m] [--draft: before approval] [--context-tokens n] [--whole-context]
+  atticus change needs <change>        Your assistant says what the change needs from the organisation (requests and processes to raise, standards to follow, teams and vendors to involve), for the change, a feature, flow, story or task; each checked against the change's own words [--mode m] [--resume run] [--context-tokens n] [--whole-context]
   atticus needs [--change id] [--all] [--json]  What changes need from the organisation, open ones first, with lead times and who handles each
   atticus waiting [--group change|kind] [--filter words] [--json]  What waits on you across every change: questions, open needs, manual steps, findings, knowledge to verify
   atticus runs [--change id] [--limit n] [--json]  The model runs: what Atticus asked a model, each round, and whether it was answered
@@ -677,6 +681,9 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       limit: { type: "string" },
       filter: { type: "string" },
       "batch-tokens": { type: "string" },
+      "context-tokens": { type: "string" },
+      "whole-context": { type: "boolean" },
+      search: { type: "boolean" },
       depth: { type: "string" },
       by: { type: "string" },
       as: { type: "string" },
@@ -1198,6 +1205,17 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       io.err('query needs a query, for example: atticus query "kind:interface via:gateway"');
       return 2;
     }
+    if (values.search === true)
+      return searchCommand(
+        root,
+        command,
+        {
+          json: values.json === true,
+          ...(num(values.limit) ? { limit: num(values.limit)! } : {}),
+          ...(typeof values.kind === "string" ? { kind: values.kind } : {}),
+        },
+        io,
+      );
     return queryCommand(
       root,
       command,
@@ -1906,6 +1924,19 @@ async function dispatch(argv: string[], io: Output): Promise<number> {
       );
     if (command === "list") return changeList(root, { json }, io);
     if (command === "conflicts") return changeConflicts(root, { json }, io);
+    if (command === "map") {
+      if (!arg) {
+        io.err("change map needs a change id, for example: atticus change map add-transfer-limit");
+        return 2;
+      }
+      const { changeMapCommand } = await import("./change-map.js");
+      return changeMapCommand(
+        root,
+        arg,
+        { ...(str(values.format) ? { format: str(values.format)! } : {}), json },
+        io,
+      );
+    }
     if (command === "draft")
       return changeDraft(
         root,

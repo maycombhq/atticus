@@ -159,6 +159,24 @@ const OWN_HOST = "the project's own JSON Schema host (maycombhq.github.io), not 
 const WORK_REFS = "C1 ExternalRef.system adapter-type values (ado, jira) and their URL shapes";
 
 export const ALLOW = [
+  {
+    file: "packages/core/src/api.ts",
+    names: ["confluence", "ado", "sharepoint"],
+    reason:
+      "the wiki types sources.yaml takes are the C6 contract's enum (ADR 0101), named in the API for the app's source form",
+  },
+  {
+    file: "packages/knowledge/src/knowledge-scan.ts",
+    names: ["teams"],
+    reason:
+      "the English word: people's teams are a kind of knowledge item (a party), not the chat product",
+  },
+  {
+    file: "packages/planner/src/needs.ts",
+    names: ["teams", "kafka", "claude"],
+    reason:
+      "teams is the English word (the teams a change involves); kafka-topic-request is an example item id in the prompt; headless-claude-code is a C5 runtime kind (ADR 0014)",
+  },
   // --- adapter-type enums of the contracts, and defaults that name adapter types
   {
     file: "packages/core/src/schema/kinds.ts",

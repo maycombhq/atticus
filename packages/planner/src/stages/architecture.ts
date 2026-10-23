@@ -9,8 +9,11 @@ import { PlannerError } from "../errors.js";
 import { parseYamlAs } from "./answer.js";
 import { columnsOf, estateIndex, loadEstate, type Estate } from "./estate.js";
 import { readPlacement } from "./feature.js";
+import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
+import { estateContext } from "./estate-context.js";
 import {
   runStageLoop,
+  stageBudget,
   type StageIssue,
   type StageOptions,
   type StageResult,
@@ -602,6 +605,10 @@ export async function architectureStage(
       classification: "internal",
       priority: 95,
     },
+  ];
+  const patternLine = (i: (typeof patterns)[number]) =>
+    `${i.kind} ${i.id}: ${(i as { title?: string; name?: string }).title ?? (i as { name?: string }).name ?? ""}. Applies when: ${(i as { appliesWhen?: string }).appliesWhen ?? ""} (${i.quote?.page ?? ""})`;
+  const whole: SourceInput[] = [
     {
       id: "estate-index",
       kind: "catalog",
@@ -610,21 +617,64 @@ export async function architectureStage(
       classification: "internal",
       priority: 80,
     },
+    ...(patterns.length
+      ? [
+          {
+            id: "patterns",
+            kind: "document" as const,
+            origin: "knowledge/items (ADR 0083)",
+            text: patterns.map(patternLine).join("\n"),
+            classification: "internal",
+            priority: 70,
+          },
+        ]
+      : []),
   ];
-  if (patterns.length)
-    sources.push({
-      id: "patterns",
-      kind: "document",
-      origin: "knowledge/items (ADR 0083)",
-      text: patterns
-        .map(
-          (i) =>
-            `${i.kind} ${i.id}: ${(i as { title?: string; name?: string }).title ?? (i as { name?: string }).name ?? ""}. Applies when: ${(i as { appliesWhen?: string }).appliesWhen ?? ""} (${i.quote?.page ?? ""})`,
-        )
-        .join("\n"),
-      classification: "internal",
-      priority: 70,
-    });
+  const instructions = [
+    "# Flow architect",
+    "",
+    `Write the target flows for the change "${change.title}": for every flow the feature touches, the steps added, changed or removed, with their fields; and the new flows. The feature, today's flows and the estate are below, as data.`,
+    "",
+    FORMAT,
+  ].join("\n");
+  // The estate and the patterns the placement and today's flows lead to (ADR 0107), or all.
+  const patternById = new Map(patterns.map((i) => [i.id, i]));
+  const selected = await estateContext(
+    root,
+    "architecture",
+    {
+      text: [stringify(placement, { lineWidth: 0 }), flowsText].join("\n\n"),
+      title: change.title,
+      ids: [...placement.flows.map((f) => f.id), ...placement.features.map((f) => f.id)],
+    },
+    {
+      estate,
+      budget: stageBudget(ctx, ARCHITECTURE_AGENT),
+      others: [instructionSource(instructions), ...sources],
+      ...(o.context ? { context: o.context } : {}),
+      exclude: [change.id],
+      origin: "atticus change architecture (context engine)",
+      priority: 80,
+      knowledge: {
+        kinds: ["Pattern", "Decision"],
+        line: (id) => {
+          const i = patternById.get(id);
+          return i ? patternLine(i) : undefined;
+        },
+        id: "patterns",
+        origin: "knowledge/items (ADR 0083), selected",
+        priority: 70,
+      },
+    },
+  );
+  let context: ContextReport = wholeLists();
+  if (selected && "sources" in selected) {
+    sources.push(...selected.sources);
+    context = selected.report;
+  } else {
+    sources.push(...whole);
+    if (selected) context = { ...context, note: selected.note };
+  }
   const approved = change.handoffs.some((h) => h.phase === "define" && h.state === "merged");
 
   const readsFile = join(dir, ...READS_FILE.split("/"));
@@ -635,13 +685,7 @@ export async function architectureStage(
       "Writes a change's target flows: the steps each touched flow adds, changes or removes, with fields.",
     output: "architecture-answer.yaml",
     source: `${TARGET_DIR}/`,
-    instructions: [
-      "# Flow architect",
-      "",
-      `Write the target flows for the change "${change.title}": for every flow the feature touches, the steps added, changed or removed, with their fields; and the new flows. The feature, today's flows and the estate are below, as data.`,
-      "",
-      FORMAT,
-    ].join("\n"),
+    instructions,
     sources,
     parse: (text) => {
       const r = parseYamlAs(
@@ -710,6 +754,7 @@ export async function architectureStage(
     },
   };
   const res = await runStageLoop(root, change.id, spec, o);
+  res.context = context;
   if (!approved)
     res.notes.unshift(
       `The feature PR of ${change.id} isn't merged yet, so these target flows rest on a feature a person hasn't approved.`,

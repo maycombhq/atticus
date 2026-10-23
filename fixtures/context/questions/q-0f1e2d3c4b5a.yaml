@@ -1,0 +1,19 @@
+schemaVersion: 1
+id: q-0f1e2d3c4b5a
+askedBy:
+  step: change-feature
+  command: atticus change feature add-fraud-check
+  at: 2026-10-20T10:00:00Z
+repo: forge-orders
+question: Who runs the check the orders would call before stock is reserved?
+options: []
+evidence:
+  - src/main/java/forge/orders/OrderController.java:9
+scope: { level: repo, id: forge-orders }
+state: answered
+rerun: atticus change feature add-fraud-check
+answer:
+  text: Northwind Pay runs it, through its screening API; the shop team owns the call.
+  by: pat
+  at: 2026-10-20T11:00:00Z
+  scope: { level: repo, id: forge-orders }

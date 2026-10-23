@@ -1,197 +1,26 @@
-import { createHash } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
-import { dirname, join, relative, sep } from "node:path";
-import {
-  deserializeRecord,
-  layoutOf,
-  recordReferences,
-  stateDirOf,
-  type CatalogRecord,
-  type RecordKind,
-} from "@maycombhq/core";
+import { mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { stateDirOf, type CatalogRecord, type RecordKind } from "@maycombhq/core";
 import { openDb, type Db } from "./db.js";
 import { compileQuery, parseQuery } from "./query.js";
+import { listSources } from "./sources.js";
+import { ensureSchema, updateIndex, type IndexProblem, type UpdateResult } from "./store.js";
+import {
+  linksOf,
+  nodesById,
+  searchIndex,
+  selectContext,
+  type ContextInput,
+  type ContextSelection,
+  type GraphNodeRow,
+  type NodeLink,
+  type SearchHit,
+  type SearchOptions,
+  type SelectOptions,
+} from "./select.js";
 
-/** Bumped when the index's tables change; an index built by another version is rebuilt. */
-export const INDEX_VERSION = 1;
-
-export interface CatalogFile {
-  /** Path relative to the metarepo, e.g. catalog/generated/interface/if-1.yaml. */
-  path: string;
-  size: number;
-  mtimeMs: number;
-}
-
-export interface IndexProblem {
-  file: string;
-  message: string;
-}
-
-/** The folders the index reads, relative to the metarepo. */
-export const CATALOG_DIRS = ["catalog/generated", "catalog/curated"];
-
-async function listFiles(root: string): Promise<CatalogFile[]> {
-  const out: CatalogFile[] = [];
-  async function walk(d: string) {
-    let entries;
-    try {
-      entries = await readdir(d, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      const full = join(d, e.name);
-      if (e.isDirectory()) await walk(full);
-      else if (/\.ya?ml$/.test(e.name)) {
-        const s = await stat(full);
-        out.push({
-          path: relative(root, full).split(sep).join("/"),
-          size: s.size,
-          mtimeMs: Math.floor(s.mtimeMs),
-        });
-      }
-    }
-  }
-  // The catalog folder follows sources.yaml layout (catalog/ unless the org pack says otherwise).
-  const catalog = layoutOf(root).catalog;
-  for (const d of CATALOG_DIRS)
-    await walk(join(root, ...d.replace(/^catalog\//, `${catalog}/`).split("/")));
-  return out.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-}
-
-/** A cheap fingerprint of the catalog files: names, sizes and modification times. */
-function fingerprint(files: CatalogFile[]): string {
-  const h = createHash("sha256").update(`v${INDEX_VERSION}\n`);
-  for (const f of files) h.update(`${f.path}\t${f.size}\t${f.mtimeMs}\n`);
-  return h.digest("hex");
-}
-
-const SCHEMA = `
-CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-CREATE TABLE records (
-  kind TEXT NOT NULL, id TEXT NOT NULL, status TEXT NOT NULL, confidence TEXT NOT NULL,
-  name TEXT NOT NULL, system TEXT, file TEXT NOT NULL, stale INTEGER NOT NULL, json TEXT NOT NULL,
-  PRIMARY KEY (kind, id)
-);
-CREATE INDEX records_id ON records (id);
-CREATE INDEX records_system ON records (system);
-CREATE TABLE refs (from_kind TEXT NOT NULL, from_id TEXT NOT NULL, field TEXT NOT NULL, to_id TEXT NOT NULL);
-CREATE INDEX refs_to ON refs (to_id);
-CREATE INDEX refs_from ON refs (from_id);
-CREATE TABLE evidence (kind TEXT NOT NULL, id TEXT NOT NULL, source TEXT NOT NULL, repo TEXT, path TEXT, line INTEGER);
-CREATE INDEX evidence_path ON evidence (repo, path);
-`;
-
-/** A short label for a record: its name or title, else what it is about, else its id. */
-export function labelOf(r: Record<string, unknown>): string {
-  for (const f of ["name", "title", "pathOrTopic", "key", "raw"])
-    if (typeof r[f] === "string" && r[f]) return r[f] as string;
-  if (r.kind === "Interface")
-    return `${String(r.from)} → ${String(r.to)}${r.method ? ` ${String(r.method)}` : ""} ${String(r.normalizedPath ?? "")}`.trim();
-  return String(r.id);
-}
-
-/**
- * The system each record belongs to: a system itself; a component's system; for records of a
- * component (endpoints, settings, deployments, tables it owns...) that component's system; an
- * interface belongs to its caller's system.
- */
-function systemsOf(records: CatalogRecord[]): Map<string, string> {
-  const key = (r: { kind: string; id: string }) => `${r.kind}|${r.id}`;
-  const systems = new Set(records.filter((r) => r.kind === "System").map((r) => r.id));
-  const componentSystem = new Map<string, string>();
-  for (const r of records) if (r.kind === "Component") componentSystem.set(r.id, r.system);
-  const ofId = (id: unknown): string | undefined => {
-    if (typeof id !== "string") return undefined;
-    return componentSystem.get(id) ?? (systems.has(id) ? id : undefined);
-  };
-  const out = new Map<string, string>();
-  const tables = new Map<string, string>();
-  const stores = new Map<string, string>();
-  for (const r of records) {
-    const x = r as unknown as Record<string, unknown>;
-    let s: string | undefined;
-    if (r.kind === "System") s = r.id;
-    else if (r.kind === "Component") s = r.system;
-    else if (r.kind === "Interface") s = ofId(r.from);
-    else
-      s =
-        ofId(x.component) ??
-        ofId(x.ownerComponent) ??
-        ofId(x.owner) ??
-        (typeof x.system === "string" ? x.system : undefined);
-    if (s) out.set(key(r), s);
-    if (r.kind === "DataStore" && s) stores.set(r.id, s);
-  }
-  for (const r of records)
-    if (r.kind === "Table" && !out.has(key(r)) && stores.has(r.dataStore))
-      out.set(key(r), stores.get(r.dataStore)!);
-  for (const r of records)
-    if (r.kind === "Table" && out.has(key(r))) tables.set(r.id, out.get(key(r))!);
-  for (const r of records) {
-    const x = r as unknown as Record<string, unknown>;
-    if (out.has(key(r))) continue;
-    const s =
-      (typeof x.table === "string" && tables.get(x.table)) ||
-      (typeof x.dataStore === "string" && stores.get(x.dataStore)) ||
-      undefined;
-    if (s) out.set(key(r), s);
-  }
-  return out;
-}
-
-/** Build a fresh index file from records. Written beside the target, then moved into place. */
-export async function buildIndexFile(
-  file: string,
-  records: { record: CatalogRecord; file: string }[],
-  fp: string,
-): Promise<void> {
-  await mkdir(dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}`;
-  await rm(tmp, { force: true });
-  const db = openDb(tmp);
-  try {
-    db.exec(SCHEMA);
-    const systems = systemsOf(records.map((r) => r.record));
-    const insRec = db.prepare("INSERT OR REPLACE INTO records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    const insRef = db.prepare("INSERT INTO refs VALUES (?, ?, ?, ?)");
-    const insEv = db.prepare("INSERT INTO evidence VALUES (?, ?, ?, ?, ?, ?)");
-    db.exec("BEGIN");
-    for (const { record: r, file: f } of records) {
-      const x = r as unknown as Record<string, unknown>;
-      insRec.run(
-        r.kind,
-        r.id,
-        r.status,
-        r.confidence,
-        labelOf(x),
-        systems.get(`${r.kind}|${r.id}`) ?? null,
-        f,
-        (r.flags ?? []).includes("stale") ? 1 : 0,
-        JSON.stringify(r),
-      );
-      for (const ref of recordReferences(r)) insRef.run(r.kind, r.id, ref.field, ref.id);
-      for (const e of r.evidence as Record<string, unknown>[])
-        insEv.run(
-          r.kind,
-          r.id,
-          String(e.source),
-          (e.repo as string) ?? null,
-          (e.path as string) ?? null,
-          typeof e.line === "number" ? e.line : null,
-        );
-    }
-    const meta = db.prepare("INSERT INTO meta VALUES (?, ?)");
-    meta.run("version", String(INDEX_VERSION));
-    meta.run("fingerprint", fp);
-    meta.run("records", String(records.length));
-    db.exec("COMMIT");
-  } finally {
-    db.close();
-  }
-  await rm(file, { force: true });
-  await rename(tmp, file);
-}
+export { INDEX_VERSION, type IndexProblem } from "./store.js";
+export { CATALOG_DIRS, labelOf } from "./sources.js";
 
 export interface OpenOptions {
   /** Index file; default <root>/.index/catalog.sqlite. */
@@ -201,46 +30,25 @@ export interface OpenOptions {
 }
 
 /**
- * The local index: a disposable SQLite view of the catalog files (ADR 0003). Opening it checks
- * the files' fingerprint and rebuilds when anything changed, so it is never out of date.
+ * The local index: a disposable SQLite view of the metarepo's files (ADR 0003, 0107): the
+ * catalog, and beside it the knowledge items, flows, changes, answered questions, wiki
+ * sections and the org pack's systems, linked. Opening it checks each file's size and time and
+ * reads again only the files that changed, so it is never out of date.
  */
 export async function openIndex(root: string, o: OpenOptions = {}): Promise<CatalogIndex> {
   const file = o.file ?? join(stateDirOf(root), ".index", "catalog.sqlite");
-  const files = await listFiles(root);
-  const fp = fingerprint(files);
-  let current: string | undefined;
-  if (!o.rebuild) {
-    try {
-      const db = openDb(file);
-      try {
-        current = (
-          db.prepare("SELECT value FROM meta WHERE key = 'fingerprint'").get() as
-            { value: string } | undefined
-        )?.value;
-      } finally {
-        db.close();
-      }
-    } catch {
-      current = undefined;
-    }
+  await mkdir(dirname(file), { recursive: true });
+  const files = await listSources(root);
+  const db = openDb(file);
+  try {
+    const fresh = ensureSchema(db, o.rebuild === true);
+    const u = await updateIndex(db, root, files, { force: fresh });
+    const rebuilt = fresh || u.changed.length > 0 || u.removed.length > 0;
+    return new CatalogIndex(db, file, u.problems, rebuilt, u);
+  } catch (e) {
+    db.close();
+    throw e;
   }
-  const problems: IndexProblem[] = [];
-  let rebuilt = false;
-  if (current !== fp) {
-    const records: { record: CatalogRecord; file: string }[] = [];
-    for (const f of files) {
-      const r = deserializeRecord(await readFile(join(root, ...f.path.split("/")), "utf8"));
-      if (r.ok) records.push({ record: r.record, file: f.path });
-      else
-        problems.push({
-          file: f.path,
-          message: r.issues.map((i) => `${i.path}: ${i.message}`).join("; "),
-        });
-    }
-    await buildIndexFile(file, records, fp);
-    rebuilt = true;
-  }
-  return new CatalogIndex(openDb(file), file, problems, rebuilt);
 }
 
 export interface Row {
@@ -261,10 +69,45 @@ export class CatalogIndex {
     /** Catalog files that failed C1 and were left out (only reported on the build that met them). */
     readonly problems: IndexProblem[],
     readonly rebuilt: boolean,
+    /** What this open read again: the files changed and removed. */
+    readonly update?: UpdateResult,
   ) {}
 
   close(): void {
     this.db.close();
+  }
+
+  /**
+   * The index's version: a hash of every file it read, so the same files give the same version
+   * on every machine. Selections are cached under it.
+   */
+  get version(): string {
+    return (
+      (
+        this.db.prepare("SELECT value FROM meta WHERE key = 'generation'").get() as
+          { value: string } | undefined
+      )?.value ?? "empty"
+    );
+  }
+
+  /** Full-text search over every node (ADR 0107 point 2): names and ids rank above prose. */
+  search(text: string, o: SearchOptions = {}): SearchHit[] {
+    return searchIndex(this, text, o);
+  }
+
+  /** The context a step should see for its input, fitted to a budget (ADR 0107 point 3). */
+  selectContext(input: ContextInput | string, o: SelectOptions): ContextSelection {
+    return selectContext(this, input, o);
+  }
+
+  /** The nodes with this id, whatever their kind (a catalog record, a flow, an item...). */
+  nodes(id: string): GraphNodeRow[] {
+    return nodesById(this, id);
+  }
+
+  /** What a node links to and what links to it, each with how the link was made. */
+  links(key: string): NodeLink[] {
+    return linksOf(this, key);
   }
 
   /** Records matching a query in the catalog query language, ordered by kind and id. */

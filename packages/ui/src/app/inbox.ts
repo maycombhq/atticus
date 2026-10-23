@@ -1,5 +1,5 @@
 import { COPY } from "../copy.js";
-import { matchesWords } from "./filter.js";
+import { matchesWords } from "./match.js";
 
 /**
  * What needs a person (ADR 0073): one list for everyone. There are no roles: every change in a

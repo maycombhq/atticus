@@ -691,6 +691,46 @@ export const TestStrategy = z
   })
   .superRefine((t, ctx) => unique(t.matrix, (m) => `${m.changeType}/${m.risk}`, ctx, "matrix"));
 
+// ------------------------------------------------------------------ estimates.yaml (ADR 0109)
+
+/** A range of ideal developer days: 20%, 50% and 80% of like work took at most this long. */
+export const DayRange = z
+  .strictObject({
+    p20: z.number().positive(),
+    p50: z.number().positive(),
+    p80: z.number().positive(),
+  })
+  .refine((d) => d.p20 <= d.p50 && d.p50 <= d.p80, {
+    message: "p20, p50 and p80 go up: p20 <= p50 <= p80",
+  });
+
+/**
+ * The reference ranges an estimate starts from, before past changes calibrate it: per class of
+ * work (a target flow's step, `<op>/<kind>` and what it reaches, e.g. add/call-out/vendor/new-entry),
+ * the days like work takes. Who agreed the figures is required: a range nobody stands behind is
+ * not an estimate.
+ */
+export const Estimates = z.strictObject({
+  schemaVersion: V,
+  /** Who agreed these figures, and when (e.g. "the platform team, September 2026"). */
+  source: z.string().min(1),
+  classes: z
+    .array(
+      z.strictObject({
+        /** A class, or its first segments then `*` (add/call-out/*). The first that matches wins. */
+        match: z.string().regex(/^[a-z-]+(\/[a-z-]+)*(\/\*)?$|^\*$/),
+        days: DayRange,
+        why: z.string().optional(),
+      }),
+    )
+    .min(1),
+  /** Working with each repo past the first: builds, reviews and releases to line up. */
+  perExtraRepo: DayRange.optional(),
+  /** How much each risk widens the upper end (p80), e.g. { unconfirmed-step: 1.15 }. */
+  risks: z.record(z.string(), z.number().min(1).max(3)).default({}),
+});
+export type Estimates = z.infer<typeof Estimates>;
+
 // ------------------------------------------------------------------ profiles/<platform>/profile.yaml
 
 export const Profile = z

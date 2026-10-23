@@ -187,3 +187,53 @@ describe("a target flow beside today's (ADR 0095)", () => {
     expect(m.steps).toEqual([]);
   });
 });
+
+describe("a step sent elsewhere (ADR 0108)", () => {
+  const delta = (to: { component: string; entry: string }) =>
+    FlowDelta.parse({
+      schemaVersion: 1,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "Stock moves to the warehouse service.",
+      steps: [{ op: "change", step: 3, kind: "call-out", what: "Stock is held", to }],
+    });
+
+  it("keeps where it went today, so a picture can draw the old line going", () => {
+    const m = mergeDelta(delta({ component: "forge-warehouse", entry: "POST /holds" }), today());
+    expect(m.steps[2]).toMatchObject({
+      mark: "changed",
+      to: { component: "forge-warehouse", entry: "POST /holds" },
+      was: { to: { component: "forge-stock", entry: "POST /reservations" } },
+    });
+  });
+
+  it("says nothing about where it went when that doesn't change", () => {
+    const m = mergeDelta(delta({ component: "forge-stock", entry: "POST /reservations" }), today());
+    expect(m.steps[2]!.was).toEqual({ kind: "call-out", what: "Stock is reserved" });
+  });
+
+  it("keeps the migration a write step names", () => {
+    const d = FlowDelta.parse({
+      schemaVersion: 1,
+      flow: "forge-orders.place-order",
+      repo: "forge-orders",
+      change: "modify",
+      why: "The verdict is kept.",
+      steps: [
+        {
+          op: "change",
+          step: 4,
+          store: {
+            table: "forge-orders-db.orders",
+            columns: ["sku", "fraud_verdict"],
+            migration: "V4__add_fraud_verdict.sql",
+          },
+        },
+      ],
+    });
+    expect(mergeDelta(d, today()).steps[3]!.store).toMatchObject({
+      migration: "V4__add_fraud_verdict.sql",
+    });
+  });
+});

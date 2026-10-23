@@ -44,6 +44,11 @@
                 icon="AllIcons.General.TodoDefault">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
+        <action id="Atticus.ChangeDiagram" class="com.maycombhq.atticus.ide.ChangeDiagramAction"
+                text="Atticus: Change Diagram" description="What a change touches, marked new, changed or retired, in the Atticus app"
+                icon="AllIcons.Actions.Diff">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
         <action id="Atticus.ModelRuns" class="com.maycombhq.atticus.ide.ModelRunsAction"
                 text="Atticus: Model Runs" description="What Atticus asked a model, what it answered, and what the checks handed back"
                 icon="AllIcons.Actions.ListFiles">

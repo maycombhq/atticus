@@ -8,9 +8,9 @@ flowchart LR
   ledger_api -->|"reads and writes"| ledger_db_account
   ledger_api -->|"writes"| ledger_db_hold
   subgraph legend["Legend"]
-    legend_new["New"]
-    legend_modify["Modify"]
-    legend_retire["Retire"]
+    legend_new["+ New"]
+    legend_modify["◇ Modify"]
+    legend_retire["✕ Retire"]
   end
   classDef product fill:#dae8fc,stroke:#6c8ebf
   classDef plannedNew stroke:#2e7d32,stroke-width:3px,stroke-dasharray:6 3

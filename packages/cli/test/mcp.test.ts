@@ -56,6 +56,7 @@ describe("atticus mcp (ADR 0104)", () => {
         "catalog_query",
         "knowledge_items",
         "change_needs",
+        "change_map",
         "open_questions",
       ]),
     );
@@ -83,6 +84,27 @@ describe("atticus mcp (ADR 0104)", () => {
       result: { content: [{ type: "text", text: expect.stringContaining("needs --change") }] },
     });
     expect((r as { result: { isError?: boolean } }).result.isError).toBeUndefined();
+  });
+
+  it("searches the index by words through atticus query --search (ADR 0107)", async () => {
+    const calls: string[][] = [];
+    const call = (args: Record<string, unknown>) =>
+      handleMcp(
+        {
+          jsonrpc: "2.0",
+          id: 9,
+          method: "tools/call",
+          params: { name: "search", arguments: args },
+        },
+        fake(calls),
+        "1",
+      );
+    await call({ text: "fraud screen" });
+    await call({ text: "firewall", kind: "ProcessDefinition,WikiSection" });
+    expect(calls).toEqual([
+      ["query", "fraud screen", "--search", "--json"],
+      ["query", "firewall", "--search", "--kind", "ProcessDefinition,WikiSection", "--json"],
+    ]);
   });
 
   it("reads what waits, the open needs and the model runs through their commands (ADR 0106)", async () => {

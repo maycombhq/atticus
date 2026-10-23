@@ -1,0 +1,7 @@
+schemaVersion: 1
+platform: forge
+name: Forge shop
+systems:
+  - { id: forge, name: Forge, boundary: product, owner: team-shop, aliases: [Forge Shop] }
+  - { id: northwind-pay, name: Northwind Pay, boundary: vendor, aliases: [NWP] }
+environments: [dev, prod]

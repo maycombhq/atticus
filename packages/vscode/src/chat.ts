@@ -9,6 +9,8 @@ import {
 } from "./atticus";
 import type { CommandUi } from "./command-ui";
 import { answersFrom, buildArgv, howToRun, matchCommand } from "./commands";
+import { changeMapMarkdown, type ChangeMapJson } from "./change-map";
+import { parseJson } from "./cli";
 import { block, describeEnd, endFiles } from "./describe";
 import type { StepEnd } from "./runner";
 import { stepTitle } from "./words";
@@ -224,7 +226,7 @@ export function chatHandler(svc: Service, commands?: () => CommandUi): vscode.Ch
     if (!cmd || cmd === "next") {
       if (!cmd && request.prompt.trim())
         stream.markdown(
-          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /answer, /diagram [repo], /new <title>, /run <command> or /ask <question>.\n\n",
+          "Use a command: /next, /survey <repo>, /verify <repo>, /spec <repo>, /feature <change>, /architecture <change>, /stories <change>, /answer, /diagram [repo], /changemap <change>, /new <title>, /run <command> or /ask <question>.\n\n",
         );
       return next(svc, root, stream, token);
     }
@@ -250,6 +252,28 @@ export function chatHandler(svc: Service, commands?: () => CommandUi): vscode.Ch
           : "Opened the estate on the Architecture canvas, in the Atticus tab.",
       );
       stream.button({ command: "atticus.diagram", arguments: [t], title: "Open it again" });
+      return;
+    }
+    if (cmd === "changemap") {
+      const change = request.prompt.trim().split(/\s+/)[0];
+      if (!change) {
+        stream.markdown("Say the change: /changemap add-transfer-limit");
+        return;
+      }
+      stream.progress(`Drawing ${change}...`);
+      const r = await svc.cli(root)(["change", "map", change, "--json", "--root", root], token);
+      const m = parseJson<ChangeMapJson>(r.stdout);
+      if (!m) {
+        stream.markdown(block([r.stderr.trim() || `atticus change map ended with exit ${r.code}`]));
+        return;
+      }
+      stream.markdown(changeMapMarkdown(m));
+      if (m.flows)
+        stream.button({
+          command: "atticus.changeDiagram",
+          arguments: [change],
+          title: "Open the Change diagram",
+        });
       return;
     }
     if (cmd === "ask") {

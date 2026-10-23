@@ -852,6 +852,35 @@ a.btn {
   color: var(--amber);
   border-color: var(--amber);
 }
+/* A change's picture (ADR 0108): shape and words as well as colour (WCAG 1.4.1). */
+.arch-box.m-new,
+.arch-link-label.m-new {
+  border: 2px solid var(--green);
+}
+.arch-box.m-modify,
+.arch-link-label.m-modify {
+  border: 2px solid var(--amber);
+}
+.arch-box.m-retire,
+.arch-link-label.m-retire {
+  border: 1px dashed var(--muted);
+}
+.arch-box.m-retire .arch-box-label,
+.arch-link-label.m-retire {
+  text-decoration: line-through;
+}
+.arch-link.m-new {
+  stroke: var(--green);
+  stroke-width: 2;
+}
+.arch-link.m-modify {
+  stroke: var(--amber);
+  stroke-width: 2;
+}
+.arch-link.m-retire {
+  stroke: var(--muted);
+  stroke-dasharray: 2 3;
+}
 .arch-shared {
   margin: 0 0 8px;
   color: var(--amber);

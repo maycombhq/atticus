@@ -40,6 +40,7 @@ const ROUTES = [
   "ux",
   "arch-review",
   "diagrams",
+  "change-diagram",
   "reconcile",
   "contracts",
   "mappings",

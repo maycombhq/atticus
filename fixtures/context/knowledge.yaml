@@ -1,0 +1,37 @@
+# Knowledge items laid over ../stages/knowledge.yaml (ADR 0083 records), as a knowledge scan of
+# the invented Forge wiki would write them. Written into knowledge/items/ by the test helper.
+- kind: Decision
+  schemaVersion: 2
+  id: card-tokens-only
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/vendor-onboarding.md, line: 9, side: document }]
+  title: Only card tokens go to NWP
+  decision: Only a card token is sent to NWP; the card number never leaves the shop.
+  decisionKind: constraint
+  stance: mandated
+  quote:
+    source: forge-wiki
+    page: vendor-onboarding.md
+    section: Card data
+    text: "Only a card token is sent to NWP; the card number never leaves the shop."
+    snapshot: 2026-10-01
+    line: 9
+- kind: Product
+  schemaVersion: 2
+  id: fraud-screen
+  status: current
+  confidence: inferred
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/vendor-onboarding.md, line: 13, side: document }]
+  name: Fraud Screen
+  productKind: product
+  description: Northwind Pay's service that scores an order for fraud and returns a verdict.
+  aliases: [Screening API]
+  vendor: Northwind Pay
+  quote:
+    source: forge-wiki
+    page: vendor-onboarding.md
+    section: Northwind Pay products
+    text: "The Fraud Screen (the Screening API) scores an order and returns a verdict."
+    snapshot: 2026-10-01
+    line: 13

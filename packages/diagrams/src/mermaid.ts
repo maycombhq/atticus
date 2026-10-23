@@ -39,9 +39,9 @@ const RESERVED = new Set([
 ]);
 
 const LEGEND_NODES: [Legend, string, string][] = [
-  ["new", "legend_new", "New"],
-  ["modify", "legend_modify", "Modify"],
-  ["retire", "legend_retire", "Retire"],
+  ["new", "legend_new", "+ New"],
+  ["modify", "legend_modify", "◇ Modify"],
+  ["retire", "legend_retire", "✕ Retire"],
 ];
 
 /** Mermaid ids: record ids made safe (letters, digits, _), unique, and stable for a view. */

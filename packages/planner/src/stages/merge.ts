@@ -20,14 +20,15 @@ export interface MergedStep {
   kind: string;
   what: string;
   to?: { component: string; entry: string; new?: boolean };
-  store?: { table: string; columns: string[]; new?: boolean };
+  /** migration: the file that changes the table, when the change alters its columns. */
+  store?: { table: string; columns: string[]; new?: boolean; migration?: string };
   data?: NonNullable<FlowStep["data"]>;
   repeats?: { from: number; to: number };
   /** Today's citations, on a kept, changed or removed step. */
   evidence: FlowStep["evidence"];
   confirmedBy?: FlowStep["confirmedBy"];
-  /** A changed step: what it was today. */
-  was?: { kind: string; what: string };
+  /** A changed step: what it was today (and where it went, when the change sends it elsewhere). */
+  was?: { kind: string; what: string; to?: { component: string; entry: string } };
   /** The delta's reason for this step. */
   why?: string;
 }
@@ -69,6 +70,7 @@ const fromDelta = (d: DeltaStep): Partial<MergedStep> => ({
           table: d.store.table,
           columns: d.store.columns,
           ...(d.store.new ? { new: true } : {}),
+          ...(d.store.migration ? { migration: d.store.migration } : {}),
         },
       }
     : {}),
@@ -140,7 +142,15 @@ export function mergeDelta(d: FlowDelta, today: FlowRecord | undefined): MergedF
               today: n,
               ...fromToday(s),
               ...fromDelta(ch),
-              was: { kind: s.kind, what: s.what },
+              was: {
+                kind: s.kind,
+                what: s.what,
+                ...(s.to &&
+                ch.to &&
+                (s.to.component !== ch.to.component || s.to.entry !== ch.to.entry)
+                  ? { to: { component: s.to.component, entry: s.to.entry } }
+                  : {}),
+              },
             }
           : { mark: "same", today: n, ...fromToday(s) };
         if (s.repeats && !ch?.repeats) todayRepeats.add(m);

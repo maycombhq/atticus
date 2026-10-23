@@ -8,9 +8,9 @@ flowchart LR
   portal -->|"S.GW.SOR GET /accounts/{id}/balance"| ledger
   portal -.->|"A.EB.PUB notifications.requested"| notify
   subgraph legend["Legend"]
-    legend_new["New"]
-    legend_modify["Modify"]
-    legend_retire["Retire"]
+    legend_new["+ New"]
+    legend_modify["◇ Modify"]
+    legend_retire["✕ Retire"]
   end
   classDef product fill:#dae8fc,stroke:#6c8ebf
   classDef internal fill:#d5e8d4,stroke:#82b366

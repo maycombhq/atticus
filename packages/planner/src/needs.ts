@@ -25,6 +25,16 @@ import {
   type ReviewSummary,
 } from "@maycombhq/knowledge";
 import type { RequestTask } from "./stages/stories.js";
+import {
+  asSources,
+  reportOf,
+  roomFor,
+  selectFor,
+  useEngine,
+  wholeLists,
+  type ContextOptions,
+  type ContextReport,
+} from "./engine.js";
 
 /**
  * What a change needs from the organisation (ADR 0101): the requests and processes to raise (a
@@ -372,6 +382,8 @@ export interface NeedsResult {
   runId?: string;
   attempts: { attempt: number; runId: string; problems: string[] }[];
   file?: NeedsFile;
+  /** What the knowledge items in the prompt were: selected (and what was left out) or every one. */
+  context?: ContextReport;
 }
 
 const unfence = (s: string) => /```(?:ya?ml)?\s*\n([\s\S]*?)```/.exec(s)?.[1] ?? s;
@@ -386,6 +398,8 @@ export async function findNeeds(
     now?: Date;
     resume?: string;
     maxAttempts?: number;
+    /** The context engine (ADR 0107), or every item (engine: false). */
+    context?: ContextOptions;
   },
 ): Promise<NeedsResult> {
   const now = o.now ?? new Date();
@@ -431,16 +445,45 @@ export async function findNeeds(
       classification: "internal",
       priority: 20,
     })),
-    ...k.items.map((r) => ({
-      id: `item-${r.id}`,
-      kind: "catalog" as const,
-      origin: `knowledge/items/${r.id}`,
-      text: itemForAi(r, k.report?.conflicts ?? []),
-      classification: "internal",
-      priority: 10,
-    })),
   ];
-  const result: NeedsResult = { status: "failed", attempts: [] };
+  const whole: SourceInput[] = k.items.map((r) => ({
+    id: `item-${r.id}`,
+    kind: "catalog" as const,
+    origin: `knowledge/items/${r.id}`,
+    text: itemForAi(r, k.report?.conflicts ?? []),
+    classification: "internal",
+    priority: 10,
+  }));
+  let context: ContextReport = wholeLists();
+  if (useEngine("needs", o.context)) {
+    // The items the change's words call for, by name, by search and by the links between them.
+    const room = roomFor(budget, sources, o.context);
+    const brief = files.get("brief.md") ?? "";
+    const title = /^#\s+(.+)$/m.exec(brief)?.[1]?.trim();
+    const got = await selectFor(
+      root,
+      { text: [...files.values()].join("\n\n"), ...(title ? { title } : {}) },
+      {
+        budget: room,
+        kinds: ["Pattern", "ProcessDefinition", "Decision", "Party", "Product"],
+        groups: ["knowledge"],
+        exclude: [change],
+        priority: 10,
+        render: (n, level) => {
+          const r = byId.get(n.id);
+          return level === "full" && r ? itemForAi(r, k.report?.conflicts ?? []) : undefined;
+        },
+      },
+    );
+    if (got.selection) {
+      sources.push(...asSources(got.selection, "catalog"));
+      context = reportOf(got.selection, room);
+    } else {
+      sources.push(...whole);
+      context = { ...wholeLists(), ...(got.note ? { note: got.note } : {}) };
+    }
+  } else sources.push(...whole);
+  const result: NeedsResult = { status: "failed", attempts: [], context };
   let feedback: SourceInput[] = [];
   // A resumed hand-off carries on the attempts it was handed back from; an answer word for
   // word the one that failed is checked once more and not asked for again.

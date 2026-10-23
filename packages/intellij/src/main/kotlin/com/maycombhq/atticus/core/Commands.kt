@@ -153,6 +153,10 @@ object Commands {
         return if (ui?.flags?.any { it.name == "--parent" } == true) base + listOf("--parent", idePid.toString()) else base
     }
 
+    /** The app's Change diagram on one change (ADR 0108). */
+    fun changeDiagramHash(change: String): String =
+        "#/change-diagram?change=" + java.net.URLEncoder.encode(change, Charsets.UTF_8).replace("+", "%20")
+
     /** The prompt file a hand-off printed ("Prompt: <path>"), to open after it. */
     fun promptPathFrom(out: String): String? = Regex("(?m)^Prompt: (\\S+)").find(out)?.groupValues?.get(1)
 

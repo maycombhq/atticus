@@ -32,3 +32,9 @@ Field names are the C1 field names (see `schema/catalog/*.json` from `atticus sc
 | Settings of the BFF except timeouts       | `kind:setting component:portal-bff -settingKind:timeout` |
 
 Add `--json` for full records and `--limit n` for more than 100 rows. `atticus impact <id>` answers the follow-on question, "what does a change to this reach?".
+
+## Searching by words
+
+`atticus query "<words>" --search` searches everything the index holds, not only the catalog (ADR 0107): catalog records, knowledge items, flows and their steps, changes (their brief, placement and needs), answered questions and the sections of the newest snapshot of each wiki. Names and ids rank above prose. `--kind Flow,ProcessDefinition` keeps only those kinds; `--limit n` and `--json` work as for queries. Each hit names the file it was read from. Assistants get the same search as the `search` MCP tool.
+
+The same index chooses what the AI steps that used to send whole lists send instead (change needs, change feature, change architecture, plan stories): the records the step's input names or leads to, fitted to the model's budget, with what was left out listed in the step's result. `--context-tokens n` sets the room for that context; `--whole-context` sends the whole lists as before. How the selection scores against the whole lists is in [the context engine's eval](evidence/context-eval.md).

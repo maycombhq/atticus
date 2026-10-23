@@ -14,6 +14,7 @@ import {
 } from "./atticus";
 import { answerApp, bundledHtml } from "./app-bundle";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
+import { changeDiagramHash } from "./change-map";
 import { chatHandler } from "./chat";
 import { CommandUi, SHOWN_SCHEME, showReadOnly, shownDocs } from "./command-ui";
 import { FlowLenses } from "./codelens";
@@ -1175,6 +1176,19 @@ ${view.next.why}`
       }));
     if (t === undefined) return;
     await vscode.commands.executeCommand("atticus.showApp", diagramHash(t));
+  });
+
+  // ADR 0108: a change's picture, in the Atticus tab.
+  reg("atticus.changeDiagram", async (change?: string) => {
+    const c =
+      change ??
+      (await vscode.window.showInputBox({
+        title: "Atticus: the Change diagram",
+        prompt: "Which change? Its id, such as add-transfer-limit.",
+        ignoreFocusOut: true,
+      }));
+    if (!c?.trim()) return;
+    await vscode.commands.executeCommand("atticus.showApp", changeDiagramHash(c.trim()));
   });
 
   reg("atticus.openApp", async () => {

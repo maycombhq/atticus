@@ -6,6 +6,7 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.project.DumbAwareAction
+import com.maycombhq.atticus.core.Commands
 import com.maycombhq.atticus.core.Copy
 
 /** The plugin's actions (Tools menu, the tool window's toolbar and Find Action). Their names are in plugin.xml. */
@@ -60,6 +61,22 @@ private fun openScreen(project: Project, hash: String) {
 class WaitingOnYouAction : AtticusAction() {
     override fun actionPerformed(e: AnActionEvent) {
         openScreen(e.project ?: return, "#/home")
+    }
+}
+
+/** A change's picture (ADR 0108): asks which change, then opens #/change-diagram on it. */
+class ChangeDiagramAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val change =
+            com.intellij.openapi.ui.Messages.showInputDialog(
+                project,
+                Copy.CHANGE_DIAGRAM_ASK,
+                Copy.CHANGE_DIAGRAM,
+                null,
+            )?.trim()
+        if (change.isNullOrEmpty()) return
+        openScreen(project, Commands.changeDiagramHash(change))
     }
 }
 

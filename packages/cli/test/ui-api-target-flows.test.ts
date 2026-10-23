@@ -123,3 +123,28 @@ describe("GET /api/changes/{id}/target-flows/{flow}", () => {
     ).toBe(404);
   });
 });
+
+describe("GET /api/changes/{id}/map (ADR 0108)", () => {
+  it("draws what the target flows touch, marked, with the same picture as Mermaid", async () => {
+    const r = await get("/api/changes/add-fraud-check/map");
+    expect(r.status).toBe(200);
+    const m = Api.ChangeMap.parse(r.body);
+    expect(m.source).toBe("openspec/changes/add-fraud-check/target-flows");
+    expect(m.flows).toBe(2);
+    const at = (id: string) => m.nodes.find((n) => n.id === id);
+    // A component the specs know is changed, not new; the vendor the delta says is new is new.
+    expect(at("forge-orders")).toMatchObject({ legend: "modify", label: "◇ forge-orders" });
+    expect(at("northwind-pay")).toMatchObject({ legend: "new", label: "+ northwind-pay" });
+    expect(at("forge-stock")?.legend).toBeUndefined();
+    expect(m.edges.find((e) => e.from === "forge-orders" && e.to === "northwind-pay")?.legend).toBe(
+      "new",
+    );
+    expect(m.mermaid).toContain('northwind_pay["+ northwind-pay"]');
+    expect(m.problems.some((p) => p.startsWith("target-flows/broken.yaml"))).toBe(true);
+  });
+
+  it("is a 404 for a change that isn't there, and a 400 for an id that can't be one", async () => {
+    expect((await get("/api/changes/no-such-change/map")).status).toBe(404);
+    expect((await get("/api/changes/Not%20An%20Id/map")).status).toBe(400);
+  });
+});

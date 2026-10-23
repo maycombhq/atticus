@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.8.0",
+    "version": "2.9.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -2279,6 +2279,67 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TargetFlowList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/map": {
+      "get": {
+        "operationId": "getChangeMap",
+        "summary": "The change's picture: the components, entries and tables its target flows touch, marked new, modify or retire (ADR 0108)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeMap"
                 }
               }
             }
@@ -17756,6 +17817,9 @@
                     },
                     "new": {
                       "type": "boolean"
+                    },
+                    "migration": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -17911,6 +17975,22 @@
                     },
                     "what": {
                       "type": "string"
+                    },
+                    "to": {
+                      "type": "object",
+                      "properties": {
+                        "component": {
+                          "type": "string"
+                        },
+                        "entry": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "component",
+                        "entry"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "required": [
@@ -17978,6 +18058,180 @@
           "triggerEvidence",
           "steps",
           "counts",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeMap": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "title": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "system",
+                    "datastore"
+                  ]
+                },
+                "boundary": {
+                  "type": "string",
+                  "enum": [
+                    "product",
+                    "internal",
+                    "vendor"
+                  ]
+                },
+                "legend": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "modify",
+                    "retire"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "system",
+                    "component",
+                    "table",
+                    "topic",
+                    "box"
+                  ]
+                },
+                "boundary": {
+                  "type": "string",
+                  "enum": [
+                    "product",
+                    "internal",
+                    "vendor"
+                  ]
+                },
+                "legend": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "modify",
+                    "retire"
+                  ]
+                },
+                "group": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "async": {
+                  "type": "boolean"
+                },
+                "legend": {
+                  "type": "string",
+                  "enum": [
+                    "new",
+                    "modify",
+                    "retire"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "from",
+                "to",
+                "label",
+                "async"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "mermaid": {
+            "type": "string"
+          },
+          "flows": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "change",
+          "title",
+          "source",
+          "groups",
+          "nodes",
+          "edges",
+          "mermaid",
+          "flows",
           "problems"
         ],
         "additionalProperties": false

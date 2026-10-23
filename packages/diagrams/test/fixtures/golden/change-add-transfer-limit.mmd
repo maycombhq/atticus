@@ -1,0 +1,45 @@
+%% Change add-transfer-limit: Daily transfer limit. Rendered by Atticus from openspec/changes/add-transfer-limit/target-flows.
+flowchart LR
+  subgraph audit["Audit"]
+    audit_svc["audit-svc"]
+  end
+  subgraph ledger["Ledger"]
+    ledger_api["◇ ledger-api"]
+  end
+  subgraph portal["Portal"]
+    portal_bff["◇ portal-bff"]
+  end
+  subgraph reports["Reports"]
+    reports_job["reports-job"]
+  end
+  subgraph ledger_db["ledger-db (postgresql)"]
+    ledger_db_account[("◇ account")]
+    ledger_db_entry[("entry")]
+    ledger_db_transfer_limit[("+ transfer_limit")]
+  end
+  limits_svc["+ limits-svc"]
+  ledger_api -->|"◇ POST /events"| audit_svc
+  ledger_api -->|"+ write"| ledger_db_account
+  ledger_api -->|"write"| ledger_db_entry
+  ledger_api -->|"+ lookup"| ledger_db_transfer_limit
+  ledger_api -->|"+ POST /checks"| limits_svc
+  ledger_api -.->|"✕ ledger.legacy-totals"| reports_job
+  portal_bff -->|"✕ GET /statements"| ledger_api
+  subgraph legend["Legend"]
+    legend_new["+ New"]
+    legend_modify["◇ Modify"]
+    legend_retire["✕ Retire"]
+  end
+  classDef product fill:#dae8fc,stroke:#6c8ebf
+  classDef internal fill:#d5e8d4,stroke:#82b366
+  classDef plannedNew stroke:#2e7d32,stroke-width:3px,stroke-dasharray:6 3
+  classDef plannedModify stroke:#ed6c02,stroke-width:3px
+  classDef plannedRetire stroke:#b71c1c,stroke-width:3px,stroke-dasharray:2 2
+  class ledger,ledger_api,portal,portal_bff,reports,reports_job product
+  class audit,audit_svc internal
+  class ledger_db_transfer_limit,legend_new,limits_svc plannedNew
+  class ledger_api,ledger_db_account,legend_modify,portal_bff plannedModify
+  class legend_retire plannedRetire
+  linkStyle 1,3,4 stroke:#2e7d32,stroke-width:2px,stroke-dasharray:6 3
+  linkStyle 0 stroke:#ed6c02,stroke-width:2px
+  linkStyle 5,6 stroke:#b71c1c,stroke-width:2px,stroke-dasharray:2 2

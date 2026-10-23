@@ -34,8 +34,10 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.7.0 (ADR 0102): knowledge in the app: /api/knowledge (sources, items and their reviews,
  *   the last scan, searching the wikis, saved searches), a change's needs and the org pack
  *   drafted from the wikis.
+ * 2.8.0 (ADR 0106): model runs, GET /api/runs and /api/runs/{id}/transcript, and POST /api/runs.
+ * 2.9.0 (ADR 0108): a change's picture, GET /api/changes/{id}/map.
  */
-export const API_VERSION = "2.8.0";
+export const API_VERSION = "2.9.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -589,13 +591,24 @@ export const MergedStep = z.object({
     .object({ component: z.string(), entry: z.string(), new: z.boolean().optional() })
     .optional(),
   store: z
-    .object({ table: z.string(), columns: z.array(z.string()), new: z.boolean().optional() })
+    .object({
+      table: z.string(),
+      columns: z.array(z.string()),
+      new: z.boolean().optional(),
+      migration: z.string().optional(),
+    })
     .optional(),
   data: FlowData.optional(),
   repeats: z.object({ from: z.number().int(), to: z.number().int() }).optional(),
   evidence: z.array(Evidence),
   confirmedBy: z.string().optional(),
-  was: z.object({ kind: z.string(), what: z.string() }).optional(),
+  was: z
+    .object({
+      kind: z.string(),
+      what: z.string(),
+      to: z.object({ component: z.string(), entry: z.string() }).optional(),
+    })
+    .optional(),
   why: z.string().optional(),
 });
 
@@ -620,6 +633,51 @@ export const TargetFlowView = z.object({
   /** Why some of it can't be shown (today's flow isn't in the spec). */
   problems: z.array(z.string()),
 });
+const MapLegend = z.enum(["new", "modify", "retire"]);
+
+/** A change's picture (ADR 0108): what its target flows touch, each part marked + new, ◇ modify or ✕ retire. */
+export const ChangeMap = z.object({
+  change: RecordId,
+  title: z.string(),
+  /** The folder the picture is drawn from, relative to the metarepo. */
+  source: z.string(),
+  groups: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      kind: z.enum(["system", "datastore"]),
+      boundary: z.enum(["product", "internal", "vendor"]).optional(),
+      legend: MapLegend.optional(),
+    }),
+  ),
+  nodes: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      kind: z.enum(["system", "component", "table", "topic", "box"]),
+      boundary: z.enum(["product", "internal", "vendor"]).optional(),
+      legend: MapLegend.optional(),
+      group: z.string().optional(),
+    }),
+  ),
+  edges: z.array(
+    z.object({
+      id: z.string(),
+      from: z.string(),
+      to: z.string(),
+      label: z.string(),
+      async: z.boolean(),
+      legend: MapLegend.optional(),
+    }),
+  ),
+  /** The same picture as Mermaid, to paste into a chat, a wiki or a pull request. */
+  mermaid: z.string(),
+  /** How many target flows it is drawn from. */
+  flows: z.number().int(),
+  /** Target flows that don't read, or whose today isn't in the spec. */
+  problems: z.array(z.string()),
+});
+export type ChangeMapT = z.infer<typeof ChangeMap>;
 export type TargetFlowListT = z.infer<typeof TargetFlowList>;
 export type TargetFlowViewT = z.infer<typeof TargetFlowView>;
 
@@ -1633,6 +1691,17 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404],
     },
   },
+  "/api/changes/{changeId}/map": {
+    get: {
+      id: "getChangeMap",
+      summary:
+        "The change's picture: the components, entries and tables its target flows touch, marked new, modify or retire (ADR 0108)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ChangeMap", description: "OK" },
+      errors: [400, 404],
+    },
+  },
   "/api/changes/{changeId}/target-flows/{flowId}": {
     get: {
       id: "getTargetFlow",
@@ -2513,6 +2582,7 @@ export function openApiDocument(): Record<string, unknown> {
     CiteList,
     TargetFlowList,
     TargetFlowView,
+    ChangeMap,
     OrgPackView,
     Health,
     Finding,

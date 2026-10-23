@@ -91,6 +91,8 @@ export interface CanvasBox {
   parent?: string;
   /** Links that start and end on this box (calls inside one system). */
   inside: number;
+  /** A change's picture (ADR 0108): + new, ◇ modify or ✕ retire; the sign is in the label too. */
+  mark?: "new" | "modify" | "retire";
 }
 
 export interface CanvasLink {
@@ -102,6 +104,7 @@ export interface CanvasLink {
   label: string;
   async: boolean;
   gaps: string[];
+  mark?: "new" | "modify" | "retire";
 }
 
 export interface CanvasGraph {

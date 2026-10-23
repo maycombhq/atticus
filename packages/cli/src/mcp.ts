@@ -94,6 +94,22 @@ export const MCP_TOOLS: McpTool[] = [
     argv: (a) => ["query", String(a.query), "--json"],
   },
   {
+    name: "search",
+    description:
+      "Search everything the index holds by words: catalog records, knowledge items, flows and their steps, changes, answered questions and wiki sections; names and ids rank first (atticus query --search). Each hit names the file it was read from.",
+    args: [
+      s("text", "The words to look for."),
+      s("kind", "Only these kinds, comma-separated (System, Flow, ProcessDefinition...).", false),
+    ],
+    argv: (a) => [
+      "query",
+      String(a.text),
+      "--search",
+      ...(a.kind ? ["--kind", String(a.kind)] : []),
+      "--json",
+    ],
+  },
+  {
     name: "explain",
     description: "A record, finding, change or command explained in plain words (atticus explain).",
     args: [s("id", "A record id, a finding id, a change id or a command.")],
@@ -142,6 +158,13 @@ export const MCP_TOOLS: McpTool[] = [
       "A change's state, next step, what blocks it, its risk and the PR to merge (atticus change status).",
     args: [change],
     argv: (a) => ["change", "status", String(a.change), "--json"],
+  },
+  {
+    name: "change_map",
+    description:
+      "A change's picture: the components, entries and tables its target flows touch, each marked + new, ◇ modify or ✕ retire, with the same picture as Mermaid to show (atticus change map).",
+    args: [change],
+    argv: (a) => ["change", "map", String(a.change), "--json"],
   },
   {
     name: "change_needs",

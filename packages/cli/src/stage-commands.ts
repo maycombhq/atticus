@@ -15,6 +15,7 @@ import {
 } from "@maycombhq/planner";
 import { runDesignBench, type DesignScore } from "@maycombhq/evals";
 import type { Output } from "./commands.js";
+import { contextFlags, contextLines } from "./context-flags.js";
 
 /**
  * The change lifecycle's three stages as loops (ADR 0087, plan 4.4): `atticus change feature`,
@@ -62,6 +63,7 @@ function printStage(
   extra: string[] = [],
 ): number {
   for (const n of r.notes) io.out(n);
+  for (const l of contextLines(r.context)) io.out(l);
   const current = r.findings.filter((f) => f.blocking && !f.question);
   if (r.state === "waiting") {
     if (current.length) {
@@ -118,9 +120,15 @@ export async function stageCli(
     );
     return 2;
   }
+  const flags = contextFlags(values);
+  if ("error" in flags) {
+    io.err(flags.error);
+    return 2;
+  }
   const runtime = deps.runtime ?? (await runtimeOf(root, str(values.mode), io));
   if (!runtime) return 2;
   const o = {
+    context: flags.context,
     runtime,
     ...(deps.criticRuntime !== undefined ? { criticRuntime: deps.criticRuntime } : {}),
     ...(deps.now ? { now: deps.now } : {}),

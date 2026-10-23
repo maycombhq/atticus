@@ -5,6 +5,8 @@ import { changesRelOf, type ChangeLifecycle } from "@maycombhq/core";
 import type { SourceInput } from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
 import { PlannerError } from "../errors.js";
+import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
+import { estateContext } from "./estate-context.js";
 import { GENERATED_MARK } from "../render.js";
 import { parseYamlAs } from "./answer.js";
 import { checkDesign, designGaps } from "./design-check.js";
@@ -12,6 +14,7 @@ import { estateIndex, loadEstate, systemOf, type Estate } from "./estate.js";
 import { designText, readFigma, type DesignRead } from "./figma.js";
 import {
   runStageLoop,
+  stageBudget,
   type StageIssue,
   type StageOptions,
   type StageResult,
@@ -343,14 +346,6 @@ export async function featureStage(
       classification: "internal",
       priority: 98,
     });
-  sources.push({
-    id: "estate-index",
-    kind: "catalog",
-    origin: "atticus change feature (deterministic)",
-    text: estateIndex(estate),
-    classification: "internal",
-    priority: 90,
-  });
 
   const instructions = [
     "# Feature placer",
@@ -360,6 +355,43 @@ export async function featureStage(
     FORMAT.replace("<changes>/<change>", rel),
     ...(design ? ["", "Add the design, mapped against the estate:", "", DESIGN_FORMAT] : []),
   ].join("\n");
+
+  // The estate: what the brief, stories or design name and lead to (ADR 0107), or all of it.
+  const whole: SourceInput = {
+    id: "estate-index",
+    kind: "catalog",
+    origin: "atticus change feature (deterministic)",
+    text: estateIndex(estate),
+    classification: "internal",
+    priority: 90,
+  };
+  const selected = await estateContext(
+    root,
+    "feature",
+    {
+      text: [brief, ...stories.map((s) => s.text), ...(design ? [designText(design)] : [])].join(
+        "\n\n",
+      ),
+      title: change.title,
+    },
+    {
+      estate,
+      budget: stageBudget(ctx, FEATURE_AGENT),
+      others: [instructionSource(instructions), ...sources],
+      ...(o.context ? { context: o.context } : {}),
+      exclude: [change.id],
+      origin: "atticus change feature (context engine)",
+      priority: 90,
+    },
+  );
+  let context: ContextReport = wholeLists();
+  if (selected && "sources" in selected) {
+    sources.push(...selected.sources);
+    context = selected.report;
+  } else {
+    sources.push(whole);
+    if (selected) context = { ...context, note: selected.note };
+  }
 
   const fill = (d: Record<string, unknown>) => ({
     ...d,
@@ -404,6 +436,7 @@ export async function featureStage(
     questions: (p) => p.questions,
   };
   const res = await runStageLoop(root, change.id, spec, o);
+  res.context = context;
   // The result carries what was written: the conflicts and design gaps Atticus added.
   if (res.answer) res.answer = (await readPlacement(dir)) ?? res.answer;
   return res;

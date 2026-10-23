@@ -69,6 +69,7 @@ function BoxView({ data }: NodeProps<BoxNode>) {
     box.outside ? "outside" : "",
     box.gaps.length ? "gappy" : "",
     data.selected ? "picked" : "",
+    box.mark ? `m-${box.mark}` : "",
   ].join(" ");
   return (
     <div className={cls} title={box.gaps.map((g) => WORDS.gap[g] ?? g).join(", ") || undefined}>
@@ -128,7 +129,7 @@ function LinkView(p: EdgeProps<LinkEdge>) {
         sourcePosition: p.sourcePosition,
         targetPosition: p.targetPosition,
       });
-  const cls = `arch-link ${d.link.async ? "async" : ""} ${d.link.gaps.length ? "gappy" : ""}`;
+  const cls = `arch-link ${d.link.async ? "async" : ""} ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""}`;
   return (
     <>
       <BaseEdge
@@ -139,7 +140,7 @@ function LinkView(p: EdgeProps<LinkEdge>) {
       />
       <EdgeLabelRenderer>
         <div
-          className={`arch-link-label nodrag nopan ${d.link.gaps.length ? "gappy" : ""}`}
+          className={`arch-link-label nodrag nopan ${d.link.gaps.length ? "gappy" : ""} ${d.link.mark ? `m-${d.link.mark}` : ""}`}
           style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}
         >
           {d.link.gaps.length > 0 && <span aria-hidden="true">⚠ </span>}

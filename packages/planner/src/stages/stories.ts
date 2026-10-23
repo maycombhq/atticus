@@ -9,6 +9,8 @@ import { readKnowledge } from "@maycombhq/knowledge";
 import { mergeStoryRequests } from "../needs.js";
 import { looksPersonal } from "@maycombhq/naysayer";
 import { PlannerError } from "../errors.js";
+import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
+import { estateContext } from "./estate-context.js";
 import { GENERATED_MARK } from "../render.js";
 import { contentWords, slug } from "../words.js";
 import { parseYamlAs } from "./answer.js";
@@ -16,6 +18,7 @@ import { isEmptyDelta, readDeltas, TARGET_DIR } from "./architecture.js";
 import { columnsOf, loadEstate, type Estate } from "./estate.js";
 import {
   runStageLoop,
+  stageBudget,
   type StageIssue,
   type StageOptions,
   type StageResult,
@@ -587,14 +590,6 @@ export async function storiesStage(
       priority: 90,
     },
     {
-      id: "processes",
-      kind: "document",
-      origin: "knowledge/items (ADR 0083)",
-      text: itemsText || "No process or request is in the knowledge items.",
-      classification: "internal",
-      priority: 80,
-    },
-    {
       id: "suggested",
       kind: "artifact",
       origin: "atticus plan stories (deterministic)",
@@ -628,6 +623,58 @@ Rules:
 - Every task has acceptance criteria a test can check, and names the fields it touches.
 - Suggest a request only when the knowledge item's "applies when" fits the step. Never raise it yourself.
 - Plain, short English.`;
+  const instructions = [
+    "# Story writer",
+    "",
+    `Word the stories of the change "${change.title}" and write each task's acceptance criteria. The stories, tasks, target flows and the organisation's processes are below, as data.`,
+    "",
+    FORMAT,
+  ].join("\n");
+
+  // The processes the target flows call for (ADR 0107), or every one.
+  const processLine = (p: Process) =>
+    `${p.processKind} ${p.id} "${p.title}": applies when ${p.appliesWhen.replace(/[.\s]+$/, "")}${p.leadTime ? `; lead time ${p.leadTime}` : ""}`;
+  const byId = new Map(items.map((p) => [p.id, p]));
+  const whole: SourceInput = {
+    id: "processes",
+    kind: "document",
+    origin: "knowledge/items (ADR 0083)",
+    text: itemsText || "No process or request is in the knowledge items.",
+    classification: "internal",
+    priority: 80,
+  };
+  const selected = await estateContext(
+    root,
+    "stories",
+    { text: [skeletonText, stringify(deltas, { lineWidth: 0 })].join("\n\n"), title: change.title },
+    {
+      budget: stageBudget(ctx, STORY_AGENT),
+      others: [instructionSource(instructions), ...sources],
+      ...(o.context ? { context: o.context } : {}),
+      exclude: [change.id],
+      origin: "knowledge/items (ADR 0083)",
+      priority: 80,
+      knowledge: {
+        kinds: ["ProcessDefinition"],
+        line: (id) => {
+          const p = byId.get(id);
+          return p ? processLine(p) : undefined;
+        },
+        id: "processes",
+        origin: "knowledge/items (ADR 0083), selected",
+        priority: 80,
+        empty: "No process or request in the knowledge items matches the target flows.",
+      },
+    },
+  );
+  let context: ContextReport = wholeLists();
+  if (selected && "sources" in selected) {
+    sources.push(...selected.sources);
+    context = selected.report;
+  } else {
+    sources.push(whole);
+    if (selected) context = { ...context, note: selected.note };
+  }
 
   const spec: StageSpec<StoriesAnswer> = {
     stage: "stories",
@@ -636,13 +683,7 @@ Rules:
       "Words a change's stories from its target flows and writes each task's acceptance criteria.",
     output: "stories-answer.yaml",
     source: ANSWER_FILE,
-    instructions: [
-      "# Story writer",
-      "",
-      `Word the stories of the change "${change.title}" and write each task's acceptance criteria. The stories, tasks, target flows and the organisation's processes are below, as data.`,
-      "",
-      FORMAT,
-    ].join("\n"),
+    instructions,
     sources,
     parse: (text) => {
       const r = parseYamlAs(text, Answer, (d) => d, "stories");
@@ -689,6 +730,7 @@ Rules:
     },
   };
   const res = await runStageLoop(root, change.id, spec, o);
+  res.context = context;
   if (empty.length)
     res.notes.unshift(
       `No story for ${empty.map((d) => `${TARGET_DIR}/${d.flow}.yaml`).join(", ")}: ${empty.length === 1 ? "it is marked modify but changes" : "they are marked modify but change"} no step, so ${empty.length === 1 ? "it is" : "they are"} context, not a change.`,

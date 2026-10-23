@@ -100,11 +100,12 @@ test("Run with anthropic starts the step, says it is running, then shows the end
   ).toBeVisible();
   await accessible(page, "a step with Run with anthropic");
 
-  const status = await page.evaluate(async () => {
-    const token = document.querySelector<HTMLMetaElement>('meta[name="atticus-token"]')!.content;
+  // The page's API token, from the meta tag the app's page carries.
+  const token = (await page.locator('meta[name="atticus-token"]').getAttribute("content")) ?? "";
+  const status = await page.evaluate(async (token) => {
     const r = await fetch("/api/runs?limit=1", { headers: { "X-Atticus-Token": token } });
     return ((await r.json()) as { serverModel: unknown }).serverModel;
-  });
+  }, token);
   expect(status).toBe("anthropic");
 
   const answer = page.waitForResponse(

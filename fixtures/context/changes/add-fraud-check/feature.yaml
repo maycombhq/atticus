@@ -1,0 +1,21 @@
+# The fraud check placed against the estate (ADR 0087), as a person approved it. Hand-written.
+schemaVersion: 1
+change: add-fraud-check
+entry: brief
+summary: Every new order is screened by Northwind Pay before stock is reserved; a rejected order is refused.
+features:
+  - id: cap-ordering
+    why: Placing an order is the feature that gains the screen.
+flows:
+  - id: forge-orders.place-order
+    how: changed
+    why: The screen runs between receiving the order and reserving stock.
+  - id: forge-stock.reserve-stock
+    how: read
+    why: Reserving stock happens only after the screen passes.
+newFlows: []
+gaps:
+  - what: No call to Northwind Pay exists yet.
+    why: The estate never talks to the fraud screen today.
+conflicts: []
+questions: []

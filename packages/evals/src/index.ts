@@ -9,3 +9,4 @@ export * from "./bench.js";
 export * from "./spec-bench.js";
 export * from "./knowledge-bench.js";
 export * from "./design-bench.js";
+export * from "./context-bench.js";

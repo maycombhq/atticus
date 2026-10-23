@@ -47,6 +47,32 @@ describe("atticus query", () => {
     expect(res.records.map((r) => r.id)).toEqual(["ledger-db.account", "ledger-db.entry"]);
   });
 
+  it("searches everything the index holds by words with --search, names and ids first (ADR 0107)", async () => {
+    const root = await forgeRoot();
+    const c = capture();
+    expect(await main(["query", "Northwind Pay", "--search", "--root", root], c.io)).toBe(0);
+    expect(c.out[0]).toMatch(/^KIND\s+ID\s+NAME\s+FILE$/);
+    expect(c.out[1]).toMatch(/^System\s+northwind-pay\s+Northwind Pay\s/);
+    expect(c.out.at(-1)).toMatch(/^\d+ hits, best first$/);
+
+    const j = capture();
+    expect(
+      await main(
+        ["query", "ledger", "--search", "--kind", "System", "--json", "--root", root],
+        j.io,
+      ),
+    ).toBe(0);
+    const res = JSON.parse(j.out.join("\n")) as {
+      hits: { kind: string; id: string; file: string }[];
+    };
+    expect(res.hits.map((h) => h.id)).toEqual(["ledger"]);
+    expect(res.hits[0]!.file).toBe("catalog/generated/system/ledger.yaml");
+
+    const none = capture();
+    expect(await main(["query", "zebra", "--search", "--root", root], none.io)).toBe(0);
+    expect(none.out).toEqual(["Nothing in the index matches those words."]);
+  });
+
   it("says when there are more records than the limit", async () => {
     const root = await forgeRoot();
     const c = capture();

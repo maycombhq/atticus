@@ -1,0 +1,44 @@
+# What selectContext must pick (ADR 0107 point 3) on ../stages with this folder laid over it.
+# Hand-written: never regenerate it from the index. `must` are ids that must be picked, `never`
+# ids that must not be (left out or not reached), `unknown` the names the input uses that the
+# index has nothing for.
+
+- name: the fraud check's brief, for what it needs from the organisation
+  input: { file: ../../stages/changes/add-fraud-check/brief.md }
+  kinds: [Pattern, ProcessDefinition, Decision, Party, Product]
+  budget: 4000
+  must:
+    # The brief names Northwind Pay's fraud screen: the product, by its name.
+    - fraud-screen
+    # Northwind Pay is a vendor: what the wiki says about sending data to a vendor.
+    - vendor-onboarding
+    # The wiki's firewall section names NWP; the item quotes that section.
+    - firewall-rule-request
+    # A constraint that names NWP by its alias.
+    - card-tokens-only
+  # Not never: broker-topic-request. Nothing in the brief is about topics, but text search stems
+  # "message" (the brief) and "Messaging team" (the item) alike, so it may come in, below the four.
+  never: []
+  below: { broker-topic-request: [fraud-screen, vendor-onboarding, firewall-rule-request, card-tokens-only] }
+  unknown: []
+
+- name: the fraud check's brief, for the feature it changes
+  input: { file: ../../stages/changes/add-fraud-check/brief.md }
+  kinds: [System, Component, Capability, Flow, Endpoint, Table]
+  budget: 4000
+  must: [northwind-pay, cap-ordering, forge-orders.place-order, forge-stock.reserve-stock]
+  never: []
+  unknown: []
+
+- name: a brief that names a vendor the estate has never heard of
+  input:
+    text: |
+      # Score orders with Quillfeather Risk
+
+      Send each new order to Quillfeather Risk and to Northwind Pay before stock is reserved,
+      through POST /v3/risk-scores.
+  kinds: [System, Component, Flow, Endpoint]
+  budget: 4000
+  must: [northwind-pay]
+  never: []
+  unknown: [POST /v3/risk-scores, Quillfeather Risk]

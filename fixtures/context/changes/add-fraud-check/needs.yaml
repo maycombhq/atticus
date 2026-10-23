@@ -1,0 +1,17 @@
+# What the fraud check needs from the organisation (ADR 0101). Hand-written.
+schemaVersion: 1
+change: add-fraud-check
+updatedAt: 2026-10-21T09:00:00Z
+needs:
+  - item: vendor-onboarding
+    kind: process
+    title: Vendor onboarding
+    for: flow:forge-orders.place-order
+    why: The order's card token goes to Northwind Pay, a vendor.
+    from: assistant
+    inputs: []
+    steps: []
+    rules: []
+    urls: []
+    status: open
+considered: []

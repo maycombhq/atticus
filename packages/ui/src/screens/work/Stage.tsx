@@ -263,9 +263,14 @@ export function ArchitectureStep({ list }: { list: Loaded<ChangeRow[]> }) {
             {l.length > 0 && (
               <p className="row" style={{ gap: 12, flexWrap: "wrap", margin: "8px 0 0" }}>
                 {l.map((c) => (
-                  <a key={c.id} href={`#/flows?change=${encodeURIComponent(c.id)}`}>
-                    {COPY.flows.openTargets}: {c.title}
-                  </a>
+                  <span key={c.id} className="row" style={{ gap: 12 }}>
+                    <a href={`#/flows?change=${encodeURIComponent(c.id)}`}>
+                      {COPY.flows.openTargets}: {c.title}
+                    </a>
+                    <a href={`#/change-diagram?change=${encodeURIComponent(c.id)}`}>
+                      {COPY.changeDiagram.title}: {c.title}
+                    </a>
+                  </span>
                 ))}
               </p>
             )}

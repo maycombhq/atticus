@@ -14,6 +14,7 @@ import {
 } from "@maycombhq/core";
 import { mergeDelta, readDeltas, TARGET_DIR } from "@maycombhq/planner";
 import { badRequest, notFound, type Router, type ServerContext } from "@maycombhq/server";
+import { changeMapBody, changeMapOf } from "./change-map.js";
 
 /**
  * The specs API (ADR 0092, C4): what the Flows screen draws. It reads files only: each repo's
@@ -158,6 +159,14 @@ export function uiSpecRoutes(r: Router, ctx: ServerContext): Router {
       });
     }
     return { status: 200, body: { change, flows, problems } satisfies Api.TargetFlowListT };
+  });
+
+  // ADR 0108: the change's picture, drawn from the same target flows.
+  r.add("GET", "/api/changes/{changeId}/map", async ({ params }) => {
+    const change = idOf(params.changeId!, "change");
+    const m = await changeMapOf(root, change);
+    if (!m) throw notFound(`There is no change ${change}.`);
+    return { status: 200, body: changeMapBody(change, m) };
   });
 
   r.add("GET", "/api/changes/{changeId}/target-flows/{flowId}", async ({ params }) => {

@@ -534,7 +534,46 @@ export const COPY = {
       learning: "Learning",
       settings: "Settings",
       runs: "Model runs",
+      changeDiagram: "Change diagram",
     },
+  },
+  /** ADR 0108: a change's picture, from its target flows. */
+  changeDiagram: {
+    title: "Change diagram",
+    intro:
+      "What the change touches, drawn from its target flows: each component, entry and table, marked + new, ◇ changed or ✕ retired; the rest is there for context. A part is new only when the target flow says so.",
+    pick: "Change",
+    none: "No change yet. Start one from a brief, then run its architecture stage.",
+    noTargets: (id: string) =>
+      `${id} has no target flows yet, so there is nothing to draw. Its architecture stage writes them:`,
+    legend: "Legend",
+    legendNew: "+ New",
+    legendModify: "◇ Changed",
+    legendRetire: "✕ Retired",
+    legendContext: "Unmarked: there for context",
+    parts: "Every part and its mark",
+    caption: (id: string) => `The parts of ${id}'s picture`,
+    lines: "Every line and its mark",
+    col: {
+      part: "Part",
+      kind: "Kind",
+      in: "In",
+      mark: "Mark",
+      from: "From",
+      to: "To",
+      what: "What",
+    },
+    mark: { new: "New", modify: "Changed", retire: "Retired", none: "Context" } as Record<
+      string,
+      string
+    >,
+    from: (n: number, source: string) =>
+      `Drawn from ${n} target flow${n === 1 ? "" : "s"} in ${source}.`,
+    problems: "What couldn't be drawn",
+    mermaid: "The same picture as Mermaid",
+    mermaidHint: "Paste it into a pull request, a wiki or a chat that draws Mermaid.",
+    copyMermaid: "Copy the Mermaid",
+    flows: (id: string) => `The target flows of ${id}, step by step`,
   },
   runNext: {
     title: "Run next",

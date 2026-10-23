@@ -265,8 +265,9 @@ test("a step's page links to its runs; without a model a step stays a command to
   ).toBeVisible();
   await expect(page.getByRole("button", { name: /^Run with/ })).toHaveCount(0);
   // The server says it has no model, and refuses to start a step.
-  const r = await page.evaluate(async () => {
-    const token = document.querySelector<HTMLMetaElement>('meta[name="atticus-token"]')!.content;
+  // The page's API token, from the meta tag the app's page carries.
+  const token = (await page.locator('meta[name="atticus-token"]').getAttribute("content")) ?? "";
+  const r = await page.evaluate(async (token) => {
     const headers = { "X-Atticus-Token": token, "Content-Type": "application/json" };
     const list = (await (await fetch("/api/runs?limit=1", { headers })).json()) as {
       serverModel: unknown;
@@ -277,7 +278,7 @@ test("a step's page links to its runs; without a model a step stays a command to
       body: JSON.stringify({ args: ["plan", "stories", "add-transfer-limit"] }),
     });
     return { serverModel: list.serverModel, status: post.status };
-  });
+  }, token);
   expect(r).toEqual({ serverModel: null, status: 409 });
 
   await open(page, a(), "knowledge");

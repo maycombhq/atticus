@@ -4,6 +4,24 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The context engine (ADR 0107)
+
+- The index holds knowledge items, flows and their steps, changes (brief, placement, needs, target flows), answered questions, wiki sections and the profile's systems, with typed links that record how each was made; it updates per file and rebuilds an old index once.
+- `atticus query "<words>" --search` and the `search` MCP tool search everything the index holds, names and ids above prose.
+- `change needs`, `change feature`, `change architecture` and `plan stories` send the context the change leads to, fitted to the budget, and say what they left out; `--context-tokens n` sets the room, `--whole-context` sends the whole lists as before. The eval (`docs/evidence/context-eval.md`) scores each step with and without the engine; under a tight budget the whole lists lose what the engine keeps.
+
+### A change drawn from its target flows (ADR 0108)
+
+- `atticus change map <change> [--format mermaid|drawio] [--json]`, `GET /api/changes/{id}/map` (API 2.9.0), the app's Change diagram (More, Design), `@atticus /changemap` in VS Code (drawn in Copilot Chat as Mermaid), IntelliJ's Atticus: Change Diagram and the `change_map` MCP tool: the components, entries and tables a change touches, marked + new, ◇ changed or ✕ retired from the target flows' own marks, the rest as context. A part the catalog lacks is unknown, never new by that alone; a step sent elsewhere draws today's line retired and the new one added. The legend reads + New, ◇ Modify, ✕ Retire in every view.
+
+### Estimates (ADR 0109)
+
+- The estimate's engine: a change's size counted from its target flows, each changed step a class of work, the org pack's ranges (new optional `estimates.yaml`) summed by a seeded simulation, the drivers named with their sources, never a number nobody stands behind. The command, API and screens come next.
+
+### Fixed
+
+- `pnpm check` passes again: the core-neutral check allowlists the English word "teams" and the C6 wiki types; the inbox's matching moved out of a .tsx file; journeys 19 and 20 read the page's token without DOM types; the context engine's timing test reports times instead of asserting them.
+
 ### Model runs, and what waits, in every surface
 
 - The app: a Model runs screen (More, Run, `#/runs`) lists every model run, newest first, with a filter; one run shows its prompt beside its answer and, per earlier round, the problems the checks handed back with the answer that failed them, all as text. Every AI step the app shows as a command gets **Run with Copilot** in a VS Code tab, or **Run with <model>** in a browser when `runtime.yaml` configures one; otherwise it stays a command to copy. Each AI step's page links to its runs.

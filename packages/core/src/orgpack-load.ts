@@ -20,6 +20,7 @@ import { Dialect } from "./schema/dialect.js";
 import {
   BUILT_IN_ROLES,
   ChangeTypes,
+  Estimates,
   Gates,
   IntegrationPattern,
   PackManifest,
@@ -479,4 +480,29 @@ export async function loadOrgPack(dir: string): Promise<OrgPack> {
     defaulted,
     problems,
   };
+}
+
+/**
+ * The org pack's reference ranges for estimates (ADR 0109), `estimates.yaml`: undefined when
+ * the pack has none (an estimate then sizes the work and gives no days); a problem when the
+ * file is there and doesn't read.
+ */
+export async function loadEstimates(
+  dir: string,
+): Promise<{ estimates?: Estimates; problem?: string }> {
+  let text: string;
+  try {
+    text = await readFile(join(dir, "estimates.yaml"), "utf8");
+  } catch {
+    return {};
+  }
+  try {
+    const r = Estimates.safeParse(parse(text));
+    if (r.success) return { estimates: r.data };
+    return {
+      problem: `estimates.yaml: ${r.error.issues.map((i) => `${i.path.join(".") || "(file)"}: ${i.message}`).join("; ")}`,
+    };
+  } catch (e) {
+    return { problem: `estimates.yaml isn't YAML: ${(e as Error).message.split("\n")[0]}` };
+  }
 }

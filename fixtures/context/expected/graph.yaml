@@ -1,0 +1,62 @@
+# The graph the index must build from ../stages with this folder laid over it (ADR 0107 point 1).
+# Hand-written: never regenerate it from the index.
+
+# Nodes per kind. Catalog: 2 systems, 2 components, 4 endpoints, a data store, a table, 3 columns
+# and the ordering feature; the org pack's 2 systems are nodes of their own beside them. Flows: 2,
+# with 5 and 2 steps. Wiki: the newest snapshot only (2026-10-01): 3 sections of the catalogue
+# page, 4 of the vendor page; the 2026-09-01 page is not read. Only the answered question.
+nodes:
+  System: 4
+  Component: 2
+  Endpoint: 4
+  DataStore: 1
+  Table: 1
+  Column: 3
+  Capability: 1
+  ProcessDefinition: 3
+  Decision: 1
+  Product: 1
+  Flow: 2
+  FlowStep: 7
+  Change: 2
+  ChangeDoc: 1
+  Need: 1
+  Question: 1
+  WikiSection: 7
+
+# Links that must be there, each with how it was made.
+links:
+  # A knowledge item names a system or product by its name or an alias (exact, any case).
+  - { from: knowledge:Decision:card-tokens-only, to: northwind-pay, type: names, how: mention alias:org-pack }
+  - { from: knowledge:Product:fraud-screen, to: northwind-pay, type: names, how: mention name:catalog }
+  # ...as does a wiki section, and a person's answer.
+  - { from: "wiki:WikiSection:forge-wiki/service-desk-catalogue.md#Network firewall rule", to: northwind-pay, type: names, how: mention alias:org-pack }
+  - { from: "wiki:WikiSection:forge-wiki/service-desk-catalogue.md#Service desk catalogue", to: forge, type: names, how: mention alias:org-pack }
+  - { from: question:Question:q-0f1e2d3c4b5a, to: northwind-pay, type: names, how: mention name:catalog }
+  - { from: question:Question:q-0f1e2d3c4b5a, to: fraud-screen, type: names, how: mention alias:knowledge }
+  - { from: question:Question:q-0f1e2d3c4b5a, to: forge-orders, type: about, how: question repo }
+  # A knowledge item quotes its wiki section.
+  - { from: knowledge:ProcessDefinition:firewall-rule-request, to: "forge-wiki/service-desk-catalogue.md#Network firewall rule", type: quotes, how: field:quote }
+  # A flow step names an endpoint: by id in its refs, or as METHOD /path where it calls out.
+  - { from: "flow:FlowStep:forge-orders.place-order#1", to: forge-orders.post-orders, type: calls, how: step 1 field:refs }
+  - { from: "flow:FlowStep:forge-orders.place-order#2", to: forge-stock.post-stock-reservations, type: calls, how: step 2 field:to.entry }
+  - { from: flow:Flow:forge-orders.place-order, to: forge-orders-db.orders, type: calls, how: step 4 field:store.table }
+  # A change touches flows, features and systems.
+  - { from: change:Change:add-fraud-check, to: forge, type: touches, how: change.yaml systems }
+  - { from: change:Change:add-fraud-check, to: forge-orders.place-order, type: touches, how: placement flows }
+  - { from: change:Change:add-fraud-check, to: forge-stock.reserve-stock, type: touches, how: placement flows }
+  - { from: change:Change:add-fraud-check, to: cap-ordering, type: touches, how: placement features }
+  - { from: change:Change:bulk-orders, to: forge-orders.place-order, type: touches, how: placement flows }
+  # A need points to its item, and to the flow it is for.
+  - { from: "change:Need:add-fraud-check:vendor-onboarding:flow:forge-orders.place-order", to: vendor-onboarding, type: needs, how: needs.yaml item }
+  - { from: "change:Need:add-fraud-check:vendor-onboarding:flow:forge-orders.place-order", to: forge-orders.place-order, type: for, how: needs.yaml for }
+  # The brief names the vendor and its product.
+  - { from: change:ChangeDoc:add-fraud-check/brief.md, to: northwind-pay, type: names, how: mention name:catalog }
+  - { from: change:ChangeDoc:add-fraud-check/brief.md, to: fraud-screen, type: names, how: mention name:knowledge }
+
+# Links that must not be there: a guess is never a link.
+absent:
+  # "vendor" is no system's name: the firewall item names no vendor by name.
+  - { from: knowledge:ProcessDefinition:firewall-rule-request, type: names }
+  # The old snapshot isn't read.
+  - { from: "wiki:WikiSection:forge-wiki/service-desk-catalogue.md#Old firewall form" }

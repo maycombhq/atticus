@@ -525,6 +525,196 @@ export function sequenceView(records: CatalogRecord[], ids: string[]): SequenceV
   };
 }
 
+/** One target flow of a change as the merge gives it (packages/planner mergeDelta), the parts a picture needs. */
+export interface ChangeFlowIn {
+  flow: string;
+  name: string;
+  component: string;
+  change: "modify" | "new" | "remove";
+  steps: {
+    mark: "same" | "changed" | "added" | "removed";
+    kind: string;
+    to?: { component: string; entry: string; new?: boolean };
+    store?: { table: string; columns: string[]; new?: boolean; migration?: string };
+    /** A changed step that goes elsewhere: where it went today. */
+    was?: { to?: { component: string; entry: string } };
+  }[];
+}
+
+type StepMark = ChangeFlowIn["steps"][number]["mark"];
+
+/** The sign each mark carries in a change's picture: + new, ◇ modify, ✕ retire. */
+export const SIGN: Record<Legend, string> = { new: "+", modify: "◇", retire: "✕" };
+
+/** The stronger of two marks on one box: new over modify over none. */
+const stronger = (a: Legend | undefined, b: Legend | undefined): Legend | undefined =>
+  a === "new" || b === "new" ? "new" : a === "modify" || b === "modify" ? "modify" : (a ?? b);
+
+/** A line's mark from its steps': all added new, all removed retire, all the same none, else modify. */
+function lineLegend(marks: Set<StepMark>): Legend | undefined {
+  if (marks.size === 1) {
+    const [m] = [...marks];
+    if (m === "added") return "new";
+    if (m === "removed") return "retire";
+    if (m === "same") return undefined;
+  }
+  return "modify";
+}
+
+/**
+ * A change's picture (ADR 0108): every component, entry and table its target flows touch.
+ * A line is marked by the steps that draw it. A box is new only when the target flow says so (a
+ * new component, entry or table, which the architecture stage checked against the catalog) or
+ * it is a new flow's component the catalog hasn't; modify when its flows change, it gains an
+ * entry, or a migration alters its columns; else context. A part the catalog lacks is unknown,
+ * never new by that alone. A component is never marked retired: a removed flow says the flow
+ * goes, not the component.
+ */
+export function changeView(
+  records: CatalogRecord[],
+  change: { id: string; title: string; source?: string },
+  flows: ChangeFlowIn[],
+  /** Components known besides the catalog's: those today's specs name. */
+  known: Iterable<string> = [],
+): FlowView {
+  const c = new Catalog(records);
+  const inSpecs = new Set(known);
+  const isKnown = (id: string) => c.components.has(id) || c.isSystem(id) || inSpecs.has(id);
+  const legends = new Map<string, Legend | undefined>();
+  const mark = (id: string, l: Legend | undefined) => legends.set(id, stronger(legends.get(id), l));
+  const tables = new Set<string>();
+  const comps = new Set<string>();
+  const lines = new Map<
+    string,
+    { from: string; to: string; label: string; async: boolean; marks: Set<StepMark> }
+  >();
+  const line = (from: string, to: string, label: string, async: boolean, m: StepMark) => {
+    const key = `${from}->${to}:${label}`;
+    const l = lines.get(key) ?? { from, to, label, async, marks: new Set<StepMark>() };
+    l.marks.add(m);
+    lines.set(key, l);
+  };
+  for (const f of flows) {
+    comps.add(f.component);
+    const touched = f.change !== "modify" || f.steps.some((s) => s.mark !== "same");
+    mark(
+      f.component,
+      f.change === "new" && !isKnown(f.component) ? "new" : touched ? "modify" : undefined,
+    );
+    for (const s of f.steps) {
+      if (s.to) {
+        comps.add(s.to.component);
+        // `new` says the component or the entry doesn't exist yet; the catalog says which.
+        mark(
+          s.to.component,
+          s.to.new && s.mark !== "removed"
+            ? isKnown(s.to.component)
+              ? "modify"
+              : "new"
+            : undefined,
+        );
+        // A step sent elsewhere: today's line goes and the new one comes.
+        const moved = s.mark === "changed" && s.was?.to;
+        line(
+          f.component,
+          s.to.component,
+          s.to.entry,
+          s.kind === "publish",
+          moved ? "added" : s.mark,
+        );
+        if (moved) {
+          comps.add(moved.component);
+          line(f.component, moved.component, moved.entry, s.kind === "publish", "removed");
+        }
+      }
+      if (s.store) {
+        tables.add(s.store.table);
+        mark(
+          s.store.table,
+          s.store.new && s.mark !== "removed"
+            ? "new"
+            : s.store.migration && s.mark !== "removed"
+              ? "modify"
+              : undefined,
+        );
+        line(f.component, s.store.table, s.kind, false, s.mark);
+      }
+    }
+  }
+  const withMark = (id: string) => {
+    const l = legends.get(id);
+    return l ? { legend: l } : {};
+  };
+  // The mark in the words too, so the picture never says it by colour alone (WCAG 1.4.1).
+  const marked = (label: string, l: Legend | undefined) => (l ? `${SIGN[l]} ${label}` : label);
+  const storeOf = (t: string) =>
+    (c.byId.get(t) as Table | undefined)?.dataStore ?? t.split(".")[0]!;
+  const systems = [
+    ...new Set([...comps].map((id) => c.systemOf(id)).filter((s): s is string => !!s)),
+  ].sort(cmp);
+  const stores = [...new Set([...tables].map(storeOf))].sort(cmp);
+  const groups: ViewGroup[] = [
+    ...systems.map((s): ViewGroup => {
+      const rec = c.systems.get(s);
+      return {
+        id: s,
+        label: c.systemName(s),
+        kind: "system",
+        ...(rec?.boundary ? { boundary: rec.boundary } : {}),
+      };
+    }),
+    ...stores.map((s): ViewGroup => {
+      const store = c.stores.get(s);
+      return { id: s, label: store ? `${s} (${store.storeType})` : s, kind: "datastore" };
+    }),
+  ];
+  const nodes: ViewNode[] = [];
+  for (const id of comps) {
+    const sys = c.components.has(id) ? c.systemOf(id) : undefined;
+    const base =
+      c.components.has(id) || c.isSystem(id)
+        ? c.endNode(id, sys)
+        : { id, label: id, kind: "component" as const };
+    const { legend: _status, ...rest } = base;
+    nodes.push({ ...rest, label: marked(rest.label, legends.get(id)), ...withMark(id) });
+  }
+  for (const t of tables) {
+    const rec = c.byId.get(t) as Table | undefined;
+    nodes.push({
+      id: t,
+      label: marked(rec?.name ?? t.slice(storeOf(t).length + 1), legends.get(t)),
+      kind: "table",
+      group: storeOf(t),
+      ...withMark(t),
+    });
+  }
+  const order = new Map(groups.map((g, n) => [g.id, n]));
+  nodes.sort(
+    (a, b) =>
+      (a.group !== undefined ? order.get(a.group)! : groups.length) -
+        (b.group !== undefined ? order.get(b.group)! : groups.length) || cmp(a.id, b.id),
+  );
+  const edges: ViewEdge[] = [...lines.values()].map((l) => {
+    const legend = lineLegend(l.marks);
+    return {
+      id: `change.${l.from}.${l.to}.${slug(l.label)}`,
+      from: l.from,
+      to: l.to,
+      label: marked(l.label, legend),
+      async: l.async,
+      ...(legend ? { legend } : {}),
+    };
+  });
+  return {
+    type: "diagram",
+    title: `Change ${change.id}: ${change.title}`,
+    ...(change.source ? { source: change.source } : {}),
+    groups,
+    nodes,
+    edges: edges.sort(byEdge),
+  };
+}
+
 /** Build a named view; the CLI's entry point. */
 export function buildView(records: CatalogRecord[], name: ViewName, focus?: string): View {
   switch (name) {

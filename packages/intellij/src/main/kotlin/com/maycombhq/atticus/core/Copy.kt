@@ -49,6 +49,8 @@ object Copy {
     const val NO_QUESTIONS = "No question is waiting for an answer."
     const val PICK_OR_TYPE = "Pick one, or type it."
     const val OPEN_PROMPT = "Open the prompt"
+    const val CHANGE_DIAGRAM = "Atticus: Change Diagram"
+    const val CHANGE_DIAGRAM_ASK = "Which change? Its id, such as add-transfer-limit."
     const val MODEL_RUNS = "Model runs"
 
     fun promptWritten(path: String) =

@@ -75,3 +75,51 @@
 .nav .more[aria-expanded="true"] {
   color: var(--text);
 }
+
+/* ADR 0108: the Change diagram's legend, canvas and Mermaid. */
+.cd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 12px;
+}
+.cd-key {
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+}
+.cd-key.m-new {
+  border: 2px solid var(--green);
+}
+.cd-key.m-modify {
+  border: 2px solid var(--amber);
+}
+.cd-key.m-retire {
+  border: 1px dashed var(--muted);
+  text-decoration: line-through;
+}
+.cd-canvas {
+  margin: 0 0 12px;
+}
+.cd-problems {
+  color: var(--amber-text);
+  margin: 0 0 12px;
+}
+.cd-mermaid {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.cd-mermaid pre {
+  flex: 1;
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  background: var(--inset);
+  border: 1px solid var(--line-2);
+  font-size: 11.5px;
+}

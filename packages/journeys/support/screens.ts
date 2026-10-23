@@ -26,6 +26,7 @@ export const SCREENS = [
   "ux?change=add-transfer-limit",
   "arch-review?change=add-transfer-limit",
   "diagrams",
+  "change-diagram?change=add-transfer-limit",
   "architecture",
   "reconcile",
   "contracts",

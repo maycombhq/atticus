@@ -116,6 +116,10 @@
             "description": "A repo on the Architecture canvas, or one of its flows: /diagram [repo] [flow]"
           },
           {
+            "name": "changemap",
+            "description": "A change's picture: what it touches, marked + new, ◇ changed or ✕ retired: /changemap <change>"
+          },
+          {
             "name": "ask",
             "description": "Ask the catalog a plain question: /ask <question>"
           },
@@ -187,6 +191,11 @@
       {
         "command": "atticus.diagram",
         "title": "Open a repo on the Architecture canvas",
+        "category": "Atticus"
+      },
+      {
+        "command": "atticus.changeDiagram",
+        "title": "Open a change's diagram",
         "category": "Atticus"
       },
       {

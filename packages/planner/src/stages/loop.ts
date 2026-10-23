@@ -36,6 +36,7 @@ import {
 } from "@maycombhq/naysayer";
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
+import type { ContextOptions, ContextReport } from "../engine.js";
 import {
   criticFindingKind,
   criticRuleChecks,
@@ -121,6 +122,8 @@ export interface StageOptions {
   resume?: string;
   /** Draft again even when the stage is done. */
   force?: boolean;
+  /** The context engine (ADR 0107): select what the stage sends, or send the whole lists (engine: false). */
+  context?: ContextOptions;
 }
 
 export interface StageResult<A> {
@@ -142,6 +145,8 @@ export interface StageResult<A> {
   pr?: string;
   notes: string[];
   runs: RunSummary[];
+  /** What the stage sent as context: selected (and what was left out), or the whole lists (ADR 0107). */
+  context?: ContextReport;
 }
 
 const loopRel = (stage: Stage) => `stage/${stage}.yaml`;
@@ -166,6 +171,14 @@ async function writeLoop(dir: string, l: StageLoop): Promise<void> {
   await writeFileAtomic(
     join(dir, loopRel(l.stage)),
     `# The ${l.stage} stage's loop (ADR 0087): drafts, the findings each one had, and the questions it raised. Atticus writes this file.\n${toCanonicalYaml(StageLoop.parse(l), ["schemaVersion", "change", "stage", "iteration", "state", "updatedAt", "run"])}`,
+  );
+}
+
+/** The tokens a stage's pack may take: its agent's budget, as the loop builds the pack with. */
+export function stageBudget(ctx: ChangeContext, agent: string): number {
+  return (
+    ctx.orgPack.agents.find((a) => a.id === agent)?.tokenBudget ??
+    ctx.orgPack.runtime.budgets.defaultTokens
   );
 }
 
