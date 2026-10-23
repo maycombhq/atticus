@@ -54,6 +54,16 @@ class NextTest {
             NextAction.Ai(listOf("plan", "stories", "add-note-tags"), "/atticus-stories add-note-tags"),
             Next.actionFor(step("stories", "atticus plan stories add-note-tags")),
         )
+        // A change's needs: an AI step, never run here as a plain command.
+        assertEquals(
+            NextAction.Ai(listOf("change", "needs", "add-note-tags"), "/atticus-needs add-note-tags"),
+            Next.actionFor(step("needs", "atticus change needs add-note-tags", slash = "/atticus-needs add-note-tags")),
+        )
+        // A step atticus next gives a slash command for is an AI step, whatever the plugin knows.
+        assertEquals(
+            NextAction.Ai(listOf("frameworks", "draft", "anvil"), "/atticus-frameworks anvil"),
+            Next.actionFor(step("frameworks", "atticus frameworks draft anvil", slash = "/atticus-frameworks anvil")),
+        )
     }
 
     @Test

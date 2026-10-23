@@ -18,6 +18,8 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Fixed
 
+- The command catalogue (`atticus commands --json`) says what every command does: summaries no longer end in the options they list (those are read as options), a description on the line under its command is read, and the commands that had none have one. The editors show these words.
+- The IntelliJ plugin runs a change's needs and a wiki search in Copilot Chat (`/atticus-needs`, `/atticus-find`) and `knowledge ask` as a hand-off, instead of as plain commands; a next step `atticus next` gives a slash command for is always an AI step.
 - `atticus ui --embed vscode` stops when stdin closes, so the server the VS Code extension starts ends with its window, even when the window or VS Code is killed.
 
 ### Knowledge and needs in the app

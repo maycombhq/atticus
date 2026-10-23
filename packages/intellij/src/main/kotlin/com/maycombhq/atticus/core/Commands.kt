@@ -46,10 +46,12 @@ object Commands {
             "change architecture" to "/atticus-architecture",
             "plan stories" to "/atticus-stories",
             "change draft" to "/atticus-plan",
+            "change needs" to "/atticus-needs",
+            "knowledge find" to "/atticus-find",
         )
 
-    /** The AI steps, by their first two words. */
-    val AI_STEPS: Set<String> = SLASH.keys
+    /** The AI steps, by their first two words: those with a slash command, and knowledge ask (a hand-off only). */
+    val AI_STEPS: Set<String> = SLASH.keys + "knowledge ask"
 
     private val HOW =
         mapOf(

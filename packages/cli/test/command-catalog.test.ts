@@ -140,4 +140,42 @@ describe("the command catalogue (ADR 0096)", () => {
     expect(j.commands.map((c) => c.id)).toContain("change new");
     expect(j.areas.length).toBe(AREAS.length);
   });
+
+  it("says what every command does, in words: none is left blank", () => {
+    const blank = all.filter((c) => !c.summary).map((c) => c.usage);
+    expect(blank).toEqual([]);
+  });
+
+  it("keeps a summary to its words: the options it lists are read as options, not shown in it", () => {
+    expect(byId.get("scan survey")!.summary).toBe(
+      "Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code",
+    );
+    expect(byId.get("scan survey")!.flags.map((f) => f.name)).toEqual(
+      expect.arrayContaining(["--attempts", "--force"]),
+    );
+    const shown = all.filter((c) => /\[--/.test(c.summary ?? "")).map((c) => c.id);
+    expect(shown).toEqual([]);
+  });
+
+  it("reads a description written on the line under its command", () => {
+    const [c] = parseHelp(
+      [
+        "  atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>",
+        "                                       Check a catalog, org pack, dialect, plugin or executor against the spec",
+        "          [--json]                     Print the result as JSON",
+      ].join("\n"),
+    );
+    expect(c).toMatchObject({
+      usage: "atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>",
+      summary: "Check a catalog, org pack, dialect, plugin or executor against the spec",
+    });
+    expect(c!.flags.map((f) => f.name)).toEqual(["--kind", "--json"]);
+  });
+
+  it("keeps a usage to the command: the architecture stage's words are its summary", () => {
+    expect(byId.get("change architecture")).toMatchObject({
+      usage: "atticus change architecture <change>",
+      summary: expect.stringMatching(/^The architecture stage: the target flows/),
+    });
+  });
 });

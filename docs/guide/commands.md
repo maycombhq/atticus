@@ -37,12 +37,12 @@ Usage:
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
   atticus guide <system> [--json]      A system's guide, generated from the catalog: parts, calls, data, runtime, decisions
-  atticus site build <dir> [--title t] The read-only catalog site as static files (only systems open to everyone)
+  atticus site build <dir> [--title t]  The read-only catalog site as static files (only systems open to everyone)
           [--depth n] [--json]
   atticus index rebuild                Rebuild the local index from the catalog files
   atticus reconcile [diagram...]       Compare draw.io diagrams with the catalog (default: inputs/diagrams)
           [--json]
-  atticus sources add <type> <location> Print the sources.yaml entry for a wiki (git, markdown-folder, ado-wiki, ...), or write it [--save]
+  atticus sources add <type> <location>  Print the sources.yaml entry for a wiki (git, markdown-folder, ado-wiki, ...), or write it [--save]
           [--id <id>] [--path <folder>] [--ref <branch>] [--submodule] [--kind <k,k>] [--framework <f,f>] [--owner <who>] [--save]
   atticus sources sync [--source s] [--json]  Read the wikis and copy each to a dated snapshot: pages, stale pages, conflicts with code, document-only facts
   atticus sources tag <source> [--kind k,k] [--framework f,f] [--owner o]  Tag a knowledge source in sources.yaml (kinds, frameworks, owner)
@@ -99,7 +99,7 @@ Usage:
   atticus change new "<title>"         Start a change from a template: --type <type>
   atticus domain profile <system>      A system as a domain profile, filled from the catalog [--out file]
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force]
-  atticus change architecture <change> The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run]
+  atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
@@ -137,7 +137,7 @@ Usage:
   atticus needs [--change id] [--all] [--json]  What changes need from the organisation, open ones first, with lead times and who handles each
   atticus needs done <change> <item>   Record a need as done, e.g. with the CTASK number as its note [--for <target>] [--note <text>]
   atticus needs skip <change> <item> --note <why>  Record a need as not needed, and why [--for <target>]
-  atticus needs reopen <change> <item> Open a need again [--for <target>]
+  atticus needs reopen <change> <item>  Open a need again [--for <target>]
                                        (with target flows: the stories stage, a task per changed step with its prompt, requests from knowledge)
   atticus plan snow <change>           Draft service-desk requests the change needs [--force]
   atticus plan bar <change>            Measure the story bar [--eval file]
@@ -145,7 +145,7 @@ Usage:
   atticus ado sync <change>            Create or update work items (a dry run until you add --approve) [--epic id]
   atticus templates draft              Draft request and work-item templates from wikis, uploads and past tickets [--no-ai]
   atticus todo [--change id] [--all]   Manual steps waiting for a person
-  atticus todo show <step> [--export text|csv|import]
+  atticus todo show <step> [--export text|csv|import]  A manual step: what to do, where, and what it needs
   atticus todo done <step>             Record a manual step's result [--result k=v]... [--skip --note why]
   atticus todo run <step> --with <executor>  Run a step with a team's own tool [--approve --inputs sha] [--fill-only]
   atticus executors check              Ping configured executors and show what each covers
@@ -171,15 +171,16 @@ Usage:
   atticus ci snippet <github|azure|gitlab|jenkins> [--write dir]  Pipeline template for the drift check
   atticus ci archive-gate <change> [--drift file]...  Whether a change may be archived
   atticus glossary list|scan [--json]  Business terms from wikis, code and people
-  atticus glossary define <term> "<definition>" [--owner team]
-  atticus glossary link <term> <record-id|schema#field>
-  atticus glossary alias <term> <name>...
+  atticus glossary define <term> "<definition>" [--owner team]  Define a business term, as you
+  atticus glossary link <term> <record-id|schema#field>  Link a term to a catalog record or field
+  atticus glossary alias <term> <name>...  Another name people use for a term
   atticus initiative new "<title>" --journey <j>  Start an initiative [--id] [--release YYYY-MM-DD] [--epic]
   atticus initiative plan <id> --target <system>  Plan its changes and commitments [--release d] [--system s]... [--dry-run]
   atticus initiative status <id>       Critical path, at-risk and slipped commitments
   atticus initiative request <id> <party>  Send a team a system card and track the reply [--system s]...
-  atticus initiative commit <commitment> <open|at-risk|done|slipped>
+  atticus initiative commit <commitment> <open|at-risk|done|slipped>  Record a commitment's status
   atticus learn [list] | learn start <role|lesson> | learn check [--answer a] [--lesson l] [--step s]
+                                       Lessons by role in a practice sandbox: list them, start one, check a step
   atticus sandbox create <dir>         A throwaway practice metarepo
   atticus commands [--json]            Every command as data: its arguments, options, area and how it runs (for an editor)
   atticus explain <id|command>         Explain a record, finding, change or command in plain words
@@ -189,7 +190,7 @@ Usage:
   atticus bench survey [--repo id] [--batch n] [--mode m]  Your assistant drafts each bench repo's scan settings; kept for later runs
   atticus bench verify [--repo id] [--batch n] [--mode m]  Your assistant verifies each bench repo's scan; kept for bench run to score
   atticus bench run [--repo id] [--batch n] [--estate e] [--json] [--specs]  Scan each bench repo and score it against its reference; --specs also scores drafted specs against bench/flows and scans each estate's repos together
-  atticus defences scan [path] [--all] Look for instructions hidden in documents and prompts
+  atticus defences scan [path] [--all]  Look for instructions hidden in documents and prompts
   atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>
                                        Check a catalog, org pack, dialect, plugin or executor against the spec
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id

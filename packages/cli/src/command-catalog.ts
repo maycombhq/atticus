@@ -236,13 +236,16 @@ function parseFlags(text: string, summaries: Map<string, string>): CommandFlag[]
 /** The commands of a help text, each with the option lines written under it. */
 export function parseHelp(help: string): Omit<CommandInfo, "area" | "runs">[] {
   const out: Omit<CommandInfo, "area" | "runs">[] = [];
-  let current: { line: string; more: string[] } | undefined;
-  const blocks: { line: string; more: string[] }[] = [];
+  let current: { line: string; more: string[]; below?: string } | undefined;
+  const blocks: { line: string; more: string[]; below?: string }[] = [];
   for (const l of help.split("\n")) {
     if (/^ {2}atticus /.test(l)) {
       current = { line: l.trim(), more: [] };
       blocks.push(current);
     } else if (current && /^ {6,}\[?--|^ {6,}\(/.test(l)) current.more.push(l.trim());
+    // A command too long for the column has its description on the line under it.
+    else if (current && !current.more.length && current.below === undefined && /^ {6,}\S/.test(l))
+      current.below = l.trim();
     else if (!/^ {6,}/.test(l)) current = undefined;
   }
   for (const b of blocks) {
@@ -250,7 +253,9 @@ export function parseHelp(help: string): Omit<CommandInfo, "area" | "runs">[] {
     // The usage and the summary are split by a run of spaces.
     const cut = b.line.search(/ {2,}/);
     const usage = cut > 0 ? b.line.slice(0, cut) : b.line;
-    const summary = cut > 0 ? b.line.slice(cut).trim() : "";
+    const written = cut > 0 ? b.line.slice(cut).trim() : (b.below ?? "");
+    // The options a summary lists at its end are read as options; the summary keeps its words.
+    const summary = written.replace(/(\s*\[[^\]]*--[^\]]*\](\.\.\.)?)+\s*$/, "");
     const tokens = usage.split(" ").slice(1);
     const words: string[] = [];
     for (const t of tokens) {
@@ -267,7 +272,7 @@ export function parseHelp(help: string): Omit<CommandInfo, "area" | "runs">[] {
     }
     const optionText = [
       usage,
-      summary,
+      written,
       // Each option line's option part only: its description may hold brackets of its own.
       ...b.more.map((m) => {
         const c = m.search(/ {2,}/);

@@ -121,7 +121,15 @@ class CommandsTest {
         assertEquals("/atticus-architecture add-note-tags", Commands.slashFor(listOf("change", "architecture", "add-note-tags")))
         assertEquals("/atticus-stories add-note-tags", Commands.slashFor(listOf("plan", "stories", "add-note-tags")))
         assertEquals("/atticus-plan add-note-tags", Commands.slashFor(listOf("change", "draft", "add-note-tags")))
+        assertEquals("/atticus-needs add-note-tags", Commands.slashFor(listOf("change", "needs", "add-note-tags")))
+        assertEquals("/atticus-find Kafka topic", Commands.slashFor(listOf("knowledge", "find", "Kafka topic")))
         assertNull(Commands.slashFor(listOf("scan", "forge-web")))
+    }
+
+    @Test
+    fun `every AI step the command line has is one, with or without a slash command`() {
+        for (s in listOf("change needs", "knowledge find", "knowledge ask", "knowledge scan", "change draft")) assertTrue(s in Commands.AI_STEPS, s)
+        assertNull(Commands.slashFor(listOf("knowledge", "ask", "Who owns the ledger?")))
     }
 
     @Test
