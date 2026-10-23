@@ -18,7 +18,14 @@ export interface ProviderDeps {
 }
 
 /** Settings every provider reads. */
-export const COMMON_SETTINGS = ["model", "timeoutMs", "maxRetries", "maxOutput", "caFile"] as const;
+export const COMMON_SETTINGS = [
+  "model",
+  "timeoutMs",
+  "maxRetries",
+  "maxOutput",
+  "maxInput",
+  "caFile",
+] as const;
 
 export type CompleteInput = Parameters<ModelProvider["complete"]>[0];
 
@@ -27,6 +34,11 @@ export abstract class BaseProvider implements ModelProvider {
   abstract readonly model: string;
   protected readonly timeoutMs: number;
   protected readonly maxOutputTokens: number;
+  /**
+   * The tokens a prompt may take (adapters.model.settings.maxInput), when the settings say:
+   * the app's server gives it to every step it starts, which fits its prompt to it (ADR 0112).
+   */
+  readonly maxInputTokens?: number;
   protected readonly retry: RetryPolicy;
   protected readonly clock: Clock;
   // Private (#) so inspecting or logging a provider never shows the environment it reads.
@@ -42,6 +54,8 @@ export abstract class BaseProvider implements ModelProvider {
     this.#env = deps.env ?? process.env;
     this.timeoutMs = s.int("timeoutMs", { min: 1000, max: 3_600_000, fallback: 300_000 });
     this.maxOutputTokens = s.int("maxOutput", { min: 1, max: 1_000_000, fallback: 16_000 });
+    const maxInput = s.int("maxInput", { min: 1000, max: 10_000_000, fallback: 0 });
+    if (maxInput) this.maxInputTokens = maxInput;
     this.retry = {
       ...DEFAULT_RETRY,
       ...deps.retry,

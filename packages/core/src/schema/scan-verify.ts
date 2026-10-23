@@ -65,12 +65,27 @@ export const VerifyWrong = z.strictObject({
 });
 export type VerifyWrong = z.infer<typeof VerifyWrong>;
 
+/**
+ * A record the assistant read in the code and agrees with, citing the line that shows it
+ * (ADR 0112): in the file the record was read from, with a short quote found on that line.
+ */
+export const VerifyConfirmed = z.strictObject({
+  record: RecordId,
+  at: At,
+  /** Text exactly as written on that line, naming the record's path, method or table. */
+  says: z.string().min(1),
+});
+export type VerifyConfirmed = z.infer<typeof VerifyConfirmed>;
+
 /** The assistant's answer, as it writes it. */
 export const VerifyAnswer = z.strictObject({
   missed: z.array(VerifyMissed).default([]),
   wrong: z.array(VerifyWrong).default([]),
-  /** Records the assistant read in the code and agrees with. */
-  confirmed: z.array(RecordId).default([]),
+  /**
+   * Records the assistant read in the code and agrees with, each citing its line. A bare id
+   * (the form before ADR 0112) is read, never recorded as verified, and handed back.
+   */
+  confirmed: z.array(z.union([RecordId, VerifyConfirmed])).default([]),
 });
 export type VerifyAnswer = z.infer<typeof VerifyAnswer>;
 

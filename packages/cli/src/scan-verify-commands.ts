@@ -249,8 +249,13 @@ export async function scanVerify(
     at: now.toISOString(),
   });
   const byId = new Map(records.map((x) => [x.id, x]));
+  // Only confirmations that cite the line showing them passed the checks (ADR 0112); only
+  // those are pinned as verified.
   const verified = await Promise.all(
-    [...a.confirmed].sort().map((id) => pin(handle, byId.get(id)!)),
+    a.confirmed
+      .map((c) => c.record)
+      .sort()
+      .map((id) => pin(handle, byId.get(id)!)),
   );
   const proposal: ScanVerifyProposal = {
     schemaVersion: SCAN_VERIFY_SCHEMA_VERSION,

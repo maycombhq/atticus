@@ -2,6 +2,10 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## Unreleased
+
+- **Every step's prompt fits the model** (ADR 0112): the extension tells every AI step its Copilot model's limit, not only the knowledge scan, so each builds a prompt that fits (8,658 of GPT-4o mini's 12,078 tokens, by the command line's count) instead of ending "the prompt is too long". A step that can't fit even its smallest useful prompt says so before anything is sent, with the numbers and what to do.
+
 ## 0.3.1
 
 Nothing a person clicks leaves them unsure.

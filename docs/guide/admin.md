@@ -76,15 +76,16 @@ adapters:
 
 Settings every provider reads:
 
-| Setting      | What it does                                                                                                     |
-| ------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `model`      | The model id; `models.allowed` is checked against it                                                             |
-| `baseUrl`    | Where to call. Must be `https://` (plain `http://` only for `localhost` or `127.0.0.1`)                          |
-| `keyEnv`     | The environment variable holding the key (not Bedrock)                                                           |
-| `timeoutMs`  | How long one request may take, default 300000 (5 minutes)                                                        |
-| `maxRetries` | Retries after 429, 5xx or a dropped connection, default 3, at most 6. `Retry-After` is honoured up to 60 seconds |
-| `maxOutput`  | The most output tokens to ask for, default 16000. Lower it for a model with a smaller limit                      |
-| `caFile`     | A PEM file of extra certificate authorities for model calls, added to Node's own list and `NODE_EXTRA_CA_CERTS`  |
+| Setting      | What it does                                                                                                                                                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`      | The model id; `models.allowed` is checked against it                                                                                                            |
+| `baseUrl`    | Where to call. Must be `https://` (plain `http://` only for `localhost` or `127.0.0.1`)                                                                         |
+| `keyEnv`     | The environment variable holding the key (not Bedrock)                                                                                                          |
+| `timeoutMs`  | How long one request may take, default 300000 (5 minutes)                                                                                                       |
+| `maxRetries` | Retries after 429, 5xx or a dropped connection, default 3, at most 6. `Retry-After` is honoured up to 60 seconds                                                |
+| `maxOutput`  | The most output tokens to ask for, default 16000. Lower it for a model with a smaller limit                                                                     |
+| `maxInput`   | The model's input limit in tokens (1000 or more), optional. The app's server gives it to every step it starts as `--max-tokens`, so each prompt fits (ADR 0112) |
+| `caFile`     | A PEM file of extra certificate authorities for model calls, added to Node's own list and `NODE_EXTRA_CA_CERTS`                                                 |
 
 **Anthropic**, directly or through a gateway that speaks the Messages API:
 

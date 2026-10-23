@@ -93,12 +93,6 @@ const failed = (message: string, rounds: number): StepEnd => ({
   questions: [],
 });
 
-/**
- * The room for pages in one prompt of the model (ADR 0106): its limit, less what the scan's
- * instructions and the items read before take. Copilot's GPT-4o mini takes 12,078 tokens.
- */
-export const batchTokensFor = (maxInputTokens: number) => Math.max(500, maxInputTokens - 4000);
-
 /** How many pages a batched knowledge scan says it left for the next batch. */
 export function pagesLeft(messages: string[]): number {
   for (const m of messages) {
@@ -110,21 +104,32 @@ export function pagesLeft(messages: string[]): number {
 
 const MAX_BATCHES = 50;
 
+/**
+ * The step's arguments with the model's limit (ADR 0112): `--max-tokens` tells the step the
+ * whole prompt must fit the model, so it builds its prompt to fit, or says before handing off
+ * that it can't. A limit the arguments already give stays.
+ */
+const withLimit = (args: string[], model: StepModel | undefined) =>
+  !model || args.some((a) => a === "--max-tokens" || a.startsWith("--max-tokens="))
+    ? args
+    : [...args, "--max-tokens", String(model.maxInputTokens)];
+
 /** Run one AI step, `args` as `atticus` takes them (e.g. ["scan", "survey", "forge-notes"]). */
-export async function runStep(args: string[], d: RunnerDeps, token: Cancel): Promise<StepEnd> {
-  // A knowledge scan reads its pages in batches that fit one prompt of the model.
+export async function runStep(args: string[], given: RunnerDeps, token: Cancel): Promise<StepEnd> {
+  const model = await given.model();
+  const d: RunnerDeps = { ...given, model: async () => model };
+  const argv = withLimit(args, model);
+  // A knowledge scan reads its pages in batches that fit one prompt of the model: it sizes
+  // each batch from the limit (ADR 0106, 0112) and says how many pages are left.
   const batchable =
     args[0] === "knowledge" &&
     args[1] === "scan" &&
     !args.includes("--batch-tokens") &&
     !args.includes("--resume");
-  if (!batchable) return runOnce(args, d, token);
-  const model = await d.model();
-  if (!model) return runOnce(args, d, token);
-  const room = batchTokensFor(model.maxInputTokens);
+  if (!batchable || !model) return runOnce(argv, d, token);
   const say = d.progress ?? (() => undefined);
   for (let batch = 1; ; batch++) {
-    const end = await runOnce([...args, "--batch-tokens", String(room)], d, token);
+    const end = await runOnce(argv, d, token);
     if (end.state !== "done") return end;
     const left = pagesLeft(end.messages);
     if (!left || batch >= MAX_BATCHES) {

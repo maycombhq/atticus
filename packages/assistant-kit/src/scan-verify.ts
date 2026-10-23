@@ -12,12 +12,14 @@ import {
   type OrgPack,
   type Question,
   type ScanSettings,
+  type VerifyConfirmed,
   type VerifyFactKind,
   type VerifyFix,
   type VerifyMissed,
 } from "@maycombhq/core";
 import { citedLine } from "@maycombhq/scanner";
 import type { RepoHandle } from "@maycombhq/sdk";
+import { citationsOf, codeExcerpts, EXCERPT_WINDOW, excerptSources } from "./excerpts.js";
 import { dialectDrafterAgent } from "./onboard.js";
 import { askedBefore, checkSurvey, folderSource, unfence } from "./scan-survey.js";
 
@@ -35,7 +37,7 @@ const INSTRUCTIONS = (
   repo: string,
 ) => `You are checking what Atticus's scan recorded for the repo ${repo} against the code (Atticus ADR 0082).
 
-Below are the records the last scan made, grouped by kind, each with its id and the file and line it was read from; the repo's folders; and the repo's scan settings. Read the repo's code: open every file you need. Then list:
+Below are the records the last scan made, grouped by kind, each with its id and the file and line it was read from; the repo's folders; the repo's scan settings; and the code around each record's line, numbered as in the file. Read that code (and any other file you can open). Then list:
 
 1. What the scan MISSED: an entry point, a call to another system, a table, or a deployment that is in the code but not in the records.
 2. What the scan has WRONG: a record the code doesn't support, or records with the wrong path, method, table or target.
@@ -79,10 +81,14 @@ wrong:
           - { label: <a few words>, means: <what picking it means>, changes: <what it would change in the scan> }
         evidence: ["<file>:<line>"]
         scope: repo          # or repo-type, with repoType: <the type's id>
-confirmed: [<record id>, <record id>]
+confirmed:
+  - record: <the record's id, from the lists below>
+    at: "<file the record was read from>:<the line that shows it>"
+    says: <text exactly as written on that line, naming its path, method or table>
 
 Rules:
 - Only facts you can see in the code. Every item cites path:line, and Atticus checks that the line exists and says what you quote, that a missed entry point, call or table is named on its line, and that a wrong or confirmed record is in the lists below. Don't guess.
+- Confirm only a record whose line you read in the code below: cite that line in the file the record was read from, within ${EXCERPT_WINDOW} lines of the record's line, quoting at least 8 characters of it that name the record's path, method or table. A confirmation without such a line isn't kept.
 - A missed fact the scan has already isn't missed. A record can't be both wrong and confirmed.
 - Settings entries must pass the scan settings' own checks (the cited line says the value, the globs match files). Leave out of the fix entries the repo's settings below already hold.
 - Leave a list empty ([]) if there is nothing to put in it.
@@ -96,10 +102,13 @@ export interface VerifyAttempt {
   problems: string[];
 }
 
+/** The items of an answer that passed every check: each confirmation with the line it cites. */
+export type CheckedVerify = Omit<VerifyAnswer, "confirmed"> & { confirmed: VerifyConfirmed[] };
+
 export interface VerifyResult {
   status: "checked" | "failed" | "waiting";
   /** The items that passed every check. */
-  answer?: VerifyAnswer;
+  answer?: CheckedVerify;
   /** What the last attempt still got wrong: those items were dropped. */
   refused: string[];
   attempts: VerifyAttempt[];
@@ -254,7 +263,7 @@ export async function checkVerify(
   repo: RepoHandle,
   repoId: string,
   records: CatalogRecord[],
-): Promise<{ problems: string[]; answer?: VerifyAnswer }> {
+): Promise<{ problems: string[]; answer?: CheckedVerify }> {
   let raw: unknown;
   try {
     raw = parse(unfence(output));
@@ -268,7 +277,7 @@ export async function checkVerify(
     };
   const byId = new Map(records.map((x) => [x.id, x]));
   const problems: string[] = [];
-  const kept: VerifyAnswer = { missed: [], wrong: [], confirmed: [] };
+  const kept: CheckedVerify = { missed: [], wrong: [], confirmed: [] };
   for (const [i, m] of r.data.missed.entries()) {
     const label = `missed.${i}`;
     const c = await checkCitation(repo, m.at, m.says, label);
@@ -291,7 +300,7 @@ export async function checkVerify(
     problems.push(...own);
     if (own.length === 0) kept.missed.push(m);
   }
-  const confirmed = new Set(r.data.confirmed);
+  const confirmed = new Set(r.data.confirmed.map((c) => (typeof c === "string" ? c : c.record)));
   for (const [i, w] of r.data.wrong.entries()) {
     const label = `wrong.${i}`;
     const own: string[] = [];
@@ -306,13 +315,72 @@ export async function checkVerify(
     problems.push(...own);
     if (own.length === 0) kept.wrong.push(w);
   }
-  for (const [i, id] of r.data.confirmed.entries()) {
-    if (!byId.has(id))
-      problems.push(`confirmed.${i}: there is no record ${id} in the scan of ${repoId}`);
-    else if (!r.data.wrong.some((w) => w.record === id) && !kept.confirmed.includes(id))
-      kept.confirmed.push(id);
+  for (const [i, c] of r.data.confirmed.entries()) {
+    const label = `confirmed.${i}`;
+    const id = typeof c === "string" ? c : c.record;
+    const rec = byId.get(id);
+    if (!rec) {
+      problems.push(`${label}: there is no record ${id} in the scan of ${repoId}`);
+      continue;
+    }
+    if (r.data.wrong.some((w) => w.record === id)) continue;
+    if (typeof c === "string") {
+      problems.push(
+        `${label}: ${id} cites no line; give the line that shows it (record, at and says), or leave it out`,
+      );
+      continue;
+    }
+    const own = await checkConfirmed(c, rec, repo, label);
+    problems.push(...own);
+    if (own.length === 0 && !kept.confirmed.some((x) => x.record === id)) kept.confirmed.push(c);
   }
   return { problems, answer: kept };
+}
+
+/** The least a confirmation quotes of its line: a short common token shows nothing. */
+const MIN_SAYS = 8;
+
+/**
+ * A confirmation's own checks (ADR 0112): its line is in the file the record was read from,
+ * near the record's line (inside the excerpt the prompt carried), says what it quotes, and the
+ * quote is long enough and names the record's path segment, method or table.
+ */
+async function checkConfirmed(
+  c: VerifyConfirmed,
+  rec: CatalogRecord,
+  repo: RepoHandle,
+  label: string,
+): Promise<string[]> {
+  const cut = c.at.lastIndexOf(":");
+  const path = c.at.slice(0, cut);
+  const line = Number(c.at.slice(cut + 1));
+  const ev = rec.evidence.filter((e) => e.path);
+  const files = [...new Set(ev.map((e) => e.path!))];
+  if (files.length && !files.includes(path))
+    return [`${label}: ${rec.id} was read from ${files.join(" or ")}, not ${path}`];
+  const lines = ev.filter((e) => e.path === path && e.line).map((e) => e.line!);
+  if (lines.length && !lines.some((l) => Math.abs(l - line) <= EXCERPT_WINDOW))
+    return [
+      `${label}: ${c.at} is more than ${EXCERPT_WINDOW} lines from ${rec.id}'s line (${lines.join(", ")})`,
+    ];
+  const cited = await checkCitation(repo, c.at, c.says, label);
+  if (cited.problem) return [cited.problem];
+  const says = c.says.trim();
+  if (says.length < MIN_SAYS)
+    return [
+      `${label}: "${says}" is too short to show ${rec.id}; quote at least ${MIN_SAYS} characters of the line`,
+    ];
+  const f = recordFact(rec);
+  if (f.kind === "deployment" || f.kind === "other") return [];
+  const seg = f.kind === "table" ? f.name.split(".").at(-1) : segmentOf(f.name);
+  const low = says.toLowerCase();
+  const named =
+    (seg !== undefined && low.includes(seg.toLowerCase())) ||
+    (f.kind !== "table" && !!f.method && low.includes(f.method.toLowerCase())) ||
+    (seg === undefined && !f.method);
+  if (named) return [];
+  const what = [seg, f.kind !== "table" ? f.method : undefined].filter(Boolean).join(" or ");
+  return [`${label}: "${says}" doesn't name ${what}`];
 }
 
 /** Verify a repo's last scan with the assistant, checking each answer and handing back what failed. */
@@ -331,6 +399,8 @@ export async function verifyScan(
     resume?: string;
     /** This step's questions on file (ADR 0078): answers are followed, none asked again. */
     questions?: Question[];
+    /** The model's limit (ADR 0112): the whole prompt fits it. Default: the step's (--max-tokens). */
+    maxTokens?: number;
   },
 ): Promise<VerifyResult> {
   const agent = dialectDrafterAgent(o.orgPack);
@@ -360,17 +430,22 @@ export async function verifyScan(
     classification: "internal",
     priority: 45,
   };
+  // ADR 0112: the code around each record's line, most cited first, so a one-shot model reads
+  // what it confirms or calls wrong; below the record lists, which the step can't do without.
+  const excerpts = await codeExcerpts(repo, citationsOf(o.records, o.repoId));
+  const records = recordSources(o.records);
   const sources = [
     settings,
     ...askedBefore(o.questions ?? []),
     await folderSource(repo),
-    ...recordSources(o.records),
+    ...records,
+    ...excerptSources(excerpts, { id: "5-code", origin: o.repoId, priority: 25 }),
   ];
   const change = `verify-${o.repoId}`;
   const attempts: VerifyAttempt[] = [];
   const max = o.maxAttempts ?? 3;
   let feedback: SourceInput[] = [];
-  let last: { answer: VerifyAnswer; problems: string[]; runId: string } | undefined;
+  let last: { answer: CheckedVerify; problems: string[]; runId: string } | undefined;
   // A resumed hand-off carries on the attempts it was handed back from; an answer word for
   // word the one that failed is checked once more and not asked for again.
   const resumed = o.resume ? await o.runtime.result(o.resume) : undefined;
@@ -388,6 +463,9 @@ export async function verifyScan(
         levels,
         maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
         now,
+        required: records.map((s) => s.id),
+        step: `scan verify ${o.repoId}`,
+        ...(o.maxTokens ? { maxTokens: o.maxTokens } : {}),
       });
       const prepared = await o.runtime.prepare({
         change,

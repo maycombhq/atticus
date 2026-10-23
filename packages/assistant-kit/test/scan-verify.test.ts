@@ -102,9 +102,26 @@ const answer = (i: ReturnType<typeof ids>, o: { fabricate?: boolean } = {}) =>
           "    fix: { reader: nothing }",
         ]
       : []),
-    `confirmed: [${i.add}, ${i.table}${o.fabricate ? ", table-not-there" : ""}]`,
+    // ADR 0112: each confirmation cites the line that shows it.
+    "confirmed:",
+    `  - record: ${i.add}`,
+    '    at: "src/main/java/forge/tasks/TaskController.java:19"',
+    '    says: "@PostMapping"',
+    `  - record: ${i.table}`,
+    '    at: "src/main/resources/db/migration/V1__create_task.sql:1"',
+    '    says: "CREATE TABLE task ("',
+    ...(o.fabricate
+      ? [
+          "  - record: table-not-there",
+          '    at: "src/main/resources/db/migration/V1__create_task.sql:1"',
+          '    says: "CREATE TABLE task ("',
+        ]
+      : []),
     "```",
   ].join("\n");
+
+const confirmedIds = (r: { answer?: { confirmed: { record: string }[] } }) =>
+  r.answer!.confirmed.map((c) => c.record);
 
 describe("atticus scan verify (ADR 0082)", () => {
   it("hands the assistant the scan's records by kind with file:line, the folders and the settings", async () => {
@@ -145,7 +162,7 @@ describe("atticus scan verify (ADR 0082)", () => {
     // Each item kept, with its fix.
     expect(r.answer!.missed.map((m) => m.name)).toEqual(["/tasks-api/tasks/archive"]);
     expect(r.answer!.wrong.map((w) => w.record)).toEqual([i.list, i.sample]);
-    expect(r.answer!.confirmed).toEqual([i.add, i.table]);
+    expect(confirmedIds(r)).toEqual([i.add, i.table]);
   });
 
   it("refuses a fabricated citation, a record that isn't in the catalog, and hands them back", async () => {
@@ -188,7 +205,7 @@ describe("atticus scan verify (ADR 0082)", () => {
     expect(r.refused).toHaveLength(4);
     expect(r.answer!.missed.map((m) => m.name)).toEqual(["/tasks-api/tasks/archive"]);
     expect(r.answer!.wrong.map((w) => w.record)).toEqual([i.list, i.sample]);
-    expect(r.answer!.confirmed).toEqual([i.add, i.table]);
+    expect(confirmedIds(r)).toEqual([i.add, i.table]);
   });
 
   it("checks a settings fix with the scan settings' own checks, and a question's evidence", async () => {
@@ -225,6 +242,136 @@ describe("atticus scan verify (ADR 0082)", () => {
     ]);
     expect((await checkVerify("not: [yaml", repo(), "forge-tasks", rs)).problems[0]).toMatch(
       /isn't YAML/,
+    );
+  });
+
+  it("sends the code around each record's line, numbered, so the model reads it (ADR 0112)", async () => {
+    const rs = await records();
+    const i = ids(rs);
+    const prompts: string[] = [];
+    const runtime = new MockRuntime(
+      (req: AiRequest) => {
+        prompts.push(req.pack.prompt);
+        return answer(i);
+      },
+      { now: () => NOW },
+    );
+    await verifyScan(repo(), { repoId: "forge-tasks", runtime, records: rs, now: NOW });
+    const p = prompts[0]!;
+    expect(p).toMatch(
+      /src\/main\/java\/forge\/tasks\/TaskController\.java lines 1-25 \(cited at [\d, ]+; numbered as in the file\):/,
+    );
+    expect(p).toContain("19:   @PostMapping");
+    expect(p).toContain("1: CREATE TABLE task (");
+    expect(p).not.toContain("open every file you need");
+    expect(p).toContain("confirmed:\n  - record: <the record's id");
+  });
+
+  it("keeps a confirmation only when it cites the line that shows it (ADR 0112)", async () => {
+    const rs = await records();
+    const i = ids(rs);
+    const doc = (confirmed: string[]) => ["confirmed:", ...confirmed].join("\n");
+    const c = await checkVerify(
+      doc([
+        // A bare id, the form before ADR 0112: no line, so not verified.
+        `  - ${i.list}`,
+        // A line in another file than the record was read from.
+        `  - { record: ${i.add}, at: "pom.xml:1", says: "<project>" }`,
+        // Not on the line.
+        `  - { record: ${i.add}, at: "src/main/java/forge/tasks/TaskController.java:19", says: "@DeleteMapping" }`,
+        // Too short to show anything.
+        `  - { record: ${i.add}, at: "src/main/java/forge/tasks/TaskController.java:19", says: "Post" }`,
+        // On the line, but naming neither the table nor anything of it.
+        `  - { record: ${i.table}, at: "src/main/resources/db/migration/V1__create_task.sql:3", says: "VARCHAR(200) NOT NULL" }`,
+        // Right.
+        `  - { record: ${i.table}, at: "src/main/resources/db/migration/V1__create_task.sql:1", says: "CREATE TABLE task" }`,
+      ]),
+      repo(),
+      "forge-tasks",
+      rs,
+    );
+    expect(c.problems).toEqual([
+      `confirmed.0: ${i.list} cites no line; give the line that shows it (record, at and says), or leave it out`,
+      `confirmed.1: ${i.add} was read from src/main/java/forge/tasks/TaskController.java, not pom.xml`,
+      `confirmed.2: src/main/java/forge/tasks/TaskController.java:19 doesn't say "@DeleteMapping"`,
+      `confirmed.3: "Post" is too short to show ${i.add}; quote at least 8 characters of the line`,
+      `confirmed.4: "VARCHAR(200) NOT NULL" doesn't name task`,
+    ]);
+    expect(c.answer!.confirmed).toEqual([
+      {
+        record: i.table,
+        at: "src/main/resources/db/migration/V1__create_task.sql:1",
+        says: "CREATE TABLE task",
+      },
+    ]);
+  });
+
+  it("hands back a rubber-stamped confirmation and records only the cited ones", async () => {
+    const rs = await records();
+    const i = ids(rs);
+    const stamp = answer(i).replace(
+      /confirmed:[\s\S]*```/,
+      `confirmed: [${i.add}, ${i.table}]\n\`\`\``,
+    );
+    const prompts: string[] = [];
+    const replies = [stamp, answer(i)];
+    const runtime = new MockRuntime(
+      (req: AiRequest) => {
+        prompts.push(req.pack.prompt);
+        return replies[prompts.length - 1]!;
+      },
+      { now: () => NOW },
+    );
+    const r = await verifyScan(repo(), { repoId: "forge-tasks", runtime, records: rs, now: NOW });
+    expect(r.attempts[0]!.problems).toEqual([
+      `confirmed.0: ${i.add} cites no line; give the line that shows it (record, at and says), or leave it out`,
+      `confirmed.1: ${i.table} cites no line; give the line that shows it (record, at and says), or leave it out`,
+    ]);
+    expect(prompts[1]).toContain(`confirmed.0: ${i.add} cites no line`);
+    expect(confirmedIds(r)).toEqual([i.add, i.table]);
+    // With no attempt left, nothing uncited is recorded as confirmed.
+    const once = new MockRuntime(() => stamp, { now: () => NOW });
+    const r1 = await verifyScan(repo(), {
+      repoId: "forge-tasks",
+      runtime: once,
+      records: rs,
+      maxAttempts: 1,
+      now: NOW,
+    });
+    expect(confirmedIds(r1)).toEqual([]);
+    expect(r1.refused).toHaveLength(2);
+  });
+
+  it("fits the model's limit, and says so before handing off when the records can't (ADR 0112)", async () => {
+    const rs = await records();
+    const i = ids(rs);
+    const packs: AiRequest["pack"][] = [];
+    const runtime = new MockRuntime(
+      (req: AiRequest) => {
+        packs.push(req.pack);
+        return answer(i);
+      },
+      { now: () => NOW },
+    );
+    await verifyScan(repo(), {
+      repoId: "forge-tasks",
+      runtime,
+      records: rs,
+      now: NOW,
+      maxTokens: 12_078,
+    });
+    expect(packs[0]!.manifest.budget).toBe(8658);
+    expect(packs[0]!.manifest.totalTokens).toBeLessThanOrEqual(8658);
+    await expect(
+      verifyScan(repo(), {
+        repoId: "forge-tasks",
+        runtime,
+        records: rs,
+        now: NOW,
+        maxTokens: 1500,
+      }),
+    ).rejects.toThrow(
+      /^atticus scan verify forge-tasks can't fit its smallest useful prompt in the model: it needs about \d+ tokens \(its instructions and 4-records-entry-point, 4-records-call, 4-records-table, 4-records-deployment\), and a model of 1500 tokens leaves 725 for the prompt\./,
     );
   });
 

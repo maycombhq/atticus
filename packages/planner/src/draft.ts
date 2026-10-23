@@ -508,6 +508,7 @@ export async function draftChange(
       levels,
       maxClassification: levels.includes("internal") ? "internal" : levels[0]!,
       now,
+      step: `change draft ${change.id}`,
     });
   };
 

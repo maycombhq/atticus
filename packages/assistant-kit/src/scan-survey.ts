@@ -447,6 +447,7 @@ export async function surveyRepo(
         levels,
         maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
         now,
+        step: `scan survey ${o.repoId}`,
       });
       const prepared = await o.runtime.prepare({
         change,

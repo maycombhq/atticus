@@ -1,4 +1,4 @@
-import { estimateTokens, wrapData, type SourceInput } from "@maycombhq/ai";
+import { estimateTokens, fitBudget, wrapData, type SourceInput } from "@maycombhq/ai";
 import {
   openIndex,
   type ContextInput,
@@ -77,11 +77,13 @@ export function sourceTokens(sources: SourceInput[]): number {
 }
 
 /**
- * The room for the selected context: the budget less what else goes in the pack, less a
- * reserve for what a later draft adds (the findings to fix, the previous answer).
+ * The room for the selected context: the budget (fitted to the model's limit, ADR 0112) less
+ * what else goes in the pack, less a reserve for what a later draft adds (the findings to fix,
+ * the previous answer).
  */
 export function roomFor(budget: number, others: SourceInput[], o?: ContextOptions): number {
-  const room = Math.max(0, budget - sourceTokens(others) - Math.min(4000, Math.floor(budget / 10)));
+  const b = fitBudget(budget);
+  const room = Math.max(0, b - sourceTokens(others) - Math.min(4000, Math.floor(b / 10)));
   return o?.tokens !== undefined ? Math.min(o.tokens, room) : room;
 }
 

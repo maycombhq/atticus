@@ -19,11 +19,24 @@ import { listRuns, runTranscript } from "./runs-view.js";
  * the model runtime. None at an organisation whose only model is Copilot, which only VS Code reaches.
  */
 async function serverModel(root: string): Promise<string | null> {
+  return (await configuredModel(root))?.type ?? null;
+}
+
+/**
+ * The configured model and, when its settings give it (adapters.model.settings.maxInput), the
+ * tokens its prompt may take: every step the server starts fits it (ADR 0112).
+ */
+async function configuredModel(root: string): Promise<{ type: string; maxInput?: number } | null> {
   const text = await readFile(join(orgPackDirOf(root), "runtime.yaml"), "utf8").catch(
     () => undefined,
   );
   if (!text) return null;
-  let y: { adapters?: { model?: { type?: unknown } }; modes?: { allowed?: unknown } } | undefined;
+  let y:
+    | {
+        adapters?: { model?: { type?: unknown; settings?: { maxInput?: unknown } } };
+        modes?: { allowed?: unknown };
+      }
+    | undefined;
   try {
     y = parse(text) as typeof y;
   } catch {
@@ -33,7 +46,10 @@ async function serverModel(root: string): Promise<string | null> {
   if (typeof type !== "string" || type === "mock") return null;
   const allowed = y?.modes?.allowed;
   if (Array.isArray(allowed) && !allowed.includes("model")) return null;
-  return type;
+  const max = y?.adapters?.model?.settings?.maxInput;
+  return typeof max === "number" && Number.isInteger(max) && max >= 1000
+    ? { type, maxInput: max }
+    : { type };
 }
 
 /** Run `atticus <args>`: the command line's own code, in this process. */
@@ -79,7 +95,8 @@ export function uiModelRunRoutes(
       const option = words.find((a) => a.startsWith("-"));
       if (option)
         throw badRequest(`${option} would be read as an option; give the step's arguments only.`);
-      const model = await serverModel(root);
+      const configured = await configuredModel(root);
+      const model = configured?.type;
       if (!model)
         throw conflict(
           "This server's runtime.yaml configures no model, so it can't run an AI step. Run it in your assistant (its slash command), or from VS Code with Copilot.",
@@ -88,7 +105,12 @@ export function uiModelRunRoutes(
         c.progress(0, 1, `Running atticus ${words.join(" ")} with ${model}`);
         // The run the step made: the newest one that wasn't there before it.
         const before = new Set((await listRuns(root, { limit: 100000 })).map((x) => x.runId));
-        const res = await runStep([...words, "--mode", "model"]);
+        const res = await runStep([
+          ...words,
+          "--mode",
+          "model",
+          ...(configured?.maxInput ? ["--max-tokens", String(configured.maxInput)] : []),
+        ]);
         const made = (await listRuns(root, { limit: 100000 })).find((x) => !before.has(x.runId));
         c.progress(1, 1, res.code === 0 ? "Done" : "Stopped");
         ctx.events.publish({ type: "file.changed", path: runsRelOf(root) });

@@ -137,6 +137,7 @@ export async function specDraft(
     ...(repoType ? { repoType } : {}),
     questions,
     keep,
+    onFile: before.flows,
     critic,
     maxAttempts: o.attempts ?? 3,
     ...(deps.now ? { now: deps.now } : {}),

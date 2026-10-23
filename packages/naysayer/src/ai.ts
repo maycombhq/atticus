@@ -527,6 +527,8 @@ export async function runLenses(
           o.maxClassification ??
           (levels.includes("confidential") ? "confidential" : levels.at(-1)!),
         now: new Date(ctx.now),
+        // ADR 0112: a lens whose prompt can't fit the model fails here, saying so, unsent.
+        step: `critic ${ctx.change.id} (the ${agent.id} lens)`,
       });
     } catch (e) {
       runs.push({ ...base, state: "failed", reason: (e as Error).message });

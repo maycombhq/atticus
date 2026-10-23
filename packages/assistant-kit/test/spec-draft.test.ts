@@ -148,4 +148,68 @@ describe("atticus spec draft (ADR 0079)", () => {
     expect(prompts[0]).not.toContain("- endpoint forge-orders.delete-orders-orderid:");
     expect(prompts[0]).toContain("which you don't write again: forge-orders.place-order");
   });
+
+  it("fits the model's limit: cited code as excerpts first, another repo's long list cut first (ADR 0112)", async () => {
+    // forge-stock with 600 more entry points: a list a 12,078-token model can't take whole.
+    const many = Array.from({ length: 600 }, (_, i) => {
+      const p = parseRecord({
+        kind: "Endpoint",
+        schemaVersion: 2,
+        id: `forge-stock.get-stock-item-${i}`,
+        status: "current",
+        confidence: "verified",
+        evidence: [
+          { source: "code", repo: "forge-stock", path: "src/StockController.java", line: 9 },
+        ],
+        component: "forge-stock",
+        endpointType: "rest",
+        method: "GET",
+        pathOrTopic: `/stock/items/${i}`,
+        normalizedPath: `/stock/items/${i}`,
+      });
+      if (!p.ok) throw new Error(JSON.stringify(p.issues));
+      return p.record;
+    });
+    const packs: AiRequest["pack"][] = [];
+    const runtime = new MockRuntime(
+      (req: AiRequest) => {
+        packs.push(req.pack);
+        return answer;
+      },
+      { now: () => NOW },
+    );
+    const r = await draftSpec(repo(), {
+      ...o(),
+      records: [...records(), ...many],
+      runtime,
+      now: NOW,
+      onFile: [expected()],
+      maxTokens: 12_078,
+    });
+    expect(r.status).toBe("drafted");
+    const m = packs[0]!.manifest;
+    expect(m.budget).toBe(8658);
+    expect(m.totalTokens).toBeLessThanOrEqual(8658);
+    // The controller, cited by the endpoints and by place-order's steps, goes in as a numbered excerpt.
+    expect(m.sources.some((s) => s.id === "6-code-000")).toBe(true);
+    expect(packs[0]!.prompt).toMatch(
+      /src\/main\/java\/forge\/orders\/OrderController\.java lines 1-26 \(cited at [\d, ]+; numbered as in the file\):/,
+    );
+    expect(packs[0]!.prompt).toContain("13:     Order saved = orders.save(order);");
+    // forge-stock's list goes in a hundred at a time while it fits; the rest is cut, not the code.
+    expect(m.dropped.map((d) => d.id)).toEqual([
+      "5-targets-forge-stock-2",
+      "5-targets-forge-stock-3",
+    ]);
+    expect(packs[0]!.prompt).toContain(
+      "Endpoint forge-stock.post-stock-reservations on forge-stock",
+    );
+  });
+
+  it("says before handing off when the catalog alone can't fit the model (ADR 0112)", async () => {
+    const runtime = new MockRuntime(() => answer, { now: () => NOW });
+    await expect(draftSpec(repo(), { ...o(), runtime, now: NOW, maxTokens: 3000 })).rejects.toThrow(
+      /^atticus spec draft forge-orders can't fit its smallest useful prompt in the model: it needs about \d+ tokens \(its instructions and 4-catalog\), and a model of 3000 tokens leaves 1850 for the prompt\. Use a model with a bigger limit/,
+    );
+  });
 });

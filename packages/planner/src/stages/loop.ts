@@ -15,6 +15,7 @@ import {
 } from "@maycombhq/core";
 import {
   buildContextPack,
+  fitBudget,
   quarantineItems,
   toRunSummary,
   type AiRuntime,
@@ -174,11 +175,14 @@ async function writeLoop(dir: string, l: StageLoop): Promise<void> {
   );
 }
 
-/** The tokens a stage's pack may take: its agent's budget, as the loop builds the pack with. */
+/**
+ * The tokens a stage's pack may take: its agent's budget, as the loop builds the pack with,
+ * fitted to the model's limit when the step was given one (ADR 0112).
+ */
 export function stageBudget(ctx: ChangeContext, agent: string): number {
-  return (
+  return fitBudget(
     ctx.orgPack.agents.find((a) => a.id === agent)?.tokenBudget ??
-    ctx.orgPack.runtime.budgets.defaultTokens
+      ctx.orgPack.runtime.budgets.defaultTokens,
   );
 }
 
@@ -345,6 +349,7 @@ export async function runStageLoop<A>(
       levels,
       maxClassification: levels.includes("internal") ? "internal" : levels[0]!,
       now,
+      step: `${spec.stage === "stories" ? "plan" : "change"} ${spec.stage} ${change.id}`,
     });
     let run: Run;
     if (resume) {

@@ -267,6 +267,7 @@ export async function askKnowledge(
         levels,
         maxClassification: levels.includes("internal") ? "internal" : levels.at(-1)!,
         now: o.now ?? new Date(),
+        step: "knowledge ask",
       });
       const prepared = await o.runtime.prepare({
         change: "knowledge-ask",
