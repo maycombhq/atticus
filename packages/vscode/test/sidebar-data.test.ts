@@ -108,10 +108,18 @@ describe("the Repos section (ADR 0093)", () => {
       path: join(root, "org-pack/scan/forge-web.yaml"),
     });
     expect(kids[2]!.open).toEqual({ kind: "app", hash: "#/architecture?node=repo%3Aforge-web" });
-    // No spec yet: the flows say how to draft one.
-    expect(repoChildren(onboarding.repos[1]!, 0, paths)[0]).toMatchObject({
-      label: "No flows yet",
-      description: "atticus spec draft forge-ledger",
+    // No spec yet: the flows row drafts one when clicked (0.3.1: it used to do nothing).
+    const bare = repoChildren(onboarding.repos[1]!, 0, paths);
+    expect(bare[0]).toMatchObject({
+      label: "No flows yet: draft its spec",
+      description: "with Copilot",
+      command: { command: "atticus.spec", args: ["forge-ledger"] },
+    });
+    // No scan settings yet: the row drafts them.
+    expect(bare[1]).toMatchObject({
+      label: "Scan settings",
+      description: "none yet: draft them",
+      command: { command: "atticus.survey", args: ["forge-ledger"] },
     });
   });
 

@@ -944,7 +944,7 @@ export const newestFind = (finds: FindSummary[], phrase: string) =>
     .filter((f) => f.phrase.trim().toLowerCase() === phrase.trim().toLowerCase())
     .sort((a, b) => b.at.localeCompare(a.at))[0];
 
-/** The saved searches, newest first; clicking one offers what it found to keep. */
+/** The saved searches, newest first; each opens to what it found, and its Keep button keeps more. */
 export function findItems(finds: FindSummary[]): Item[] {
   return [...finds]
     .sort((a, b) => b.at.localeCompare(a.at))
@@ -952,8 +952,83 @@ export function findItems(finds: FindSummary[]): Item[] {
       id: `find:${f.slug}`,
       label: `“${f.phrase}”`,
       description: `${f.candidates ? `${f.candidates} found · ${f.kept} kept` : "nothing found"} · ${day(f.at)}`,
-      tooltip: `A search of the wikis for “${f.phrase}” on ${day(f.at)}: ${plural(f.candidates, "candidate")}, ${f.kept} kept. Click to keep more.`,
+      tooltip: `A search of the wikis for “${f.phrase}” on ${day(f.at)}: ${plural(f.candidates, "candidate")}, ${f.kept} kept. Open it to see what was found, new and already known; Keep… keeps the new ones.`,
       icon: "search",
-      command: { command: "atticus.keepFound", args: [f.slug] },
+      expand: { kind: "find", slug: f.slug },
+      context: "atticus.find",
     }));
+}
+
+/** The kinds a found item can be kept as: its record's kinds, the kind found first (ADR 0101). */
+const KEEP_PAIRS: [string, string][] = [
+  ["request", "process"],
+  ["standard", "pattern"],
+  ["decision", "constraint"],
+  ["team", "vendor"],
+  ["product", "project"],
+];
+export function keepKinds(kind: string): string[] {
+  const pair = KEEP_PAIRS.find((p) => p.includes(kind));
+  return pair ? [kind, ...pair.filter((k) => k !== kind)] : [kind];
+}
+
+/** Each knowledge kind in a few plain words, for choosing what to keep a found item as. */
+export const KIND_WORDS: Record<string, string> = {
+  request: "a request to raise, with its form",
+  process: "a process: the steps to achieve something",
+  standard: "a standard to follow",
+  pattern: "a pattern to use",
+  decision: "a decision made",
+  constraint: "a constraint to keep to",
+  team: "a team",
+  vendor: "a vendor",
+  product: "a product",
+  project: "a project",
+};
+
+const candOrder = (c: FindCandidate) => (c.kept ? 1 : c.known ? 2 : 0);
+
+/** What a saved search found: new first (a click keeps one), then kept, then already known. */
+export function candidateItems(slug: string, cands: FindCandidate[]): Item[] {
+  return [...cands]
+    .sort((a, b) => candOrder(a) - candOrder(b))
+    .map((c) => {
+      const links = linkLine(urlsOf(c));
+      const tip = [
+        `**${md(c.title)}** · ${c.kind}`,
+        ...(c.quote ? [`> ${md(c.quote)}`] : []),
+        ...(c.page
+          ? [
+              `From ${md(c.page)}${c.section ? `, ${md(c.section)}` : ""}. The quote was checked on the page.`,
+            ]
+          : []),
+        ...(links ? [links] : []),
+        c.kept
+          ? `Kept as ${c.kept.as || c.kind} by ${md(c.kept.by)} on ${day(c.kept.at)}: it is a knowledge item, verified.`
+          : c.known
+            ? `Already a knowledge item: ${md(c.known)}.`
+            : "New: not a knowledge item yet. Click to keep it; you choose what kind it is.",
+      ];
+      const base = {
+        id: `cand:${slug}:${c.id}`,
+        label: c.title,
+        tooltip: tip.join("\n\n"),
+        markdown: true,
+      };
+      if (c.kept)
+        return {
+          ...base,
+          description: `✓ kept as ${c.kept.as || c.kind} by ${c.kept.by}`,
+          icon: "pass-filled",
+          color: "testing.iconPassed",
+        };
+      if (c.known) return { ...base, description: `already known as ${c.known}`, icon: "book" };
+      return {
+        ...base,
+        description: `new · ${c.kind}${c.page ? ` · ${c.page}` : ""}`,
+        icon: "sparkle",
+        command: { command: "atticus.keepCandidate", args: [slug, c.id] },
+        context: "atticus.findCandidate.new",
+      };
+    });
 }

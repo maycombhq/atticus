@@ -10,7 +10,8 @@ import {
   defaultSourceId,
   itemTitle,
   keepArgv,
-  KNOWLEDGE_KINDS,
+  keepKinds,
+  KIND_WORDS,
   listFromText,
   needArgv,
   needDescription,
@@ -20,6 +21,7 @@ import {
   sourcesAddArgv,
   urlsOf,
   type FindCandidate,
+  type FindSummary,
   type KnowledgeEntry,
   type NeedEntry,
   type Url,
@@ -28,6 +30,8 @@ import {
 } from "./knowledge-data";
 import { readFind, readFinds, readKnowledgeList } from "./knowledge-read";
 import { parseJson } from "./cli";
+import { findOutcome, runProgressTitle } from "./feedback";
+import { pickLoading, pickManyLoading } from "./pick";
 import type { Service } from "./service";
 
 /**
@@ -485,10 +489,18 @@ export class KnowledgeUi {
       ignoreFocusOut: true,
     });
     if (!q?.trim()) return;
-    const argv = ["knowledge", "ask", q.trim()];
-    const p = await this.c.captured(root, argv);
+    // An AI step (ADR 0083): Copilot answers from the items only, and the command line checks it.
+    const end = await this.d.runAi(["knowledge", "ask", q.trim()], undefined, { quiet: true });
+    if (end?.state !== "done") return;
+    const answer = end.messages.filter((l) => l.trim());
+    this.svc.log.appendLine(`--- The knowledge's answer to “${q.trim()}”`);
+    for (const l of answer) this.svc.log.appendLine(l);
     this.svc.log.show(true);
-    this.c.showPrinted(argv, p);
+    void vscode.window.showInformationMessage(
+      answer.length
+        ? `${answer[0]}${answer.length > 1 ? " (all of it, with what it cites, in the Atticus output)" : ""}`
+        : "The knowledge had no answer to that.",
+    );
   }
 
   // ------------------------------------------------------------------ searching the wikis
@@ -505,12 +517,31 @@ export class KnowledgeUi {
       })
     )?.trim();
     if (!phrase) return;
-    const o = await (
-      await this.svc.api(root)
-    )
-      .get<Api.OnboardingView>("/api/onboarding")
-      .catch(() => undefined);
+    const o = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Atticus: reading the wiki sources…",
+      },
+      async () =>
+        (await this.svc.api(root))
+          .get<Api.OnboardingView>("/api/onboarding")
+          .catch(() => undefined),
+    );
     const wikis = o?.sources?.wikis ?? [];
+    if (o && !wikis.length) {
+      // A dialog: nothing can be searched until a wiki is added and synced.
+      const add = await vscode.window.showInformationMessage(
+        "No wiki to search yet.",
+        {
+          modal: true,
+          detail:
+            "Add a wiki or docs repo to sources.yaml and sync it: the search reads the pages copied then.",
+        },
+        "Add a wiki or docs repo…",
+      );
+      if (add) await this.addWiki(root);
+      return;
+    }
     let source: string | undefined;
     if (wikis.length > 1) {
       const pick = await vscode.window.showQuickPick(
@@ -527,76 +558,170 @@ export class KnowledgeUi {
       if (!pick) return;
       source = pick.id || undefined;
     }
-    const end = await this.d.runAi([
-      "knowledge",
-      "find",
-      phrase,
-      ...(source ? ["--source", source] : []),
-    ]);
+    // Quiet: this says how it ended, in its own words, instead of "the step is done".
+    const end = await this.d.runAi(
+      ["knowledge", "find", phrase, ...(source ? ["--source", source] : [])],
+      undefined,
+      { quiet: true },
+    );
     this.d.refreshAll();
     if (end?.state !== "done") return;
-    const finds = await readFinds(this.svc.cli(root), root);
-    const found = newestFind(finds, phrase);
+    const out = findOutcome(end.messages);
+    if (out.kind === "nothing") {
+      // A dialog: the person asked, and the answer is the end of it.
+      void vscode.window.showInformationMessage(out.message, {
+        modal: true,
+        detail:
+          "The search reads the pages copied at the last sync. Try other words, or sync the wikis again (Sync the knowledge sources).",
+      });
+      return;
+    }
     // The file the step wrote, as it printed it; else the newest search of the phrase.
-    const named = end.messages.join("\n").match(/finds[\\/]([a-z0-9][a-z0-9-]*)\.ya?ml/i)?.[1];
-    const slug = named ?? found?.slug;
-    if (!slug)
-      return void vscode.window.showWarningMessage(
+    const slug =
+      out.kind === "saved"
+        ? out.slug
+        : newestFind(await readFinds(this.svc.cli(root), root), phrase)?.slug;
+    if (!slug) {
+      const pick = await vscode.window.showWarningMessage(
         "The search ran, but Atticus couldn't find its saved file. The Searches list in the Knowledge section has it once it is there.",
+        "Show the output",
       );
+      if (pick) this.svc.log.show(true);
+      return;
+    }
     await this.keepFound(root, slug);
   }
 
-  /** What a saved search found: pick the candidates to keep, and what to keep each as. */
-  async keepFound(root: string, given?: string) {
-    let slug = given;
-    const finds = await readFinds(this.svc.cli(root), root);
-    if (!slug) {
-      if (!finds.length)
-        return void vscode.window.showInformationMessage(
-          "No search yet: Atticus: Search the wikis… makes one.",
-        );
-      const pick = await vscode.window.showQuickPick(
-        [...finds]
-          .sort((a, b) => b.at.localeCompare(a.at))
-          .map((f) => ({
-            label: `“${f.phrase}”`,
-            description: `${f.candidates} found · ${f.kept} kept · ${f.at.slice(0, 10)}`,
-            slug: f.slug,
-          })),
-        { title: "Atticus: which search?", ignoreFocusOut: true },
+  /** Keep one candidate of a saved search: a row's click or its Keep button. */
+  async keepCandidate(root: string, slug: string, id: string) {
+    const c = this.findOf(root, await readFinds(this.svc.cli(root), root), slug)?.candidates.find(
+      (x) => x.id === id,
+    );
+    if (!c)
+      return void vscode.window.showWarningMessage(
+        `${id} isn't in the search ${slug} any more. Search the wikis again.`,
       );
-      if (!pick) return;
-      slug = pick.slug;
-    }
-    // Its candidates as `knowledge finds --json` gives them; else the saved file, if it is flat.
+    if (c.kept || c.known)
+      return void vscode.window.showInformationMessage(
+        c.kept
+          ? `“${c.title}” was kept already, by ${c.kept.by}.`
+          : `“${c.title}” is a knowledge item already: ${c.known}.`,
+      );
+    const as = await this.askKind(c);
+    if (!as) return;
+    await this.keepAll(root, slug, [{ c, as }]);
+  }
+
+  /** A saved search's candidates: as `knowledge finds --json` lists them, else its file. */
+  private findOf(root: string, finds: FindSummary[], slug: string) {
     const listed = finds.find((x) => x.slug === slug);
-    const f = listed?.list
+    return listed?.list
       ? {
           phrase: listed.phrase,
           candidates: listed.list,
           pages: [...new Set(listed.list.map((c) => c.page).filter(Boolean))],
         }
       : readFind(root, this.rel(root), slug);
-    if (!f)
-      return void vscode.window.showWarningMessage(
+  }
+
+  /** Keep each, say what was kept and where it shows, and show the Knowledge section. */
+  private async keepAll(root: string, slug: string, picks: { c: FindCandidate; as: string }[]) {
+    const kept: string[] = [];
+    const failed: string[] = [];
+    for (const { c, as } of picks) {
+      const p = await this.c.captured(root, keepArgv(c, slug, as));
+      (p.code === 0 ? kept : failed).push(as === c.kind ? c.title : `${c.title} (as ${as})`);
+    }
+    this.d.refreshAll();
+    if (kept.length) void vscode.commands.executeCommand("atticus.knowledge.focus");
+    if (failed.length) {
+      const pick = await vscode.window.showWarningMessage(
+        `Kept ${kept.length}; ${failed.length} couldn't be kept: ${failed.join(", ")}.`,
+        "Show the output",
+      );
+      if (pick) this.svc.log.show(true);
+    } else if (kept.length)
+      void vscode.window.showInformationMessage(
+        `Kept ${kept.join(", ")}: knowledge items with a green tick, verified by you, under Items in the Knowledge section. Commit ${this.rel(root)}/ through a pull request.`,
+      );
+  }
+
+  /** What a saved search found: pick the candidates to keep, and what to keep each as. */
+  async keepFound(root: string, given?: string) {
+    let slug = given;
+    let finds: FindSummary[] = [];
+    if (!slug) {
+      const pick = await pickLoading(
+        {
+          title: "Atticus: which search of the wikis?",
+          reading: "Reading the searches…",
+          empty: async () => {
+            const go = await vscode.window.showInformationMessage(
+              "No search of the wikis yet.",
+              { modal: true, detail: "Search the wikis for a term or phrase first." },
+              "Search the wikis…",
+            );
+            if (go) await this.search(root);
+          },
+          log: this.svc.log,
+        },
+        async () => {
+          finds = await readFinds(this.svc.cli(root), root);
+          return [...finds]
+            .sort((a, b) => b.at.localeCompare(a.at))
+            .map((f) => ({
+              label: `“${f.phrase}”`,
+              description: `${f.candidates} found · ${f.kept} kept · ${f.at.slice(0, 10)}`,
+              slug: f.slug,
+            }));
+        },
+      );
+      if (!pick) return;
+      slug = pick.slug;
+    } else
+      finds = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Window, title: "Atticus: reading what it found…" },
+        () => readFinds(this.svc.cli(root), root),
+      );
+    const f = this.findOf(root, finds, slug);
+    if (!f) {
+      const pick = await vscode.window.showWarningMessage(
         `Couldn't read the search ${slug} (${this.rel(root)}/finds/${slug}.yaml).`,
+        "Show the output",
       );
-    if (!f.candidates.length)
-      return void vscode.window.showInformationMessage(
-        `“${f.phrase}”: nothing on the pages that isn't a knowledge item already.`,
+      if (pick) this.svc.log.show(true);
+      return;
+    }
+    const fresh = f.candidates.filter((c) => !c.known && !c.kept);
+    if (!fresh.length) {
+      void vscode.window.showInformationMessage(
+        f.candidates.length
+          ? `“${f.phrase}”: everything found is a knowledge item already (${f.candidates.length}). Open the search under Searches in the Knowledge section to see them.`
+          : `“${f.phrase}”: nothing on the pages that isn't a knowledge item already.`,
       );
-    const picked = await vscode.window.showQuickPick(
-      f.candidates.map((c) => ({ ...candidatePick(c), c })),
-      {
-        title: `Atticus: “${f.phrase}”: ${f.candidates.length} found on ${f.pages.length} page${f.pages.length === 1 ? "" : "s"}. Pick what to keep.`,
-        placeHolder: "Each quote was checked on its page. What you keep is verified by you.",
-        canPickMany: true,
-        matchOnDescription: true,
-        matchOnDetail: true,
-        ignoreFocusOut: true,
-      },
-    );
+      return;
+    }
+    // New ones first, picked to start with; then those already kept or known, for reference.
+    const sep = (label: string) => ({ label, kind: vscode.QuickPickItemKind.Separator });
+    const others = f.candidates.filter((c) => c.known || c.kept);
+    const items = [
+      sep(`New (${fresh.length})`),
+      ...fresh.map((c) => ({ ...candidatePick(c), c })),
+      ...(others.length ? [sep(`Already known or kept (${others.length})`)] : []),
+      ...others.map((c) => ({ ...candidatePick(c), c })),
+    ] as (vscode.QuickPickItem & { c?: FindCandidate })[];
+    const picked = (
+      await pickManyLoading(
+        {
+          title: `Atticus: “${f.phrase}”: ${fresh.length} new, ${others.length} already known, on ${f.pages.length} page${f.pages.length === 1 ? "" : "s"}. Pick what to keep.`,
+          reading: "Reading what it found…",
+          placeholder: "Each quote was checked on its page. What you keep is verified by you.",
+          empty: "Nothing to keep.",
+          matchOnDetail: true,
+        },
+        () => items,
+      )
+    )?.flatMap((p) => (p.c && !p.c.known && !p.c.kept ? [{ c: p.c }] : []));
     if (!picked?.length) return;
     // One: ask its kind. More: keep each as found, unless the person wants to choose.
     let choose = true;
@@ -611,31 +736,24 @@ export class KnowledgeUi {
       if (!how) return;
       choose = how.choose;
     }
-    const kept: string[] = [];
-    const failed: string[] = [];
+    const keep: { c: FindCandidate; as: string }[] = [];
     for (const { c } of picked) {
       const as = choose ? await this.askKind(c) : c.kind;
-      if (!as) continue;
-      const p = await this.c.captured(root, keepArgv(c, slug, as));
-      (p.code === 0 ? kept : failed).push(c.title);
+      if (!as) return;
+      keep.push({ c, as });
     }
-    this.d.refreshAll();
-    if (failed.length) {
-      const pick = await vscode.window.showWarningMessage(
-        `Kept ${kept.length}; ${failed.length} couldn't be kept: ${failed.join(", ")}.`,
-        "Show the output",
-      );
-      if (pick) this.svc.log.show(true);
-    } else if (kept.length)
-      void vscode.window.showInformationMessage(
-        `Kept ${kept.join(", ")}, verified by you. Commit ${this.rel(root)}/ through a pull request.`,
-      );
+    await this.keepAll(root, slug, keep);
   }
 
+  /** What to keep a found item as: only the kinds its record can be (ADR 0101), in plain words. */
   private async askKind(c: FindCandidate): Promise<string | undefined> {
-    const kinds = [c.kind, ...KNOWLEDGE_KINDS.filter((k) => k !== c.kind)];
+    const kinds = keepKinds(c.kind);
+    if (kinds.length === 1) return c.kind;
     const pick = await vscode.window.showQuickPick(
-      kinds.map((k) => ({ label: k, ...(k === c.kind ? { description: "as found" } : {}) })),
+      kinds.map((k) => ({
+        label: k,
+        description: `${KIND_WORDS[k] ?? ""}${k === c.kind ? " · as found" : ""}`,
+      })),
       { title: `Atticus: keep “${c.title}” as`, ignoreFocusOut: true },
     );
     return pick?.label;
@@ -672,7 +790,13 @@ export class KnowledgeUi {
 
   /** The page the need's knowledge item was read from, at its quote. */
   async openNeedPage(root: string, n: NeedEntry) {
-    const { items } = await readKnowledgeList(this.svc.cli(root), root);
+    const { items } = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: "Atticus: finding the page it was read from…",
+      },
+      () => readKnowledgeList(this.svc.cli(root), root),
+    );
     const k = items.find((i) => i.id === n.item);
     if (!k)
       return void vscode.window.showWarningMessage(
@@ -684,31 +808,41 @@ export class KnowledgeUi {
   /** A change's open needs, one after another: raise each, then mark it. */
   async raiseNeeds(root: string, change?: string) {
     for (;;) {
-      const r = await this.svc.cli(root)([
-        "needs",
-        ...(change ? ["--change", change] : []),
-        "--json",
-        "--root",
-        root,
-      ]);
-      const open = (parseJson<NeedEntry[]>(r.stdout) ?? [])
-        .filter((n) => n.status === "open")
-        .map((n) => ({ ...n, inputs: n.inputs ?? [], steps: n.steps ?? [], rules: n.rules ?? [] }));
-      if (!open.length)
-        return void vscode.window.showInformationMessage(
-          change ? `${change} has no open needs.` : "No change has an open need.",
-        );
-      const pick = await vscode.window.showQuickPick(
-        open.map((n) => ({
-          label: n.title,
-          description: `${change ? "" : `${n.change} · `}${needDescription(n)}`,
-          detail: n.why,
-          n,
-        })),
+      // The list shows at once and is read while open; it comes back after each one is marked.
+      const pick = await pickLoading(
         {
-          title: `Atticus: ${change ? `${change}'s` : "the"} open needs (${open.length}). Raise each, then mark it.`,
-          matchOnDescription: true,
-          ignoreFocusOut: true,
+          title: `Atticus: ${change ? `${change}'s` : "the"} open needs. Raise each, then mark it.`,
+          reading: "Reading the open needs…",
+          empty: change ? `${change} has no open needs.` : "No change has an open need.",
+          log: this.svc.log,
+        },
+        async () => {
+          const r = await this.svc.cli(root)([
+            "needs",
+            ...(change ? ["--change", change] : []),
+            "--json",
+            "--root",
+            root,
+          ]);
+          const all = parseJson<NeedEntry[]>(r.stdout);
+          if (!Array.isArray(all))
+            throw new Error(
+              (r.stderr || r.stdout).trim().split("\n")[0] || `atticus needs exited ${r.code}`,
+            );
+          return all
+            .filter((n) => n.status === "open")
+            .map((n) => ({
+              ...n,
+              inputs: n.inputs ?? [],
+              steps: n.steps ?? [],
+              rules: n.rules ?? [],
+            }))
+            .map((n) => ({
+              label: n.title,
+              description: `${change ? "" : `${n.change} · `}${needDescription(n)}`,
+              detail: n.why,
+              n,
+            }));
         },
       );
       if (!pick) return;
@@ -755,7 +889,15 @@ export class KnowledgeUi {
    * accept (verified ones picked to start with), and it goes into profile.yaml.
    */
   async draftOrgPack(root: string) {
-    const r = await this.svc.cli(root)(["orgpack", "draft", "--json", "--root", root]);
+    const r = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Atticus: ${runProgressTitle(["orgpack", "draft"])}…`,
+      },
+      () => this.svc.cli(root)(["orgpack", "draft", "--json", "--root", root]),
+    );
+    this.svc.log.appendLine(`--- atticus orgpack draft --json (exit ${r.code})`);
+    if (r.stderr.trim()) this.svc.log.appendLine(r.stderr.trimEnd());
     const d = parseJson<{
       platform: string;
       file: string;
@@ -770,10 +912,14 @@ export class KnowledgeUi {
         notes: string[];
       }[];
     }>(r.stdout);
-    if (!d)
-      return void vscode.window.showWarningMessage(
-        `Atticus: ${(r.stderr || r.stdout).trim().split("\n")[0] || "couldn't draft the org pack"}`,
+    if (!d) {
+      const pick = await vscode.window.showWarningMessage(
+        `Atticus couldn't draft the org pack: ${(r.stderr || r.stdout).trim().split("\n")[0] || `exit ${r.code}`}`,
+        "Show the output",
       );
+      if (pick) this.svc.log.show(true);
+      return;
+    }
     if (!d.proposals.length)
       return void vscode.window.showInformationMessage(
         `The ${d.platform} profile already has every system the knowledge items name.`,
@@ -805,42 +951,49 @@ export class KnowledgeUi {
       "Open profile.yaml",
     );
     if (open)
-      await vscode.window.showTextDocument(
-        await vscode.workspace.openTextDocument(
-          vscode.Uri.file(join(root, "org-pack", "profiles", d.platform, "profile.yaml")),
-        ),
-      );
+      await vscode.commands.executeCommand("atticus.openItem", {
+        kind: "file",
+        path:
+          [
+            join(root, "org-pack", "profiles", d.platform, "profile.yaml"),
+            join(root, ".atticus", "org-pack", "profiles", d.platform, "profile.yaml"),
+          ].find((f) => existsSync(f)) ??
+          join(root, "org-pack", "profiles", d.platform, "profile.yaml"),
+      });
   }
 
   /** The knowledge items no person has verified yet, one after another, to verify, correct or reject. */
   async reviewUnverified(root: string) {
     for (;;) {
-      const { items } = await readKnowledgeList(this.svc.cli(root), root);
-      const left = items.filter((i) => {
-        const st = i.review?.state;
-        return st !== "verified" && st !== "corrected" && st !== "rejected";
-      });
-      if (!left.length)
-        return void vscode.window.showInformationMessage(
-          "Every knowledge item has been checked by a person.",
-        );
-      const pick = await vscode.window.showQuickPick(
-        left.map((k) => ({
-          label: `${k.review?.state === "stale" ? "$(warning) " : ""}${itemTitle(k)}`,
-          description: `${k.knowledgeKind ?? k.kind}${k.review?.state === "stale" ? " · its page changed: check again" : ""}`,
-          detail: k.quote ? `“${k.quote.text}” (${k.quote.source}/${k.quote.page})` : "",
-          k,
-        })),
+      const pick = await pickLoading(
         {
-          title: `Atticus: ${left.length} knowledge item${left.length === 1 ? "" : "s"} no person has checked. Pick one to check it against its page.`,
-          matchOnDescription: true,
+          title:
+            "Atticus: the knowledge items no person has checked. Pick one to check it against its page.",
+          reading: "Reading the knowledge items…",
+          empty: "Every knowledge item has been checked by a person.",
           matchOnDetail: true,
-          ignoreFocusOut: true,
+          log: this.svc.log,
+        },
+        async () => {
+          const { items, problem } = await readKnowledgeList(this.svc.cli(root), root);
+          if (!items.length && problem) throw new Error(problem);
+          return items
+            .filter((i) => {
+              const st = i.review?.state;
+              return st !== "verified" && st !== "corrected" && st !== "rejected";
+            })
+            .map((k) => ({
+              label: `${k.review?.state === "stale" ? "$(warning) " : ""}${itemTitle(k)}`,
+              description: `${k.knowledgeKind ?? k.kind}${k.review?.state === "stale" ? " · its page changed: check again" : ""}`,
+              detail: k.quote ? `“${k.quote.text}” (${k.quote.source}/${k.quote.page})` : "",
+              k,
+            }));
         },
       );
       if (!pick) return;
       const act = await vscode.window.showQuickPick(
         [
+          { label: "$(book) Open the page it was read from", id: "page" },
           { label: "$(pass-filled) It's right", id: "verify" },
           { label: "$(edit) Correct it…", id: "correct" },
           { label: "$(error) It's wrong…", id: "reject" },
@@ -853,7 +1006,13 @@ export class KnowledgeUi {
         { title: `Atticus: “${itemTitle(pick.k)}”`, ignoreFocusOut: true },
       );
       if (!act) continue;
-      if (act.id === "verify") await this.verify(root, pick.k);
+      if (act.id === "page")
+        await vscode.commands.executeCommand(
+          "atticus.openItem",
+          snapshotOpen(pick.k, this.svc.paths(root)),
+          { beside: true },
+        );
+      else if (act.id === "verify") await this.verify(root, pick.k);
       else if (act.id === "correct") await this.correct(root, pick.k);
       else if (act.id === "reject") await this.reject(root, pick.k);
       else if ("u" in act) await vscode.env.openExternal(vscode.Uri.parse(act.u.url));

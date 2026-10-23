@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  candidateItems,
   candidatePick,
   correctArgv,
   correctChoices,
@@ -10,6 +11,7 @@ import {
   groupKnowledge,
   itemTitle,
   keepArgv,
+  keepKinds,
   knowledgeGroupItems,
   knowledgeItemRows,
   knowledgeTooltip,
@@ -717,7 +719,51 @@ candidates:
       ["“SSO”", "nothing found · 2026-10-21"],
       ["“Kafka topic”", "2 found · 1 kept · 2026-10-20"],
     ]);
-    expect(rows[0]!.command).toEqual({ command: "atticus.keepFound", args: ["kafka-topic-2"] });
+    // A search opens to what it found; its Keep button keeps more.
+    expect(rows[0]!.expand).toEqual({ kind: "find", slug: "kafka-topic-2" });
+    expect(rows[0]!.context).toBe("atticus.find");
+    expect(rows[0]!.command).toBeUndefined();
+  });
+
+  it("lists what a search found: new first, then kept, then already known", () => {
+    const kept = {
+      ...found!.candidates[0]!,
+      id: "process-kafka-acl",
+      title: "Get a Kafka ACL",
+      kept: { by: "Ada Lovelace", at: "2026-10-22T12:00:00Z", as: "process" },
+    };
+    const rows = candidateItems("kafka-topic", [
+      found!.candidates[1]!,
+      kept,
+      found!.candidates[0]!,
+    ]);
+    expect(rows.map((r) => [r.label, r.description, r.icon])).toEqual([
+      ["Ask for a Kafka ACL", "new · request · forge-wiki/messaging/kafka-topics", "sparkle"],
+      ["Get a Kafka ACL", "✓ kept as process by Ada Lovelace", "pass-filled"],
+      ["Ask for a Kafka topic", "already known as request-kafka-topic", "book"],
+    ]);
+    // A new one is kept with a click, or its inline Keep button.
+    expect(rows[0]!.command).toEqual({
+      command: "atticus.keepCandidate",
+      args: ["kafka-topic", "request-kafka-acl"],
+    });
+    expect(rows[0]!.context).toBe("atticus.findCandidate.new");
+    expect(rows[1]!.color).toBe("testing.iconPassed");
+    expect(rows[1]!.command).toBeUndefined();
+    expect(rows[2]!.command).toBeUndefined();
+    expect(rows[0]!.tooltip).toContain(
+      "Ask the Messaging team for an ACL before the first deploy.",
+    );
+  });
+
+  it("offers only the kinds a candidate's record can be kept as, the kind found first", () => {
+    expect(keepKinds("request")).toEqual(["request", "process"]);
+    expect(keepKinds("process")).toEqual(["process", "request"]);
+    expect(keepKinds("standard")).toEqual(["standard", "pattern"]);
+    expect(keepKinds("constraint")).toEqual(["constraint", "decision"]);
+    expect(keepKinds("vendor")).toEqual(["vendor", "team"]);
+    expect(keepKinds("project")).toEqual(["project", "product"]);
+    expect(keepKinds("glossary")).toEqual(["glossary"]);
   });
 });
 

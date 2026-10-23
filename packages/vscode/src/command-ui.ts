@@ -33,6 +33,8 @@ import {
   type AcceptDry,
   type Stage,
 } from "./guided";
+import { runProgressTitle } from "./feedback";
+import { pickLoading } from "./pick";
 import type { StepEnd } from "./runner";
 import { discoveredFrom, isMetarepoName } from "./start";
 
@@ -45,8 +47,16 @@ import { discoveredFrom, isMetarepoName } from "./start";
  */
 
 export interface CommandUiDeps {
-  /** Run an AI step with Copilot's model; how it ended, or undefined when it didn't start. */
-  runAi: (args: string[], spec?: string) => Promise<StepEnd | undefined>;
+  /**
+   * Run an AI step with Copilot's model; how it ended, or undefined when it didn't start. Its
+   * progress says what it is doing in plain words; quiet leaves saying how a done step ended to
+   * the caller (a search of the wikis says what it found).
+   */
+  runAi: (
+    args: string[],
+    spec?: string,
+    o?: { title?: string; quiet?: boolean },
+  ) => Promise<StepEnd | undefined>;
   inTerminal: (root: string, name: string, args: string[], run?: boolean) => vscode.Terminal;
   refreshAll: () => void;
 }
@@ -80,55 +90,85 @@ export class CommandUi {
     return this.catalog;
   }
 
+  /** The catalogue, with a note while it is read the first time (atticus commands --json). */
+  private loadShown(root: string): Promise<Catalog> {
+    if (this.catalog) return this.catalog;
+    return Promise.resolve(
+      vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Atticus: reading the command line's commands…",
+        },
+        () => this.load(root),
+      ),
+    );
+  }
+
   /** Pick a command from every one, or from those given, by area. */
   async pick(
     root: string,
     only?: CatalogCommand[],
     title?: string,
   ): Promise<CatalogCommand | undefined> {
-    const cat = await this.load(root);
-    const list = only ? { ...cat, commands: only } : cat;
     const developer = vscode.workspace
       .getConfiguration("atticus")
       .get<boolean>("showDeveloperCommands", false);
-    const items = pickList(list, { developer }).map((i) =>
-      i.separator
-        ? { label: i.label, kind: vscode.QuickPickItemKind.Separator }
-        : {
-            label: i.label,
-            ...(i.description ? { description: i.description } : {}),
-            ...(i.detail ? { detail: i.detail } : {}),
-            id: i.id,
-          },
+    let cat: Catalog | undefined;
+    const p = await pickLoading<vscode.QuickPickItem & { id?: string }>(
+      {
+        title: title ?? "Run an Atticus command",
+        reading: "Reading the command line's commands…",
+        placeholder: "Type to find a command by its words or what it does",
+        empty: "There is no command to run here.",
+        matchOnDetail: true,
+        log: this.svc.log,
+      },
+      async () => {
+        cat = await this.load(root);
+        const list = only ? { ...cat, commands: only } : cat;
+        return pickList(list, { developer }).map((i) =>
+          i.separator
+            ? { label: i.label, kind: vscode.QuickPickItemKind.Separator }
+            : {
+                label: i.label,
+                ...(i.description ? { description: i.description } : {}),
+                ...(i.detail ? { detail: i.detail } : {}),
+                id: i.id,
+              },
+        );
+      },
     );
-    const p = await vscode.window.showQuickPick(items, {
-      title: title ?? "Run an Atticus command",
-      placeHolder: "Type to find a command by its words or what it does",
-      matchOnDescription: true,
-      matchOnDetail: true,
-      ignoreFocusOut: true,
-    });
-    const id = (p as { id?: string } | undefined)?.id;
-    return id ? cat.commands.find((c) => c.id === id) : undefined;
+    return p?.id && cat ? cat.commands.find((c) => c.id === p.id) : undefined;
   }
 
   // ------------------------------------------------------------------ pickers by kind
 
+  /** A pick list that shows at once and reads its items while open (0.3.1). */
   private async quick(
     title: string,
-    items: { label: string; description?: string; detail?: string; value: string }[],
-    empty: string,
+    items:
+      | { label: string; description?: string; detail?: string; value: string }[]
+      | (() => Promise<{ label: string; description?: string; detail?: string; value: string }[]>),
+    empty: string | (() => unknown),
+    reading = "Reading…",
   ): Promise<string | undefined> {
-    if (!items.length) {
-      void vscode.window.showWarningMessage(empty);
-      return undefined;
-    }
-    const p = await vscode.window.showQuickPick(items, {
-      title,
-      matchOnDescription: true,
-      ignoreFocusOut: true,
-    });
+    const p = await pickLoading(
+      { title, reading, empty, log: this.svc.log },
+      typeof items === "function" ? items : () => items,
+    );
     return p?.value;
+  }
+
+  /** A repo or a change, picked from those the metarepo has. */
+  async pickTarget(root: string, kind: "repo" | "change", title: string) {
+    const v = await this.askArg(
+      root,
+      { id: title, summary: "", args: [], flags: [] } as unknown as CatalogCommand,
+      { name: kind, kind, optional: false, many: false },
+      [],
+      title,
+    );
+    return typeof v === "string" ? v : undefined;
   }
 
   private async askArg(
@@ -136,48 +176,57 @@ export class CommandUi {
     cmd: CatalogCommand,
     a: CatalogArg,
     before: (string | string[] | undefined)[],
+    named?: string,
   ): Promise<string | string[] | undefined | null> {
-    const title = `atticus ${cmd.id}: ${a.name}${a.optional ? " (optional)" : ""}`;
+    const title = named ?? `atticus ${cmd.id}: ${a.name}${a.optional ? " (optional)" : ""}`;
     const api = () => this.svc.api(root);
     const enc = encodeURIComponent;
     const kind: ArgKind = a.kind;
-    if (kind === "repo") {
-      const [o, s] = await Promise.all([
-        api().then((x) => x.get<Api.OnboardingView>("/api/onboarding")),
-        api()
-          .then((x) => x.get<Api.SpecList>("/api/specs"))
-          .catch(() => ({ repos: [] })),
-      ]);
-      const ids = [...new Set([...o.repos.map((r) => r.id), ...s.repos.map((r) => r.repo)])];
+    // Each list shows at once and is read while it is open.
+    if (kind === "repo")
       return this.quick(
         title,
-        ids.map((id) => ({ label: id, value: id })),
-        "No repos yet: add them to a repos.manifest.yaml in org-pack/profiles.",
+        async () => {
+          const [o, s] = await Promise.all([
+            api().then((x) => x.get<Api.OnboardingView>("/api/onboarding")),
+            api()
+              .then((x) => x.get<Api.SpecList>("/api/specs"))
+              .catch(() => ({ repos: [] })),
+          ]);
+          const ids = [...new Set([...o.repos.map((r) => r.id), ...s.repos.map((r) => r.repo)])];
+          return ids.map((id) => ({ label: id, value: id }));
+        },
+        "No repos yet: add them first (Atticus: Add repos).",
+        "Reading the repos…",
       );
-    }
-    if (kind === "change") {
-      const cs = await api().then((x) => x.get<Api.ChangeSummary[]>("/api/changes"));
+    if (kind === "change")
       return this.quick(
         title,
-        cs.map((c) => ({ label: c.title, description: `${c.id} · ${c.state}`, value: c.id })),
+        async () =>
+          (await api().then((x) => x.get<Api.ChangeSummary[]>("/api/changes"))).map((c) => ({
+            label: c.title,
+            description: `${c.id} · ${c.state}`,
+            value: c.id,
+          })),
         "No changes yet: start one with Atticus: New change.",
+        "Reading the changes…",
       );
-    }
-    if (kind === "question") {
-      const q = await readOpenQuestions(this.svc.cli(root), root);
+    if (kind === "question")
       return this.quick(
         title,
-        q.ok
-          ? q.value.map((x) => ({
-              label: x.question,
-              description: x.repo,
-              detail: x.id,
-              value: x.id,
-            }))
-          : [],
+        async () => {
+          const q = await readOpenQuestions(this.svc.cli(root), root);
+          if (!q.ok) throw new Error(q.message);
+          return q.value.map((x) => ({
+            label: x.question,
+            description: x.repo,
+            detail: x.id,
+            value: x.id,
+          }));
+        },
         "No question is waiting for an answer.",
+        "Reading the open questions…",
       );
-    }
     if (kind === "finding") {
       const change = typeof before[0] === "string" ? before[0] : undefined;
       if (!change)
@@ -186,38 +235,45 @@ export class CommandUi {
           prompt: "The finding's id",
           ignoreFocusOut: true,
         });
-      const fs = await api().then((x) =>
-        x.get<Api.Finding[]>(`/api/findings?change=${enc(change)}`),
-      );
       return this.quick(
         title,
-        fs
-          .filter((f) => (f.state ?? "open") === "open")
-          .map((f) => ({
-            label: f.summary,
-            description: `${f.severity} · ${f.artifact}`,
-            value: f.id,
-          })),
+        async () =>
+          (await api().then((x) => x.get<Api.Finding[]>(`/api/findings?change=${enc(change)}`)))
+            .filter((f) => (f.state ?? "open") === "open")
+            .map((f) => ({
+              label: f.summary,
+              description: `${f.severity} · ${f.artifact}`,
+              value: f.id,
+            })),
         `${change} has no open findings.`,
+        "Reading the findings…",
       );
     }
-    if (kind === "flow") {
-      const x = await api();
-      const { repos } = await x.get<Api.SpecList>("/api/specs");
-      const items: { label: string; description: string; value: string }[] = [];
-      for (const r of repos)
-        for (const f of (await x.get<Api.SpecView>(`/api/specs/${enc(r.repo)}`)).flows)
-          items.push({ label: f.name, description: `${f.id} · ${r.repo}`, value: f.id });
-      return this.quick(title, items, "No repo has a spec yet: draft one with atticus spec draft.");
-    }
-    if (kind === "system") {
-      const page = await api().then((x) => x.get<Api.RecordPage>("/api/catalog/System?limit=500"));
+    if (kind === "flow")
       return this.quick(
         title,
-        page.items.map((r) => ({ label: r.name ?? r.id, description: r.id, value: r.id })),
-        "The catalog has no systems yet: run atticus scan.",
+        async () => {
+          const x = await api();
+          const { repos } = await x.get<Api.SpecList>("/api/specs");
+          const items: { label: string; description: string; value: string }[] = [];
+          for (const r of repos)
+            for (const f of (await x.get<Api.SpecView>(`/api/specs/${enc(r.repo)}`)).flows)
+              items.push({ label: f.name, description: `${f.id} · ${r.repo}`, value: f.id });
+          return items;
+        },
+        "No repo has a spec yet: draft one with atticus spec draft.",
+        "Reading the flows…",
       );
-    }
+    if (kind === "system")
+      return this.quick(
+        title,
+        async () =>
+          (
+            await api().then((x) => x.get<Api.RecordPage>("/api/catalog/System?limit=500"))
+          ).items.map((r) => ({ label: r.name ?? r.id, description: r.id, value: r.id })),
+        "The catalog has no systems yet: run atticus scan.",
+        "Reading the catalog's systems…",
+      );
     if (kind === "choice" && a.choices)
       return this.quick(
         title,
@@ -350,10 +406,13 @@ export class CommandUi {
     const r = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Atticus: ${commandText(argv)}`,
+        title: `Atticus: ${runProgressTitle(argv)}…`,
         cancellable: true,
       },
-      (_p, token) => this.svc.cli(root)([...argv, "--root", root], token),
+      (p, token) => {
+        p.report({ message: `${commandText(argv)}` });
+        return this.svc.cli(root)([...argv, "--root", root], token);
+      },
     );
     const lines = [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(
       Boolean,
@@ -425,10 +484,14 @@ export class CommandUi {
     title?: string,
   ) {
     try {
-      const cat = await this.load(root);
-      const cmd = id ? cat.commands.find((c) => c.id === id) : await this.pick(root, only, title);
+      const cmd = id
+        ? (await this.loadShown(root)).commands.find((c) => c.id === id)
+        : await this.pick(root, only, title);
       if (!cmd) {
-        if (id) void vscode.window.showWarningMessage(`This atticus has no command ${id}.`);
+        if (id)
+          void vscode.window.showWarningMessage(
+            `This atticus has no command ${id}. It may be older than this extension: upgrade it, then try again.`,
+          );
         return;
       }
       const a = await this.ask(root, cmd, preset);
@@ -444,7 +507,17 @@ export class CommandUi {
 
   /** Every command that takes this repo or change, with it filled in. */
   async forItem(root: string, kind: "repo" | "change", value: string) {
-    const cat = await this.load(root);
+    let cat: Catalog;
+    try {
+      cat = await this.loadShown(root);
+    } catch (e) {
+      const pick = await vscode.window.showErrorMessage(
+        `Couldn't read the command line's commands: ${(e as Error).message}`,
+        "Show the output",
+      );
+      if (pick) this.svc.log.show(true);
+      return;
+    }
     await this.pickAndRun(
       root,
       undefined,
@@ -471,10 +544,15 @@ export class CommandUi {
     const brief = briefPathFrom(p.lines.join("\n"));
     if (!brief) return this.showPrinted(["change", "new"], p);
     const id = brief.split("/").slice(-2)[0]!;
-    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(join(root, brief)));
-    await vscode.window.showTextDocument(doc, { preview: false });
+    try {
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(join(root, brief)));
+      await vscode.window.showTextDocument(doc, { preview: false });
+    } catch {
+      return this.showPrinted(["change", "new"], p);
+    }
+    // Not a dialog: the person writes the brief first. The Next section offers the stage too.
     const pick = await vscode.window.showInformationMessage(
-      `${p.lines[0]} Write the brief, save it, then run the feature stage.`,
+      `${p.lines[0]} Write the brief, save it, then run the feature stage (it is also the next step in the Next section).`,
       "Run the feature stage",
     );
     if (pick) await this.d.runAi(["change", "feature", id]);
@@ -485,8 +563,14 @@ export class CommandUi {
   /** Run in a folder that isn't a metarepo yet (init, adopt, sandbox): no --root. */
   private async plain(cwd: string, argv: string[]): Promise<Printed> {
     const r = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `Atticus: ${commandText(argv)}` },
-      () => this.svc.cli(cwd)(argv),
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Atticus: ${runProgressTitle(argv)}…`,
+      },
+      (p) => {
+        p.report({ message: `${commandText(argv)}` });
+        return this.svc.cli(cwd)(argv);
+      },
     );
     const lines = [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(
       Boolean,
@@ -652,10 +736,16 @@ export class CommandUi {
     if (!platform) return;
     if (how.id === "edit") {
       const rel = existsSync(join(root, "org-pack")) ? "org-pack" : join(".atticus", "org-pack");
-      const doc = await vscode.workspace.openTextDocument(
-        vscode.Uri.file(join(root, rel, "profiles", platform, "repos.manifest.yaml")),
-      );
-      await vscode.window.showTextDocument(doc);
+      const file = join(root, rel, "profiles", platform, "repos.manifest.yaml");
+      try {
+        await vscode.window.showTextDocument(
+          await vscode.workspace.openTextDocument(vscode.Uri.file(file)),
+        );
+      } catch {
+        void vscode.window.showWarningMessage(
+          `${file} isn't there yet. Add repos from a folder or a Git host organisation first; it is written then.`,
+        );
+      }
       return;
     }
     let target: string[];
@@ -679,7 +769,17 @@ export class CommandUi {
     const argv = ["repos", "discover", ...target, "--platform", platform];
     const dry = await this.captured(root, [...argv, "--dry-run"]);
     const found = discoveredFrom(dry.lines.join("\n"));
-    if (dry.code !== 0 || !found.repos.length) return this.showPrinted(argv, dry);
+    if (dry.code !== 0) return this.showPrinted(argv, dry);
+    if (!found.repos.length) {
+      const pick = await vscode.window.showWarningMessage(
+        how.id === "folder"
+          ? `No repo found in ${target[0]}: nothing was added. Pick the folder that holds the clones, each repo a folder in it.`
+          : `No repo found in ${target[1]}: nothing was added. Check the organisation's name; the output says what the Git host answered.`,
+        "Show the output",
+      );
+      if (pick) this.svc.log.show(true);
+      return;
+    }
     const ok = await vscode.window.showInformationMessage(
       `Add ${found.repos.length} repo${found.repos.length === 1 ? "" : "s"} to the ${platform} manifest?`,
       {
@@ -708,9 +808,12 @@ export class CommandUi {
     id: string,
     a: { args?: (string | undefined)[]; flags?: Record<string, string | true> },
   ): Promise<void> {
-    const cat = await this.load(root);
+    const cat = await this.loadShown(root);
     const cmd = cat.commands.find((c) => c.id === id);
-    if (!cmd) return void vscode.window.showWarningMessage(`This atticus has no command ${id}.`);
+    if (!cmd)
+      return void vscode.window.showWarningMessage(
+        `This atticus has no command ${id}. It may be older than this extension: upgrade it, then try again.`,
+      );
     await this.run(root, cmd, {
       args: a.args ?? [],
       flags: { ...requiredSwitches(cmd), ...(a.flags ?? {}) },
@@ -755,8 +858,14 @@ export class CommandUi {
     argv: string[],
   ): Promise<{ ok: true; value: T; code: number } | { ok: false; printed: Printed }> {
     const r = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `Atticus: ${commandText(argv)}` },
-      () => this.svc.cli(root)([...argv, "--root", root]),
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Atticus: ${runProgressTitle(argv)}…`,
+      },
+      (p) => {
+        p.report({ message: `${commandText(argv)}` });
+        return this.svc.cli(root)([...argv, "--root", root]);
+      },
     );
     this.svc.log.appendLine(`--- ${commandText(argv)} (exit ${r.code})`);
     if (r.stderr.trim()) this.svc.log.appendLine(r.stderr.trimEnd());
@@ -935,40 +1044,55 @@ export class CommandUi {
    */
   async onboardRepo(root: string, given?: string) {
     let repo = given;
-    for (;;) {
+    const readState = async () => {
       const api = await this.svc.api(root);
       const [o, specs, q] = await Promise.all([
         api.get<Api.OnboardingView>("/api/onboarding"),
         api.get<Api.SpecList>("/api/specs").catch((): Api.SpecList => ({ repos: [] })),
         readOpenQuestions(this.svc.cli(root), root),
       ]);
-      if (!repo) {
-        if (!o.repos.length) {
-          const add = await vscode.window.showInformationMessage(
-            "No repos yet: add them first.",
-            "Add repos",
-          );
-          if (add) await this.addRepos(root);
-          return;
-        }
-        repo = await this.quick(
-          "Atticus: which repo to onboard?",
-          o.repos.map((r) => ({
+      return { o, specs, q };
+    };
+    if (!repo) {
+      let none = false;
+      repo = await this.quick(
+        "Atticus: which repo to onboard?",
+        async () => {
+          const { o } = await readState();
+          none = !o.repos.length;
+          return o.repos.map((r) => ({
             label: r.id,
             description: r.lastScan ? "scanned" : r.cloned ? "not scanned" : "not cloned",
             value: r.id,
-          })),
-          "",
+          }));
+        },
+        () => undefined,
+        "Reading the repos…",
+      );
+      if (none) {
+        // A dialog: the only way on is to add repos first.
+        const add = await vscode.window.showInformationMessage(
+          "No repos yet: add them first.",
+          { modal: true, detail: "Atticus onboards the repos listed in a repos manifest." },
+          "Add repos",
         );
-        if (!repo) return;
+        if (add) await this.addRepos(root);
+        return;
       }
-      const r = o.repos.find((x) => x.id === repo);
-      if (!r) return void vscode.window.showWarningMessage(`${repo} isn't in a repos manifest.`);
-      const stages = onboardingStages(r, {
-        flows: specs.repos.find((x) => x.repo === repo)?.flows ?? 0,
-        questions: q.ok ? q.value.filter((x) => x.repo === repo).length : 0,
+      if (!repo) return;
+    }
+    const name = repo;
+    for (;;) {
+      // The stages show at once, read while the list is open; it comes back after each one runs.
+      const stage = await this.pickStage(name, async () => {
+        const { o, specs, q } = await readState();
+        const r = o.repos.find((x) => x.id === name);
+        if (!r) throw new Error(`${name} isn't in a repos manifest.`);
+        return onboardingStages(r, {
+          flows: specs.repos.find((x) => x.repo === name)?.flows ?? 0,
+          questions: q.ok ? q.value.filter((x) => x.repo === name).length : 0,
+        });
       });
-      const stage = await this.pickStage(repo, stages);
       if (!stage) return;
       if (stage.run.kind === "vscode")
         await vscode.commands.executeCommand(stage.run.command, ...stage.run.args);
@@ -976,7 +1100,7 @@ export class CommandUi {
     }
   }
 
-  private pickStage(repo: string, stages: Stage[]): Promise<Stage | undefined> {
+  private pickStage(repo: string, read: () => Promise<Stage[]>): Promise<Stage | undefined> {
     const ICON: Record<Stage["state"], string> = {
       done: "$(pass-filled)",
       next: "$(arrow-right)",
@@ -991,30 +1115,24 @@ export class CommandUi {
       again: "after every scan",
       optional: "only if needed",
     };
-    const qp = vscode.window.createQuickPick<vscode.QuickPickItem & { stage: Stage }>();
-    qp.title = `Atticus: onboard ${repo}`;
-    qp.placeholder = "Pick a stage to run it; this list comes back when it's done. Esc to stop.";
-    qp.ignoreFocusOut = true;
-    qp.matchOnDetail = true;
-    qp.items = stages.map((s) => ({
-      label: `${ICON[s.state]} ${s.label}`,
-      description: WORD[s.state],
-      detail: s.detail,
-      stage: s,
-    }));
-    const next = qp.items.find((i) => i.stage.state === "next");
-    if (next) qp.activeItems = [next];
-    return new Promise((done) => {
-      qp.onDidAccept(() => {
-        done(qp.selectedItems[0]?.stage);
-        qp.hide();
-      });
-      qp.onDidHide(() => {
-        done(undefined);
-        qp.dispose();
-      });
-      qp.show();
-    });
+    return pickLoading<vscode.QuickPickItem & { stage: Stage }>(
+      {
+        title: `Atticus: onboard ${repo}`,
+        reading: `Reading where ${repo} is…`,
+        placeholder: "Pick a stage to run it; this list comes back when it's done. Esc to stop.",
+        empty: `${repo} has no stages to show.`,
+        matchOnDetail: true,
+        log: this.svc.log,
+        active: (i) => i.stage.state === "next",
+      },
+      async () =>
+        (await read()).map((s) => ({
+          label: `${ICON[s.state]} ${s.label}`,
+          description: WORD[s.state],
+          detail: s.detail,
+          stage: s,
+        })),
+    ).then((p) => p?.stage);
   }
 
   /** Knowledge the catalog doesn't have from code: another repo, a wiki, files, or reading them. */
@@ -1034,10 +1152,27 @@ export class CommandUi {
           go: () => vscode.commands.executeCommand("atticus.addWiki"),
         },
         {
-          label: "$(search) Search the wikis…",
+          label: "$(search) Search the wikis for something new…",
           detail:
-            "atticus knowledge find: a term or phrase; Copilot reads the pages it is on for what isn't an item yet",
+            "atticus knowledge find: a term or phrase; Copilot reads the pages it is on, then you keep what it found (a process, a request, a standard…)",
           go: () => vscode.commands.executeCommand("atticus.searchWikis"),
+        },
+        {
+          label: "$(check-all) Keep what a search found…",
+          detail:
+            "atticus knowledge keep: a saved search's new items, kept as knowledge items you verified",
+          go: () => vscode.commands.executeCommand("atticus.keepFound"),
+        },
+        {
+          label: "$(pass) Check what no one has verified…",
+          detail: "Each knowledge item a person hasn't checked: right, correct it, or wrong",
+          go: () => vscode.commands.executeCommand("atticus.reviewUnverified"),
+        },
+        {
+          label: "$(organization) Draft the org pack from the wikis…",
+          detail:
+            "atticus orgpack draft: the products and vendors the wikis name, as the profile's systems, to accept",
+          go: () => vscode.commands.executeCommand("atticus.draftOrgPack"),
         },
         {
           label: "$(file-add) Add files",
@@ -1107,19 +1242,34 @@ export class CommandUi {
 
   /** Doctor and the upgrade check, when the window opens: say what needs a look. */
   async checkHealth(root: string, quiet: boolean) {
-    const up = await this.svc.cli(root)(["upgrade", "--check", "--root", root]);
-    if (up.code === 1) {
-      const pick = await vscode.window.showWarningMessage(
-        `Atticus: ${up.stdout.split("\n")[0] ?? "the metarepo needs an upgrade"}`,
-        "Upgrade",
-        "Show what",
+    if (!quiet)
+      return vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: "Atticus: checking this machine and the metarepo…",
+        },
+        () => this.checkHealthNow(root, false),
       );
-      if (pick === "Upgrade") await this.pickAndRun(root, "upgrade");
-      else if (pick === "Show what") {
-        this.svc.log.appendLine(up.stdout.trimEnd());
-        this.svc.log.show(true);
-      }
-    }
+    return this.checkHealthNow(root, true);
+  }
+
+  private async checkHealthNow(root: string, quiet: boolean) {
+    const up = await this.svc.cli(root)(["upgrade", "--check", "--root", root]);
+    // Not awaited: what is said mustn't hold the progress note, or the doctor's check, open.
+    if (up.code === 1)
+      void vscode.window
+        .showWarningMessage(
+          `Atticus: ${up.stdout.split("\n")[0] ?? "the metarepo needs an upgrade"}`,
+          "Upgrade",
+          "Show what",
+        )
+        .then((pick) => {
+          if (pick === "Upgrade") void this.pickAndRun(root, "upgrade");
+          else if (pick === "Show what") {
+            this.svc.log.appendLine(up.stdout.trimEnd());
+            this.svc.log.show(true);
+          }
+        });
     const doc = await this.svc.cli(root)(["doctor", "--json", "--root", root]);
     let problems: string[];
     try {
@@ -1129,12 +1279,13 @@ export class CommandUi {
     }
     if (problems.length) {
       for (const l of problems) this.svc.log.appendLine(`doctor: ${l}`);
-      const pick = await vscode.window.showWarningMessage(
-        `Atticus: this machine has ${problems.length} thing${problems.length === 1 ? "" : "s"} to fix. ${problems[0]}`,
-        "Show all",
-      );
-      if (pick) this.svc.log.show(true);
-    } else if (!quiet)
+      void vscode.window
+        .showWarningMessage(
+          `Atticus: this machine has ${problems.length} thing${problems.length === 1 ? "" : "s"} to fix. ${problems[0]}`,
+          "Show all",
+        )
+        .then((pick) => pick && this.svc.log.show(true));
+    } else if (!quiet && up.code !== 1)
       void vscode.window.showInformationMessage(
         "Atticus: this machine and the metarepo are ready.",
       );

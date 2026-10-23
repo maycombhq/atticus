@@ -52,11 +52,24 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
     this.questions = undefined;
     this.changed.fire(undefined);
     this.questionsChanged.fire();
-    this.loading = this.load().finally(() => {
-      this.loading = undefined;
-      this.changed.fire(undefined);
-      this.questionsChanged.fire();
-    });
+    this.loading = this.load()
+      .catch((e: unknown) => {
+        // Never left on "Reading…": say why, with the output a click away.
+        const message = `Couldn't read the metarepo: ${(e as Error)?.message ?? String(e)}`;
+        this.svc.log.appendLine(message);
+        this.nodes = [{ kind: "error", message }, { kind: "app" }];
+        if (this.questions === undefined) this.questions = message;
+      })
+      .finally(() => {
+        this.loading = undefined;
+        this.changed.fire(undefined);
+        this.questionsChanged.fire();
+      });
+    // The views' own progress bars, beside their Reading rows.
+    for (const viewId of ["atticus.view", "atticus.questions"])
+      void vscode.window.withProgress({ location: { viewId } }, () =>
+        (this.loading ?? Promise.resolve()).catch(() => undefined),
+      );
     return this.loading;
   }
 
@@ -100,7 +113,7 @@ export class AtticusView implements vscode.TreeDataProvider<Node> {
 
   /** Each change's title from its change.yaml, read once a refresh. */
   private readonly titles = new Map<string, string | undefined>();
-  private changeTitle = (id: string): string | undefined => {
+  readonly changeTitle = (id: string): string | undefined => {
     if (!this.titles.has(id)) {
       let title: string | undefined;
       for (const dir of ["openspec", join(".atticus", "openspec")])

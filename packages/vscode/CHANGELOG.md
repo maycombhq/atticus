@@ -2,6 +2,24 @@
 
 The Atticus extension for VS Code. The command line's own changes are in the repository's [CHANGELOG](https://github.com/maycombhq/atticus/blob/main/CHANGELOG.md).
 
+## 0.3.1
+
+Nothing a person clicks leaves them unsure.
+
+- **Progress in plain words.** Every run says what it is doing ("Recording that request-kafka-topic is right…", "Finding what add-note-tags needs from the organisation, with Copilot…"), with the command underneath, instead of the command alone. Checking this machine, reading the next step, drafting the org pack, asking the catalog, acting on a finding, answering a question and finding a need's page now show progress too; before, some showed nothing until they ended.
+- **Pick lists open at once.** Lists that read their items (a command's repo, change, question, finding, flow or system; Run a command; the onboarding stages; the open needs; the searches; what no one has verified) open straight away with "Reading…" and VS Code's busy bar, instead of appearing late.
+- **Reading rows in every section.** Repos, Changes, Knowledge and Catalog, and every part of them (items by kind, needs, searches, what changed, flows, tasks), show "Reading…" until read; a refresh keeps the rows on show, with the section's progress bar, until the new ones are read. A part that can't be read says "Couldn't read this: why" and opens the Atticus output when clicked. An empty part says what fills it ("No tasks yet: the stories stage writes them").
+- **Searching the wikis, start to end.** Says when no page mentions the phrase (nothing is sent to Copilot), and when there is no wiki to search yet (a dialog to add one). What it found opens as a list, new first and picked, then those already known or kept. Each item is kept as its own kind or the other its record can be, described in plain words (a request offers request or process, no longer every kind, which the command line refused). The Knowledge section then opens, with the kept items ticked. A saved search now opens in the Knowledge section to what it found, each marked new, kept or already known; a new one is kept with a click or its **Keep it…** button, and the search's **Keep…** button keeps several.
+- **Add knowledge** and **Start or bring in** also offer: Keep what a search found, Check what no one has verified, and Draft the org pack from the wikis.
+- **Check what no one has verified** opens each item's page beside the list.
+- **Ask about it** (a knowledge item) runs with Copilot like any other AI step, and shows the answer; the catalog's **Ask** says its answer too, not only in the output.
+- Rows that looked clickable now act: a repo's **No flows yet: draft its spec** and **Scan settings: none yet: draft them** run those steps with Copilot.
+- Picking a repo or change for Survey, Verify, Spec, Feature, Architecture and Stories is a list of the metarepo's own, not a box to type an id in.
+- **Show the next step** is a dialog with Run it (or Take this step), naming the step in plain words.
+- Nothing found says so: Add repos when the folder holds no repo; Answer this repo's questions when it has none; Onboard a repo when there are no repos (a dialog with Add repos); open needs, searches and unverified items when there are none; a need list that couldn't be read says why instead of "no open needs".
+- A command that needs a metarepo, run without one, offers to open or create one; without the command line, it offers to check again.
+- Fixed: Edit the manifest by hand failed silently when the manifest wasn't written yet; a new change whose brief couldn't be opened failed silently; the Next section could stay on "Reading the metarepo..." when reading it threw.
+
 ## 0.3.0
 
 - **Draft the org pack from the wikis**: the systems the knowledge names, with their aliases and owners, to pick and accept into profile.yaml.

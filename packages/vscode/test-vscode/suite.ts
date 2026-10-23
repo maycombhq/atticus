@@ -51,9 +51,24 @@ export async function run(): Promise<void> {
     return first;
   });
 
+  // 0.3.1: a section answers at once with a Reading row, then its rows once read.
+  await check("a section says it is reading, then shows what it read", async () => {
+    const t = h.sections.catalog!;
+    t.reset();
+    const first = t.getChildren().map((n) => t.getTreeItem(n));
+    if (!first.length || !/^Reading the catalog/.test(label(first[0]!)))
+      throw new Error(`no Reading row: ${first.map(label).join(", ")}`);
+    const read = await t.children();
+    if (!read.length || /^Reading/.test(label(t.getTreeItem(read[0]!))))
+      throw new Error("still reading");
+    const now = t.getChildren().map((n) => label(t.getTreeItem(n)));
+    if (now.some((l) => /^Reading/.test(l))) throw new Error(`shown: ${now.join(", ")}`);
+    return `${label(first[0]!)} → ${now.length} rows`;
+  });
+
   const top = async (name: string) => {
     const t = h.sections[name]!;
-    return Promise.all((await t.getChildren()).map((n) => t.getTreeItem(n)));
+    return Promise.all((await t.children()).map((n) => t.getTreeItem(n)));
   };
   await check("Repos lists the manifest's repos", async () => {
     const items = (await top("repos")).map(label);
@@ -77,9 +92,9 @@ export async function run(): Promise<void> {
   });
   await check("a change shows what it needs, or the step that finds it (ADR 0101)", async () => {
     const t = h.sections.changes!;
-    const [change] = await t.getChildren();
+    const [change] = await t.children();
     if (!change) throw new Error("no change");
-    const kids = (await t.getChildren(change)).map((n) => t.getTreeItem(n));
+    const kids = (await t.children(change)).map((n) => t.getTreeItem(n));
     const needs = kids.find((k) => /^(Needs \(|Find what it needs)/.test(label(k)));
     if (!needs) throw new Error(`no needs row: ${kids.map(label).join(", ")}`);
     return label(needs);

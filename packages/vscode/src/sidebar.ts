@@ -2,8 +2,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as vscode from "vscode";
 import type * as Api from "./api-types";
+import { emptyBelow, errorLabel, loadingLabel } from "./feedback";
+import { Loads } from "./loads";
 import {
   actionRow,
+  candidateItems,
   findItems,
   itemsOfGroup,
   knowledgeGroupItems,
@@ -19,6 +22,7 @@ import {
   type ScanReport,
 } from "./knowledge-data";
 import {
+  readFind,
   readFinds,
   readKnowledgeList,
   readNeeds,
@@ -56,6 +60,7 @@ type Node =
   | {
       id: string;
       state: "loading" | "error" | "empty";
+      /** The message is the row's label; for an error, the reason after "Couldn't read this". */
       message: string;
       /** An empty section's first step, run by clicking the row (ADR 0100). */
       action?: { label: string; command: string };
@@ -114,11 +119,24 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
     private readonly section: Section,
   ) {}
 
+  private readonly loads = new Loads<Node[]>();
+
+  /** Read again; what is on show stays until the new rows are read. */
   refresh() {
+    this.details.clear();
+    this.needs.clear();
+    this.knowledge = undefined;
+    this.loads.refresh();
+    this.changed.fire(undefined);
+  }
+
+  /** Forget what was read (another metarepo opened): every part shows Reading… again. */
+  reset() {
     this.details.clear();
     this.needs.clear();
     this.onboarding = undefined;
     this.knowledge = undefined;
+    this.loads.clear();
     this.changed.fire(undefined);
   }
 
@@ -296,42 +314,103 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
           ),
           ...findItems((await this.knowledgeState(root)).finds),
         ];
+      case "find": {
+        // What the search found, as the command line lists it; else its saved file.
+        const listed = (await this.knowledgeState(root)).finds.find((f) => f.slug === x.slug);
+        const cands =
+          listed?.list ??
+          readFind(root, paths.knowledgeRel ?? "knowledge", x.slug)?.candidates ??
+          [];
+        return candidateItems(x.slug, cands);
+      }
       case "evidence":
         return evidenceItems(x, paths);
     }
   }
 
-  async getChildren(node?: Node): Promise<Node[]> {
+  /** A part's rows, read (no "Reading…" row): for the tests in VS Code, and a part read at once. */
+  async children(node?: Node): Promise<Node[]> {
+    const root = this.svc.root;
+    if (!root || !this.svc.cliOk) return [];
+    if (node && (!isItem(node) || !node.expand)) return [];
+    return this.loads.wait(
+      node?.id ?? "",
+      () => this.read(root, node as Item | undefined),
+      (e) => this.failed(node, e),
+    );
+  }
+
+  /**
+   * The rows to show now (0.3.1): a "Reading…" row until a part is first read, then its rows; a
+   * refresh keeps the rows on show, with the view's progress bar, until they are read again.
+   */
+  getChildren(node?: Node): Node[] {
     const root = this.svc.root;
     // No metarepo or no command line: empty, so the view's welcome says what to do first.
     if (!root || !this.svc.cliOk) return [];
     if (node && (!isItem(node) || !node.expand)) return [];
-    try {
-      const items = node ? await this.below(root, node as Item) : await this.top(root);
-      if (!items.length)
-        return [
-          {
-            id: `${node?.id ?? this.section}:empty`,
-            state: "empty",
-            message: node ? "Nothing here yet." : EMPTY[this.section].message,
-            ...(node ? {} : { action: EMPTY[this.section] }),
-          },
-        ];
-      return items;
-    } catch (e) {
+    const it = node as Item | undefined;
+    const shown = this.loads.get(
+      it?.id ?? "",
+      () => this.read(root, it),
+      () => this.changed.fire(it),
+      (e) => this.failed(it, e),
+    );
+    return (
+      shown ?? [
+        {
+          id: `${it?.id ?? this.section}:loading`,
+          state: "loading",
+          message: loadingLabel(this.section, it?.expand?.kind),
+        },
+      ]
+    );
+  }
+
+  /** Read a part, with the view's progress bar while it reads. */
+  private read(root: string, node: Item | undefined): Promise<Node[]> {
+    const p = (async (): Promise<Node[]> => {
+      const items = node ? await this.below(root, node) : await this.top(root);
+      if (items.length) return items;
       return [
-        { id: `${node?.id ?? this.section}:error`, state: "error", message: (e as Error).message },
+        {
+          id: `${node?.id ?? this.section}:empty`,
+          state: "empty",
+          message: node ? emptyBelow(node.expand!.kind) : EMPTY[this.section].message,
+          ...(node ? {} : { action: EMPTY[this.section] }),
+        },
       ];
-    }
+    })();
+    void vscode.window.withProgress({ location: { viewId: `atticus.${this.section}` } }, () =>
+      p.catch(() => undefined),
+    );
+    return p;
+  }
+
+  private failed(node: Item | undefined, e: unknown): Node[] {
+    const message = (e as Error)?.message ?? String(e);
+    this.svc.log.appendLine(`Couldn't read the ${this.section} section: ${message}`);
+    return [{ id: `${node?.id ?? this.section}:error`, state: "error", message }];
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
     if (!isItem(node)) {
-      const t = new vscode.TreeItem(node.action?.label ?? node.message);
+      const label =
+        node.state === "error" ? errorLabel(node.message) : (node.action?.label ?? node.message);
+      const t = new vscode.TreeItem(label);
       t.id = node.id;
-      t.tooltip = node.message;
+      t.tooltip =
+        node.state === "error"
+          ? `${node.message}\n\nClick to see the commands run, in the Atticus output. Refresh to read it again.`
+          : node.message;
       t.iconPath = new vscode.ThemeIcon(
-        node.state === "error" ? "warning" : node.action ? "add" : "info",
+        node.state === "loading"
+          ? "loading~spin"
+          : node.state === "error"
+            ? "warning"
+            : node.action
+              ? "add"
+              : "info",
       );
       if (node.action) t.command = { command: node.action.command, title: node.action.label };
       if (node.state === "error")

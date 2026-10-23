@@ -1,7 +1,7 @@
 {
   "name": "atticus",
   "displayName": "Atticus",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Run Atticus's AI steps with Copilot's own model, in VS Code. Atticus's command line does all the checking.",
   "license": "Apache-2.0",
   "publisher": "maycombhq",
@@ -421,6 +421,12 @@
         "title": "Keep what a search of the wikis found…",
         "category": "Atticus",
         "icon": "$(check-all)"
+      },
+      {
+        "command": "atticus.keepCandidate",
+        "title": "Keep it…",
+        "category": "Atticus",
+        "icon": "$(check)"
       },
       {
         "command": "atticus.syncSource",
@@ -887,6 +893,26 @@
           "command": "atticus.findNeeds",
           "when": "view == atticus.changes && viewItem == atticus.change",
           "group": "atticus"
+        },
+        {
+          "command": "atticus.keepFound",
+          "when": "view == atticus.knowledge && viewItem == atticus.find",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.keepFound",
+          "when": "view == atticus.knowledge && viewItem == atticus.find",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.keepCandidate",
+          "when": "view == atticus.knowledge && viewItem == atticus.findCandidate.new",
+          "group": "inline"
+        },
+        {
+          "command": "atticus.keepCandidate",
+          "when": "view == atticus.knowledge && viewItem == atticus.findCandidate.new",
+          "group": "atticus"
         }
       ],
       "commandPalette": [
@@ -981,6 +1007,10 @@
         {
           "command": "atticus.openNeedPage",
           "when": "false"
+        },
+        {
+          "command": "atticus.keepCandidate",
+          "when": "false"
         }
       ],
       "atticus.start": [
@@ -1027,13 +1057,23 @@
           "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
-          "command": "atticus.addKnowledge",
+          "command": "atticus.keepFound",
           "group": "3_bring@5",
           "when": "atticus.hasMetarepo && !atticus.cliMissing"
         },
         {
+          "command": "atticus.reviewUnverified",
+          "group": "3_bring@6",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        },
+        {
           "command": "atticus.draftOrgPack",
-          "group": "3_bring@5",
+          "group": "3_bring@7",
+          "when": "atticus.hasMetarepo && !atticus.cliMissing"
+        },
+        {
+          "command": "atticus.addKnowledge",
+          "group": "3_bring@8",
           "when": "atticus.hasMetarepo && !atticus.cliMissing"
         }
       ]

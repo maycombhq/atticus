@@ -19,12 +19,15 @@ import { CommandUi } from "./command-ui";
 import { FlowLenses } from "./codelens";
 import { urlsOf } from "./knowledge-data";
 import { KnowledgeUi } from "./knowledge-ui";
-import type { NextStep } from "./types";
+import type { NextStep, OpenQuestion } from "./types";
 import { SectionTree, type Section } from "./sidebar";
 import { findingActions, flowHash, stepOf, type Item, type Open } from "./sidebar-data";
 import { setupAction } from "./guided";
 import { commandText } from "./cli";
 import { describeEnd } from "./describe";
+import { aiProgressTitle, runProgressTitle } from "./feedback";
+import { pickLoading } from "./pick";
+import { stepTitle } from "./words";
 import type { StepEnd } from "./runner";
 import { Service } from "./service";
 import { AtticusView, QuestionsView } from "./view";
@@ -146,10 +149,25 @@ ${view.next.why}`
   const needRoot = (): string | undefined => {
     const root = svc.root;
     if (!root)
-      void vscode.window.showWarningMessage(
-        "Open the metarepo folder (the one with org-pack/) first.",
-      );
-    return root;
+      void vscode.window
+        .showWarningMessage(
+          "This needs an Atticus metarepo open in the window (a folder with org-pack/). None is open.",
+          "Open a metarepo",
+          "Create one",
+        )
+        .then((p) => {
+          if (p === "Open a metarepo") void vscode.commands.executeCommand("vscode.openFolder");
+          else if (p === "Create one")
+            void vscode.commands.executeCommand("atticus.createMetarepo");
+        });
+    else if (!svc.cliOk)
+      void vscode.window
+        .showWarningMessage(
+          "Atticus can't run its command line (atticus). Install it, or set its path in the setting atticus.path.",
+          "Check again",
+        )
+        .then((p) => p && vscode.commands.executeCommand("atticus.checkHealth"));
+    return root && svc.cliOk ? root : undefined;
   };
 
   /** Show how a step ended: the first line in a notification, all of it in the output. */
@@ -168,20 +186,32 @@ ${view.next.why}`
     else if (pick === "Show details") svc.log.show(true);
   };
 
-  const runAi = async (args: string[], spec?: string) => {
+  const runAi = async (
+    args: string[],
+    spec?: string,
+    o: { title?: string; quiet?: boolean } = {},
+  ) => {
     const root = needRoot();
     if (!root) return;
     const end = await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: `Atticus: ${commandText(args)}`,
+        title: `Atticus: ${o.title ?? aiProgressTitle(args)}…`,
         cancellable: true,
       },
-      (p, token) =>
-        svc.run(root, { args, ...(spec ? { spec } : {}) }, (l) => p.report({ message: l }), token),
+      (p, token) => {
+        p.report({ message: `${commandText(args)}` });
+        return svc.run(
+          root,
+          { args, ...(spec ? { spec } : {}) },
+          (l) => p.report({ message: l }),
+          token,
+        );
+      },
     );
     // Not awaited: the notice can sit in the bell, and what comes next mustn't wait on it.
-    void showEnd(end);
+    if (o.quiet && end.state === "done") for (const l of describeEnd(end)) svc.log.appendLine(l);
+    else void showEnd(end);
     svc.fireChanged();
     return end;
   };
@@ -270,7 +300,14 @@ ${view.next.why}`
     );
   };
   context.subscriptions.push(
-    vscode.workspace.onDidChangeWorkspaceFolders(() => void updateContext().then(refreshAll)),
+    // Another metarepo: forget what was read, so every section says Reading… again.
+    vscode.workspace.onDidChangeWorkspaceFolders(
+      () =>
+        void updateContext().then(() => {
+          for (const t of sections) t.reset();
+          refreshAll();
+        }),
+    ),
     vscode.extensions.onDidChange(() => void updateContext()),
   );
   reg("atticus.checkHealth", async () => {
@@ -361,9 +398,28 @@ ${view.next.why}`
     "atticus.searchWikis",
     withRoot((root) => knowledge.search(root)),
   );
-  reg("atticus.keepFound", (slug?: unknown) => {
+  reg("atticus.keepFound", (arg?: unknown) => {
     const root = needRoot();
-    if (root) void knowledge.keepFound(root, typeof slug === "string" ? slug : undefined);
+    // A slug, or a search's row in the Knowledge section (its Keep… button).
+    const slug =
+      typeof arg === "string"
+        ? arg
+        : (arg as Item | undefined)?.expand?.kind === "find"
+          ? (arg as { expand: { slug: string } }).expand.slug
+          : undefined;
+    if (root) void knowledge.keepFound(root, slug);
+  });
+  reg("atticus.keepCandidate", (slug?: unknown, id?: unknown) => {
+    const root = needRoot();
+    // A click passes the search and the candidate; the inline Keep button passes the row.
+    let s = typeof slug === "string" ? slug : undefined;
+    let c = typeof id === "string" ? id : undefined;
+    const row = slug as Item | undefined;
+    if (!s && row?.command?.command === "atticus.keepCandidate") {
+      s = row.command.args?.[0] as string | undefined;
+      c = row.command.args?.[1] as string | undefined;
+    }
+    if (root && s && c) void knowledge.keepCandidate(root, s, c);
   });
   reg(
     "atticus.syncSource",
@@ -437,7 +493,7 @@ ${view.next.why}`
   });
   reg("atticus.setupStep", (arg?: string | { step?: { id: string } }) => {
     const id = typeof arg === "string" ? arg : arg?.step?.id;
-    if (!id) return;
+    if (!id) return vscode.commands.executeCommand("atticus.runCommand", "setup");
     const a = setupAction(id);
     return vscode.commands.executeCommand(a.command, ...(a.args ?? []));
   });
@@ -530,15 +586,26 @@ ${view.next.why}`
       if (ok !== "Apply") return;
     }
     try {
-      const api = await svc.api(root);
-      await api.post(
-        `/api/findings/${encodeURIComponent(f.change)}/${encodeURIComponent(f.id)}/action`,
-        body,
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `Atticus: recording “${c.label}” on the finding…`,
+        },
+        async () => {
+          const api = await svc.api(root);
+          await api.post(
+            `/api/findings/${encodeURIComponent(f.change)}/${encodeURIComponent(f.id)}/action`,
+            body,
+          );
+        },
       );
       void vscode.window.showInformationMessage(`${c.label}: done. ${f.summary}`);
       refreshAll();
     } catch (e) {
-      void vscode.window.showErrorMessage(`Couldn't do that: ${(e as Error).message}`);
+      svc.log.appendLine(`Couldn't act on the finding ${f.id}: ${(e as Error).message}`);
+      void vscode.window
+        .showErrorMessage(`Couldn't do that: ${(e as Error).message}`, "Show the output")
+        .then((p) => p && svc.log.show(true));
     }
   });
   reg("atticus.showStep", (item: Item) => {
@@ -553,33 +620,52 @@ ${view.next.why}`
       void vscode.commands.executeCommand("atticus.showApp", item.open.hash);
   });
   reg("atticus.showLog", () => svc.log.show());
+  /** `atticus next`, with a note while it reads; the reason, with the output, when it can't. */
+  const readNextShown = async (root: string) => {
+    const r = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Atticus: ${runProgressTitle(["next"])}…`,
+      },
+      () => readNext(svc.cli(root), root),
+    );
+    if (!r.ok)
+      void vscode.window
+        .showErrorMessage(`Couldn't read the next step: ${r.message}`, "Show the output")
+        .then((p) => p && svc.log.show(true));
+    return r;
+  };
   reg("atticus.next", async () => {
     const root = needRoot();
     if (!root) return;
-    const r = await readNext(svc.cli(root), root);
-    if (!r.ok)
-      return void vscode.window.showErrorMessage(`Couldn't read the next step: ${r.message}`);
+    const r = await readNextShown(root);
+    if (!r.ok) return;
     const n = r.value.next;
     if (!n)
-      return void vscode.window.showInformationMessage("Atticus has no next step to suggest.");
+      return void vscode.window.showInformationMessage(
+        "Nothing to do next: everything is up to date.",
+      );
+    // A dialog: Run it is how to go on, and a notification slips into the bell.
     const pick = await vscode.window.showInformationMessage(
-      `Next: ${n.command}. ${n.why}`,
-      "Run it",
+      `Next: ${stepTitle(n, view.changeTitle)}`,
+      { modal: true, detail: `${n.why}\n\n${n.command}` },
+      n.person ? "Take this step" : "Run it",
     );
-    if (pick) await vscode.commands.executeCommand("atticus.runNext");
+    if (pick) await takeStep(root, n);
   });
   reg("atticus.runNext", async () => {
     const root = needRoot();
     if (!root) return;
     let n = view.next;
     if (!n) {
-      const r = await readNext(svc.cli(root), root);
-      if (!r.ok)
-        return void vscode.window.showErrorMessage(`Couldn't read the next step: ${r.message}`);
+      const r = await readNextShown(root);
+      if (!r.ok) return;
       n = r.value.next;
     }
     if (!n)
-      return void vscode.window.showInformationMessage("Atticus has no next step to suggest.");
+      return void vscode.window.showInformationMessage(
+        "Nothing to do next: everything is up to date.",
+      );
     return takeStep(root, n);
   });
   // Any step of the Next section, the next one or one after it (ADR 0100, 0101).
@@ -633,13 +719,14 @@ ${view.next.why}`
 
   for (const name of Object.keys(STEP_COMMANDS) as StepCommand[]) {
     const step = STEP_COMMANDS[name];
-    reg(`atticus.${name}`, async (target?: string) => {
+    reg(`atticus.${name}`, async (target?: unknown) => {
+      const root = needRoot();
+      if (!root) return;
+      // A repo or change from those the metarepo has, read while the list is open.
       const t =
-        target ??
-        (await vscode.window.showInputBox({
-          prompt: `Which ${step.target}? (its id, as atticus lists it)`,
-          ignoreFocusOut: true,
-        }));
+        typeof target === "string"
+          ? target
+          : await commands.pickTarget(root, step.target, `Atticus: which ${step.target}?`);
       if (!t?.trim()) return;
       await runAi(step.args(t.trim()), name === "spec" ? t.trim() : undefined);
     });
@@ -649,18 +736,54 @@ ${view.next.why}`
     const root = needRoot();
     if (!root) return;
     const cli = svc.cli(root);
-    const r = await readOpenQuestions(cli, root);
-    if (!r.ok)
-      return void vscode.window.showErrorMessage(`Couldn't read the questions: ${r.message}`);
-    let q = r.value.find((x) => x.id === id);
-    if (!q) {
-      if (id)
-        return void vscode.window.showWarningMessage(`${id} isn't an open question any more.`);
-      if (!r.value.length)
-        return void vscode.window.showInformationMessage("No question is waiting for an answer.");
-      const pick = await vscode.window.showQuickPick(
-        r.value.map((x) => ({ label: x.question, description: x.repo, detail: x.id, q: x })),
-        { placeHolder: "Which question?", ignoreFocusOut: true },
+    const read = async () => {
+      const r = await readOpenQuestions(cli, root);
+      if (!r.ok) throw new Error(r.message);
+      return r.value;
+    };
+    let q: OpenQuestion | undefined;
+    if (id) {
+      // The question clicked: the ones the Questions section read, else read now.
+      const known = Array.isArray(view.questions) ? view.questions : undefined;
+      let open: OpenQuestion[];
+      try {
+        open = known?.some((x) => x.id === id)
+          ? known
+          : await vscode.window.withProgress(
+              {
+                location: vscode.ProgressLocation.Window,
+                title: "Atticus: reading the question…",
+              },
+              read,
+            );
+      } catch (e) {
+        return void vscode.window
+          .showErrorMessage(
+            `Couldn't read the questions: ${(e as Error).message}`,
+            "Show the output",
+          )
+          .then((p) => p && svc.log.show(true));
+      }
+      q = open.find((x) => x.id === id);
+      if (!q)
+        return void vscode.window.showWarningMessage(
+          `${id} isn't an open question any more: it was answered, or its step ran again.`,
+        );
+    } else {
+      const pick = await pickLoading(
+        {
+          title: "Atticus: which question?",
+          reading: "Reading the open questions…",
+          empty: "No question is waiting for an answer.",
+          log: svc.log,
+        },
+        async () =>
+          (await read()).map((x) => ({
+            label: x.question,
+            description: x.repo,
+            detail: x.id,
+            q: x,
+          })),
       );
       if (!pick) return;
       q = pick.q;
@@ -692,7 +815,15 @@ ${view.next.why}`
         answer = { text: text.trim() };
       }
     }
-    const done = await answerQuestion(cli, root, q.id, answer);
+    const asked = q;
+    const given = answer;
+    const done = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Atticus: writing the answer to ${asked.id}…`,
+      },
+      () => answerQuestion(cli, root, asked.id, given),
+    );
     svc.fireChanged();
     for (const l of done.lines) svc.log.appendLine(l);
     const first = done.lines[0] ?? (done.ok ? `Answered ${q.id}.` : `Couldn't answer ${q.id}.`);
@@ -711,6 +842,12 @@ ${view.next.why}`
       typeof node === "string"
         ? (Array.isArray(view.questions) ? view.questions : []).filter((q) => q.repo === node)
         : (node?.questions ?? []);
+    if (!qs.length)
+      return void vscode.window.showInformationMessage(
+        typeof node === "string"
+          ? `${node} has no open question.`
+          : "No question is waiting for an answer.",
+      );
     for (const q of qs) {
       const before = view.openQuestions;
       await vscode.commands.executeCommand("atticus.answerQuestion", q.id);
@@ -727,9 +864,26 @@ ${view.next.why}`
       ignoreFocusOut: true,
     });
     if (!question?.trim()) return;
-    const r = await svc.cli(root)(["ask", question.trim(), "--root", root]);
-    svc.log.appendLine(r.stdout.trimEnd());
+    const r = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `Atticus: ${runProgressTitle(["ask"])}…`,
+      },
+      () => svc.cli(root)(["ask", question.trim(), "--root", root]),
+    );
+    const lines = [...r.stdout.trimEnd().split("\n"), ...r.stderr.trimEnd().split("\n")].filter(
+      Boolean,
+    );
+    svc.log.appendLine(`--- The catalog's answer to “${question.trim()}” (exit ${r.code})`);
+    for (const l of lines) svc.log.appendLine(l);
     svc.log.show(true);
+    const say =
+      r.code === 0 ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
+    void say(
+      lines.length
+        ? `${lines[0]}${lines.length > 1 ? " (all of it in the Atticus output)" : ""}`
+        : "The catalog had no answer to that.",
+    );
   });
 
   // The app in a VS Code tab (ADR 0091): the one atticus ui the service runs for this window.

@@ -32,6 +32,8 @@ export type Expand =
   | { kind: "knowledge-group"; group: string }
   | { kind: "last-scan" }
   | { kind: "finds" }
+  /** What one saved search found (0.3.1). */
+  | { kind: "find"; slug: string }
   /** A change's needs from the organisation (ADR 0101). */
   | { kind: "needs"; change: string }
   | { kind: "kind"; recordKind: string }
@@ -151,19 +153,23 @@ export function repoChildren(r: Api.OnboardingRepo, flows: number, p: Paths): It
         }
       : {
           id: `flows:${r.id}`,
-          label: "No flows yet",
-          description: `atticus spec draft ${r.id}`,
-          tooltip: `Draft the repo's spec: atticus spec draft ${r.id}, or /atticus-spec in Copilot Chat.`,
-          icon: "info",
+          label: "No flows yet: draft its spec",
+          description: "with Copilot",
+          tooltip: `Click to draft the repo's spec with Copilot (atticus spec draft ${r.id}): a flow per trigger, each step citing its code.`,
+          icon: "sparkle",
+          command: { command: "atticus.spec", args: [r.id] },
         },
     {
       id: `settings:${r.id}`,
       label: "Scan settings",
-      description: r.scanSettings.present ? r.scanSettings.path : "none yet",
+      description: r.scanSettings.present ? r.scanSettings.path : "none yet: draft them",
       icon: "settings-gear",
       ...(r.scanSettings.present
         ? { open: file(p, r.scanSettings.path) }
-        : { tooltip: `Draft them with atticus scan survey ${r.id}.` }),
+        : {
+            tooltip: `Click to draft them with Copilot (atticus scan survey ${r.id}): folders to leave out, path prefixes, client base URLs.`,
+            command: { command: "atticus.survey", args: [r.id] },
+          }),
     },
     {
       id: `canvas:${r.id}`,
