@@ -1,0 +1,327 @@
+# Retrieval cases for the context engine's eval (packages/evals, context-bench: runRetrievalBench).
+# Each case is a step's input (title and text) and what a correct context must hold: record or
+# node ids, or {text: ...} for a sentence that must be in what is sent (a document's or a wiki
+# section's words). Written by hand from the fixtures; never generate it from the index.
+#
+# Roots:
+#   forge: fixtures/forge/expected/scan.yaml + catalog-extra.yaml + curated.yaml + distractors.yaml
+#          + the forge-wiki page in knowledge/ + documents/settlement-runbook-docx as inputs/.
+#   shop:  fixtures/stages with fixtures/context laid over it (the index tests' root).
+#
+# Groups:
+#   identifier  the input says the words a camelCase or PascalCase name is made of
+#   paraphrase  the input avoids the record's own words
+#   synonym     the input uses a glossary term's other name (a curated alias)
+#   multi-hop   the record is two links from anything the input names
+#   distractor  similar records of other systems compete
+#   document    the fact is only in an ingested document's section
+#   long-wiki   the sentence is deep inside a long wiki section
+#   exact       the input names the record (id, name, alias or endpoint)
+#   no-answer   nothing in the estate answers it
+- id: forge-show-renamed-time
+  group: identifier
+  root: forge
+  title: Show when an account was last renamed
+  text: Portal customers can rename an account; show when it was last renamed.
+  needed: [ledger-db.account.renamedat]
+- id: forge-renamed-timestamp
+  group: identifier
+  root: forge
+  text: the renamed timestamp
+  needed: [ledger-db.account.renamedat]
+- id: forge-closed-at
+  group: identifier
+  root: forge
+  text: when the account was closed
+  needed: [ledger-db.account.closedat]
+- id: forge-daily-limit-amount
+  group: identifier
+  root: forge
+  text: the daily limit amount on a ledger account
+  needed: [ledger-db.account.dailylimitamount]
+- id: forge-spending-cap
+  group: paraphrase
+  root: forge
+  title: Let customers set a spending cap
+  text: Let customers set their own spending cap on what can leave an account each day.
+  needed: [ledger-db.account.dailylimitamount]
+- id: forge-card-issuer
+  group: paraphrase
+  root: forge
+  text: the card issuer we hand the money to
+  needed: [northwind-pay]
+- id: forge-most-per-day
+  group: paraphrase
+  root: forge
+  text: the most a customer may send per day
+  needed: [ledger-db.account.dailylimitamount]
+- id: forge-move-money
+  group: paraphrase
+  root: forge
+  text: move money from one account to another
+  needed: [ledger-api.post-transfer]
+- id: forge-money-left
+  group: paraphrase
+  root: forge
+  text: how much money is left in an account
+  needed: [ledger-api.get-balance]
+- id: forge-owner-name
+  group: paraphrase
+  root: forge
+  text: full name of the customer who owns the account
+  needed: [ledger-db.account.holder-name]
+- id: forge-booking-hit
+  group: paraphrase
+  root: forge
+  text: when a booking hit the ledger
+  needed: [ledger-db.entry.posted-at]
+- id: forge-page-someone
+  group: paraphrase
+  root: forge
+  text: page someone when the ledger keeps failing
+  needed: [ledger-api.alert.error-rate]
+- id: forge-wait-answer
+  group: paraphrase
+  root: forge
+  text: how long the portal waits for an answer from the ledger
+  needed: [portal-bff.ledger-read-timeout]
+- id: forge-schema-changes
+  group: paraphrase
+  root: forge
+  text: database schema changes for the ledger
+  needed: [ledger-db.v1, ledger-db.v2]
+- id: forge-permissions
+  group: paraphrase
+  root: forge
+  text: who may call the ledger and with which permissions
+  needed: [gw-ledger-v1.oauth-scopes]
+- id: forge-who-did-what
+  group: paraphrase
+  root: forge
+  text: a record of who did what, for the inspectors
+  needed: [audit]
+- id: forge-overnight-batch
+  group: paraphrase
+  root: forge
+  text: the overnight batch that totals the day's bookings
+  needed: [reports-job]
+- id: forge-friendly-label
+  group: paraphrase
+  root: forge
+  text: let customers give an account a friendly label of their own
+  needed: [ledger-db.account.nickname]
+- id: forge-withdrawal-ceiling
+  group: synonym
+  root: forge
+  text: Raise the withdrawal ceiling for premium customers.
+  needed: [ledger-db.account.dailylimitamount]
+- id: forge-beneficial-owner
+  group: synonym
+  root: forge
+  text: Show the beneficial owner on the account page.
+  needed: [ledger-db.account.holder-name]
+- id: forge-booking-date
+  group: synonym
+  root: forge
+  text: Let finance filter ledger entries by booking date.
+  needed: [ledger-db.entry.posted-at]
+- id: forge-who-calls-nwp
+  group: multi-hop
+  root: forge
+  text: Which of our services talk to Northwind Pay?
+  needed: [ledger-api, if-e7344c9455608119]
+- id: forge-reports-feed
+  group: multi-hop
+  root: forge
+  text: The reports-job wants every finished transfer as soon as it happens.
+  needed: [topic.transfers-completed]
+- id: forge-balance-route
+  group: multi-hop
+  root: forge
+  text: Which gateway route does the portal-bff balance call go through?
+  needed: [gw-ledger-v1]
+- id: forge-ledger-migrations
+  group: multi-hop
+  root: forge
+  text: The ledger-api team wants to squash its old migrations.
+  needed: [ledger-db.v1, ledger-db.v2]
+- id: forge-account-shut
+  group: distractor
+  root: forge
+  text: the date a ledger account was shut
+  needed: [ledger-db.account.closedat]
+- id: forge-ledger-connect
+  group: distractor
+  root: forge
+  text: the portal's connect timeout to the ledger
+  needed: [portal-bff.ledger-connect-timeout]
+- id: forge-portal-balance
+  group: distractor
+  root: forge
+  text: the balance endpoint the portal serves to the browser
+  needed: [portal-bff.get-balance]
+- id: forge-account-number
+  group: distractor
+  root: forge
+  text: the account number on a ledger account
+  needed: [ledger-db.account.account-number]
+- id: forge-ledger-nickname
+  group: distractor
+  root: forge
+  text: the nickname a customer gives a ledger account
+  needed: [ledger-db.account.nickname]
+- id: forge-late-transfer
+  group: document
+  root: forge
+  text: What happens to a transfer sent late in the afternoon?
+  needed: [{ text: settled on the next business day }]
+- id: forge-charged-twice
+  group: document
+  root: forge
+  text: A customer says they were charged twice for one payment.
+  needed: [{ text: compare the idempotency keys }]
+- id: forge-weekend-settlement
+  group: document
+  root: forge
+  text: Do weekends count as business days for settlement?
+  needed: [{ text: Saturday and Sunday are not business days }]
+- id: forge-frozen-account
+  group: document
+  root: forge
+  text: Block outgoing transfers while an account is frozen.
+  needed: [{ text: refuses every outgoing one }]
+- id: forge-unmatched-entries
+  group: long-wiki
+  root: forge
+  text: What do we do with ledger entries nobody could match at month end?
+  needed: [{ text: moved to the suspense account }]
+- id: forge-vendor-retry
+  group: long-wiki
+  root: forge
+  text: how often do we try the card vendor again after a timeout
+  needed: [{ text: retried three times }]
+- id: forge-vendor-maintenance
+  group: long-wiki
+  root: forge
+  text: when is the payment provider's API down for maintenance
+  needed: [{ text: first Sunday of each month }]
+- id: forge-back-dated
+  group: long-wiki
+  root: forge
+  text: Can we post a correction into last month after finance has closed it?
+  needed: [{ text: refuses back-dated entries }]
+- id: forge-off-by-a-cent
+  group: long-wiki
+  root: forge
+  text: a converted payment is off by a cent at month end
+  needed: [{ text: booked to the rounding account }]
+- id: forge-post-transfers
+  group: exact
+  root: forge
+  text: A transfer limit on POST /transfers.
+  needed: [ledger-api.post-transfer]
+- id: forge-get-balance-id
+  group: exact
+  root: forge
+  text: Change ledger-api.get-balance to return the currency.
+  needed: [ledger-api.get-balance]
+- id: forge-nwp-name
+  group: exact
+  root: forge
+  text: Northwind Pay changes its payment API.
+  needed: [northwind-pay, northwind-pay.post-payment]
+- id: forge-ledger-platform
+  group: exact
+  root: forge
+  text: The Ledger Platform needs a second region.
+  needed: [ledger]
+- id: forge-topic-name
+  group: exact
+  root: forge
+  text: Who consumes topic.transfers-completed?
+  needed: [topic.transfers-completed]
+- id: forge-entry-table
+  group: exact
+  root: forge
+  text: Add a column to ledger-db.entry.
+  needed: [ledger-db.entry]
+- id: forge-none-button
+  group: no-answer
+  root: forge
+  text: the colour of the login button
+  needed: []
+- id: forge-none-mortgage
+  group: no-answer
+  root: forge
+  text: mortgage valuation surveys
+  needed: []
+- id: forge-none-canteen
+  group: no-answer
+  root: forge
+  text: the canteen's lunch menu
+  needed: []
+- id: shop-open-port
+  group: paraphrase
+  root: shop
+  text: open a port so a service can reach a host
+  needed: [firewall-rule-request]
+- id: shop-new-supplier
+  group: paraphrase
+  root: shop
+  text: bring a new third-party supplier on board
+  needed: [vendor-onboarding]
+- id: shop-queue-subject
+  group: paraphrase
+  root: shop
+  text: a message queue subject that doesn't exist yet
+  needed: [broker-topic-request]
+- id: shop-hold-inventory
+  group: paraphrase
+  root: shop
+  text: hold inventory for a purchase
+  needed: [forge-stock.post-stock-reservations]
+- id: shop-shopper-buys
+  group: paraphrase
+  root: shop
+  text: a shopper buys something
+  needed: [forge-orders.place-order]
+- id: shop-cancel-purchase
+  group: paraphrase
+  root: shop
+  text: cancel a purchase
+  needed: [forge-orders.delete-orders-orderid]
+- id: shop-how-many
+  group: paraphrase
+  root: shop
+  text: how many items were bought
+  needed: [forge-orders-db.orders.quantity]
+- id: shop-when-made
+  group: paraphrase
+  root: shop
+  text: when the order was made
+  needed: [forge-orders-db.orders.created-at]
+- id: shop-full-card-number
+  group: paraphrase
+  root: shop
+  text: may we send the whole card number to the payment vendor
+  needed: [card-tokens-only]
+- id: shop-fraud-score
+  group: exact
+  root: shop
+  text: score an order for fraud with the vendor
+  needed: [fraud-screen]
+- id: shop-nwp-alias
+  group: exact
+  root: shop
+  text: NWP wants the order's total.
+  needed: [northwind-pay]
+- id: shop-stock-reservation
+  group: exact
+  root: shop
+  text: stock reservation
+  needed: [forge-stock.post-stock-reservations]
+- id: shop-none-parking
+  group: no-answer
+  root: shop
+  text: employee parking permits
+  needed: []

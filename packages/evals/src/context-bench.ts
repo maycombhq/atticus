@@ -10,8 +10,16 @@ import {
   parseRecord,
   recordPath,
   serializeRecord,
+  zip,
   type CatalogRecord,
 } from "@maycombhq/core";
+import {
+  openIndex,
+  type CatalogIndex,
+  type ContextInput,
+  type ContextSelection,
+  type SelectOptions,
+} from "@maycombhq/index";
 import {
   MockModelProvider,
   MockRuntime,
@@ -613,4 +621,313 @@ export function renderContextTable(rows: ContextRow[]): string {
     "",
   ];
   return lines.join("\n");
+}
+
+// ---------------------------------------------------------------- retrieval cases (ADR 0116)
+
+/**
+ * The harder cases (ADR 0116, fixtures/retrieval): about sixty inputs a step could get, run
+ * straight through `selectContext` on two roots, in each retrieval mode, at a normal and a
+ * tight budget. A case names what its context must hold: record or node ids, or a sentence
+ * (a document's or a wiki section's words) that must be in what is sent. The groups: words of a
+ * camelCase name, paraphrase, a glossary synonym, two links from what is named, similar records
+ * of other systems, a fact only in a document, a sentence deep in a long wiki section, exact
+ * names, and inputs nothing answers.
+ *
+ * - **recall**: the share of what the case needs that the context holds (in full or in one line);
+ * - **precision**: the share of what was picked that the case needs;
+ * - **MRR**: 1 / the rank of the first needed pick (0 when none is picked);
+ * - **tokens**: what the selection takes.
+ *
+ * A mode is a step's default only where its recall is at least the lexical engine's on every
+ * case and budget.
+ */
+
+export type RetrievalMode = "lexical" | "+expansion" | "+rerank" | "+embeddings";
+export const RETRIEVAL_MODES: RetrievalMode[] = ["lexical", "+expansion", "+rerank", "+embeddings"];
+
+export type RetrievalGroup =
+  | "identifier"
+  | "paraphrase"
+  | "synonym"
+  | "multi-hop"
+  | "distractor"
+  | "document"
+  | "long-wiki"
+  | "exact"
+  | "no-answer";
+
+export interface RetrievalCase {
+  id: string;
+  group: RetrievalGroup;
+  root: "forge" | "shop";
+  title?: string;
+  text: string;
+  /** Ids, or a sentence that must be in the context. */
+  needed: (string | { text: string })[];
+}
+
+export interface RetrievalRow {
+  case: string;
+  group: RetrievalGroup;
+  mode: RetrievalMode;
+  budget: "normal" | "tight";
+  needed: number;
+  found: number;
+  recall: number;
+  precision: number;
+  mrr: number;
+  /** What the selection took. */
+  tokens: number;
+  picked: number;
+  /** The rank (from 1) of the first needed pick, or 0. */
+  rank: number;
+  missing: string[];
+}
+
+/** The budgets: a step's usual room for context, and a tight one. */
+export const RETRIEVAL_BUDGETS = { normal: 3000, tight: 600 } as const;
+
+const needleOf = (n: string | { text: string }) => (typeof n === "string" ? n : n.text);
+const fold = (s: string) => s.replace(/\s+/g, " ").toLowerCase();
+
+export function readRetrievalCases(fx: string): RetrievalCase[] {
+  return parse(readFileSync(join(fx, "retrieval/cases.yaml"), "utf8")) as RetrievalCase[];
+}
+
+/** The forge root: the scan's catalog, the retrieval extras, distractors, the wiki and a document. */
+export async function retrievalForgeRoot(fx: string, root: string): Promise<string> {
+  await cp(join(fx, "forge/metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
+  await writeRecords(root, "catalog/generated", join(fx, "forge/expected/scan.yaml"));
+  await writeRecords(root, "catalog/generated", join(fx, "retrieval/catalog-extra.yaml"));
+  await writeRecords(root, "catalog/generated", join(fx, "retrieval/distractors.yaml"));
+  await writeRecords(root, "catalog/curated", join(fx, "retrieval/curated.yaml"));
+  await cp(join(fx, "retrieval/knowledge"), join(root, "knowledge"), { recursive: true });
+  const parts: { name: string; data: Uint8Array }[] = [];
+  const walk = async (d: string, rel: string): Promise<void> => {
+    for (const e of await readdir(d, { withFileTypes: true })) {
+      const f = join(d, e.name);
+      if (e.isDirectory()) await walk(f, `${rel}${e.name}/`);
+      else parts.push({ name: `${rel}${e.name}`, data: await readFile(f) });
+    }
+  };
+  await walk(join(fx, "retrieval/documents/settlement-runbook-docx"), "");
+  parts.sort((a, b) => (a.name < b.name ? -1 : 1));
+  await mkdir(join(root, "inputs/documents"), { recursive: true });
+  await writeFile(
+    join(root, "inputs/documents/settlement-runbook.docx"),
+    zip(parts, new Date(2026, 8, 15, 12, 0, 0)),
+  );
+  return root;
+}
+
+/** The shop root: fixtures/stages with fixtures/context laid over it, as the index tests have it. */
+export async function retrievalShopRoot(fx: string, root: string): Promise<string> {
+  const plain = async (dir: string, file: string) => {
+    for (const r of parse(readFileSync(file, "utf8")) as unknown[]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error(`bad fixture record in ${file}`);
+      const f = join(root, dir, recordPath(p.record));
+      await mkdir(dirname(f), { recursive: true });
+      await writeFile(f, serializeRecord(p.record));
+    }
+  };
+  await mkdir(join(root, "org-pack"), { recursive: true });
+  await writeRecords(root, "catalog/generated", join(fx, "specs/catalog.yaml"));
+  await writeRecords(root, "catalog/generated", join(fx, "stages/catalog-extra.yaml"));
+  await plain("knowledge/items", join(fx, "stages/knowledge.yaml"));
+  await plain("knowledge/items", join(fx, "context/knowledge.yaml"));
+  await cp(join(fx, "stages/specs"), join(root, "specs"), { recursive: true });
+  await cp(join(fx, "context/org-pack"), join(root, "org-pack"), { recursive: true });
+  await cp(join(fx, "context/knowledge"), join(root, "knowledge"), { recursive: true });
+  await cp(join(fx, "context/questions"), join(root, "questions"), { recursive: true });
+  return root;
+}
+
+/** How a mode selects: the index it opens, and the input and options it selects with. */
+export interface RetrievalModeRun {
+  open(root: string): Promise<CatalogIndex>;
+  input?(c: RetrievalCase, ix: CatalogIndex): Promise<ContextInput> | ContextInput;
+  options?(c: RetrievalCase): Partial<SelectOptions>;
+}
+
+/** The modes built so far; a mode without a run is listed as not built. */
+export type RetrievalModes = Partial<Record<RetrievalMode, RetrievalModeRun>>;
+
+export function defaultRetrievalModes(): RetrievalModes {
+  return { lexical: { open: (root) => openIndex(root) } };
+}
+
+/** What each pick put in the context, in pick order: full detail, or its one line. */
+function pickTexts(s: ContextSelection): string[] {
+  const full = s.sources.filter((x) => x.id !== "ctx-lines").map((x) => x.text);
+  const lines = (s.sources.find((x) => x.id === "ctx-lines")?.text ?? "").split("\n").slice(1);
+  let fi = 0;
+  let li = 0;
+  return s.picked.map((p) => (p.level === "full" ? (full[fi++] ?? "") : (lines[li++] ?? "")));
+}
+
+export function scoreSelection(
+  c: RetrievalCase,
+  s: ContextSelection,
+): Omit<RetrievalRow, "case" | "group" | "mode" | "budget"> {
+  const texts = pickTexts(s);
+  const hits = (n: string | { text: string }, i: number) =>
+    typeof n === "string"
+      ? s.picked[i]!.id === n || s.picked[i]!.id.startsWith(`${n}#`)
+      : fold(texts[i]!).includes(fold(n.text));
+  const foundAt = c.needed.map((n) => s.picked.findIndex((_, i) => hits(n, i)));
+  const found = foundAt.filter((i) => i >= 0).length;
+  const usefulPicks = s.picked.filter((_, i) => c.needed.some((n) => hits(n, i))).length;
+  const first = Math.min(...foundAt.filter((i) => i >= 0).map((i) => i + 1), Infinity);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return {
+    needed: c.needed.length,
+    found,
+    recall: c.needed.length ? r2(found / c.needed.length) : 1,
+    precision: s.picked.length ? r2(usefulPicks / s.picked.length) : c.needed.length ? 0 : 1,
+    mrr: Number.isFinite(first) ? r2(1 / first) : 0,
+    tokens: s.tokens,
+    picked: s.picked.length,
+    rank: Number.isFinite(first) ? first : 0,
+    missing: c.needed.filter((_, i) => foundAt[i]! < 0).map(needleOf),
+  };
+}
+
+export interface RetrievalBenchOptions {
+  fixtures: string;
+  /** The modes to run. Default: the ones built (defaultRetrievalModes). */
+  modes?: RetrievalModes;
+  /** Only these cases. */
+  cases?: string[];
+}
+
+export async function runRetrievalBench(o: RetrievalBenchOptions): Promise<RetrievalRow[]> {
+  const fx = o.fixtures;
+  const parent = await mkdtemp(join(tmpdir(), "atticus-retrieval-eval-"));
+  const roots = {
+    forge: await retrievalForgeRoot(fx, join(parent, "forge")),
+    shop: await retrievalShopRoot(fx, join(parent, "shop")),
+  };
+  const cases = readRetrievalCases(fx).filter((c) => !o.cases || o.cases.includes(c.id));
+  const modes = o.modes ?? defaultRetrievalModes();
+  const rows: RetrievalRow[] = [];
+  for (const mode of RETRIEVAL_MODES) {
+    const m = modes[mode];
+    if (!m) continue;
+    const open = new Map<string, CatalogIndex>();
+    try {
+      for (const c of cases) {
+        let ix = open.get(c.root);
+        if (!ix) open.set(c.root, (ix = await m.open(roots[c.root])));
+        const input: ContextInput = m.input
+          ? await m.input(c, ix)
+          : { text: c.text, ...(c.title ? { title: c.title } : {}) };
+        for (const budget of ["normal", "tight"] as const) {
+          const s = ix.selectContext(input, {
+            budget: RETRIEVAL_BUDGETS[budget],
+            ...(m.options?.(c) ?? {}),
+          });
+          rows.push({ case: c.id, group: c.group, mode, budget, ...scoreSelection(c, s) });
+        }
+      }
+    } finally {
+      for (const ix of open.values()) ix.close();
+    }
+  }
+  return rows;
+}
+
+/** Per mode, whether its recall is at least the lexical engine's on every case and budget. */
+export function retrievalSwitches(rows: RetrievalRow[]): Partial<Record<RetrievalMode, boolean>> {
+  const out: Partial<Record<RetrievalMode, boolean>> = {};
+  const lexical = new Map(
+    rows.filter((r) => r.mode === "lexical").map((r) => [`${r.case}|${r.budget}`, r.recall]),
+  );
+  for (const r of rows.filter((x) => x.mode !== "lexical"))
+    out[r.mode] = (out[r.mode] ?? true) && r.recall >= (lexical.get(`${r.case}|${r.budget}`) ?? 0);
+  return out;
+}
+
+const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+
+/** The retrieval cases as Markdown: per group and mode, then per case. */
+export function renderRetrievalTable(rows: RetrievalRow[], notes: string[] = []): string {
+  const built = RETRIEVAL_MODES.filter((m) => rows.some((r) => r.mode === m));
+  const notBuilt = RETRIEVAL_MODES.filter((m) => !built.includes(m));
+  const groups = [...new Set(rows.map((r) => r.group))];
+  const sw = retrievalSwitches(rows);
+  const cell = (rs: RetrievalRow[]) => {
+    const answered = rs.filter((r) => r.needed > 0);
+    return answered.length
+      ? `${avg(answered.map((r) => r.recall)).toFixed(2)} / ${avg(answered.map((r) => r.precision)).toFixed(2)} / ${avg(answered.map((r) => r.mrr)).toFixed(2)}`
+      : `${avg(rs.map((r) => r.picked)).toFixed(1)} picked`;
+  };
+  const lines = [
+    "## Retrieval cases (ADR 0116)",
+    "",
+    `${new Set(rows.map((r) => r.case)).size} inputs from \`fixtures/retrieval/cases.yaml\`, run straight through \`selectContext\` on two roots: the Forge scan with 208 look-alike records of eight other systems, three glossary terms and their curated aliases, a long wiki page and a Word runbook in \`inputs/\`; and the shop with its wiki and knowledge items. Budgets: ${RETRIEVAL_BUDGETS.normal} tokens (normal) and ${RETRIEVAL_BUDGETS.tight} (tight). Each cell is recall / precision / MRR, averaged over the group's cases; for inputs nothing answers it is how many records were picked anyway.`,
+    "",
+    ...notes,
+    ...(notes.length ? [""] : []),
+    `| Group | Cases | ${built.flatMap((m) => [`${m} normal`, `${m} tight`]).join(" | ")} |`,
+    `| --- | --- | ${built.flatMap(() => ["---", "---"]).join(" | ")} |`,
+    ...[...groups, "all"].map((g) => {
+      const rs = rows.filter((r) => g === "all" || r.group === g);
+      const n = new Set(rs.filter((r) => g !== "all" || r.needed > 0).map((r) => r.case)).size;
+      return `| ${g} | ${n} | ${built
+        .flatMap((m) =>
+          (["normal", "tight"] as const).map((b) =>
+            cell(rs.filter((r) => r.mode === m && r.budget === b && (g !== "all" || r.needed > 0))),
+          ),
+        )
+        .join(" | ")} |`;
+    }),
+    "",
+    ...(notBuilt.length ? [`Not built yet: ${notBuilt.join(", ")}.`, ""] : []),
+    "A mode becomes a step's default only where its recall is at least the lexical engine's on every case and budget:",
+    "",
+    ...built
+      .filter((m) => m !== "lexical")
+      .map(
+        (m) =>
+          `- ${m}: ${sw[m] ? "recall holds on every case" : "recall drops on some case, so it stays off"}`,
+      ),
+    ...(built.length === 1 ? ["- only the lexical engine is built"] : []),
+    "",
+    "### Per case (normal budget): the rank of the first needed pick, 0 when it isn't picked",
+    "",
+    `| Case | Group | ${built.join(" | ")} | Missing (${built[0] ?? "lexical"}) |`,
+    `| --- | --- | ${built.map(() => "---").join(" | ")} | --- |`,
+    ...[...new Set(rows.map((r) => r.case))].map((id) => {
+      const rs = rows.filter((r) => r.case === id && r.budget === "normal");
+      const first = rs.find((r) => r.mode === built[0]);
+      return `| ${id} | ${rs[0]!.group} | ${built
+        .map((m) => {
+          const r = rs.find((x) => x.mode === m);
+          return r ? (r.needed ? String(r.rank) : `${r.picked} picked`) : "-";
+        })
+        .join(" | ")} | ${first?.missing.join(", ") || "none"} |`;
+    }),
+    "",
+  ];
+  return lines.join("\n");
+}
+
+/** Both halves of the eval, as docs/evidence/context-eval.md has them. */
+export interface ContextEval {
+  steps: ContextRow[];
+  retrieval: RetrievalRow[];
+  /** Said above the retrieval table: what each mode replays. */
+  notes: string[];
+}
+
+export async function runContextEval(fixtures: string): Promise<ContextEval> {
+  const steps = await runContextBench({ fixtures });
+  const retrieval = await runRetrievalBench({ fixtures });
+  return { steps, retrieval, notes: [] };
+}
+
+export function renderContextEval(e: ContextEval): string {
+  return `${renderContextTable(e.steps)}\n${renderRetrievalTable(e.retrieval, e.notes)}`;
 }

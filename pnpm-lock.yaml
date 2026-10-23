@@ -368,6 +368,9 @@ importers:
       '@maycombhq/glossary':
         specifier: workspace:*
         version: link:../glossary
+      '@maycombhq/index':
+        specifier: workspace:*
+        version: link:../index
       '@maycombhq/knowledge':
         specifier: workspace:*
         version: link:../knowledge

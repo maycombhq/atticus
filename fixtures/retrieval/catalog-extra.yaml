@@ -1,0 +1,32 @@
+# Laid over fixtures/forge/expected/scan.yaml for the retrieval cases. Invented.
+# Camel-case columns on the ledger's account table, the way a JPA entity names them, so their
+# ids are one lower-case word (ledger-db.account.renamedat) and their names one token: the
+# miss the retrieval cases reproduce ("the renamed timestamp" against renamedAt).
+# Records omit schemaVersion and status; the bench adds them.
+- { kind: Column, id: ledger-db.account.renamedat, confidence: verified, table: ledger-db.account, name: renamedAt, type: timestamp, nullable: true, evidence: [{ source: code, repo: forge-ledger, path: src/main/java/forge/ledger/Account.java, line: 21 }] }
+- { kind: Column, id: ledger-db.account.closedat, confidence: verified, table: ledger-db.account, name: closedAt, type: timestamp, nullable: true, evidence: [{ source: code, repo: forge-ledger, path: src/main/java/forge/ledger/Account.java, line: 24 }] }
+- { kind: Column, id: ledger-db.account.dailylimitamount, confidence: verified, table: ledger-db.account, name: dailyLimitAmount, type: "numeric(18,2)", nullable: false, glossaryTerm: term.daily-limit, evidence: [{ source: code, repo: forge-ledger, path: src/main/java/forge/ledger/Account.java, line: 27 }] }
+- { kind: Column, id: ledger-db.account.nickname, confidence: verified, table: ledger-db.account, name: nickname, type: "varchar(60)", nullable: true, evidence: [{ source: code, repo: forge-ledger, path: src/main/java/forge/ledger/Account.java, line: 30 }] }
+# The glossary (GlossaryTerm records, as packages/glossary builds them): a term, its
+# definition, and the columns whose name is the term. Other names come from curated aliases.
+- kind: GlossaryTerm
+  id: term.daily-limit
+  confidence: inferred
+  term: Daily limit
+  definition: The most a customer may transfer out of one account in a calendar day.
+  fields: [ledger-db.account.dailylimitamount]
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/ledger-operations.md, line: 7 }]
+- kind: GlossaryTerm
+  id: term.account-holder
+  confidence: inferred
+  term: Account holder
+  definition: The person or business an account belongs to.
+  fields: [ledger-db.account.holder-name]
+  evidence: [{ source: document, path: knowledge/snapshots/forge-wiki/2026-10-01/ledger-operations.md, line: 9 }]
+- kind: GlossaryTerm
+  id: term.posting-date
+  confidence: inferred
+  term: Posting date
+  definition: When an entry was booked to the ledger.
+  fields: [ledger-db.entry.posted-at]
+  evidence: [{ source: migration, repo: forge-ledger, path: src/main/resources/db/migration/V2__create_entry.sql, line: 5 }]
