@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- Atticus's mark: a pair of round wire glasses, like Atticus Finch's. Two lenses, an arched
+       bridge and short temples, drawn as one even line on a 24-unit grid. The line is 0.9 wide in
+       large marks (the Marketplace and plugin icons) and heavier as the mark gets small: 1.4 at
+       26 px, 1.6 at 24 px, 1.8 at 16 px. -->
+  <g fill="none" stroke="currentColor" stroke-width="0.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="12.6" r="4.5"/><circle cx="17.5" cy="12.6" r="4.5"/><path d="M10.9 11.5 C11.1 9.9 12.9 9.9 13.1 11.5"/><path d="M2.05 12.0 L0.7 11.7"/><path d="M21.95 12.0 L23.3 11.7"/></g>
+</svg>

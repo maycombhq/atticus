@@ -4,9 +4,9 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
-### A mockingbird
+### A pair of glasses
 
-- Atticus's mark is a mockingbird made of one circle in parts (`docs/brand/mockingbird.svg`): a quarter-circle wing, a quarter-circle head with its beak, a half-circle body and a tail wedge, apart by thin gaps. It is the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
+- Atticus's mark is a pair of round wire glasses, like Atticus Finch's (`docs/brand/glasses.svg`): two lenses, an arched bridge and short temples in one even line, heavier as it gets small. It is the app's header and favicon, the VS Code activity bar and Marketplace icon, and the IntelliJ tool window and plugin icon.
 
 ### Every screen says what is happening
 

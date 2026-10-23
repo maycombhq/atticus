@@ -5,18 +5,7 @@ import { groupLabel, MAIN, MORE, MORE_GROUPS, type ScreenDef } from "./screens.j
 
 const T = COPY.menu;
 
-/**
- * Atticus's mark: a mockingbird made of one circle in parts (docs/brand/mockingbird.svg), apart
- * by thin gaps, in the theme's accent.
- */
-const MOCKINGBIRD = [
-  "M11.4 11.4 H4 A7.4 7.4 0 0 1 11.4 4 Z",
-  "M20 11.4 H14.2 A5.8 5.8 0 0 1 20 5.6 Z M18.3 8.15 a0.8 0.8 0 1 0 0 1.6 a0.8 0.8 0 1 0 0 -1.6 Z",
-  "M20 6.9 L23.4 8.5 L20 9.5 Z",
-  "M4 12.6 H20 A8 8 0 0 1 4 12.6 Z",
-  "M0.4 12.6 H3.2 V15.4 Z",
-];
-
+/** Atticus's mark: a pair of round wire glasses (docs/brand/glasses.svg), in the theme's accent. */
 function Logo() {
   return (
     <svg
@@ -24,11 +13,18 @@ function Logo() {
       width="26"
       height="26"
       viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--accent)"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
       style={{ filter: "drop-shadow(0 0 var(--glow-size) var(--accent))" }}
     >
-      {MOCKINGBIRD.map((d) => (
-        <path key={d} d={d} fill="var(--accent)" fillRule="evenodd" />
-      ))}
+      <circle cx="6.5" cy="12.6" r="4.5" />
+      <circle cx="17.5" cy="12.6" r="4.5" />
+      <path d="M10.9 11.5 C11.1 9.9 12.9 9.9 13.1 11.5" />
+      <path d="M2.05 12.0 L0.7 11.7" />
+      <path d="M21.95 12.0 L23.3 11.7" />
     </svg>
   );
 }
