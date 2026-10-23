@@ -10,8 +10,20 @@ export interface BridgeReply {
   body: unknown;
 }
 
+/** How an AI step run by the extension ended (ADR 0106): its state, its last lines, its run. */
+export interface StepEnd {
+  state: string;
+  lines: string[];
+  runId?: string;
+}
+
 export interface Bridge {
   call(path: string, o: { method: string; body?: unknown }): Promise<BridgeReply>;
+  /**
+   * Ask the extension to run an AI step with Copilot (ADR 0106): its command words and arguments.
+   * Each progress line comes to onLine as it comes; the promise ends with the step's end.
+   */
+  runStep(args: string[], onLine: (line: string) => void): Promise<StepEnd>;
   onEvent(f: (e: { type: string } & Record<string, unknown>) => void): () => void;
   onNavigate(f: (hash: string) => void): void;
 }
@@ -25,6 +37,7 @@ const isMsg = (m: unknown): m is Msg => typeof m === "object" && m !== null;
 export function makeBridge(post: (m: Msg) => void, on: (f: (m: unknown) => void) => void): Bridge {
   let next = 0;
   const waiting = new Map<number, (r: BridgeReply) => void>();
+  const steps = new Map<number, { onLine: (l: string) => void; done: (e: StepEnd) => void }>();
   const events = new Set<(e: { type: string } & Record<string, unknown>) => void>();
   const navigations: ((hash: string) => void)[] = [];
   on((m) => {
@@ -33,6 +46,18 @@ export function makeBridge(post: (m: Msg) => void, on: (f: (m: unknown) => void)
       const done = waiting.get(m.id);
       waiting.delete(m.id);
       done?.({ status: Number(m.status), body: m.body });
+    } else if (m.type === "run-progress" && typeof m.id === "number") {
+      if (typeof m.line === "string") steps.get(m.id)?.onLine(m.line);
+    } else if (m.type === "run-end" && typeof m.id === "number") {
+      const step = steps.get(m.id);
+      steps.delete(m.id);
+      step?.done({
+        state: typeof m.state === "string" ? m.state : "failed",
+        lines: Array.isArray(m.lines)
+          ? m.lines.filter((l): l is string => typeof l === "string")
+          : [],
+        ...(typeof m.runId === "string" ? { runId: m.runId } : {}),
+      });
     } else if (m.type === "event" && isMsg(m.event) && typeof m.event.type === "string") {
       for (const f of events) f(m.event as { type: string } & Record<string, unknown>);
     } else if (m.type === "navigate" && typeof m.hash === "string" && SCREEN_HASH.test(m.hash)) {
@@ -51,6 +76,13 @@ export function makeBridge(post: (m: Msg) => void, on: (f: (m: unknown) => void)
           path,
           ...(o.body !== undefined ? { body: o.body } : {}),
         });
+      });
+    },
+    runStep(args, onLine) {
+      const id = ++next;
+      return new Promise((resolve) => {
+        steps.set(id, { onLine, done: resolve });
+        post({ type: "run-step", id, args });
       });
     },
     onEvent(f) {

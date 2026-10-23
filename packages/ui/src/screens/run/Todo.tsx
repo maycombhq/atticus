@@ -12,6 +12,13 @@ import {
   useAction,
 } from "./shared.js";
 import { COPY } from "../../copy.js";
+import {
+  FilterBox,
+  FilterCount,
+  FilterEmpty,
+  filteredWhat,
+  matchesWords,
+} from "../../app/filter.js";
 
 const T = COPY.todo;
 
@@ -367,11 +374,20 @@ function StepDetail({ step, done }: { step: Step; done: () => void }) {
   );
 }
 
+/** A step the filter keeps: its words in the step's title, id, change or system. */
+export const matchStep = (
+  s: { id: string; title: string; system: string; change?: string | undefined },
+  text: string,
+): boolean => matchesWords([s.title, s.id, s.change, s.system], text);
+
+const FILTER_ID = "todo-filter";
+
 export function Todo() {
   const todo = useApi<Todo>("/api/todo?all=1");
   const findings = useApi<Finding[]>("/api/findings");
   const [current, setCurrent] = useState<string | undefined>();
   const [change, setChange] = useState<string>("all");
+  const [text, setText] = useState("");
   useLiveEvents((e) => {
     if (e.type === "file.changed") {
       todo.reload();
@@ -385,6 +401,14 @@ export function Todo() {
   const open = steps.filter((s) => s.state === "open");
   const closed = steps.filter((s) => s.state !== "open");
   const waiting = open.filter((s) => s.waitsFor.length > 0);
+  // The filter narrows the lists of steps; the progress stays the change's.
+  const filtering = !!text.trim();
+  const openShown = open.filter((s) => matchStep(s, text));
+  const closedShown = closed.filter((s) => matchStep(s, text));
+  const what = filteredWhat({
+    text,
+    ...(change !== "all" ? { change: change === "none" ? T.noChange2 : change } : {}),
+  });
   const changes =
     todo.state === "ready" ? [...new Set(todo.data.steps.map((s) => s.change ?? "none"))] : [];
   const selected = steps.find((s) => s.id === current) ?? open[0];
@@ -403,17 +427,27 @@ export function Todo() {
               ? T.waitForAPerson(plural(open.length, "step"))
               : T.nothingToDoEvery}
         </p>
-        {changes.length > 1 && (
-          <Choice
-            label={T.change}
-            value={change}
-            onChange={setChange}
-            options={[
-              { value: "all", label: T.allChanges },
-              ...changes.map((c) => ({ value: c, label: c === "none" ? T.noChange2 : c })),
-            ]}
-          />
-        )}
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div className="stack" style={{ gap: 2 }}>
+            <FilterBox id={FILTER_ID} value={text} onChange={setText} />
+            <FilterCount
+              shown={openShown.length + closedShown.length}
+              total={steps.length}
+              active={filtering}
+            />
+          </div>
+          {changes.length > 1 && (
+            <Choice
+              label={T.change}
+              value={change}
+              onChange={setChange}
+              options={[
+                { value: "all", label: T.allChanges },
+                ...changes.map((c) => ({ value: c, label: c === "none" ? T.noChange2 : c })),
+              ]}
+            />
+          )}
+        </div>
       </div>
       <p className="muted" style={{ margin: 0 }}>
         {T.stepsAPersonDoes}
@@ -502,43 +536,52 @@ export function Todo() {
           </View>
         </Panel>
 
-        <Panel title={T.openSteps} meta={open.length} span="span 4" rows="span 2">
+        <Panel
+          title={T.openSteps}
+          meta={filtering ? `${openShown.length}/${open.length}` : open.length}
+          span="span 4"
+          rows="span 2"
+        >
           <View of={todo} empty={() => open.length === 0} emptyText={T.noOpenSteps}>
-            {() => (
-              <nav aria-label={T.openSteps} className="stack" style={{ gap: 2 }}>
-                {Object.entries(
-                  open.reduce<Record<string, Step[]>>((a, s) => {
-                    (a[s.system] ??= []).push(s);
-                    return a;
-                  }, {}),
-                ).map(([system, list]) => (
-                  <div key={system} className="stack" style={{ gap: 2 }}>
-                    <span className="hud" style={{ fontSize: 10, marginTop: 6 }}>
-                      {SYSTEM_LABEL[system] ?? system}
-                    </span>
-                    {list.map((s) => (
-                      <button
-                        key={`${s.change}/${s.id}`}
-                        type="button"
-                        className="run-pick"
-                        aria-current={s.id === selected?.id ? "true" : undefined}
-                        onClick={() => setCurrent(s.id)}
-                      >
-                        <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                          <span style={{ fontSize: 12.5 }}>{s.title}</span>
-                          <span className="hud" style={{ fontSize: 9.5 }}>
-                            {s.change ?? T.noChange} · {s.id}
+            {() =>
+              openShown.length === 0 ? (
+                <FilterEmpty what={what} onClear={() => setText("")} focus={FILTER_ID} />
+              ) : (
+                <nav aria-label={T.openSteps} className="stack" style={{ gap: 2 }}>
+                  {Object.entries(
+                    openShown.reduce<Record<string, Step[]>>((a, s) => {
+                      (a[s.system] ??= []).push(s);
+                      return a;
+                    }, {}),
+                  ).map(([system, list]) => (
+                    <div key={system} className="stack" style={{ gap: 2 }}>
+                      <span className="hud" style={{ fontSize: 10, marginTop: 6 }}>
+                        {SYSTEM_LABEL[system] ?? system}
+                      </span>
+                      {list.map((s) => (
+                        <button
+                          key={`${s.change}/${s.id}`}
+                          type="button"
+                          className="run-pick"
+                          aria-current={s.id === selected?.id ? "true" : undefined}
+                          onClick={() => setCurrent(s.id)}
+                        >
+                          <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+                            <span style={{ fontSize: 12.5 }}>{s.title}</span>
+                            <span className="hud" style={{ fontSize: 9.5 }}>
+                              {s.change ?? T.noChange} · {s.id}
+                            </span>
                           </span>
-                        </span>
-                        <span className={`chip ${s.waitsFor.length ? "warn" : ""}`}>
-                          {s.waitsFor.length ? T.waits : T.toDo}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                ))}
-              </nav>
-            )}
+                          <span className={`chip ${s.waitsFor.length ? "warn" : ""}`}>
+                            {s.waitsFor.length ? T.waits : T.toDo}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </nav>
+              )
+            }
           </View>
         </Panel>
 
@@ -609,23 +652,31 @@ export function Todo() {
           </p>
         </Panel>
 
-        <Panel title={T.done} meta={closed.length} span="span 5">
+        <Panel
+          title={T.done}
+          meta={filtering ? `${closedShown.length}/${closed.length}` : closed.length}
+          span="span 5"
+        >
           <View of={todo} empty={() => closed.length === 0} emptyText={T.nothingDoneYet}>
             {() =>
-              closed.map((s) => (
-                <button
-                  key={`${s.change}/${s.id}`}
-                  type="button"
-                  className="run-pick"
-                  aria-current={s.id === selected?.id ? "true" : undefined}
-                  onClick={() => setCurrent(s.id)}
-                >
-                  <span style={{ fontSize: 12.5 }}>{s.title}</span>
-                  <span className={`chip ${s.state === "done" ? "done" : "dim"}`}>
-                    {s.state.toUpperCase()}
-                  </span>
-                </button>
-              ))
+              closedShown.length === 0 ? (
+                <div className="state">{COPY.filter.nothingMatches(what)}</div>
+              ) : (
+                closedShown.map((s) => (
+                  <button
+                    key={`${s.change}/${s.id}`}
+                    type="button"
+                    className="run-pick"
+                    aria-current={s.id === selected?.id ? "true" : undefined}
+                    onClick={() => setCurrent(s.id)}
+                  >
+                    <span style={{ fontSize: 12.5 }}>{s.title}</span>
+                    <span className={`chip ${s.state === "done" ? "done" : "dim"}`}>
+                      {s.state.toUpperCase()}
+                    </span>
+                  </button>
+                ))
+              )
             }
           </View>
         </Panel>

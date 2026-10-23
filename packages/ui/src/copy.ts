@@ -255,8 +255,7 @@ export const COPY = {
       correctedFields: (f: string) => `Corrected: ${f}`,
     },
     ai: {
-      intro:
-        "This step needs your assistant, so the app doesn't run it. Run the command in a terminal at the metarepo:",
+      intro: "This step needs a model. Run the command in a terminal at the metarepo:",
       slash: "Or type this in Copilot Chat or Claude Code:",
       copy: "Copy the command",
       copySlash: "Copy the slash command",
@@ -324,8 +323,6 @@ export const COPY = {
     items: {
       intro:
         "What the knowledge scan read from the wikis, as people reviewed it. A tick lasts until the page under it changes; a rejected item is left out of plans and answers, and still listed here with its reason.",
-      search: "Find an item",
-      searchHint: "Title, id, team or words of its quote",
       kind: "Kind",
       allKinds: "All kinds",
       empty:
@@ -536,6 +533,7 @@ export const COPY = {
       evals: "AI quality",
       learning: "Learning",
       settings: "Settings",
+      runs: "Model runs",
     },
   },
   runNext: {
@@ -870,6 +868,20 @@ export const COPY = {
     next: "Next",
     done: "Done",
   },
+  /** One filter box wherever a list grows (ADR 0105 addendum), the same words in the extension. */
+  filter: {
+    label: "Filter",
+    placeholder: "Words to match, for example forge-ledger",
+    shown: (n: number, of: number) => `${n} of ${of} shown`,
+    words: (text: string) => `“${text}”`,
+    inRepo: (repo: string) => `in ${repo}`,
+    inChange: (change: string) => `in ${change}`,
+    among: (kind: string) => `among ${kind}`,
+    nothingMatches: (what: string) => `Nothing matches ${what}.`,
+    clear: "Clear the filter",
+    repo: "Repo",
+    allRepos: "All repos",
+  },
   common: {
     nothingHereYet: "Nothing here yet.",
     of: (label: string | number, value: string | number, max: string | number) =>
@@ -914,8 +926,6 @@ export const COPY = {
     notYet: "not yet",
     noneOpen: "none open",
     acrossChanges: "Across changes",
-    filter: "Filter",
-    wordsToMatchFor: "Words to match, for example forge-ledger open",
     ofAcrossOpenChange: (
       rowsLength: string | number,
       v: string | number,
@@ -1060,7 +1070,6 @@ export const COPY = {
     couldntLoadWhatNeeds:
       "Couldn't load what needs a person. Check that atticus ui is still running, then reload.",
     nothingNeedsAPerson: "Nothing needs a person right now.",
-    andMore: (v: string | number) => `and ${v} more`,
     needsAPerson: "Needs a person",
     // ADR 0105: what waits on you, by kind, each linking to where it is acted on.
     waitingOnYou: "Waiting on you",
@@ -1070,6 +1079,22 @@ export const COPY = {
     waitSteps: "Manual steps to do",
     waitBlocking: "Blocking findings",
     openNeeds: "Open needs",
+    // ADR 0105 addendum: the list of what needs a person, grouped by change.
+    byChangeIntro:
+      "Grouped by change, changes with something blocking first; then what belongs to no change.",
+    noChangeGroup: "Not part of a change",
+    blocked: "BLOCKED",
+    groupCount: (n: number) => `${n} waiting`,
+    inState: (state: string) => `in ${state}`,
+    sectionNeeds: "Open needs",
+    sectionFindings: "Findings",
+    sectionSteps: "Manual steps",
+    sectionQuestions: (repo?: string) => (repo ? `Questions · ${repo}` : "Questions"),
+    sectionTriage: "To sort out",
+    sectionKnowledge: "Knowledge to verify",
+    knowledgeToVerify: (n: number) =>
+      `${n} knowledge item${n === 1 ? "" : "s"} no one has verified yet`,
+    knowledgeDetail: "Verify, correct or reject each against its page",
     findings: (lens: string | number) => `${lens} findings`,
     noOpenFindings: "No open findings.",
     findingsByLens: "Findings by lens",
@@ -2143,6 +2168,100 @@ export const COPY = {
     whoCallsThisEntry: "Who calls this entry point isn't known yet.",
     callerNotKnown: "Caller not known",
     start: "Start",
+  },
+  /** ADR 0106: what Atticus asked a model and what it answered, run by run. */
+  runs: {
+    title: "Model runs",
+    intro:
+      "What Atticus asked a model and what came back, for every AI step, newest first. A prompt and an answer are shown as text, as they were written.",
+    listTitle: "Runs",
+    caption: "Model runs, newest first",
+    cols: {
+      step: "Step or change",
+      agent: "Agent",
+      round: "Round",
+      state: "State",
+      answered: "Answered",
+      handedBack: "Handed back",
+      when: "When",
+    },
+    yes: "Yes",
+    notYet: "Not yet",
+    problems: (n: number) => (n === 0 ? "Nothing" : n === 1 ? "1 problem" : `${n} problems`),
+    states: {
+      prepared: "Prepared",
+      waiting: "Waiting for its answer",
+      produced: "Answered, not checked yet",
+      validated: "Passed the checks",
+      failed: "Failed",
+      cancelled: "Cancelled",
+    } as Record<string, string>,
+    empty:
+      "No model runs yet. A run is listed here once an AI step starts: run one from its page, or with its command or slash command.",
+    emptyFor: (change: string) => `No model runs for ${change} yet.`,
+    onlyFor: (change: string) => `Only the runs of ${change}.`,
+    showAll: "Show every run",
+    pick: "Open a run from the list to read what it was asked and what it answered.",
+    back: "Back to every run",
+    missing: (id: string) => `There is no run ${id}. It may have been removed from .runs/.`,
+    runTitle: (change: string, round: number) => `${change}, round ${round}`,
+    prompt: "Prompt",
+    answer: "Answer",
+    noAnswer: "No answer yet: the run is waiting for one.",
+    handedBack: "Handed back",
+    noneHandedBack: "Nothing was handed back: this is the step's first round.",
+    roundProblems: (n: number) => `Round ${n}: the problems the checks found`,
+    failedAnswer: (n: number) => `The answer round ${n} gave`,
+    noFailedAnswer: "The answer that failed them isn't in the prompt.",
+    rounds: "Rounds of this step",
+    round: (n: number) => `Round ${n}`,
+    thisRound: "(this one)",
+    facts: {
+      agent: "Agent",
+      runtime: "Runs with",
+      state: "State",
+      started: "Started",
+      finished: "Finished",
+      size: "Prompt size",
+      file: "Prompt file",
+    },
+    tokens: (n: number) => `${n} tokens`,
+    textBox: (what: string) => `${what}, scrolls on its own`,
+    forChange: (change: string) => `Model runs for ${change}`,
+    knowledge: "Model runs of the knowledge steps",
+    all: "Every model run",
+  },
+  /** ADR 0106: an AI step run from the app, with Copilot in a VS Code panel or the server's model. */
+  runStep: {
+    withCopilot: "Run with Copilot",
+    withModel: (model: string) => `Run with ${model}`,
+    running: "Running…",
+    busy: "The step is running. The button comes back when it ends.",
+    hintCopilot: "Copilot runs it in VS Code, with your consent, and the checks read its answer.",
+    hintModel: (model: string) =>
+      `The server runs it with ${model}, as runtime.yaml sets, and the checks read its answer.`,
+    started: (model: string) => `Started on the server with ${model}.`,
+    progress: "Progress",
+    output: "What the step printed",
+    ends: {
+      done: "Done: the step finished.",
+      handoff: "Handed off: the prompt waits for its answer.",
+      question: "It asked a question: answer it in Waiting on you, then run the step again.",
+      stopped: "It stopped: its checks found problems. Read the run to see them.",
+      failed: "It failed.",
+      cancelled: "Cancelled.",
+      "too-long": "It stopped: the prompt was too long for the model.",
+      "no-consent": "It didn't run: Copilot wasn't allowed to use the model.",
+      "no-model": "It didn't run: no Copilot model is available.",
+      "model-error": "It stopped: the model answered with an error.",
+      "too-many-rounds": "It stopped: the checks still found problems after the last round.",
+    } as Record<string, string>,
+    /** The extension refused the step, or couldn't start it: its first line says why. */
+    refused: (why: string) => `It didn't run: ${why}`,
+    ended: (state: string) => `It ended: ${state}.`,
+    openRun: "Read the run in Model runs",
+    openRuns: "Open Model runs",
+    cantStart: (why: string) => `Couldn't start it: ${why}`,
   },
   nextStep: {
     releasePlan: "Release plan",

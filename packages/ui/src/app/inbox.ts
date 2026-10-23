@@ -1,3 +1,6 @@
+import { COPY } from "../copy.js";
+import { matchesWords } from "./filter.js";
+
 /**
  * What needs a person (ADR 0073): one list for everyone. There are no roles: every change in a
  * phase, every open blocking finding or knowledge gap, open need of a change (ADR 0105), triage
@@ -30,14 +33,23 @@ export interface InboxData {
     handledBy?: string;
     leadTime?: string;
   }[];
+  /** The questions a step raised (questions/<id>.yaml, ADR 0078), by repo. */
+  questionFiles?: { id: string; question: string; repo: string }[];
+  /** How many knowledge items no one has verified yet, when the page knows it. */
+  knowledgeToVerify?: number;
 }
 
 export interface InboxItem {
-  kind: "phase" | "finding" | "need" | "triage" | "question" | "step";
+  kind: "phase" | "finding" | "need" | "triage" | "question" | "step" | "knowledge";
   title: string;
   detail: string;
   href: string;
   since?: string;
+  /** The item's own id, its change and its repo, for grouping and the filter. */
+  id?: string;
+  change?: string;
+  repo?: string;
+  blocking?: boolean;
 }
 
 /** The screen where a change in each lifecycle state is worked on. */
@@ -83,6 +95,8 @@ export function inboxOf(d: InboxData): InboxItem[] {
       title: `${c.title} is in ${c.state}`,
       detail: `${c.id} · ${c.type}`,
       href: withChange(screen, c.id),
+      id: c.id,
+      change: c.id,
       ...(c.updatedAt ? { since: c.updatedAt } : {}),
     });
   }
@@ -96,6 +110,9 @@ export function inboxOf(d: InboxData): InboxItem[] {
           ARTIFACT_SCREEN.find(([a]) => f.artifact.startsWith(a))?.[1] ?? "changes",
           f.change,
         ),
+        id: f.id,
+        ...(f.change ? { change: f.change } : {}),
+        ...(f.severity === "blocking" ? { blocking: true } : {}),
       });
   for (const n of d.needs ?? [])
     if (n.status === "open")
@@ -104,15 +121,28 @@ export function inboxOf(d: InboxData): InboxItem[] {
         title: n.title,
         detail: [n.kind, n.handledBy, n.leadTime, n.change].filter(Boolean).join(" · "),
         href: "#/changes?across=needs",
+        id: n.item,
+        change: n.change,
       });
   for (const t of d.triage)
-    out.push({ kind: "triage", title: t.summary, detail: t.kind, href: "#/intake" });
+    out.push({ kind: "triage", title: t.summary, detail: t.kind, href: "#/intake", id: t.id });
   for (const q of d.questions)
     out.push({
       kind: "question",
       title: q.question,
       detail: `${q.system ?? ""}${q.owner ? ` · ask ${q.owner}` : ""}`,
       href: "#/map",
+      id: q.id,
+      ...(q.system ? { repo: q.system } : {}),
+    });
+  for (const q of d.questionFiles ?? [])
+    out.push({
+      kind: "question",
+      title: q.question,
+      detail: `${q.repo} · ${q.id}`,
+      href: `#/questions/${encodeURIComponent(q.id)}`,
+      id: q.id,
+      repo: q.repo,
     });
   for (const s of d.steps)
     out.push({
@@ -120,6 +150,99 @@ export function inboxOf(d: InboxData): InboxItem[] {
       title: s.title,
       detail: `${s.system}${s.change ? ` · ${s.change}` : ""}`,
       href: "#/todo",
+      id: s.id,
+      ...(s.change ? { change: s.change } : {}),
+    });
+  if (d.knowledgeToVerify)
+    out.push({
+      kind: "knowledge",
+      title: COPY.commandCenter.knowledgeToVerify(d.knowledgeToVerify),
+      detail: COPY.commandCenter.knowledgeDetail,
+      href: "#/knowledge",
     });
   return out;
+}
+
+/** The kinds a group lists, in order: a change's, then what belongs to no change. */
+export type WaitingKind = "need" | "finding" | "step" | "question" | "triage" | "knowledge";
+const IN_CHANGE: WaitingKind[] = ["need", "finding", "step"];
+const NO_CHANGE: WaitingKind[] = ["question", "need", "finding", "step", "triage", "knowledge"];
+
+export interface WaitingSection {
+  kind: WaitingKind;
+  /** Questions are listed by repo. */
+  repo?: string;
+  items: InboxItem[];
+}
+export interface WaitingGroup {
+  /** The change's id; none for the group of what belongs to no change. */
+  change?: string;
+  title: string;
+  state?: string;
+  blocking: number;
+  count: number;
+  sections: WaitingSection[];
+}
+
+/**
+ * What needs a person grouped by change (ADR 0105 addendum): each change with something open,
+ * with its open needs, its findings (blocking first) and its manual steps; changes with a
+ * blocking finding first, then in the order the changes are listed. Then one group for what
+ * belongs to no change: questions by repo, manual steps, triage and knowledge to verify. A
+ * change in a phase with nothing open has no group: the changes in flight list it. The filter
+ * matches an item's title, id, change (its id or title) and repo.
+ */
+export function waitingByChange(
+  items: InboxItem[],
+  changes: { id: string; title: string; state?: string }[],
+  text: string,
+): { groups: WaitingGroup[]; shown: number; total: number } {
+  const listed = items.filter((i) => i.kind !== "phase");
+  const byId = new Map(changes.map((c, n) => [c.id, { ...c, n }]));
+  const shown = listed.filter((i) =>
+    matchesWords([i.title, i.id, i.change, i.change && byId.get(i.change)?.title, i.repo], text),
+  );
+  const sectionsOf = (list: InboxItem[], kinds: WaitingKind[]): WaitingSection[] =>
+    kinds.flatMap((kind): WaitingSection[] => {
+      const of = list.filter((i) => i.kind === kind);
+      if (!of.length) return [];
+      if (kind === "finding")
+        return [
+          { kind, items: [...of.filter((i) => i.blocking), ...of.filter((i) => !i.blocking)] },
+        ];
+      if (kind !== "question") return [{ kind, items: of }];
+      const repos = [...new Set(of.map((i) => i.repo ?? ""))].sort((a, b) =>
+        !a ? 1 : !b ? -1 : a.localeCompare(b),
+      );
+      return repos.map((r) => ({
+        kind,
+        ...(r ? { repo: r } : {}),
+        items: of.filter((i) => (i.repo ?? "") === r),
+      }));
+    });
+  const ids = [...new Set(shown.map((i) => i.change).filter((c): c is string => !!c))];
+  const order = (g: WaitingGroup) => byId.get(g.change ?? "")?.n ?? Number.MAX_SAFE_INTEGER;
+  const groups: WaitingGroup[] = ids
+    .map((id): WaitingGroup => {
+      const of = shown.filter((i) => i.change === id);
+      const c = byId.get(id);
+      return {
+        change: id,
+        title: c?.title ?? id,
+        ...(c?.state ? { state: c.state } : {}),
+        blocking: of.filter((i) => i.blocking).length,
+        count: of.length,
+        sections: sectionsOf(of, IN_CHANGE),
+      };
+    })
+    .sort((a, b) => Number(b.blocking > 0) - Number(a.blocking > 0) || order(a) - order(b));
+  const none = shown.filter((i) => !i.change);
+  if (none.length)
+    groups.push({
+      title: COPY.commandCenter.noChangeGroup,
+      blocking: 0,
+      count: none.length,
+      sections: sectionsOf(none, NO_CHANGE),
+    });
+  return { groups, shown: shown.length, total: listed.length };
 }

@@ -7,6 +7,7 @@ import { NeedsPanel } from "../knowledge/Needs.js";
 import {
   architectureStep,
   pickChange,
+  stageOf,
   STAGE_SCREEN,
   stageStep,
   taskStep,
@@ -15,6 +16,7 @@ import {
   type TaskRow,
 } from "./next.js";
 import { Command, NoChangeYet, RunNextPanel } from "./RunNext.js";
+import { RunsLink } from "../runs/Runs.js";
 
 /**
  * Feature design, Stories and Tasks (plan 4.5): for now each shows the change's files and the
@@ -167,7 +169,10 @@ export function StagePage(p: {
                   {c.title}
                 </span>
               </p>
-              <ChangePicker list={list} current={c.id} screen={screen} />
+              <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+                <RunsLink change={c.id} />
+                <ChangePicker list={list} current={c.id} screen={screen} />
+              </div>
             </div>
             {p.stage === "tasks" && p.tasks?.state === "loading" ? (
               <View of={p.tasks}>{() => null}</View>
@@ -248,6 +253,13 @@ export function ArchitectureStep({ list }: { list: Loaded<ChangeRow[]> }) {
         {(l) => (
           <>
             <RunNextPanel step={architectureStep(l)} />
+            <p className="work-say" style={{ margin: "0 0 8px" }}>
+              <RunsLink
+                {...(l.find((c) => stageOf(c.state) === "architecture")
+                  ? { change: l.find((c) => stageOf(c.state) === "architecture")!.id }
+                  : {})}
+              />
+            </p>
             {l.length > 0 && (
               <p className="row" style={{ gap: 12, flexWrap: "wrap", margin: "8px 0 0" }}>
                 {l.map((c) => (

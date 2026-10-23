@@ -4,7 +4,15 @@ import { api, ApiError, useApi, useLiveEvents } from "../api/client.js";
 import { FlowCanvas, type FlowViewData } from "../app/flow.js";
 import type { Graph } from "../app/graph.js";
 import { useMe } from "../app/me.js";
-import { inboxOf, type InboxData } from "../app/inbox.js";
+import type { Api } from "@maycombhq/core";
+import { FilterBox, FilterCount, FilterEmpty, filteredWhat } from "../app/filter.js";
+import {
+  inboxOf,
+  waitingByChange,
+  type InboxData,
+  type InboxItem,
+  type WaitingSection,
+} from "../app/inbox.js";
 import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
 import { useNeedsAcross } from "./knowledge/NeedsAcross.js";
 
@@ -50,7 +58,7 @@ const PHASE_LABEL: Record<string, string> = {
 const ACTIVE = new Set<string>([...PHASES, "returned", "post-release-review"]);
 
 function stateChip(c: ChangeSummary) {
-  if (c.openFindings.blocking > 0) return { cls: "blocking", text: "BLOCKED" };
+  if (c.openFindings.blocking > 0) return { cls: "blocking", text: T.blocked };
   return {
     cls: c.state === "release-ready" ? "warn" : "",
     text: (PHASE_LABEL[c.state] ?? c.state).toUpperCase(),
@@ -241,6 +249,124 @@ export function WaitingSections(p: {
   );
 }
 
+const SECTION: Record<WaitingSection["kind"], (s: WaitingSection) => string> = {
+  need: () => T.sectionNeeds,
+  finding: () => T.sectionFindings,
+  step: () => T.sectionSteps,
+  question: (s) => T.sectionQuestions(s.repo),
+  triage: () => T.sectionTriage,
+  knowledge: () => T.sectionKnowledge,
+};
+const groupId = (change?: string) =>
+  `waiting-${(change ?? "no-change").replace(/[^a-z0-9-]/gi, "-")}`;
+const FILTER_ID = "waiting-filter";
+
+function WaitingRow({ x }: { x: InboxItem }) {
+  return (
+    <li>
+      <a
+        href={x.href}
+        className="list-row"
+        style={{ alignItems: "flex-start", textDecoration: "none", color: "inherit" }}
+      >
+        <span style={{ minWidth: 0 }}>
+          <span className="clamp2" style={{ fontSize: 12.5 }}>
+            {x.title}
+          </span>
+          <span className="hud" style={{ fontSize: 9.5 }}>
+            {x.detail}
+          </span>
+        </span>
+        <span className={`chip ${x.blocking ? "blocking" : x.kind === "finding" ? "warn" : ""}`}>
+          {x.kind.toUpperCase()}
+        </span>
+      </a>
+    </li>
+  );
+}
+
+/**
+ * What needs a person, grouped by change (ADR 0105 addendum), with the filter every list that
+ * grows has. Pure, so tests render it in each state.
+ */
+export function WaitingList(p: {
+  items: InboxItem[];
+  changes: { id: string; title: string; state?: string }[];
+  text: string;
+  onText: (v: string) => void;
+  state: "loading" | "error" | "ready";
+}) {
+  if (p.state === "loading")
+    return (
+      <div className="state" role="status">
+        {T.loading}
+      </div>
+    );
+  if (p.state === "error")
+    return (
+      <div className="state" role="alert">
+        {T.couldntLoadWhatNeeds}
+      </div>
+    );
+  const w = waitingByChange(p.items, p.changes, p.text);
+  if (w.total === 0) return <div className="state">{T.nothingNeedsAPerson}</div>;
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+        {T.byChangeIntro}
+      </p>
+      <FilterBox id={FILTER_ID} value={p.text} onChange={p.onText} />
+      <FilterCount shown={w.shown} total={w.total} active={!!p.text.trim()} />
+      {w.groups.length === 0 && (
+        <FilterEmpty
+          what={filteredWhat({ text: p.text })}
+          onClear={() => p.onText("")}
+          focus={FILTER_ID}
+        />
+      )}
+      {w.groups.map((g) => (
+        <section key={g.change ?? ""} aria-labelledby={groupId(g.change)}>
+          <h3
+            id={groupId(g.change)}
+            className="h row"
+            style={{ fontSize: 14, margin: "6px 0", gap: 6, flexWrap: "wrap" }}
+          >
+            {g.change ? (
+              <>
+                <a href={`#/changes/${encodeURIComponent(g.change)}`}>{g.title}</a>
+                <span className="muted mono" style={{ fontSize: 11 }}>
+                  {g.change}
+                </span>
+              </>
+            ) : (
+              <span>{g.title}</span>
+            )}
+            <span className="chip">{T.groupCount(g.count)}</span>
+            {g.blocking > 0 && <span className="chip blocking">{T.blocked}</span>}
+            {g.state && (
+              <span className="hud" style={{ fontSize: 10 }}>
+                {T.inState(g.state)}
+              </span>
+            )}
+          </h3>
+          {g.sections.map((s) => (
+            <div key={`${s.kind}|${s.repo ?? ""}`}>
+              <h4 className="hud" style={{ fontSize: 11, margin: "6px 0" }}>
+                {SECTION[s.kind](s)}
+              </h4>
+              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                {s.items.map((x, k) => (
+                  <WaitingRow key={`${x.id ?? ""}|${k}`} x={x} />
+                ))}
+              </ul>
+            </div>
+          ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
 export function CommandCenter() {
   const changes = useApi<ChangeSummary[]>("/api/changes");
   const findings = useApi<Finding[]>("/api/findings?state=open");
@@ -248,6 +374,11 @@ export function CommandCenter() {
   const qs = useApi<{ data: { questions?: InboxData["questions"] } | null }>("/api/view/questions");
   const triage = useApi<{ data: { items?: InboxData["triage"] } | null }>("/api/view/triage");
   const todo = useApi<{ steps: InboxData["steps"] }>("/api/todo");
+  const asked = useApi<{ questions: NonNullable<InboxData["questionFiles"]> }>(
+    "/api/questions?state=open",
+  );
+  const knowledge = useApi<Api.KnowledgeItemListT>("/api/knowledge/items");
+  const [text, setText] = useState("");
   const { me } = useMe();
   const needs = useNeedsAcross(changes);
   const allNeeds =
@@ -262,6 +393,15 @@ export function CommandCenter() {
     questions: qs.state === "ready" ? (qs.data.data?.questions ?? []) : [],
     triage: triage.state === "ready" ? (triage.data.data?.items ?? []) : [],
     steps: todo.state === "ready" ? todo.data.steps : [],
+    questionFiles: asked.state === "ready" ? asked.data.questions : [],
+    // Knowledge no one has verified, or whose page changed since it was: when the page knows it.
+    ...(knowledge.state === "ready"
+      ? {
+          knowledgeToVerify: knowledge.data.items.filter(
+            (i) => !i.review || i.review.state === "stale",
+          ).length,
+        }
+      : {}),
   });
   const graph = useApi<Graph>("/api/graph");
   // The map is the estate's context view; with one system, that system's components and links.
@@ -294,6 +434,8 @@ export function CommandCenter() {
       needs.reload();
       todo.reload();
       qs.reload();
+      asked.reload();
+      knowledge.reload();
     }
     if (e.type === "run.changed") findings.reload();
   });
@@ -343,6 +485,26 @@ export function CommandCenter() {
             steps={todo.state === "ready" ? todo.data.steps.length : undefined}
             blocking={findings.state === "ready" ? blocking.length : undefined}
           />
+        </Panel>
+        <Panel
+          title={T.needsAPerson}
+          span="1 / -1"
+          meta={inbox.filter((x) => x.kind !== "phase").length || undefined}
+        >
+          <WaitingList
+            items={inbox}
+            changes={changes.state === "ready" ? changes.data : []}
+            text={text}
+            onText={setText}
+            state={
+              changes.state === "loading" || findings.state === "loading"
+                ? "loading"
+                : changes.state === "error" || findings.state === "error"
+                  ? "error"
+                  : "ready"
+            }
+          />
+          {me && <DigestButtons />}
         </Panel>
       </div>
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
@@ -492,52 +654,6 @@ export function CommandCenter() {
               </View>
             )}
           </View>
-        </Panel>
-
-        <Panel title={T.needsAPerson} span="span 4" meta={inbox.length || undefined}>
-          {changes.state === "loading" || findings.state === "loading" ? (
-            <div className="state" role="status">
-              {T.loading}
-            </div>
-          ) : changes.state === "error" || findings.state === "error" ? (
-            <div className="state" role="alert">
-              {T.couldntLoadWhatNeeds}
-            </div>
-          ) : inbox.length === 0 ? (
-            <div className="state">{T.nothingNeedsAPerson}</div>
-          ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {inbox.slice(0, 5).map((x, k) => (
-                <li key={k}>
-                  <a
-                    href={x.href}
-                    className="list-row"
-                    style={{ alignItems: "flex-start", textDecoration: "none", color: "inherit" }}
-                  >
-                    <span style={{ minWidth: 0 }}>
-                      <span className="clamp2" style={{ fontSize: 12.5 }}>
-                        {x.title}
-                      </span>
-                      <span className="hud" style={{ fontSize: 9.5 }}>
-                        {x.detail}
-                      </span>
-                    </span>
-                    <span
-                      className={`chip ${x.kind === "finding" ? "blocking" : x.kind === "phase" ? "" : "warn"}`}
-                    >
-                      {x.kind.toUpperCase()}
-                    </span>
-                  </a>
-                </li>
-              ))}
-              {inbox.length > 5 && (
-                <li className="muted" style={{ fontSize: 12, paddingTop: 6 }}>
-                  {T.andMore(inbox.length - 5)}
-                </li>
-              )}
-            </ul>
-          )}
-          {me && <DigestButtons />}
         </Panel>
 
         <Panel title={T.findingsByLens} span="span 4">

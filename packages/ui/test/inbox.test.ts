@@ -121,6 +121,9 @@ describe("what needs a person", () => {
         title: "Network firewall rule",
         detail: "request · Network team · 10 working days · add-transfer-limit",
         href: "#/changes?across=needs",
+        // Its id and change, for grouping by change and the filter (ADR 0105 addendum).
+        id: "firewall-rule-request",
+        change: "add-transfer-limit",
       },
     ]);
     // After the findings, before the queues.

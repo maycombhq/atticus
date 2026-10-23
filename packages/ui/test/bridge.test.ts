@@ -67,6 +67,47 @@ describe("the app's calls through the extension (ADR 0097)", () => {
   });
 });
 
+describe("an AI step run with Copilot through the extension (ADR 0106)", () => {
+  it("asks the extension to run the step, passes on its progress and ends with its end", async () => {
+    const h = host();
+    const b = makeBridge(h.post, h.on);
+    const lines: string[] = [];
+    const p = b.runStep(["change", "feature", "add-transfer-limit"], (l) => lines.push(l));
+    expect(h.sent).toEqual([
+      { type: "run-step", id: 1, args: ["change", "feature", "add-transfer-limit"] },
+    ]);
+    h.deliver({ type: "run-progress", id: 1, line: "Copilot is writing the brief" });
+    // Another step's progress isn't this one's.
+    h.deliver({ type: "run-progress", id: 9, line: "someone else's" });
+    h.deliver({ type: "run-progress", id: 1, line: "The checks passed" });
+    h.deliver({
+      type: "run-end",
+      id: 1,
+      state: "done",
+      lines: ["Wrote brief.md"],
+      runId: "run-20261023034001-0001",
+    });
+    expect(await p).toEqual({
+      state: "done",
+      lines: ["Wrote brief.md"],
+      runId: "run-20261023034001-0001",
+    });
+    expect(lines).toEqual(["Copilot is writing the brief", "The checks passed"]);
+  });
+
+  it("keeps a step's numbers apart from the API calls', and drops what isn't text", async () => {
+    const h = host();
+    const b = makeBridge(h.post, h.on);
+    const call = b.call("/api/changes", { method: "GET" });
+    const step = b.runStep(["knowledge", "scan"], () => {});
+    expect(h.sent[1]).toMatchObject({ type: "run-step", id: 2 });
+    h.deliver({ type: "api-reply", id: 1, status: 200, body: [] });
+    h.deliver({ type: "run-end", id: 2, state: "failed", lines: ["No wiki", 3, null] });
+    expect(await call).toEqual({ status: 200, body: [] });
+    expect(await step).toEqual({ state: "failed", lines: ["No wiki"] });
+  });
+});
+
 describe("the layout worker, wherever the page comes from", () => {
   it("uses the worker's own address when it is on the page's origin", async () => {
     expect(

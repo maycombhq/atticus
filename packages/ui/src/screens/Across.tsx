@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useApi } from "../api/client.js";
 import { ExternalLink, Panel, View } from "../app/ui.js";
+import { FilterBox, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
 import { Table } from "./know/common.js";
 import { NeedsAcross } from "./knowledge/NeedsAcross.js";
 import { COPY } from "../copy.js";
@@ -132,12 +133,7 @@ const EMPTY: Record<RowsId, string> = {
 
 /** Rows whose words contain every word of the filter, case aside. */
 export function filterRows(rows: AcrossRow[], text: string): AcrossRow[] {
-  const words = text.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return rows;
-  return rows.filter((r) => {
-    const hay = JSON.stringify(r).toLowerCase();
-    return words.every((w) => hay.includes(w));
-  });
+  return rows.filter((r) => matchesWords([JSON.stringify(r)], text));
 }
 
 export function AcrossPanel({ view }: { view: AcrossId }) {
@@ -162,22 +158,13 @@ export function AcrossPanel({ view }: { view: AcrossId }) {
           </a>
         ))}
       </nav>
-      <div className="stack" style={{ gap: 4, marginBottom: 10 }}>
-        <label htmlFor="across-filter" className="hud" style={{ fontSize: 10 }}>
-          {T.filter}
-        </label>
-        <input
-          id="across-filter"
-          className="field"
-          value={text}
-          placeholder={T.wordsToMatchFor}
-          onChange={(e) => setText(e.target.value)}
-        />
+      <div style={{ marginBottom: 10 }}>
+        <FilterBox id="across-filter" value={text} onChange={setText} />
       </div>
       {view === "needs" ? (
-        <NeedsAcross text={text} />
+        <NeedsAcross text={text} onClear={() => setText("")} />
       ) : (
-        <AcrossRows data={data} view={view} text={text} label={label} />
+        <AcrossRows data={data} view={view} text={text} label={label} onClear={() => setText("")} />
       )}
     </Panel>
   );
@@ -188,6 +175,7 @@ function AcrossRows(p: {
   view: RowsId;
   text: string;
   label: string;
+  onClear: () => void;
 }) {
   const { data, view, text, label } = p;
   return (
@@ -213,9 +201,11 @@ function AcrossRows(p: {
                   caption={T.acrossOpenChanges(label)}
                 />
               ) : (
-                <p className="muted" style={{ margin: 0 }}>
-                  {T.nothingMatches(text)}
-                </p>
+                <FilterEmpty
+                  what={filteredWhat({ text })}
+                  onClear={p.onClear}
+                  focus="across-filter"
+                />
               )}
             </div>
           );

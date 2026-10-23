@@ -7,8 +7,12 @@ test("runs a task with AI, and is told to open the change's workspace first", as
   await open(page, app(), "home");
   await open(page, app(), "tasks?change=add-transfer-limit");
   await expect(
-    page.getByRole("group", { name: "Your screens" }).getByRole("link", { name: "Task board" }),
-  ).toBeVisible();
+    // ADR 0105: the Task board is under More, in Build; More is open on one of its pages.
+    page
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("group", { name: "Build" })
+      .getByRole("link", { name: "Task board" }),
+  ).toHaveAttribute("aria-current", "page");
   await page.getByRole("button", { name: "Run with AI" }).first().click();
   await expect(page.getByRole("status").filter({ hasText: "worktree" })).toContainText(
     "atticus workspace open add-transfer-limit",

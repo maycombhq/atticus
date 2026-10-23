@@ -55,6 +55,7 @@ const ROUTES = [
   "governance",
   "evals",
   "learning",
+  "runs",
   "settings",
 ];
 

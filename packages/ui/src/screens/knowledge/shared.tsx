@@ -1,6 +1,7 @@
 import type { Api } from "@maycombhq/core";
 import { ExternalLink } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
+import { RunsLink } from "../runs/Runs.js";
 import { Command } from "../work/RunNext.js";
 import "../run/run.css";
 import "../work/work.css";
@@ -44,8 +45,21 @@ export function ReviewChip({ review }: { review: Review | undefined }) {
   );
 }
 
-/** An AI step the app doesn't run: the command and the slash command, each with Copy. */
-export function AiStep({ command, slash, why }: { command: string; slash?: string; why?: string }) {
+/**
+ * An AI step: the command and the slash command, each with Copy, the Run button where a model
+ * can be reached from here (ADR 0106), and a link to the step's runs when the page gives one.
+ */
+export function AiStep({
+  command,
+  slash,
+  why,
+  runs,
+}: {
+  command: string;
+  slash?: string;
+  why?: string;
+  runs?: { change?: string; q?: string; label?: string };
+}) {
   return (
     <div className="stack" style={{ gap: 4 }}>
       {why && <p className="work-why">{why}</p>}
@@ -56,6 +70,11 @@ export function AiStep({ command, slash, why }: { command: string; slash?: strin
           <p className="work-say">{K.ai.slash}</p>
           <Command text={slash} label={K.ai.copySlash} />
         </>
+      )}
+      {runs && (
+        <p className="work-say">
+          <RunsLink {...runs} />
+        </p>
       )}
     </div>
   );
@@ -72,7 +91,11 @@ export function NoKnowledgeYet({ text }: { text: string }) {
       <p style={{ margin: 0 }}>
         <a href="#/wikis">{K.emptyGo}</a>
       </p>
-      <AiStep command="atticus knowledge scan" slash="/atticus-knowledge" />
+      <AiStep
+        command="atticus knowledge scan"
+        slash="/atticus-knowledge"
+        runs={{ q: "knowledge", label: COPY.runs.knowledge }}
+      />
     </div>
   );
 }

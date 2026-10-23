@@ -9,7 +9,7 @@ test("sees tables and their dependants, and the mappings artifact", async ({ pag
   await expect(page.getByRole("heading", { level: 2, name: "entry" })).toBeVisible();
   await accessible(page, "contracts: table");
   await open(page, app(), "impact?q=ledger-db.entry");
-  await expect(page.getByText("reports-job").first()).toBeVisible();
+  await expect(page.getByText("reports-job").filter({ visible: true }).first()).toBeVisible();
   await open(page, app(), "mappings?change=add-transfer-limit");
   await expect(
     page.getByRole("heading", { level: 2, name: "Mappings", exact: true }),

@@ -83,7 +83,11 @@ function SourceCard(p: {
         <dt>{S.scanLabel}</dt>
         <dd>{s.scanned ? S.scanned(s.scanned.date) : S.notScanned}</dd>
       </dl>
-      <AiStep command={s.commands.scan} slash={s.commands.slash} />
+      <AiStep
+        command={s.commands.scan}
+        slash={s.commands.slash}
+        runs={{ q: "knowledge", label: COPY.runs.knowledge }}
+      />
     </article>
   );
 }
@@ -377,7 +381,12 @@ export function ScanReport({ of }: { of: Loaded<Api.KnowledgeScanViewT> }) {
               ))}
             </ul>
           )}
-          <AiStep command={d.command} slash={d.slash} why={C.rescan} />
+          <AiStep
+            command={d.command}
+            slash={d.slash}
+            why={C.rescan}
+            runs={{ q: "knowledge", label: COPY.runs.knowledge }}
+          />
         </div>
       )}
     </View>

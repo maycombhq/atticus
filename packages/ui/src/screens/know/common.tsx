@@ -338,6 +338,7 @@ export function Table<R>(p: {
             {p.cols.map((c) => (
               <th
                 key={c.label}
+                scope="col"
                 style={{ padding: "4px 8px 6px 0", fontWeight: 400, width: c.width }}
               >
                 {c.label}

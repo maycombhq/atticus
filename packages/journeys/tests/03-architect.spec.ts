@@ -36,6 +36,7 @@ test("sees what a change to the ledger API reaches", async ({ page }) => {
   await expect(
     page.getByRole("heading", { level: 2, name: "Blast radius of ledger-api" }),
   ).toBeVisible();
-  await expect(page.getByText("portal-bff").first()).toBeVisible();
+  // The visible text, not the diagram node's hidden <title> of the same words.
+  await expect(page.getByText("portal-bff").filter({ visible: true }).first()).toBeVisible();
   await accessible(page, "impact explorer");
 });

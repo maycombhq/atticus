@@ -7,6 +7,7 @@ import { Questions } from "./Questions.js";
 import { KNOW_SCREENS } from "./know/index.js";
 import { KNOWLEDGE_SCREENS } from "./knowledge/index.js";
 import { RUN_SCREENS } from "./run/index.js";
+import { Runs } from "./runs/Runs.js";
 import { Dashboard } from "./work/Dashboard.js";
 import { Onboarding } from "./work/Onboarding.js";
 import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work/Stage.js";
@@ -34,4 +35,5 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   ...KNOW_SCREENS,
   ...KNOWLEDGE_SCREENS,
   ...RUN_SCREENS,
+  runs: Runs,
 };

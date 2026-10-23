@@ -1,4 +1,5 @@
 import type { Loaded } from "../../api/client.js";
+import { RunStep } from "../../app/runstep.js";
 import { View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { CopyButton } from "../run/shared.js";
@@ -7,13 +8,20 @@ import "./work.css";
 
 const R = COPY.runNext;
 
-/** A command on its own line with a copy button; a keyboard reaches the button. */
+/**
+ * A command on its own line with a copy button; a keyboard reaches the button. An AI step also
+ * gets a Run button where a model can be reached from here (ADR 0106): Copilot in a VS Code
+ * panel, the server's model in a browser.
+ */
 export function Command({ text, label }: { text: string; label: string }) {
   return (
-    <div className="work-cmd">
-      <code className="mono">{text}</code>
-      <CopyButton text={text} label={`${label}: ${text}`} />
-    </div>
+    <>
+      <div className="work-cmd">
+        <code className="mono">{text}</code>
+        <CopyButton text={text} label={`${label}: ${text}`} />
+      </div>
+      <RunStep command={text} />
+    </>
   );
 }
 
@@ -30,7 +38,8 @@ function SlashLine({ slash }: { slash: Slash }) {
 
 /**
  * The page's "Run next" (plan 4.5): the command for this page's step with a copy button, and
- * the slash command to type in Copilot Chat where one exists. It shows; it never runs.
+ * the slash command to type in Copilot Chat where one exists. An AI step also gets a Run button
+ * where a model can be reached from here (ADR 0106).
  */
 export function RunNextPanel({ step }: { step: Step }) {
   return (

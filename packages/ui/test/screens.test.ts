@@ -82,7 +82,7 @@ describe("the app's menu (plan 4.5, B1; ADR 0105)", () => {
     expect(of("Plan")).toEqual(["breakdown", "initiatives"]);
     expect(of("Build")).toEqual(["tasks", "trace", "todo"]);
     expect(of("Release")).toEqual(["release", "service-desk"]);
-    expect(of("Run")).toEqual(["governance", "evals", "learning"]);
+    expect(of("Run")).toEqual(["governance", "evals", "learning", "runs"]);
   });
 
   it("keeps every screen reachable and removes none; Questions is a section of Waiting on you", () => {
@@ -93,6 +93,7 @@ describe("the app's menu (plan 4.5, B1; ADR 0105)", () => {
     const ADDED = [
       "flows", // ADR 0092
       ...["wikis", "knowledge", "wiki-search", "parties", "orgpack-draft"], // ADR 0102
+      "runs", // ADR 0106
     ];
     const menu = [...MAIN, ...MORE].map((s) => s.id);
     expect(menu).not.toContain("questions");
@@ -107,6 +108,7 @@ describe("the app's menu (plan 4.5, B1; ADR 0105)", () => {
     expect(screenOf("#/changes/add-transfer-limit").id).toBe("changes");
     expect(screenOf("#/explore?q=daily").id).toBe("explore");
     expect(screenOf("#/home").id).toBe("home");
+    expect(screenOf("#/runs?run=run-20261023034001-0001").id).toBe("runs");
     expect(screenOf("#/flows?repo=forge-web&flow=forge-web.save-customer").id).toBe("flows");
     expect(screenOf("#/stories?change=add-transfer-limit").id).toBe("stories");
     expect(screenOf("").id).toBe("dashboard");

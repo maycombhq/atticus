@@ -3,8 +3,10 @@ import type { Api } from "@maycombhq/core";
 import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { escapeCloses, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
+import { FilterBox, FilterEmpty, filteredWhat } from "../../app/filter.js";
 import { message, Note, queryParam } from "../know/common.js";
 import { Problems } from "../work/RunNext.js";
+import { RunsLink } from "../runs/Runs.js";
 import {
   correctionBody,
   fieldLabel,
@@ -61,6 +63,8 @@ export function ItemList(p: {
   kind: string;
   current?: string | undefined;
   screen?: string;
+  /** Clears the filter and the kind; with it, nothing matching offers to clear them. */
+  onClear?: () => void;
 }) {
   const screen = p.screen ?? "knowledge";
   return (
@@ -78,7 +82,19 @@ export function ItemList(p: {
             <p className="hud" style={{ fontSize: 10, margin: "0 0 6px" }} aria-live="polite">
               {I.count(shown.length)}
             </p>
-            {groups.length === 0 && <div className="state">{I.noMatch}</div>}
+            {groups.length === 0 &&
+              (p.onClear ? (
+                <FilterEmpty
+                  what={filteredWhat({
+                    text: p.text,
+                    ...(p.kind ? { kind: kindLabel(p.kind) } : {}),
+                  })}
+                  onClear={p.onClear}
+                  focus="item-find"
+                />
+              ) : (
+                <div className="state">{I.noMatch}</div>
+              ))}
             {groups.map((g) => (
               <section key={g.title} aria-label={g.title} style={{ marginBottom: 10 }}>
                 <h3 className="hud" style={{ fontSize: 11, margin: "6px 0" }}>
@@ -533,18 +549,7 @@ export function ItemFilters(p: {
 }) {
   return (
     <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 10 }} role="search">
-      <div className="stack" style={{ gap: 4, flex: "1 1 200px" }}>
-        <label htmlFor="item-find" className="hud" style={{ fontSize: 10 }}>
-          {I.search}
-        </label>
-        <input
-          id="item-find"
-          className="field"
-          placeholder={I.searchHint}
-          value={p.text}
-          onChange={(e) => p.onText(e.target.value)}
-        />
-      </div>
+      <FilterBox id="item-find" value={p.text} onChange={p.onText} grow />
       <div className="stack" style={{ gap: 4 }}>
         <label htmlFor="item-kind" className="hud" style={{ fontSize: 10 }}>
           {I.kind}
@@ -603,10 +608,19 @@ export function KnowledgeItems({ hash }: { hash: string }) {
     <div className="bento">
       <Panel title={K.nav.items} span="span 5">
         <p className="work-say" style={{ marginTop: 0 }}>
-          {I.intro}
+          {I.intro} <RunsLink q="knowledge" label={COPY.runs.knowledge} />
         </p>
         <ItemFilters text={text} kind={kind} onText={setText} onKind={setKind} />
-        <ItemList of={list} text={text} kind={kind} current={current} />
+        <ItemList
+          of={list}
+          text={text}
+          kind={kind}
+          current={current}
+          onClear={() => {
+            setText("");
+            setKind("");
+          }}
+        />
       </Panel>
       <Panel title={item?.title ?? I.open} span="span 7" labelledBy="item-detail">
         {item ? (

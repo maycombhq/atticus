@@ -6,6 +6,8 @@ import { COPY } from "../../copy.js";
 import { message, Note } from "../know/common.js";
 import { markedWords, NeedRow } from "./Needs.js";
 import { AiStep, groupItems } from "./shared.js";
+import { RunsLink } from "../runs/Runs.js";
+import { FilterEmpty, filteredWhat, matchesWords } from "../../app/filter.js";
 
 /**
  * Needs across changes (ADR 0105): every open need of every open change, grouped by change and
@@ -55,12 +57,8 @@ export function needsAcross(
   notYet: { change: string; title: string; command: string; slash: string }[];
   errors: { change: string; title: string; error: string }[];
 } {
-  const words = o.text.toLowerCase().split(/\s+/).filter(Boolean);
-  const hit = (r: ChangeNeeds, n: Need) => {
-    if (!words.length) return true;
-    const hay = `${r.change} ${r.title} ${JSON.stringify(n)}`.toLowerCase();
-    return words.every((w) => hay.includes(w));
-  };
+  const hit = (r: ChangeNeeds, n: Need) =>
+    matchesWords([r.change, r.title, JSON.stringify(n)], o.text);
   const groups: { change: string; title: string; needs: Need[] }[] = [];
   let open = 0;
   for (const r of rows) {
@@ -98,6 +96,7 @@ export function NeedsAcrossView(p: {
   kept?: ReadonlySet<string>;
   onMark?: (change: string, n: Need, body: Record<string, unknown>) => void;
   busy?: boolean;
+  onClear?: () => void;
 }) {
   return (
     <View of={p.of} empty={(d) => d.length === 0} emptyText={T.needsNoChanges}>
@@ -105,7 +104,7 @@ export function NeedsAcrossView(p: {
         const d = needsAcross(rows, p);
         return (
           <div className="stack" style={{ gap: 10 }}>
-            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+            <p className="muted" aria-live="polite" style={{ margin: 0, fontSize: 12 }}>
               {T.needsCount(d.open, rows.length)}
             </p>
             {d.errors.map((e) => (
@@ -117,11 +116,16 @@ export function NeedsAcrossView(p: {
                 {T.needsCantRead(e.change, e.error)}
               </p>
             ))}
-            {d.groups.length === 0 && (
-              <div className="state">
-                {p.text.trim() ? T.nothingMatches(p.text.trim()) : T.needsNone}
-              </div>
-            )}
+            {d.groups.length === 0 &&
+              (p.text.trim() ? (
+                <FilterEmpty
+                  what={filteredWhat({ text: p.text })}
+                  onClear={() => p.onClear?.()}
+                  focus="across-filter"
+                />
+              ) : (
+                <div className="state">{T.needsNone}</div>
+              ))}
             {d.groups.map((g) => (
               <section key={g.change} aria-labelledby={idOf(g.change)}>
                 <h3 id={idOf(g.change)} className="h" style={{ fontSize: 14, margin: "6px 0" }}>
@@ -130,6 +134,9 @@ export function NeedsAcrossView(p: {
                     {g.change}
                   </span>
                 </h3>
+                <p className="work-say" style={{ margin: "0 0 4px" }}>
+                  <RunsLink change={g.change} />
+                </p>
                 {groupItems(g.needs, N.groups).map((k) => (
                   <div key={k.title}>
                     <h4 className="hud" style={{ fontSize: 11, margin: "6px 0" }}>
@@ -157,7 +164,12 @@ export function NeedsAcrossView(p: {
                   {d.notYet.map((c) => (
                     <li key={c.change}>
                       <a href={`#/changes/${encodeURIComponent(c.change)}`}>{c.title}</a>
-                      <AiStep command={c.command} slash={c.slash} why={N.none(c.change)} />
+                      <AiStep
+                        command={c.command}
+                        slash={c.slash}
+                        why={N.none(c.change)}
+                        runs={{ change: c.change }}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -221,7 +233,7 @@ export function useNeedsAcross(
 }
 
 /** The view as the cross-change page mounts it: loads, marks and follows the files. */
-export function NeedsAcross({ text }: { text: string }) {
+export function NeedsAcross({ text, onClear }: { text: string; onClear?: () => void }) {
   const changes = useApi<ChangeRef[]>("/api/changes");
   const rows = useNeedsAcross(changes);
   const [all, setAll] = useState(false);
@@ -259,7 +271,15 @@ export function NeedsAcross({ text }: { text: string }) {
         {T.needsShowAll}
       </label>
       <Note note={note} />
-      <NeedsAcrossView of={rows} all={all} text={text} kept={kept} onMark={onMark} busy={busy} />
+      <NeedsAcrossView
+        of={rows}
+        all={all}
+        text={text}
+        kept={kept}
+        onMark={onMark}
+        busy={busy}
+        {...(onClear ? { onClear } : {})}
+      />
     </div>
   );
 }

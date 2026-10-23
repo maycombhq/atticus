@@ -20,10 +20,34 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // No view to pick: one navigation, every screen in its group.
   await expect(page.getByLabel("View", { exact: true })).toHaveCount(0);
-  const define = page.getByRole("navigation", { name: "Main" }).getByRole("group", {
-    name: "Define",
-  });
+  // ADR 0105: the menu in the order of a working day; every other page under More, in its group.
+  const nav = page.getByRole("navigation", { name: "Main" });
+  const main = nav.getByRole("group", { name: "Main" });
+  await expect(main.getByRole("link")).toHaveText([
+    "Dashboard",
+    "Waiting on you",
+    "Changes",
+    "Onboarding",
+    "Feature design",
+    "Architecture",
+    "Stories",
+    "Tasks",
+    "Knowledge",
+  ]);
+  await expect(main.getByRole("link", { name: "Waiting on you" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  const more = nav.getByRole("button", { name: "More" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await more.click();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+  const define = nav.getByRole("group", { name: "Define" });
   await expect(define.getByRole("link", { name: "Feature brief" })).toBeVisible();
+  await expect(define.getByRole("link", { name: "Feature brief" })).toHaveAttribute(
+    "href",
+    "#/brief",
+  );
   await expect(page.getByRole("heading", { level: 2, name: "Needs a person" })).toBeVisible();
   await expect(page.getByText(/Approving is the pull request/).first()).toBeVisible();
   await accessible(page, "home");

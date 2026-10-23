@@ -4,6 +4,7 @@ import { api, useApi, useLiveEvents, type Loaded } from "../../api/client.js";
 import { escapeCloses, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { message, Note } from "../know/common.js";
+import { RunsLink } from "../runs/Runs.js";
 import { AiStep, groupItems, kindLabel, Links, pageText } from "./shared.js";
 
 /**
@@ -306,7 +307,12 @@ export function NeedsView(p: {
     <View of={p.of}>
       {(d) =>
         !d.present ? (
-          <AiStep command={d.command} slash={d.slash} why={N.none(d.change)} />
+          <AiStep
+            command={d.command}
+            slash={d.slash}
+            why={N.none(d.change)}
+            runs={{ change: d.change }}
+          />
         ) : (
           <div className="stack" style={{ gap: 8 }}>
             <p className="hud" style={{ fontSize: 10, margin: 0 }}>
@@ -381,7 +387,7 @@ export function NeedsPanel({ change, span }: { change: string; span?: string }) 
         {N.title}
       </h2>
       <p className="work-say" style={{ marginTop: 0 }}>
-        {N.intro}
+        {N.intro} <RunsLink change={change} />
       </p>
       <NeedsView of={needs} onMark={onMark} busy={busy} />
       <Note note={note} />

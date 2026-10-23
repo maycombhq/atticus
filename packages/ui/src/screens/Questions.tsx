@@ -4,6 +4,7 @@ import { api, useApi, type Loaded } from "../api/client.js";
 import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
 import { Choice, CopyButton, message } from "./run/shared.js";
+import { FilterBox, FilterCount, FilterEmpty, filteredWhat, matchesWords } from "../app/filter.js";
 
 /**
  * The Questions page (ADR 0078, plan Phase 2a): the questions a step raised for a person, each
@@ -57,41 +58,74 @@ export function answerBody(f: AnswerForm): { body: Record<string, unknown> } | {
 const day = (iso: string) => iso.slice(0, 10);
 const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
 
-export function QuestionList(p: { of: Loaded<QuestionListView>; current?: string; all?: boolean }) {
+/** The repos the questions are about, in order. */
+export const questionRepos = (qs: QuestionView[]): string[] =>
+  [...new Set(qs.map((q) => q.repo))].sort((a, b) => a.localeCompare(b));
+
+/** The questions the filter keeps: its words in the question, id or repo, and the repo picked. */
+export const shownQuestions = (qs: QuestionView[], f: { text: string; repo: string }) =>
+  qs.filter(
+    (q) => (!f.repo || q.repo === f.repo) && matchesWords([q.question, q.id, q.repo], f.text),
+  );
+
+const FILTER_ID = "questions-filter";
+
+export function QuestionList(p: {
+  of: Loaded<QuestionListView>;
+  current?: string;
+  all?: boolean;
+  text?: string;
+  repo?: string;
+  onClear?: () => void;
+}) {
+  const text = p.text ?? "";
+  const repo = p.repo ?? "";
   return (
     <View
       of={p.of}
       empty={(d) => d.questions.length === 0 && d.problems.length === 0}
       emptyText={p.all ? C.emptyAll : C.empty}
     >
-      {(d) => (
-        <div className="stack" style={{ gap: 8 }}>
-          {d.problems.map((x) => (
-            <p key={x.file} className="state error" role="alert" style={{ margin: 0 }}>
-              {C.unreadable(x.file)} {x.message}
-            </p>
-          ))}
-          {d.questions.length > 0 && (
-            <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
-              {d.questions.map((q) => (
-                <li key={q.id}>
-                  <a
-                    href={`#/questions/${q.id}`}
-                    aria-current={q.id === p.current ? "true" : undefined}
-                    className="stack"
-                    style={{ gap: 2 }}
-                  >
-                    <span>{q.question}</span>
-                    <span className="hud" style={{ fontSize: 10 }}>
-                      {q.repo} · {q.state} · {q.id}
-                    </span>
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      {(d) => {
+        const shown = shownQuestions(d.questions, { text, repo });
+        const active = !!text.trim() || !!repo;
+        return (
+          <div className="stack" style={{ gap: 8 }}>
+            {d.problems.map((x) => (
+              <p key={x.file} className="state error" role="alert" style={{ margin: 0 }}>
+                {C.unreadable(x.file)} {x.message}
+              </p>
+            ))}
+            <FilterCount shown={shown.length} total={d.questions.length} active={active} />
+            {active && shown.length === 0 && d.questions.length > 0 && (
+              <FilterEmpty
+                what={filteredWhat({ text, repo })}
+                onClear={() => p.onClear?.()}
+                focus={FILTER_ID}
+              />
+            )}
+            {shown.length > 0 && (
+              <ul className="stack" style={{ listStyle: "none", margin: 0, padding: 0, gap: 6 }}>
+                {shown.map((q) => (
+                  <li key={q.id}>
+                    <a
+                      href={`#/questions/${q.id}`}
+                      aria-current={q.id === p.current ? "true" : undefined}
+                      className="stack"
+                      style={{ gap: 2 }}
+                    >
+                      <span>{q.question}</span>
+                      <span className="hud" style={{ fontSize: 10 }}>
+                        {q.repo} · {q.state} · {q.id}
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      }}
     </View>
   );
 }
@@ -321,28 +355,67 @@ export function Questions({ hash }: { hash: string }) {
     filter === "open" ? "/api/questions?state=open" : "/api/questions",
   );
   const current = questionRoute(hash);
+  const [text, setText] = useState("");
+  const [repo, setRepo] = useState("");
+  const repos = [
+    ...new Set([
+      ...(list.state === "ready" ? questionRepos(list.data.questions) : []),
+      ...(repo ? [repo] : []),
+    ]),
+  ].sort((a, b) => a.localeCompare(b));
   return (
     <>
       <div className="row between" style={{ flexWrap: "wrap" }}>
         <p className="n" style={{ margin: 0, fontSize: 24 }}>
           {C.title}
         </p>
-        <Choice
-          label={C.filter}
-          value={filter}
-          options={[
-            { value: "open", label: C.filterOpen },
-            { value: "all", label: C.filterAll },
-          ]}
-          onChange={setFilter}
-        />
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <FilterBox id={FILTER_ID} value={text} onChange={setText} />
+          <div className="stack" style={{ gap: 4 }}>
+            <label htmlFor="questions-repo" className="hud" style={{ fontSize: 10 }}>
+              {COPY.filter.repo}
+            </label>
+            <select
+              id="questions-repo"
+              className="field"
+              value={repo}
+              onChange={(e) => setRepo(e.target.value)}
+            >
+              <option value="">{COPY.filter.allRepos}</option>
+              {repos.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Choice
+            label={C.filter}
+            value={filter}
+            options={[
+              { value: "open", label: C.filterOpen },
+              { value: "all", label: C.filterAll },
+            ]}
+            onChange={setFilter}
+          />
+        </div>
       </div>
       <p className="muted" style={{ margin: "4px 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
         {C.intro}
       </p>
       <div className="bento">
         <Panel title={C.listTitle} span="span 5">
-          <QuestionList of={list} current={current} all={filter === "all"} />
+          <QuestionList
+            of={list}
+            current={current}
+            all={filter === "all"}
+            text={text}
+            repo={repo}
+            onClear={() => {
+              setText("");
+              setRepo("");
+            }}
+          />
         </Panel>
         <section className="panel" style={{ gridColumn: "span 7" }}>
           {current ? (

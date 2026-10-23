@@ -57,7 +57,12 @@ export function SearchResult({ of }: { of: Loaded<Api.WikiSearchResultT> }) {
                 </ul>
               </section>
             ))}
-            <AiStep command={d.command} slash={d.slash} why={S.next} />
+            <AiStep
+              command={d.command}
+              slash={d.slash}
+              why={S.next}
+              runs={{ q: "knowledge", label: COPY.runs.knowledge }}
+            />
           </div>
         )
       }

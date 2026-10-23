@@ -6,6 +6,7 @@ import { Panel } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam, setQueryParam } from "../know/common.js";
 import { CopyButton, Facts } from "../run/shared.js";
+import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
 import {
   canvasGraph,
@@ -587,6 +588,7 @@ function Inspector({
             <code className="mono">{node.next.command}</code>
             <CopyButton text={node.next.command} label={`${WORDS.copy}: ${node.next.command}`} />
           </div>
+          <RunStep command={node.next.command} />
         </>
       )}
     </div>
