@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RunState, RunSummary, RuntimeKind } from "./schema/ai.js";
+import { RunState, RunSummary, RunTools, RuntimeKind } from "./schema/ai.js";
 import { Evidence, RecordId } from "./schema/common.js";
 import {
   Flow,
@@ -38,8 +38,10 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.9.0 (ADR 0108): a change's picture, GET /api/changes/{id}/map.
  * 2.10.0 (ADR 0109): a change's estimate, GET /api/changes/{id}/estimate.
  * 2.11.0 (ADR 0110): the prompt and response history, GET /api/history and /api/history/{id}.
+ * 2.12.0 (ADR 0107 addendum): what a model run's tools were asked and gave back: toolCalls in
+ *   GET /api/runs and tools in the transcript; run records are at version 2.
  */
-export const API_VERSION = "2.11.0";
+export const API_VERSION = "2.12.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -361,6 +363,8 @@ export const RunListItem = RunView.extend({
   handedBack: z.number().int().min(0),
   /** The prompt's size, as the context pack counted it. */
   promptTokens: z.number().int().min(0).optional(),
+  /** How many tool calls the run's model made (ADR 0107 addendum). */
+  toolCalls: z.number().int().min(0).optional(),
 });
 export type RunListItem = z.infer<typeof RunListItem>;
 /** ADR 0106: the AI step to start on the server: its command words and arguments. */
@@ -380,6 +384,8 @@ export const RunTranscript = z.object({
   prompt: z.string(),
   /** The answer, when there is one; text, never markup. */
   answer: z.string().optional(),
+  /** The tools the model was offered, each call it made and what it was given back; text, never markup. */
+  tools: RunTools.optional(),
   handedBack: z.array(
     z.object({
       attempt: z.number().int().min(1),

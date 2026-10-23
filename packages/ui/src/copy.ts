@@ -2306,6 +2306,16 @@ export const COPY = {
     roundProblems: (n: number) => `Round ${n}: the problems the checks found`,
     failedAnswer: (n: number) => `The answer round ${n} gave`,
     noFailedAnswer: "The answer that failed them isn't in the prompt.",
+    /** ADR 0107 addendum: what the model looked at through its read-only tools. */
+    tools: {
+      title: "What the model looked up",
+      offered: (names: string, n: number) =>
+        `Read-only tools offered: ${names || "none"}. The model called them ${n === 1 ? "once" : `${n} times`}.`,
+      stopped: (why: string) => `A cap stopped the tool calls (${why}).`,
+      call: (round: number, name: string, tokens: number, refused: boolean) =>
+        `Round ${round}: ${name}, ${tokens} tokens back${refused ? ", refused" : ""}`,
+      returned: (name: string) => `What ${name} gave back`,
+    },
     rounds: "Rounds of this step",
     round: (n: number) => `Round ${n}`,
     thisRound: "(this one)",

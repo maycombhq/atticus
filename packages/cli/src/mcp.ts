@@ -129,6 +129,37 @@ export const MCP_TOOLS: McpTool[] = [
     ],
   },
   {
+    name: "show",
+    description:
+      "One record, flow, flow step (flow-id#n), knowledge item, change, answered question or wiki section in full, by its id, with the file it was read from and whether it was verified (atticus context show).",
+    args: [s("id", "The id, as search or a record names it.")],
+    argv: (a) => ["context", "show", String(a.id)],
+  },
+  {
+    name: "walk",
+    description:
+      "The links from one id: what it calls, contains, names or is named by, each with how the link was made, at most two hops (atticus context walk).",
+    args: [
+      s("id", "The id to walk from."),
+      { name: "hops", description: "1 (the default) or 2.", choices: ["1", "2"] },
+      s("kind", "Only these kinds, comma-separated (System, Flow, Endpoint...).", false),
+    ],
+    argv: (a) => [
+      "context",
+      "walk",
+      String(a.id),
+      ...(a.hops ? ["--hops", String(a.hops)] : []),
+      ...(a.kind ? ["--kind", String(a.kind)] : []),
+    ],
+  },
+  {
+    name: "show_code",
+    description:
+      "The code a fact cites: a few lines around each file and line a record or flow step cites, read from the workspace checkout and never outside it (atticus context code).",
+    args: [s("id", "A record's or a flow step's (flow-id#n) id.")],
+    argv: (a) => ["context", "code", String(a.id)],
+  },
+  {
     name: "explain",
     description: "A record, finding, change or command explained in plain words (atticus explain).",
     args: [s("id", "A record id, a finding id, a change id or a command.")],

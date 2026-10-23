@@ -325,20 +325,133 @@ function endpointsIn(text: string): string[] {
   );
 }
 
-/** Names the input uses that might be systems, vendors, components or endpoints. */
+/**
+ * Words that are not part of a name when capitalised: small words, days and months, the words
+ * of a Given/When/Then or a user story, and the headings a brief has.
+ */
+const NOT_NAME = new Set([
+  ...STOP,
+  ..."a an and as at be but by do if in is it me my no of on or so to up us we i".split(" "),
+  ..."monday tuesday wednesday thursday friday saturday sunday".split(" "),
+  ..."january february march april june july august september october november december".split(" "),
+  ..."given when then customer user story stories acceptance criteria scenario feature background".split(
+    " ",
+  ),
+  ..."summary notes note risks assumptions dependencies definition ready release review rollout".split(
+    " ",
+  ),
+]);
+
+/** A phrase that starts with one of these is a Given/When/Then or a user story, not a name. */
+const STEP_WORDS = new Set(["given", "when", "then", "and", "but", "as", "if"]);
+
+/** A first word of a sentence that tells someone to do something: not part of the name after it. */
+const VERBS = new Set(
+  "ask send call use read run see check add make keep let show put move hold score place write open close update remove raise talk tell email notify contact route post fetch store reserve refuse".split(
+    " ",
+  ),
+);
+
+/** Words a name may end with that don't change what it names: Northwind Pay API is Northwind Pay. */
+const GENERIC = new Set(
+  "api apis service services system systems team app apps application platform portal ui ux gateway database db store queue topic site module library sdk client server backend frontend web mobile integration endpoint endpoints".split(
+    " ",
+  ),
+);
+
+/** A file name in backticks (notes.md, OrderController.java), not a name. */
+const FILE =
+  /\.(md|markdown|ya?ml|json|java|kt|ts|tsx|js|mjs|py|go|cs|rb|sql|xml|txt|csv|html?|properties|sh|toml|ini|cfg)$/i;
+
+/** Title Case: most words of the line capitalised, as in a heading; its capitals say nothing. */
+function titleCase(line: string): boolean {
+  const words = line.match(/[A-Za-z][A-Za-z0-9'-]*/g) ?? [];
+  if (words.length < 3) return false;
+  return words.filter((w) => /^[A-Z]/.test(w)).length / words.length > 0.6;
+}
+
+/**
+ * Names the input uses that might be systems, vendors, components or endpoints: names in
+ * backticks (an id like forge-hold-store, or a capitalised name; not a field, a file or a
+ * command), runs of capitalised words in a sentence (not in a heading or a Title Case line, cut
+ * at the small words, without a sentence's first verb, and not a Given/When/Then), and endpoints.
+ */
 function nameCandidates(text: string): string[] {
   const out = new Set<string>();
   const lines = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l) && !/^\s*<!--/.test(l));
   const body = lines.join("\n");
-  for (const m of body.matchAll(/`([^`\n]{2,60})`/g)) out.add(m[1]!.trim());
-  for (const m of body.matchAll(/\b([A-Z][A-Za-z0-9]+(?:[ -][A-Z][A-Za-z0-9]+)+)\b/g)) {
-    const words = m[1]!.split(/[ -]/);
-    while (words.length && STOP.has(words[0]!.toLowerCase())) words.shift();
-    if (words.length >= 2) out.add(words.join(" "));
+  for (const m of body.matchAll(/`([^`\n]{2,60})`/g)) {
+    const t = m[1]!.trim();
+    if (/^(GET|POST|PUT|PATCH|DELETE)\s+\//.test(t)) continue; // taken as an endpoint below
+    const id = /^[a-z0-9]+(?:[-.][a-z0-9]+)+$/.test(t) && !FILE.test(t);
+    const name = /^[A-Z][A-Za-z0-9]*(?: [A-Z][A-Za-z0-9]*){0,3}$/.test(t);
+    if (id || name) out.add(t);
+  }
+  // A paragraph's lines read as one, so a name can run over a line break; a Title Case line is out.
+  const paragraphs: string[] = [];
+  let para: string[] = [];
+  for (const l of [...lines, ""]) {
+    if (!l.trim() || titleCase(l)) {
+      if (para.length) paragraphs.push(para.join(" "));
+      para = [];
+    } else para.push(l.trim());
+  }
+  for (const line of paragraphs) {
+    for (const m of line.matchAll(/\b([A-Z][A-Za-z0-9]+(?:[ -][A-Z][A-Za-z0-9]+)+)\b/g)) {
+      const words = m[1]!.split(/[ -]/);
+      if (STEP_WORDS.has(words[0]!.toLowerCase())) continue;
+      // At a sentence's start, a verb is the sentence's, not the name's: "Ask Quillfeather Risk".
+      const before = line.slice(0, m.index).trimEnd();
+      const starts = before === "" || /[.!?:;]$/.test(before);
+      if (starts && VERBS.has(words[0]!.toLowerCase())) words.shift();
+      // Cut at the small words: "On Monday In October" is no name.
+      let run: string[] = [];
+      const flush = () => {
+        if (run.length >= 2) out.add(run.join(" "));
+        run = [];
+      };
+      for (const w of words) {
+        if (NOT_NAME.has(w.toLowerCase())) flush();
+        else run.push(w);
+      }
+      flush();
+    }
   }
   for (const m of body.matchAll(/\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[^\s`"'),;]*)/g))
     out.add(`${m[1]} ${m[2]!.replace(/[.:]+$/, "")}`);
   return [...out];
+}
+
+/**
+ * Whether the index knows a name: by its name or alias exactly; as known names with only
+ * generic words beside them (Northwind Pay API, Forge Shop UI); or because a record, an item,
+ * a flow, an answered question or a wiki section already uses the phrase (a change's own files
+ * don't count: they are the input).
+ */
+function knownName(
+  ix: CatalogIndex,
+  names: Map<string, string[]>,
+  maxWords: number,
+  candidate: string,
+): boolean {
+  const m = /^(GET|POST|PUT|PATCH|DELETE)\s+(\/\S*)$/.exec(candidate);
+  if (m) return names.has(endpointName(m[1]!, m[2]!));
+  const f = foldName(candidate);
+  if (names.has(f) || names.has(f.replace(/ /g, "-"))) return true;
+  const toks = f.split(/[\s-]+/).filter(Boolean);
+  const covered = new Array<boolean>(toks.length).fill(false);
+  for (const hit of namesIn(toks.join(" "), names, maxWords)) {
+    const n = hit.name.split(" ").length;
+    for (let i = hit.at; i < hit.at + n && i < toks.length; i++) covered[i] = true;
+  }
+  if (covered.some(Boolean) && toks.every((t, i) => covered[i] || GENERIC.has(t))) return true;
+  const words = queryWords(candidate);
+  if (words.length < 2 || words.length !== toks.length) return false;
+  const phrase = `"${words.join(" ")}"`;
+  return !!prep(
+    ix,
+    `SELECT 1 FROM fts f JOIN nodes n ON n.key = f.key WHERE fts MATCH ? AND n.grp != 'change' LIMIT 1`,
+  ).get(phrase);
 }
 
 function candidatesOf(
@@ -509,12 +622,7 @@ function candidatesOf(
 
   // ---- what the input names that the index doesn't have
   const unknown = nameCandidates(`${title}\n${text}`)
-    .filter((c) => {
-      const m = /^(GET|POST|PUT|PATCH|DELETE)\s+(\/\S*)$/.exec(c);
-      if (m) return !names.has(endpointName(m[1]!, m[2]!));
-      const f = foldName(c);
-      return !names.has(f) && !names.has(f.replace(/ /g, "-"));
-    })
+    .filter((c) => !knownName(ix, names, maxWords, c))
     .sort();
   return { candidates, unknown };
 }

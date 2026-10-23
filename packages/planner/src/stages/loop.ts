@@ -38,6 +38,7 @@ import {
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
 import type { ContextOptions, ContextReport } from "../engine.js";
+import { askGaps, type ContextGap } from "../gaps.js";
 import {
   criticFindingKind,
   criticRuleChecks,
@@ -109,6 +110,11 @@ export interface StageSpec<A> {
   current(): Promise<A | undefined>;
   /** The questions the assistant raised in its answer. */
   questions?(answer: A): QuestionDraft[];
+  /**
+   * The names the change uses that nothing Atticus has read says anything about (ADR 0107
+   * point 5): each one the answer relies on becomes a question to a person, never a guess.
+   */
+  gaps?: ContextGap[];
 }
 
 export interface StageOptions {
@@ -480,6 +486,19 @@ export async function runStageLoop<A>(
         if (q) f.question = q.id;
       }
       loop.questions = [...new Set([...loop.questions, ...qs.map((q) => q.id)])].sort();
+    }
+    // A gap the answer relies on goes to a person (ADR 0107 point 5).
+    if (answer !== undefined && run.output && spec.gaps?.length) {
+      const asked = await askGaps(root, change.id, spec.gaps, run.output, {
+        command: rerunOf(spec.stage, change.id),
+        rerun: rerunOf(spec.stage, change.id),
+        ...(run.runId ? { run: run.runId } : {}),
+        at,
+      });
+      if (asked.length) {
+        loop.questions = [...new Set([...loop.questions, ...asked.map((q) => q.id)])].sort();
+        await writeLoop(dir, loop);
+      }
     }
 
     // ---- stop, or go round again

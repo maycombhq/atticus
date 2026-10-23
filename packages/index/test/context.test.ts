@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import { openDb } from "../src/db.js";
-import { openIndex, type CatalogIndex } from "../src/index.js";
+import { GAP_STEP, gapNameOf, gapQuestion, openIndex, type CatalogIndex } from "../src/index.js";
 import { CONTEXT, contextRoot, STAGES } from "./helpers.js";
 
 interface ExpectedLink {
@@ -316,5 +316,57 @@ describe("selectContext (ADR 0107 point 3)", () => {
     );
     // Times are reported, not asserted: a runner busy with every package's tests at once took
     // over a second for what takes 27 ms alone. What is asserted is the work: one file re-read.
+  });
+});
+
+describe("gaps (ADR 0107 point 5)", () => {
+  const brief = `# Score orders with Quillfeather Risk\n\nSend each new order to Quillfeather Risk before stock is reserved.\n`;
+
+  it("a gap a person answered is known from then on, by that answer, with who and when", async () => {
+    const root = await contextRoot();
+    const before = await openIndex(root);
+    expect(before.selectContext({ text: brief }, { budget: 3000 }).unknown).toEqual([
+      "Quillfeather Risk",
+    ]);
+    before.close();
+    await writeFile(
+      join(root, "questions/q-a1b2c3d4e5f6.yaml"),
+      stringify({
+        schemaVersion: 1,
+        id: "q-a1b2c3d4e5f6",
+        askedBy: {
+          step: GAP_STEP,
+          command: "atticus change feature score-orders",
+          at: "2026-10-23T09:00:00Z",
+        },
+        repo: "score-orders",
+        question: gapQuestion("Quillfeather Risk"),
+        options: [],
+        evidence: ["openspec/changes/score-orders/brief.md:1"],
+        scope: { level: "repo", id: "score-orders" },
+        state: "answered",
+        rerun: "atticus change feature score-orders",
+        answer: {
+          text: "A risk-scoring vendor the payments team is trialling; not onboarded yet.",
+          by: "sam",
+          at: "2026-10-23T10:00:00Z",
+          scope: { level: "repo", id: "score-orders" },
+        },
+      }),
+    );
+    const ix = await openIndex(root);
+    const s = ix.selectContext({ text: brief }, { budget: 3000 });
+    expect(s.unknown).toEqual([]);
+    const q = s.picked.find((p) => p.id === "q-a1b2c3d4e5f6");
+    expect(q?.via).toBe("named in the input");
+    const [node] = ix.nodes("q-a1b2c3d4e5f6");
+    expect(node?.detail).toMatch(/Answer, by sam at 2026-10-23T10:00:00Z: A risk-scoring vendor/);
+    expect(
+      gapNameOf({ askedBy: { step: GAP_STEP }, question: gapQuestion("Quillfeather Risk") }),
+    ).toBe("Quillfeather Risk");
+    expect(
+      gapNameOf({ askedBy: { step: "change-feature" }, question: gapQuestion("X") }),
+    ).toBeUndefined();
+    ix.close();
   });
 });

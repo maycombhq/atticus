@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.11.0",
+    "version": "2.12.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -16363,7 +16363,7 @@
         "properties": {
           "schemaVersion": {
             "type": "number",
-            "const": 1
+            "const": 2
           },
           "runId": {
             "type": "string",
@@ -16452,6 +16452,74 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
+          "tools": {
+            "type": "object",
+            "properties": {
+              "offered": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "calls": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "round": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "input": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "output": {
+                      "type": "string"
+                    },
+                    "tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "error": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "round",
+                    "name",
+                    "input",
+                    "output",
+                    "tokens"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "stopped": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "offered",
+              "calls"
+            ],
+            "additionalProperties": false
+          },
           "promptPath": {
             "type": "string"
           },
@@ -16483,7 +16551,7 @@
               "properties": {
                 "schemaVersion": {
                   "type": "number",
-                  "const": 1
+                  "const": 2
                 },
                 "runId": {
                   "type": "string",
@@ -16571,6 +16639,74 @@
                   "minimum": 1,
                   "maximum": 9007199254740991
                 },
+                "tools": {
+                  "type": "object",
+                  "properties": {
+                    "offered": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "calls": {
+                      "default": [],
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "round": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "input": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {}
+                          },
+                          "output": {
+                            "type": "string"
+                          },
+                          "tokens": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          },
+                          "error": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "round",
+                          "name",
+                          "input",
+                          "output",
+                          "tokens"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "stopped": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "offered",
+                    "calls"
+                  ],
+                  "additionalProperties": false
+                },
                 "promptPath": {
                   "type": "string"
                 },
@@ -16586,6 +16722,11 @@
                   "maximum": 9007199254740991
                 },
                 "promptTokens": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "toolCalls": {
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 9007199254740991
@@ -16628,7 +16769,7 @@
             "properties": {
               "schemaVersion": {
                 "type": "number",
-                "const": 1
+                "const": 2
               },
               "runId": {
                 "type": "string",
@@ -16716,6 +16857,74 @@
                 "minimum": 1,
                 "maximum": 9007199254740991
               },
+              "tools": {
+                "type": "object",
+                "properties": {
+                  "offered": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "calls": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "round": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "input": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {}
+                        },
+                        "output": {
+                          "type": "string"
+                        },
+                        "tokens": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 9007199254740991
+                        },
+                        "error": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "round",
+                        "name",
+                        "input",
+                        "output",
+                        "tokens"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "stopped": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "offered",
+                  "calls"
+                ],
+                "additionalProperties": false
+              },
               "promptPath": {
                 "type": "string"
               },
@@ -16731,6 +16940,11 @@
                 "maximum": 9007199254740991
               },
               "promptTokens": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "toolCalls": {
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 9007199254740991
@@ -16757,6 +16971,74 @@
           },
           "answer": {
             "type": "string"
+          },
+          "tools": {
+            "type": "object",
+            "properties": {
+              "offered": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "calls": {
+                "default": [],
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "round": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "input": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "output": {
+                      "type": "string"
+                    },
+                    "tokens": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "error": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "round",
+                    "name",
+                    "input",
+                    "output",
+                    "tokens"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "stopped": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "offered",
+              "calls"
+            ],
+            "additionalProperties": false
           },
           "handedBack": {
             "type": "array",

@@ -1,11 +1,13 @@
 import { estimateTokens, fitBudget, wrapData, type SourceInput } from "@maycombhq/ai";
 import {
+  contextToolBox,
   openIndex,
   type ContextInput,
   type ContextSelection,
   type GraphNodeRow,
   type SelectOptions,
 } from "@maycombhq/index";
+import type { ContextGap } from "./gaps.js";
 
 /**
  * The context engine in the steps (ADR 0107 point 3): a step that used to send a whole list
@@ -45,6 +47,8 @@ export interface ContextReport {
   leftOut: { id: string; kind: string; score: number }[];
   /** Names the input uses that the index has nothing for. */
   unknown: string[];
+  /** The unknown names as the step's gaps: where the change names them, and the question each became (ADR 0107 point 5). */
+  gaps?: ContextGap[];
   version?: string;
   /** Why the engine wasn't used, when it was asked for and couldn't be. */
   note?: string;
@@ -86,6 +90,12 @@ export function roomFor(budget: number, others: SourceInput[], o?: ContextOption
   const room = Math.max(0, b - sourceTokens(others) - Math.min(4000, Math.floor(b / 10)));
   return o?.tokens !== undefined ? Math.min(o.tokens, room) : room;
 }
+
+/**
+ * The context tools of a metarepo (ADR 0107 addendum) as a tool box for the model runtime:
+ * search, show, walk and show_code, each call against the index and the workspace checkout.
+ */
+export const contextToolsFor = (root: string) => contextToolBox(root, () => openIndex(root));
 
 /** Select a step's context from the index. Undefined (with why) when the index can't be read. */
 export async function selectFor(

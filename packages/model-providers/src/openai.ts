@@ -1,12 +1,34 @@
+import type { ChatInput, ChatTurn } from "@maycombhq/ai";
 import {
   BaseProvider,
   COMMON_SETTINGS,
   num,
+  toolInput,
   type CompleteInput,
   type ProviderDeps,
 } from "./common.js";
 import type { Where } from "./messages.js";
 import { readKey, SettingsReader, type RawSettings } from "./settings.js";
+
+/** The text of a Chat Completions message: a string, or its text parts. */
+const textOf = (content: unknown): string =>
+  typeof content === "string"
+    ? content
+    : Array.isArray(content)
+      ? content
+          .map((p: { type?: string; text?: string }) => (p.type === "text" ? (p.text ?? "") : ""))
+          .join("")
+      : "";
+
+/** Why a choice was declined, when it was. */
+const declinedOf = (
+  choice: { message?: { refusal?: unknown }; finish_reason?: string } | undefined,
+): string | undefined =>
+  choice?.finish_reason === "content_filter"
+    ? "content filter"
+    : typeof choice?.message?.refusal === "string" && choice.message.refusal
+      ? "refusal"
+      : undefined;
 
 const SETTINGS = [
   ...COMMON_SETTINGS,
@@ -92,17 +114,98 @@ export class OpenAiCompatibleProvider extends BaseProvider {
     return this.#key ? [this.#key] : [];
   }
 
-  async complete(input: CompleteInput) {
-    const max = this.tokensFor(input);
-    const azure = this.flavour === "azure";
+  private headers(): Record<string, string> {
     const auth: Record<string, string> = !this.#key
       ? {}
       : this.auth === "api-key"
         ? { "api-key": this.#key }
         : { authorization: `Bearer ${this.#key}` };
+    return { "content-type": "application/json", accept: "application/json", ...auth };
+  }
+
+  /**
+   * A conversation with tools (ADR 0107 addendum): Chat Completions' `tools` (functions),
+   * `tool_calls` in the answer and `tool` messages back; the last request has tool_choice none.
+   */
+  async chat(input: ChatInput): Promise<ChatTurn> {
+    const max = this.tokensFor(input);
+    const azure = this.flavour === "azure";
+    const messages: unknown[] = [{ role: "system", content: input.system }];
+    for (const m of input.messages) {
+      if (m.role === "user") messages.push({ role: "user", content: m.text });
+      else if (m.role === "assistant")
+        messages.push({
+          role: "assistant",
+          content: m.text || null,
+          tool_calls: m.calls.map((c) => ({
+            id: c.id,
+            type: "function",
+            function: { name: c.name, arguments: JSON.stringify(c.input) },
+          })),
+        });
+      else
+        for (const r of m.results)
+          messages.push({ role: "tool", tool_call_id: r.id, content: r.text });
+    }
     const res = (await this.post({
       url: this.url,
-      headers: { "content-type": "application/json", accept: "application/json", ...auth },
+      headers: this.headers(),
+      body: {
+        ...(azure ? {} : { model: this.model }),
+        messages,
+        tools: input.tools.map((t) => ({
+          type: "function",
+          function: { name: t.name, description: t.description, parameters: t.inputSchema },
+        })),
+        tool_choice: input.final ? "none" : "auto",
+        [this.maxField]: max,
+        stream: false,
+      },
+      ...(input.signal ? { signal: input.signal } : {}),
+    })) as {
+      choices?: {
+        message?: {
+          content?: unknown;
+          refusal?: unknown;
+          tool_calls?: { id?: string; function?: { name?: string; arguments?: unknown } }[];
+        };
+        finish_reason?: string;
+      }[];
+      usage?: Record<string, unknown>;
+    };
+    const choice = res.choices?.[0];
+    const calls = (choice?.message?.tool_calls ?? [])
+      .filter((c) => typeof c.function?.name === "string")
+      .map((c, i) => ({
+        id: c.id ?? `call-${i + 1}`,
+        name: c.function!.name!,
+        input: toolInput(c.function!.arguments),
+      }));
+    const u = res.usage ?? {};
+    return this.finishTurn(
+      textOf(choice?.message?.content),
+      calls,
+      {
+        cutOff: choice?.finish_reason === "length",
+        ...(declinedOf(choice) ? { declined: declinedOf(choice)! } : {}),
+      },
+      max,
+      {
+        ...(num(u.prompt_tokens) !== undefined ? { inputTokens: num(u.prompt_tokens)! } : {}),
+        ...(num(u.completion_tokens) !== undefined
+          ? { outputTokens: num(u.completion_tokens)! }
+          : {}),
+      },
+      input,
+    );
+  }
+
+  async complete(input: CompleteInput) {
+    const max = this.tokensFor(input);
+    const azure = this.flavour === "azure";
+    const res = (await this.post({
+      url: this.url,
+      headers: this.headers(),
       body: {
         ...(azure ? {} : { model: this.model }),
         messages: [
@@ -118,24 +221,8 @@ export class OpenAiCompatibleProvider extends BaseProvider {
       usage?: Record<string, unknown>;
     };
     const choice = res.choices?.[0];
-    const content = choice?.message?.content;
-    const text =
-      typeof content === "string"
-        ? content
-        : Array.isArray(content)
-          ? content
-              .map((p: { type?: string; text?: string }) =>
-                p.type === "text" ? (p.text ?? "") : "",
-              )
-              .join("")
-          : "";
-    const refusal = choice?.message?.refusal;
-    const declined =
-      choice?.finish_reason === "content_filter"
-        ? "content filter"
-        : typeof refusal === "string" && refusal
-          ? "refusal"
-          : undefined;
+    const text = textOf(choice?.message?.content);
+    const declined = declinedOf(choice);
     const u = res.usage ?? {};
     return this.finish(
       text,

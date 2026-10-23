@@ -108,6 +108,25 @@ describe("atticus mcp (ADR 0104)", () => {
     ]);
   });
 
+  it("shows a record, walks its links and shows the code a fact cites (ADR 0107 addendum)", async () => {
+    const calls: string[][] = [];
+    const call = (name: string, args: Record<string, unknown>) =>
+      handleMcp(
+        { jsonrpc: "2.0", id: 11, method: "tools/call", params: { name, arguments: args } },
+        fake(calls),
+        "1",
+      );
+    await call("show", { id: "forge-orders.place-order" });
+    await call("walk", { id: "forge-orders.place-order", hops: "2", kind: "Endpoint" });
+    await call("show_code", { id: "forge-orders.place-order#1" });
+    expect(calls).toEqual([
+      ["context", "show", "forge-orders.place-order"],
+      ["context", "walk", "forge-orders.place-order", "--hops", "2", "--kind", "Endpoint"],
+      ["context", "code", "forge-orders.place-order#1"],
+    ]);
+    expect(await call("walk", { id: "x", hops: "3" })).toMatchObject({ result: { isError: true } });
+  });
+
   it("reads what waits, the open needs and the model runs through their commands (ADR 0106)", async () => {
     const calls: string[][] = [];
     const call = (name: string, args: Record<string, unknown>) =>

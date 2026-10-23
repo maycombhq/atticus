@@ -3,7 +3,7 @@ import { copyFile, mkdir, readdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path";
 import { parse } from "yaml";
 import { changeReport } from "@maycombhq/changes";
-import { RunSummary } from "@maycombhq/core";
+import { readRunSummary } from "@maycombhq/core";
 import { traceMatrix } from "@maycombhq/testgen";
 import { REQUESTS_FILE, type ReleaseContext } from "./context.js";
 import { sectionOf } from "./model.js";
@@ -257,7 +257,8 @@ export async function evidencePack(ctx: ReleaseContext): Promise<EvidencePack> {
   const runs: string[] = [];
   for (const f of files.filter((x) => /(^|\/)runs\/[^/]+\.ya?ml$/.test(x.path))) {
     try {
-      const s = RunSummary.safeParse(parse(await readFile(join(ctx.dir, f.path), "utf8")));
+      // A run record of any version: version 1 (before tools) reads as version 2.
+      const s = readRunSummary(parse(await readFile(join(ctx.dir, f.path), "utf8")));
       if (s.success)
         runs.push(
           `- ${s.data.runId}: ${s.data.agent} on ${s.data.runtime}, ${s.data.state}, ${s.data.startedAt}${s.data.usage ? `, ${s.data.usage.inputTokens} in / ${s.data.usage.outputTokens} out tokens` : ""}; context sha-256 \`${s.data.contextManifestSha256.slice(0, 12)}…\` (${f.path})`,

@@ -1,7 +1,15 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Recording, type RuntimeKind } from "@maycombhq/core";
+import { Recording, runsDirOf, type RuntimeKind } from "@maycombhq/core";
 import { DATA_RULE, estimateTokens } from "./context.js";
+import {
+  chatWithTools,
+  ToolSession,
+  type ChatInput,
+  type ChatTurn,
+  type ToolBox,
+  type ToolLimits,
+} from "./tools.js";
 import {
   OneShotRuntime,
   RuntimeError,
@@ -128,15 +136,54 @@ export interface ModelProvider {
     maxOutputTokens: number;
     signal?: AbortSignal;
   }): Promise<{ text: string; usage: Usage }>;
+  /**
+   * A conversation with tools (ADR 0107 addendum): the provider's tool-call API. A provider
+   * without it gets the one-shot prompt and no tools.
+   */
+  chat?(input: ChatInput): Promise<ChatTurn>;
 }
 
-/** Test provider: answers from a function, never the network. */
+/** What a mock model does in one round of a conversation with tools. */
+export type MockChatScript = (
+  input: ChatInput,
+  round: number,
+) => { text?: string; calls?: { name: string; input: Record<string, unknown> }[] };
+
+/** Test provider: answers from a function, never the network; with a script, it calls tools. */
 export class MockModelProvider implements ModelProvider {
   readonly calls: { system: string; prompt: string }[] = [];
+  /** Every conversation request with tools, as it was sent. */
+  readonly chats: ChatInput[] = [];
+  readonly chat?: (input: ChatInput) => Promise<ChatTurn>;
   constructor(
     readonly model: string,
     private readonly answer: (prompt: string) => string,
-  ) {}
+    script?: MockChatScript,
+  ) {
+    if (script)
+      this.chat = async (input: ChatInput) => {
+        this.chats.push(structuredClone({ ...input, signal: undefined }));
+        const round = input.messages.filter((m) => m.role === "tool").length + 1;
+        const first = input.messages[0];
+        const r = script(input, round);
+        const calls = (r.calls ?? []).map((c, i) => ({ id: `call-${round}-${i + 1}`, ...c }));
+        const text =
+          r.text ?? (calls.length ? "" : this.answer(first?.role === "user" ? first.text : ""));
+        const sent = input.messages
+          .map((m) =>
+            m.role === "tool" ? m.results.map((x) => x.text).join("") : "text" in m ? m.text : "",
+          )
+          .join("");
+        return {
+          text,
+          calls,
+          usage: {
+            inputTokens: estimateTokens(input.system + sent),
+            outputTokens: estimateTokens(text),
+          },
+        };
+      };
+  }
   async complete(input: { system: string; prompt: string; maxOutputTokens: number }) {
     this.calls.push({ system: input.system, prompt: input.prompt });
     const text = this.answer(input.prompt);
@@ -150,17 +197,29 @@ export class MockModelProvider implements ModelProvider {
   }
 }
 
+/**
+ * The tools a runtime offers each request (ADR 0107 addendum), or none. The CLI registers the
+ * context tools of the metarepo (packages/index) with `registerToolSource`.
+ */
+export type ToolSource = (request: AiRequest) => ToolBox | undefined;
+
 /** Calls a model directly with the context pack; used where the org pack allows model mode. */
 export class ModelRuntime extends OneShotRuntime {
   readonly kind: RuntimeKind = "model";
 
   constructor(
     private readonly provider: ModelProvider,
-    opts: ConstructorParameters<typeof OneShotRuntime>[0] & {
+    private readonly mo: ConstructorParameters<typeof OneShotRuntime>[0] & {
       allowedModels?: readonly string[];
+      /** The read-only tools beside each pack, when the provider can call tools. */
+      tools?: ToolSource;
+      toolLimits?: Partial<ToolLimits>;
+      /** The metarepo: each finished run is kept under .runs/ for Model runs. */
+      root?: string;
     } = {},
   ) {
-    super(opts);
+    super(mo);
+    const opts = mo;
     if (
       opts.allowedModels &&
       opts.allowedModels.length > 0 &&
@@ -174,6 +233,23 @@ export class ModelRuntime extends OneShotRuntime {
     const { agent, pack, outputPath } = run.request;
     const system = `You are the ${agent.id} agent in Atticus. ${agent.description}\nWrite only the content of ${outputPath}.\n${DATA_RULE}`;
     const left = agent.tokenBudget - pack.manifest.totalTokens;
+    const box = this.provider.chat ? this.mo.tools?.(run.request) : undefined;
+    if (box && box.definitions.length && this.provider.chat) {
+      const session = new ToolSession(box, this.mo.toolLimits);
+      try {
+        const r = await chatWithTools((i) => this.provider.chat!(i), {
+          system,
+          prompt: pack.prompt,
+          session,
+          maxOutputTokens: Math.max(256, left),
+          ...(signal ? { signal } : {}),
+        });
+        return { output: r.text, usage: r.usage, tools: r.tools };
+      } catch (e) {
+        // The calls made before the failure stay in the run record.
+        throw Object.assign(e as Error, { tools: session.record() });
+      }
+    }
     const { text, usage } = await this.provider.complete({
       system,
       prompt: pack.prompt,
@@ -181,5 +257,19 @@ export class ModelRuntime extends OneShotRuntime {
       ...(signal ? { signal } : {}),
     });
     return { output: text, usage };
+  }
+
+  /** Kept as a hand-off run is: run.json, the prompt and the manifest, so Model runs shows it. */
+  protected override async keep(run: Run): Promise<void> {
+    if (!this.mo.root) return;
+    const dir = join(runsDirOf(this.mo.root), run.request.change, run.runId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "prompt.md"), run.request.pack.prompt, "utf8");
+    await writeFile(
+      join(dir, "context-manifest.json"),
+      JSON.stringify(run.request.pack.manifest, null, 2) + "\n",
+      "utf8",
+    );
+    await writeFile(join(dir, "run.json"), JSON.stringify(run, null, 2) + "\n", "utf8");
   }
 }

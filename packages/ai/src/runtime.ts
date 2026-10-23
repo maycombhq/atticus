@@ -1,4 +1,11 @@
-import type { AgentDefinition, RunState, RunSummary, RuntimeKind } from "@maycombhq/core";
+import {
+  RUN_SCHEMA_VERSION,
+  type AgentDefinition,
+  type RunState,
+  type RunSummary,
+  type RunTools,
+  type RuntimeKind,
+} from "@maycombhq/core";
 import { sha256, type ContextPack } from "./context.js";
 
 /**
@@ -37,6 +44,8 @@ export interface Run {
   output?: string;
   usage?: Usage;
   errors: string[];
+  /** The tools the model was offered, every call it made and what it got back (ADR 0107). */
+  tools?: RunTools;
 }
 
 export interface AiRuntime {
@@ -93,7 +102,7 @@ export function makeRunId(now: Date, seq?: number): string {
 /** The summary that goes into review/; full packs and transcripts stay in .runs/. */
 export function toRunSummary(run: Run): RunSummary {
   return {
-    schemaVersion: 1,
+    schemaVersion: RUN_SCHEMA_VERSION,
     runId: run.runId,
     change: run.request.change,
     agent: run.request.agent.id,
@@ -108,6 +117,7 @@ export function toRunSummary(run: Run): RunSummary {
     contextManifestSha256: sha256(JSON.stringify(run.request.pack.manifest)),
     errors: run.errors,
     attempt: run.attempt,
+    ...(run.tools ? { tools: run.tools } : {}),
   };
 }
 
@@ -135,7 +145,10 @@ export abstract class OneShotRuntime implements AiRuntime {
   protected abstract produce(
     run: Run,
     signal?: AbortSignal,
-  ): Promise<{ output: string; usage: Usage }>;
+  ): Promise<{ output: string; usage: Usage; tools?: RunTools }>;
+
+  /** Keep a finished run where Model runs reads it (the model runtime, given a root). */
+  protected async keep(_run: Run): Promise<void> {}
 
   async prepare(request: AiRequest): Promise<Run> {
     checkAllowed(this.kind, request.agent);
@@ -166,19 +179,22 @@ export abstract class OneShotRuntime implements AiRuntime {
       return run;
     }
     try {
-      const { output, usage } = await this.produce(run, signal);
-      run = transition(run, "produced", this.now(), { output, usage });
+      const { output, usage, tools } = await this.produce(run, signal);
+      run = transition(run, "produced", this.now(), { output, usage, ...(tools ? { tools } : {}) });
       const problems = (await this.opts.validate?.(output, run.request)) ?? [];
       run =
         problems.length === 0
           ? transition(run, "validated", this.now())
           : transition(run, "failed", this.now(), { errors: problems });
     } catch (e) {
+      const tools = (e as { tools?: RunTools }).tools;
       run = transition(run, signal?.aborted ? "cancelled" : "failed", this.now(), {
         errors: [(e as Error).message],
+        ...(tools ? { tools } : {}),
       });
     }
     this.runs.set(runId, run);
+    await this.keep(run).catch(() => undefined);
     return run;
   }
 

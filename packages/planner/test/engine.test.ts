@@ -6,8 +6,16 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { MockRuntime, type AiRequest } from "@maycombhq/ai";
-import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
-import { ENGINE_DEFAULT, featureStage, findNeeds, roomFor, storiesStage } from "../src/index.js";
+import { answerQuestion, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { GAP_STEP, gapQuestion } from "@maycombhq/index";
+import {
+  ENGINE_DEFAULT,
+  featureStage,
+  findNeeds,
+  GAP_RULE,
+  roomFor,
+  storiesStage,
+} from "../src/index.js";
 
 /**
  * ADR 0107: the steps that sent whole lists select their context with the index instead, behind
@@ -152,6 +160,86 @@ describe("the context engine in the steps", () => {
     expect(seen[0]).toContain('process vendor-onboarding "Vendor onboarding": applies when');
     expect(seen[0]).not.toContain("broker-topic-request");
     expect(r === undefined || r.context?.engine === true).toBe(true);
+  });
+
+  // ADR 0107 point 5: what neither the wikis nor the repos say.
+  describe("gaps", () => {
+    const withGap = async () => {
+      const root = await shop({ placed: true, targets: true });
+      const brief = join(root, "openspec/changes", CHANGE, "brief.md");
+      const text = readFileSync(brief, "utf8");
+      await writeFile(brief, `${text}\nEvery order is also scored by Quillfeather Risk.\n`);
+      const line = `${text}\nEvery order is also scored by Quillfeather Risk.\n`
+        .split("\n")
+        .findIndex((l) => l.includes("Quillfeather"));
+      return { root, evidence: `openspec/changes/${CHANGE}/brief.md:${line + 1}` };
+    };
+
+    it("feature: lists a gap, tells the model not to guess, and asks a person when the answer relies on it", async () => {
+      const { root, evidence } = await withGap();
+      const seen: string[] = [];
+      const answer = `${PLACED}gaps:\n  - { what: Quillfeather Risk scores the order, why: no flow calls it }\n`;
+      const r = await featureStage(root, CHANGE, { runtime: assistant(answer, seen), now: NOW });
+      expect(seen[0]).toContain(GAP_RULE);
+      expect(seen[0]).toMatch(
+        /origin="context-gaps">\nNames the change uses that nothing Atticus has read says anything about:\n- Quillfeather Risk/,
+      );
+      const gap = r.context?.gaps?.find((g) => g.name === "Quillfeather Risk");
+      expect(gap).toMatchObject({ evidence, state: "asked" });
+      expect(r.state).toBe("questions");
+      const q = r.questions.find((x) => x.id === gap!.question)!;
+      expect(q.question).toBe(gapQuestion("Quillfeather Risk"));
+      expect(q.askedBy.step).toBe(GAP_STEP);
+      expect(q.repo).toBe(CHANGE);
+      expect(q.evidence).toEqual([evidence]);
+
+      // Answered, the gap is asserted knowledge: indexed, known, and in the next pack.
+      await answerQuestion(root, q.id, {
+        text: "A risk-scoring vendor the payments team is trialling; not onboarded yet.",
+        by: "sam",
+        at: "2026-10-21T10:00:00Z",
+      });
+      const again: string[] = [];
+      const r2 = await featureStage(root, CHANGE, {
+        runtime: assistant(answer, again),
+        now: NOW,
+        force: true,
+      });
+      expect(r2.context?.gaps ?? []).toEqual([]);
+      expect(again[0]).toMatch(
+        /- Quillfeather Risk: A risk-scoring vendor the payments team is trialling; not onboarded yet. \(sam, 2026-10-21T10:00:00Z, question q-/,
+      );
+      expect(r2.state).toBe("done");
+    });
+
+    it("feature: a gap the answer doesn't rely on is listed, not asked", async () => {
+      const { root } = await withGap();
+      const r = await featureStage(root, CHANGE, { runtime: assistant(PLACED, []), now: NOW });
+      expect(r.context?.gaps).toEqual([
+        expect.objectContaining({ name: "Quillfeather Risk", state: "listed" }),
+      ]);
+      expect(r.state).toBe("done");
+      expect(r.questions).toEqual([]);
+    });
+
+    it("needs: the same gap is one question, whichever step meets it first", async () => {
+      const { root } = await withGap();
+      const r = await findNeeds(root, CHANGE, {
+        runtime: assistant(
+          "needs: []\nnot_needed: []\n# Nothing says what Quillfeather Risk is.\n",
+          [],
+        ),
+        now: NOW,
+        maxAttempts: 1,
+      });
+      expect(r.status).toBe("done");
+      expect(r.questions?.map((q) => q.question)).toEqual([gapQuestion("Quillfeather Risk")]);
+      const f = await featureStage(root, CHANGE, {
+        runtime: assistant(`${PLACED}# Quillfeather Risk: unknown\n`, []),
+        now: NOW,
+      });
+      expect(f.questions.map((q) => q.id)).toEqual(r.questions!.map((q) => q.id));
+    });
   });
 
   it("leaves room for the step's own input and a reserve, or what --context-tokens says", () => {

@@ -2,7 +2,15 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { parseJson } from "./cli";
-import { ModelRefused, type Cancel, type Cli, type OpenQuestion, type StepModel } from "./types";
+import {
+  ModelRefused,
+  type Cancel,
+  type ChatTurnMessage,
+  type Cli,
+  type ModelTool,
+  type OpenQuestion,
+  type StepModel,
+} from "./types";
 
 /**
  * The step runner (ADR 0090): one AI step's whole loop with Copilot's model. It runs
@@ -29,6 +37,16 @@ export interface HandoffJson {
   messages?: string[];
   errors?: string[];
   questions?: OpenQuestion[];
+  /** The read-only tools the model may call, and how to run a call (ADR 0107 addendum). */
+  tools?: HandoffTools;
+}
+
+export interface HandoffTools {
+  definitions: ModelTool[];
+  limits: { rounds: number; tokens: number; perCall: number };
+  /** atticus <callArgs> <tool> --input <json> --round <n> --json <runArgs> */
+  callArgs: string[];
+  runArgs: string[];
 }
 
 interface Waiting {
@@ -226,11 +244,17 @@ async function loop(
     if (token.isCancellationRequested) return { state: "cancelled", ...waiting };
     say(`Sending the prompt (${tokens} tokens) to ${model.name}.`);
     let answer = "";
+    // With tools, the model may ask for more than the prompt holds, within the room it has.
+    const room = model.maxInputTokens - tokens - TOOL_RESERVE;
+    const withTools = !!(h.tools && model.chat && room >= MIN_TOOL_ROOM);
     try {
-      for await (const part of await model.send(messages, token)) {
-        if (token.isCancellationRequested) break;
-        answer += part;
-      }
+      if (withTools)
+        answer = await toolConversation(model, messages, h.tools!, room, h.runId, d, token, say);
+      else
+        for await (const part of await model.send(messages, token)) {
+          if (token.isCancellationRequested) break;
+          answer += part;
+        }
     } catch (e) {
       if (token.isCancellationRequested) return { state: "cancelled", ...waiting };
       if (e instanceof ModelRefused) return { state: "no-consent", message: e.message, ...waiting };
@@ -250,6 +274,71 @@ async function loop(
       );
     }
     argv = h.resumeArgs;
+  }
+}
+
+/** Tokens kept back for the model's answer when tools add to the prompt. */
+export const TOOL_RESERVE = 1500;
+/** Below this room for what tools return, the model gets the one-shot prompt and no tools. */
+export const MIN_TOOL_ROOM = 800;
+
+/** Said when the rounds or the room for tools are used up: answer now. */
+export const NO_MORE_TOOLS =
+  "No more tool calls: write the result file's content now, with what you have, and say what you couldn't look up.";
+
+/**
+ * The conversation with tools (ADR 0107 addendum): the prompt, then rounds of tool calls. Each
+ * call runs as `atticus context call` with the run's id, so the run's record keeps it and what
+ * it returned, and the command's caps hold. The rounds are capped by the tools' limits, and what
+ * tools return by the room the model has left; then the model is asked to answer.
+ */
+async function toolConversation(
+  model: StepModel,
+  messages: string[],
+  tools: HandoffTools,
+  room: number,
+  runId: string,
+  d: RunnerDeps,
+  token: Cancel,
+  say: (line: string) => void,
+): Promise<string> {
+  const history: ChatTurnMessage[] = messages.map((text) => ({ role: "user", text }));
+  let used = 0;
+  for (let round = 1; ; round++) {
+    const final = round > tools.limits.rounds || used >= room;
+    if (final && round > 1) history.push({ role: "user", text: NO_MORE_TOOLS });
+    const turn = await model.chat!(history, tools.definitions, token);
+    if (token.isCancellationRequested) return "";
+    if (!turn.calls.length || final) return turn.text;
+    history.push({ role: "assistant", text: turn.text, calls: turn.calls });
+    say(
+      `Round ${round} of tools: ${model.name} asked for ${turn.calls.map((c) => c.name).join(", ")}.`,
+    );
+    const results: { id: string; name: string; text: string }[] = [];
+    for (const c of turn.calls) {
+      const r = await d.cli(
+        [
+          ...tools.callArgs,
+          c.name,
+          "--input",
+          JSON.stringify(c.input ?? {}),
+          "--round",
+          String(round),
+          "--json",
+          ...tools.runArgs,
+        ],
+        token,
+      );
+      if (r.cancelled || token.isCancellationRequested) return "";
+      const out = parseJson<{ output?: string }>(r.stdout);
+      const text =
+        typeof out?.output === "string"
+          ? out.output
+          : `The tool didn't run: ${(r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`).split("\n")[0]}`;
+      used += await model.countTokens(text, token);
+      results.push({ id: c.id, name: c.name, text });
+    }
+    history.push({ role: "tool", results });
   }
 }
 

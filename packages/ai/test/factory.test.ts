@@ -8,6 +8,7 @@ import {
   clearModelProviders,
   registerModelProvider,
   registeredModelProviders,
+  registerToolSource,
   buildContextPack,
   createRuntime,
   DATA_RULE,
@@ -157,6 +158,36 @@ describe("createRuntime", () => {
         providers: { anthropic: (s) => provider(String(s.model)) },
       }),
     ).rejects.toThrow(/model-b is not allowed/);
+  });
+
+  it("model mode: offers the registered tools to a mock model that calls them (ADR 0107)", async () => {
+    const cfg = rt({
+      modes: { allowed: ["model"], default: "model" },
+      adapters: { model: { type: "mock", settings: { model: "mock-model" } } },
+    });
+    const root = await tmp();
+    const seen: string[] = [];
+    registerToolSource((r) => {
+      seen.push(r);
+      return () => ({
+        definitions: [{ name: "show", description: "Show.", inputSchema: { type: "object" } }],
+        call: async () => "shown",
+      });
+    });
+    try {
+      const r = await createRuntime(cfg, {
+        root,
+        now,
+        modelAnswer: () => "plan",
+        modelScript: (_i, round) => (round === 1 ? { calls: [{ name: "show", input: {} }] } : {}),
+      });
+      const run = await r.run((await r.prepare(request())).runId);
+      expect(seen).toEqual([root]);
+      expect(run.output).toBe("plan");
+      expect(run.tools?.calls.map((c) => c.name)).toEqual(["show"]);
+    } finally {
+      registerToolSource(undefined);
+    }
   });
 
   it("model mode: registered providers (ADR 0065), passed-in ones win, mock is reserved", async () => {

@@ -19,6 +19,34 @@ export interface StepModel {
   countTokens(text: string, token: Cancel): Promise<number>;
   /** Send the messages (each a user message, in order); the answer comes back in parts. */
   send(messages: string[], token: Cancel): Promise<AsyncIterable<string>>;
+  /**
+   * One request of a conversation with tools (ADR 0107 addendum): the model answers with text,
+   * or with tool calls for the runner to run. Absent: the model gets the one-shot prompt.
+   */
+  chat?(messages: ChatTurnMessage[], tools: ModelTool[], token: Cancel): Promise<ModelTurn>;
+}
+
+/** A read-only tool the model may call, as `atticus ... --handoff --json` offers it. */
+export interface ModelTool {
+  name: string;
+  description: string;
+  inputSchema: object;
+}
+
+export interface ModelToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export type ChatTurnMessage =
+  | { role: "user"; text: string }
+  | { role: "assistant"; text: string; calls: ModelToolCall[] }
+  | { role: "tool"; results: { id: string; name: string; text: string }[] };
+
+export interface ModelTurn {
+  text: string;
+  calls: ModelToolCall[];
 }
 
 /** The person didn't allow the extension to use the model (VS Code asked them). */

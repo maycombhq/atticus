@@ -1,6 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parse } from "yaml";
+import { gapNameOf } from "./gaps.js";
 import {
   changesDirOf,
   deserializeRecord,
@@ -663,6 +664,7 @@ function questionNodes(path: string, text: string): FileRead {
   const picked = a.option !== undefined ? q.options[a.option - 1] : undefined;
   const answer = picked ? `${picked.label}: ${picked.means}` : (a.text ?? "");
   const key = `question:Question:${q.id}`;
+  const gap = gapNameOf(q);
   return {
     nodes: [
       {
@@ -681,7 +683,8 @@ function questionNodes(path: string, text: string): FileRead {
         mentions: true,
       },
     ],
-    names: [],
+    // An answered gap (ADR 0107 point 5): the name it was about is known from now on, by this answer.
+    names: gap ? [{ name: foldName(gap), id: q.id, kind: "Question", how: "answered gap" }] : [],
     links: [{ from: key, to: q.repo, by: "id", type: "about", how: "question repo" }],
   };
 }

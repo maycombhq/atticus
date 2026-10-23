@@ -380,6 +380,7 @@ export async function featureStage(
       others: [instructionSource(instructions), ...sources],
       ...(o.context ? { context: o.context } : {}),
       exclude: [change.id],
+      change: change.id,
       origin: "atticus change feature (context engine)",
       priority: 90,
     },
@@ -412,6 +413,7 @@ export async function featureStage(
     output: "feature-answer.yaml",
     source: "feature.yaml",
     instructions,
+    ...(context.gaps?.length ? { gaps: context.gaps } : {}),
     sources,
     parse: (text) => {
       const r = parseYamlAs(text, FeaturePlacement, fill, "feature.yaml");

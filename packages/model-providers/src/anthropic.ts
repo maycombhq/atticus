@@ -1,7 +1,9 @@
+import type { ChatInput, ChatTurn } from "@maycombhq/ai";
 import {
   BaseProvider,
   COMMON_SETTINGS,
   num,
+  toolInput,
   type CompleteInput,
   type ProviderDeps,
 } from "./common.js";
@@ -50,18 +52,109 @@ export class AnthropicProvider extends BaseProvider {
     return [this.#key];
   }
 
+  private headers() {
+    return {
+      "content-type": "application/json",
+      accept: "application/json",
+      "anthropic-version": this.version,
+      ...(this.auth === "bearer"
+        ? { authorization: `Bearer ${this.#key}` }
+        : { "x-api-key": this.#key }),
+    };
+  }
+
+  /**
+   * A conversation with tools (ADR 0107 addendum): the Messages API's `tools`, `tool_use`
+   * blocks in the answer and `tool_result` blocks back; the last request has tool_choice none.
+   */
+  async chat(input: ChatInput): Promise<ChatTurn> {
+    const max = this.tokensFor(input);
+    const messages = input.messages.map((m) =>
+      m.role === "user"
+        ? { role: "user", content: m.text }
+        : m.role === "assistant"
+          ? {
+              role: "assistant",
+              content: [
+                ...(m.text ? [{ type: "text", text: m.text }] : []),
+                ...m.calls.map((c) => ({
+                  type: "tool_use",
+                  id: c.id,
+                  name: c.name,
+                  input: c.input,
+                })),
+              ],
+            }
+          : {
+              role: "user",
+              content: m.results.map((r) => ({
+                type: "tool_result",
+                tool_use_id: r.id,
+                content: r.text,
+                ...(r.error ? { is_error: true } : {}),
+              })),
+            },
+    );
+    const res = (await this.post({
+      url: this.url,
+      headers: this.headers(),
+      body: {
+        model: this.model,
+        max_tokens: max,
+        system: input.system,
+        messages,
+        tools: input.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          input_schema: t.inputSchema,
+        })),
+        tool_choice: { type: input.final ? "none" : "auto" },
+      },
+      ...(input.signal ? { signal: input.signal } : {}),
+    })) as {
+      content?: { type?: string; text?: string; id?: string; name?: string; input?: unknown }[];
+      stop_reason?: string;
+      usage?: Record<string, unknown>;
+    };
+    const blocks = res.content ?? [];
+    const text = blocks
+      .filter((b) => b.type === "text" && typeof b.text === "string")
+      .map((b) => b.text)
+      .join("");
+    const calls = blocks
+      .filter((b) => b.type === "tool_use" && typeof b.name === "string")
+      .map((b, i) => ({ id: b.id ?? `tool-${i + 1}`, name: b.name!, input: toolInput(b.input) }));
+    return this.finishTurn(
+      text,
+      calls,
+      {
+        cutOff: res.stop_reason === "max_tokens",
+        ...(res.stop_reason === "refusal" ? { declined: "refusal" } : {}),
+      },
+      max,
+      this.usageOf(res.usage),
+      input,
+    );
+  }
+
+  private usageOf(u: Record<string, unknown> = {}) {
+    const in_ =
+      num(u.input_tokens) === undefined
+        ? undefined
+        : num(u.input_tokens)! +
+          (num(u.cache_creation_input_tokens) ?? 0) +
+          (num(u.cache_read_input_tokens) ?? 0);
+    return {
+      ...(in_ !== undefined ? { inputTokens: in_ } : {}),
+      ...(num(u.output_tokens) !== undefined ? { outputTokens: num(u.output_tokens)! } : {}),
+    };
+  }
+
   async complete(input: CompleteInput) {
     const max = this.tokensFor(input);
     const res = (await this.post({
       url: this.url,
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        "anthropic-version": this.version,
-        ...(this.auth === "bearer"
-          ? { authorization: `Bearer ${this.#key}` }
-          : { "x-api-key": this.#key }),
-      },
+      headers: this.headers(),
       body: {
         model: this.model,
         max_tokens: max,
@@ -78,13 +171,6 @@ export class AnthropicProvider extends BaseProvider {
       .filter((b) => b.type === "text" && typeof b.text === "string")
       .map((b) => b.text)
       .join("");
-    const u = res.usage ?? {};
-    const input_ =
-      num(u.input_tokens) === undefined
-        ? undefined
-        : num(u.input_tokens)! +
-          (num(u.cache_creation_input_tokens) ?? 0) +
-          (num(u.cache_read_input_tokens) ?? 0);
     return this.finish(
       text,
       {
@@ -92,10 +178,7 @@ export class AnthropicProvider extends BaseProvider {
         ...(res.stop_reason === "refusal" ? { declined: "refusal" } : {}),
       },
       max,
-      {
-        ...(input_ !== undefined ? { inputTokens: input_ } : {}),
-        ...(num(u.output_tokens) !== undefined ? { outputTokens: num(u.output_tokens)! } : {}),
-      },
+      this.usageOf(res.usage),
       input,
     );
   }

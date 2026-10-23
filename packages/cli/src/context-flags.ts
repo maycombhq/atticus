@@ -36,7 +36,22 @@ export function contextLines(c: ContextReport | undefined): string[] {
         : ""
     }.`,
   ];
-  if (c.unknown.length)
+  const gaps = c.gaps ?? [];
+  if (gaps.length) {
+    // ADR 0107 point 5: what neither the wikis nor the repos say, listed; a gap the answer
+    // relied on is a question to a person.
+    lines.push(
+      `Gaps: names the change uses that nothing Atticus has read says anything about: ${gaps
+        .map((g) => `${g.name}${g.evidence ? ` (${g.evidence})` : ""}`)
+        .join(", ")}.`,
+    );
+    for (const g of gaps.filter((x) => x.question))
+      lines.push(
+        g.state === "answered"
+          ? `  ${g.name}: answered (question ${g.question}).`
+          : `  ${g.name}: the answer relies on it, so it is a question to a person, not a guess: atticus questions answer ${g.question}`,
+      );
+  } else if (c.unknown.length)
     lines.push(`Names the change uses that nothing in the index has: ${c.unknown.join(", ")}.`);
   return lines;
 }

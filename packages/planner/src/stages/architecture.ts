@@ -734,6 +734,7 @@ export async function architectureStage(
       others: [instructionSource(instructions), ...sources],
       ...(o.context ? { context: o.context } : {}),
       exclude: [change.id],
+      change: change.id,
       origin: "atticus change architecture (context engine)",
       priority: 80,
       knowledge: {
@@ -767,6 +768,7 @@ export async function architectureStage(
     output: "architecture-answer.yaml",
     source: `${TARGET_DIR}/`,
     instructions,
+    ...(context.gaps?.length ? { gaps: context.gaps } : {}),
     sources,
     parse: (text) => {
       const r = parseYamlAs(
