@@ -1,0 +1,26 @@
+# The pinned-note scenario (ADR 0115 and 0117 addenda, 2026-10-24), a live run's failure retold
+# on the invented Forge estate: a person answers which notes can be pinned; the next draft must
+# not ask it again in other words, and the critic's business lens must not block the draft for
+# following the answer. Everything here is invented.
+change: pin-order-note
+# The feature stage's first draft raises this; a person answers it.
+asked:
+  question: Which order notes can be pinned?
+  evidence: [openspec/changes/pin-order-note/brief.md:9]
+answer:
+  text: Text notes only — only notes a shopper typed, not delivery updates, refund notices or system notes.
+  by: priya.nair
+# The next draft asks it again, in other words.
+reasked:
+  question: Which kinds of order note count as 'text notes' that can be pinned? Only plain notes, or also delivery updates, refund notices, system notes?
+  evidence: [openspec/changes/pin-order-note/brief.md:13]
+  # The words of the answer that settle it, as a drafter or the judge quotes them.
+  quote: only notes a shopper typed, not delivery updates, refund notices or system notes
+# A question the answer doesn't settle: it still goes to a person.
+open:
+  question: Can a shopper pin a note on an order that is out for delivery?
+  evidence: [openspec/changes/pin-order-note/brief.md:13]
+# The business lens's finding about the narrowing the person chose.
+lensFinding:
+  summary: The draft narrows the brief's 'pin one note' to text notes only, so pinning other kinds of note isn't delivered.
+  quote: only notes a shopper typed

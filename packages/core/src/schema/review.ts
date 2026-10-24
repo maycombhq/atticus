@@ -265,6 +265,18 @@ export const Finding = z
     evidence: z.array(FindingEvidence).min(1, "a finding without evidence is discarded"),
     /** For knowledge gaps: the owner question and who should answer. */
     question: z.strictObject({ text: z.string().min(1), owner: z.string().min(1) }).optional(),
+    /**
+     * The answer a person gave for the change that decided what this finding is about (ADR 0115
+     * addendum, 2026-10-24): the question's id and the answer's words the lens quoted, checked
+     * word for word. A finding that would block, of a rule a person may waive, is kept as a risk
+     * linked to the answer: the person already decided it. Optional (C3, additive).
+     */
+    answered: z
+      .strictObject({
+        question: z.string().regex(/^q-[0-9a-f]{12}$/),
+        quote: z.string().min(1).max(200),
+      })
+      .optional(),
     /** Set when the rule is not waivable (constitution, or the rule says so). */
     waivable: z.boolean(),
     state: FindingState.default("open"),

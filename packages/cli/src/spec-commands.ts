@@ -25,7 +25,7 @@ import {
   type SpecHeader,
   type SpecTemplate,
 } from "@maycombhq/core";
-import { stepQuestionJudge } from "@maycombhq/planner";
+import { stepJudges } from "@maycombhq/planner";
 import { checkSpec, citedFileHashes, staleFlows, type SpecCheckFinding } from "@maycombhq/scanner";
 import { fsRepo } from "@maycombhq/sdk";
 import type { Output } from "./commands.js";
@@ -178,7 +178,7 @@ export async function specDraft(
   };
   const rerun = `atticus spec draft ${repo.id}`;
   // ADR 0117: matched by the step's own reading (sameAs) and, where a model can be called, a judge.
-  const judge = stepQuestionJudge(root, deps.runtime, repo.id, new Date(at));
+  const judges = stepJudges(root, deps.runtime, repo.id, new Date(at));
   const { raised, known, reused } = await raiseQuestions(
     root,
     r.questions,
@@ -190,7 +190,7 @@ export async function specDraft(
       ...(r.runId ? { run: r.runId } : {}),
       at,
     },
-    judge ? { judge } : {},
+    judges,
   );
   const open = [...raised, ...known.filter((q) => q.state === "open")].map((q) => q.id);
   const header: SpecHeader = {

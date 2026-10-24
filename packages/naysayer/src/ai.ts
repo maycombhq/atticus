@@ -17,6 +17,7 @@ import {
   type QuarantineItem,
   type SourceInput,
 } from "@maycombhq/ai";
+import { answersText, checkedAnswerLink } from "./answers.js";
 import { quarantineHits } from "./defences.js";
 import { artifactOf, hopRoutes, type ArtifactName } from "./artifacts.js";
 import type { CriticContext } from "./context.js";
@@ -114,8 +115,15 @@ findings:
     evidence:
       - { path: <file>, line: <line number>, quote: <the exact words on that line> }
     question: { text: <the question>, owner: <who should answer> }   # knowledge gaps only
-
+ANSWERED_LINE
 Every finding quotes the exact text it relies on; a finding whose quote isn't on that line is discarded. Severity, layer and state come from the rule: don't set them. Write "findings: []" when nothing is wrong.`;
+
+/** The output format line for a link to a person's answer, when the lens was given answers. */
+const ANSWERED_LINE = `    answered: { id: <the answered question's id>, quote: "<the words of its answer, copied exactly>" }   # only when a person's answer decided what the finding is about
+`;
+
+/** What a lens is told about the answers people gave (ADR 0115 addendum, 2026-10-24). */
+const ANSWERS_RULE = `People answered questions about this change; the "answers-on-file" data block lists each question with its id and the answer. Those answers are part of the brief, as binding as its own words, and a person made each decision deliberately. A scope, a limit or a choice a person set by answering is not a finding: an artifact or a draft that follows it (that narrows the brief as an answer says, say) is right, so don't report it. If a finding of yours is still about what an answer decided, give answered with that question's id and the words of its answer, so the person sees which decision it is about.`;
 
 function instructions(ctx: CriticContext, lens: LensName, review?: StageReview): string {
   return [
@@ -129,9 +137,10 @@ function instructions(ctx: CriticContext, lens: LensName, review?: StageReview):
           "",
         ]
       : []),
+    ...(ctx.answers?.length ? [ANSWERS_RULE, ""] : []),
     "Artifact lines are numbered as `<n>: <text>`; cite those numbers.",
     "",
-    OUTPUT_FORMAT,
+    OUTPUT_FORMAT.replace("ANSWERED_LINE", ctx.answers?.length ? ANSWERED_LINE : ""),
   ].join("\n");
 }
 
@@ -228,6 +237,7 @@ const AiFinding = z.object({
     .optional(),
   evidence: z.array(AiEvidence).default([]),
   question: z.object({ text: z.string().min(1), owner: z.string().min(1).optional() }).optional(),
+  answered: z.object({ id: z.string().min(1), quote: z.string().min(1) }).optional(),
 });
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
@@ -358,6 +368,9 @@ export function parseLensOutput(
     const heading = f.locator?.heading ?? (line ? headingAt(doc, line) : undefined);
     const locator = { ...(line ? { line } : {}), ...(heading ? { heading } : {}) };
     if (Object.keys(locator).length === 0) locator.heading = doc.sections[0]?.heading ?? doc.path;
+    // A link to a person's answer holds only when it names an answer the lens was given and
+    // quotes that answer's words; otherwise the finding stands without it.
+    const answered = checkedAnswerLink(ctx.answers ?? [], f.answered);
     hits.push({
       rule,
       layer: "ai",
@@ -375,6 +388,7 @@ export function parseLensOutput(
               question: { text: f.question!.text, owner: f.question!.owner ?? DEFAULT_ROLES[lens] },
             }
           : {}),
+        ...(answered ? { answered } : {}),
         key: `ai|${rule.id}|${doc.path}|${line ?? heading ?? ""}`,
       },
     });
@@ -568,6 +582,16 @@ export async function runLenses(
         text: catalogSlice(ctx),
         classification: "internal",
         priority: 5,
+      });
+    // What people answered for the change: part of the brief, as data (ADR 0115 addendum).
+    if (ctx.answers?.length)
+      sources.push({
+        id: "answers-on-file",
+        kind: "document",
+        origin: "questions/ (answered for this change)",
+        text: answersText(ctx.answers),
+        classification: "internal",
+        priority: 9,
       });
     // What the drafter read of the estate, as data, below the artifacts (ADR 0115).
     for (const x of review?.sources ?? [])

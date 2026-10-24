@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { Finding, findingPath, toCanonicalYaml } from "@maycombhq/core";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
+import { changeAnswers } from "./answers.js";
 import type { Hit } from "./hits.js";
 import { layerRank, severityRank, type EffectiveRule } from "./rules.js";
 
@@ -25,6 +26,7 @@ const LEADING = [
   "fix",
   "evidence",
   "question",
+  "answered",
   "waivable",
   "state",
   "resolution",
@@ -152,7 +154,16 @@ export function toFinding(
 ): Finding {
   const gap = h.hit.kind === "knowledge-gap";
   const layer = h.rule.effectiveLayer;
-  const severity = gap ? "gap" : h.rule.severity;
+  // A finding about what a person decided by answering (ADR 0115 addendum, 2026-10-24) doesn't
+  // block: they already made the decision a waiver would be. Only where a waiver could be: a
+  // constitution rule, or one that says it can't be waived, still blocks.
+  const decided =
+    !gap &&
+    !!h.hit.answered &&
+    h.rule.severity === "blocking" &&
+    h.rule.waivable &&
+    layer !== "constitution";
+  const severity = gap ? "gap" : decided ? "risk" : h.rule.severity;
   const why = h.also.length ? `${h.hit.why} Also caught by ${h.also.join(", ")}.` : h.hit.why;
   return Finding.parse({
     schemaVersion: 1,
@@ -172,6 +183,7 @@ export function toFinding(
     fix: h.hit.fix,
     evidence: h.hit.evidence,
     ...(h.hit.question ? { question: h.hit.question } : {}),
+    ...(!gap && h.hit.answered ? { answered: h.hit.answered } : {}),
     waivable: !gap && severity === "blocking" && h.rule.waivable && layer !== "constitution",
     state: "open",
     createdAt: o.now,
@@ -230,23 +242,51 @@ const DECIDED: ReadonlySet<string> = new Set(["applied", "waived", "dismissed"])
 
 /**
  * Whether a gate whose rounds are used up may have one checking round past its limit (ADR 0115
- * addendum): a person acted on every blocking finding of its newest counted round (applied a
- * fix, waived it with a reason, or dismissed it as not relevant), and acted on at least one in
- * that round itself, not carried from the round before. The checking round reviews the fixes;
- * if it raises a blocking finding, a person decides again. The ids acted on come back; none
- * when no checking round is due.
+ * addenda): nothing blocking from its newest counted round is still open (it never had any, or a
+ * person acted on every one: applied a fix, waived it with a reason, or dismissed it as not
+ * relevant), and a person acted since that round ran: acted on any of its findings (a gap
+ * included), not carried from the round before, or answered a question raised for the change.
+ * The checking round reviews what was done; if it raises a blocking finding, a person decides
+ * again, and a further round needs a further decision. The finding and question ids acted on
+ * come back; none when no checking round is due.
  */
 export async function checkRoundDue(root: string, change: string, gate: string): Promise<string[]> {
+  return (await checkRoundState(root, change, gate)).actedOn;
+}
+
+/**
+ * What stands between a gate whose rounds are used up and a checking round: the blocking
+ * findings of its newest counted round still open, and what a person did since it ran.
+ */
+export async function checkRoundState(
+  root: string,
+  change: string,
+  gate: string,
+): Promise<{ round?: number; openBlocking: number; actedOn: string[] }> {
   const n = (await countedRounds(root, change, gate)).at(-1);
-  if (n === undefined) return [];
+  if (n === undefined) return { openBlocking: 0, actedOn: [] };
   const meta = await readRoundMeta(root, change, gate, n);
+  const since = meta?.createdAt ?? "";
   const carried = new Set((meta?.findings ?? []).filter((f) => f.carried).map((f) => f.id));
-  const blocking = (await readRound(root, change, gate, n)).findings.filter(
-    (f) => f.finding.severity === "blocking",
-  );
-  if (blocking.some((f) => !DECIDED.has(f.finding.state) || !f.finding.resolution)) return [];
-  const actedOn = blocking.filter((f) => !carried.has(f.finding.id)).map((f) => f.finding.id);
-  return actedOn.sort();
+  const findings = (await readRound(root, change, gate, n)).findings;
+  const openBlocking = findings.filter(
+    (f) =>
+      f.finding.severity === "blocking" && (!DECIDED.has(f.finding.state) || !f.finding.resolution),
+  ).length;
+  if (openBlocking) return { round: n, openBlocking, actedOn: [] };
+  const acted = findings
+    .filter(
+      (f) =>
+        f.finding.resolution &&
+        f.finding.state !== "open" &&
+        !carried.has(f.finding.id) &&
+        f.finding.resolution.at >= since,
+    )
+    .map((f) => f.finding.id);
+  const answered = (await changeAnswers(root, change))
+    .filter((a) => a.at >= since)
+    .map((a) => a.id);
+  return { round: n, openBlocking: 0, actedOn: [...acted.sort(), ...answered.sort()] };
 }
 
 /** Gates that have a review folder. */

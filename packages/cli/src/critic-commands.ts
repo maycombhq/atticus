@@ -15,6 +15,7 @@ import {
   act,
   completeLensRun,
   gateStatus,
+  roundsUsed,
   overrideStats,
   reviewedGates,
   runCritic,
@@ -64,16 +65,19 @@ const where = (artifact: string, line?: number) => (line ? `${artifact}:${line}`
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : `${n} ${many}`);
 
-function statusLine(s: GateStatus): string {
+const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/** A gate's status in one line, for atticus critic, atticus findings and atticus change status. */
+export function statusLine(s: GateStatus): string {
   if (s.waiting.length)
     return `The ${s.gate} gate is not decided: ${plural(s.waiting.length, "AI lens", "AI lenses")} ${s.waiting.length === 1 ? "is" : "are"} with your assistant. Run atticus handoff done <run> for each, then look at the findings again.`;
   const counts = `${s.open.blocking} blocking, ${s.open.gaps} open gap${s.open.gaps === 1 ? "" : "s"}`;
   if (s.mayProceed)
     return s.checkRound
-      ? `The ${s.gate} gate may proceed: a person acted on every blocking finding. Its ${s.maxRounds} critic rounds are used, so one checking round past the limit may review what was done (atticus critic <change> --gate ${s.gate}).`
+      ? `The ${s.gate} gate may proceed: nothing blocking is open and a person acted since the last round. ${capital(roundsUsed(s))}, so one checking round past the limit may review what was done (atticus critic <change> --gate ${s.gate}).`
       : `The ${s.gate} gate may proceed: nothing blocking is open.`;
   if (s.humanDecides)
-    return `The ${s.gate} gate is closed (${counts}) and its ${s.maxRounds} critic rounds are used: a person decides now.`;
+    return `The ${s.gate} gate is closed (${counts}) and ${roundsUsed(s)}: a person decides now.`;
   return `The ${s.gate} gate is closed: ${counts}. Act on each with atticus finding <id> <action>.`;
 }
 

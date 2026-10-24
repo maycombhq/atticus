@@ -16,6 +16,7 @@ import {
   type ChangeType,
   type ChecklistPack,
 } from "@maycombhq/core";
+import { changeAnswers } from "./answers.js";
 import { readChangeFiles } from "./artifacts.js";
 import { buildContext, type CriticContext, type GateDef } from "./context.js";
 import { CriticError } from "./errors.js";
@@ -165,6 +166,8 @@ export async function prepareLayers(
   const footprint = await changeFootprint(lifecycle, change);
   const files = await readChangeFiles(changeFolder(root, change.id));
   const ctx = buildContext({ root, change, type, lifecycle, footprint, files, gate, now });
+  // What people answered for the change: part of the brief the lenses review against.
+  ctx.answers = await changeAnswers(root, change.id);
 
   const { sources, problems } = await ruleSources(ctx, teamPacks);
   const layered = layerRules(sources);

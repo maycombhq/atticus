@@ -12,6 +12,7 @@ import {
   type Footprint,
   type PhaseId,
 } from "@maycombhq/changes";
+import type { ChangeAnswer } from "./answers.js";
 import { readHops, type ChangeFiles, type Hop } from "./artifacts.js";
 
 /** One gate from gates.yaml (C6). */
@@ -58,6 +59,11 @@ export interface CriticContext {
    * a word rule for an open item; it asks a person.
    */
   judged(kind: string, inputs: Record<string, unknown>): string | undefined;
+  /**
+   * The answers people gave for the change (ADR 0115 addendum, 2026-10-24), part of the brief:
+   * the lenses read them as data. Empty when none.
+   */
+  answers?: ChangeAnswer[];
 }
 
 export function buildContext(o: {

@@ -22,4 +22,10 @@ in themselves, so the stage tests above don't see it.
 business lens and one for the architecture lens (ADR 0115). The hand-off lens tests copy it into
 the org pack so the critic's AI lenses review the feature stage's draft; the other tests don't.
 
+`pin-note/` is the pinned-note scenario (ADR 0115 and 0117 addenda, 2026-10-24): the change
+`pin-order-note` ("pin an order note"), a blocking business-lens rule (`checklists/pin-review.yaml`)
+and `scenario.yaml`: the question a person answers, the same question asked again in other
+words, one the answer leaves open, and the lens finding about the narrowing the person chose. The
+tests copy it in themselves.
+
 Everything here is invented.

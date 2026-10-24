@@ -1,6 +1,12 @@
 import type { AiRuntime, SourceInput } from "@maycombhq/ai";
-import { questionJudge } from "@maycombhq/ai";
-import { fileJudgments, listQuestions, type QuestionJudge } from "@maycombhq/core";
+import { answerJudge, questionJudge } from "@maycombhq/ai";
+import {
+  answerWords,
+  fileJudgments,
+  listQuestions,
+  type QuestionJudge,
+  type RaiseOptions,
+} from "@maycombhq/core";
 
 /**
  * The questions already on file, in the step's own prompt (ADR 0117): the step's model reads
@@ -16,7 +22,13 @@ const LISTED = 30;
 
 export const SAME_AS_RULE = `Questions already on file for this change are listed in questions-on-file. Before you raise a question, look there. If one of them asks the same thing, in any words, give it with the question as
   sameAs: { id: <its id>, verdict: same, quote: "<words of that question, copied exactly, that ask what yours asks>" }
-and if yours asks part of what one of them asks, give verdict: narrower. Two questions about different fields, columns or ids are never the same. When none of them asks it, leave sameAs out.`;
+and if yours asks part of what one of them asks, give verdict: narrower. Two questions about different fields, columns or ids are never the same. When none of them asks it, leave sameAs out.
+
+A question marked answered is decided: its answer, given under it, is part of the brief, as binding as the brief's own words. Follow it. Never ask an answered question again, in any words, and never ask what its answer already says (which things it covers, what a word in it means, whether it really meant it). If you think the answer still leaves something open, ask only that, and give
+  sameAs: { id: <the answered question's id>, verdict: narrower, quote: "<words of that question, copied exactly>" }
+If you raise a question anyway that an answer already decides, give
+  sameAs: { id: <its id>, verdict: answered, quote: "<the words of its answer, copied exactly, that decide yours>" }
+and Atticus reads that answer instead of asking the person again.`;
 
 export async function questionsOnFile(root: string, repo: string): Promise<SourceInput[]> {
   const all = (await listQuestions(root, { repo }).catch(() => ({ questions: [] }))).questions
@@ -38,7 +50,14 @@ export async function questionsOnFile(root: string, repo: string): Promise<Sourc
       kind: "document",
       origin: "questions/",
       text: all
-        .map((q) => `- ${q.id} (${q.state}): ${q.question.trim()} [${q.evidence.join(", ")}]`)
+        .map((q) =>
+          [
+            `- ${q.id} (${q.state}): ${q.question.trim()} [${q.evidence.join(", ")}]`,
+            ...(q.state === "answered"
+              ? [`  Answer (${q.answer?.by ?? "a person"}): ${answerWords(q) ?? ""}`]
+              : []),
+          ].join("\n"),
+        )
         .join("\n"),
       classification: "internal",
       priority: 90,
@@ -59,4 +78,22 @@ export function stepQuestionJudge(
 ): QuestionJudge | undefined {
   if (runtime.kind === "hand-off" || runtime.kind === "mock") return undefined;
   return questionJudge({ runtime, store: fileJudgments(root), change, now });
+}
+
+/**
+ * The judges a step's raiseQuestions uses for what its own reading leaves open (ADR 0117 and its
+ * 2026-10-24 addendum): the same-question judge, and the answered-by judge, which reads a
+ * person's answer and says whether it already decides a new question. Both only where the
+ * runtime calls a model directly (model, headless Claude Code, replay); none with the hand-off
+ * runtime or the mock one.
+ */
+export function stepJudges(
+  root: string,
+  runtime: AiRuntime,
+  change: string,
+  now: Date,
+): Pick<RaiseOptions, "judge" | "answerJudge"> {
+  if (runtime.kind === "hand-off" || runtime.kind === "mock") return {};
+  const o = { runtime, store: fileJudgments(root), change, now };
+  return { judge: questionJudge(o), answerJudge: answerJudge(o) };
 }

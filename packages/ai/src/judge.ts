@@ -44,6 +44,8 @@ export interface JudgeSpec {
   means: Record<string, string>;
   /** Which texts a verdict other than unsure quotes: every text of the item, or any one. */
   quote: "each" | "one";
+  /** With quote "one": the text that quote must come from (e.g. a person's answer). */
+  quoteFrom?: string;
   /** A fact that settles an item before the model: the verdict and why, or undefined. */
   veto?: (item: JudgeItem) => { verdict: string; rule: string } | undefined;
 }
@@ -113,7 +115,9 @@ export function judgeInstructions(spec: JudgeSpec): string {
     "",
     spec.quote === "each"
       ? "Unless you answer unsure, quote the words of each text that decide it, copied exactly."
-      : "Unless you answer unsure, quote the words that decide it, copied exactly from one text.",
+      : spec.quoteFrom
+        ? `Unless you answer unsure, quote the words of ${spec.quoteFrom} that decide it, copied exactly.`
+        : "Unless you answer unsure, quote the words that decide it, copied exactly from one text.",
     "A quote that isn't word for word in the text it names is refused.",
     "",
     "Reply with YAML only:",
@@ -193,6 +197,8 @@ export function answerProblem(
   if (spec.quote === "each" && Object.keys(item.texts).some((k) => !quoted.has(k)))
     return "quote the words of each text that decide it";
   if (spec.quote === "one" && quoted.size === 0) return "quote the words that decide it";
+  if (spec.quoteFrom && !quoted.has(spec.quoteFrom))
+    return `quote the words of ${spec.quoteFrom} that decide it`;
   return undefined;
 }
 

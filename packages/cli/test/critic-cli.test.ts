@@ -7,7 +7,15 @@ import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { ReplayRuntime } from "@maycombhq/ai";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
-import { critic, criticStats, findingAction, findings } from "../src/critic-commands.js";
+import type { GateStatus } from "@maycombhq/naysayer";
+import { changeStatus } from "../src/change-commands.js";
+import {
+  critic,
+  criticStats,
+  findingAction,
+  findings,
+  statusLine,
+} from "../src/critic-commands.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FORGE = join(HERE, "../../../fixtures/forge");
@@ -265,5 +273,38 @@ describe("atticus critic", () => {
       await criticStats(await mkdtemp(join(tmpdir(), "atticus-cli-critic-empty-")), {}, c.io),
     ).toBe(0);
     expect(c.out).toEqual(["No critic findings yet."]);
+  });
+
+  it("names the checking round in the gate's status once one has run, in critic and change status (ADR 0115 addendum)", async () => {
+    const status = (o: Partial<GateStatus>): GateStatus => ({
+      gate: "define",
+      round: 3,
+      maxRounds: 2,
+      open: { blocking: 1, gaps: 0, risks: 0, ideas: 0 },
+      total: { blocking: 1, gaps: 0, risks: 0, ideas: 0 },
+      mayProceed: false,
+      humanDecides: true,
+      checkRound: false,
+      checkRoundsRun: 1,
+      waiting: [],
+      reasons: [],
+      findings: [],
+      ...o,
+    });
+    expect(statusLine(status({}))).toBe(
+      "The define gate is closed (1 blocking, 0 open gaps) and its 2 critic rounds and the checking round are used: a person decides now.",
+    );
+    expect(statusLine(status({ round: 2, checkRoundsRun: 0 }))).toBe(
+      "The define gate is closed (1 blocking, 0 open gaps) and its 2 critic rounds are used: a person decides now.",
+    );
+    // change status says it too, for a gate whose rounds are used up.
+    const r = await root();
+    await critic(r, CHANGE, {}, capture().io, { now: NOW });
+    await critic(r, CHANGE, {}, capture().io, { now: NOW });
+    const c = capture();
+    expect(await changeStatus(r, CHANGE, {}, c.io)).toBe(0);
+    expect(c.out.find((l) => l.startsWith("Critic: "))).toMatch(
+      /^Critic: The plan gate is closed \(\d+ blocking, \d+ open gaps?\) and its 2 critic rounds are used: a person decides now\.$/,
+    );
   });
 });

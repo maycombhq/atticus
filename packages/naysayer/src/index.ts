@@ -18,5 +18,6 @@ export * from "./gates.js";
 export * from "./critic.js";
 export * from "./complete.js";
 export * from "./act.js";
+export * from "./answers.js";
 export * from "./stats.js";
 export * from "./snow-triggers.js";

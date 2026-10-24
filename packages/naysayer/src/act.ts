@@ -121,6 +121,13 @@ export async function act(
   const gap = f.kind === "knowledge-gap";
   const act = a.data;
 
+  // A gap has no fix to apply, only a fact to write in: a person who already wrote it by hand
+  // records that with edit-and-apply and a reason, no patch needed.
+  if (gap && act === "apply")
+    throw new CriticError(
+      "refused",
+      `${f.id} is a knowledge gap, so there is no fix to apply: the missing fact has to be written in. If you already wrote it into ${f.artifact} by hand, record that with: atticus finding ${change.id} ${f.id} edit-and-apply --reason "<what you wrote>" (no patch needed). Otherwise route the question to its owner: atticus finding ${change.id} ${f.id} ask.`,
+    );
   if (gap && act !== "ask" && act !== "edit-and-apply")
     throw new CriticError(
       "refused",
@@ -223,12 +230,11 @@ export async function act(
 }
 
 /**
- * What comes after a person's decision on a blocking finding when the gate's critic rounds are
+ * What comes after a person's decision on a finding (a gap included) when the gate's critic rounds are
  * used up (ADR 0115 addendum): the other blocking findings of the round still to act on, or the
  * one checking round past the limit that reviews what was done. Undefined while rounds are left.
  */
 async function afterLimit(root: string, change: string, f: Finding): Promise<string | undefined> {
-  if (f.severity !== "blocking") return undefined;
   const ctx = await loadChangeContext(root);
   const max = gateRoundLimit(ctx.orgPack.gates, f.gate);
   if (max === undefined || (await countedRounds(root, change, f.gate)).length < max)
@@ -237,7 +243,7 @@ async function afterLimit(root: string, change: string, f: Finding): Promise<str
     (x) => x.finding.severity === "blocking" && x.finding.state === "open",
   ).length;
   if (left)
-    return `But no critic round is left at the ${f.gate} gate: act on the other ${left} blocking finding${left === 1 ? "" : "s"} of round ${f.round}, and one checking round past the limit reviews what was done.`;
+    return `But no critic round is left at the ${f.gate} gate: act on the ${f.severity === "blocking" ? "other " : ""}${left} blocking finding${left === 1 ? "" : "s"} of round ${f.round}, and one checking round past the limit reviews what was done.`;
   if ((await checkRoundDue(root, change, f.gate)).length === 0) return undefined;
   return `The ${f.gate} gate has no critic round left, so it allows one checking round past the limit: run atticus critic ${change} --gate ${f.gate}, or run the change's stage again, to review what was done. If that round finds something blocking, a person decides again.`;
 }

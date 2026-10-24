@@ -1,6 +1,10 @@
 import {
+  ANSWERED_BY,
   differentThings,
+  namedBeyondAnswer,
   SAME_QUESTION,
+  type AnswerJudge,
+  type AnsweredVerdict,
   type QuestionJudge,
   type SameVerdict,
 } from "@maycombhq/core";
@@ -46,6 +50,51 @@ export function questionJudge(o: JudgeOptions): QuestionJudge {
     const r = await judge(SAME_QUESTION_SPEC, items, o);
     const out = new Map<string, SameVerdict>();
     for (const [k, v] of r.results) out.set(k, v.verdict as SameVerdict);
+    return out;
+  };
+}
+
+/**
+ * Does a person's answer on file already decide a new question? (questions/, ADR 0117 addendum,
+ * 2026-10-24) The same-question judgment reads two questions; this one reads the answer too, so a
+ * draft that asks again what a person said, in other words, isn't put to them a second time.
+ * The veto: the new question names an id, field, path or number neither the answered question
+ * nor its answer names.
+ */
+export const ANSWERED_BY_SPEC: JudgeSpec = {
+  kind: ANSWERED_BY,
+  ask: "A person already answered the existing question with the answer given. Does that answer decide what the new question asks, so that asking the new question would ask the person again what they already said?",
+  verdicts: ["yes", "no"],
+  means: {
+    yes: "the answer already says what the new question asks: it asks the same again in other words, or asks about something the answer settles",
+    no: "the answer leaves what the new question asks open, or the new question is about something else",
+  },
+  quote: "one",
+  quoteFrom: "answer",
+  veto: (item) => {
+    const names = namedBeyondAnswer(
+      { question: item.texts.new ?? "" },
+      { question: item.texts.existing ?? "", answer: item.texts.answer ?? "" },
+      String(item.inputs.repo ?? ""),
+    );
+    return names.length ? { verdict: "no", rule: "veto:names-beyond-answer" } : undefined;
+  },
+};
+
+/** A judge for raiseQuestions' answered-by pairs, through the AI runtime (model, headless or replay). */
+export function answerJudge(o: JudgeOptions): AnswerJudge {
+  return async (pairs) => {
+    const items: JudgeItem[] = pairs.map((p) => ({
+      inputs: p.inputs,
+      texts: { new: p.draft.question, existing: p.answered.question, answer: p.answer },
+      facts: [
+        `new cites ${p.draft.evidence.join(", ")}`,
+        `existing cites ${p.answered.evidence.join(", ")}`,
+      ],
+    }));
+    const r = await judge(ANSWERED_BY_SPEC, items, o);
+    const out = new Map<string, AnsweredVerdict>();
+    for (const [k, v] of r.results) out.set(k, v.verdict as AnsweredVerdict);
     return out;
   };
 }

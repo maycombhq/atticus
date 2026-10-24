@@ -167,12 +167,14 @@ export const QuestionDraft = z
      * The step's own reading (ADR 0117): this question is one already on file (same), or asks
      * part of one (narrower), with the words of the earlier question that say so. Atticus checks
      * the id is a question it listed, the words are in it, and that the two name no different
-     * ids or fields, before it follows the reading.
+     * ids or fields, before it follows the reading. `answered` (ADR 0117 addendum, 2026-10-24):
+     * a person's answer on file already decides this question; the quote is the words of that
+     * answer that decide it, and the question is not asked again.
      */
     sameAs: z
       .strictObject({
         id: QuestionId,
-        verdict: z.enum(["same", "narrower"]),
+        verdict: z.enum(["same", "narrower", "answered"]),
         quote: z.string().trim().min(1),
       })
       .optional(),
