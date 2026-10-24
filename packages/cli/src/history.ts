@@ -56,16 +56,6 @@ export function maskSecrets(text: string): { text: string; masked: boolean } {
   return { text: out, masked: long || red !== shielded };
 }
 
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/** The one change of `ids` the text names, as a whole id; none when it names none or several. */
-export function changeNamed(text: string, ids: readonly string[]): string | undefined {
-  const named = ids.filter((id) =>
-    new RegExp(`(?<![A-Za-z0-9_-])${escapeRe(id)}(?![A-Za-z0-9_-])`).test(text),
-  );
-  return named.length === 1 ? named[0] : undefined;
-}
-
 /** The changes of the metarepo: the folders under openspec/changes with a change.yaml. */
 export async function changeIds(root: string): Promise<string[]> {
   const dir = changesDirOf(root);
@@ -131,14 +121,18 @@ export interface HistoryInput {
   text: string;
   session?: string;
   command?: string;
+  /** The change the surface says the turn is about (a step it ran on that change). */
+  change?: string;
   now?: Date;
   /** Six hex digits for the id; random by default. */
   random?: () => string;
 }
 
 /**
- * Append one record, unless recording is off. Its change is the one change its text names,
- * else the branch change/<id>; its command is the one given, else a prompt's leading /word.
+ * Append one record, unless recording is off. Its change is only ever an explicit one: the one
+ * the surface passes (when it is one of the metarepo's changes), else the branch change/<id>,
+ * else none. What the text is about is never guessed from its words (a short id such as "fix"
+ * would tag unrelated prompts). Its command is the one given, else a prompt's leading /word.
  */
 export async function addHistory(
   root: string,
@@ -152,7 +146,10 @@ export async function addHistory(
   const masked = maskSecrets(i.text);
   const original = Buffer.byteLength(i.text, "utf8");
   const cut = cutText(masked.text);
-  const change = changeNamed(i.text, await changeIds(root)) ?? (await branchChange(root));
+  const given = i.change?.trim();
+  const change =
+    (given && (await changeIds(root)).includes(given) ? given : undefined) ??
+    (await branchChange(root));
   const command =
     i.command?.trim() ||
     (i.kind === "prompt" ? /^\s*(\/[a-z][a-z0-9-]*)(?=\s|$)/.exec(i.text)?.[1] : undefined);

@@ -4,7 +4,7 @@ import { HandoffRuntime, TOOL_LIMITS, type Run } from "@maycombhq/ai";
 import { CONTEXT_TOOLS } from "@maycombhq/index";
 import { changesRelOf, listQuestions, runsDirOf, runsRelOf, type Question } from "@maycombhq/core";
 import { lensRunOf } from "@maycombhq/naysayer";
-import type { Output } from "./commands.js";
+import type { Output, StepFact } from "./commands.js";
 
 /**
  * `atticus <step> --handoff` (ADR 0086, plan 4.8): the step runs with the hand-off runtime, as
@@ -118,11 +118,13 @@ export async function handoffStep(
   const asked = json ? await openQuestions(root) : new Map<string, string>();
   const out: string[] = [];
   const err: string[] = [];
+  const facts: StepFact[] = [];
   let code: number;
   try {
     code = await dispatch([...args, ...resume, "--mode", "hand-off"], {
       out: (l) => out.push(l),
       err: (l) => err.push(l),
+      report: (f) => facts.push(f),
     });
   } catch (e) {
     if (!json) throw e;
@@ -132,16 +134,36 @@ export async function handoffStep(
   const after = await runStates(root);
   const byStart = (a: Run, b: Run) =>
     a.startedAt.localeCompare(b.startedAt) || a.runId.localeCompare(b.runId);
+  const critic = isCritic(args[0], args[1]);
+  const stage = isStage(args[0], args[1]);
+  const queue = critic || stage;
+  // A step of a change offers only that change's runs: two steps at once (two chats, a chat and
+  // a terminal) hand off two runs, and the other change's must never be answered as this one's.
+  const changeArg = critic ? args[1] : stage ? args[2] : undefined;
+  const ofChange = (x: Run) =>
+    !changeArg || changeArg.startsWith("-") || x.request.change === changeArg;
   const waiting = [...after]
     .filter(([path, s]) => s.run.state === "waiting" && before.get(path)?.key !== s.key)
     .map(([, s]) => s.run)
+    .filter(ofChange)
     .sort(byStart);
-  // Resumed before `handoff done`: the same run is still waiting, so say how to finish it again.
   const resumed = resume.length ? resume.join("=").split("=").at(-1) : undefined;
   const resumedRun = [...after.values()].find((s) => s.run.runId === resumed)?.run;
-  const still = resumedRun?.state === "waiting" ? resumedRun : undefined;
-  const critic = isCritic(args[0], args[1]);
-  const queue = critic || isStage(args[0], args[1]);
+  // The run the step says it handed off or waits on, as data (Output.report), never read from
+  // its words: a stage names its draft or the lens it waits on.
+  const named = facts
+    .map((f) => ("handoff" in f ? f.handoff.runId : undefined))
+    .filter((x): x is string => !!x)
+    .at(-1);
+  const namedRun = named ? [...after.values()].find((s) => s.run.runId === named)?.run : undefined;
+  // Resumed before `handoff done`, or after an answer that failed its check (the step offers the
+  // same run again, to be fixed): the same run, said to be still waiting.
+  const still =
+    resumedRun &&
+    (resumedRun.state === "waiting" ||
+      (resumedRun.state === "failed" && namedRun?.runId === resumedRun.runId))
+      ? resumedRun
+      : undefined;
   // The critic's next lens: a run of the same change, started with or after the one resumed
   // (for a stage, a lens run: the stage's next draft is a new run, found above).
   const next =
@@ -160,22 +182,35 @@ export async function handoffStep(
       : undefined;
   // Run again while its hand-off waits (a runner that lost its place, a person who ran it twice):
   // the step names the run it is waiting on, and that run is offered again.
-  const named = [...out, ...err].join("\n").match(/\(run (run-[0-9a-z-]+)\)/)?.[1];
   const waitedOn =
-    !resume.length && !waiting.length && named
-      ? [...after.values()].find((s) => s.run.runId === named && s.run.state === "waiting")?.run
+    !resume.length && namedRun && before.get(`${namedRun.request.change}/${namedRun.runId}`)
+      ? namedRun
       : undefined;
-  const run = (queue ? waiting[0] : waiting.at(-1)) ?? still ?? next ?? waitedOn;
+  const offered = namedRun && ["waiting", "failed"].includes(namedRun.state) ? namedRun : undefined;
+  const run =
+    offered ?? (queue ? waiting[0] : waiting.at(-1)) ?? still ?? next ?? waitedOn ?? undefined;
+  const pagesLeft = facts
+    .map((f) => ("pagesLeft" in f ? f.pagesLeft : undefined))
+    .filter((x): x is number => x !== undefined)
+    .at(-1);
+  const stillOffered = !!run && (run === still || run === waitedOn);
   if (json)
     return printJson(
       root,
       argv,
       args,
-      { run, still: !!run && (run === still || run === waitedOn), code, out, err, asked },
+      {
+        run,
+        still: stillOffered,
+        code,
+        out,
+        err,
+        asked,
+        ...(pagesLeft !== undefined ? { pagesLeft } : {}),
+      },
       io,
     );
-  if (run && (run === still || run === waitedOn))
-    io.out(`Run ${run.runId} is still waiting for its result file.`);
+  if (stillOffered) io.out(`Run ${run.runId} is still waiting for its result file.`);
   if (!run) {
     for (const l of out) io.out(l);
     for (const l of err) io.err(l);
@@ -219,6 +254,7 @@ async function printJson(
     out: string[];
     err: string[];
     asked: Map<string, string>;
+    pagesLeft?: number;
   },
   io: Output,
 ): Promise<number> {
@@ -286,6 +322,8 @@ async function printJson(
         messages: s.out,
         errors: s.err,
         questions: questions.map(questionOut),
+        // A batched scan's pages left for the next batch, as data (never read from its words).
+        ...(s.pagesLeft !== undefined ? { pagesLeft: s.pagesLeft } : {}),
       },
       null,
       2,

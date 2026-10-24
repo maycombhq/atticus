@@ -121,6 +121,32 @@ describe("the Claude Code plugin (ADR 0104)", () => {
       return { meta, run, calls };
     };
 
+    it.skipIf(process.platform !== "win32")(
+      "never hands the Windows shell a metarepo path it would expand (%...%)",
+      async () => {
+        const dir = await mkdtemp(join(tmpdir(), "atticus-history-hook-"));
+        await writeFile(join(dir, "history.mjs"), byPath.get("hooks/history.mjs")!);
+        const meta = join(dir, "%USERNAME%-meta");
+        await mkdir(join(meta, "org-pack"), { recursive: true });
+        const bin = join(dir, "bin");
+        await mkdir(bin);
+        const log = join(dir, "called.txt");
+        await writeFile(join(bin, "atticus.cmd"), `@echo called>> "${log}"\r\n`);
+        const env = {
+          ...process.env,
+          CLAUDE_PROJECT_DIR: meta,
+          PATH: `${bin};${process.env.PATH}`,
+        };
+        delete (env as Record<string, string | undefined>).ATTICUS_BIN;
+        execFileSync(process.execPath, [join(dir, "history.mjs"), "prompt"], {
+          env,
+          input: JSON.stringify({ prompt: "/atticus-next", cwd: meta }),
+          encoding: "utf8",
+        });
+        expect(existsSync(log)).toBe(false);
+      },
+    );
+
     it("records a prompt in a metarepo, and adds nothing to the conversation", async () => {
       const h = await setUp(true);
       const out = h.run("prompt", {

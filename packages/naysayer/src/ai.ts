@@ -234,29 +234,48 @@ const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
 /** The shortest quote an evidence entry may give (ADR 0111), as the knowledge scan asks. */
 const MIN_QUOTE = 12;
 
-/** Parse a lens's output into hits; returns what was discarded and why. */
+/** A lens's answer as data: the findings list, or why the answer isn't a review at all. */
+function lensFindings(output: string): { list: unknown[] } | { problem: string } {
+  let data: unknown;
+  try {
+    data = parse(output.replace(/^```(?:ya?ml)?\s*\n|\n```\s*$/g, ""));
+  } catch (e) {
+    return { problem: `the output is not YAML: ${(e as Error).message.split("\n")[0]}` };
+  }
+  const list = Array.isArray(data) ? data : (data as { findings?: unknown } | null)?.findings;
+  return Array.isArray(list)
+    ? { list }
+    : {
+        problem: "the output has no findings list (a lens that finds nothing answers findings: [])",
+      };
+}
+
+/**
+ * Why a lens's answer isn't a review at all, or undefined when it is one: YAML with a findings
+ * list (empty when the lens found nothing). An empty answer, a refusal or prose is not a clean
+ * review, and must never count as one: the gate would open on a review that never happened.
+ */
+export function lensAnswerProblem(output: string): string | undefined {
+  const r = lensFindings(output);
+  return "problem" in r ? r.problem : undefined;
+}
+
+/**
+ * Parse a lens's output into hits; returns what was discarded and why. `malformed` says why an
+ * answer that isn't a review at all was refused (lensAnswerProblem): the lens then failed.
+ */
 export function parseLensOutput(
   ctx: CriticContext,
   lens: LensName,
   output: string,
   rules: EffectiveRule[],
   docs: Doc[],
-): { hits: RuledHit[]; discarded: Discarded[] } {
+): { hits: RuledHit[]; discarded: Discarded[]; malformed?: string } {
   const discarded: Discarded[] = [];
-  let data: unknown;
-  try {
-    data = parse(output.replace(/^```(?:ya?ml)?\s*\n|\n```\s*$/g, ""));
-  } catch (e) {
-    return {
-      hits: [],
-      discarded: [
-        { lens, reason: `the output is not YAML: ${(e as Error).message.split("\n")[0]}` },
-      ],
-    };
-  }
-  const list = Array.isArray(data) ? data : (data as { findings?: unknown } | null)?.findings;
-  if (!Array.isArray(list))
-    return { hits: [], discarded: [{ lens, reason: "the output has no findings list" }] };
+  const read = lensFindings(output);
+  if ("problem" in read)
+    return { hits: [], discarded: [{ lens, reason: read.problem }], malformed: read.problem };
+  const list = read.list;
   const byRule = new Map(rules.map((r) => [r.id, r]));
   const byPath = new Map(docs.map((d) => [d.path, d]));
   const hits: RuledHit[] = [];
@@ -630,12 +649,13 @@ export async function runLenses(
       );
       hits.push(...parsed.hits);
       discarded.push(...parsed.discarded);
-      runs.push({
-        ...base,
-        ...meta,
-        state: "ran",
-        ...(out.reason ? { reason: out.reason } : {}),
-      });
+      // An answer that isn't a review (empty, a refusal, prose) is a lens that failed, never a
+      // clean review: the gate stays closed until a lens really reviews.
+      runs.push(
+        parsed.malformed
+          ? { ...base, ...meta, state: "failed", reason: parsed.malformed }
+          : { ...base, ...meta, state: "ran", ...(out.reason ? { reason: out.reason } : {}) },
+      );
     } catch (e) {
       runs.push({ ...base, state: "failed", reason: (e as Error).message });
     }

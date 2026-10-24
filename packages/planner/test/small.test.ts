@@ -131,7 +131,9 @@ describe("the fast path (atticus change small)", () => {
     );
     const seen: AiRequest[] = [];
     await smallStage(root, CHANGE, { runtime: assistant([ANSWER], seen), now: NOW });
-    expect(seen[0]!.pack.prompt).toContain("[checkout-note.md:3] Show the order time as HH:MM.");
+    expect(seen[0]!.pack.prompt).toContain(
+      "[inputs/checkout-note.md:3] Show the order time as HH:MM.",
+    );
     expect(seen[0]!.pack.prompt).toContain(`openspec/changes/${CHANGE}/inputs/checkout-note.md`);
   });
 

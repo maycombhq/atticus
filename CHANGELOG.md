@@ -4,6 +4,27 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### What an adversarial review of the stage loop found (ADR 0115 addendum)
+
+- A lens that didn't review is never a clean review. An empty answer, a refusal or prose (no `findings` list) fails `atticus handoff done` and is offered again; in model mode it records the lens `failed`. A failed lens in a gate's newest round now stops the gate's hand-off (`lens-failed`) until a new critic round reviews. This applies to the code-and-test lens's hand-up review too.
+- A lens run that is gone or cancelled is recorded `failed` and the next lens is offered. The draft is kept: when every lens is in and one didn't review, the stage stops, and running it again sends the same draft to a new critic round. Before, the stage kept waiting on the dead lens and dropped every later draft.
+- A stage waits on its own round's lenses, even when someone runs `atticus critic` at the same gate in the meantime.
+- When the gate's critic rounds are used up (`maxAuthorRounds`), the stage stops for a person to decide. It no longer says nothing blocks. A draft that fails the stage's own checks uses no critic round.
+- A done architecture stage, checked again after the change's code merged and was rescanned, is not drafted again: its own migration (by its file name), and a table or entry it marked new, may now be in the catalog.
+- A question the loop raises is linked to its finding by the question's id, never by its words. A finding a person answered that comes back in a draft given the answer stops the loop, so the assistant can't draft for ever. Note: since the questions moved to the code repo (ADR 0111 addendum), questions answered before under the change id are asked once more.
+- A resume names this stage's own draft or a lens of its round, or it is refused: another change's run is never read in as this change's draft. `--handoff --json` offers only the run the step reports, as data, and only the step's change's runs. A lens offered again after its answer failed the check is `stillWaiting` and counts toward the runner's limit.
+- The last draft's findings and people's answers go to the drafter as a data block (`hand-backs`), screened by the defences, never inside Atticus's trusted instructions.
+- A lens's quotes are checked against the draft it was given. The draft is kept in the run's folder when the lens is handed off.
+- `feature.yaml` goes to the architecture drafter as it is on disk, so `feature.yaml:N` cites the file's line N. Attached files are cited by their path in the change folder (`[inputs/refund-rules.md:12]`), so a question resting on an attachment is asked. A cited line whose path has a space is kept.
+- `inputs/index.yaml` can't point a step at a file outside `inputs/read/`.
+- Attaching never replaces a file because of its name. A file named like one already attached is kept beside it, both are read, and a note says how to replace it: `atticus change attach <change> <file> --replaces inputs/<old>`. This also works for a file already attached.
+- `delta.sent-not-stored` flags a sent field only when the step says nothing else about it. A qualified name (`order.id`) is read by its last part, and a key the write matches rows by goes under `checks`. A step kind that must name a table, and so has no `to`, comes from the spec template's step rules, so a lookup may have a `to`.
+- Conformance: a migration named with its folder is found, a table whose columns no scan read lists them as unchecked rather than missing, concurrent scans of one commit each get a folder of their own, and two missing columns of one step get their own finding ids.
+- The prompt history tags a record with a change only when the surface passes one (`atticus history add --change <id>`) or the branch is `change/<id>`. It no longer finds a change id in the prompt's words.
+- The VS Code runner reads a batched knowledge scan's pages left from the `pagesLeft` field, not from the printed words. `run.json` is written atomically, and a stage run while it is half written waits instead of drafting twice.
+- The Claude Code history hook never hands Windows' `cmd` an argument it would expand (`%…%`).
+- Not built: the VS Code chat doesn't pass `--change` to `history add` yet; a done stage whose today's flow changed because its own change merged is still reported stale (`delta.stale`).
+
 ### The model searches the code (ADR 0118)
 
 - Three more read-only context tools beside search, show, walk and show_code: `grep` (lines that match a pattern the model chooses, literal or a regular expression, case-insensitive if asked, limited to a glob of paths, in one repo or every clone; each hit `repo:path:line: text`; 30 hits by default, at most 100), `files` (paths a glob matches, at most 500) and `outline` (a file's declarations from the syntax tree the readers parse, nested, with the annotations, decorators or attributes written on each; a Markdown or AsciiDoc file's headings, a YAML or properties file's keys). They read the base clones under `workspace/` only, with the same path guards, and skip `.git/`, links, binary files and everything the repo's `.gitignore` files ignore.

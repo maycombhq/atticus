@@ -6,7 +6,6 @@ import { describe, expect, it } from "vitest";
 import { Api } from "@maycombhq/core";
 import {
   addHistory,
-  changeNamed,
   cutText,
   historyEntry,
   listHistory,
@@ -85,16 +84,6 @@ describe("a record's text", () => {
     const plain = "x".repeat(90000);
     expect(maskSecrets(`log ${plain}`)).toEqual({ text: `log ${plain}`, masked: false });
   });
-
-  it("names a change only when exactly one of the metarepo's changes is in it", () => {
-    const ids = ["add-transfer-limit", "refunds-through-northwind-pay", "add-transfer"];
-    expect(changeNamed("/atticus-needs add-transfer-limit", ids)).toBe("add-transfer-limit");
-    expect(changeNamed("Compare add-transfer-limit and refunds-through-northwind-pay", ids)).toBe(
-      undefined,
-    );
-    expect(changeNamed("not-add-transfer-limit-at-all", ids)).toBe(undefined);
-    expect(changeNamed("Which repos call forge-ledger?", ids)).toBe(undefined);
-  });
 });
 
 describe("atticus history add", () => {
@@ -105,6 +94,7 @@ describe("atticus history add", () => {
       kind: "prompt",
       session: "5f1d7c0e",
       text: "/atticus-needs add-transfer-limit",
+      change: "add-transfer-limit",
       now: at,
       random: () => "abcdef",
     });
@@ -143,6 +133,42 @@ describe("atticus history add", () => {
       random: () => "000001",
     });
     expect(r.record).toMatchObject({ change: "add-transfer-limit", command: "/stories" });
+  });
+
+  it("never takes a change from the text's words: only one the surface passes, or the branch", async () => {
+    const root = await metarepo();
+    await mkdir(join(root, "openspec", "changes", "fix"), { recursive: true });
+    await writeFile(join(root, "openspec", "changes", "fix", "change.yaml"), "id: fix\n", "utf8");
+    const add = (text: string, change?: string) =>
+      addHistory(root, {
+        surface: "cli",
+        kind: "prompt",
+        session: "s2",
+        text,
+        ...(change ? { change } : {}),
+        now: at,
+        random: () => "000002",
+      });
+    // A short change id in a sentence about something else is no tag.
+    expect((await add("How do I fix the build?")).record?.change).toBeUndefined();
+    expect((await add("/atticus-needs add-transfer-limit")).record?.change).toBeUndefined();
+    // One the surface passes is kept when it is one of the metarepo's changes.
+    expect((await add("/atticus-needs", "add-transfer-limit")).record?.change).toBe(
+      "add-transfer-limit",
+    );
+    expect((await add("/atticus-needs", "no-such-change")).record?.change).toBeUndefined();
+    // And from the command line, with --change.
+    const c = capture();
+    expect(
+      await historyAddCli(
+        root,
+        { surface: "cli", kind: "prompt", change: "fix" },
+        async () => "Run the stories",
+        c.io,
+      ),
+    ).toBe(0);
+    const last = (await readHistory(root)).at(-1);
+    expect(last?.change).toBe("fix");
   });
 
   it("keeps a reply told twice in a row once, and the same words after another prompt again", async () => {

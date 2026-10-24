@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -83,11 +84,20 @@ export interface ConformRun {
 
 const stamp = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
 
+/**
+ * The folder a scan of a repo at a commit checks the commit out in: its own for each scan, so
+ * two task runs scanning the same commit (a shared merge-base) never remove each other's.
+ */
+export function conformScanDir(root: string, repo: string, commit: string): string {
+  const own = `${process.pid}-${randomBytes(4).toString("hex")}`;
+  return join(stateDirOf(root), ".index", "conform", `${repo}-${commit.slice(0, 12)}-${own}`);
+}
+
 /** Scan a repo at a commit from a detached worktree of its base clone, then remove the worktree. */
 function gitScanAt(root: string, git: GitRunner): ScanAt {
   return async (repo, commit) => {
     const base = baseClonePath(root, repo);
-    const dir = join(stateDirOf(root), ".index", "conform", `${repo}-${commit.slice(0, 12)}`);
+    const dir = conformScanDir(root, repo, commit);
     await rm(dir, { recursive: true, force: true });
     await mkdir(join(dir, ".."), { recursive: true });
     await git(["worktree", "add", "--detach", "--force", "--", dir, commit], base);
@@ -133,12 +143,22 @@ const FIX: Record<Exclude<ConformItem["status"], "found">, string> = {
     "Add a step that names it to the target flow if the change needs it, or take it out of the branch. Dismiss it as not relevant if it belongs elsewhere.",
 };
 
-/** A finding's id from its item: the same item keeps its id, so a dismissal survives a rescan. */
+/**
+ * A finding's id from its item: the same item keeps its id, so a dismissal survives a rescan. A
+ * column the code lacks has no record, so its sentence (which names the column) tells two
+ * missing columns of one step apart.
+ */
 export function conformFindingId(i: ConformItem): string {
+  const column =
+    i.check !== "column"
+      ? ""
+      : i.record
+        ? `-${slug(i.record.split(".").pop()!)}`
+        : `-${createHash("sha256").update(i.what).digest("hex").slice(0, 8)}`;
   const subject =
     i.status === "unexpected"
       ? slug(i.record ?? i.what)
-      : `${slug(i.flow ?? "")}-${i.item ?? "trigger"}${i.check === "column" && i.record ? `-${slug(i.record.split(".").pop()!)}` : ""}`;
+      : `${slug(i.flow ?? "")}-${i.item ?? "trigger"}${column}`;
   return `conform-${i.status}-${i.check}-${subject}`.slice(0, 120).replace(/-+$/, "");
 }
 

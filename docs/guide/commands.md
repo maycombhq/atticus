@@ -111,7 +111,7 @@ Usage:
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change small <change>        The fast path for a small change (ADR 0113): your assistant places it on the flows, writes its target flows and words its stories in one step; every stage's checks, and the critic at the change type's gate [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context]
-  atticus change attach <change> <files...>  Attach a spec, screenshot, PDF, email export or document to a change: copied into its inputs/, read and cited by line or page, read by its steps [--json]
+  atticus change attach <change> <files...>  Attach a spec, screenshot, PDF, email export or document to a change: copied into its inputs/, read and cited by line or page, read by its steps [--replaces inputs/<file>] [--json]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m] [--max-tokens n]
           [--template id] [--id id] [--owner role=a,b]... [--system id]...
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
@@ -156,7 +156,7 @@ Usage:
   atticus runs show <run> [--json]     One run: its prompt, its answer and the problems handed back to it
   atticus history [--change id] [--session id] [--filter words] [--limit n] [--json]  The prompts people sent their assistant here and the responses they got, by session, kept on this machine
   atticus history show <id> [--json]   One prompt or response, and its pair
-  atticus history add --surface <claude-code|vscode|cli> --kind <prompt|response> [--session id] [--command c]  Record one prompt or response, its text read from stdin (the plugin's hooks and VS Code call it)
+  atticus history add --surface <claude-code|vscode|cli> --kind <prompt|response> [--session id] [--command c] [--change id]  Record one prompt or response, its text read from stdin (the plugin's hooks and VS Code call it)
   atticus history off                  Stop recording prompts and responses on this machine (kept in .atticus/me.yaml)
   atticus history on                   Record them again on this machine (runtime.yaml can still turn it off for everyone)
   atticus needs done <change> <item>   Record a need as done, e.g. with the CTASK number as its note [--for <target>] [--note <text>]

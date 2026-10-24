@@ -377,18 +377,16 @@ describe("a knowledge scan in batches", () => {
     const cli = async (argv: string[]) => {
       calls.push(argv);
       n++;
-      const left =
-        n === 1
-          ? ["3 pages left to read: run atticus knowledge scan again for the next batch."]
-          : [];
+      // The pages left come as data (pagesLeft); the words are for the person, never parsed.
       return {
         code: 0,
         stdout: JSON.stringify({
           state: "done",
           exitCode: 0,
-          messages: [`Read batch ${n}.`, ...left],
+          messages: [`Read batch ${n}.`, ...(n === 1 ? ["Three pages are still to read."] : [])],
           errors: [],
           questions: [],
+          ...(n === 1 ? { pagesLeft: 3 } : {}),
         }),
         stderr: "",
       };

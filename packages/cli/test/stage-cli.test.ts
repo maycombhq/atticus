@@ -308,6 +308,81 @@ describe("the starter review on a metarepo atticus init made (ADR 0119)", () => 
   }, 180_000);
 });
 
+describe("a stage's --handoff --json offers its own run, named as data (M5, M6)", () => {
+  const run = async (root: string, argv: string[]) => {
+    const out: string[] = [];
+    const code = await main(argv, { out: (l) => out.push(l), err: () => {} }, { quiet: true });
+    // handoff done prints sentences; the steps with --json print one object.
+    const text = out.join("\n");
+    return {
+      code,
+      j: (text.startsWith("{") ? JSON.parse(text) : {}) as Record<string, unknown>,
+    };
+  };
+
+  it("never offers another change's run, though it was handed off at the same time", async () => {
+    const root = await estate();
+    await writeFile(
+      join(root, "openspec/changes/bulk-orders/brief.md"),
+      "# Bulk orders\n\nA shop owner places many orders at once.\n",
+    );
+    const mine = await run(root, [
+      "change",
+      "feature",
+      CHANGE,
+      "--handoff",
+      "--json",
+      "--root",
+      root,
+    ]);
+    // Another change's step hands off while this one waits.
+    await run(root, [
+      "change",
+      "feature",
+      "bulk-orders",
+      "--force",
+      "--handoff",
+      "--json",
+      "--root",
+      root,
+    ]);
+    const again = await run(root, [
+      "change",
+      "feature",
+      CHANGE,
+      "--handoff",
+      "--json",
+      "--root",
+      root,
+    ]);
+    expect(again.j).toMatchObject({ state: "handoff", runId: mine.j.runId, stillWaiting: true });
+  });
+
+  it("offers a lens again, still waiting, when its answer failed the check", async () => {
+    const root = await estate();
+    await cp(join(FIXTURES, "stages/lenses/checklists"), join(root, "org-pack/checklists"), {
+      recursive: true,
+    });
+    const draft = (
+      await run(root, ["change", "feature", CHANGE, "--handoff", "--json", "--root", root])
+    ).j;
+    await writeFile(join(root, draft.resultFile as string), PLACED);
+    await run(root, draft.doneArgs as string[]);
+    const lens = (await run(root, draft.resumeArgs as string[])).j;
+    expect(lens).toMatchObject({ state: "handoff", lens: "business" });
+    // Copilot answered with nothing: the check fails it.
+    await writeFile(join(root, lens.resultFile as string), "");
+    expect((await run(root, lens.doneArgs as string[])).code).toBe(1);
+    const again = (await run(root, lens.resumeArgs as string[])).j;
+    expect(again).toMatchObject({
+      state: "handoff",
+      runId: lens.runId,
+      lens: "business",
+      stillWaiting: true,
+    });
+  });
+});
+
 describe("atticus bench design", () => {
   it("scores the bench's design with the assistant's mapping", async () => {
     const cache = await mkdtemp(join(tmpdir(), "atticus-design-bench-"));

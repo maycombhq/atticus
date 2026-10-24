@@ -181,6 +181,24 @@ describe("atticus critic --mode hand-off", () => {
     expect(c.out[0]).toBe("The business lens of round 1 at the plan gate raised 0 findings.");
   });
 
+  it("an empty answer or a refusal isn't a review: it is refused, and the lens is still waiting", async () => {
+    const r = await root();
+    const { waiting } = await start(r);
+    const [a, b] = waiting;
+    await write(r, a!.runId!, a!.lens, "");
+    let c = capture();
+    expect(await handoffDone(r, a!.runId!, c.io)).toBe(1);
+    expect(c.err[0]).toContain("findings-business.yaml: the output has no findings list");
+    await write(r, b!.runId!, b!.lens, "I'm sorry, but I can't help with that.\n");
+    c = capture();
+    expect(await handoffDone(r, b!.runId!, c.io)).toBe(1);
+    expect(c.err[0]).toContain("has no findings list");
+    const meta = parse(
+      await readFile(join(changesDirOf(r), CHANGE, "review/plan/1/meta/round.yaml"), "utf8"),
+    ) as { lenses: { lens: string; state: string }[] };
+    expect(meta.lenses.filter((l) => l.state === "ran")).toEqual([]);
+  });
+
   it("an answer in a fenced code block is read, as the critic's parser reads it", async () => {
     const r = await root();
     const { waiting } = await start(r);

@@ -17,7 +17,7 @@ import {
 import { HandoffRuntime } from "@maycombhq/ai";
 import { NAMING_CHANGE, NAMING_OUTPUT } from "@maycombhq/features";
 import { GLOSSARY_CHANGE, GLOSSARY_OUTPUT } from "@maycombhq/glossary";
-import { lensRunOf } from "@maycombhq/naysayer";
+import { lensAnswerProblem, lensRunOf } from "@maycombhq/naysayer";
 import {
   STORY_PROSE_OUTPUT,
   DRAFT_OUTPUT,
@@ -214,6 +214,11 @@ export async function handoffDone(
           : (await readFile(_file, "utf8").catch(() => "")).trim()
             ? []
             : [`${request.outputPath} is empty`];
+      // The code-and-test lens's review must be one, as a critic lens's must (yamlAnswerProblems).
+      if (completionOf(request) === "hand-up") {
+        const why = lensAnswerProblem(await readFile(_file, "utf8").catch(() => ""));
+        return why ? [`${request.outputPath}: ${why}`] : [];
+      }
       if (completionOf(request) !== "artifact") return yamlAnswerProblems(_file, request);
       const report = await os.validate({ item: request.change, type: "change" });
       return report.items.flatMap((i) =>

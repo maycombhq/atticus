@@ -51,6 +51,8 @@ export async function attachFiles(
   files: { name: string; bytes: Uint8Array }[],
   by: string,
   now = new Date(),
+  /** The attached file (inputs/<name>) these replace: a person's word, never a name's guess. */
+  replaces?: string,
 ): Promise<AttachResult> {
   const c = await changeStore(root)
     .read(change)
@@ -65,6 +67,7 @@ export async function attachFiles(
     by,
     at: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
     elsewhere: (h) => known.get(h),
+    ...(replaces ? { replaces } : {}),
   });
 }
 
@@ -79,17 +82,27 @@ export function attachedLine(rel: string, a: ChangeInput): string {
   return `Attached ${rel}/${a.path} (${what})${a.supersedes ? `, a newer version of ${a.supersedes}` : ""}${a.defences ? `; the defences found ${a.defences.risk} risk` : ""}.`;
 }
 
-/** atticus change attach <change> <files...> [--json]. Exit 0: all attached; 1: some refused. */
+/**
+ * atticus change attach <change> <files...> [--replaces inputs/<file>] [--json]. Exit 0: all
+ * attached; 1: some refused. With --replaces, the one file given is the newer version of that
+ * attached file (a person says so; Atticus never guesses it from the names).
+ */
 export async function changeAttachCli(
   root: string,
   change: string | undefined,
   paths: string[],
-  o: { by: string; json?: boolean; now?: Date },
+  o: { by: string; json?: boolean; now?: Date; replaces?: string },
   io: Output,
 ): Promise<number> {
   if (!change || paths.length === 0) {
     io.err(
       "Usage: atticus change attach <change> <files...>, for example: atticus change attach add-refund-window refund-rules.pdf",
+    );
+    return 2;
+  }
+  if (o.replaces && paths.length !== 1) {
+    io.err(
+      "--replaces names the one attached file that the file given replaces: attach one file with it, for example: atticus change attach add-refund-window refund-rules-v2.pdf --replaces inputs/refund-rules-v1.pdf",
     );
     return 2;
   }
@@ -105,7 +118,7 @@ export async function changeAttachCli(
   }
   let r: AttachResult;
   try {
-    r = await attachFiles(root, change, files, o.by, o.now);
+    r = await attachFiles(root, change, files, o.by, o.now, o.replaces);
   } catch (e) {
     if (e instanceof AttachError) {
       io.err(e.message);

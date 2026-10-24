@@ -32,3 +32,7 @@ What each assistant lets Atticus see differs:
 - A team sees what was asked and answered while a change was worked on, beside what Atticus's own steps asked (ADR 0106), and finds a prompt again by its words or its change.
 - The history is as private as the person's own machine: it is never committed, never sent anywhere, and an organisation or a person can turn it off.
 - What is recorded is exact about where it came from: Claude Code's prompts and replies in a metarepo, and `@atticus` in VS Code. Copilot's own chats, and anything typed in IntelliJ, are not, and every surface that shows the history says so.
+
+## Addendum (2026-10-23): a change only when it is said
+
+A record's change was the one change id its text named, matched by word. A short id (`fix`) then tagged prompts about anything. A record's change is now only an explicit one: the change the surface passes (`atticus history add --change <id>`, when it is one of the metarepo's changes), or else the branch `change/<id>`, or else none.

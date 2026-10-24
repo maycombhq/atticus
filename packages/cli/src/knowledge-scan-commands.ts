@@ -269,7 +269,11 @@ export async function knowledgeScan(
     }.`,
   );
   io.out(`Written to ${knowledgeRelOf(root)}/items/ and ${knowledgeRelOf(root)}/scan.yaml.`);
-  if (left) io.out(leftLine());
+  if (left) {
+    io.out(leftLine());
+    // As data too, for a tool that runs the batches (--handoff --json gives it as pagesLeft).
+    io.report?.({ pagesLeft: left });
+  }
   if (r.conflicts.length) {
     io.out(
       `${plural(r.conflicts.length, "conflict")} between pages (both kept, for an owner to settle):`,
