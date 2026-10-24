@@ -91,6 +91,8 @@ const AREA_BY_WORD: Record<string, string> = {
   commands: "start",
   next: "changes",
   scan: "repos",
+  verify: "repos",
+  map: "repos",
   spec: "repos",
   estate: "repos",
   "repo-type": "repos",

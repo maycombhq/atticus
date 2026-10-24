@@ -2,6 +2,7 @@ export * from "./schema/common.js";
 export * from "./schema/kinds.js";
 export * from "./schema/facts.js";
 export * from "./facts.js";
+export * from "./cite.js";
 export * from "./catalog.js";
 export * from "./identity.js";
 export * from "./serialize.js";

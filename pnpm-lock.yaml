@@ -299,6 +299,9 @@ importers:
       '@maycombhq/ui':
         specifier: workspace:*
         version: link:../ui
+      '@maycombhq/verify':
+        specifier: workspace:*
+        version: link:../verify
       '@maycombhq/workspace':
         specifier: workspace:*
         version: link:../workspace
@@ -1202,6 +1205,15 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+
+  packages/verify:
+    dependencies:
+      '@maycombhq/core':
+        specifier: workspace:*
+        version: link:../core
+      '@maycombhq/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   packages/vscode:
     devDependencies:

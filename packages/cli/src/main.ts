@@ -396,6 +396,7 @@ Usage:
           [--json]                     Print the result as JSON
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force] [--max-tokens n]
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept] [--max-tokens n]
+  atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus map) against its code: the claim on each cited line, the quote, references, secrets, coverage; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
   atticus estate join [--json]         Join each repo's call-outs to the flows their targets start; writes specs/estate.yaml
@@ -898,6 +899,9 @@ const OPTIONS = {
   session: { type: "string" },
   command: { type: "string" },
   markdown: { type: "boolean" },
+  dir: { type: "string" },
+  commit: { type: "string" },
+  routed: { type: "string" },
 } satisfies ParseArgsOptionsConfig;
 
 async function dispatchCommand(argv: string[], io: Output): Promise<number> {
@@ -1221,6 +1225,33 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       }
       throw e;
     }
+  }
+  if (group === "verify") {
+    const repo = command;
+    if (!repo) {
+      io.err("Usage: atticus verify <repo> [--dir path] [--commit sha] [--routed a,b] [--json]");
+      return 2;
+    }
+    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    const { verifyCommand } = await import("./verify-commands.js");
+    return verifyCommand(
+      root,
+      repo,
+      {
+        ...(text(values.dir) ? { dir: resolve(text(values.dir)!) } : {}),
+        ...(text(values.commit) ? { commit: text(values.commit)! } : {}),
+        ...(text(values.routed)
+          ? {
+              routed: text(values.routed)!
+                .split(",")
+                .map((x) => x.trim())
+                .filter(Boolean),
+            }
+          : {}),
+        json: values.json === true,
+      },
+      io,
+    );
   }
   if (group === "scan" && command === "verify") {
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);

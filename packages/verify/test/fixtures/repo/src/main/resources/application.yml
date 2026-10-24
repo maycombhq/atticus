@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: ledger-api
+  kafka:
+    bootstrap-servers: kafka:9092
+fx:
+  client:
+    timeout:
+      connect: 500ms
+    retries: 2
+    # the vendor
+    base-url: https://fx.northwind.example/api
+    read-timeout: 1500ms
+server:
+  port: 8080
+management:
+  endpoints: health
+spring.datasource:
+  url: jdbc:postgresql://ledger-db/ledger
+  username: ledger
+  password: ${LEDGER_DB_PASSWORD}

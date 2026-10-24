@@ -12,6 +12,7 @@ import {
   type StepRequirement,
 } from "@maycombhq/core";
 import type { RepoHandle } from "@maycombhq/sdk";
+import { fieldKey, lineNamesField, lineNamesRoute, lineNamesWord } from "@maycombhq/core";
 
 /**
  * The spec critic (ADR 0079), deterministic: it checks a repo's flows against the catalog,
@@ -83,13 +84,7 @@ type Table = RecordOf<"Table">;
 const at = (e: EvidenceT | undefined) =>
   e?.path ? `${e.path}${e.line !== undefined ? `:${e.line}` : ""}` : undefined;
 
-/** A field as compared: the last dotted part, lower case, without _ - or spaces. */
-export const fieldKey = (f: string) =>
-  f
-    .split(".")
-    .pop()!
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
+export { fieldKey, lineNamesRoute, lineNamesWord, lineNamesField } from "@maycombhq/core";
 
 /** The repo's components: those whose repo is it, or that cite it. */
 export function repoComponents(records: readonly CatalogRecord[], repoId: string): Set<string> {
@@ -232,46 +227,6 @@ export function specTriggers(
   }
   return out.sort((a, b) => a.id.localeCompare(b.id));
 }
-
-const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const PARAM = /^(\{[^}]*\}|:[^/]+|<[^>]+>|\$\{[^}]*\})$/;
-const PARAM_RE = "(?:\\{[^}]*\\}|:[A-Za-z_]\\w*|<[^>]+>|\\$\\{[^}]*\\})";
-
-/**
- * Whether a line names a route: the path, or its tail once leading segments are dropped (a
- * class-level prefix sits elsewhere), with at least one plain segment left. Parameters match
- * in any style ({id}, :id, <id>, ${id}).
- */
-export function lineNamesRoute(line: string, path: string): boolean {
-  const segs = path.split(/[?#]/, 1)[0]!.split("/").filter(Boolean);
-  for (let k = 0; k < segs.length; k++) {
-    const tail = segs.slice(k);
-    if (!tail.some((s) => !PARAM.test(s))) break;
-    const re = new RegExp(
-      `/${tail.map((s) => (PARAM.test(s) ? PARAM_RE : escape(s))).join("/")}(?![A-Za-z0-9_-])`,
-      "i",
-    );
-    if (re.test(line)) return true;
-  }
-  return false;
-}
-
-/** Whether a line names a word (a table, a topic): case aside, not inside a longer word. */
-export const lineNamesWord = (line: string, word: string) =>
-  new RegExp(`(^|[^A-Za-z0-9_])${escape(word)}($|[^A-Za-z0-9_])`, "i").test(line);
-
-/** Whether a line names a field, letter case and _ or - aside (first_name matches firstName). */
-export const lineNamesField = (line: string, field: string) => {
-  const k = fieldKey(field);
-  return (
-    k.length > 0 &&
-    line
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, " ")
-      .replace(/ /g, "")
-      .includes(k)
-  );
-};
 
 interface Claim {
   kind: "route" | "word" | "field";

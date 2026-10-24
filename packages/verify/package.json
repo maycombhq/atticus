@@ -1,0 +1,27 @@
+{
+  "name": "@maycombhq/verify",
+  "version": "1.0.0-rc.1",
+  "description": "The verifier for the facts an assistant writes (ADR 0124): the claim on the cited line, the quote, references, redaction and coverage.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=30000 --hookTimeout=60000"
+  },
+  "dependencies": {
+    "@maycombhq/core": "workspace:*",
+    "@maycombhq/sdk": "workspace:*"
+  }
+}

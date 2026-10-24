@@ -70,6 +70,16 @@ export function questionsDirOf(root: string): string {
   return join(root, ...questionsRelOf(root).split("/"));
 }
 
+/** Where the facts an assistant writes live, with forward slashes (ADR 0124): `facts`, or `.atticus/facts` when adopted. */
+export function factsRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/facts" : "facts";
+}
+
+/** The facts folder (ADR 0124): `<repo>.jsonl` the assistant writes, `<repo>.rejected.jsonl` and `<repo>.verify.yaml` the verifier writes. */
+export function factsDirOf(root: string): string {
+  return join(root, ...factsRelOf(root).split("/"));
+}
+
 /** Where judgments live (ADR 0117), relative to the root: `judgments`, or `.atticus/judgments` when adopted. */
 export function judgmentsRelOf(root: string): string {
   return isAdopted(root) ? ".atticus/judgments" : "judgments";
