@@ -3,7 +3,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
-import { CorrectForm, ItemDetail, ItemList, itemFor } from "../src/screens/knowledge/Items.js";
+import {
+  CorrectForm,
+  ItemDetail,
+  ItemList,
+  itemFor,
+  reviewKey,
+  reviewQueue,
+  stepQueue,
+} from "../src/screens/knowledge/Items.js";
 import { needTick, markBody, markedWords, NeedsView } from "../src/screens/knowledge/Needs.js";
 import { DraftPage, initialPick } from "../src/screens/knowledge/OrgPackDraft.js";
 import { PartiesPage, relations } from "../src/screens/knowledge/Parties.js";
@@ -706,5 +714,35 @@ describe("the knowledge screens, after the app review", () => {
     expect(markedWords("open")).toBe(K.needs.openAgain);
     expect(markedWords("done")).toBe("done");
     expect(markedWords("not-needed")).toBe(K.needs.markSkip.toLowerCase());
+  });
+});
+
+describe("review mode for knowledge (WP7.8)", () => {
+  it("walks the items nobody has reviewed, or whose page changed since", () => {
+    const stale: Api.KnowledgeItemViewT = {
+      ...logging,
+      id: "stale-one",
+      review: { ...logging.review!, state: "stale" },
+    };
+    const queue = reviewQueue([kafka, logging, stale, messaging]);
+    expect(queue.map((i) => i.id)).toEqual(["kafka-topic-request", "stale-one", "messaging-team"]);
+    expect(stepQueue(queue, "kafka-topic-request", 1)).toBe("stale-one");
+    expect(stepQueue(queue, "messaging-team", 1)).toBe("messaging-team");
+    expect(stepQueue(queue, "kafka-topic-request", -1)).toBe("kafka-topic-request");
+    expect(stepQueue(queue, "json-logging", 1)).toBe("kafka-topic-request");
+    expect(stepQueue([], undefined, 1)).toBeUndefined();
+  });
+
+  it("reads j, k and the arrows to move, and v, c and r to verify, correct and reject", () => {
+    expect(["j", "ArrowDown", "k", "ArrowUp", "v", "c", "r", "x"].map(reviewKey)).toEqual([
+      "next",
+      "next",
+      "prev",
+      "prev",
+      "verify",
+      "correct",
+      "reject",
+      undefined,
+    ]);
   });
 });

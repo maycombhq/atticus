@@ -21,6 +21,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### Review mode for knowledge
+
+- Knowledge items has **Review what no one has checked**: it walks the items nobody has reviewed, or whose page changed since, one after another, with the quote and its page beside the item. Keys: j or ↓ next, k or ↑ back, v verify and go on, c correct, r reject. The keys act while the item's panel has the focus, never while typing in a form.
+
 ### What passes through a line of code
 
 - VS Code's lenses over a cited line now also say which changes are in flight on a flow through it ("change add-tags is in flight here"), opening the change at a glance, and offer "what breaks if this changes" for the records read from the line, opening the Impact screen. `GET /api/cites` gives each flow's changes in flight (those whose target flows touch it).

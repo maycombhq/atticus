@@ -572,6 +572,42 @@ export function ItemFilters(p: {
   );
 }
 
+/** WP7.8: what review mode walks: items nobody has reviewed, or whose page changed since. */
+export function reviewQueue(items: Item[]): Item[] {
+  return items.filter((i) => !i.review || i.review.state === "stale");
+}
+
+/** The item before or after the current one in the queue; the first when it isn't in it. */
+export function stepQueue(
+  queue: Item[],
+  current: string | undefined,
+  dir: 1 | -1,
+): string | undefined {
+  if (!queue.length) return undefined;
+  const at = queue.findIndex((i) => i.id === current);
+  if (at < 0) return queue[0]!.id;
+  return queue[Math.min(queue.length - 1, Math.max(0, at + dir))]!.id;
+}
+
+/** Review mode's keys: j/k (or the arrows) move, v verifies, c corrects, r rejects. */
+export function reviewKey(
+  key: string,
+): "next" | "prev" | "verify" | "correct" | "reject" | undefined {
+  return (
+    {
+      j: "next",
+      ArrowDown: "next",
+      k: "prev",
+      ArrowUp: "prev",
+      v: "verify",
+      c: "correct",
+      r: "reject",
+    } as const
+  )[key as "j"];
+}
+
+const itemHash = (id: string) => `#/knowledge?item=${encodeURIComponent(id)}`;
+
 export function KnowledgeItems({ hash }: { hash: string }) {
   const list = useApi<Api.KnowledgeItemListT>("/api/knowledge/items");
   const current = queryParam(hash, "item");
@@ -581,6 +617,7 @@ export function KnowledgeItems({ hash }: { hash: string }) {
   const [open, setOpen] = useState<{ id: string; mode: "correct" | "reject" } | undefined>();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ ok: boolean; text: string; working?: boolean } | undefined>();
+  const [reviewing, setReviewing] = useState(false);
   // A note is about the item it was made on: picking another clears it.
   useEffect(() => setNote(undefined), [current]);
   useLiveEvents((e) => {
@@ -588,8 +625,14 @@ export function KnowledgeItems({ hash }: { hash: string }) {
   });
   const { item, missing } =
     list.state === "ready" ? itemFor(list.data.items, current) : ({} as ReturnType<typeof itemFor>);
+  const queue = list.state === "ready" ? reviewQueue(list.data.items) : [];
+  const go = (id: string | undefined) => {
+    if (id) window.location.hash = itemHash(id);
+  };
   const onReview = (body: Record<string, unknown>, ok: string) => {
     if (!item) return;
+    // In review mode a verdict moves on to the next item that waits for one.
+    const after = reviewing ? stepQueue(queue, item.id, 1) : undefined;
     setBusy(true);
     setNote({ ok: true, text: COPY.app.working, working: true });
     api<unknown>(`/api/knowledge/items/${encodeURIComponent(item.id)}/review`, {
@@ -600,6 +643,7 @@ export function KnowledgeItems({ hash }: { hash: string }) {
         setNote({ ok: true, text: ok });
         setOpen(undefined);
         list.reload();
+        if (after && after !== item.id) go(after);
       })
       .catch((e: unknown) => setNote({ ok: false, text: message(e) }))
       .finally(() => setBusy(false));
@@ -610,6 +654,21 @@ export function KnowledgeItems({ hash }: { hash: string }) {
         <p className="work-say" style={{ marginTop: 0 }}>
           {I.intro} <RunsLink q="knowledge" label={COPY.runs.knowledge} />
         </p>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          <button
+            type="button"
+            className="btn"
+            aria-pressed={reviewing}
+            disabled={!reviewing && queue.length === 0}
+            onClick={() => {
+              const on = !reviewing;
+              setReviewing(on);
+              if (on && !queue.some((i) => i.id === current)) go(stepQueue(queue, current, 1));
+            }}
+          >
+            {reviewing ? I.reviewStop : I.reviewStart(queue.length)}
+          </button>
+        </div>
         <ItemFilters text={text} kind={kind} onText={setText} onKind={setKind} />
         <ItemList
           of={list}
@@ -624,7 +683,30 @@ export function KnowledgeItems({ hash }: { hash: string }) {
       </Panel>
       <Panel title={item?.title ?? I.open} span="span 7" labelledBy="item-detail">
         {item ? (
-          <>
+          <div
+            // Review mode (WP7.8): the keys act on this item while the panel has the focus.
+            tabIndex={reviewing ? 0 : undefined}
+            role={reviewing ? "group" : undefined}
+            aria-label={reviewing ? I.reviewStop : undefined}
+            aria-keyshortcuts={reviewing ? "j k v c r" : undefined}
+            onKeyDown={(e) => {
+              if (!reviewing || open || busy) return;
+              const t = e.target as HTMLElement;
+              if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+              const a = reviewKey(e.key);
+              if (!a) return;
+              e.preventDefault();
+              if (a === "next" || a === "prev")
+                go(stepQueue(queue, item.id, a === "next" ? 1 : -1));
+              else if (a === "verify") onReview({ verdict: "verified" }, I.verified(item.id));
+              else setOpen({ id: item.id, mode: a });
+            }}
+          >
+            {reviewing && (
+              <p className="muted" style={{ margin: "0 0 8px", fontSize: 12.5 }}>
+                {I.reviewKeys(queue.length)}
+              </p>
+            )}
             <ItemDetail
               key={item.id}
               item={item}
@@ -634,7 +716,7 @@ export function KnowledgeItems({ hash }: { hash: string }) {
               onMode={(m) => setOpen(m ? { id: item.id, mode: m } : undefined)}
             />
             <Note note={note} />
-          </>
+          </div>
         ) : (
           <div className="state">{missing ? I.missing(missing) : I.pick}</div>
         )}

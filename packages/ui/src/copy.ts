@@ -384,6 +384,11 @@ export const COPY = {
         "There are no knowledge items yet. Sync a source on the Knowledge sources page, then read it with your assistant.",
       noMatch: "No item matches.",
       pick: "Pick an item to see it and review it.",
+      reviewStart: (n: number) =>
+        n ? `Review what no one has checked (${n})` : "Nothing waits for a review",
+      reviewStop: "Stop reviewing",
+      reviewKeys: (n: number) =>
+        `Review mode, ${n} waiting: j or ↓ next, k or ↑ back, v verify and go on, c correct, r reject.`,
       missing: (id: string) =>
         `There is no knowledge item ${id}: a rescan may have removed it, or the link is wrong. Pick one from the list.`,
       count: (n: number) => `${n} item${n === 1 ? "" : "s"}`,
