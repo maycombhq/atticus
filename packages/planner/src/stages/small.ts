@@ -16,6 +16,7 @@ import { changeInputSources } from "@maycombhq/intake";
 import { readKnowledge } from "@maycombhq/knowledge";
 import { PlannerError } from "../errors.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
+import { recordKnowledge } from "./knowledge-applies.js";
 import { parseYamlAs } from "./answer.js";
 import {
   checkDeltas,
@@ -554,6 +555,7 @@ export async function smallStage(
   };
   const res = await runStageLoop(root, change.id, spec, o);
   res.context = context;
+  await recordKnowledge(root, change.id, "small", context);
   res.notes.unshift(size.words);
   const d = res.answer ? derive(res.answer) : undefined;
   return { ...res, stories: d?.stories ?? [], requests: d?.requests ?? [], size: size.words };

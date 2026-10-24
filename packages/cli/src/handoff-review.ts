@@ -1,6 +1,7 @@
 import { readRound, reviewedGates, roundsOf } from "@maycombhq/naysayer";
 import { changeMapBody, changeMapOf } from "./change-map.js";
 import { estimateOf } from "./change-estimate.js";
+import { knowledgeAppliesMarkdown, readKnowledgeApplies } from "@maycombhq/planner";
 
 /**
  * A hand-off PR that reviews itself (WP7.4): the parts of the PR body an approver would
@@ -21,6 +22,9 @@ export async function handoffReview(root: string, change: string): Promise<strin
     lines.push("```mermaid", changeMapBody(change, map).mermaid.trimEnd(), "```", "");
     lines.push(`From ${map.flows} target flow${map.flows === 1 ? "" : "s"} in ${map.source}.`, "");
   } else lines.push("No target flows yet: the architecture stage writes them.", "");
+
+  const applies = await readKnowledgeApplies(root, change).catch(() => undefined);
+  if (applies) lines.push(knowledgeAppliesMarkdown(applies).trimEnd(), "");
 
   lines.push("### Estimate", "");
   const est = await estimateOf(root, change).catch(() => undefined);

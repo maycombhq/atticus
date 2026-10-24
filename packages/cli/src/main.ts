@@ -502,6 +502,7 @@ Usage:
   atticus change attach <change> <files...>  Attach a spec, screenshot, PDF, email export or document to a change: copied into its inputs/, read and cited by line or page, read by its steps [--replaces inputs/<file>] [--promote inputs/<file>: copy one into general knowledge] [--like <archived change>: attach an earlier change as an example] [--json]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m] [--max-tokens n]
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
+  atticus change knowledge <id>        The wiki sections, documents, patterns, decisions and processes that apply to the change, picked by its stages, with near-misses; confirm or exclude one (an excluded item stays out of later stages) [--confirm id] [--exclude id] [--json]
   atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
                                        (without --approve: say what it would open, send nothing)
   atticus change sync <id> [--approve]   Read the hand-off PR; a merged PR moves the change on (--approve merges a ready one)
@@ -901,6 +902,8 @@ const OPTIONS = {
   markdown: { type: "boolean" },
   dir: { type: "string" },
   commit: { type: "string" },
+  confirm: { type: "string" },
+  exclude: { type: "string" },
   routed: { type: "string" },
 } satisfies ParseArgsOptionsConfig;
 
@@ -2406,6 +2409,19 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       return 2;
     }
     if (command === "status") return changeStatus(root, arg, { json }, io);
+    if (command === "knowledge") {
+      const { changeKnowledge } = await import("./knowledge-applies-commands.js");
+      return changeKnowledge(
+        root,
+        arg,
+        {
+          ...(str(values.confirm) ? { confirm: str(values.confirm)! } : {}),
+          ...(str(values.exclude) ? { exclude: str(values.exclude)! } : {}),
+          json,
+        },
+        io,
+      );
+    }
     const approve = values.approve === true;
     if (command === "handoff")
       return changeHandoff(

@@ -150,6 +150,8 @@ Decided on 2026-10-24 (ADR 0124, from the design "Atticus 2 — AI Reads, Code V
 - [ ] **A3. The `/atticus map` skill and the renderers.** The reading protocol for Claude Code, Copilot agent mode and the batched hand-off tier (file batches sized to the limit, ADR 0112); the capability probe; `map.md`, `flows/`, `contracts/` (OpenAPI) and `questions/` rendered from the projected records. Tests with the mock and replay runtimes.
 - [ ] **A4. The measure.** Fields and config added to five bench references; one run of the assistant reading batch 1 with the verifier on, recall, precision, coverage and model cost per repo recorded in `bench/README.md`; the Phase B bar set from the numbers (working targets: 85% recall, 95% precision, 80% of reference flow steps in order).
 
+- [x] **B-knowledge. The knowledge that applies to a change, listed** (Part 5 of the design): every stage's selection writes the knowledge items it picked (patterns, standards, decisions, processes, vendors, terms, wiki and document sections) with why, the stages that used them and the near-misses into `knowledge.yaml` in the change folder; `atticus change knowledge <id> [--confirm id] [--exclude id]`; an excluded item stays out of every later stage's selection; the hand-off PR's review shows "Applies to this change". Not yet: the app's Change screen tab (Phase D), and a story's Context linking the items its criteria drew on (Phase B stories rework).
+
 Phases B to D (one change end to end with the stories bench and `knowledge.yaml`; the estate; surfaces, flags and the release) follow the design doc and are ticketed when Phase A's numbers are in.
 
 ### B. The core loop: scan → change → stories (what the product is for)

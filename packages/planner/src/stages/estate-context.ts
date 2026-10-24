@@ -18,6 +18,7 @@ import {
   type RetrievalAi,
 } from "../engine.js";
 import { fitGapSources, gapContext } from "../gaps.js";
+import { excludedKnowledge } from "./knowledge-applies.js";
 import { briefEndpointsSource } from "./brief-endpoints.js";
 import { ESTATE_HEADING, ESTATE_KINDS, estateLine, flowSummary, type Estate } from "./estate.js";
 
@@ -75,6 +76,8 @@ export async function estateContext(
   | undefined
 > {
   if (!useEngine(step, o.context)) return undefined;
+  // Knowledge a person excluded from this change stays out of every later selection (Part 5).
+  const excluded = o.change ? await excludedKnowledge(root, o.change) : [];
   const room = roomFor(o.budget, o.others, o.context);
   const e = o.estate;
   const kinds = [...(e ? ESTATE_KINDS : []), ...(o.knowledge?.kinds ?? [])];
@@ -94,7 +97,7 @@ export async function estateContext(
       ...(order ? { order } : {}),
       kinds,
       groups: [...(e ? ["catalog", "flow"] : []), ...(o.knowledge ? ["knowledge"] : [])],
-      exclude: o.exclude ?? [],
+      exclude: [...(o.exclude ?? []), ...excluded],
       render: (n, level) => render(n, level) ?? `${n.kind} ${n.id}`,
     });
   // ADR 0116: the model's expansion (and, at the final room, its rerank) where they are on; either

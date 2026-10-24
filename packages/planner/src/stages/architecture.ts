@@ -21,6 +21,7 @@ import {
 import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
 import { readPlacement } from "./feature.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
+import { recordKnowledge } from "./knowledge-applies.js";
 import { estateContext } from "./estate-context.js";
 import {
   runStageLoop,
@@ -1914,6 +1915,7 @@ export async function architectureStage(
       : o,
   );
   res.context = context;
+  await recordKnowledge(root, change.id, "architecture", context);
   if (!approved)
     res.notes.unshift(
       `The feature PR of ${change.id} isn't merged yet, so these target flows rest on a feature a person hasn't approved.`,

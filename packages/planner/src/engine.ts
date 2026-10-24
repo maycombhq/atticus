@@ -164,7 +164,16 @@ export interface ContextReport {
   budget?: number;
   /** Tokens it used. */
   tokens?: number;
-  picked: { id: string; kind: string; level: "full" | "line"; score: number }[];
+  picked: {
+    id: string;
+    kind: string;
+    level: "full" | "line";
+    score: number;
+    /** Where it lives, when the index knows (knowledge items: their file; ADR 0124, Part 5). */
+    file?: string;
+    /** Why it was picked: named, a search hit, or the link it was reached by. */
+    via?: string;
+  }[];
   /** What didn't fit, by score; why, when a model's rerank judged it not needed (ADR 0116). */
   leftOut: { id: string; kind: string; score: number; why?: string }[];
   /** Names the input uses that the index has nothing for. */
@@ -255,7 +264,14 @@ export function reportOf(s: ContextSelection, budget: number): ContextReport {
     engine: true,
     budget,
     tokens: s.tokens,
-    picked: s.picked.map((p) => ({ id: p.id, kind: p.kind, level: p.level, score: p.score })),
+    picked: s.picked.map((p) => ({
+      id: p.id,
+      kind: p.kind,
+      level: p.level,
+      score: p.score,
+      ...(p.file ? { file: p.file } : {}),
+      ...(p.via ? { via: p.via } : {}),
+    })),
     leftOut: s.leftOut,
     unknown: s.unknown,
     version: s.version,

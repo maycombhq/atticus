@@ -17,3 +17,4 @@ export * from "./engine.js";
 export * from "./gaps.js";
 export * from "./task-context.js";
 export * from "./conform.js";
+export * from "./stages/knowledge-applies.js";

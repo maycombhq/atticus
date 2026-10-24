@@ -7,6 +7,7 @@ import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@
 import { changeInputSources } from "@maycombhq/intake";
 import { PlannerError } from "../errors.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
+import { recordKnowledge } from "./knowledge-applies.js";
 import { estateContext } from "./estate-context.js";
 import { GENERATED_MARK } from "../render.js";
 import { parseYamlAs } from "./answer.js";
@@ -496,6 +497,7 @@ export async function featureStage(
       : o,
   );
   res.context = context;
+  await recordKnowledge(root, change.id, "feature", context);
   // The result carries what was written: the conflicts and design gaps Atticus added.
   if (res.answer) res.answer = (await readPlacement(dir)) ?? res.answer;
   return res;

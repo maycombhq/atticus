@@ -35,6 +35,7 @@ import { readKnowledge } from "@maycombhq/knowledge";
 import { mergeStoryRequests } from "../needs.js";
 import { PlannerError } from "../errors.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
+import { recordKnowledge } from "./knowledge-applies.js";
 import { estateContext } from "./estate-context.js";
 import { GENERATED_MARK } from "../render.js";
 import { slug } from "../words.js";
@@ -1470,6 +1471,7 @@ Rules:
       : o,
   );
   res.context = context;
+  await recordKnowledge(root, change.id, "stories", context);
   res.notes.unshift(...settled.notes);
   if (empty.length)
     res.notes.unshift(
