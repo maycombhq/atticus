@@ -1,4 +1,5 @@
 import { zeroInstallCommands, type CommandDef, type Layout } from "./commands.js";
+import { FACT_RULES, factsReference } from "./map.js";
 
 /**
  * The slash commands for the steps of the revamp (plan principle 8 and 4.8, ADR 0086), the way
@@ -61,8 +62,34 @@ const step = (
   text: string,
 ): CommandDef => ({ name, description, argumentHint, source: SOURCE, body: text });
 
+/**
+ * `/atticus-map` (ADR 0124 §4, the agentic tier): the reading protocol for an assistant that
+ * opens files and runs commands itself. Outline first, read whole only the files that hold facts,
+ * write one cited fact per line, ask what the code can't settle, and loop on `atticus verify`.
+ */
+export function mapCommand(): CommandDef {
+  return step(
+    "atticus-map",
+    "Read a repo into facts, each citing its file and line; Atticus checks every one and you loop until all pass.",
+    "[repo]",
+    body(
+      "Read the repo {{ARGS}} into facts: what it answers to, what it calls, the data it reads and writes, the fields that cross those boundaries, how it is deployed and the config it depends on. Every fact cites the line it rests on; Atticus checks the claim on that line.",
+      [
+        "Run `atticus map {{ARGS}} --estimate`. It prints the repo's folder, the commit to read and the facts file to write (facts/<repo>.jsonl in a metarepo, or under .atticus/ in a repo adopted in place). If it says there is no checkout, tell the person what it printed and stop.",
+        "Outline the repo before you read it: list its tree, read its build and deploy files (pom.xml, build.gradle, package.json, *.csproj, Dockerfile, pipeline and Kubernetes files) and find its entry points (main classes, controllers, routes, listeners, schedulers, handlers).",
+        "Read whole only the files that hold entries, calls, stores, fields, deploys or config. Search or outline the rest; don't read every file.",
+        `Write the facts file: one JSON object per line, in this shape (generated from the schema Atticus checks with):\n\n${factsReference()}\n\n${FACT_RULES}`,
+        "Write what the code can't settle (which host is production, whether a folder is generated) to `<repo>.questions.jsonl` beside the facts file, one question per line in the shape above. Never guess, and never answer a question yourself.",
+        "Run `atticus verify {{ARGS}}`. While it exits 1, read `<repo>.rejected.jsonl` beside the facts file: for each fact in it, read the cited lines again, then rewrite the fact in the facts file or drop it. Run `atticus verify {{ARGS}}` again, until it exits 0.",
+        "Then read the files `<repo>.verify.yaml` lists as `unknown`, add their facts and verify again. Generated or vendored code isn't read: propose an exclusion (`exclude: [{path: \"<glob>\"}]` in the org pack's `scan/<repo>.yaml`) for the person to accept in a pull request; never write it yourself.",
+      ],
+    ),
+  );
+}
+
 export function stepCommands(): CommandDef[] {
   return [
+    mapCommand(),
     step(
       "atticus-survey",
       "Draft a repo's scan settings with your assistant; Atticus checks them against the code.",

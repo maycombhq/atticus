@@ -58,6 +58,7 @@ const METAREPO_PATHS = [
   ".claude/commands/atticus-impact.md",
   ".claude/commands/atticus-knowledge-ask.md",
   ".claude/commands/atticus-knowledge.md",
+  ".claude/commands/atticus-map.md",
   ".claude/commands/atticus-needs.md",
   ".claude/commands/atticus-next.md",
   ".claude/commands/atticus-plan.md",
@@ -95,6 +96,7 @@ const METAREPO_PATHS = [
   ".github/prompts/atticus-impact.prompt.md",
   ".github/prompts/atticus-knowledge-ask.prompt.md",
   ".github/prompts/atticus-knowledge.prompt.md",
+  ".github/prompts/atticus-map.prompt.md",
   ".github/prompts/atticus-needs.prompt.md",
   ".github/prompts/atticus-next.prompt.md",
   ".github/prompts/atticus-plan.prompt.md",
@@ -255,6 +257,8 @@ const STEPS: [name: string, run: string | undefined][] = [
   ["atticus-needs", "atticus change needs"],
   ["atticus-find", "atticus knowledge find"],
   ["atticus-next", undefined],
+  // ADR 0124: the agentic read loops on atticus verify, not on a hand-off.
+  ["atticus-map", undefined],
 ];
 
 describe("step slash commands (ADR 0086)", () => {
@@ -275,6 +279,7 @@ describe("step slash commands (ADR 0086)", () => {
     [".github/prompts/atticus-architecture.prompt.md", "atticus-architecture.prompt.md"],
     [".github/prompts/atticus-task.prompt.md", "atticus-task.prompt.md"],
     [".claude/commands/atticus-small.md", "atticus-small.claude.md"],
+    [".claude/commands/atticus-map.md", "atticus-map.claude.md"],
   ] as const)
     it(`${rel} matches its golden file`, async () => {
       const want = (await readFile(join(STEP_GOLDEN, golden), "utf8")).replace(/\r\n/g, "\n");

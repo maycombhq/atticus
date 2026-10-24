@@ -772,6 +772,12 @@ export const COPY = {
         what: "Says the next step to take, its command and why.",
       },
       {
+        name: "/atticus-map",
+        args: "<repo>",
+        where: "metarepo",
+        what: "Reads a repo into facts, each citing its line; Atticus checks every one and the assistant loops until all pass.",
+      },
+      {
         name: "/atticus-survey",
         args: "<repo>",
         where: "metarepo",
