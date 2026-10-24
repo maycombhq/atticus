@@ -4,12 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
-<<<<<<< HEAD
 ### A path written across lines can be cited (ADR 0124, A4)
 
 - **`cite.with`** in a fact: the other lines its path is built from (a class prefix, a base URL, a context path, a route template, a proto package). `atticus verify` checks every part is written on one of the lines.
 - A route template without a leading slash (`[HttpPost("upload")]`) now verifies; config keys with `:` or `__` (`ConnectionStrings:Default`) are read by their last part; `TokenUrl` is no longer taken for a secret.
-=======
+
 ### The app has six entries; everything else is behind `atticus ui --full` (ADR 0124 addendum D-app)
 
 - The menu is **Home**, **Map** (Estate canvas, Flows, Contracts, Impact and Trust), **Change** (a tab per stage: Feature design, Architecture, Stories, Tasks), **Questions**, **Knowledge** (items, sources, documents, search) and **Set up** (Repos, AI, Org pack). A change's At a glance and its list are linked from every stage tab.
@@ -17,7 +16,6 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **Map › Trust** says, per repo, how far to trust its map: the facts the verifier kept and rejected, how much of the code they cover and which files no fact cites, whether the facts are of the commit the checkout is at, whether the catalog is built from the facts or the built-in readers, and the command to run next (`GET /api/trust`, API 2.22.0).
 - **Change › Feature design** lists the org knowledge that applies to the change (`knowledge.yaml`), with Confirm and Exclude. The app writes the file and shows the `git commit` command to run (`GET /api/changes/{id}/knowledge`, `POST /api/changes/{id}/knowledge/{item}`).
 - The app now also updates when `facts/` changes, and the tour names the six entries.
->>>>>>> worktree-agent-aac973042dce34c0a
 
 ### Your assistant reads a repo into facts, at any tier (ADR 0124, A3a)
 
