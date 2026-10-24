@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { splitForms, type CatalogRecord } from "@maycombhq/core";
 import type { Db } from "./db.js";
+import { nodeText } from "./vectors.js";
 import {
   documentNodes,
   foldName,
@@ -62,6 +63,8 @@ CREATE INDEX reviews_item ON reviews (item);
 CREATE INDEX reviews_file ON reviews (file);
 CREATE VIRTUAL TABLE fts USING fts5(key UNINDEXED, name, ids, body, words, tokenize = 'porter unicode61');
 CREATE TABLE selections (key TEXT PRIMARY KEY, json TEXT NOT NULL);
+CREATE TABLE node_text (key TEXT PRIMARY KEY, text_sha TEXT NOT NULL, text TEXT NOT NULL, file TEXT NOT NULL);
+CREATE INDEX node_text_file ON node_text (file);
 `;
 
 /** The kinds a mention can name (ADR 0107): systems, components, vendors and teams, products. */
@@ -278,7 +281,16 @@ export async function updateIndex(
   db.exec("BEGIN IMMEDIATE");
   try {
     const drop = (path: string) => {
-      for (const t of ["records", "refs", "evidence", "nodes", "names", "links", "reviews"])
+      for (const t of [
+        "records",
+        "refs",
+        "evidence",
+        "nodes",
+        "names",
+        "links",
+        "reviews",
+        "node_text",
+      ])
         db.prepare(`DELETE FROM ${t} WHERE file = ?`).run(path);
     };
     const dropFts = db.prepare(
@@ -304,6 +316,8 @@ export async function updateIndex(
       "INSERT INTO fts (key, name, ids, body, words) VALUES (?, ?, ?, ?, ?)",
     );
     const delFtsKey = db.prepare("DELETE FROM fts WHERE key = ?");
+    // ADR 0116: what each node is embedded as, by the hash its vector is kept under.
+    const insText = db.prepare("INSERT OR REPLACE INTO node_text VALUES (?, ?, ?, ?)");
     const upFile = db.prepare("INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?, ?)");
     let catalogChanged = removed.some((p) => known.has(p));
     const fresh: string[] = [];
@@ -359,6 +373,8 @@ export async function updateIndex(
           n.mentions ? 1 : 0,
           n.json ?? null,
         );
+        const t = nodeText(n);
+        insText.run(n.key, sha(t), t, f.path);
         // ADR 0116: the words its identifiers are made of (renamedAt → renamed at), searched too.
         insFts.run(
           n.key,

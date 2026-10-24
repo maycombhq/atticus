@@ -115,17 +115,38 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "search",
     description:
-      "Search everything the index holds by words: catalog records, knowledge items, flows and their steps, changes, answered questions and wiki sections; names and ids rank first (atticus query --search). Each hit names the file it was read from.",
+      "Search everything the index holds by words and meaning: catalog records, knowledge items, flows and their steps, changes, answered questions, wiki sections and documents; names and ids rank first, and with the local embedding model what is similar in meaning ranks too (atticus query --search). Each hit names the file it was read from.",
     args: [
       s("text", "The words to look for."),
       s("kind", "Only these kinds, comma-separated (System, Flow, ProcessDefinition...).", false),
+      {
+        name: "by",
+        description: "words, meaning or both (the default: both, words only without the model).",
+        choices: ["words", "meaning", "both"],
+      },
     ],
     argv: (a) => [
       "query",
       String(a.text),
       "--search",
       ...(a.kind ? ["--kind", String(a.kind)] : []),
-      "--json",
+      "--by",
+      String(a.by ?? "both"),
+    ],
+  },
+  {
+    name: "similar",
+    description:
+      "What reads like one id, by the local embedding model: records, items, sections and documents near it in meaning. A hint where to look, never a link or a fact (atticus context similar).",
+    args: [
+      s("id", "The id to start from."),
+      s("kind", "Only these kinds, comma-separated.", false),
+    ],
+    argv: (a) => [
+      "context",
+      "similar",
+      String(a.id),
+      ...(a.kind ? ["--kind", String(a.kind)] : []),
     ],
   },
   {

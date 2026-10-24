@@ -94,6 +94,28 @@ function licenceText(dir) {
   return f ? readFileSync(join(dir, f), "utf8") : undefined;
 }
 
+/**
+ * Files no bundle may carry, whatever package brings them (ADR 0116): DirectML and its shader
+ * compiler come with onnxruntime-node under Microsoft's own redistribution terms, which aren't
+ * on the allowed list. Each as { file, why }.
+ */
+export function forbiddenFiles(deployDir) {
+  const out = [];
+  const walk = (d) => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const f = join(d, e.name);
+      if (e.isDirectory()) walk(f);
+      else if (/^(DirectML|dxcompiler|dxil)\.dll$/i.test(e.name))
+        out.push({
+          file: f,
+          why: "DirectML's licence isn't on the allowed list (ADR 0052, 0116); ship the CPU build only",
+        });
+    }
+  };
+  if (existsSync(join(deployDir, "node_modules"))) walk(join(deployDir, "node_modules"));
+  return out;
+}
+
 /** Every package in a deployed folder: { name, version, licence, text, own }. */
 export function inventory(deployDir) {
   const out = new Map();
@@ -104,12 +126,21 @@ export function inventory(deployDir) {
     if (!pkg.name || !pkg.version) return;
     const key = `${pkg.name}@${pkg.version}`;
     if (out.has(key)) return;
+    // ADR 0116: the bundled embedding model is a third party's weights, not Atticus's own code.
+    const m = pkg.atticusModel;
     out.set(key, {
       name: pkg.name,
       version: pkg.version,
       licence: licenceOf(pkg),
       text: licenceText(dir),
-      own: pkg.name.startsWith("@maycombhq/"),
+      own: pkg.name.startsWith("@maycombhq/") && !m,
+      ...(m
+        ? {
+            model: m.name,
+            purl: `pkg:generic/${m.name}@${m.sha256.slice(0, 12)}${m.source ? `?download_url=${encodeURIComponent(m.source)}` : ""}`,
+            hashes: [{ alg: "SHA-256", content: m.sha256 }],
+          }
+        : {}),
     });
     // Files a package vendors (a prebuilt grammar, ADR 0060), each with its own licence.
     const vendored = join(dir, "grammars", "vendored.json");
@@ -169,8 +200,8 @@ export function cyclonedx(items, o) {
     components: items
       .filter((i) => i.name !== "@maycombhq/cli")
       .map((i) => ({
-        type: "library",
-        name: i.name,
+        type: i.model ? "machine-learning-model" : "library",
+        name: i.model ?? i.name,
         version: i.version,
         purl: i.purl ?? purl(i),
         ...(i.hashes ? { hashes: i.hashes } : {}),

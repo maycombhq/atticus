@@ -333,6 +333,24 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
         : "no editor listed in runtime.yaml",
     fix: "Change worktrees open as VS Code or IntelliJ workspaces: install one, or add its command to PATH.",
   });
+  // ADR 0116: the local embedding model for "similar in meaning", when runtime.yaml turns it on.
+  {
+    const { embeddingState, runtimeAvailable } = await import("@maycombhq/embed");
+    const e = await embeddingState(root);
+    const ort = e.setting === "off" ? undefined : await runtimeAvailable(root);
+    out.push({
+      id: "embeddings",
+      label: "Embedding model",
+      status: e.setting === "off" ? "ok" : e.problem || !ort ? "warn" : "ok",
+      detail:
+        e.setting === "off"
+          ? "off (runtime.yaml retrieval.embeddings); the context engine searches by words and names"
+          : e.problem
+            ? e.problem
+            : `${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}) in ${e.dir}; runtime: ${ort ?? "none found"}`,
+      fix: "Install the offline bundle that carries the model, or point retrieval.embeddings.model at a model folder, then run atticus index embed. Until then the context engine searches by words and names only.",
+    });
+  }
   const live = Object.entries(rt.adapters).filter(
     ([, a]) => a && a.type !== "mock" && a.type !== "manual",
   );

@@ -41,12 +41,30 @@
   budget: 4000
   must: [northwind-pay]
   never: []
+  # With no model, only the names the input marks by its form (an endpoint, a name in backticks).
+  unknown: [POST /v3/risk-scores]
+
+# The same brief with a model's reading of it (ADR 0116, the planner's expansion, written here by
+# hand): the names it found; the index only checks that it has nothing for each.
+- name: a brief that names a vendor the estate has never heard of, read by a model
+  input:
+    text: |
+      # Score orders with Quillfeather Risk
+
+      Send each new order to Quillfeather Risk and to Northwind Pay before stock is reserved,
+      through POST /v3/risk-scores.
+    expansion: { terms: [fraud score], ids: [northwind-pay], unknown: [Quillfeather Risk] }
+  kinds: [System, Component, Flow, Endpoint]
+  budget: 4000
+  must: [northwind-pay]
+  never: []
   unknown: [POST /v3/risk-scores, Quillfeather Risk]
 
-# The unknown names, without the false positives (ADR 0107 addendum, point 5): words that
-# start a sentence or a Given/When/Then, days and months, fields, files and commands in
-# backticks, a known name with a generic word after it (Northwind Pay API, Forge Shop UI), and a
-# name a wiki section already says something about (the security questionnaire) are not gaps.
+# The unknown names, without the false positives (ADR 0107 addendum, point 5; ADR 0116): which
+# capitalised words are names is the model's to say (its reading, written here by hand, names
+# more than are gaps); fields, files and commands in backticks are not names, and the index's
+# fact check leaves out a known name with a generic word after it (Northwind Pay API, Forge Shop
+# UI) and a name a wiki section already says something about (the security questionnaire).
 # What is left is what neither the wikis nor the repos say.
 - name: a brief full of capitalised words that are not names
   input:
@@ -62,6 +80,10 @@
 
       Ask Quillfeather Risk, and the Brambleford Ledger Service keeps the held orders in
       `forge-hold-store`. Acceptance Criteria and Open Questions follow.
+    expansion:
+      terms: [held orders]
+      ids: [northwind-pay]
+      unknown: [Brambleford Ledger Service, Forge Shop UI, Northwind Pay API, Quillfeather Risk, Security Questionnaire]
   kinds: [System, Component, Flow, Endpoint]
   budget: 4000
   must: [northwind-pay]

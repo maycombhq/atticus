@@ -87,7 +87,7 @@ describe("atticus context (ADR 0107 addendum)", { timeout: 120_000 }, () => {
       tools: { name: string; inputSchema: object }[];
       limits: { rounds: number; tokens: number };
     };
-    expect(j.tools.map((t) => t.name)).toEqual(["search", "show", "walk", "show_code"]);
+    expect(j.tools.map((t) => t.name)).toEqual(["search", "show", "walk", "show_code", "similar"]);
     expect(j.limits.rounds).toBeGreaterThan(0);
   });
 
@@ -134,7 +134,7 @@ describe("atticus context (ADR 0107 addendum)", { timeout: 120_000 }, () => {
     ]);
     const shown = await run(root, "runs", "show", RUN);
     expect(shown.out).toMatch(
-      /Tools offered: search, show, walk, show_code; the model called them 2 times\./,
+      /Tools offered: search, show, walk, show_code, similar; the model called them 2 times\./,
     );
     expect(shown.out).toMatch(/Round 2: show_code \{"id":"nope"\} \(refused\)/);
     const list = await run(root, "runs");

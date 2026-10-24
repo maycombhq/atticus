@@ -1,4 +1,11 @@
-import { impact, openIndex, QueryError, translate, type CatalogIndex } from "@maycombhq/index";
+import {
+  impact,
+  openIndex,
+  QueryError,
+  runContextTool,
+  translate,
+  type CatalogIndex,
+} from "@maycombhq/index";
 import type { Output } from "./commands.js";
 
 /** Lay rows out in columns, with a header. */
@@ -96,9 +103,34 @@ export async function queryCommand(
 export async function searchCommand(
   root: string,
   text: string,
-  o: { json?: boolean; limit?: number; kind?: string },
+  o: { json?: boolean; limit?: number; kind?: string; by?: string },
   io: Output,
 ): Promise<number> {
+  // ADR 0116: by meaning too, through the search tool (it fuses the words and the meaning).
+  if (o.by && o.by !== "words") {
+    if (o.by !== "meaning" && o.by !== "both") {
+      io.err("--by is words, meaning or both.");
+      return 2;
+    }
+    const ix = await openIndex(root);
+    try {
+      const kinds = o.kind
+        ?.split(",")
+        .map((k) => k.trim())
+        .filter(Boolean);
+      io.out(
+        await runContextTool(ix, root, "search", {
+          text,
+          by: o.by,
+          limit: Math.min(o.limit ?? 20, 20),
+          ...(kinds?.length ? { kinds } : {}),
+        }),
+      );
+      return 0;
+    } finally {
+      ix.close();
+    }
+  }
   return withIndex(root, io, (ix) => {
     const kinds = o.kind
       ? o.kind
@@ -158,6 +190,39 @@ export async function impactCommand(
     }
     return 0;
   });
+}
+
+/**
+ * atticus index embed (ADR 0116): give every node its vector from the local embedding model, so
+ * "similar in meaning" can rank. A first build of a big estate takes minutes; after that only
+ * changed texts are embedded (a step does those as it opens the index).
+ */
+export async function indexEmbed(root: string, io: Output): Promise<number> {
+  const ix = await openIndex(root, { embedOnOpen: 0 });
+  try {
+    const before = ix.meaning();
+    if (!ix.embedder) {
+      io.err(`${before.note}. Set retrieval.embeddings.model in the org pack's runtime.yaml.`);
+      return 1;
+    }
+    let last = Date.now();
+    const n = await ix.embed({
+      progress: (done, of) => {
+        if (Date.now() - last > 5000 || done === of) {
+          io.out(`Embedded ${done} of ${of}`);
+          last = Date.now();
+        }
+      },
+    });
+    const after = ix.meaning();
+    io.out(`${n ? `Embedded ${n} new text${n === 1 ? "" : "s"}. ` : ""}${after.note}.`);
+    return after.on ? 0 : 1;
+  } catch (e) {
+    io.err(`The embedding model couldn't run: ${(e as Error).message.split("\n")[0]}`);
+    return 1;
+  } finally {
+    ix.close();
+  }
 }
 
 /** atticus index rebuild: build the index from the catalog files now. */

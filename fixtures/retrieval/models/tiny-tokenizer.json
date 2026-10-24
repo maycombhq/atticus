@@ -1,0 +1,16 @@
+{
+  "normalizer": { "type": "BertNormalizer", "clean_text": true, "handle_chinese_chars": true, "strip_accents": null, "lowercase": true },
+  "pre_tokenizer": { "type": "BertPreTokenizer" },
+  "model": {
+    "type": "WordPiece",
+    "unk_token": "[UNK]",
+    "continuing_subword_prefix": "##",
+    "max_input_chars_per_word": 12,
+    "vocab": {
+      "[PAD]": 0, "[UNK]": 1, "[CLS]": 2, "[SEP]": 3,
+      "the": 4, "renamed": 5, "rename": 6, "##d": 7, "time": 8, "##stamp": 9,
+      "cafe": 10, ".": 11, ",": 12, "ledger": 13, "-": 14, "db": 15, "日": 16, "本": 17,
+      "account": 18, "##s": 19
+    }
+  }
+}

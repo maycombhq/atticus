@@ -224,12 +224,21 @@ export interface ContextInput {
    * goes in the pack; none makes a link, a name or a fact.
    */
   rankings?: { name: string; text?: string; keys?: string[] }[];
+  /**
+   * What a model read the input as (ADR 0116, the planner's expansion), already checked: search
+   * phrases (each one more ranking), the ids of names it mapped (each an id the index has; seeds),
+   * and the names it found that the index may not know (each quoted from the input). With it,
+   * the gaps are its names the index doesn't know; without it, only names the input marks.
+   */
+  expansion?: { terms: string[]; ids: string[]; unknown: string[] };
 }
 
 /** One ordered list of node keys, best first, with what it is (for a seed's `via`). */
 export interface Ranking {
   name: string;
   keys: string[];
+  /** Said beside a key's rank in its way in (a similarity's cosine). */
+  detail?: Map<string, string>;
 }
 
 /**
@@ -240,6 +249,9 @@ export const RRF_K = 1;
 
 /** A search hit enters a ranking only with at least this share of the best hit's BM25. */
 export const RANK_FLOOR = 0.3;
+
+/** The cosine below which a node is not similar in meaning, unless the model says otherwise. */
+export const MEANING_FLOOR = 0.3;
 
 /**
  * Reciprocal rank fusion (ADR 0116): each ranking gives a key 1 / (k + its rank); the sums are
@@ -256,7 +268,8 @@ export function fuse(rankings: Ranking[], k = RRF_K): Map<string, { score: numbe
       const v = 1 / (k + i + 1);
       const s = sum.get(key) ?? { score: 0, parts: [] };
       s.score += v;
-      s.parts.push({ name: r.name, rank: i + 1, v });
+      const d = r.detail?.get(key);
+      s.parts.push({ name: `${r.name} #${i + 1}${d ? ` (${d})` : ""}`, rank: i + 1, v });
       sum.set(key, s);
     });
   const best = Math.max(0, ...[...sum.values()].map((s) => s.score));
@@ -265,7 +278,7 @@ export function fuse(rankings: Ranking[], k = RRF_K): Map<string, { score: numbe
     const parts = [...s.parts].sort((a, b) => b.v - a.v || cmp(a.name, b.name)).slice(0, 3);
     out.set(key, {
       score: round((0.95 * s.score) / best),
-      via: `search (${parts.map((p) => `${p.name} #${p.rank}`).join(", ")})`,
+      via: `search (${parts.map((p) => p.name).join(", ")})`,
     });
   }
   return out;
@@ -334,6 +347,20 @@ export interface SelectOptions {
   rrfK?: number;
   /** A search hit enters a ranking only with this share of the best hit's BM25. Default RANK_FLOOR. */
   rankFloor?: number;
+  /**
+   * Rank by similarity in meaning too, when the index has a model and every node a vector
+   * (ADR 0116). Default true; it is off, and the selection says so, until then.
+   */
+  meaning?: boolean;
+  /** The cosine below which a node isn't similar. Default: the model's, else MEANING_FLOOR. */
+  meaningFloor?: number;
+  /**
+   * A model's order of the candidates it was shown (ADR 0116, the planner's rerank): `shown`, the
+   * candidates it saw ("Kind id"), and `refs`, the ones it wants, most needed first. The fit runs
+   * in that order; one it saw and dropped is left out with why. Ignored unless `refs` is a subset
+   * of `shown`, each once. It never changes the scores, the links or the gaps.
+   */
+  order?: { shown: string[]; refs: string[] };
   /** How far the walk goes from a seed. Default 2. */
   hops?: number;
   /** At most this many links followed from one node. Default 24. */
@@ -387,12 +414,14 @@ export interface ContextSelection {
   sources: ContextSource[];
   picked: Picked[];
   /** Candidates that didn't fit, by score: a person can see them, the model can ask for them. */
-  leftOut: { id: string; kind: string; score: number }[];
+  leftOut: { id: string; kind: string; score: number; why?: string }[];
   /** Names in the input the index has nothing for. */
   unknown: string[];
   tokens: number;
   /** The index version the selection was made on. */
   version: string;
+  /** Whether similarity in meaning ranked too, or why not (ADR 0116). */
+  meaning: string;
   cached: boolean;
 }
 
@@ -448,33 +477,6 @@ function endpointsIn(text: string): string[] {
   );
 }
 
-/**
- * Words that are not part of a name when capitalised: small words, days and months, the words
- * of a Given/When/Then or a user story, and the headings a brief has.
- */
-const NOT_NAME = new Set([
-  ...STOP,
-  ..."a an and as at be but by do if in is it me my no of on or so to up us we i".split(" "),
-  ..."monday tuesday wednesday thursday friday saturday sunday".split(" "),
-  ..."january february march april june july august september october november december".split(" "),
-  ..."given when then customer user story stories acceptance criteria scenario feature background".split(
-    " ",
-  ),
-  ..."summary notes note risks assumptions dependencies definition ready release review rollout".split(
-    " ",
-  ),
-]);
-
-/** A phrase that starts with one of these is a Given/When/Then or a user story, not a name. */
-const STEP_WORDS = new Set(["given", "when", "then", "and", "but", "as", "if"]);
-
-/** A first word of a sentence that tells someone to do something: not part of the name after it. */
-const VERBS = new Set(
-  "ask send call use read run see check add make keep let show put move hold score place write open close update remove raise talk tell email notify contact route post fetch store reserve refuse".split(
-    " ",
-  ),
-);
-
 /** Words a name may end with that don't change what it names: Northwind Pay API is Northwind Pay. */
 const GENERIC = new Set(
   "api apis service services system systems team app apps application platform portal ui ux gateway database db store queue topic site module library sdk client server backend frontend web mobile integration endpoint endpoints".split(
@@ -486,59 +488,24 @@ const GENERIC = new Set(
 const FILE =
   /\.(md|markdown|ya?ml|json|java|kt|ts|tsx|js|mjs|py|go|cs|rb|sql|xml|txt|csv|html?|properties|sh|toml|ini|cfg)$/i;
 
-/** Title Case: most words of the line capitalised, as in a heading; its capitals say nothing. */
-function titleCase(line: string): boolean {
-  const words = line.match(/[A-Za-z][A-Za-z0-9'-]*/g) ?? [];
-  if (words.length < 3) return false;
-  return words.filter((w) => /^[A-Z]/.test(w)).length / words.length > 0.6;
-}
-
 /**
- * Names the input uses that might be systems, vendors, components or endpoints: names in
+ * Names the input marks as names by its form, without judging its prose (ADR 0116): names in
  * backticks (an id like forge-hold-store, or a capitalised name; not a field, a file or a
- * command), runs of capitalised words in a sentence (not in a heading or a Title Case line, cut
- * at the small words, without a sentence's first verb, and not a Given/When/Then), and endpoints.
+ * command) and endpoints. Which words of a sentence are a name is the model's to say (the
+ * expansion's names, `ContextInput.expansion`); with no model, only these are asked about.
  */
 function nameCandidates(text: string): string[] {
   const out = new Set<string>();
-  const lines = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l) && !/^\s*<!--/.test(l));
-  const body = lines.join("\n");
+  const body = text
+    .split(/\r?\n/)
+    .filter((l) => !/^\s*#/.test(l) && !/^\s*<!--/.test(l))
+    .join("\n");
   for (const m of body.matchAll(/`([^`\n]{2,60})`/g)) {
     const t = m[1]!.trim();
     if (/^(GET|POST|PUT|PATCH|DELETE)\s+\//.test(t)) continue; // taken as an endpoint below
     const id = /^[a-z0-9]+(?:[-.][a-z0-9]+)+$/.test(t) && !FILE.test(t);
     const name = /^[A-Z][A-Za-z0-9]*(?: [A-Z][A-Za-z0-9]*){0,3}$/.test(t);
     if (id || name) out.add(t);
-  }
-  // A paragraph's lines read as one, so a name can run over a line break; a Title Case line is out.
-  const paragraphs: string[] = [];
-  let para: string[] = [];
-  for (const l of [...lines, ""]) {
-    if (!l.trim() || titleCase(l)) {
-      if (para.length) paragraphs.push(para.join(" "));
-      para = [];
-    } else para.push(l.trim());
-  }
-  for (const line of paragraphs) {
-    for (const m of line.matchAll(/\b([A-Z][A-Za-z0-9]+(?:[ -][A-Z][A-Za-z0-9]+)+)\b/g)) {
-      const words = m[1]!.split(/[ -]/);
-      if (STEP_WORDS.has(words[0]!.toLowerCase())) continue;
-      // At a sentence's start, a verb is the sentence's, not the name's: "Ask Quillfeather Risk".
-      const before = line.slice(0, m.index).trimEnd();
-      const starts = before === "" || /[.!?:;]$/.test(before);
-      if (starts && VERBS.has(words[0]!.toLowerCase())) words.shift();
-      // Cut at the small words: "On Monday In October" is no name.
-      let run: string[] = [];
-      const flush = () => {
-        if (run.length >= 2) out.add(run.join(" "));
-        run = [];
-      };
-      for (const w of words) {
-        if (NOT_NAME.has(w.toLowerCase())) flush();
-        else run.push(w);
-      }
-      flush();
-    }
   }
   for (const m of body.matchAll(/\b(GET|POST|PUT|PATCH|DELETE)\s+(\/[^\s`"'),;]*)/g))
     out.add(`${m[1]} ${m[2]!.replace(/[.:]+$/, "")}`);
@@ -617,6 +584,14 @@ function candidatesOf(
       seed(n.key, 1, "named in the input");
       expansion.push(...describe(n));
     }
+  // ADR 0116: the ids a model mapped the input's names to (each one the index has).
+  for (const id of [...new Set(input.expansion?.ids ?? [])].sort())
+    if (!exactIds.has(id))
+      for (const n of nodesById(ix, id)) {
+        if (rejected.has(n.id)) continue;
+        seed(n.key, 0.9, "named in the input (the model's reading, an id the index has)");
+        expansion.push(...describe(n));
+      }
   const limit = o.searchLimit ?? 30;
   const split = o.lexical?.split !== false;
   const hitScore = new Map<string, number>();
@@ -631,7 +606,12 @@ function candidatesOf(
   const about = [...new Set(expansion)].join(" ");
   const synonyms =
     o.lexical?.synonyms === false ? [] : synonymsOf(ix, names, `${title}\n${text}`, maxWords);
-  const extra = input.rankings ?? [];
+  const extra: { name: string; text?: string; keys?: string[] }[] = [
+    ...(input.rankings ?? []),
+    ...(input.expansion?.terms ?? [])
+      .slice(0, 8)
+      .map((t) => ({ name: `the model's "${t}"`, text: t })),
+  ];
   // A ranking keeps the hits whose BM25 is at least a share of its best: a weak match (one
   // common word) doesn't enter it, so rank alone doesn't lift it.
   const floor = o.rankFloor ?? RANK_FLOOR;
@@ -650,6 +630,20 @@ function candidatesOf(
         name: `synonyms of "${syn.name}"`,
         keys: ranked(syn.words.join(" "), k),
       });
+    // ADR 0116: the nodes nearest the input in meaning, a ranking like the others (never a link).
+    if (o.meaning !== false) {
+      const sim = ix.similar(input, {
+        limit,
+        ...(kinds ? { kinds } : {}),
+        ...(o.meaningFloor !== undefined ? { floor: o.meaningFloor } : {}),
+      });
+      if ("hits" in sim)
+        rankings.push({
+          name: "similar in meaning",
+          keys: sim.hits.map((h) => h.key),
+          detail: new Map(sim.hits.map((h) => [h.key, `cos ${h.cos.toFixed(2)}`])),
+        });
+    }
     for (const r of extra)
       rankings.push({
         name: r.name,
@@ -768,10 +762,43 @@ function candidatesOf(
     .sort((a, b) => b.score - a.score || cmp(a.key, b.key));
 
   // ---- what the input names that the index doesn't have
-  const unknown = nameCandidates(`${title}\n${text}`)
-    .filter((c) => !knownName(ix, names, maxWords, c))
-    .sort();
+  // ADR 0116: the model's names when it read the input, else the names the input marks; either
+  // way only those the index has nothing for (knownName is the fact check, never a judgment).
+  const asked = input.expansion
+    ? [...new Set([...input.expansion.unknown, ...nameCandidates(`${title}\n${text}`)])]
+    : nameCandidates(`${title}\n${text}`);
+  const unknown = asked.filter((c) => !knownName(ix, names, maxWords, c)).sort();
   return { candidates, unknown };
+}
+
+/** A candidate as a rerank names it: its kind and id. */
+export const candidateRef = (c: { kind: string; id: string }) => `${c.kind} ${c.id}`;
+
+/**
+ * The candidates in a model's order (ADR 0116, the planner's rerank). The order must name only
+ * candidates it was shown, each once; else it is ignored and the score order stands. Shown and
+ * not named: dropped. Not shown: after the named ones, in score order.
+ */
+export function orderCandidates<C extends { kind: string; id: string }>(
+  candidates: C[],
+  order: SelectOptions["order"],
+): { candidates: C[]; dropped: C[]; used: boolean } {
+  if (!order) return { candidates, dropped: [], used: false };
+  const shown = new Set(order.shown);
+  const named = order.refs;
+  const byRef = new Map(candidates.map((c) => [candidateRef(c), c]));
+  const valid =
+    new Set(named).size === named.length && named.every((r) => shown.has(r) && byRef.has(r));
+  if (!valid) return { candidates, dropped: [], used: false };
+  const keep = new Set(named);
+  return {
+    candidates: [
+      ...named.map((r) => byRef.get(r)!),
+      ...candidates.filter((c) => !shown.has(candidateRef(c))),
+    ],
+    dropped: candidates.filter((c) => shown.has(candidateRef(c)) && !keep.has(candidateRef(c))),
+    used: true,
+  };
 }
 
 /** The size of a source once buildContextPack wraps it as data. */
@@ -786,7 +813,18 @@ export function selectContext(
   o: SelectOptions,
 ): ContextSelection {
   const input: ContextInput = typeof raw === "string" ? { text: raw } : raw;
-  const version = ix.version;
+  // ADR 0116: whether similarity in meaning ranks too (a model, every node embedded, the input
+  // embedded), said in the selection and part of its cache key and version.
+  const m = ix.meaning();
+  const probe = o.meaning === false || !m.on ? undefined : ix.similar(input, { limit: 1 });
+  const meaning =
+    o.meaning === false
+      ? "similar in meaning is off for this step"
+      : probe && "off" in probe
+        ? `similar in meaning is off: ${probe.off}`
+        : m.note;
+  const meaningOn = !!probe && "hits" in probe;
+  const version = meaningOn ? `${ix.version}+${m.model}` : ix.version;
   const keyed = {
     input,
     kinds: o.kinds ?? null,
@@ -801,6 +839,7 @@ export function selectContext(
     minScore: o.minScore ?? 0.1,
     exclude: o.exclude ?? null,
     includeRejected: o.includeRejected ?? false,
+    meaning: meaningOn ? (o.meaningFloor ?? "default") : false,
   };
   const cacheKey = createHash("sha256")
     .update(`${version}\n${JSON.stringify(keyed)}`)
@@ -845,7 +884,10 @@ export function selectContext(
   let full = 0;
   // In score order: once one doesn't fit, the rest are left out, so nothing lower jumps it.
   let over = false;
-  for (const c of found.candidates) {
+  // ADR 0116: a model's order of the candidates it was shown (a rerank): the fit runs in that
+  // order; what it was shown and left off its list is left out, said why; the rest follow.
+  const ordered = orderCandidates(found.candidates, o.order);
+  for (const c of ordered.candidates) {
     if (over) {
       leftOut.push({ id: c.id, kind: c.kind, score: c.score });
       continue;
@@ -902,6 +944,8 @@ export function selectContext(
       leftOut.push({ id: n.id, kind: n.kind, score: c.score });
     }
   }
+  for (const d of ordered.dropped)
+    leftOut.push({ id: d.id, kind: d.kind, score: d.score, why: "the model judged it not needed" });
   if (lines.length)
     sources.push({
       id: linesId,
@@ -913,5 +957,5 @@ export function selectContext(
     });
   const tokens =
     used + (lines.length ? tokensOf(wrapped(linesId, "catalog", linesOrigin, linesChars)) : 0);
-  return { sources, picked, leftOut, unknown: found.unknown, tokens, version, cached };
+  return { sources, picked, leftOut, unknown: found.unknown, tokens, version, cached, meaning };
 }

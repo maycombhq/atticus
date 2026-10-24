@@ -3,7 +3,7 @@
 // home folder, with no network, and use it: version, a practice sandbox, doctor, a scan, the
 // app's health call. On Windows it runs install.ps1, elsewhere install.sh.
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -77,6 +77,30 @@ console.log(atticus("sandbox", "create", sandbox).trim());
 const root = join(sandbox, "metarepo");
 console.log(atticus("doctor", "--root", root).trim().split("\n").at(-1));
 console.log(atticus("scan", "--root", root).trim().split("\n").at(-1));
+
+// ADR 0116: a bundle that carries the embedding model searches by meaning, with no network.
+if (existsSync(join(dir, "node_modules", "@maycombhq", "embed-model", "atticus-model.yaml"))) {
+  const rt = join(root, "org-pack", "runtime.yaml");
+  appendFileSync(rt, "\nretrieval:\n  embeddings: { model: bundled }\n");
+  console.log(
+    atticus("doctor", "--root", root)
+      .split("\n")
+      .find((l) => /Embedding model/.test(l)),
+  );
+  console.log(atticus("index", "embed", "--root", root).trim().split("\n").at(-1));
+  const hits = atticus(
+    "query",
+    "how much money is left",
+    "--search",
+    "--by",
+    "meaning",
+    "--root",
+    root,
+  );
+  if (!/similar in meaning, cos/.test(hits))
+    throw new Error(`the bundled model didn't search by meaning:\n${hits}`);
+  console.log("The bundled embedding model searches by meaning offline.");
+}
 
 // The app answers.
 const ui = spawn(process.execPath, [installed, "ui", "--port", "0", "--root", root], { env });

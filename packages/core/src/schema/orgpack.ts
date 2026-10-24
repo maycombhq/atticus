@@ -605,6 +605,28 @@ export const Runtime = z.strictObject({
    * Additive and optional, so no schema version bump. Configuration, not a safety rule.
    */
   history: z.strictObject({ record: z.boolean().default(true) }).optional(),
+  /**
+   * Retrieval by meaning in the context engine (ADR 0116). Additive and optional, so no schema
+   * version bump (as history and buildEngine): a pack without it reads as everything off.
+   * - embeddings.model: off (the default), `bundled` (the model the offline bundle carries,
+   *   @maycombhq/embed-model) or a folder with `atticus-model.yaml` (relative to the org pack);
+   *   embeddings.runtime: a folder whose node_modules holds onnxruntime-node, when it isn't
+   *   beside Atticus. Nothing is ever downloaded.
+   * - expansion and rerank: one model call before a step's selection that names what the
+   *   input is about, and one that orders the candidates when they don't fit. Off unless on.
+   */
+  retrieval: z
+    .strictObject({
+      embeddings: z
+        .strictObject({
+          model: z.string().min(1).default("off"),
+          runtime: z.string().min(1).optional(),
+        })
+        .default({ model: "off" }),
+      expansion: z.boolean().default(false),
+      rerank: z.boolean().default(false),
+    })
+    .optional(),
   /** Atticus sends no telemetry unless an organisation turns it on here. */
   telemetry: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   adapters: z

@@ -7,3 +7,4 @@ export * from "./defences.js";
 export * from "./attempts.js";
 export * from "./fit.js";
 export * from "./tools.js";
+export * from "./embed.js";

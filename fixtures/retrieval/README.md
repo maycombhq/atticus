@@ -15,6 +15,8 @@ Forge ecosystem, its wiki, its runbook and the vendor Northwind Pay.
 | `documents/settlement-runbook-docx/` | A Word document as its XML parts, zipped into the root's `inputs/` by the bench: facts that are only in a document |
 | `recorded/` | What a model answered for the expansion and rerank modes, replayed by the bench (see its README) |
 | `vectors/` | The int8 vectors a local embedding model gave every node and input text, replayed by the bench (see its README) |
+| `models/` | Golden token ids from each model's own tokenizer, and an invented tokenizer for the unit tests |
+| `expected/` | The index's golden output: identifier words, the wiki page's sections and parts, the document's sections |
 
 The case groups are listed at the top of `cases.yaml`. Write cases by hand from the fixtures;
 never generate them from the index.
