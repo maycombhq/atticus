@@ -152,6 +152,8 @@ Decided on 2026-10-24 (ADR 0124, from the design "Atticus 2 — AI Reads, Code V
 
 - [x] **B-knowledge. The knowledge that applies to a change, listed** (Part 5 of the design): every stage's selection writes the knowledge items it picked (patterns, standards, decisions, processes, vendors, terms, wiki and document sections) with why, the stages that used them and the near-misses into `knowledge.yaml` in the change folder; `atticus change knowledge <id> [--confirm id] [--exclude id]`; an excluded item stays out of every later stage's selection; the hand-off PR's review shows "Applies to this change". Not yet: the app's Change screen tab (Phase D), and a story's Context linking the items its criteria drew on (Phase B stories rework).
 
+- [x] **B-error-case. Every task that can fail has an error criterion** (Part 3): a story criterion carries `outcome: success | error`; `stories.no-error-case` asks for an error criterion on every task whose step validates, writes, calls out or publishes; the drafter's rules say so. Not blocking yet, so recorded replays keep passing; it becomes blocking when Phase B re-records the stage fixtures.
+
 Phases B to D (one change end to end with the stories bench and `knowledge.yaml`; the estate; surfaces, flags and the release) follow the design doc and are ticketed when Phase A's numbers are in.
 
 ### B. The core loop: scan → change → stories (what the product is for)

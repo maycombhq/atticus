@@ -436,7 +436,9 @@ export async function taskContext(
             change.id,
             ds,
             dt,
-            own?.length ? ownCriteria! : criteria.map((text) => ({ text, checks: [] })),
+            own?.length
+              ? ownCriteria!
+              : criteria.map((text) => ({ text, checks: [], outcome: "success" as const })),
           )
         : [
             `Implement task ${id} of the change ${change.id} in the repo ${line.repo}: ${line.title}.`,

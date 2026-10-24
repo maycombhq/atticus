@@ -325,12 +325,20 @@ export const StoryCriterion = z.union([
     .string()
     .trim()
     .min(1)
-    .transform((text) => ({ text, checks: [] as string[] })),
+    .transform((text) => ({ text, checks: [] as string[], outcome: "success" as const })),
   z.strictObject({
     text: z.string().trim().min(1),
     checks: z.array(z.string().trim().min(1)).default([]),
+    /**
+     * Whether the criterion is about the step succeeding or failing (ADR 0124, Part 3): a task
+     * that validates, writes, calls out or publishes has at least one `error` criterion.
+     */
+    outcome: z.enum(["success", "error"]).default("success"),
   }),
 ]);
+
+/** Step kinds whose task needs an error criterion: what happens when it fails (ADR 0124, Part 3). */
+export const NEEDS_ERROR_CASE = ["validate", "write", "call-out", "publish"] as const;
 export type StoryCriterion = z.infer<typeof StoryCriterion>;
 
 /** A request the story writer says a step meets, with the words of its applies-when. */
@@ -455,6 +463,19 @@ export function checkStories(
               `Task ${t.id}: a criterion says it checks ${f}, which isn't one of the task's fields (${t.fields.join(", ") || "none"}).`,
               t.repo,
             );
+        if (
+          t.op !== "remove" &&
+          t.kind &&
+          (NEEDS_ERROR_CASE as readonly string[]).includes(t.kind) &&
+          !c.some((x) => x.outcome === "error")
+        )
+          out.push({
+            rule: "stories.no-error-case",
+            target: t.id,
+            message: `Task ${t.id} (${t.title}) ${t.kind === "validate" ? "validates input" : t.kind === "write" ? "writes data" : "calls another system"} but no criterion says what happens when that fails: add one with outcome: error (${t.kind === "validate" ? "the input is rejected and with what" : t.kind === "write" ? "the write fails and what the caller sees" : "the call fails or times out and what the caller sees"}).`,
+            blocking: false,
+            repo: t.repo,
+          });
         const unchecked = t.fields.filter((f) => !c.some((x) => x.checks.includes(f)));
         if (unchecked.length)
           issue(
@@ -1313,6 +1334,7 @@ stories:
         criteria:
           - text: "Given <situation>, when <action>, then <what can be checked>"
             checks: [<each of the task's fields whose value this criterion's outcome depends on>]
+            outcome: success   # or error, for what happens when the step fails
 requests:      # every request or process from the list below that a step meets
   - item: <process or request id>
     flow: <flow id>
@@ -1325,6 +1347,7 @@ Rules:
 - Every task has acceptance criteria a test can check. Each of the task's fields is under the checks of a criterion that checks it; checks name only the task's fields.
 - A criterion checks a field when its outcome depends on the field's value: its then clause states the value, or a result that follows from a value its given clause fixes.
 - For each key a step matches rows by or checks (its fields.checks), add one criterion of its own for the refusal: what happens when that key doesn't match.
+- A task whose step validates, writes, calls out or publishes has at least one criterion with outcome: error: the input rejected and with what message or status, the write failing, the call failing or timing out, and what the caller sees each time.
 - Name a request only when the knowledge item's "applies when" fits the step, quoting those words. Never raise it yourself.
 - Plain, short English.`;
   const instructions = [
