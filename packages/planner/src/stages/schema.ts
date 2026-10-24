@@ -254,6 +254,12 @@ export const StageLoop = z.strictObject({
   questions: z.array(z.string()).default([]),
   /** Answered questions whose answers a draft has read. */
   read: z.array(z.string()).default([]),
+  /**
+   * Questions held back once and handed to the drafter with an answer on file that may decide
+   * them, by the id they would have had (ADR 0117 addendum, 2026-10-24). One asked again after
+   * that goes to a person.
+   */
+  handedBack: z.array(z.string()).optional(),
   /** The critic rounds the loop ran, newest last. */
   critic: z.array(z.strictObject({ gate: text(), round: z.number().int().positive() })).default([]),
   /**
@@ -267,6 +273,11 @@ export const StageLoop = z.strictObject({
       round: z.number().int().positive(),
       draft: z.string().optional(),
       files: z.array(z.string()).default([]),
+      /**
+       * The questions the draft raised (ADR 0117 addendum, 2026-10-24): the stage's file doesn't
+       * keep them, so they wait here with the draft until its lenses are in, and are raised then.
+       */
+      questions: z.array(QuestionDraft).optional(),
       issues: z
         .array(
           z.strictObject({

@@ -1,0 +1,19 @@
+# One blocking AI rule at the define gate (ADR 0115 addendum, 2026-10-24): the business lens
+# reviews the feature stage's draft against the brief. Copied into org-pack/checklists/ by the
+# pinned-note tests only. Contract C3. Everything here is invented.
+schemaVersion: 1
+name: pin-review
+version: 0.1.0
+description: The define gate's business lens, for the pinned-note scenario.
+rules:
+  - id: brief-scope-delivered
+    title: The placement delivers the brief's scope
+    layer: org
+    lens: business
+    appliesTo: { artifacts: [brief] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: Read the brief's scope and the feature placement drafted from it. Report something the brief asks for that the placement doesn't deliver.
+    waivable: true
+    source: Forge product review

@@ -1,0 +1,46 @@
+# Answered-by cases (ADR 0117 addendum, 2026-10-24). Each pair is a new question and an answered
+# question on file for the same change, with the person's answer. `truth` is what a person
+# reading the three says: yes (the answer already decides the new question) or no (it leaves it
+# open, or the new question is about something else). `recorded` is the judge's recorded answer
+# for the pairs that reach it (the veto settles the others before any model is asked). The live
+# run's failure is here, retold on the Forge estate: a pinned-note draft asked again which notes
+# count as text notes, after a person had said. Everything here is invented.
+repo: pin-order-note
+cases:
+  - id: text-notes-asked-again
+    new:
+      question: Which kinds of order note count as 'text notes' that can be pinned? Only plain notes, or also delivery updates, refund notices, system notes?
+      evidence: [openspec/changes/pin-order-note/brief.md:13]
+    existing:
+      question: Which order notes can be pinned?
+      evidence: [openspec/changes/pin-order-note/brief.md:9]
+      answer: Text notes only — only notes a shopper typed, not delivery updates, refund notices or system notes.
+    truth: yes
+    recorded:
+      verdict: yes
+      quotes:
+        - { of: answer, text: "not delivery updates, refund notices or system notes" }
+      why: The answer already lists which notes can be pinned and which can't.
+  - id: out-for-delivery-left-open
+    new:
+      question: Can a shopper pin a note on an order that is out for delivery?
+      evidence: [openspec/changes/pin-order-note/brief.md:13]
+    existing:
+      question: Which order notes can be pinned?
+      evidence: [openspec/changes/pin-order-note/brief.md:9]
+      answer: Text notes only — only notes a shopper typed, not delivery updates, refund notices or system notes.
+    truth: no
+    recorded:
+      verdict: no
+      quotes:
+        - { of: answer, text: "Text notes only" }
+      why: The answer is about kinds of note, not about the order's state.
+  - id: length-named-beyond-answer
+    new:
+      question: Can a note of over 500 characters be pinned?
+      evidence: [openspec/changes/pin-order-note/brief.md:13]
+    existing:
+      question: Which order notes can be pinned?
+      evidence: [openspec/changes/pin-order-note/brief.md:9]
+      answer: Text notes only — only notes a shopper typed, not delivery updates, refund notices or system notes.
+    truth: no

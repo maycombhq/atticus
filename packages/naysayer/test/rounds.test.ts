@@ -229,7 +229,13 @@ describe("rounds, gates and actions", () => {
       checkRound?: { after: number; actedOn: string[] };
     };
     expect(meta.checkRound?.after).toBe(2);
-    expect(meta.checkRound?.actedOn.sort()).toEqual(blocking.map((f) => f.finding.id).sort());
+    // Every finding a person acted on since round 2 is recorded: the fixes and the gaps asked.
+    const gaps = r2.findings.filter(
+      (f) => f.finding.severity === "gap" && f.finding.state === "open",
+    );
+    expect(meta.checkRound?.actedOn.sort()).toEqual(
+      [...blocking, ...gaps].map((f) => f.finding.id).sort(),
+    );
     expect(r3.status.humanDecides).toBe(true);
     expect(r3.status.checkRound).toBe(false);
     await expect(runCritic(root, CHANGE, { now: LATER })).rejects.toThrow(/the most it allows/);

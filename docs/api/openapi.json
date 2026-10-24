@@ -21184,6 +21184,25 @@
             ],
             "additionalProperties": false
           },
+          "answered": {
+            "type": "object",
+            "properties": {
+              "question": {
+                "type": "string",
+                "pattern": "^q-[0-9a-f]{12}$"
+              },
+              "quote": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            },
+            "required": [
+              "question",
+              "quote"
+            ],
+            "additionalProperties": false
+          },
           "waivable": {
             "type": "boolean"
           },

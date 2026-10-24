@@ -20,7 +20,7 @@ import {
   type VerifyFix,
   type VerifySettings,
 } from "@maycombhq/core";
-import { stepQuestionJudge } from "@maycombhq/planner";
+import { stepJudges } from "@maycombhq/planner";
 import { checkScanSettings } from "@maycombhq/scanner";
 import { fsRepo, type RepoHandle } from "@maycombhq/sdk";
 import type { Output } from "./commands.js";
@@ -248,7 +248,7 @@ export async function scanVerify(
   );
   // ADR 0117: a question on file is matched by the step's own reading (sameAs) and, where a
   // model can be called directly, a judge.
-  const judge = stepQuestionJudge(root, deps.runtime, repo.id, now);
+  const judges = stepJudges(root, deps.runtime, repo.id, now);
   const { raised, known, reused } = await raiseQuestions(
     root,
     drafts,
@@ -260,7 +260,7 @@ export async function scanVerify(
       ...(r.runId ? { run: r.runId } : {}),
       at: now.toISOString(),
     },
-    judge ? { judge } : {},
+    judges,
   );
   const byId = new Map(records.map((x) => [x.id, x]));
   // Only confirmations that cite the line showing them passed the checks (ADR 0112); only

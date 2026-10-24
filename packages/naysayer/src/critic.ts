@@ -24,7 +24,7 @@ import { artifactOf } from "./artifacts.js";
 import { checkRegistry } from "./checks/index.js";
 import { CriticError } from "./errors.js";
 import {
-  checkRoundDue,
+  checkRoundState,
   countedRounds,
   markNeedHit,
   mergeHits,
@@ -133,13 +133,20 @@ export async function runCritic(
   const counted = max === undefined ? [] : await countedRounds(root, change.id, gate.id);
   // A person acted on every blocking finding of the newest round: one checking round past the
   // limit reviews their fixes (ADR 0115 addendum). Its own blocking findings go to a person.
-  const actedOn =
-    max !== undefined && counted.length >= max ? await checkRoundDue(root, change.id, gate.id) : [];
+  const limit =
+    max !== undefined && counted.length >= max
+      ? await checkRoundState(root, change.id, gate.id)
+      : { openBlocking: 0, actedOn: [] as string[] };
+  const actedOn = limit.actedOn;
   if (max !== undefined && counted.length >= max && actedOn.length === 0) {
     const past = counted.length - max;
+    const had = `The ${gate.id} gate has had ${max} critic round${max > 1 ? "s" : ""}, the most it allows${past > 0 ? `, and ${past === 1 ? "a checking round" : `${past} checking rounds`} past it` : ""}.`;
+    // Never ask a person to act on blocking findings there aren't (ADR 0115 addendum).
     throw new CriticError(
       "round-limit",
-      `The ${gate.id} gate has had ${max} critic round${max > 1 ? "s" : ""}, the most it allows${past > 0 ? `, and ${past === 1 ? "a checking round" : `${past} checking rounds`} past it` : ""}. A person decides now: act on each blocking finding of round ${counted.at(-1)} (fix it by hand and apply, waive it with a reason, or dismiss it as not relevant), and one checking round past the limit reviews the fixes; or return the change.`,
+      limit.openBlocking
+        ? `${had} A person decides now: act on each blocking finding of round ${counted.at(-1)} (fix it by hand and apply, waive it with a reason, or dismiss it as not relevant), and one checking round past the limit reviews the fixes; or return the change.`
+        : `${had} Nothing blocking is open in round ${counted.at(-1)}, but nobody has acted since it ran, so no checking round is due. A person decides now: answer the change's open questions (atticus questions), or act on one of round ${counted.at(-1)}'s findings (atticus findings ${change.id}), and one checking round past the limit reviews what was done; or return the change.`,
     );
   }
   const checkRound = actedOn.length ? { after: counted.at(-1)!, actedOn } : undefined;

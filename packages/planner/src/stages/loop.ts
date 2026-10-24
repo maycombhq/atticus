@@ -11,6 +11,7 @@ import {
   retrievalOf,
   runsDirOf,
   toCanonicalYaml,
+  type HeldQuestion,
   type Question,
   type QuestionDraft,
   type RunSummary,
@@ -50,7 +51,7 @@ import {
 import type { ChangeLifecycle, RunRetrieval } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
 import { citeFiles } from "./cite.js";
-import { questionsOnFile, stepQuestionJudge } from "./questions-on-file.js";
+import { questionsOnFile, stepJudges } from "./questions-on-file.js";
 import type { ContextOptions, ContextReport, RetrievalAi } from "../engine.js";
 import { askGaps, type ContextGap } from "../gaps.js";
 import {
@@ -373,7 +374,7 @@ export async function runStageLoop<A>(
   // A critic round waiting for its AI lenses: the stage waits for the first one (ADR 0115).
   const handedToLens = async (
     w: LensWait,
-    draft: { draft?: string; files: string[]; issues: StageIssue[] },
+    draft: { draft?: string; files: string[]; issues: StageIssue[]; questions?: QuestionDraft[] },
     extra: Partial<StageResult<A>> = {},
   ): Promise<StageResult<A>> => {
     loop.review = { gate: w.gate, round: w.round, ...draft };
@@ -527,6 +528,7 @@ export async function runStageLoop<A>(
     let answer: A | undefined;
     const found: StageIssue[] = [];
     let files: string[] = [];
+    let reviewed: QuestionDraft[] | undefined;
     let review = resume || reviewAgain ? loop.review : undefined;
     reviewAgain = false;
     // A resume names a lens of the round the draft waits on; a draft run resumed while an older
@@ -562,6 +564,7 @@ export async function runStageLoop<A>(
       answer = await spec.current();
       files = review.files;
       found.push(...review.issues, ...lenses.issues);
+      reviewed = review.questions;
     } else {
       // ---- draft (a review of an earlier draft no longer applies)
       delete loop.review;
@@ -677,7 +680,15 @@ export async function runStageLoop<A>(
         if (c.waiting)
           return handedToLens(
             c.waiting,
-            { draft: run.runId, files, issues: found },
+            {
+              draft: run.runId,
+              files,
+              issues: found,
+              // The draft's questions wait with it: the stage's file doesn't keep them.
+              ...(answer !== undefined && spec.questions?.(answer).length
+                ? { questions: spec.questions(answer) }
+                : {}),
+            },
             { files, ...(answer !== undefined ? { answer } : {}) },
           );
         found.push(...c.issues);
@@ -750,7 +761,8 @@ export async function runStageLoop<A>(
           scope: "repo",
         },
       });
-    const own = answer !== undefined && spec.questions ? spec.questions(answer) : [];
+    // A draft read back after its lenses: its questions waited with it (the file has none).
+    const own = reviewed ?? (answer !== undefined && spec.questions ? spec.questions(answer) : []);
     for (const q of own) {
       const ok: string[] = [];
       for (const e of q.evidence) if (await lineExists(root, e)) ok.push(e);
@@ -760,9 +772,13 @@ export async function runStageLoop<A>(
           `Left out the assistant's question "${q.question}": none of its evidence (${q.evidence.join(", ")}) is a line in the metarepo.`,
         );
     }
+    // A question an answer on file may decide, that nothing settled: handed back to the drafter
+    // once, with the answer, rather than put to the person again (ADR 0117 addendum).
+    const held: HeldQuestion[] = [];
     if (drafted.length) {
       const qs: Question[] = [];
-      const judge = stepQuestionJudge(root, o.runtime, change.id, now);
+      const judges = stepJudges(root, o.runtime, change.id, now);
+      const handedBack = new Set(loop.handedBack ?? []);
       for (const repo of [...new Set(drafted.map((x) => x.repo))]) {
         const mine = drafted.filter((x) => x.repo === repo);
         const raised = await raiseQuestions(
@@ -776,8 +792,13 @@ export async function runStageLoop<A>(
             ...(run?.runId ? { run: run.runId } : {}),
             at,
           },
-          judge ? { judge } : {},
+          { ...judges, hold: (q) => !handedBack.has(q.id) },
         );
+        held.push(...raised.held);
+        for (const [i, a] of raised.decidedBy)
+          notes.push(
+            `Your assistant asked again what ${a.id} answered ("${mine[i]!.q.question.trim()}"); the stage reads ${a.answer?.by ?? "the person"}'s answer instead of asking again.`,
+          );
         qs.push(...raised.raised, ...raised.known);
         // Each finding asked is linked to the question it became, by id, never by its words (a
         // check's own question doesn't hold the finding's message).
@@ -802,7 +823,39 @@ export async function runStageLoop<A>(
     }
 
     // ---- stop, or go round again
-    const open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
+    let open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
+    // The stage waits for a person anyway: what was held back goes to them too, with the rest.
+    const heldIssues: StageIssue[] = [];
+    if (held.length && open.length) {
+      for (const repo of [...new Set(held.map((h) => h.question.repo))]) {
+        const r = await raiseQuestions(
+          root,
+          held.filter((h) => h.question.repo === repo).map((h) => h.draft),
+          {
+            step: `change-${spec.stage}`,
+            repo,
+            command: rerunOf(spec.stage, change.id),
+            rerun: rerunOf(spec.stage, change.id),
+            ...(run?.runId ? { run: run.runId } : {}),
+            at,
+          },
+          stepJudges(root, o.runtime, change.id, now),
+        );
+        loop.questions = [
+          ...new Set([...loop.questions, ...[...r.raised, ...r.known].map((q) => q.id)]),
+        ].sort();
+      }
+      open = (await questionsOf(loop.questions)).filter((q) => q.state === "open");
+    } else if (held.length) {
+      loop.handedBack = [
+        ...new Set([...(loop.handedBack ?? []), ...held.map((h) => h.question.id)]),
+      ].sort();
+      for (const h of held) heldIssues.push(askedAnswered(h));
+      notes.push(
+        `Handed back ${held.length === 1 ? "a question" : `${held.length} questions`} that a person's answer on file may already decide, rather than ask them again.`,
+      );
+      await writeLoop(dir, loop);
+    }
     if (ignored.length && !open.length) {
       for (const f of ignored) f.stoppedAt = n;
       const stop = stopMessage(spec, rel, n, ignored, rerunOf(spec.stage, change.id));
@@ -834,18 +887,21 @@ export async function runStageLoop<A>(
       await writeLoop(dir, loop);
       return result("questions", { files, ...(answer !== undefined ? { answer } : {}) });
     }
-    if (blocking.length === 0) {
+    if (blocking.length === 0 && heldIssues.length === 0) {
       loop.state = "done";
       await writeLoop(dir, loop);
       return result("done", { files, ...(answer !== undefined ? { answer } : {}) });
     }
-    issues = blocking.map((f) => ({
-      rule: f.rule,
-      target: f.target,
-      ...(f.evidence ? { evidence: f.evidence } : {}),
-      message: f.message,
-      blocking: true,
-    }));
+    issues = [
+      ...blocking.map((f) => ({
+        rule: f.rule,
+        target: f.target,
+        ...(f.evidence ? { evidence: f.evidence } : {}),
+        message: f.message,
+        blocking: true,
+      })),
+      ...heldIssues,
+    ];
   }
 }
 
@@ -900,7 +956,7 @@ function instructionsWith(base: string, fix: StageIssue[], answered: Question[])
   if (answered.length)
     out.push(
       "",
-      `People answered questions; the "${HAND_BACKS}" data block lists each question with its answer. Follow their answers.`,
+      `People answered questions; the "${HAND_BACKS}" data block lists each question with its answer. Their answers are part of the brief: follow them, and never ask any of those questions again, in any words, or ask what an answer already says.`,
     );
   return out.join("\n");
 }
@@ -920,6 +976,24 @@ function handBacks(fix: StageIssue[], answered: Question[]): string | undefined 
       ...answered.map((q) => `- ${q.question} Answer: ${answerWords(q) ?? ""}`),
     );
   return out.length ? out.join("\n") : undefined;
+}
+
+/**
+ * The hand-back for a question held back (ADR 0117 addendum): the answered questions that may
+ * already decide it, with their answers. The words quote people and the model, so the message
+ * goes in the hand-backs data block, never the instructions.
+ */
+function askedAnswered(h: HeldQuestion): StageIssue {
+  const answers = h.answered
+    .map((a) => `${a.id} "${a.question.trim()}", answered: "${answerWords(a) ?? ""}"`)
+    .join("; ");
+  return {
+    rule: "stage.asks-answered",
+    target: h.question.id,
+    message: `Your question "${h.question.question.trim()}" may ask again what a person already answered: ${answers}. That answer is part of the brief: follow it and leave the question out. If it decides your question, give sameAs with verdict answered and the answer's words; if it leaves something open, ask only that, with sameAs verdict narrower.`,
+    blocking: true,
+    kind: "drafting",
+  };
 }
 
 /** Whether "path:line" is a line of a file under the metarepo. */

@@ -4,6 +4,15 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A person's answer, read for the rest of the change (ADR 0115 and 0117 addenda)
+
+- A question a person answered isn't asked again in other words. The draft's prompt lists each answered question with its answer, and says the answer is part of the brief and is never asked again. Where a model is called directly (model, headless Claude Code), a new judgment, `answered-by`, reads the answer and says whether it already decides a new question; with a hand-off the drafter says so itself (`sameAs` with verdict `answered`, quoting the answer). A question the answer decides reads that answer. One nothing settled goes back to the drafter once, with the answer, before it goes to a person.
+- The critic's lenses read the answers people gave for the change, as data, in a stage and in `atticus critic`, and are told a scope a person set by answering isn't a finding. A lens that still reports one names the answer (`answered`, checked word for word); the finding is kept as a risk linked to the answer, not a block. A rule that can't be waived still blocks.
+- A checking round past a gate's limit is due once nothing blocking from the newest round is open and a person acted since it ran: on any of its findings (a gap included) or by answering one of the change's questions. A stage no longer stops with "act on each blocking finding of round 3" when round 3 has none; the refusal says what makes a round due.
+- Once a checking round has run, the gate says "its 2 critic rounds and the checking round are used" in `atticus critic`, `atticus findings` and `atticus change status`, which now prints a used-up gate's status.
+- `atticus finding <change> <id> apply` on a knowledge gap says that a fact you already wrote in by hand is recorded with `edit-and-apply --reason "<what you wrote>"`, no patch needed.
+- In hand-off mode, the questions a draft raised are no longer lost while its critic lenses are with the assistant.
+
 ### Knowledge files in the metarepo's inputs/ (ADR 0122)
 
 - Files dropped in the metarepo's `inputs/` are now general knowledge. `atticus sources sync` reads them as a source called `inputs`, with the wikis or alone (`--source inputs`), and needs no wiki configured. The knowledge scan reads the snapshot into items, each quote checked against the file.

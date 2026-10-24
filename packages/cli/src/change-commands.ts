@@ -24,7 +24,9 @@ import {
   loadRepos,
   type GitRunner,
 } from "@maycombhq/workspace";
+import { gateStatus, reviewedGates } from "@maycombhq/naysayer";
 import type { Output } from "./commands.js";
+import { statusLine } from "./critic-commands.js";
 import { table } from "./index-commands.js";
 import { scanCommand } from "./scan-commands.js";
 
@@ -176,6 +178,7 @@ export async function changeStatus(
     return fail(io, e);
   }
   for (const p of r.problems) io.err(p);
+  const critic = await usedUpGates(root, r.change.id);
   if (o.json) {
     io.out(
       JSON.stringify(
@@ -191,6 +194,7 @@ export async function changeStatus(
           privacy: r.privacy,
           handoff: r.handoff,
           footprint: r.footprint,
+          ...(critic.length ? { critic } : {}),
         },
         null,
         2,
@@ -225,7 +229,19 @@ export async function changeStatus(
     io.out("Blocked by:");
     for (const x of r.reasons) io.out(`  - ${x.message}`);
   }
+  // A gate whose critic rounds are used up: what a person does next, in the critic's words.
+  for (const line of critic) io.out(`Critic: ${line}`);
   return 0;
+}
+
+/** The status lines of the change's gates whose critic rounds are used up (ADR 0115 addendum). */
+async function usedUpGates(root: string, id: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const g of await reviewedGates(root, id).catch(() => [] as string[])) {
+    const s = await gateStatus(root, id, g).catch(() => undefined);
+    if (s && (s.humanDecides || s.checkRound)) out.push(statusLine(s));
+  }
+  return out;
 }
 
 /**

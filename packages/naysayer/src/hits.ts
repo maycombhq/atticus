@@ -26,6 +26,8 @@ export interface Hit {
   key: string;
   /** Knowledge gaps: the record the missing fact is about. */
   subject?: string;
+  /** The person's answer for the change that decided what it is about (a lens says, checked). */
+  answered?: { question: string; quote: string };
 }
 
 export interface CheckResult {

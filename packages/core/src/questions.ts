@@ -252,11 +252,91 @@ export interface QuestionPair {
  */
 export type QuestionJudge = (pairs: QuestionPair[]) => Promise<Map<string, SameVerdict>>;
 
+/**
+ * The kind of judgment that says whether a person's answer on file already decides a new
+ * question (ADR 0117 addendum, 2026-10-24): yes, and the question isn't asked again; no, and it
+ * is weighed as any other question. Asked of an answered question with its answer, which the
+ * same-question judgment never sees.
+ */
+export const ANSWERED_BY = "answered-by";
+/** Bumped when what the answered-by judgment is asked changes, so old verdicts aren't read. */
+const ANSWERED_BY_VERSION = 1;
+export type AnsweredVerdict = "yes" | "no" | "unsure";
+
+/** What an answered-by judgment is about, as hashed into its key: the answer is part of it. */
+export function answeredByInputs(
+  repo: string,
+  d: { question: string; evidence: readonly string[] },
+  answered: Question,
+): Record<string, unknown> {
+  return {
+    v: ANSWERED_BY_VERSION,
+    repo,
+    new: { question: d.question.trim(), evidence: [...d.evidence].sort() },
+    answered: {
+      id: answered.id,
+      question: answered.question.trim(),
+      answer: (answerWords(answered) ?? "").trim(),
+    },
+  };
+}
+
+/**
+ * The veto of the answered-by judgment, a fact: the ids, fields, paths and numbers the new
+ * question names that neither the answered question nor its answer names. A person answered
+ * about those things, not these, so the answer is never read for it (ADR 0117 §4).
+ */
+export function namedBeyondAnswer(
+  d: { question: string },
+  answered: { question: string; answer: string },
+  repo = "",
+): string[] {
+  const known = new Set([
+    ...namedIdentifiers(answered.question, repo),
+    ...namedIdentifiers(answered.answer, repo),
+  ]);
+  return [...namedIdentifiers(d.question, repo)].filter((n) => !known.has(n));
+}
+
+/** A new question and an answered one the checks couldn't settle, for a judge. */
+export interface AnsweredPair {
+  /** The judgment's key: judgmentKey(ANSWERED_BY, inputs). */
+  key: string;
+  inputs: Record<string, unknown>;
+  repo: string;
+  draft: QuestionDraft;
+  answered: Question;
+  /** The answer in words. */
+  answer: string;
+}
+
+/** Judges answered-by pairs in one go (@maycombhq/ai's answerJudge); a pair left out is open. */
+export type AnswerJudge = (pairs: AnsweredPair[]) => Promise<Map<string, AnsweredVerdict>>;
+
 export interface RaiseOptions {
   /** Judge pairs the checks and the step's own reading leave open. None: they are raised. */
   judge?: QuestionJudge;
+  /**
+   * Judge whether an answer on file decides a new question, for the pairs the step's own
+   * reading (`sameAs: answered`) and a stored judgment leave open. None: they stay open.
+   */
+  answerJudge?: AnswerJudge;
+  /**
+   * Hold back a question an answered one may already decide, where nothing settled it (no
+   * reading, no judgment, no judge, or the judge unsure): it isn't written, and comes back in
+   * `held` with the answered questions, so the step can hand it back to its drafter instead of
+   * asking the person again. Called once per such question; true holds it.
+   */
+  hold?: (q: Question, answered: Question[]) => boolean;
   /** Where judgments are kept; default the metarepo's judgments/. */
   judgments?: JudgmentStore;
+}
+
+/** A question held back: the one it would have been, and the answered ones that may decide it. */
+export interface HeldQuestion {
+  question: Question;
+  draft: QuestionDraft;
+  answered: Question[];
 }
 
 const evidenceFile = (e: string) => e.slice(0, e.lastIndexOf(":"));
@@ -315,14 +395,26 @@ export async function raiseQuestions(
   known: Question[];
   reused: Question[];
   of: (Question | undefined)[];
+  /** Questions held back for the step's drafter (`hold`); not written. */
+  held: HeldQuestion[];
+  /** The answered questions whose answer decides a draft, by the draft's index (ADR 0117 addendum). */
+  decidedBy: Map<number, Question>;
 }> {
   const store = o.judgments ?? fileJudgments(root);
   const raised: Question[] = [];
   const known: Question[] = [];
   const reused: Question[] = [];
+  const held: HeldQuestion[] = [];
+  const decidedBy = new Map<number, Question>();
   const of: (Question | undefined)[] = drafts.map(() => undefined);
   let others: Question[] | undefined;
-  const plans: { i: number; d: QuestionDraft; q: Question; cands: Question[] }[] = [];
+  const plans: {
+    i: number;
+    d: QuestionDraft;
+    q: Question;
+    cands: Question[];
+    answered: Question[];
+  }[] = [];
   for (const [i, d] of drafts.entries()) {
     const q = questionFromDraft(d, by);
     const existing = await readQuestion(root, q.id).catch(() => undefined);
@@ -335,13 +427,71 @@ export async function raiseQuestions(
     const cands = candidatesFor(by.repo, d, by.step, others).filter(
       (x) => !differentThings(d, x, by.repo),
     );
-    plans.push({ i, d, q, cands });
+    // The answered questions whose answer may decide it: the candidates above, and every one
+    // this step asked (a draft re-asking its own answered question cites other lines). The
+    // veto: it names something neither the question nor its answer names.
+    const answered = others.filter(
+      (x) =>
+        x.state === "answered" &&
+        (cands.some((c) => c.id === x.id) ||
+          x.id === d.sameAs?.id ||
+          askedByStep(x, by.step) ||
+          candidatesFor(by.repo, d, "", [x]).length > 0) &&
+        namedBeyondAnswer(d, { question: x.question, answer: answerWords(x) ?? "" }, by.repo)
+          .length === 0,
+    );
+    plans.push({ i, d, q, cands, answered });
   }
+
+  // Does an answer on file decide it? Stored, the step's own reading, or the judge's.
+  const decides = new Map<string, AnsweredVerdict>();
+  const open: AnsweredPair[] = [];
+  for (const p of plans)
+    for (const x of p.answered) {
+      const inputs = answeredByInputs(by.repo, p.d, x);
+      const key = judgmentKey(ANSWERED_BY, inputs);
+      if (decides.has(key) || open.some((y) => y.key === key)) continue;
+      const stored = await store.get(ANSWERED_BY, key);
+      if (stored && typeof stored.verdict === "string") {
+        decides.set(key, stored.verdict as AnsweredVerdict);
+        continue;
+      }
+      const answer = answerWords(x) ?? "";
+      const said =
+        p.d.sameAs?.id === x.id && p.d.sameAs.verdict === "answered" ? p.d.sameAs : undefined;
+      if (said && quotedIn(answer, said.quote)) {
+        const j = await store.put(
+          makeJudgment({
+            kind: ANSWERED_BY,
+            inputs,
+            verdict: "yes",
+            quotes: [{ of: "answer", text: said.quote }],
+            confirmedBy: { by: "ai", run: by.run ?? by.command },
+            at: by.at,
+          }),
+        );
+        decides.set(key, j.verdict as AnsweredVerdict);
+        continue;
+      }
+      open.push({ key, inputs, repo: by.repo, draft: p.d, answered: x, answer });
+    }
+  if (open.length && o.answerJudge)
+    for (const [k, v] of await o.answerJudge(open)) if (!decides.has(k)) decides.set(k, v);
+  const answeredFor = (p: (typeof plans)[number]) =>
+    p.answered.find(
+      (x) => decides.get(judgmentKey(ANSWERED_BY, answeredByInputs(by.repo, p.d, x))) === "yes",
+    );
+  const unsettled = (p: (typeof plans)[number]) =>
+    p.answered.filter((x) => {
+      const v = decides.get(judgmentKey(ANSWERED_BY, answeredByInputs(by.repo, p.d, x)));
+      return v !== "yes" && v !== "no";
+    });
 
   // What each pair is: stored, the step's own reading, or the judge's.
   const verdicts = new Map<string, SameVerdict>();
   const pending: QuestionPair[] = [];
-  for (const p of plans)
+  // A question an answer already decides needs no same-question judgment.
+  for (const p of plans.filter((y) => !answeredFor(y)))
     for (const x of p.cands) {
       const inputs = sameQuestionInputs(by.repo, p.d, x);
       const key = judgmentKey(SAME_QUESTION, inputs);
@@ -377,9 +527,12 @@ export async function raiseQuestions(
       of[p.i] = dup;
       continue;
     }
-    let same: Question | undefined;
+    // A person's answer on file decides it: the step reads that answer, nobody is asked again.
+    const decided = answeredFor(p);
+    let same: Question | undefined = decided;
+    if (decided) decidedBy.set(p.i, decided);
     const related: NonNullable<Question["related"]> = [];
-    for (const x of p.cands) {
+    for (const x of decided ? [] : p.cands) {
       const key = judgmentKey(SAME_QUESTION, sameQuestionInputs(by.repo, p.d, x));
       const v = verdicts.get(key) ?? "unsure";
       if (v === "different") continue;
@@ -423,11 +576,18 @@ export async function raiseQuestions(
       continue;
     }
     const q = related.length ? Question.parse({ ...p.q, related }) : p.q;
+    // An answered question that may decide it and that nothing settled: the step may hand it
+    // back to its drafter, with the answer, rather than ask the person what they already said.
+    const maybe = unsettled(p);
+    if (maybe.length && o.hold?.(q, maybe)) {
+      held.push({ question: q, draft: p.d, answered: maybe });
+      continue;
+    }
     await write(root, q);
     raised.push(q);
     of[p.i] = q;
   }
-  return { raised, known, reused, of };
+  return { raised, known, reused, of, held, decidedBy };
 }
 
 /**

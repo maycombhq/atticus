@@ -45,6 +45,8 @@ export interface GateStatus {
    * checking round past the limit reviews what they did (ADR 0115 addendum).
    */
   checkRound: boolean;
+  /** Checking rounds past the limit that have run at the gate (ADR 0115 addendum). */
+  checkRoundsRun: number;
   /** AI lenses of the newest round that are still with the person's assistant (hand-off). */
   waiting: { lens: string; runId: string }[];
   /** Why the hand-off may not proceed, as the lifecycle reports it. */
@@ -93,6 +95,9 @@ export async function gateStatusOf(
   const maxRounds = maxRoundsOf(lifecycle, gate);
   const usedUp =
     maxRounds !== undefined && (await countedRounds(root, change.id, gate)).length >= maxRounds;
+  let checkRoundsRun = 0;
+  for (const n of rounds)
+    if ((await readRoundMeta(root, change.id, gate, n))?.checkRound) checkRoundsRun++;
   return {
     gate,
     ...(round ? { round } : {}),
@@ -102,6 +107,7 @@ export async function gateStatusOf(
     mayProceed: reasons.length === 0,
     humanDecides: blocking.length > 0 && usedUp,
     checkRound: usedUp && (await checkRoundDue(root, change.id, gate)).length > 0,
+    checkRoundsRun,
     waiting,
     reasons,
     findings,
@@ -129,4 +135,16 @@ export async function gateStatus(
       `There is no gate ${gate}. Gates: ${lifecycle.orgPack.gates.gates.map((g) => g.id).join(", ")}.`,
     );
   return gateStatusOf(root, lifecycle, change, gate);
+}
+
+/**
+ * The gate's used rounds in words, for a person: "its 2 critic rounds are used", and once a
+ * checking round past the limit has run, "its 2 critic rounds and the checking round are used",
+ * so the words match the rounds on file.
+ */
+export function roundsUsed(s: Pick<GateStatus, "maxRounds" | "checkRoundsRun">): string {
+  const max = s.maxRounds ?? 0;
+  const n = s.checkRoundsRun ?? 0;
+  const checking = n === 1 ? " and the checking round" : n > 1 ? ` and ${n} checking rounds` : "";
+  return `its ${max} critic round${max === 1 ? "" : "s"}${checking} ${max === 1 && !n ? "is" : "are"} used`;
 }
