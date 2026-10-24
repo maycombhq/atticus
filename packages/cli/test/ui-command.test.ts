@@ -1,4 +1,5 @@
-import { cp, mkdtemp } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { readCatalog } from "@maycombhq/scanner";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -32,6 +33,53 @@ describe("atticus ui", () => {
       const h = await fetch(srv.url + "/api/health", { headers: { "X-Atticus-Token": srv.token } });
       expect(await h.json()).toMatchObject({ user: "pat", version: "1.2.3" });
       expect((await fetch(srv.url + "/api/changes", { method: "POST" })).status).toBe(401);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("keeps the catalog in memory while it runs, and reads it again when a file changes (ADR 0119)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-cmd-"));
+    await cp(join(FORGE, "metarepo"), root, { recursive: true });
+    const dir = join(root, "catalog", "generated", "datastore");
+    await mkdir(dir, { recursive: true });
+    const store = (type: string) =>
+      [
+        "schemaVersion: 2",
+        "kind: DataStore",
+        "id: probe-db",
+        "status: current",
+        "confidence: verified",
+        "evidence:",
+        "  - commit: 6ef8ed0f115024e860c495e84875f1926c412036",
+        "    extractor: migrations@1.3.0",
+        "    line: 1",
+        "    path: probe/V1__init.sql",
+        "    repo: probe",
+        "    scannedAt: 2026-10-20T20:14:16.096Z",
+        "    source: migration",
+        "ownerComponent: probe",
+        `storeType: ${type}`,
+        "",
+      ].join("\n");
+    await writeFile(join(dir, "probe-db.yaml"), store("postgres"));
+    const srv = await startUi(root, { port: 0 });
+    const typeNow = async () =>
+      (
+        (await readCatalog(join(root, "catalog", "generated"))).records.find(
+          (r) => r.id === "probe-db",
+        ) as { storeType?: string } | undefined
+      )?.storeType;
+    try {
+      expect(await typeNow()).toBe("postgres");
+      await writeFile(join(dir, "probe-db.yaml"), store("h2"));
+      // The watcher hears the write and the kept catalog is forgotten.
+      let seen: string | undefined;
+      for (let i = 0; i < 40 && seen !== "h2"; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+        seen = await typeNow();
+      }
+      expect(seen).toBe("h2");
     } finally {
       await srv.close();
     }

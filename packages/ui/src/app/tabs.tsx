@@ -22,9 +22,12 @@ export function SectionTabs({ current, hash }: { current: ScreenDef; hash: strin
   const section = sectionLabel(current.section);
   const change = current.section === "Changes" ? changeOf(hash) : undefined;
   const shown = current.under ?? current.id;
+  // The list's tab never repeats the section's name: every change, or the one open.
+  const label = (s: ScreenDef) =>
+    s.id === "changes" ? (change ? T.thisChange : T.allChanges) : s.label;
   const tab = (s: ScreenDef) => (
     <a key={s.id} href={tabHref(s, change)} aria-current={s.id === shown ? "page" : undefined}>
-      {s.label}
+      {label(s)}
     </a>
   );
   const plain = tabs.filter((s) => !s.group);
@@ -39,7 +42,7 @@ export function SectionTabs({ current, hash }: { current: ScreenDef; hash: strin
           </>
         )}
         <span aria-hidden="true"> › </span>
-        <span aria-current="location">{current.label}</span>
+        <span aria-current="location">{label(current)}</span>
       </nav>
       <nav aria-label={T.tabs(section)} className="tabs">
         {plain.map(tab)}

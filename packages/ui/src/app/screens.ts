@@ -56,7 +56,7 @@ export const SCREENS: ScreenDef[] = [
   { id: "release", label: S.release, section: "Changes", group: "Release" },
   { id: "service-desk", label: S.serviceDesk, section: "Changes", group: "Release" },
   // Knowledge (ADR 0102): the items, the wikis they come from, searching them, the parties.
-  { id: "knowledge", label: N.knowledge, section: "Knowledge" },
+  { id: "knowledge", label: K.items, section: "Knowledge" },
   { id: "wikis", label: K.sources, section: "Knowledge" },
   { id: "wiki-search", label: K.search, section: "Knowledge" },
   { id: "parties", label: K.parties, section: "Knowledge" },

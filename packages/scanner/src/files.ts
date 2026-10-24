@@ -1,5 +1,5 @@
 import { readdir, readFile, rm } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import {
   deserializeRecord,
   writeFileAtomic,
@@ -8,10 +8,43 @@ import {
   type CatalogRecord,
 } from "@maycombhq/core";
 
+type CatalogRead = { records: CatalogRecord[]; problems: { file: string; message: string }[] };
+
+/**
+ * Catalogs a long-running process read, kept until it is told the files changed (ADR 0119). The
+ * local server turns this on and forgets on every file change its watcher sees: a metarepo's
+ * 1,500 records took seconds to read on every request. A one-shot command reads the files.
+ */
+const kept = new Map<string, Promise<CatalogRead>>();
+let keeping = false;
+
+/** Keep catalogs read in memory (the local server), or read the files every time (the default). */
+export function keepCatalogsInMemory(on = true): void {
+  keeping = on;
+  if (!on) kept.clear();
+}
+
+/** The files changed: the next read reads them again. */
+export function forgetCatalogs(): void {
+  kept.clear();
+}
+
 /** Read every record file under a catalog folder. Files that fail C1 are reported, not returned. */
-export async function readCatalog(
-  dir: string,
-): Promise<{ records: CatalogRecord[]; problems: { file: string; message: string }[] }> {
+export async function readCatalog(dir: string): Promise<CatalogRead> {
+  if (!keeping) return readCatalogFiles(dir);
+  const key = resolve(dir);
+  let read = kept.get(key);
+  if (!read) {
+    read = readCatalogFiles(dir);
+    kept.set(key, read);
+    read.catch(() => kept.delete(key));
+  }
+  const r = await read;
+  // Each caller gets its own copy: one that sorts or changes records never changes the next's.
+  return { records: structuredClone(r.records), problems: r.problems.map((p) => ({ ...p })) };
+}
+
+async function readCatalogFiles(dir: string): Promise<CatalogRead> {
   const records: CatalogRecord[] = [];
   const problems: { file: string; message: string }[] = [];
   async function walk(d: string) {
@@ -52,6 +85,8 @@ export async function writeCatalog(
   dir: string,
   records: CatalogRecord[],
 ): Promise<{ written: number; unchanged: number; removed: number }> {
+  // What a reader kept is out of date once this writes.
+  forgetCatalogs();
   const wanted = new Map(records.map((r) => [recordPath(r), serializeRecord(r)]));
   let written = 0;
   let unchanged = 0;

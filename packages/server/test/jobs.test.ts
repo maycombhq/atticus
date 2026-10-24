@@ -1,6 +1,7 @@
 import { currentSignal, throwIfCancelled } from "@maycombhq/core";
 import { describe, expect, it } from "vitest";
 import { JobManager } from "../src/jobs.js";
+import { EventHub } from "../src/server.js";
 
 /** Cancel stops the work, through the job's signal (ADR 0119). */
 describe("JobManager cancel", () => {
@@ -46,5 +47,17 @@ describe("JobManager cancel", () => {
     const job = jobs.start("index", async () => undefined);
     await jobs.settle(job.id);
     expect(jobs.cancel(job.id)).toBe(false);
+  });
+});
+
+describe("EventHub listeners (ADR 0119)", () => {
+  it("tells a listener in this process every event, until it stops listening", () => {
+    const hub = new EventHub();
+    const heard: string[] = [];
+    const stop = hub.listen((e) => heard.push(e.type));
+    hub.publish({ type: "file.changed", path: "catalog/generated" });
+    stop();
+    hub.publish({ type: "index.rebuilt" });
+    expect(heard).toEqual(["file.changed"]);
   });
 });

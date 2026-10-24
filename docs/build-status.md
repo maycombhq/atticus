@@ -246,7 +246,7 @@ Facts stay deterministic: from code, or from a decision a person recorded. The m
 - [ ] **J7. Value:** the change cockpit; evidence beside a question; flows and changes on a code line; a hand-off PR that reviews itself; watch and nudge; start from a similar change; a system page; review mode for knowledge; undo; bulk actions; a guided first hour.
 - [ ] **J8. Any assistant, any model, set up from the app** (own ADR): an assistant registry (Copilot, Claude Code, Cursor, Codex, Gemini CLI, Windsurf, generic); the AI tab writing `runtime.yaml`; keys in the OS credential manager; provider plugins from configuration (Vertex first); every model VS Code sees.
 - [ ] **J9. Branches you can see and choose** (own ADR): the remote's default branch detected; named branches per repo scanned beside the baseline; a Repos screen.
-- [ ] **J10. Knowledge kept inside the repos** (own ADR): the knowledge folders read by the scan as source documents, organised by system, kind and freshness; drop targets in the app and both editors.
+- [ ] **J10. Knowledge files in two scopes** (own ADR; never folders inside the code repos): general knowledge dropped in the metarepo's `inputs/`, read by the knowledge scan into items with cited quotes; files specific to a change in its own `inputs/` (built, ADR 0113), read only by its steps; promote a change's file to general knowledge; a Documents tab by system, kind and freshness; drop targets in the app and both editors.
 
 ### G. For a person, and later phases
 

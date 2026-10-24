@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
-import { createLog, DEFAULT_PORT } from "@maycombhq/core";
+import { join } from "node:path";
+import { catalogDirOf, createLog, DEFAULT_PORT } from "@maycombhq/core";
+import { forgetCatalogs, keepCatalogsInMemory, readCatalog } from "@maycombhq/scanner";
 import { startServer, type RunningServer } from "@maycombhq/server";
 import { uiDistDir } from "@maycombhq/ui";
 import type { Output } from "./commands.js";
@@ -18,7 +20,7 @@ import { uiModelRunRoutes } from "./ui-api-runs.js";
 import { uiHistoryRoutes } from "./ui-api-history.js";
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
-export function startUi(
+export async function startUi(
   root: string,
   o: {
     port?: number;
@@ -30,7 +32,7 @@ export function startUi(
   } = {},
   deps: UiDeps = {},
 ): Promise<RunningServer> {
-  return startServer({
+  const srv = await startServer({
     root,
     port: o.port ?? DEFAULT_PORT,
     ...(o.embed ? { embed: o.embed } : {}),
@@ -57,6 +59,22 @@ export function startUi(
         uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
         ctx,
       );
+    },
+  });
+  // ADR 0119: the catalog is read once and kept while the server runs; any file change it
+  // hears (its watcher, its own writes, a scan) means the next read reads the files again.
+  keepCatalogsInMemory(true);
+  // Read it now, while nobody waits, so the first page doesn't pay for it.
+  void readCatalog(join(catalogDirOf(root), "generated")).catch(() => undefined);
+  const stop = srv.events.listen((e) => {
+    if (e.type === "file.changed" || e.type === "index.rebuilt") forgetCatalogs();
+  });
+  const close = srv.close;
+  return Object.assign(srv, {
+    close: async () => {
+      stop();
+      keepCatalogsInMemory(false);
+      await close();
     },
   });
 }

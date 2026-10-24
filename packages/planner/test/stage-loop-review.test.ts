@@ -347,6 +347,81 @@ describe("a done architecture stage once the change's own code is in the catalog
   });
 });
 
+describe("a done architecture stage once today's flow changed", () => {
+  const deltaRuntime = (count: () => void) =>
+    new MockRuntime(
+      (req: AiRequest) => {
+        if (req.agent.id.endsWith("-critic")) return "findings: []";
+        count();
+        return DELTAS;
+      },
+      { now: () => NOW },
+    );
+  async function doneThenRescanned(state: "build" | "design") {
+    const root = await estateRoot();
+    await featureStage(root, CHANGE, {
+      runtime: new MockRuntime(
+        (req) => (req.agent.id.endsWith("-critic") ? "findings: []" : PLACED),
+        {
+          now: () => NOW,
+        },
+      ),
+      now: NOW,
+    });
+    let calls = 0;
+    const first = await architectureStage(root, CHANGE, {
+      runtime: deltaRuntime(() => calls++),
+      now: NOW,
+    });
+    expect(first.state).toBe("done");
+    // The flow is rescanned: one step reads differently from when the design was pinned.
+    const flow = join(root, "specs/forge-orders/forge-orders.place-order.yaml");
+    await writeFile(
+      flow,
+      (await readFile(flow, "utf8")).replace(
+        "what: The stock service reserves the quantity",
+        "what: The stock service holds the quantity",
+      ),
+    );
+    const file = join(root, "openspec/changes", CHANGE, "change.yaml");
+    const path = state === "build" ? ["design", "plan", "build"] : ["design"];
+    const moves = path
+      .map(
+        (to, i) =>
+          `  - from: ${i ? path[i - 1] : "define"}
+    to: ${to}
+    at: 2026-10-2${i + 1}T09:00:00Z
+    by: pat
+`,
+      )
+      .join("");
+    await writeFile(
+      file,
+      (await readFile(file, "utf8")).replace(/^state: .*$/m, `state: ${state}`) + moves,
+    );
+    const before = calls;
+    const again = await architectureStage(root, CHANGE, {
+      runtime: deltaRuntime(() => calls++),
+      now: NOW,
+    });
+    return { again, drafted: calls - before };
+  }
+
+  it("stays done once the change is in build: its design was built, a rescan doesn't redraft it", async () => {
+    const { again, drafted } = await doneThenRescanned("build");
+    expect(again.state).toBe("done");
+    expect(drafted).toBe(0);
+    expect(again.notes.join("\n")).toMatch(
+      /Today's flow forge-orders\.place-order changed since this design; the change is in build, so the design stays as it was\./,
+    );
+  });
+
+  it("drafts again while the change is still in design: the step numbers may point elsewhere", async () => {
+    const { drafted } = await doneThenRescanned("design");
+    expect(drafted).toBeGreaterThan(0);
+  });
+});
+
 describe("what a write sends, and where a step may go (M10, A5, M11)", () => {
   const delta = (step: Record<string, unknown>) =>
     FlowDelta.parse({
