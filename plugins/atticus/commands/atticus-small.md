@@ -3,6 +3,8 @@ description: "Plan a small change in one step: its place on the flows, its targe
 argument-hint: "[change]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Run the fast path of the small change $ARGUMENTS (ADR 0113): in one answer, place it on the estate's flows and features, write the target flow of every flow it changes, and word one story per target flow with each step's acceptance criteria. Atticus checks every part as the feature, architecture and stories stages would, makes the tasks from your target flows, runs the critic at the change type's gate on every draft and writes every file the full path writes. Loop until it is done.
 
 1. Run `atticus change small $ARGUMENTS --handoff` in a terminal in this workspace. It prints the prompt file, the result file, and the two commands that finish the step. If it prints no prompt file, there was nothing for you to write: say what it printed and go on.

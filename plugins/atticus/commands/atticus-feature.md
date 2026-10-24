@@ -3,6 +3,8 @@ description: Place a change on the estate's flows and features, looping with Att
 argument-hint: "[change]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Run the feature stage of the change $ARGUMENTS: place it against the estate, from its brief, its existing stories, or a design. You pick, by meaning, the features and flows it touches, the new flows it needs, the gaps and the questions; Atticus checks every id, finds the other changes in flight, runs the critic on every draft and writes feature.yaml. Loop until the stage is done.
 
 1. Run `atticus change feature $ARGUMENTS --handoff` (add `--from-figma <file.json>` the first time when the change starts from an exported Figma design) in a terminal in this workspace. It prints the prompt file, the result file, and the two commands that finish the step. If it prints no prompt file, there was nothing for you to write: say what it printed and go on.

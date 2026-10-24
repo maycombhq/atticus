@@ -18,6 +18,13 @@ const STOP =
 
 const FINISH = "Finish by running `atticus next` and telling the person what it says to do next.";
 
+/**
+ * WP3.4: before a step, the one check that the workspace is ready, and the one message when it
+ * isn't, the same one `atticus next` and the editors give.
+ */
+export const GUARD =
+  "Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.";
+
 /** The four steps every AI step shares: hand-off, do the work, done, resume. */
 function handoff(command: string, o: { note?: string; at?: number } = {}): string[] {
   const work = (o.at ?? 1) + 1;
@@ -35,6 +42,8 @@ function body(
   o: { stop?: boolean; finish?: boolean } = {},
 ): string {
   return [
+    GUARD,
+    "",
     purpose,
     "",
     ...steps.map((s, i) => `${i + 1}. ${s}`),

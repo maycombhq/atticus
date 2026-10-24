@@ -39,6 +39,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### Every step prompt checks first
+
+- Each step's slash command (`/atticus-survey` to `/atticus-next`) starts by running `atticus assistant-files --check`. When the command line isn't installed, the folder isn't a metarepo, or the prompt files are out of date, the assistant says exactly that and stops. The zero-install commands (`/atticus-ask`, `/atticus-impact` and the rest) read committed files only and need no check.
+- `atticus assistant-files` outside a metarepo says so, the same way `atticus next` does, instead of listing the files it would write.
+
 ### One question at a time
 
 - `atticus questions show <id> [--json]` shows one question on file with its options, evidence and answer. A subcommand `questions` hasn't (`questions shwo`) is refused with the three it has, instead of listing the knowledge gaps.

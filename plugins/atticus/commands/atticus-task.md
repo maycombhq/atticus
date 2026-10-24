@@ -3,6 +3,8 @@ description: "Start a task of a change with its context loaded: its story and cr
 argument-hint: "[change] [task]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Implement the task $ARGUMENTS (the change's id, then the task's id). Atticus gives you its context, so nobody pastes files into the chat: the task, its story and acceptance criteria, the target-flow step it implements with today's step and the file and line it is cited at, the needs, standards and decisions that apply, the files attached to the change and the files likely to change.
 
 1. Run `atticus task context $ARGUMENTS --markdown` in a terminal in this workspace and read all of it. (Where the Atticus MCP server is on, its task_context tool gives the same.)

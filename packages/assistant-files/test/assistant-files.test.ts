@@ -6,13 +6,16 @@ import { describe, expect, it } from "vitest";
 import { loadOrgPack } from "@maycombhq/core";
 import {
   generateAssistantFiles,
+  GUARD,
   loadOrgCommands,
   parseHeader,
   renderAssistantFiles,
   sha256,
   smokeCheck,
   SPEC_KIT_VERSION,
+  stepCommands,
   writeAssistantFiles,
+  zeroInstallCommands,
 } from "../src/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -442,5 +445,25 @@ describe("org-pack commands", () => {
       "org-pack/process/commands/broken.md: a command starts with YAML front matter between --- lines",
       "org-pack/process/commands/misnamed.md: id other doesn't match the file name",
     ]);
+  });
+});
+
+describe("every step command starts with the check (WP3.4)", () => {
+  it("checks the command line, the metarepo and the files first, and stops with what it said", () => {
+    const steps = stepCommands();
+    expect(steps.length).toBeGreaterThan(10);
+    for (const c of steps) {
+      expect(c.body.startsWith(GUARD), c.name).toBe(true);
+    }
+    expect(GUARD).toContain("atticus assistant-files --check");
+    expect(GUARD).toMatch(/isn't installed here/);
+    expect(GUARD).toMatch(/isn't an Atticus metarepo/);
+    expect(GUARD).toMatch(/out of date/);
+    // The zero-install commands read committed files only: no command line, no check.
+    expect(
+      zeroInstallCommands({ catalog: "catalog", openspec: "openspec" }).some((c) =>
+        c.body.includes(GUARD),
+      ),
+    ).toBe(false);
   });
 });

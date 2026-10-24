@@ -3,6 +3,8 @@ description: Answer a question from the knowledge items only, citing each one.
 argument-hint: "[question]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Answer $ARGUMENTS from the organisation's knowledge items only (the patterns, standards, processes, requests, decisions and constraints read from the wikis), citing each item you rely on. Atticus checks every citation.
 
 1. Run `atticus knowledge ask "$ARGUMENTS" --handoff` in a terminal in this workspace. It prints the prompt file, the result file, and the two commands that finish the step. If it prints no prompt file, there was nothing for you to write: say what it printed and go on.

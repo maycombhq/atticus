@@ -3,6 +3,8 @@ description: Write a change's stories and tasks from its target flows, looping w
 argument-hint: "[change]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Run the stories stage of the change $ARGUMENTS. Atticus derives the stories per repo from the target flows, a task per changed step with its fields, evidence and prompt, and the change tasks and service requests the knowledge items call for, each citing its item and step. You word the stories and write each task's acceptance criteria. Atticus checks them and runs the critic on every draft. Loop until the stage is done.
 
 1. Run `atticus plan stories $ARGUMENTS --handoff` in a terminal in this workspace. It prints the prompt file, the result file, and the two commands that finish the step. If it prints no prompt file, there was nothing for you to write: say what it printed and go on.
