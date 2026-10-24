@@ -24,6 +24,14 @@ describe("first-run tour", () => {
       expect(text).toContain(entry);
   });
 
+  it("says Home is one page, and names Change's tabs from All changes to Tasks", () => {
+    expect(TOUR[0]!.body).toMatch(/what needs a person/);
+    expect(TOUR[0]!.body).toMatch(/scanned and trusted/);
+    const change = TOUR.find((s) => s.title === "One change, a tab per stage")!;
+    expect(change.target).toBe('.nav a[href="#/changes"]');
+    expect(change.body).toMatch(/All changes.*At a glance.*feature.*architecture.*stories.*tasks/);
+  });
+
   it("says approving is the pull request, not a role (ADR 0073)", () => {
     const text = TOUR.map((s) => s.body).join(" ");
     expect(text).toContain("Merging it approves the gate");

@@ -31,6 +31,19 @@ describe("the command palette", () => {
     expect(screens("feature brief", true)).toEqual(["#/brief"]);
   });
 
+  it("finds Home by the pages merged into it, and never offers the Overview's own page", () => {
+    const screens = (text: string, full = false) =>
+      paletteItems(text, [], [], full)
+        .filter((i) => i.kind === "screen")
+        .map((i) => i.href);
+    expect(screens("waiting on you")).toEqual(["#/home"]);
+    expect(screens("overview")).toEqual(["#/home"]);
+    expect(screens("overview", true)).toEqual(["#/home"]);
+    expect(screens("dashboard", true)).toEqual([]);
+    expect(screens("all changes")).toEqual(["#/changes"]);
+    expect(paletteItems("all changes", [], [])[0]).toMatchObject({ detail: "Change" });
+  });
+
   it("matches screens by name and offers no Ask line for an empty box", () => {
     expect(paletteItems("impact", [], [])[0]).toMatchObject({ kind: "screen", href: "#/impact" });
     expect(paletteItems("", [], []).some((i) => i.kind === "ask")).toBe(false);

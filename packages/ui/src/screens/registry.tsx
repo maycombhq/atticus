@@ -14,7 +14,6 @@ import { Words } from "./run/Words.js";
 import { Runs } from "./runs/Runs.js";
 import { ChangeDiagram } from "./work/ChangeDiagram.js";
 import { Conformance } from "./work/Conformance.js";
-import { Dashboard } from "./work/Dashboard.js";
 import { ChangeCockpit } from "./work/Cockpit.js";
 import { Estimate } from "./work/Estimate.js";
 import { Onboarding } from "./work/Onboarding.js";
@@ -27,8 +26,8 @@ import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work
 export type Screen = ComponentType<{ hash: string }>;
 
 export const SCREEN_COMPONENTS: Record<string, Screen> = {
-  // The stage screens of plan 4.5 (Change's tabs), the Overview and the first steps.
-  dashboard: () => <Dashboard />,
+  // The stage screens of plan 4.5 (Change's tabs) and the first steps. The Overview is part of
+  // Home: its address, #/dashboard, opens Home (OLD_ADDRESSES in app/screens.ts).
   onboarding: () => <Onboarding />,
   "feature-design": FeatureDesign,
   architecture: ArchitecturePage,
@@ -37,8 +36,9 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   // Map: the estate canvas (the Architecture workspace, without a change's step) and Trust.
   canvas: ({ hash }) => <Architecture hash={hash} screen="canvas" />,
   trust: () => <Trust />,
-  // Every other page, unchanged (behind --full, or reached by a link).
+  // Home: one page, Waiting on you with the Overview merged in.
   home: () => <CommandCenter />,
+  // Every other page, unchanged (behind --full, or reached by a link).
   changes: Changes,
   explore: Explore,
   flows: Flows,

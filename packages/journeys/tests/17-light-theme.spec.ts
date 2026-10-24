@@ -35,7 +35,8 @@ test("the command palette and the tour are accessible in the light theme", async
 });
 
 test("the theme switch is remembered, and System follows the computer again", async ({ page }) => {
-  await open(page, app(), "dashboard");
+  // Home, which the Overview is part of now.
+  await open(page, app(), "home");
   const pick = page.getByLabel("Theme");
   await expect(pick).toHaveValue("system");
   await pick.selectOption("dark");
@@ -43,7 +44,7 @@ test("the theme switch is remembered, and System follows the computer again", as
   await page.reload();
   await expect(page.getByLabel("Theme")).toHaveValue("dark");
   expect(await theme(page)).toBe("dark");
-  await accessible(page, "dashboard (dark chosen on a light system)");
+  await accessible(page, "home (dark chosen on a light system)");
 
   await page.getByLabel("Theme").selectOption("system");
   expect(await theme(page)).toBe("light");

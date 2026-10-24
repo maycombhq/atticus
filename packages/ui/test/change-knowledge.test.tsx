@@ -110,7 +110,7 @@ describe("the knowledge that applies, on Change › Feature", () => {
     expect(empty).toContain("atticus change feature add-limit");
   });
 
-  it("is on the feature tab only, with links to the change's At a glance and every change", () => {
+  it("is on the feature tab only; At a glance and All changes are Change's tabs, not links here", () => {
     const list = {
       state: "ready" as const,
       data: [
@@ -135,8 +135,8 @@ describe("the knowledge that applies, on Change › Feature", () => {
       />,
     );
     expect(feature).toContain(esc(K.title));
-    expect(feature).toContain('href="#/cockpit?change=add-limit"');
-    expect(feature).toContain('href="#/changes"');
+    expect(feature).not.toContain('href="#/cockpit?change=add-limit"');
+    expect(feature).not.toContain('href="#/changes"');
     const stories = renderToStaticMarkup(
       <StagePage
         stage="stories"

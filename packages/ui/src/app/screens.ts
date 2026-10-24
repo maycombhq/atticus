@@ -2,10 +2,11 @@ import { COPY } from "../copy.js";
 
 /**
  * The app's map (the product owner's Surfaces design; ADR 0119 before it, plan 4.5, B1 and ADR
- * 0105). Six entries: Home (what needs you), Map (the estate, its flows, contracts, impact and how
- * far to trust it), Change (one change, a tab per stage), Questions (everything open), Knowledge
- * (the org's wikis and documents, cited) and Set up (what the files hold, as forms). The app
- * shows files and asks questions; it runs no scans, model calls or git.
+ * 0105). Six entries: Home (one page: what needs you, then the estate and the changes in flight),
+ * Map (the estate, its flows, contracts, impact and how far to trust it), Change (every change,
+ * one at a glance, then a tab per stage), Questions (everything open), Knowledge (the org's wikis
+ * and documents, cited) and Set up (what the files hold, as forms). The app shows files and asks
+ * questions; it runs no scans, model calls or git.
  *
  * Every other page stays, working as it did, behind `atticus ui --full` until a need brings it
  * back: with the flag it is a tab of its section (and Atticus's own pages a seventh entry);
@@ -31,12 +32,14 @@ export interface ScreenDef {
   /** A page out of the tabs: the tab it is a part of. */
   under?: string;
   /**
-   * A page of the six reached by a link from another (a change's list and its At a glance, the
-   * Ask page, a system's page, the words): not a tab, but in Ctrl+K. A tab with --full.
+   * A page of the six reached by a link from another (a change's picture, the Ask page, a
+   * system's page, the words, the first steps): not a tab, but in Ctrl+K. A tab with --full.
    */
   aside?: true;
   /** Behind --full: a tab only when the app runs with `atticus ui --full`. */
   full?: true;
+  /** Other words Ctrl+K finds the page by: the names of pages merged into it. */
+  also?: readonly string[];
 }
 
 const N = COPY.nav;
@@ -44,11 +47,16 @@ const S = COPY.nav.screens;
 const K = COPY.knowledge.nav;
 
 export const SCREENS: ScreenDef[] = [
-  // Home: one page, what needs you.
-  { id: "home", label: S.home, section: "Home" },
+  // Home: one page (the product owner, 2026-10-24): what needs you, then the estate and the
+  // changes in flight. The Overview is merged into it; its address opens Home (OLD_ADDRESSES).
+  {
+    id: "home",
+    label: S.home,
+    section: "Home",
+    also: [COPY.commandCenter.waitingOnYou, N.dashboard],
+  },
   // The words, from the link beside Help.
   { id: "words", label: S.words, section: "Home", aside: true },
-  { id: "dashboard", label: N.dashboard, section: "Home", full: true },
 
   // Map: the estate drawn, its flows, contracts, what breaks, and how far to trust it.
   { id: "canvas", label: S.canvas, section: "Map" },
@@ -67,10 +75,10 @@ export const SCREENS: ScreenDef[] = [
   { id: "governance", label: S.governance, section: "Map", full: true },
   { id: "initiatives", label: S.initiatives, section: "Map", full: true },
 
-  // Change: one change, a tab per stage.
-  { id: "changes", label: S.changes, section: "Change", aside: true },
+  // Change: every change, one at a glance, then a tab per stage (the product owner, 2026-10-24).
+  { id: "changes", label: S.changes, section: "Change" },
   // WP7.1: one change at a glance.
-  { id: "cockpit", label: S.cockpit, section: "Change", group: "Define", aside: true },
+  { id: "cockpit", label: S.cockpit, section: "Change", group: "Define" },
   { id: "brief", label: S.brief, section: "Change", group: "Define", full: true },
   { id: "ux", label: S.ux, section: "Change", group: "Define", full: true },
   { id: "feature-design", label: N.feature, section: "Change", group: "Define" },
@@ -144,9 +152,16 @@ export const tabsOf = (s: Section, full = false): ScreenDef[] =>
 /** Where a section opens: its first tab. */
 export const landingOf = (s: Section, full = false): ScreenDef => tabsOf(s, full)[0]!;
 
-/** The page a hash opens; an unknown one opens Home, what needs you. */
+/**
+ * Addresses of pages merged into another: the old address opens the page it is part of now, so
+ * every bookmark and editor link still works. The Overview is part of Home (2026-10-24).
+ */
+export const OLD_ADDRESSES: Readonly<Record<string, string>> = { dashboard: "home" };
+
+/** The page a hash opens; an unknown one opens Home. */
 export function screenOf(hash: string): ScreenDef {
-  const id = hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "home";
+  const asked = hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "home";
+  const id = OLD_ADDRESSES[asked] ?? asked;
   return SCREENS.find((s) => s.id === id) ?? SCREENS[0]!;
 }
 

@@ -1,6 +1,6 @@
 /** Every screen by its route (the menu of ADR 0105, then More and the cross-change views), with the Forge change where a screen works on one. */
 export const SCREENS = [
-  "dashboard",
+  // The Overview is part of Home (2026-10-24): #/dashboard opens Home, checked as "home" below.
   "onboarding",
   "feature-design?change=add-transfer-limit",
   "stories?change=add-transfer-limit",
@@ -29,8 +29,10 @@ export const SCREENS = [
   "ai",
   // ADR 0123: each repo's branches.
   "repos",
-  // WP7.1: one change at a glance. WP7.7: a system's page.
+  // WP7.1: one change at a glance (a tab of Change: without a change it says to pick one in All
+  // changes). WP7.7: a system's page.
   "cockpit",
+  "cockpit?change=add-transfer-limit",
   "systems",
   "intake",
   "scans",

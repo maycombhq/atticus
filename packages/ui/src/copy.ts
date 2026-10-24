@@ -542,6 +542,7 @@ export const COPY = {
   /** The menu: six entries (the Surfaces design), and Atticus's own pages with --full. */
   nav: {
     main: "Main",
+    /** The Overview's name: it is part of Home now, and Ctrl+K finds Home by it. */
     dashboard: "Overview",
     onboarding: "Onboarding",
     feature: "Feature design",
@@ -570,13 +571,10 @@ export const COPY = {
     /** The tabs of a section, and where you are. */
     tabs: (section: string) => `${section} pages`,
     youAreHere: "You are here",
-    /** The Changes list's tab: every change, or the one open. */
-    allChanges: "All changes",
-    thisChange: "This change",
     ofChange: (id: string) => `change ${id}`,
     /** The pages, by screen id. */
     screens: {
-      home: "Waiting on you",
+      home: "Home",
       canvas: "Estate canvas",
       trust: "Trust",
       explore: "Search the catalog",
@@ -595,7 +593,7 @@ export const COPY = {
       mappings: "API mappings",
       breakdown: "Breakdown",
       initiatives: "Initiatives",
-      changes: "Changes",
+      changes: "All changes",
       tasks: "Task board",
       trace: "Test trace",
       todo: "Manual steps",
@@ -998,9 +996,8 @@ export const COPY = {
   work: {
     loading: "Loading",
     unreadable: "These files couldn't be read:",
-    // Dashboard
-    dashIntro:
-      "Where the work is: what is onboarded and scanned, the changes in flight and the questions waiting for a person.",
+    // Home's overview (the Overview, merged into Home on 2026-10-24)
+    estate: "What is scanned and trusted",
     coverage: "Onboarded and scanned",
     reposListed: "repos in the manifests",
     reposCloned: "cloned",
@@ -1008,15 +1005,17 @@ export const COPY = {
     reposScanned: "scanned",
     records: "facts in the catalog",
     openOnboarding: "Open Onboarding",
+    trustNone: "No repo is listed yet, so there is no map to trust.",
+    allTrusted:
+      "Every repo's map is trusted: its facts are verified and of the commit checked out.",
+    notTrusted: "Not trusted yet",
+    openTrust: "Open Map › Trust",
     inFlight: "Changes in flight",
     noChanges: 'No change is in flight. Start one with atticus change new "<title>" --type <type>.',
     stageCol: "Stage",
     changeCol: "Change",
     stateCol: "State",
     commandCol: "Run",
-    openQuestions: "Open questions",
-    noQuestions: "No questions are waiting.",
-    allQuestions: (n: number) => `See all ${n} on the Questions page`,
     slashTitle: "Slash commands in Copilot Chat and Claude Code",
     slashIntro:
       "These slash commands are in Copilot Chat once atticus assistant-files has written them, and in Claude Code through the Atticus plugin. In each AI step your assistant does the model work and Atticus checks it.",
@@ -1068,7 +1067,12 @@ export const COPY = {
     noChangeYet: 'No change yet. Start one with atticus change new "<title>" --type <type>.',
     noChangeTitle: "No change yet",
     noChangeCommand: 'atticus change new "<title>" --type <type>',
-    noChangeLink: "The Changes screen lists every change once you start one.",
+    noChangeLink: "All changes lists every change once you start one.",
+    /** A change's tab opened with no change in its address. */
+    pickAChangeTitle: "Pick a change",
+    pickAChange:
+      "This tab is about one change. Pick it in All changes, and every tab of Change follows it.",
+    openAllChanges: "Open All changes",
     stageIs: (stage: string) => `This change is at the ${stage} stage.`,
     goStage: (page: string) => `Open ${page}`,
     files: "The change's files",
@@ -1186,7 +1190,7 @@ export const COPY = {
     steps: {
       home: {
         title: "Your home",
-        body: "Home shows what needs a person across every change (changes in each phase, blocking findings, open needs, questions and manual steps) and the changes in flight. Beside it: Map, Change, Questions, Knowledge and Set up. Everyone sees the same screens; Ctrl+K jumps anywhere.",
+        body: "Home is one page. First what needs a person across every change (changes in each phase, blocking findings, open needs, questions and manual steps) and the step to run next; then what is scanned and trusted, and each change in flight with the stage it is at. Beside it: Map, Change, Questions, Knowledge and Set up. Everyone sees the same screens; Ctrl+K jumps anywhere.",
       },
       ask: {
         title: "Ask in plain words",
@@ -1194,7 +1198,7 @@ export const COPY = {
       },
       change: {
         title: "One change, a tab per stage",
-        body: "Change has a tab for each stage: feature, architecture, stories and tasks. Each shows that stage's files and the command to run next; Feature also lists the org knowledge that applies, to confirm or exclude. At a glance says where the change is and what blocks it. Watch a change you aren't on, and your digest says how it is doing.",
+        body: "Change opens on All changes: pick one, and the tabs follow it. At a glance says where the change is and what blocks it; then a tab for each stage: feature, architecture, stories and tasks. Each shows that stage's files and the command to run next; Feature also lists the org knowledge that applies, to confirm or exclude. Watch a change you aren't on, and your digest says how it is doing.",
       },
       assistant: {
         title: "Run a step in your assistant",
@@ -1532,8 +1536,6 @@ export const COPY = {
     noChangeInFlight: "No change in flight. Start one with atticus change new.",
     gatePipeline: (id: string | number) => `Gate pipeline · ${id}`,
     gatePipeline2: "Gate pipeline",
-    noChangesInFlight: "No changes in flight.",
-    changesInFlight: "Changes in flight",
     interfacesInTheCatalog: "Interfaces in the catalog",
     interfaces: "Interfaces",
     theCatalogIsEmpty: "The catalog is empty. Run a scan to map your repos.",
@@ -2428,7 +2430,7 @@ export const COPY = {
   /** WP7.1: the change cockpit, one change at a glance. */
   cockpit: {
     title: "This change at a glance",
-    none: "No change yet: start one on Changes.",
+    none: "No change yet: start one with atticus change new, and All changes lists it.",
     where: "Where it is",
     state: (state: string, risk: string) => `In ${state}, ${risk} risk.`,
     stages: { feature: "Placement", architecture: "Target flows", stories: "Stories" } as Record<

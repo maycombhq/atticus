@@ -12,8 +12,7 @@ import { accessible, expect, startApp, stopApp, test, type App } from "../suppor
 
 const BIN = join(dirname(fileURLToPath(import.meta.url)), "../../cli/dist/bin.js");
 const ROUTES = [
-  // The menu, in the order of a working day (ADR 0105).
-  "dashboard",
+  // The menu, in the order of a working day (ADR 0105). The Overview is part of Home.
   "home",
   "changes",
   "onboarding",
@@ -91,7 +90,6 @@ for (const route of ROUTES)
 
 for (const route of [
   "home",
-  "dashboard",
   "map",
   "changes",
   "changes?across=needs",

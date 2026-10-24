@@ -4,10 +4,10 @@ import { COPY } from "../copy.js";
 const T = COPY.tour;
 
 /**
- * First-run tour: a few steps through Home, the six entries, asking, a change's tabs and the
- * hand-off PR. It points only at the menu's six (`link`), never at a page behind --full. It is the
- * same for everyone (there are no roles, ADR 0073), opens once per browser, can be skipped, and
- * replays from Help.
+ * First-run tour: a few steps through Home (one page), the six entries, asking, Change's tabs
+ * (All changes first) and the hand-off PR. It points only at the menu's six (`link`), never at a
+ * page behind --full. It is the same for everyone (there are no roles, ADR 0073), opens once per
+ * browser, can be skipped, and replays from Help.
  */
 
 interface Step {
@@ -30,14 +30,14 @@ export const TOUR: Step[] = [
   },
   {
     ...T.steps.change,
-    target: link("feature-design"),
+    target: link("changes"),
   },
   {
     ...T.steps.assistant,
   },
   {
     ...T.steps.approve,
-    target: link("feature-design"),
+    target: link("changes"),
   },
 ];
 

@@ -5,6 +5,7 @@ import {
   groupLabel,
   landingOf,
   offered,
+  OLD_ADDRESSES,
   PHASES,
   SCREENS,
   screenOf,
@@ -74,7 +75,6 @@ const BEFORE = [
 
 /** What the product owner's design keeps behind --full until a need brings it back. */
 const BEHIND_FULL = [
-  "dashboard",
   "map",
   "features",
   "mappings",
@@ -120,7 +120,7 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     expect(SECTIONS.map((s) => landingOf(s).id)).toEqual([
       "home",
       "canvas",
-      "feature-design",
+      "changes",
       "questions",
       "knowledge",
       "repos",
@@ -130,7 +130,15 @@ describe("the app's map: six entries (the Surfaces design)", () => {
   it("gives each entry exactly its tabs", () => {
     expect(of("Home")).toEqual(["home"]);
     expect(of("Map")).toEqual(["canvas", "flows", "contracts", "impact", "trust"]);
-    expect(of("Change")).toEqual(["feature-design", "architecture", "stories", "task-list"]);
+    // The product owner, 2026-10-24: the list and At a glance are tabs, before the stages.
+    expect(of("Change")).toEqual([
+      "changes",
+      "cockpit",
+      "feature-design",
+      "architecture",
+      "stories",
+      "task-list",
+    ]);
     expect(of("Questions")).toEqual(["questions"]);
     expect(of("Knowledge")).toEqual(["knowledge", "wikis", "documents", "wiki-search"]);
     expect(of("SetUp")).toEqual(["repos", "ai", "orgpack"]);
@@ -147,10 +155,10 @@ describe("the app's map: six entries (the Surfaces design)", () => {
     }
   });
 
-  it("reaches a change's list, At a glance and picture, Ask, a system and the words by link", () => {
+  it("reaches a change's picture, Ask, a system, the first steps and the words by link", () => {
     const aside = SCREENS.filter((s) => s.aside).map((s) => s.id);
     expect(aside.sort()).toEqual(
-      ["change-diagram", "changes", "cockpit", "explore", "onboarding", "systems", "words"].sort(),
+      ["change-diagram", "explore", "onboarding", "systems", "words"].sort(),
     );
     for (const id of aside) expect(offered(SCREENS.find((s) => s.id === id)!), id).toBe(true);
   });
@@ -184,9 +192,19 @@ describe("the app's map: six entries (the Surfaces design)", () => {
   it("keeps every page and every address", () => {
     const ids = new Set(SCREENS.map((s) => s.id));
     expect(ids.size).toBe(SCREENS.length);
-    expect(BEFORE.filter((id) => !ids.has(id))).toEqual([]);
-    for (const id of BEFORE) expect(screenOf(`#/${id}`).id, id).toBe(id);
+    expect(BEFORE.filter((id) => !ids.has(id) && !(id in OLD_ADDRESSES))).toEqual([]);
+    for (const id of BEFORE) expect(screenOf(`#/${id}`).id, id).toBe(OLD_ADDRESSES[id] ?? id);
     expect(screenOf("#/questions/q-1").id).toBe("questions");
+  });
+
+  it("merges the Overview into Home: its address opens Home, and it is in no list, even --full", () => {
+    expect(OLD_ADDRESSES).toEqual({ dashboard: "home" });
+    expect(SCREENS.some((s) => s.id === "dashboard")).toBe(false);
+    expect(screenOf("#/dashboard").id).toBe("home");
+    expect(screenOf("#/dashboard?x=1").id).toBe("home");
+    expect(of("Home")).toEqual(["home"]);
+    expect(of("Home", true)).toEqual(["home", "words"]);
+    expect(sectionLabel(screenOf("#/home").section)).toBe(screenOf("#/home").label);
   });
 
   it("routes a hash to its page, and anything unknown to Home", () => {

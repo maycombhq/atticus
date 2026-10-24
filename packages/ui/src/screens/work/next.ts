@@ -21,6 +21,8 @@ export interface ChangeRow {
   state: string;
   /** ADR 0113: it takes the fast path, one step from brief to tasks. */
   fastPath?: boolean;
+  /** Its open findings, as /api/changes counts them: a blocking one marks it blocked on Home. */
+  openFindings?: { blocking: number };
 }
 
 export interface TaskRow {
@@ -175,18 +177,13 @@ export function stageStep(page: Stage, c: ChangeRow, tasks?: TaskRow[]): Step {
   };
 }
 
-/** Pick the change a stage page opens on: the one in the route, else the first at this stage. */
-export function pickChange(
-  list: ChangeRow[],
-  wanted: string | undefined,
-  page: Stage,
-): ChangeRow | undefined {
-  return (
-    list.find((c) => c.id === wanted) ??
-    list.find((c) => stageOf(c.state) === page) ??
-    list.find(inFlight) ??
-    list[0]
-  );
+/**
+ * The change a change's tab is about: the one its address names, picked in All changes (the
+ * product owner, 2026-10-24). None when the address names none, or one not in the list: the tab
+ * then says to pick one there.
+ */
+export function pickChange(list: ChangeRow[], wanted: string | undefined): ChangeRow | undefined {
+  return wanted === undefined ? undefined : list.find((c) => c.id === wanted);
 }
 
 /** How far onboarding has got, for the dashboard and the step list. */

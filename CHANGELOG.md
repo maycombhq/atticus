@@ -24,6 +24,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **`cite.with`** in a fact: the other lines its path is built from (a class prefix, a base URL, a context path, a route template, a proto package). `atticus verify` checks every part is written on one of the lines.
 - A route template without a leading slash (`[HttpPost("upload")]`) now verifies; config keys with `:` or `__` (`ConnectionStrings:Default`) are read by their last part; `TokenUrl` is no longer taken for a secret.
 
+### Home is one page; Change's tabs start with All changes and At a glance (ADR 0124 addendum D-app, 2026-10-24)
+
+- **Home** is one page: what needs you first (the setup checklist, the step to run next, Waiting on you and Needs a person), then what is scanned and trusted (repos cloned, with scan settings and scanned; how many repos' maps are trusted and which aren't, with a link to Map › Trust) and each change in flight with the stage it is at and its command, a blocking finding marked; then the key numbers, the gate pipeline, the catalog, the system map, the findings and the slash commands. The Overview is part of it: it is gone from the `--full` list, Ctrl+K finds Home by "Overview" and "Waiting on you", and `#/dashboard` (the VS Code panel's default) opens Home.
+- **Change** has six tabs: **All changes**, **At a glance**, Feature design, Architecture, Stories and Tasks, and opens on All changes. A change's tab whose address names no change says to pick one in All changes, with a link, instead of opening on a change it guessed. The At a glance and All changes links in a stage tab's header are gone: the tabs replace them.
+- The tour says so.
+
 ### The app has six entries; everything else is behind `atticus ui --full` (ADR 0124 addendum D-app)
 
 - The menu is **Home**, **Map** (Estate canvas, Flows, Contracts, Impact and Trust), **Change** (a tab per stage: Feature design, Architecture, Stories, Tasks), **Questions**, **Knowledge** (items, sources, documents, search) and **Set up** (Repos, AI, Org pack). A change's At a glance and its list are linked from every stage tab.
