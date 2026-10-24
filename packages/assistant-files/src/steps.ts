@@ -24,7 +24,7 @@ const FINISH = "Finish by running `atticus next` and telling the person what it 
  * isn't, the same one `atticus next` and the editors give.
  */
 export const GUARD =
-  "Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.";
+  "Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, tell the person what it said and that `atticus adopt` sets Atticus up in this one repo (or `atticus init` for an estate of repos), and stop. If it says the assistant files are out of date, tell the person exactly what it said and stop.";
 
 /** The four steps every AI step shares: hand-off, do the work, done, resume. */
 function handoff(command: string, o: { note?: string; at?: number } = {}): string[] {

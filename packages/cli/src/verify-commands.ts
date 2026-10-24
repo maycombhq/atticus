@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { factsDirOf, factsRelOf, parseFacts } from "@maycombhq/core";
+import { factsDirOf, factsRelOf, parseFactsLines } from "@maycombhq/core";
 import { dirSource, verifyFacts } from "@maycombhq/verify";
 import type { Output } from "./commands.js";
 import {
@@ -70,12 +70,13 @@ export async function verifyCommand(
     );
     return 2;
   }
-  const parsed = parseFacts(await readFile(file, "utf8"));
-  if (!parsed.ok) {
+  // One bad line costs that fact, not the read: it goes to <repo>.rejected.jsonl with why.
+  const parsed = parseFactsLines(await readFile(file, "utf8"));
+  if (!parsed.facts.length && parsed.bad.length) {
     io.err(`${rel}/${repo}.jsonl does not read as facts:`);
-    for (const i of parsed.issues.slice(0, 20))
-      io.err(`  ${i.line !== undefined ? `line ${i.line}: ` : ""}${i.message}`);
-    if (parsed.issues.length > 20) io.err(`  ... and ${parsed.issues.length - 20} more`);
+    for (const b of parsed.bad.slice(0, 20))
+      io.err(`  line ${b.line}: ${b.issues.map((i) => i.message).join("; ")}`);
+    if (parsed.bad.length > 20) io.err(`  ... and ${parsed.bad.length - 20} more`);
     return 2;
   }
   const dir = await checkoutOf(root, repo, o.dir);
@@ -110,8 +111,13 @@ export async function verifyCommand(
     qProblems.push(...r.problems);
   }
 
-  const summary = await writeVerifyFiles(root, repo, report, commit, qProblems);
-  const failed = report.rejected.length + qProblems.length > 0;
+  const badLines = parsed.bad.map((b) => ({
+    line: b.line,
+    raw: b.raw,
+    message: `line ${b.line} isn't a fact: ${b.issues.map((i) => i.message).join("; ")}`,
+  }));
+  const summary = await writeVerifyFiles(root, repo, report, commit, qProblems, badLines);
+  const failed = report.rejected.length + qProblems.length + badLines.length > 0;
 
   // --write (ADR 0124, A3b): the kept facts become the catalog, only when none was rejected,
   // so a half-fixed read never replaces the repo's records.
@@ -149,6 +155,7 @@ export async function verifyCommand(
       `${raised} question${raised === 1 ? "" : "s"} raised for a person (atticus questions list): a person answers, never the assistant.`,
     );
   for (const q of qProblems) io.out(`  bad-question: ${q.message}`);
+  for (const b of badLines.slice(0, 15)) io.out(`  schema: ${b.message}`);
   if (failed)
     io.out(
       `Fix them from ${rel}/${repo}.rejected.jsonl (read the lines again, then rewrite or drop each fact or question) and run atticus verify ${repo} again.`,

@@ -3,7 +3,7 @@ description: Say the next step to take, with its command and slash command, and 
 argument-hint: "[--all]"
 ---
 
-Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, tell the person what it said and that `atticus adopt` sets Atticus up in this one repo (or `atticus init` for an estate of repos), and stop. If it says the assistant files are out of date, tell the person exactly what it said and stop.
 
 Say what to do next. Atticus works it out from the files: the repos, their clones, scan settings and last scan, the questions open, the specs and their last check, the knowledge sources and the changes in flight.
 

@@ -3,7 +3,7 @@ description: Read a repo into facts, each citing its file and line; Atticus chec
 argument-hint: "[repo]"
 ---
 
-Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, tell the person what it said and that `atticus adopt` sets Atticus up in this one repo (or `atticus init` for an estate of repos), and stop. If it says the assistant files are out of date, tell the person exactly what it said and stop.
 
 Read the repo $ARGUMENTS into facts: what it answers to, what it calls, the data it reads and writes, the fields that cross those boundaries, how it is deployed and the config it depends on. Every fact cites the line it rests on; Atticus checks the claim on that line.
 
@@ -22,7 +22,10 @@ Every fact: kind first, then id: text, repo: text, commit: text, component?: tex
 - flow: name: text, entry: text, steps: [{kind: entry|lookup|read|write|call-out|publish|transform|validate|branch|log|respond|loop|retry, what: text, ref?: text, cite: {file: text, line: number, value: text, quote?: text}}, ...], outcome?: text, errors?: [{when: text, then: text, cite: {file: text, line: number, value: text, quote?: text}}, ...]
 
 - One JSON object per line and nothing else on the line. A field marked `?` may be left out.
-- `id`: a short slug of a-z, 0-9, `.`, `_` and `-` that names the claim (`entry.get.accounts-id`), unique in the file. `repo` is the repo's id and `commit` the commit you read.
+- `id`: lower case only, a short slug of a-z, 0-9, `.`, `_` and `-` that names the claim (`entry.get.accounts-id`, never `firstName`), unique in the file. `repo` is the repo's id and `commit` the commit you read.
+- An entry's `path` is the full path a caller uses: class-level and group prefixes, and a context or base path the code or config sets (`server.servlet.context-path`, `UsePathBase`), joined; record that base as a `config` fact too. A route served as HTML (a server-rendered page or form post) is `entryType: rest` with its method; `screen` is for a front end's own routes.
+- A store fact is a table, collection, bucket, queue or cache the code reads or writes at run time: one fact per table and operation, whichever layer or dialect does it. A migration or schema file that creates a table is where its columns are cited (`field` facts with `side: column`), not a store fact of its own.
+- A config fact's `key` is written as it appears on its line (the last part of a YAML path or a flag is enough: `path` for `livenessProbe.httpGet.path`).
 - `cite.file` is the path in the repo with `/`; `cite.line` is the line where the claim is written: an entry's or a call's `path`, a store's `name`, a field's `name`, a config's `key`, a deploy's `resourceName` (that line or the one either side); `cite.value` is the claim as written there; `cite.quote` is that line's text, at most 200 characters.
 - `from`, `under`, `owner`, `mappedTo`, `entry` and `steps[].ref` name another fact's `id`.
 - `conf: inferred` when you concluded it rather than read it. Leave out `verified` and `by`: Atticus sets them.

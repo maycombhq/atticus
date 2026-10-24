@@ -128,6 +128,8 @@ export async function writeVerifyFiles(
   report: VerifyReport,
   commit: string | undefined,
   questionProblems: readonly QuestionProblem[] = [],
+  /** Lines of the facts file that aren't facts: kept here, with why, so nothing is lost. */
+  badLines: readonly { line: number; raw: string; message: string }[] = [],
 ): Promise<VerifySummary> {
   const dir = factsDirOf(root);
   await mkdir(dir, { recursive: true });
@@ -140,6 +142,7 @@ export async function writeVerifyFiles(
     ...questionProblems.map((q) =>
       JSON.stringify({ code: "bad-question", message: q.message, question: JSON.parse(q.line) }),
     ),
+    ...badLines.map((b) => JSON.stringify({ code: "schema", message: b.message, raw: b.raw })),
   ];
   if (lines.length) await writeFile(rejectedFile, lines.join("\n") + "\n", "utf8");
   else await rm(rejectedFile, { force: true });

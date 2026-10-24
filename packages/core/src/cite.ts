@@ -25,6 +25,12 @@ export const fieldKey = (f: string) =>
  */
 export function lineNamesRoute(line: string, path: string): boolean {
   const segs = path.split(/[?#]/, 1)[0]!.split("/").filter(Boolean);
+  // A root route ("/"), or one of parameters only ("/{id}"), has no plain segment to look for:
+  // it is named by its literal in quotes, parameters in any style.
+  if (!segs.some((s) => !PARAM.test(s))) {
+    const body = segs.map((s) => (PARAM.test(s) ? PARAM_RE : escape(s))).join("/");
+    return new RegExp(`["'\`]/${body}/?["'\`]`).test(line);
+  }
   for (let k = 0; k < segs.length; k++) {
     const tail = segs.slice(k);
     if (!tail.some((s) => !PARAM.test(s))) break;

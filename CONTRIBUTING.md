@@ -8,3 +8,7 @@ Thanks for helping. Atticus is early; the best contributions right now are bug r
 4. Never include code, names or data from your employer or clients. Use invented examples.
 
 By contributing you agree your contribution is licensed under the Apache License 2.0.
+
+## Build-tool telemetry
+
+Turborepo, the build tool, sends anonymous usage data unless told not to. Set `TURBO_TELEMETRY_DISABLED=1` in your environment (or run `pnpm exec turbo telemetry disable` once). Atticus itself, and the offline bundle, make no such call.

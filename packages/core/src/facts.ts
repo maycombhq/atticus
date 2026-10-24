@@ -62,6 +62,54 @@ function issueOf(i: z.core.$ZodIssue): FactIssue {
   return { code: i.code, message: `${i.path.join(".") || "(root)"}: ${i.message}` };
 }
 
+/**
+ * Read a JSONL facts file line by line, keeping every line that reads and returning the others
+ * with their issues, so one bad line (a capital in an id, a missing field) costs that fact, not
+ * the whole read (feedback from the A4 run). A repeated id keeps its first line.
+ */
+export function parseFactsLines(text: string): {
+  facts: Fact[];
+  bad: { line: number; raw: string; issues: FactIssue[] }[];
+} {
+  const facts: Fact[] = [];
+  const bad: { line: number; raw: string; issues: FactIssue[] }[] = [];
+  const seen = new Set<string>();
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const line = i + 1;
+    if (raw.trim() === "") return;
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch (e) {
+      bad.push({ line, raw, issues: [{ line, code: "not-json", message: (e as Error).message }] });
+      return;
+    }
+    const r = Fact.safeParse(json);
+    if (!r.success) {
+      bad.push({ line, raw, issues: r.error.issues.map((iss) => ({ line, ...issueOf(iss) })) });
+      return;
+    }
+    if (seen.has(r.data.id)) {
+      bad.push({
+        line,
+        raw,
+        issues: [
+          {
+            line,
+            factId: r.data.id,
+            code: "duplicate-id",
+            message: `fact id ${r.data.id} is used on an earlier line`,
+          },
+        ],
+      });
+      return;
+    }
+    seen.add(r.data.id);
+    facts.push(r.data);
+  });
+  return { facts, bad };
+}
+
 /** One canonical JSON line per fact, sorted by id; the same facts give the same bytes. */
 export function serializeFacts(facts: readonly Fact[]): string {
   const sorted = [...facts].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));

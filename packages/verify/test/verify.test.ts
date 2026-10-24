@@ -146,6 +146,64 @@ describe("verifyFacts: the claim on the cited line (ADR 0124)", () => {
 });
 
 describe("coverage: reported, never trusted (ADR 0124)", () => {
+  it("doesn't count tests, build wrappers, package docs or message bundles as source", async () => {
+    const { isSourceFile } = await import("../src/index.js");
+    for (const p of [
+      "src/test/java/org/x/OwnerControllerTests.java",
+      "src/main/java/org/x/package-info.java",
+      "mvnw.cmd",
+      "gradlew",
+      "src/main/resources/messages/messages_de.properties",
+      "web/app/owner.spec.ts",
+      "tests/test_items.py",
+      "Services/Ordering.FunctionalTests/OrderingApiTests.cs",
+    ])
+      expect(isSourceFile(p), p).toBe(false);
+    for (const p of [
+      "src/main/java/org/x/OwnerController.java",
+      "src/main/resources/application.properties",
+      "app/api/routes/items.py",
+    ])
+      expect(isSourceFile(p), p).toBe(true);
+  });
+
+  it("accepts a config key by the last part of its YAML path or flag", async () => {
+    const src = memorySource({
+      "k8s/app.yaml": "        httpGet:\n          path: /actuator/health\n",
+      "ci.sh": "kubectl wait --for=condition=ready --timeout=60s pod\n",
+    });
+    const base = {
+      repo: "x",
+      commit: "0123abc",
+      settingKind: "config" as const,
+      verified: "none" as const,
+      by: "assistant" as const,
+      conf: "declared" as const,
+    };
+    const r = await verifyFacts({
+      source: src,
+      facts: [
+        {
+          kind: "config",
+          id: "k1",
+          ...base,
+          key: "livenessProbe.httpGet.path",
+          value: "/actuator/health",
+          cite: { file: "k8s/app.yaml", line: 2, value: "path" },
+        },
+        {
+          kind: "config",
+          id: "k2",
+          ...base,
+          key: "kubectl wait --timeout",
+          value: "60s",
+          cite: { file: "ci.sh", line: 1, value: "timeout" },
+        },
+      ],
+    });
+    expect(r.rejected).toEqual([]);
+  });
+
   it("counts cited and routed files as read, the rest unknown; excludes generated code and secrets", async () => {
     const facts = load("forge-ledger.facts.jsonl");
     const r = await verifyFacts({

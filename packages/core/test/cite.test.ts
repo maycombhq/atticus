@@ -21,6 +21,12 @@ describe("claim on the line (ADR 0089, moved to core for the verifier of ADR 012
     expect(lineNamesRoute('@PostMapping("/entries")', "/accounts/{id}/entries")).toBe(true);
     expect(lineNamesRoute("fetch(base + '/v1/rates/' + pair)", "/v1/rates/{pair}")).toBe(true);
     expect(lineNamesRoute('@GetMapping("/accountsx")', "/accounts")).toBe(false);
+    // a root route, or one of parameters only, is named by its literal (feedback from the A4 run)
+    expect(lineNamesRoute('  @GetMapping("/")', "/")).toBe(true);
+    expect(lineNamesRoute("app.MapGet(\"/\", () => ...)", "/")).toBe(true);
+    expect(lineNamesRoute('  @GetMapping("/{id}")', "/{id}")).toBe(true);
+    expect(lineNamesRoute("router.get('/:id', h)", "/{id}")).toBe(true);
+    expect(lineNamesRoute("  return x / y;", "/")).toBe(false);
   });
   it("names a word not inside a longer word, and a field letter case and separators aside", () => {
     expect(lineNamesWord('@Table(name = "entry")', "entry")).toBe(true);

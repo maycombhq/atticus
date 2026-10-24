@@ -74,9 +74,26 @@ const SOURCE_NAME = /(^|\/)(Dockerfile[^/]*|Makefile|Jenkinsfile|Procfile|Contai
 const LOCKFILE =
   /(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|composer\.lock|Gemfile\.lock|Cargo\.lock|poetry\.lock|go\.sum|packages\.lock\.json)$/;
 
+/**
+ * Files that hold no facts of what a repo serves, calls, stores or deploys, so coverage doesn't
+ * count them (feedback from the A4 run): tests, build-tool wrappers, Java package docs, and
+ * i18n message bundles.
+ */
+const NOT_PRODUCT = [
+  /(^|\/)(src\/test|src\/it|test|tests|__tests__|__mocks__|spec|specs|e2e|testdata|test-data|fixtures)\//i,
+  /(\.|_|-)(test|spec|tests|specs)\.[a-z0-9]+$/i,
+  /(Test|Tests|IT|Spec)\.(java|kt|scala|groovy|cs|vb)$/,
+  /(^|\/)test_[^/]+\.py$/,
+  /(^|\/)(mvnw|mvnw\.cmd|gradlew|gradlew\.bat)$/,
+  /(^|\/)package-info\.java$/,
+  /(^|\/)messages(_[A-Za-z_]+)?\.properties$/,
+  /\.(resx|po|pot)$/i,
+];
+
 /** Whether a repo file counts as source for coverage. */
 export function isSourceFile(path: string, firstLine = ""): boolean {
   if (isSecretPath(path) || LOCKFILE.test(path)) return false;
+  if (NOT_PRODUCT.some((re) => re.test(path))) return false;
   if (quoteNotRequired(path, firstLine)) return false;
   return SOURCE_EXT.test(path) || SOURCE_NAME.test(path);
 }
@@ -100,11 +117,17 @@ function claimsOf(f: Fact): Claim[] {
       return [{ kind: "field", value: f.name }];
     case "deploy":
       return [{ kind: "word", value: f.resourceName ?? f.cite.value }];
-    case "config":
+    case "config": {
+      // A key as written on the line, or the last part of a dotted path or a flag (a YAML path
+      // `livenessProbe.httpGet.path` names `path:` on its line; `kubectl wait --timeout`, `timeout`).
+      const tail = f.key.trim().split(/\s+/).pop()!.replace(/^-+/, "");
       return [
         { kind: "word", value: f.key },
         { kind: "word", value: lastPart(f.key) },
+        { kind: "word", value: tail },
+        { kind: "word", value: lastPart(tail) },
       ];
+    }
     case "flow":
       return [routeOrWord(f.cite.value)];
   }
@@ -309,14 +332,10 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     if (excludeRes.some((re) => re.test(p))) excluded.push(p);
     else sources.push(p);
   }
+  // A file is read when a kept fact cites it, or the reader opened it through Atticus's tools. A
+  // flow step's cite doesn't count: a step names its own value, so it is weaker evidence.
   const touched = new Set<string>(o.routed ?? []);
-  for (const f of accepted) {
-    touched.add(f.cite.file);
-    if (f.kind === "flow") {
-      for (const s of f.steps) touched.add(s.cite.file);
-      for (const e of f.errors) touched.add(e.cite.file);
-    }
-  }
+  for (const f of accepted) if (f.kind !== "flow") touched.add(f.cite.file);
   const read = sources.filter((p) => touched.has(p)).sort();
   const unknown = sources.filter((p) => !touched.has(p)).sort();
   const total = read.length + unknown.length;
