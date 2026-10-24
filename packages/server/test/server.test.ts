@@ -166,7 +166,7 @@ describe("the local server (ADR 0015)", () => {
     expect(await raw({ Origin: srv.url })).toBe(200);
   });
 
-  it("health: versions, the root and the user", async () => {
+  it("health: versions, the root, the user and whether the app shows every page (--full)", async () => {
     const r = await call("/api/health");
     expect(r.status).toBe(200);
     expect(Health.parse(r.body)).toEqual({
@@ -176,6 +176,7 @@ describe("the local server (ADR 0015)", () => {
       root,
       openspec: "openspec",
       user: "priya",
+      full: false,
     });
   });
 

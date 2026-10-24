@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The app has six entries; everything else is behind `atticus ui --full` (ADR 0124 addendum D-app)
+
+- The menu is **Home**, **Map** (Estate canvas, Flows, Contracts, Impact and Trust), **Change** (a tab per stage: Feature design, Architecture, Stories, Tasks), **Questions**, **Knowledge** (items, sources, documents, search) and **Set up** (Repos, AI, Org pack). A change's At a glance and its list are linked from every stage tab.
+- The other pages (Estate's features, mappings, diagrams, reconcile, governance and initiatives; the separate brief, UX, architecture review, breakdown, estimate, conformance, trace, task board, manual steps, release and service-desk pages; scans, intake, the org pack from the wikis, teams and vendors, settings, the Overview; Model runs, Prompt history, AI quality and Learning) are out of the menu, the tabs and Ctrl+K. Every old address still opens its page. **`atticus ui --full`** brings them all back as tabs, and Atticus's own pages as a seventh entry.
+- **Map › Trust** says, per repo, how far to trust its map: the facts the verifier kept and rejected, how much of the code they cover and which files no fact cites, whether the facts are of the commit the checkout is at, whether the catalog is built from the facts or the built-in readers, and the command to run next (`GET /api/trust`, API 2.22.0).
+- **Change › Feature design** lists the org knowledge that applies to the change (`knowledge.yaml`), with Confirm and Exclude. The app writes the file and shows the `git commit` command to run (`GET /api/changes/{id}/knowledge`, `POST /api/changes/{id}/knowledge/{item}`).
+- The app now also updates when `facts/` changes, and the tour names the six entries.
+
 ### Your assistant reads a repo into facts, at any tier (ADR 0124, A3a)
 
 - **`/atticus-map <repo>`** is the reading protocol for an assistant that opens files and runs commands itself (Claude Code, Cursor, Copilot agent mode, Gemini CLI, Windsurf, AGENTS.md tools), generated for each one and for the Claude Code plugin. Outline the repo, read whole only the files that hold facts, write one cited fact per line to the facts file (the field list is generated from the facts schema), keep secrets out (`source: env:NAME`), ask what the code can't settle, then loop on `atticus verify` until it passes.

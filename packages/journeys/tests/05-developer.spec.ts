@@ -6,12 +6,9 @@ const app = forgeJourney();
 test("runs a task with AI, and is told to open the change's workspace first", async ({ page }) => {
   await open(page, app(), "home");
   await open(page, app(), "tasks?change=add-transfer-limit");
+  // The Task board is behind --full: its address still opens it, Change's entry marked.
   await expect(
-    // ADR 0119: the Task board is a tab of the change, in Build.
-    page
-      .getByRole("navigation", { name: "Changes pages" })
-      .getByRole("group", { name: "Build" })
-      .getByRole("link", { name: "Task board" }),
+    page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Change" }),
   ).toHaveAttribute("aria-current", "page");
   await page.getByRole("button", { name: "Run with AI" }).first().click();
   await expect(page.getByRole("status").filter({ hasText: "worktree" })).toContainText(

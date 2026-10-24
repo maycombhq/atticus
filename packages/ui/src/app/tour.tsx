@@ -4,7 +4,8 @@ import { COPY } from "../copy.js";
 const T = COPY.tour;
 
 /**
- * First-run tour: a few steps through Home, the sidebar, asking and the hand-off PR. It is the
+ * First-run tour: a few steps through Home, the six entries, asking, a change's tabs and the
+ * hand-off PR. It points only at the menu's six (`link`), never at a page behind --full. It is the
  * same for everyone (there are no roles, ADR 0073), opens once per browser, can be skipped, and
  * replays from Help.
  */
@@ -29,14 +30,14 @@ export const TOUR: Step[] = [
   },
   {
     ...T.steps.change,
-    target: link("changes"),
+    target: link("feature-design"),
   },
   {
     ...T.steps.assistant,
   },
   {
     ...T.steps.approve,
-    target: link("changes"),
+    target: link("feature-design"),
   },
 ];
 

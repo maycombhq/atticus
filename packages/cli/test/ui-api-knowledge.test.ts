@@ -100,6 +100,24 @@ let srv: RunningServer;
 let root: string;
 let base: string;
 
+/** ADR 0124, Part 5: what a change's stages picked from the org's knowledge, and a near-miss. */
+const KNOWLEDGE_APPLIES = `schemaVersion: 1
+change: add-chat-export
+items:
+  - id: json-logging
+    kind: Pattern
+    status: suggested
+    stages: [feature]
+    score: 4
+    why: named in the brief
+    file: knowledge/items/pattern/json-logging.yaml
+nearMisses:
+  - id: northwind-pay
+    kind: Party
+    score: 1.5
+    stage: feature
+`;
+
 const call = async (method: string, path: string, body?: unknown) => {
   const r = await fetch(srv.url + path, {
     method,
@@ -154,7 +172,13 @@ beforeAll(async () => {
   const change = join(root, "openspec", "changes", "add-chat-export");
   await mkdir(change, { recursive: true });
   await writeFile(join(change, "needs.yaml"), NEEDS);
+  await writeFile(join(change, "knowledge.yaml"), KNOWLEDGE_APPLIES);
   await mkdir(join(root, "openspec", "changes", "add-transfer-limit"), { recursive: true });
+  await mkdir(join(root, "openspec", "changes", "bad-knowledge"), { recursive: true });
+  await writeFile(
+    join(root, "openspec", "changes", "bad-knowledge", "knowledge.yaml"),
+    "schemaVersion: 7\n",
+  );
   srv = await startServer({
     root,
     port: 0,
@@ -456,6 +480,78 @@ describe("a change's needs (ADR 0102)", () => {
       "utf8",
     );
     expect(md).toContain("Kafka topic");
+  });
+});
+
+describe("the knowledge that applies to a change (ADR 0124, Part 5)", () => {
+  it("gives knowledge.yaml as the stages wrote it, or an empty list before any stage ran", async () => {
+    const r = await call("GET", "/api/changes/add-chat-export/knowledge");
+    expect(r.status).toBe(200);
+    const v = Api.ChangeKnowledgeView.parse(r.body);
+    expect(v).toMatchObject({
+      change: "add-chat-export",
+      file: "openspec/changes/add-chat-export/knowledge.yaml",
+      present: true,
+      command: "atticus change knowledge add-chat-export",
+    });
+    expect(v.items).toEqual([
+      expect.objectContaining({
+        id: "json-logging",
+        status: "suggested",
+        why: "named in the brief",
+      }),
+    ]);
+    expect(v.nearMisses.map((n) => n.id)).toEqual(["northwind-pay"]);
+    const none = Api.ChangeKnowledgeView.parse(
+      (await call("GET", "/api/changes/add-transfer-limit/knowledge")).body,
+    );
+    expect(none).toMatchObject({ present: false, items: [], nearMisses: [] });
+    expect((await call("GET", "/api/changes/nope/knowledge")).status).toBe(404);
+    expect((await call("GET", "/api/changes/bad-knowledge/knowledge")).status).toBe(422);
+  });
+
+  it("confirms an item and excludes a near-miss, writing the file and giving the commit command", async () => {
+    const yes = await call("POST", "/api/changes/add-chat-export/knowledge/json-logging", {
+      status: "confirmed",
+    });
+    expect(yes.status).toBe(200);
+    const set = Api.SetChangeKnowledgeResult.parse(yes.body);
+    expect(set.file).toBe("openspec/changes/add-chat-export/knowledge.yaml");
+    expect(set.commit).toBe(
+      'git add openspec/changes/add-chat-export/knowledge.yaml && git commit -m "add-chat-export: the knowledge that applies"',
+    );
+    expect(set.knowledge.items[0]).toMatchObject({ id: "json-logging", status: "confirmed" });
+    const no = Api.SetChangeKnowledgeResult.parse(
+      (
+        await call("POST", "/api/changes/add-chat-export/knowledge/northwind-pay", {
+          status: "excluded",
+        })
+      ).body,
+    );
+    expect(no.knowledge.nearMisses).toEqual([]);
+    expect(no.knowledge.items.find((i) => i.id === "northwind-pay")).toMatchObject({
+      status: "excluded",
+      why: "a person",
+    });
+    const file = parse(
+      await readFile(join(root, "openspec/changes/add-chat-export/knowledge.yaml"), "utf8"),
+    ) as { items: { id: string; status: string }[] };
+    expect(file.items.map((i) => [i.id, i.status])).toEqual([
+      ["json-logging", "confirmed"],
+      ["northwind-pay", "excluded"],
+    ]);
+  });
+
+  it("refuses what it can't do: another status, an item not listed, a change with no list", async () => {
+    const at = (change: string, item: string, body: unknown) =>
+      call("POST", `/api/changes/${change}/knowledge/${item}`, body);
+    expect((await at("add-chat-export", "json-logging", { status: "suggested" })).status).toBe(400);
+    expect((await at("add-chat-export", "json-logging", {})).status).toBe(400);
+    expect((await at("add-chat-export", "nope", { status: "confirmed" })).status).toBe(404);
+    expect((await at("add-transfer-limit", "json-logging", { status: "confirmed" })).status).toBe(
+      422,
+    );
+    expect((await at("nope", "json-logging", { status: "confirmed" })).status).toBe(404);
   });
 });
 

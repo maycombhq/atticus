@@ -5,6 +5,7 @@ import type { Laid, Point } from "../../app/layout/index.js";
 import { Panel } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { queryParam, setQueryParam } from "../know/common.js";
+import { systemHash } from "../know/Systems.js";
 import { CopyButton, Facts } from "../run/shared.js";
 import { RunStep } from "../../app/runstep.js";
 import { ArchitectureCanvas } from "./Canvas.js";
@@ -53,7 +54,14 @@ const nodePath = (id: string, lens: Lens) =>
  * at a time. A lens switcher, breadcrumbs, the picture of the open node, an outline of the same
  * graph for keyboards and screen readers, and a details panel with the command for the next step.
  */
-export function Architecture({ hash }: { hash: string }) {
+export function Architecture({
+  hash,
+  screen = "architecture",
+}: {
+  hash: string;
+  /** The page it is shown on: Change's Architecture tab, or the Map's estate canvas. */
+  screen?: string;
+}) {
   const lensParam = queryParam(hash, "lens");
   const lens: Lens = (LENSES as readonly string[]).includes(lensParam ?? "")
     ? (lensParam as Lens)
@@ -282,7 +290,7 @@ export function Architecture({ hash }: { hash: string }) {
                 role="tab"
                 aria-selected={l === lens}
                 className={`btn ${l === lens ? "primary" : ""}`}
-                onClick={() => setQueryParam("architecture", "lens", l)}
+                onClick={() => setQueryParam(screen, "lens", l)}
               >
                 {WORDS.lenses[l]}
               </button>
@@ -549,6 +557,12 @@ function Inspector({
         {node.kind === "repo" && (
           <a className="btn" href={`#/flows?repo=${encodeURIComponent(node.label)}`}>
             {COPY.flows.openFlows}
+          </a>
+        )}
+        {/* WP7.7: a system's page, its guide, questions and changes. */}
+        {node.kind === "system" && node.id.startsWith("system:") && (
+          <a className="btn" href={systemHash(node.id.slice("system:".length))}>
+            {COPY.systems.openPage}
           </a>
         )}
         {node.kind !== "estate" && (lens === "data" || node.kind === "table") && (

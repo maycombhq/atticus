@@ -50,9 +50,11 @@ const DATA: Api.ChangeCockpitT = {
 };
 
 describe("the change cockpit (WP7.1)", () => {
-  it("is the first page of a change", () => {
-    expect(screenOf("cockpit")?.section).toBe("Changes");
-    const changeTabs = tabsOf("Changes").filter((t) => t.group);
+  it("is a page of Change, linked from each stage tab, and its first tab with --full", () => {
+    expect(screenOf("cockpit")?.section).toBe("Change");
+    expect(screenOf("cockpit")?.aside).toBe(true);
+    expect(tabsOf("Change").map((t) => t.id)).not.toContain("cockpit");
+    const changeTabs = tabsOf("Change", true).filter((t) => t.group);
     expect(changeTabs[0]?.id).toBe("cockpit");
   });
 
