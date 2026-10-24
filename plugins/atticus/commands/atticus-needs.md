@@ -3,6 +3,8 @@ description: "Say what a change needs from the organisation: the requests and pr
 argument-hint: "[change]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Find what the change $ARGUMENTS needs from the organisation. You read the change (its brief, feature, design, stories and tasks) and the knowledge items, and say which apply, to the whole change or to one feature, flow, story or task, why, and the change's own words that call for each. Atticus checks every one: the item is real and no person rejected it, the target is in the change, the words are in the file you name. It writes needs.yaml and needs.md with each item's how-to, lead time and who handles it.
 
 1. Run `atticus change needs $ARGUMENTS --handoff` in a terminal in this workspace. It prints the prompt file, the result file, and the two commands that finish the step. If it prints no prompt file, there was nothing for you to write: say what it printed and go on.

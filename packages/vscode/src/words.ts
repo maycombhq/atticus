@@ -55,6 +55,10 @@ export const WORDS = {
   startFromNothingDetail: "Write the brief from scratch.",
   findingSimilar: "Looking for earlier changes like it…",
   changesYouWatch: "Changes you watch:",
+  ownerTitle: "Atticus: Who looks after the org pack",
+  ownerPrompt:
+    "The handle of the person or team who looks after the org pack, normally the platform lead (for example priya.nair or team-platform).",
+  ownerRule: "One handle: letters, digits, dots and hyphens, no spaces.",
 };
 
 /** WP7.6: an archived change near a new one, as `atticus change similar --json` gives it. */
@@ -289,4 +293,14 @@ export function optionHint(f: { value?: string }): string {
   const v = f.value.replace(/^<|>$/g, "");
   const placeholder = /^[a-z]$/.test(v) || /^[a-z][a-z-]*$/.test(v);
   return placeholder ? "you give its value" : `you give its value, such as ${v}`;
+}
+
+/** WP4.4: the org pack's owner as a form: the handle it takes, or why it won't do. */
+export function ownerProblem(handle: string): string | undefined {
+  return /^[A-Za-z0-9][A-Za-z0-9._@-]*$/.test(handle.trim()) ? undefined : WORDS.ownerRule;
+}
+
+/** The current owner, from what `atticus orgpack owner` prints; undefined when none is set. */
+export function ownerFrom(line: string): string | undefined {
+  return /^(\S+) looks after the org pack/.exec(line.trim())?.[1];
 }

@@ -87,6 +87,11 @@ export function splitWords(line: string): string[] {
   return out;
 }
 
+/** Arguments as one line again, quoting a word with a space, so a line reads back the same. */
+export function lineOf(args: string[]): string {
+  return args.map((a) => (/\s/.test(a) || a === "" ? `"${a}"` : a)).join(" ");
+}
+
 /** The command a typed line names (the longest that fits), and the words after it. */
 export function matchCommand(
   c: Catalog,

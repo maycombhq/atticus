@@ -1,6 +1,9 @@
+import { stat } from "node:fs/promises";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
 import {
   answerQuestion,
+  changesDirOf,
   answerWords,
   listQuestions,
   QuestionError,
@@ -13,7 +16,7 @@ import { gitUser } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 
 /**
- * atticus questions list | answer (ADR 0078): the questions a step raised, as files in
+ * atticus questions list | show | answer (ADR 0078): the questions a step raised, as files in
  * questions/, and a person's answer written to the same file. The app's Questions page writes
  * the same file through the same functions. The older `atticus questions` (no subcommand)
  * still lists the knowledge gaps and their owner questions.
@@ -26,6 +29,14 @@ const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim(
 export function scopeWords(s: Question["scope"], short = false): string {
   if (s.level === "repo") return short ? "this repo" : `this repo (${s.id})`;
   return `every repo of type ${s.id}`;
+}
+
+/** A stage's question is filed under its change's id: say "this change" for it, not "this repo". */
+async function isChange(root: string, id: string): Promise<boolean> {
+  return stat(join(changesDirOf(root), id, "change.yaml")).then(
+    () => true,
+    () => false,
+  );
 }
 
 /** The lines `atticus questions list` prints for one question. */
@@ -96,6 +107,22 @@ export async function questionsFiles(
     );
     return r.problems.length ? 1 : 0;
   }
+  if (command === "show") {
+    if (!id) {
+      io.err(
+        "questions show needs a question id, for example: atticus questions show q-1a2b3c4d5e6f",
+      );
+      return 2;
+    }
+    const q = (await listQuestions(root)).questions.find((x) => x.id === id);
+    if (!q) {
+      io.err(`No question ${id}: atticus questions list shows them.`);
+      return 1;
+    }
+    if (values.json === true) io.out(JSON.stringify(q, null, 2));
+    else for (const l of questionLines(q)) io.out(l);
+    return 0;
+  }
   if (command === "answer") {
     if (!id) {
       io.err(
@@ -131,7 +158,7 @@ export async function questionsFiles(
       });
       const q = r.question;
       io.out(
-        `Answered ${q.id}: ${answerWords(q)} (for ${q.answer!.scope.level === "repo" ? `this repo, ${q.repo}` : scopeWords(q.answer!.scope)}). Wrote ${questionsRelOf(root)}/${q.id}.yaml; commit it for review.`,
+        `Answered ${q.id}: ${answerWords(q)} (for ${q.answer!.scope.level === "repo" ? `${(await isChange(root, q.repo)) ? "this change" : "this repo"}, ${q.repo}` : scopeWords(q.answer!.scope)}). Wrote ${questionsRelOf(root)}/${q.id}.yaml; commit it for review.`,
       );
       if (r.skill)
         io.out(
@@ -154,7 +181,10 @@ export async function questionsFiles(
     }
   }
   io.err(
-    'Usage: atticus questions list [--state open|answered|retired] [--json], or atticus questions answer <id> --option <n> | --text "..." [--scope repo|repo-type] [--type <repo type>]',
+    `atticus questions ${command ?? ""} isn't a command: it is questions list, show or answer (atticus questions alone lists the knowledge gaps).`,
+  );
+  io.err(
+    'Usage: atticus questions list [--state open|answered|retired] [--json], atticus questions show <id> [--json], or atticus questions answer <id> --option <n> | --text "..." [--scope repo|repo-type] [--type <repo type>]',
   );
   return 2;
 }

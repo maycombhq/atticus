@@ -160,3 +160,44 @@ describe("atticus questions list and answer (ADR 0078)", () => {
     expect((await run(root, ["answer"])).code).toBe(2);
   });
 });
+
+describe("atticus questions show, and a change's question (WP2.4)", () => {
+  it("shows one question by its id, as list prints it, or says there is none", async () => {
+    const { root, id } = await metarepo();
+    const r = await run(root, ["show", id]);
+    expect(r.code).toBe(0);
+    expect(r.out[0]).toBe(
+      `${id}  open  forge-notes  (asked by atticus scan survey forge-notes on 2026-10-21)`,
+    );
+    expect(r.out).toContain("  Proposed scope: this repo (forge-notes)");
+    const json = await run(root, ["show", id, "--json"]);
+    expect((JSON.parse(json.out.join("\n")) as Question).id).toBe(id);
+    const none = await run(root, ["show", "q-000000000000"]);
+    expect(none.code).toBe(1);
+    expect(none.err.join("\n")).toMatch(/No question q-000000000000.*atticus questions list/);
+    expect((await run(root, ["show"])).code).toBe(2);
+  });
+
+  it("refuses a subcommand it hasn't, rather than listing the gaps", async () => {
+    const { root } = await metarepo();
+    const r = await run(root, ["shwo", "q-1"]);
+    expect(r.code).toBe(2);
+    expect(r.err.join("\n")).toMatch(/questions list, show or answer/);
+  });
+
+  it("says a change's question was answered for this change, not this repo", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-questions-change-"));
+    await mkdir(join(root, "org-pack"), { recursive: true });
+    await mkdir(join(root, "openspec", "changes", "add-pins"), { recursive: true });
+    await writeFile(join(root, "openspec", "changes", "add-pins", "change.yaml"), "id: add-pins\n");
+    const { raised } = await raiseQuestions(root, [draft()], {
+      ...asked,
+      step: "stories",
+      repo: "add-pins",
+      command: "atticus plan stories add-pins",
+      rerun: "atticus plan stories add-pins",
+    });
+    const r = await run(root, ["answer", raised[0]!.id, "--option", "2", "--by", "pat"]);
+    expect(r.out[0]).toContain("(for this change, add-pins)");
+  });
+});

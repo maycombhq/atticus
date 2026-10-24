@@ -5,8 +5,8 @@ import { estimateOf } from "./change-estimate.js";
 /**
  * A hand-off PR that reviews itself (WP7.4): the parts of the PR body an approver would
  * otherwise open the app for. What the change does as a picture (Mermaid, which GitHub and Azure
- * DevOps draw), its estimate as a range with what drives it, and the findings still open at its
- * gates, blocking first. Read from the change's files; nothing is worked out again.
+ * DevOps draw), its estimate as a range with what drives it, what changed since each gate's last
+ * round, and the findings still open at its gates, blocking first. Read from the change's files; nothing is worked out again.
  */
 
 const days = (d: { p20: number; p50: number; p80: number }) =>
@@ -36,6 +36,37 @@ export async function handoffReview(root: string, change: string): Promise<strin
       est ? "Not sized yet: the org pack's estimates don't cover these units." : "Not sized yet.",
       "",
     );
+
+  // What changed since the last round: each gate's newest round against the one before it.
+  lines.push("### Since the last round", "");
+  const reviewed = await reviewedGates(root, change).catch(() => [] as string[]);
+  const openIds = async (gate: string, n: number) =>
+    new Set(
+      (await readRound(root, change, gate, n)).findings
+        .filter(({ finding: f }) => f.state === "open")
+        .map(({ finding: f }) => f.id),
+    );
+  const code = (ids: string[]) => ids.map((i) => `\`${i}\``).join(", ");
+  let any = false;
+  for (const gate of reviewed) {
+    const rounds = await roundsOf(root, change, gate);
+    if (!rounds.length) continue;
+    any = true;
+    if (rounds.length === 1) {
+      lines.push(`- ${gate} gate: the first round.`);
+      continue;
+    }
+    const [before, now] = [rounds.at(-2)!, rounds.at(-1)!];
+    const [was, is] = [await openIds(gate, before), await openIds(gate, now)];
+    const closed = [...was].filter((i) => !is.has(i)).sort();
+    const added = [...is].filter((i) => !was.has(i)).sort();
+    const still = [...is].filter((i) => was.has(i)).length;
+    lines.push(
+      `- ${gate} gate, round ${now} against round ${before}: ${closed.length} closed${closed.length ? ` (${code(closed)})` : ""}, ${added.length} new${added.length ? ` (${code(added)})` : ""}, ${still} still open.`,
+    );
+  }
+  if (!any) lines.push("No gate has been reviewed yet.");
+  lines.push("");
 
   lines.push("### Findings still open", "");
   const gates = await reviewedGates(root, change).catch(() => [] as string[]);

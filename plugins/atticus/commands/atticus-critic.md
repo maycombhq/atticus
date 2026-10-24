@@ -3,6 +3,8 @@ description: Review a change with the critic's AI lenses, one at a time; Atticus
 argument-hint: "[change]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Review the change $ARGUMENTS with the critic: Atticus runs the rule checks itself, then offers its AI lenses (architecture, security, data, the business view and those the org pack adds) one at a time. You answer each lens; Atticus checks every finding's quote and records it on the gate.
 
 1. Run `atticus critic $ARGUMENTS --handoff` in a terminal in this workspace. It prints the prompt file, the result file, and the two commands that finish the step. If it prints no prompt file, there was nothing for you to write: say what it printed and go on.

@@ -3,6 +3,8 @@ description: Search every wiki for a term or phrase and propose what the pages h
 argument-hint: "[term or phrase]"
 ---
 
+Before anything else, run `atticus assistant-files --check` in a terminal in this workspace. If the `atticus` command isn't found, tell the person Atticus's command line isn't installed here (its install guide says how, offline) and stop. If it says this folder isn't an Atticus metarepo, or that the assistant files are out of date, tell the person exactly what it said and stop.
+
 Search the organisation's wikis for $ARGUMENTS. Atticus finds the pages and sections that mention it; you read only those and write every item on them about it (a process or the steps to achieve something, a request and its form, a standard, a decision, a team, a vendor, a product), each with its exact quote; items already known keep their ids. Atticus checks every quote and saves what you found for the person to keep.
 
 1. Run `atticus knowledge find "$ARGUMENTS" --handoff` in a terminal in this workspace. It prints the prompt file, the result file, and the two commands that finish the step. If it prints no prompt file, there was nothing for you to write: say what it printed and go on.

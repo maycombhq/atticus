@@ -92,6 +92,8 @@ export const SCREENS: ScreenDef[] = [
   { id: "history", label: S.history, section: "Atticus" },
   { id: "evals", label: S.evals, section: "Atticus" },
   { id: "learning", label: S.learning, section: "Atticus" },
+  // WP5.1: Atticus's own words, in plain sentences.
+  { id: "words", label: S.words, section: "Atticus" },
 ];
 
 /** A section's name as the menu shows it. */

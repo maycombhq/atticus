@@ -7,6 +7,8 @@ import {
   changeTypesFrom,
   commandsFor,
   howToRun,
+  lineOf,
+  splitWords,
   matchCommand,
   optionsOf,
   pickList,
@@ -273,5 +275,13 @@ describe("the command list, friendlier (ADR 0098)", () => {
     };
     expect(pickList(withDev).some((i) => i.id === "bench run")).toBe(false);
     expect(pickList(withDev, { developer: true }).some((i) => i.id === "bench run")).toBe(true);
+  });
+});
+
+describe("a next step's arguments as a line (WP4.2)", () => {
+  it("reads back the same words, quoting one with a space", () => {
+    const args = ["change", "new", "Let members pin a message", "--type", "feature"];
+    expect(lineOf(args)).toBe('change new "Let members pin a message" --type feature');
+    expect(splitWords(lineOf(args))).toEqual(args);
   });
 });

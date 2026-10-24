@@ -13,6 +13,7 @@ import {
   commandsFor,
   howToRun,
   listFor,
+  lineOf,
   matchCommand,
   normaliseCatalog,
   optionsOf,
@@ -47,6 +48,8 @@ import type { StepEnd } from "./runner";
 import { discoveredFrom, freeFolder, isMetarepoName } from "./start";
 import {
   optionHint,
+  ownerFrom,
+  ownerProblem,
   pastChangeRows,
   startupNotice,
   WORDS,
@@ -887,6 +890,31 @@ export class CommandUi {
     this.d.refreshAll();
   }
 
+  /**
+   * A next step's command (WP4.2), run the way Run a command runs it: with progress and Cancel,
+   * what it printed in a notice, and the views read again after. A shared write gets its dry run
+   * and a person's yes; only a server opens a terminal.
+   */
+  async runLine(root: string, args: string[]): Promise<void> {
+    const m = matchCommand(await this.load(root), lineOf(args));
+    const how = m ? howToRun(m.command) : { mode: "run" as const };
+    if (how.mode === "ai") {
+      await this.d.runAi(args);
+      return;
+    }
+    if (how.mode === "terminal") {
+      this.d.inTerminal(root, `Atticus ${m!.command.id}`, [...args, "--root", root]);
+      return;
+    }
+    if (how.mode === "approve") {
+      const p = await this.approveAndRun(root, args, how.flag, {
+        optional: !m!.command.flags.some((f) => f.name === how.flag && f.required),
+      });
+      if (p) this.showPrinted(args, p);
+    } else this.showPrinted(args, await this.captured(root, args));
+    this.d.refreshAll();
+  }
+
   /** The whole flow: pick (or take) a command, ask what it needs, run it. */
   async pickAndRun(
     root: string,
@@ -1650,32 +1678,21 @@ export class CommandUi {
   }
 
   /** The org pack's pack.yaml, to name its owner (the setup step org-pack-owner). */
+  /** WP4.4: who looks after the org pack, asked in a form and written by atticus orgpack owner. */
   async openOrgPackOwner(root: string) {
-    const file =
-      [join(root, "org-pack", "pack.yaml"), join(root, ".atticus", "org-pack", "pack.yaml")].find(
-        (f) => existsSync(f),
-      ) ?? join(root, "org-pack", "pack.yaml");
-    try {
-      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
-      const line = Math.max(
-        0,
-        doc
-          .getText()
-          .split(/\r?\n/)
-          .findIndex((l) => /^owner:/.test(l)),
-      );
-      await vscode.window.showTextDocument(doc, {
-        preview: false,
-        selection: new vscode.Range(line, 0, line, doc.lineAt(line).text.length),
-      });
-      void vscode.window.showInformationMessage(
-        "Set owner to the person who looks after the org pack (normally the platform lead), then commit it.",
-      );
-    } catch {
-      void vscode.window.showWarningMessage(
-        `${file} isn't there. Run atticus upgrade, or atticus init.`,
-      );
-    }
+    const now = await this.captured(root, ["orgpack", "owner"]);
+    if (now.code !== 0) return this.showPrinted(["orgpack", "owner"], now);
+    const handle = await vscode.window.showInputBox({
+      title: WORDS.ownerTitle,
+      prompt: WORDS.ownerPrompt,
+      value: ownerFrom(now.lines[0] ?? "") ?? "",
+      validateInput: (v) => ownerProblem(v),
+      ignoreFocusOut: true,
+    });
+    if (handle === undefined) return;
+    const argv = ["orgpack", "owner", handle.trim()];
+    this.showPrinted(argv, await this.captured(root, argv));
+    this.d.refreshAll();
   }
 
   /** Accept the catalog as the baseline, after walking the map with the architect. */
