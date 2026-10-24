@@ -71,6 +71,49 @@ export async function attachFiles(
   });
 }
 
+/**
+ * Copy a file attached to a change into general knowledge (ADR 0122): into the metarepo's
+ * inputs/inbox/, where the knowledge source reads it at the next sync. The change keeps its copy
+ * and goes on citing it. `file` is the attached file's name, with or without inputs/.
+ */
+export async function promoteChangeInput(
+  root: string,
+  change: string,
+  file: string,
+): Promise<{ path: string; note: string }> {
+  const c = await changeStore(root)
+    .read(change)
+    .catch(() => {
+      throw new AttachError(
+        "not-found",
+        `There is no change ${change}: atticus change list shows them.`,
+      );
+    });
+  const name = file.replace(/^inputs\//, "");
+  if (!name || /[\\/]/.test(name) || name === "." || name === "..")
+    throw new AttachError(
+      "invalid",
+      `Name one attached file, such as inputs/${basename(file) || "rules.pdf"}.`,
+    );
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await readFile(join(changeFolder(root, c.id), "inputs", name)));
+  } catch {
+    throw new AttachError(
+      "not-found",
+      `inputs/${name} isn't attached to ${c.id}: atticus change attach ${c.id} adds it.`,
+    );
+  }
+  const { addToInbox } = await import("./intake-commands.js");
+  const r = await addToInbox(root, [{ name, bytes }]);
+  const added = r.added[0];
+  if (!added) throw new AttachError("invalid", `inputs/${name}: ${r.refused[0]?.why ?? "refused"}`);
+  return {
+    path: added.path,
+    note: `Copied to ${added.path}: general knowledge, read at the next atticus sources sync. ${c.id} keeps its copy. Commit both through a pull request.`,
+  };
+}
+
 /** One line about a file attached, for a person. */
 export function attachedLine(rel: string, a: ChangeInput): string {
   const what =
@@ -91,9 +134,30 @@ export async function changeAttachCli(
   root: string,
   change: string | undefined,
   paths: string[],
-  o: { by: string; json?: boolean; now?: Date; replaces?: string },
+  o: { by: string; json?: boolean; now?: Date; replaces?: string; promote?: string },
   io: Output,
 ): Promise<number> {
+  // ADR 0122: --promote copies an attached file into general knowledge.
+  if (change && o.promote) {
+    if (paths.length) {
+      io.err(
+        "--promote names one file already attached; attach new files without it, for example: atticus change attach add-refund-window --promote inputs/refund-rules.pdf",
+      );
+      return 2;
+    }
+    try {
+      const r = await promoteChangeInput(root, change, o.promote);
+      if (o.json) io.out(JSON.stringify(r, null, 2));
+      else io.out(r.note);
+      return 0;
+    } catch (e) {
+      if (e instanceof AttachError) {
+        io.err(e.message);
+        return 1;
+      }
+      throw e;
+    }
+  }
   if (!change || paths.length === 0) {
     io.err(
       "Usage: atticus change attach <change> <files...>, for example: atticus change attach add-refund-window refund-rules.pdf",

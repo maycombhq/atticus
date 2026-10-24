@@ -198,6 +198,47 @@ describe("atticus change attach", () => {
 });
 
 describe("atticus task context", () => {
+  it("moves an attached file into general knowledge with --promote, and the change keeps it (ADR 0122)", async () => {
+    const root = await estate();
+    const dir = await mkdtemp(join(tmpdir(), "atticus-attach-src-"));
+    await writeFile(join(dir, "limits-note.md"), "# Limits\n\nThe ledger owns every limit.\n");
+    const by = ["--by", "pat", "--root", root];
+    expect(
+      await main(["change", "attach", CHANGE, join(dir, "limits-note.md"), ...by], io().io, {
+        quiet: true,
+      }),
+    ).toBe(0);
+    const o = io();
+    expect(
+      await main(["change", "attach", CHANGE, "--promote", "inputs/limits-note.md", ...by], o.io, {
+        quiet: true,
+      }),
+    ).toBe(0);
+    expect(o.out.join("\n")).toContain("inputs/inbox/limits-note.md");
+    expect(await readFile(join(root, "inputs", "inbox", "limits-note.md"), "utf8")).toContain(
+      "The ledger owns every limit.",
+    );
+    // The change keeps its copy.
+    expect(
+      await readFile(join(root, "openspec/changes", CHANGE, "inputs", "limits-note.md"), "utf8"),
+    ).toContain("The ledger owns every limit.");
+    // Once is enough: the same bytes are already in inputs/.
+    const again = io();
+    expect(
+      await main(["change", "attach", CHANGE, "--promote", "limits-note.md", ...by], again.io, {
+        quiet: true,
+      }),
+    ).toBe(1);
+    expect(again.err.join("\n")).toMatch(/already in inputs/);
+    const none = io();
+    expect(
+      await main(["change", "attach", CHANGE, "--promote", "inputs/nope.md", ...by], none.io, {
+        quiet: true,
+      }),
+    ).toBe(1);
+    expect(none.err.join("\n")).toMatch(/isn't attached/);
+  });
+
   it("prints the task's context as Markdown, or as JSON", async () => {
     const root = await estate();
     await stageCli(root, ["change", "small", CHANGE], {}, io().io, { runtime: mock(), now: NOW });

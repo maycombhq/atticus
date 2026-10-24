@@ -58,6 +58,7 @@ export const SCREENS: ScreenDef[] = [
   // Knowledge (ADR 0102): the items, the wikis they come from, searching them, the parties.
   { id: "knowledge", label: K.items, section: "Knowledge" },
   { id: "wikis", label: K.sources, section: "Knowledge" },
+  { id: "documents", label: K.documents, section: "Knowledge" },
   { id: "wiki-search", label: K.search, section: "Knowledge" },
   { id: "parties", label: K.parties, section: "Knowledge" },
   // The estate: what the code says, searched, drawn and followed.

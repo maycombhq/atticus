@@ -189,6 +189,11 @@ export interface SyncOptions {
   defaultClassification?: string;
   /** Adapters by source type; a folder adapter is built in. */
   adapters?: Partial<Record<WikiSource["type"], KnowledgeSourceAdapter>>;
+  /**
+   * Adapters for single sources by id, before the one for their type: the built-in `inputs`
+   * source (ADR 0122), whose files are documents read into text, not Markdown pages.
+   */
+  adaptersById?: Record<string, KnowledgeSourceAdapter>;
 }
 
 const DEFAULT_LEVELS = ["public", "internal", "confidential", "restricted"];
@@ -365,7 +370,10 @@ export async function syncSources(o: SyncOptions): Promise<SyncResult> {
     const folder =
       source.type === "markdown-folder" ||
       (source.type !== "confluence" && !isUrl(source.location));
-    const adapter = o.adapters?.[source.type] ?? (folder ? markdownFolderAdapter : undefined);
+    const adapter =
+      o.adaptersById?.[source.id] ??
+      o.adapters?.[source.type] ??
+      (folder ? markdownFolderAdapter : undefined);
     if (!adapter) {
       res.problems.push({
         source: source.id,

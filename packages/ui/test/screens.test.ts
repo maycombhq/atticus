@@ -73,7 +73,7 @@ describe("the app's map: six sections, every page a tab (ADR 0119)", () => {
   it("puts each page in its section, and a change's pages under their phase", () => {
     const of = (s: Section) => tabsOf(s).map((x) => x.id);
     expect(of("Home")).toEqual(["home", "dashboard"]);
-    expect(of("Knowledge")).toEqual(["knowledge", "wikis", "wiki-search", "parties"]);
+    expect(of("Knowledge")).toEqual(["knowledge", "wikis", "documents", "wiki-search", "parties"]);
     expect(of("SetUp")).toEqual([
       "onboarding",
       "scans",

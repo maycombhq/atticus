@@ -145,6 +145,25 @@ class AttachToChangeAction : AtticusAction() {
     }
 }
 
+/** ADR 0122: the selected files into general knowledge (inputs/inbox/), read at the next sync. */
+class AddToKnowledgeAction : AtticusAction() {
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible = e.project != null && pickedFiles(e).isNotEmpty()
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val paths = pickedFiles(e)
+        if (paths.isEmpty()) {
+            Notify.show(project, Copy.ATTACH_NO_FILES)
+            return
+        }
+        val flow = CommandFlow(project)
+        val argv = Commands.addToKnowledgeArgv(paths)
+        flow.captured(argv) { r -> flow.said(argv, r) }
+    }
+}
+
 /**
  * ADR 0113: a task's context where the code is written. Asks the change and the task, reads
  * atticus task context, and puts it on the clipboard for Copilot Chat in agent mode, with the

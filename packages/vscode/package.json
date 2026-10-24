@@ -368,6 +368,12 @@
         "icon": "$(file-add)"
       },
       {
+        "command": "atticus.addToKnowledge",
+        "title": "Add to Atticus knowledge",
+        "category": "Atticus",
+        "icon": "$(book)"
+      },
+      {
         "command": "atticus.checkHealth",
         "title": "Check this machine and the metarepo",
         "category": "Atticus",
@@ -1335,6 +1341,11 @@
       "explorer/context": [
         {
           "command": "atticus.attachToChange",
+          "when": "atticus.hasMetarepo && !explorerResourceIsFolder",
+          "group": "7_modification"
+        },
+        {
+          "command": "atticus.addToKnowledge",
           "when": "atticus.hasMetarepo && !explorerResourceIsFolder",
           "group": "7_modification"
         }

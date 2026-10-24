@@ -71,6 +71,13 @@
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
             <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
         </action>
+        <!-- ADR 0122: files for general knowledge, into the metarepo's inputs/inbox/. -->
+        <action id="Atticus.AddToKnowledge" class="com.maycombhq.atticus.ide.AddToKnowledgeAction"
+                text="Add to Atticus Knowledge" description="Copy the selected files into the metarepo's inputs/inbox/: general knowledge, read at the next sync"
+                icon="AllIcons.Actions.AddFile">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
+        </action>
         <action id="Atticus.StartTask" class="com.maycombhq.atticus.ide.StartTaskAction"
                 text="Atticus: Start a Task in Copilot" description="A task's context (story, criteria, the step with today's code, the files to change) on the clipboard for Copilot Chat in agent mode"
                 icon="AllIcons.Actions.Execute">

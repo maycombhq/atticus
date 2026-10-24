@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { userInfo } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
   inputsDirOf,
   loadOrgPack,
@@ -53,6 +53,54 @@ const sha256 = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 const rel = (root: string, p: string) => relative(root, p).split(sep).join("/");
 
 /**
+ * Copy files into inputs/inbox/ as they are, with no sorting (ADR 0122: the drop target for
+ * general knowledge). A file already somewhere under inputs/ (same bytes), an empty file and a
+ * name with a folder in it are refused; a name taken in the inbox gets -2, -3...
+ */
+export async function addToInbox(
+  root: string,
+  files: { name: string; bytes: Uint8Array }[],
+): Promise<{
+  added: { name: string; path: string; kind: string }[];
+  refused: { name: string; why: string }[];
+}> {
+  const INBOX = inboxRelOf(root);
+  const inbox = join(root, ...INBOX.split("/"));
+  const known = new Map<string, string>();
+  for (const f of await filesUnder(inputsDirOf(root)))
+    known.set(sha256(new Uint8Array(await readFile(f))), rel(root, f));
+  const added: { name: string; path: string; kind: string }[] = [];
+  const refused: { name: string; why: string }[] = [];
+  for (const { name, bytes } of files) {
+    if (!name || /[\\/]/.test(name) || name === "." || name === "..") {
+      refused.push({ name, why: "give a file name without a folder in it" });
+      continue;
+    }
+    if (bytes.length === 0) {
+      refused.push({ name, why: "it is empty" });
+      continue;
+    }
+    const hash = sha256(bytes);
+    const already = known.get(hash);
+    if (already) {
+      refused.push({ name, why: `it is already in inputs as ${already}` });
+      continue;
+    }
+    const dot = name.lastIndexOf(".");
+    const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+    await mkdir(inbox, { recursive: true });
+    const taken = new Set(await readdir(inbox));
+    let target = name;
+    for (let n = 2; taken.has(target); n++) target = `${stem}-${n}${ext}`;
+    await writeFile(join(inbox, target), bytes);
+    const path = `${INBOX}/${target}`;
+    known.set(hash, path);
+    added.push({ name, path, kind: classify(target, bytes).classification });
+  }
+  return { added, refused };
+}
+
+/**
  * atticus intake add <files...>: copy files into inputs/inbox/ as they are, with no sorting.
  * A file already somewhere under inputs/ (same bytes) is refused. Exit 0 when everything was
  * added, 1 when something was refused or unreadable, 2 when no file was named.
@@ -62,13 +110,10 @@ export async function intakeAdd(root: string, files: string[], io: Output): Prom
     io.err("Name at least one file to add.");
     return 2;
   }
-  const INBOX = inboxRelOf(root);
-  const inbox = join(root, ...INBOX.split("/"));
-  const known = new Map<string, string>();
-  for (const f of await filesUnder(inputsDirOf(root)))
-    known.set(sha256(new Uint8Array(await readFile(f))), rel(root, f));
   let problems = false;
   let added = 0;
+  const ALREADY = "it is already in inputs as ";
+  // One at a time, in the order given, so each message names the file as it was typed.
   for (const f of files) {
     const src = resolve(f);
     let bytes: Uint8Array;
@@ -79,27 +124,20 @@ export async function intakeAdd(root: string, files: string[], io: Output): Prom
       problems = true;
       continue;
     }
-    const hash = sha256(bytes);
-    const already = known.get(hash);
-    if (already) {
-      io.err(`${f} is already in inputs as ${already}; not copied.`);
+    const r = await addToInbox(root, [{ name: basename(src), bytes }]);
+    for (const x of r.refused) {
+      io.err(
+        x.why.startsWith(ALREADY)
+          ? `${f} is already in inputs as ${x.why.slice(ALREADY.length)}; not copied.`
+          : `${f} wasn't copied: ${x.why}.`,
+      );
       problems = true;
-      continue;
     }
-    const name = src.split(/[\\/]/).pop()!;
-    const dot = name.lastIndexOf(".");
-    const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
-    await mkdir(inbox, { recursive: true });
-    const taken = new Set(await readdir(inbox));
-    let target = name;
-    for (let n = 2; taken.has(target); n++) target = `${stem}-${n}${ext}`;
-    await writeFile(join(inbox, target), bytes);
-    const path = `${INBOX}/${target}`;
-    known.set(hash, path);
-    const c = classify(target, bytes).classification;
-    const reading = c === "document" || c === "image" ? ", needs reading" : "";
-    io.out(`Added ${path} (${c}${reading}).`);
-    added++;
+    for (const a of r.added) {
+      const reading = a.kind === "document" || a.kind === "image" ? ", needs reading" : "";
+      io.out(`Added ${a.path} (${a.kind}${reading}).`);
+      added++;
+    }
   }
   if (added > 0) io.out("Run atticus intake list to see what Atticus made of them.");
   return problems ? 1 : 0;

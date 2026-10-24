@@ -491,7 +491,7 @@ Usage:
   atticus change feature <change>      The feature stage: your assistant places the change on the estate's flows and features from the brief, stories or a design; checked and criticised every draft until done [--from-figma f.json] [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change architecture <change>  The architecture stage: the target flows (steps added, changed or removed, with fields) as flow deltas; looped the same way [--mode m] [--resume run] [--context-tokens n] [--whole-context] [--max-tokens n]
   atticus change small <change>        The fast path for a small change (ADR 0113): your assistant places it on the flows, writes its target flows and words its stories in one step; every stage's checks, and the critic at the change type's gate [--mode m] [--resume run] [--force] [--context-tokens n] [--whole-context]
-  atticus change attach <change> <files...>  Attach a spec, screenshot, PDF, email export or document to a change: copied into its inputs/, read and cited by line or page, read by its steps [--replaces inputs/<file>] [--json]
+  atticus change attach <change> <files...>  Attach a spec, screenshot, PDF, email export or document to a change: copied into its inputs/, read and cited by line or page, read by its steps [--replaces inputs/<file>] [--promote inputs/<file>: copy one into general knowledge] [--json]
   atticus change draft <change>        Your assistant drafts the proposal, spec and interfaces from the brief and the catalog; checked [--attempts 3] [--force] [--mode m] [--max-tokens n]
   atticus change status <id> [--json]  State, next step, what blocks it, risk, the PR to merge and test kinds
   atticus change handoff <id> --approve  Open the phase's hand-off PR; merging it approves the gate [--repo]
@@ -878,6 +878,7 @@ const OPTIONS = {
   source: { type: "string" },
   "from-figma": { type: "string" },
   replaces: { type: "string" },
+  promote: { type: "string" },
   surface: { type: "string" },
   session: { type: "string" },
   command: { type: "string" },
@@ -2046,6 +2047,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         json,
         ...(typeof values.replaces === "string" && values.replaces.trim()
           ? { replaces: values.replaces.trim() }
+          : {}),
+        ...(typeof values.promote === "string" && values.promote.trim()
+          ? { promote: values.promote.trim() }
           : {}),
       },
       io,

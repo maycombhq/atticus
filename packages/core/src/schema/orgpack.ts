@@ -486,6 +486,14 @@ export const Sources = z
                     path: [k],
                     message: `${k} is for a git wiki; ${w.id} is ${w.type}`,
                   });
+            // ADR 0122: inputs is the metarepo's own inputs/ folder, read as a source of its own.
+            if (w.id === "inputs")
+              ctx.addIssue({
+                code: "custom",
+                path: ["id"],
+                message:
+                  "inputs is the metarepo's own inputs/ folder, which Atticus reads as a source by itself: give this wiki another id",
+              });
           }),
       )
       .default([]),

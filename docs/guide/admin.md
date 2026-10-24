@@ -12,7 +12,15 @@ Home shows it until the catalog is accepted; `atticus setup` prints it. Each ste
 4. **Repos are cloned here** (`atticus workspace sync`, or _Sync repos_ on the Scans screen).
 5. **The first scan is done** (`atticus scan`, or _Scan now_). Scans read files only: no network, no AI.
 6. **Existing knowledge is added** (optional): diagrams, partner specs and exports in `inputs/` (`atticus intake add <files>`), wikis in `sources.yaml` (`atticus sources add`).
-7. **The catalog is accepted**: walk the ecosystem map with the architect, then `atticus baseline` or _Accept the catalog_ on Home. It writes `catalog/baseline.yaml` with your name (your Git user); commit it and open a pull request, whose merge makes it the baseline on main. Every later scan, document and change is compared with this baseline.
+
+### Knowledge as files
+
+Knowledge comes in two scopes (ADR 0122):
+
+- **General knowledge** goes in the metarepo's `inputs/`: decisions, runbooks, specs, request forms, slides and exported pages. Add files on Knowledge › Documents, with **Add to Atticus knowledge** in either editor, or with `atticus intake add <files>`. `atticus sources sync` reads `inputs/` as a source called `inputs`, and the knowledge scan (`/atticus-knowledge inputs`) reads it into items, each quote checked against the file. A file dropped twice is read once, and an older version is kept but not read.
+- **Specific to one change** goes in that change's Files attached (`atticus change attach`). Only that change's steps read it. **Copy to general knowledge** (`--promote`) copies it into `inputs/inbox/` when every change should see it.
+
+Pictures go to a person, since AI steps take text only. A scanned PDF with no text layer can't be read: OCR isn't built. 7. **The catalog is accepted**: walk the ecosystem map with the architect, then `atticus baseline` or _Accept the catalog_ on Home. It writes `catalog/baseline.yaml` with your name (your Git user); commit it and open a pull request, whose merge makes it the baseline on main. Every later scan, document and change is compared with this baseline.
 
 ### Helm charts and Kustomize overlays
 

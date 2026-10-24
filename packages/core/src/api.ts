@@ -46,7 +46,7 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.15.0 (ADR 0116): how a run's context was retrieved, retrieval in the transcript (the model's
  *   expansion and rerank); run records are at version 3.
  */
-export const API_VERSION = "2.16.0";
+export const API_VERSION = "2.17.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -959,6 +959,34 @@ export const AttachResult = z.object({
   refused: z.array(z.object({ name: z.string(), why: z.string() })),
   notes: z.array(z.string()),
 });
+/** A file in the metarepo's inputs/ (ADR 0122): what it is, whether it was read, its items. */
+export const DocumentView = z.object({
+  path: z.string(),
+  kind: z.string(),
+  title: z.string().optional(),
+  systems: z.array(z.string()),
+  state: z.enum(["read", "skipped", "not-synced"]),
+  reason: z.string().optional(),
+  duplicateOf: z.string().optional(),
+  supersededBy: z.string().optional(),
+  inbox: z.boolean(),
+  modifiedAt: z.string().optional(),
+  items: z.array(z.object({ id: z.string(), title: z.string(), verified: z.boolean() })),
+});
+export const DocumentList = z.object({
+  documents: z.array(DocumentView),
+  snapshot: z.object({ date: z.string() }).nullable(),
+  commands: z.array(z.string()),
+});
+export const AddDocumentResult = z.object({
+  added: z.array(z.object({ name: z.string(), path: z.string(), kind: z.string() })),
+  refused: z.array(z.object({ name: z.string(), why: z.string() })),
+});
+export const PromoteResult = z.object({ path: z.string(), note: z.string() });
+export type DocumentViewT = z.infer<typeof DocumentView>;
+export type DocumentListT = z.infer<typeof DocumentList>;
+export type AddDocumentResultT = z.infer<typeof AddDocumentResult>;
+
 export type ChangeInputT = z.infer<typeof ChangeInput>;
 export type ChangeInputListT = z.infer<typeof ChangeInputList>;
 export type AttachResultT = z.infer<typeof AttachResult>;
@@ -1955,6 +1983,17 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 413, 422],
     },
   },
+  "/api/changes/{changeId}/inputs/{name}/promote": {
+    post: {
+      id: "promoteChangeInput",
+      summary:
+        "Copy a file attached to a change into general knowledge (inputs/inbox/); the change keeps its copy (ADR 0122)",
+      tag: "changes",
+      params: [p("changeId"), p("name")],
+      ok: { status: 200, schema: "PromoteResult", description: "Copied" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/changes/{changeId}/map": {
     get: {
       id: "getChangeMap",
@@ -2760,6 +2799,24 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "KnowledgeScanView", description: "OK" },
     },
   },
+  "/api/knowledge/documents": {
+    get: {
+      id: "listDocuments",
+      summary:
+        "The files in the metarepo's inputs/: what each is, the systems it names, whether the knowledge source read it (or why not), and the items that quote it (ADR 0122)",
+      tag: "knowledge",
+      ok: { status: 200, schema: "DocumentList", description: "OK" },
+    },
+    post: {
+      id: "addDocument",
+      summary:
+        "Add a file to general knowledge (its bytes in base64): copied into inputs/inbox/ as it is; the same bytes already in inputs/ are refused (ADR 0122)",
+      tag: "knowledge",
+      body: AttachFileRequest,
+      ok: { status: 201, schema: "AddDocumentResult", description: "Added, or refused with why" },
+      errors: [400, 413, 422],
+    },
+  },
   "/api/knowledge/items": {
     get: {
       id: "listKnowledgeItems",
@@ -2931,6 +2988,9 @@ export function openApiDocument(): Record<string, unknown> {
     ChangeInput,
     ChangeInputList,
     AttachResult,
+    DocumentList,
+    AddDocumentResult,
+    PromoteResult,
     ChangeConformance,
     OrgPackView,
     Health,

@@ -30,4 +30,11 @@ describe("the change's files attached", () => {
     expect(T.inputWhen("pat", "2026-10-23T09:00:00Z")).toBe("pat, 2026-10-23");
     expect(T.attachTooLarge(22)).toMatch(/up to 15 MB/);
   });
+
+  it("can copy a file into general knowledge, and says the change keeps it (ADR 0122)", () => {
+    expect(T.promoteFor("inputs/refund-rules.pdf")).toBe(
+      "Copy inputs/refund-rules.pdf to general knowledge",
+    );
+    expect(T.promoted("inputs/refund-rules.pdf")).toMatch(/inputs\/inbox\/.*keeps its copy/);
+  });
 });

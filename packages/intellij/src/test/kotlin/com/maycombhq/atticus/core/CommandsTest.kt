@@ -120,6 +120,7 @@ class CommandsTest {
         assertEquals("/atticus-task fix-label 1.1", Commands.taskSlash("fix-label", "1.1"))
         assertEquals(listOf("task", "context", "fix-label", "1.1", "--markdown"), Commands.taskContextArgv("fix-label", "1.1"))
         assertEquals(listOf("change", "attach", "fix-label", "a.pdf", "b.png"), Commands.attachArgv("fix-label", listOf("a.pdf", "b.png")))
+        assertEquals(listOf("intake", "add", "a.pdf", "b.png"), Commands.addToKnowledgeArgv(listOf("a.pdf", "b.png")))
         assertEquals("/atticus-verify forge-web", Commands.slashFor(listOf("scan", "verify", "forge-web", "--force")))
         assertEquals("/atticus-spec forge-web", Commands.slashFor(listOf("spec", "draft", "forge-web")))
         assertEquals("/atticus-knowledge", Commands.slashFor(listOf("knowledge", "scan")))
