@@ -12,7 +12,7 @@ import {
 } from "@maycombhq/core";
 import {
   APPLIES_SPEC,
-  callsModelDirectly,
+  judgesDirectly,
   COVERS_FIELD_SPEC,
   judge,
   settle,
@@ -492,7 +492,7 @@ export function unwrittenChecks(a: StoriesAnswer, stories: DeltaStory[]): Unwrit
 
 /** A judge for criteria, where the runtime calls a model directly; none for hand-off and mock. */
 export const judgeRuntime = (runtime: AiRuntime): AiRuntime | undefined =>
-  callsModelDirectly(runtime) ? runtime : undefined;
+  judgesDirectly(runtime) ? runtime : undefined;
 
 const coversItem = (c: UnwrittenCheck): JudgeItem => ({
   inputs: { v: 1, field: c.field, criterion: c.criterion },
@@ -515,7 +515,8 @@ async function settleCoverage(
   });
   return claims.map((claim, i) => ({
     claim,
-    verdict: r.results.get(judgmentKey(COVERS_FIELD_SPEC.kind, items[i]!.inputs))?.verdict,
+    // No entry in settle's results: nothing settled it, so the claim is unjudged.
+    verdict: r.get(judgmentKey(COVERS_FIELD_SPEC.kind, items[i]!.inputs))?.verdict,
   }));
 }
 

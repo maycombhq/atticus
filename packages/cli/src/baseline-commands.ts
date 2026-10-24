@@ -3,12 +3,14 @@ import { join, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import {
   CatalogBaseline,
+  DEFAULT_RUNTIME,
   catalogDirOf,
   inputsDirOf,
   loadOrgPack,
   orgPackDirOf,
   WORKSPACE_SCHEMA_VERSION,
 } from "@maycombhq/core";
+import { whatRunsWhere } from "@maycombhq/assistant-files";
 import { buildSite } from "@maycombhq/site";
 import { baseClonePath, loadRepos } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
@@ -103,6 +105,15 @@ export async function setupSteps(
       done: !!op.pack?.owner && op.pack.owner !== "unassigned",
       detail: op.pack?.owner && op.pack.owner !== "unassigned" ? op.pack.owner : "unassigned",
       fix: "Set owner in org-pack/pack.yaml to the person who looks after the org pack (normally the platform lead), and commit it through a pull request.",
+    },
+    {
+      // ADR 0121 item 6: how AI runs here is a choice, not the default left by accident.
+      id: "ai",
+      label: "Choose how AI runs here",
+      done: JSON.stringify(op.runtime) !== JSON.stringify(DEFAULT_RUNTIME),
+      detail: whatRunsWhere(op.runtime),
+      fix: "Choose the assistants, the modes and the model provider on Set up › AI in the app (or in org-pack/runtime.yaml), and commit it through a pull request. As atticus init wrote it, steps are handed to Copilot, which needs nothing more.",
+      optional: true,
     },
     {
       id: "repos",

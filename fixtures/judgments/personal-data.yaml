@@ -1,0 +1,84 @@
+# Personal-data cases (ADR 0117 addendum): does a new column hold personal data? `truth` is what a
+# data protection reviewer says. The new rule settles a column already classified as personal (a
+# fact) and asks the judge of the rest, reading the column's name, table and type; `recorded` is
+# the judge's recorded answer. The old rule (the critic's looksPersonal: a word list matched
+# against the name's parts) is scored on the same columns.
+cases:
+  - id: changed-by-email
+    column: changed_by_email
+    table: limit_change
+    type: varchar(200)
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: column, text: changed_by_email }] }
+  - id: holder-name
+    column: holder_name
+    table: account
+    type: varchar(120)
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: column, text: holder_name }] }
+  - id: account-id
+    column: account_id
+    table: limit_change
+    type: bigint
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: column, text: account_id }] }
+  - id: daily-limit
+    column: daily_limit
+    table: account
+    type: numeric(18,2)
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: column, text: daily_limit }] }
+  - id: product-name
+    column: product_name
+    table: catalogue_item
+    type: varchar(80)
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: column, text: product_name }] }
+  - id: ip-allowlist-flag
+    column: ip_allowlist_enabled
+    table: tenant_settings
+    type: boolean
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: column, text: ip_allowlist_enabled }] }
+  - id: file-name
+    column: file_name
+    table: statement_export
+    type: varchar(255)
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: column, text: file_name }] }
+  - id: zip-archive
+    column: zip_archive_path
+    table: statement_export
+    type: varchar(255)
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: column, text: zip_archive_path }] }
+  - id: msisdn
+    column: msisdn
+    table: customer_contact
+    type: varchar(15)
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: column, text: msisdn }] }
+  - id: given-names
+    column: given_names
+    table: customer
+    type: varchar(120)
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: column, text: given_names }] }
+  - id: tax-identifier
+    column: tax_identifier
+    table: customer
+    type: varchar(20)
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: column, text: tax_identifier }] }
+  - id: national-rate
+    column: national_rate
+    table: fee_schedule
+    type: numeric(5,2)
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: column, text: national_rate }] }
+  - id: classified-already
+    column: payee_reference
+    table: transfer
+    type: varchar(35)
+    classifiedPersonal: true
+    truth: yes

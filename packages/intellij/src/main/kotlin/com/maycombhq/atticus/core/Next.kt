@@ -13,7 +13,11 @@ data class NextStep(
     val source: String? = null,
 )
 
-data class NextView(val next: NextStep?, val steps: List<NextStep>)
+/**
+ * [runs] says in one line what runs a step here (ADR 0121 item 6); [modelMode] whether a step can
+ * run on runtime.yaml's model, so "Run on Atticus's configured model" is offered.
+ */
+data class NextView(val next: NextStep?, val steps: List<NextStep>, val runs: String? = null, val modelMode: Boolean = false)
 
 /** What the plugin does for a step `atticus next` names. */
 sealed interface NextAction {
@@ -34,7 +38,7 @@ object Next {
     /** Read `atticus next --json`; null when it printed no JSON (not a metarepo, say). */
     fun parse(json: String): NextView? {
         val root = runCatching { Json.objectIn(json) }.getOrNull().obj() ?: return null
-        return NextView(root["next"].obj()?.let(::step), root.objs("steps").map(::step))
+        return NextView(root["next"].obj()?.let(::step), root.objs("steps").map(::step), root.str("runs"), root.bool("modelMode"))
     }
 
     private fun step(m: Map<*, *>) =

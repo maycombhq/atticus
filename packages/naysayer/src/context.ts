@@ -52,6 +52,12 @@ export interface CriticContext {
   isDue(artifact: string): boolean;
   /** The org pack's owner, who takes questions nobody else owns. */
   packOwner?: string;
+  /**
+   * A judgment of meaning settled before the checks ran (ADR 0117 addendum): the verdict of a
+   * kind's item by its inputs, or undefined while no one has judged it. A check never stands in
+   * a word rule for an open item; it asks a person.
+   */
+  judged(kind: string, inputs: Record<string, unknown>): string | undefined;
 }
 
 export function buildContext(o: {
@@ -132,6 +138,7 @@ export function buildContext(o: {
       }
       return [...names].map((n) => n.toLowerCase());
     },
+    judged: () => undefined,
     isDue: (artifact) => {
       if (artifact === "catalog") return true;
       if (artifact === "code" || artifact === "tests") return gateIndex >= PHASES.indexOf("build");

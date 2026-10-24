@@ -9,8 +9,11 @@ import {
   loadChangeContext,
   type ChangePolicy,
 } from "@maycombhq/changes";
+import type { AiRuntime } from "@maycombhq/ai";
 import {
+  fileJudgments,
   inputsDirOf,
+  type JudgmentStore,
   type CatalogRecord,
   type ChangeLifecycle,
   type ChangeRepos,
@@ -37,9 +40,10 @@ import { ReleaseError } from "./errors.js";
 
 /**
  * Everything the release views read, loaded once per view: the change, its folder's artifacts,
- * the catalog, the org pack, repos, manual steps, service requests and critic rounds. Files
- * only: no network, no AI. The views are computed from this on every read, so they never go
- * stale.
+ * the catalog, the org pack, repos, manual steps, service requests and critic rounds, and the
+ * judgments on file. Files only, no network; the one model call is the judge's, through the AI
+ * runtime, when one is given that calls a model directly. The views are computed from this on
+ * every read, so they never go stale.
  */
 
 /** The change folder's file of service-request drafts (the org-flow artifact, ADR 0029). */
@@ -110,6 +114,13 @@ export interface ReleaseContext {
   latest: { finding: Finding; path: string }[];
   exportedRequests: ExportedServiceRequest[];
   problems: string[];
+  /**
+   * Where the views keep and read their judgments of meaning (ADR 0117 addendum): whether an
+   * API change breaks callers, which sentences undo a step, which lines name a secret, which
+   * columns are personal. A judgment on file is read; the judge is asked only when the runtime
+   * calls a model directly. What neither settles is shown to a person as not judged.
+   */
+  judging: { store: JudgmentStore; runtime?: AiRuntime };
 }
 
 const SyncEntries = z.object({
@@ -205,6 +216,10 @@ async function readRounds(root: string, change: string): Promise<RoundView[]> {
 
 export interface LoadOptions {
   now?: Date | string;
+  /** The judgments store. Default: the metarepo's judgments/. */
+  judgments?: JudgmentStore;
+  /** The runtime the judge is asked through, when it calls a model directly. */
+  runtime?: AiRuntime;
 }
 
 const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -285,5 +300,9 @@ export async function loadRelease(
     latest,
     exportedRequests: exported.requests,
     problems,
+    judging: {
+      store: o.judgments ?? fileJudgments(root),
+      ...(o.runtime ? { runtime: o.runtime } : {}),
+    },
   };
 }

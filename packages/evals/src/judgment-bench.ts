@@ -12,30 +12,49 @@ import {
   type SameVerdict,
 } from "@maycombhq/core";
 import {
-  COVERS_FIELD_SPEC,
   APPLIES_SPEC,
+  ASKS_CHECK_SPEC,
+  BREAKING_SPEC,
+  COVERS_FIELD_SPEC,
   judge,
+  judgeStandIn,
   MockRuntime,
+  NAMES_SECRET_SPEC,
+  PERSONAL_DATA_SPEC,
+  personalItem,
   questionJudge,
+  REACHES_SPEC,
+  recordedJudge as recordedStandIn,
+  settle,
+  UNDOES_SPEC,
+  verdictOf,
   type AiRequest,
   type JudgeItem,
   type JudgeSpec,
 } from "@maycombhq/ai";
-import { groundValues, settleClaims } from "@maycombhq/knowledge";
-import { reliedOn, writesField } from "@maycombhq/planner";
+import { groundValues, reachesItem, settleClaims } from "@maycombhq/knowledge";
+import { dorItems, reliedOn, writesField, type DorCheck } from "@maycombhq/planner";
+import { breakingItem, secretItem, undoesItem } from "@maycombhq/release";
 import {
   oldApplies,
+  oldBreaking,
+  oldDorChecks,
   oldLeadTimeDays,
+  oldLooksPersonal,
   oldNamesField,
+  oldNamesSecret,
+  oldReaches,
   oldReliesOn,
   oldSameQuestion,
   oldStatesValue,
+  oldUndoes,
   type OldStep,
 } from "./judgment-baselines.js";
 
 /**
- * The judgments' eval (ADR 0117). Each judgment the ADR moved from a word rule to the model is
- * scored on the cases in fixtures/judgments/, against what a person says (`truth`), three ways:
+ * The judgments' eval (ADR 0117 and its addendum). Each judgment moved from a word rule to the
+ * model is scored on the cases in fixtures/judgments/, against what a person says (`truth`),
+ * three ways:
  *
  * - **old**: the deleted heuristic (judgment-baselines.ts), as it was;
  * - **model**: the new path with a model the runtime can call: the checks and vetoes, then the
@@ -417,7 +436,200 @@ async function reliesRow(repoRoot: string): Promise<JudgmentRow> {
   };
 }
 
-/** Score every judgment ADR 0117 replaced, old against new, on the fixtures. */
+// ---------------------------------------------------------------- the addendum's kinds
+
+interface YesNoCase {
+  id: string;
+  truth: "yes" | "no";
+  recorded?: Recorded;
+}
+
+/**
+ * A yes-or-no kind of the addendum, scored three ways through settle(), the call the steps
+ * make: the model mode with the recorded verdicts standing in for a model, the hand-off mode
+ * with no model to ask (the veto and nothing else; an open item is never a yes).
+ */
+async function settledRow<C extends YesNoCase>(
+  kind: string,
+  spec: JudgeSpec,
+  cases: C[],
+  itemOf: (c: C) => JudgeItem,
+  old: (c: C) => boolean,
+): Promise<JudgmentRow> {
+  // Keyed by texts and facts: one sentence can be judged for two steps.
+  const key = (it: { texts: Record<string, string>; facts?: string[] }) =>
+    JSON.stringify({ texts: it.texts, facts: it.facts ?? [] });
+  const byItem = new Map<string, Recorded>();
+  for (const c of cases) if (c.recorded) byItem.set(key(itemOf(c)), c.recorded);
+  const rec = judgeStandIn((it) => byItem.get(key(it)), { now: () => NOW });
+  const items = cases.map(itemOf);
+  const asked = await settle(spec, items, {
+    runtime: rec.runtime,
+    store: memoryJudgments(),
+    change: "eval",
+    now: NOW,
+  });
+  const handed = await settle(spec, items, {
+    runtime: new MockRuntime(() => "", { now: () => NOW }),
+    store: memoryJudgments(),
+    change: "eval",
+    now: NOW,
+  });
+  const rows = (said: (c: C, i: number) => boolean) =>
+    score(cases.map((c, i) => ({ id: c.id, truth: c.truth === "yes", said: said(c, i) })));
+  return {
+    kind,
+    cases: cases.length,
+    old: rows((c) => old(c)),
+    model: rows((_, i) => verdictOf(asked, spec, items[i]!.inputs)?.verdict === "yes"),
+    handoff: rows((_, i) => verdictOf(handed, spec, items[i]!.inputs)?.verdict === "yes"),
+    prompts: rec.calls(),
+  };
+}
+
+async function breakingRow(repoRoot: string): Promise<JudgmentRow> {
+  const f = await fixture<{ cases: (YesNoCase & { change: string; notes: string })[] }>(
+    repoRoot,
+    "breaking.yaml",
+  );
+  return settledRow(
+    "breaking",
+    BREAKING_SPEC,
+    f.cases,
+    (c) =>
+      breakingItem(
+        { change: c.change, operation: "the operation", caller: "a-caller", callee: "a-callee" },
+        c.notes,
+      ),
+    // "check" was the old rule's "a person decides", so it never said yes.
+    (c) => oldBreaking(c.change, c.notes) === "yes",
+  );
+}
+
+async function undoesRow(repoRoot: string): Promise<JudgmentRow> {
+  const f = await fixture<{
+    steps: Record<string, { kind: string; names: string[] }>;
+    cases: (YesNoCase & { step: string; sentence: string })[];
+  }>(repoRoot, "undoes.yaml");
+  const others = (step: string) =>
+    Object.entries(f.steps)
+      .filter(([k]) => k !== step)
+      .flatMap(([, s]) => s.names);
+  return settledRow(
+    "undoes",
+    UNDOES_SPEC,
+    f.cases,
+    (c) =>
+      undoesItem(c.sentence, { key: c.step, repo: c.step, what: [], ...f.steps[c.step]! }, [
+        ...others(c.step),
+        ...f.steps[c.step]!.names,
+      ]),
+    (c) => oldUndoes(c.sentence, f.steps[c.step]!, others(c.step)),
+  );
+}
+
+async function namesSecretRow(repoRoot: string): Promise<JudgmentRow> {
+  const f = await fixture<{ cases: (YesNoCase & { line: string })[] }>(
+    repoRoot,
+    "names-secret.yaml",
+  );
+  return settledRow(
+    "names-secret",
+    NAMES_SECRET_SPEC,
+    f.cases,
+    (c) => secretItem(c.line),
+    (c) => oldNamesSecret(c.line),
+  );
+}
+
+async function personalDataRow(repoRoot: string): Promise<JudgmentRow> {
+  const f = await fixture<{
+    cases: (YesNoCase & {
+      column: string;
+      table: string;
+      type?: string;
+      classifiedPersonal?: boolean;
+    })[];
+  }>(repoRoot, "personal-data.yaml");
+  return settledRow(
+    "personal-data",
+    PERSONAL_DATA_SPEC,
+    f.cases,
+    (c) => personalItem(c),
+    // The old check also read the classification first; looksPersonal judged the rest.
+    (c) => c.classifiedPersonal === true || oldLooksPersonal(c.column),
+  );
+}
+
+async function asksCheckRow(repoRoot: string): Promise<JudgmentRow> {
+  const f = await fixture<{ cases: (YesNoCase & { item: string; check: DorCheck })[] }>(
+    repoRoot,
+    "asks-check.yaml",
+  );
+  return settledRow(
+    "asks-check",
+    ASKS_CHECK_SPEC,
+    f.cases,
+    (c) => dorItems(c.item).find((x) => x.check === c.check)!.item,
+    (c) => oldDorChecks(c.item).includes(c.check),
+  );
+}
+
+/**
+ * Reaches has four answers. Correct is the right one; a wrong yes is a route said that isn't
+ * so (a claim the wiki doesn't make, checked against code as if it did); a wrong no is a route
+ * missed (none, or open).
+ */
+async function reachesRow(repoRoot: string): Promise<JudgmentRow> {
+  const f = await fixture<{
+    cases: {
+      id: string;
+      sentence: string;
+      from: string;
+      to: string;
+      truth: string;
+      recorded?: Recorded;
+    }[];
+  }>(repoRoot, "reaches.yaml");
+  const items = f.cases.map((c) => reachesItem(c.sentence, c.from, c.to));
+  const byTexts = new Map<string, Recorded>();
+  f.cases.forEach((c, i) => c.recorded && byTexts.set(JSON.stringify(items[i]!.texts), c.recorded));
+  const rec = recordedStandIn(byTexts, { now: () => NOW });
+  const asked = await settle(REACHES_SPEC, items, {
+    runtime: rec.runtime,
+    store: memoryJudgments(),
+    change: "eval",
+    now: NOW,
+  });
+  const scored = (said: (i: number) => string) => {
+    const s: JudgmentScore = {
+      correct: 0,
+      total: f.cases.length,
+      wrongYes: 0,
+      wrongNo: 0,
+      wrong: [],
+    };
+    f.cases.forEach((c, i) => {
+      const v = said(i);
+      if (v === c.truth) return void s.correct++;
+      s.wrong.push(c.id);
+      if (v === "gateway" || v === "direct" || v === "api-only") s.wrongYes++;
+      else s.wrongNo++;
+    });
+    return s;
+  };
+  return {
+    kind: "reaches",
+    cases: f.cases.length,
+    old: scored((i) => oldReaches(f.cases[i]!.sentence)),
+    model: scored((i) => verdictOf(asked, REACHES_SPEC, items[i]!.inputs)?.verdict ?? "open"),
+    // Hand-off: no model to ask; every sentence is shown to a person as unjudged.
+    handoff: scored(() => "open"),
+    prompts: rec.calls(),
+  };
+}
+
+/** Score every judgment ADR 0117 and its addendum replaced, old against new, on the fixtures. */
 export async function runJudgmentBench(repoRoot: string): Promise<JudgmentRow[]> {
   return [
     await sameQuestionRow(repoRoot),
@@ -425,6 +637,12 @@ export async function runJudgmentBench(repoRoot: string): Promise<JudgmentRow[]>
     await statesValueRow(repoRoot),
     await appliesRow(repoRoot),
     await reliesRow(repoRoot),
+    await breakingRow(repoRoot),
+    await undoesRow(repoRoot),
+    await namesSecretRow(repoRoot),
+    await personalDataRow(repoRoot),
+    await asksCheckRow(repoRoot),
+    await reachesRow(repoRoot),
   ];
 }
 

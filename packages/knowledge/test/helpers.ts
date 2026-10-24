@@ -34,3 +34,16 @@ export const forgeExpected = <T>(file: string): T =>
   parse(readFileSync(join(FORGE, "expected", file), "utf8")) as T;
 
 export const forgeSystems = (op: OrgPack) => op.profiles.flatMap((p) => p.profile?.systems ?? []);
+
+/**
+ * How the Forge wiki's sentences say one system reaches another, as a careful reader judges
+ * them (ADR 0117 addendum, the reaches judgment): the verdicts a model would record, hand-written
+ * for the fixture. A sentence not listed says none of it.
+ */
+export const FORGE_READS: Record<string, string> = {
+  "The portal reads balances and creates transfers through the gateway.": "gateway",
+  "Payments to Northwind Pay go out through the gateway (pattern S.GW.VND).": "gateway",
+  "Reports read entries through the Ledger API.": "api-only",
+};
+export const forgeReaches = (it: { texts: Record<string, string> }) =>
+  FORGE_READS[it.texts.sentence ?? ""] ?? "none";

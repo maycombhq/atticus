@@ -1,8 +1,22 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
-import { Lens, runsDirOf, toCanonicalYaml } from "@maycombhq/core";
-import type { AiRuntime, QuarantineItem, SourceInput } from "@maycombhq/ai";
+import {
+  fileJudgments,
+  judgmentKey,
+  Lens,
+  runsDirOf,
+  toCanonicalYaml,
+  type JudgmentStore,
+} from "@maycombhq/core";
+import {
+  PERSONAL_DATA_SPEC,
+  settle,
+  type AiRuntime,
+  type QuarantineItem,
+  type SourceInput,
+} from "@maycombhq/ai";
+import { personalItems } from "./checks/data.js";
 import { writeQuarantineItems } from "./defences.js";
 import { runLenses, type Discarded, type LensName, type LensRun } from "./ai.js";
 import { parseDoc, type Doc } from "./doc.js";
@@ -37,8 +51,14 @@ export interface RunCriticOptions {
   gate?: string;
   /** Lenses whose findings are written. Layer 1 always runs whole, to decide what reaches layer 2. */
   lenses?: LensName[];
-  /** The AI runtime for layer 2 (mock or replay in tests). Without it, only layer 1 runs. */
+  /**
+   * The AI runtime for layer 2 (mock or replay in tests), and for the judgments the checks read
+   * (ADR 0117 addendum) when it calls a model directly. Without it, only layer 1 runs, and what
+   * no one has judged is asked of a person.
+   */
   runtime?: AiRuntime;
+  /** Where judgments are kept and read. Default: the metarepo's judgments/. */
+  judgments?: JudgmentStore;
   /** ISO timestamp recorded on findings. */
   now?: string;
   /** Extra team packs (paths relative to the metarepo root), on top of the owning teams' packs. */
@@ -130,6 +150,17 @@ export async function runCritic(
     now,
     opts.teamPacks ?? [],
   );
+
+  // The judgments of meaning the checks read (ADR 0117 addendum), settled before they run: a fact
+  // that settles one, a judgment on file, and the judge where the runtime calls a model.
+  const personal = await settle(PERSONAL_DATA_SPEC, personalItems(ctx), {
+    runtime: opts.runtime,
+    store: opts.judgments ?? fileJudgments(root),
+    change: change.id,
+    now: new Date(now),
+  });
+  ctx.judged = (kind, inputs) =>
+    kind === PERSONAL_DATA_SPEC.kind ? personal.get(judgmentKey(kind, inputs))?.verdict : undefined;
 
   // Layer 1: deterministic checks and needs, all lenses (it decides what reaches layer 2).
   const registry = checkRegistry(opts.checks);

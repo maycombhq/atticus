@@ -33,6 +33,8 @@ async function root(): Promise<string> {
   const r = await mkdtemp(join(tmpdir(), "atticus-cli-critic-handoff-"));
   await cp(join(FORGE, "metarepo/org-pack"), join(r, "org-pack"), { recursive: true });
   await cp(join(FORGE_CHANGE, "org-pack"), join(r, "org-pack"), { recursive: true });
+  // A person's judgments of the seeded change: which new columns hold personal data (ADR 0117).
+  await cp(join(FORGE_CHANGE, "judgments"), join(r, "judgments"), { recursive: true });
   for (const x of parse(readFileSync(join(FORGE, "expected/scan.yaml"), "utf8")) as Record<
     string,
     unknown

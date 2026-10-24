@@ -9,7 +9,7 @@ export * from "./related.js";
 export * from "./needs.js";
 export * from "./checks/index.js";
 export { nearestCode, patternSettingKinds } from "./checks/interfaces.js";
-export { looksPersonal } from "./checks/data.js";
+export { personalItems } from "./checks/data.js";
 export * from "./findings.js";
 export * from "./model.js";
 export * from "./ai.js";

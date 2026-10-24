@@ -21,7 +21,7 @@ import { Question } from "./schema/question.js";
 import { Judgment } from "./schema/judgment.js";
 import { RepoType } from "./schema/repo-type.js";
 import { DiagramLayout } from "./schema/layout.js";
-import { ScannerPlugin } from "./schema/plugin.js";
+import { ModelProviderPlugin, ScannerPlugin } from "./schema/plugin.js";
 import { SpecTemplate } from "./schema/spec.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
 import * as C6 from "./schema/orgpack.js";
@@ -106,6 +106,7 @@ export function orgPackJsonSchemas(): Record<string, object> {
     Question,
     RepoType,
     ScannerPlugin,
+    ModelProviderPlugin,
     SpecTemplate,
     Sources: C6.Sources,
     Runtime: C6.Runtime,

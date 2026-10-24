@@ -1,9 +1,10 @@
 import { readStoryIndex, readTasks } from "@maycombhq/naysayer";
 import { addWorkingDays, dayOf, laterOf, workingDays } from "@maycombhq/initiatives";
+import { UNDOES_SPEC } from "@maycombhq/ai";
 import { REQUESTS_FILE, type ReleaseContext, type ServiceRequestView } from "./context.js";
+import { judgedFor, undoesItem } from "./judged.js";
 import {
   buildModel,
-  hasWord,
   opOf,
   sectionOf,
   sectionsOf,
@@ -154,9 +155,6 @@ function requestWait(ctx: ReleaseContext, r: ServiceRequestView, why: string): R
     readyBy,
   };
 }
-
-const ROLLBACK =
-  /\b(roll(?:ed|ing)?[ -]?back|revert(?:ed|ing)?|back[ -]?out|undo|down[ -]?migration|restore)\b/i;
 
 const SECTIONS: { name: PlanSection["name"]; re: RegExp; gap: string }[] = [
   {
@@ -413,7 +411,9 @@ export async function deploymentPlan(ctx: ReleaseContext): Promise<DeploymentPla
   }
   const numOf = new Map(order.map((k, i) => [k, i + 1]));
 
-  // ---- rollback texts
+  // ---- rollback texts (ADR 0117 addendum): which sentences say how a step is undone is a
+  // judgment. Every sentence of design.md's rollout sections and of data.md is a candidate for
+  // every step; the veto drops a sentence that names another step and not this one.
   const rollbackLines = [
     ...sectionsOf(ctx, "design.md", /roll|release|deploy|back-?out/i).flatMap((s) =>
       sentences(s.lines).map((x) => ({ ...x, file: "design.md" })),
@@ -421,26 +421,43 @@ export async function deploymentPlan(ctx: ReleaseContext): Promise<DeploymentPla
     ...sectionsOf(ctx, "data.md", /.*/).flatMap((s) =>
       sentences(s.lines).map((x) => ({ ...x, file: "data.md" })),
     ),
-  ].filter((x) => ROLLBACK.test(x.text));
+  ].filter((x) => !/^\|[\s|:-]*\|?$/.test(x.text));
   const allNames = [...units.values()].flatMap((u) => u.names);
-  const generic = rollbackLines.filter((x) => !allNames.some((n) => hasWord(x.text, n)));
+  const pairs = [...units.values()].flatMap((u) =>
+    rollbackLines.map((x) => ({
+      u,
+      x,
+      item: undoesItem(
+        x.text,
+        { key: u.key, kind: u.kind, repo: u.repo, what: u.what, names: u.names },
+        allNames,
+      ),
+    })),
+  );
+  const undoes = await judgedFor(
+    ctx,
+    UNDOES_SPEC,
+    pairs.map((p) => p.item),
+  );
+  const labelOf = (u: Unit) => (u.kind === "code" ? u.repo : (u.what[0] ?? u.repo));
   const rollbackOf = (u: Unit): Rollback => {
-    const own = rollbackLines.filter((x) => u.names.some((n) => hasWord(x.text, n)));
-    const fit =
-      own.length > 0
-        ? own
-        : u.kind === "migration"
-          ? generic.filter((x) => /migration|schema|column|table/i.test(x.text))
-          : u.kind === "code"
-            ? generic.filter((x) => !/migration|schema|column|table/i.test(x.text))
-            : [];
-    if (fit.length === 0)
+    const mine = pairs.filter((p) => p.u === u);
+    const fit = mine.filter((p) => undoes(p.item)?.verdict === "yes").map((p) => p.x);
+    if (fit.length > 0)
       return {
-        gap: `No rollback step written for ${u.kind === "code" ? u.repo : (u.what[0] ?? u.repo)}: say how to undo it in design.md under "Rollout and rollback"${u.kind === "migration" ? " or in data.md" : ""}.`,
+        text: fit.map((x) => x.text).join(" "),
+        source: sortStrings(fit.map((x) => `${x.file}:${x.n}`)).join(", "),
+      };
+    const open = mine.filter((p) => {
+      const v = undoes(p.item)?.verdict;
+      return v === undefined || v === "unsure";
+    });
+    if (open.length > 0)
+      return {
+        gap: `No rollback step judged for ${labelOf(u)} yet: ${open.length === 1 ? "a sentence" : `${open.length} sentences`} of design.md or data.md may say how to undo it, but ${open.some((p) => undoes(p.item)) ? "a judge couldn't tell" : "no model was asked"}, so a person checks ${sortStrings([...new Set(open.map((p) => `${p.x.file}:${p.x.n}`))]).join(", ")}.`,
       };
     return {
-      text: fit.map((x) => x.text).join(" "),
-      source: sortStrings(fit.map((x) => `${x.file}:${x.n}`)).join(", "),
+      gap: `No rollback step written for ${labelOf(u)}: say how to undo it in design.md under "Rollout and rollback"${u.kind === "migration" ? " or in data.md" : ""}.`,
     };
   };
 
@@ -515,7 +532,16 @@ export async function deploymentPlan(ctx: ReleaseContext): Promise<DeploymentPla
   const sections: PlanSection[] = SECTIONS.map((d) => {
     const s = sectionOf(ctx, "design.md", d.re);
     if (!s || !s.text) return { name: d.name, gap: d.gap };
-    if (d.name === "rollback" && !ROLLBACK.test(s.text))
+    // Rollback: the section's sentences were judged with every step; a section none of whose
+    // sentences undoes a step, all judged, gives the order but no way back.
+    const inSection = pairs.filter(
+      (p) => p.x.file === "design.md" && s.lines.some((l) => l.n === p.x.n),
+    );
+    if (
+      d.name === "rollback" &&
+      inSection.length > 0 &&
+      inSection.every((p) => undoes(p.item)?.verdict === "no")
+    )
       return {
         name: d.name,
         heading: s.heading,

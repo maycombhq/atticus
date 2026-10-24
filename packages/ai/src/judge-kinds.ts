@@ -85,3 +85,186 @@ export const APPLIES_SPEC: JudgeSpec = {
   },
   quote: "each",
 };
+
+// ---- the kinds of the ADR 0117 addendum (release, critic, readiness bar, knowledge facts)
+
+/** A name written as a whole word in a text (not inside another word): a fact, not a reading. */
+export function namesWord(text: string, word: string): boolean {
+  if (!word) return false;
+  const esc = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^A-Za-z0-9_-])${esc}($|[^A-Za-z0-9_-])`, "i").test(text);
+}
+
+/**
+ * Must an existing caller change for an API change? (release notes, ADR 0117 addendum)
+ * Inputs: `change` (planned-new, planned-modify, planned-retire), `notes`. The veto is the
+ * catalog's change kind: a retired operation breaks its callers, a new one has none yet.
+ */
+export const BREAKING_SPEC: JudgeSpec = {
+  kind: "breaking",
+  ask: "Given what interfaces.md says about the change to the operation in the facts, must a caller that uses the operation today change its code or handling to keep working?",
+  verdicts: ["yes", "no"],
+  means: {
+    yes: "a caller must change: a field removed, renamed or now required, a new error or response it must handle, a changed meaning or format",
+    no: "callers that use it today keep working unchanged: only optional additions, or nothing they see changes",
+  },
+  quote: "one",
+  veto: (item) =>
+    item.inputs.change === "planned-retire"
+      ? { verdict: "yes", rule: "veto:retired-operation" }
+      : item.inputs.change === "planned-new"
+        ? { verdict: "no", rule: "veto:new-operation" }
+        : undefined,
+};
+
+/**
+ * Does a sentence say how to undo a deployment step? (release plan, ADR 0117 addendum)
+ * Inputs: `sentence`, `step` (its key), `names` (the step's names: repo, tables, routes) and
+ * `others` (the other steps' names). The veto: the sentence names another step and none of this
+ * one's, so it is about that step.
+ */
+export const UNDOES_SPEC: JudgeSpec = {
+  kind: "undoes",
+  ask: "Does the sentence say how the deployment step in the facts is undone (rolled back, reverted, backed out) if the release goes wrong, or that it needs no undo and why?",
+  verdicts: ["yes", "no"],
+  means: {
+    yes: "the sentence tells a person how to undo this step, or why it needs none (for example an expand-only migration)",
+    no: "the sentence is about something else: the rollout order, another step, or what the change does",
+  },
+  quote: "one",
+  veto: (item) => {
+    const s = String(item.inputs.sentence ?? "");
+    const own = (item.inputs.names as string[] | undefined) ?? [];
+    const others = (item.inputs.others as string[] | undefined) ?? [];
+    if (own.some((n) => namesWord(s, n))) return undefined;
+    return others.some((n) => namesWord(s, n))
+      ? { verdict: "no", rule: "veto:names-another-step" }
+      : undefined;
+  },
+};
+
+/**
+ * Credentials written in a known token format: a fact (the shape is on the line), kept
+ * deterministic. Words about secrets are a reading, and go to the judge.
+ */
+export const TOKEN_FORMATS: readonly { re: RegExp; what: string }[] = [
+  { re: /-----BEGIN [A-Z ]*PRIVATE KEY-----/, what: "a private key" },
+  { re: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/, what: "a cloud access key" },
+  { re: /\bgh[pousr]_[A-Za-z0-9]{30,}\b/, what: "a Git host token" },
+  { re: /\b(?:sk|xox[abp])-[A-Za-z0-9-]{20,}\b/, what: "an API token" },
+  {
+    re: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]+/,
+    what: "a signed token (JWT)",
+  },
+];
+
+/** The token format a text holds, if any. */
+export const tokenFormatIn = (text: string) => TOKEN_FORMATS.find((t) => t.re.test(text))?.what;
+
+/**
+ * Does a line of the change say a secret or credential is needed or touched? (security review
+ * draft, ADR 0117 addendum) Inputs: `line`. The veto: a token in a known format is on the line.
+ */
+export const NAMES_SECRET_SPEC: JudgeSpec = {
+  kind: "names-secret",
+  ask: "Does the line say that the change needs, creates, uses, rotates or exposes a secret or credential (a key, certificate, password, token or client secret)?",
+  verdicts: ["yes", "no"],
+  means: {
+    yes: "a reviewer of secrets should see this line: it names a credential the change needs or touches, or holds one",
+    no: "it doesn't: the words may sound alike (a primary key, a token bucket, an account's key field) but no secret is involved",
+  },
+  quote: "one",
+  veto: (item) =>
+    tokenFormatIn(String(item.inputs.line ?? ""))
+      ? { verdict: "yes", rule: "veto:token-format" }
+      : undefined,
+};
+
+/** The fact a personal-data item carries when the column is classified personal already. */
+export const CLASSIFIED_PERSONAL = "classified as personal data";
+
+/**
+ * A column for the personal-data judgment. The key is the column, its table and its type, so
+ * the critic and the security review read the same judgment; whether it is classified personal
+ * is a fact beside it, not part of the key.
+ */
+export function personalItem(c: {
+  column: string;
+  table: string;
+  type?: string | undefined;
+  classifiedPersonal?: boolean;
+}): JudgeItem {
+  return {
+    inputs: { v: 1, column: c.column, table: c.table, ...(c.type ? { type: c.type } : {}) },
+    texts: { column: c.column },
+    facts: [
+      `table: ${c.table}`,
+      ...(c.type ? [`type: ${c.type}`] : []),
+      ...(c.classifiedPersonal ? [CLASSIFIED_PERSONAL] : []),
+    ],
+  };
+}
+
+/**
+ * Is a column personal data? (critic data classification, security review, ADR 0117
+ * addendum) Inputs: `column`, `table`, `type`. The veto: the column is classified as personal
+ * already (the catalog or data.md says so by name).
+ */
+export const PERSONAL_DATA_SPEC: JudgeSpec = {
+  kind: "personal-data",
+  ask: "Does the column hold personal data: data about a person who can be identified (a name, contact detail, address, date of birth, government id, account holder, or a value tied to one person)?",
+  verdicts: ["yes", "no"],
+  means: {
+    yes: "the column holds data about an identifiable person, judged by its name, its table and its type",
+    no: "it doesn't: an amount, a flag, a timestamp or an id of a thing, not a person, even if its name has a word that sounds personal",
+  },
+  quote: "one",
+  veto: (item) =>
+    item.facts?.includes(CLASSIFIED_PERSONAL)
+      ? { verdict: "yes", rule: "veto:classified-personal" }
+      : undefined,
+};
+
+/**
+ * Does a definition-of-ready item ask for one of the readiness bar's checks? (planner bar,
+ * ADR 0117 addendum) Inputs: `item`, `check`, and `known` (the checks of an item in Atticus's
+ * own default wording, which Atticus wrote with its checks). The veto: the item is a default
+ * one, so its checks are known, not read.
+ */
+export const ASKS_CHECK_SPEC: JudgeSpec = {
+  kind: "asks-check",
+  ask: "Does the definition-of-ready item ask for what the check in the facts tests in a story?",
+  verdicts: ["yes", "no"],
+  means: {
+    yes: "a story that fails the check doesn't meet the item",
+    no: "the item asks for something else; the check doesn't test it",
+  },
+  quote: "one",
+  veto: (item) =>
+    Array.isArray(item.inputs.known)
+      ? {
+          verdict: (item.inputs.known as string[]).includes(String(item.inputs.check))
+            ? "yes"
+            : "no",
+          rule: "veto:default-item",
+        }
+      : undefined,
+};
+
+/**
+ * How does one system reach another, by a wiki sentence? (knowledge facts, ADR 0117 addendum)
+ * Inputs: `sentence`, `from`, `to`. No veto: which systems a sentence names is the mention
+ * index's fact, and it chose the pair.
+ */
+export const REACHES_SPEC: JudgeSpec = {
+  kind: "reaches",
+  ask: "What does the sentence say about how the system 'from' in the facts reaches the system 'to'?",
+  verdicts: ["gateway", "direct", "api-only", "none"],
+  means: {
+    gateway: "from calls to through the API gateway",
+    direct: "from calls to directly, not through the gateway",
+    "api-only": "from reads to's data only through to's API, never its tables",
+    none: "the sentence says none of these about from and to (or says it is not so)",
+  },
+  quote: "one",
+};

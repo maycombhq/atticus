@@ -1,0 +1,60 @@
+# Asks-check cases (ADR 0117 addendum): does an org pack's definition-of-ready item ask for one of
+# the readiness bar's checks? `truth` is what the team that wrote the item says. The new rule
+# settles an item in Atticus's own default wording by the checks Atticus wrote it with (the veto)
+# and asks the judge of the rest; `recorded` is the judge's recorded answer. The old rule (the
+# bar's dorChecks: words like "user", "acceptance", "repo" and "test" in the item) is scored on the
+# same pairs.
+cases:
+  - id: default-who
+    item: Who it is for and the outcome, traced to the brief
+    check: who
+    truth: yes
+  - id: default-who-not-tests
+    item: Who it is for and the outcome, traced to the brief
+    check: tests
+    truth: no
+  - id: acceptance-by-the-owner
+    item: Acceptance by the product owner is recorded before the sprint starts
+    check: criteria
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: item, text: Acceptance by the product owner is recorded }] }
+  - id: user-interface-copy
+    item: The user interface copy is reviewed by the content team
+    check: who
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: item, text: The user interface copy is reviewed }] }
+  - id: waits-on-named
+    item: The upstream work it waits on is named, with its owner
+    check: depends
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: item, text: The upstream work it waits on is named }] }
+  - id: services-and-codebases
+    item: The services and codebases it changes are listed
+    check: systems
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: item, text: The services and codebases it changes }] }
+  - id: test-types
+    item: Each story says which kinds of test prove it
+    check: tests
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: item, text: which kinds of test prove it }] }
+  - id: scenarios
+    item: Acceptance criteria are written as scenarios
+    check: criteria
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: item, text: Acceptance criteria are written as scenarios }] }
+  - id: test-data-is-not-test-types
+    item: Test data for the story is agreed with the data owner
+    check: tests
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: item, text: Test data for the story is agreed }] }
+  - id: value-is-not-who
+    item: The story's value is estimated in points
+    check: who
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: item, text: estimated in points }] }
+  - id: for-whom-in-other-words
+    item: It names the customer it serves and what they gain
+    check: who
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: item, text: It names the customer it serves }] }

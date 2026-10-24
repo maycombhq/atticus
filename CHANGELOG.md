@@ -8,7 +8,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - A fix a person applies when the gate has no critic round left no longer leaves the change stuck. Once a person has acted on every blocking finding of the gate's newest round (applied, waived or dismissed), the gate allows one checking round past its limit; `atticus critic` and the stage run it. If it finds something blocking, a person decides again, and the stage stops without drafting over their fix. `atticus finding … apply` says what really comes next instead of "the next critic round checks the fix". `gateStatus` and `atticus findings --json` show `checkRound`.
 - `atticus change status`, `canAdvance` and `change handoff` follow the path a change is on. On the stage path (feature, architecture, stories) a phase is due its stage's files and its loop done, not `proposal.md` and `specs/`; the hand-off PR carries the stage's files. The path is the change policy's new `stages` section, so an org pack can change it.
-- A criterion that checks a field without naming it is no longer handed back with "name it in its then clause". Where a model is called directly a judge reads it (`covers-field`); with a hand-off it is a note under the criterion in the story file for the story lens and the reviewer, never a stop. New `settle()` in `@maycombhq/ai`.
+- A criterion that checks a field without naming it is no longer handed back with "name it in its then clause". Where a model is called directly a judge reads it (`covers-field`); with a hand-off it is a note under the criterion in the story file for the story lens and the reviewer, never a stop. It reads verdicts with `settle()` from `@maycombhq/ai`.
 - The architecture and stories stages refuse while an earlier stage isn't finished (its loop not done, or its gate blocked), naming the stage, the gate and the command. They may still run before the earlier hand-off PR merges.
 
 ### Any assistant, set up from the app (ADR 0121)
@@ -20,6 +20,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - The local API gains `GET` and `PUT /api/settings/ai` and `POST /api/settings/ai/test` (API 2.16.0). `@maycombhq/model-providers` exports each provider's accepted settings (`PROVIDER_SETTINGS`).
 - VS Code: **Atticus: Pick the model** (also in the Next view's menu, and the button when no model is found) lists every chat model VS Code offers, under its vendor, not only Copilot's. It also offers Copilot's default and **Atticus's configured model**. The choice is kept in `atticus.model` as `vendor/family`; a bare family still means Copilot's. A step started from the chat runs on the model picked there, whatever its vendor.
 - Atticus's configured model runs the step on `runtime.yaml`'s model provider, through the command line in model mode, so it needs `model` among the modes allowed. `atticus <step> --handoff --json --mode model` runs the step that way and prints its end as JSON.
+- One line says what runs a step here, for example "Hand-off to GitHub Copilot · model mode allowed: anthropic claude-opus-5-5". It is on Home (with a link to Set up › AI), at the top of VS Code's Next view (beside the model VS Code runs steps on; a click picks the model), in `atticus next --json` (`runs`) and in `GET /api/settings/ai`.
+- The setup checklist gains "Choose how AI runs here". It is optional, and done once `runtime.yaml` is no longer as `atticus init` wrote it.
+- The AI tab also edits the models allowed (one a line) and the budgets: the tokens for a step, and per agent as `architect: 300000` lines. A line that doesn't read is named before anything is saved.
+- IntelliJ can run an AI step itself, for the first time: where `runtime.yaml` allows model mode and names a provider, the AI step and Next step offer **Run it on Atticus's configured model**. It runs the step with `--mode model` in a console. Both say how AI steps run here. `atticus next --json` gains `modelMode`, as data.
+- **Model-provider plugins.** For a provider Atticus has no built-in for, an org pack can add `plugins/model-providers/<id>/`, and `runtime.yaml` names it as `adapters.model.type`.
+  - The plugin's code only translates: `request` builds the request and `response` reads the answer. It runs in the plugin sandbox.
+  - Atticus makes the call itself, over HTTPS to the hosts the manifest names, and adds the key. The plugin never sees the key.
+  - It is pinned by sha256 like a scanner plugin. `atticus plugin test` runs its request and answer golden files, and `atticus plugin pin` pins it.
+  - `atticus plugin add vertex` copies the Vertex AI plugin Atticus ships. It covers Anthropic's models through `rawPredict` and Gemini through `generateContent`.
+  - The AI tab lists plugins beside the built-ins, says when one isn't pinned, and its Test goes through the plugin.
+  - Not built yet: tool calls from a plugin, and refreshing a token.
 
 - `runtime.yaml` may now allow `cursor`, `gemini-cli`, `windsurf` and `agents-md` (Codex and any tool that reads `AGENTS.md`) beside `copilot` and `claude-code`. `atticus assistant-files` writes the same slash commands, instructions and skills for each one, in its own files:
   - Cursor: `.cursor/commands/` and an always-applied rule.
@@ -32,6 +43,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - `doctor` looks for each allowed assistant's program.
 - A critic lens on headless Claude Code runs in an empty folder of its own under the system's temp folder, not in its run folder: outside the metarepo, and a short path. Windows can't start a program in a folder over 260 characters, and a run folder under a deep metarepo can pass that; a real run hit it. Its findings are kept in the run folder. When Windows still can't start Claude Code in a long folder, the message says so instead of blaming PATH.
 - Running headless Claude Code no longer stops the command line on a pipe error (`ENOTCONN` on Windows): an error on the process or any of its streams fails that run with its reason (`collectChild`).
+
+### More judgments by the model, checked by facts (ADR 0117 addendum)
+
+- Six more word rules are gone, each now a closed question to the judge with a fact that settles what it can first, kept in `judgments/<kind>/`: whether an API change breaks callers (release notes; a new or retired operation is settled by its change kind), which sentences say how a deployment step is undone (deployment plan; a sentence naming another step is about that step), which lines name a secret (security review; a token in a known format stays a fact, is listed as a gap and is never shown), whether a new column holds personal data (the critic and the security review; `looksPersonal` and its word list are deleted, an org's `personalHints` still apply), which of the readiness bar's checks a definition-of-ready item asks for (Atticus's default items keep their checks), and how a wiki sentence says one system reaches another (`atticus sources sync`; `judgeFacts`).
+- The judge is asked only where runtime.yaml's runtime calls a model directly. With the hand-off runtime nothing is asked and nothing is guessed: the release notes say `check (not judged)`, the plan says which lines a person reads for a rollback, the review lists the fields and lines not judged, the critic asks the table's owner which columns hold personal data (a knowledge gap), the bar lists the items it couldn't check, and `sources sync` prints the sentences no one has judged.
+- `fixtures/judgments/` gains the failing cases of each rule, both ways; the judgment bench scores them: the old rules got 30 of 67 right, the judge 67 of 67, the hand-off said yes wrongly in none.
+- The release notes' table says who settled "Breaking" (its change kind, a model, a person, or not judged); the security review's "Looks personal" column is "Personal data" (yes, no, unsure or not judged).
 
 ### The critic's lenses run on headless Claude Code (ADR 0115 addendum)
 

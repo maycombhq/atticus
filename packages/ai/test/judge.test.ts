@@ -7,7 +7,7 @@ import { judgmentKey, memoryJudgments, type QuestionPair, type RuntimeKind } fro
 import {
   COVERS_FIELD_SPEC,
   HandoffRuntime,
-  callsModelDirectly,
+  judgesDirectly,
   judge,
   settle,
   judgeInstructions,
@@ -305,7 +305,7 @@ describe("settle (ADR 0117): judged where a model is called directly, never gues
   it("with a hand-off asks nothing and leaves the item unjudged; a stored verdict still settles it", async () => {
     const root = await mkdtemp(join(tmpdir(), "atticus-settle-"));
     const rt = new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
-    expect(callsModelDirectly(rt)).toBe(false);
+    expect(judgesDirectly(rt)).toBe(false);
     const store = memoryJudgments();
     const r = await settle(COVERS_FIELD_SPEC, [item], {
       runtime: rt,
@@ -314,9 +314,9 @@ describe("settle (ADR 0117): judged where a model is called directly, never gues
       now: NOW,
     });
     const key = judgmentKey(COVERS_FIELD_SPEC.kind, item.inputs);
-    expect(r.unjudged).toEqual([key]);
-    expect(r.results.size).toBe(0);
-    expect(r.runs).toEqual([]);
+    // Nothing settled it: the item is open (unjudged), not a yes or a no.
+    expect(r.has(key)).toBe(false);
+    expect(r.size).toBe(0);
     // No run was handed off: no prompt for the person.
     await expect(readdir(join(root, ".runs"))).rejects.toThrow();
     // A verdict on file (a person's, or an earlier model's) settles it with no call.
@@ -336,8 +336,7 @@ describe("settle (ADR 0117): judged where a model is called directly, never gues
       change: "c",
       now: NOW,
     });
-    expect(again.unjudged).toEqual([]);
-    expect(again.results.get(key)).toMatchObject({ verdict: "yes", by: "stored" });
+    expect(again.get(key)).toMatchObject({ verdict: "yes", by: "stored" });
   });
 
   it("with a direct model asks the judge once, and keeps its verdict", async () => {
@@ -353,7 +352,7 @@ describe("settle (ADR 0117): judged where a model is called directly, never gues
         },
       ]);
     });
-    expect(callsModelDirectly(rt)).toBe(true);
+    expect(judgesDirectly(rt)).toBe(true);
     const store = memoryJudgments();
     const r = await settle(COVERS_FIELD_SPEC, [item], {
       runtime: rt,
@@ -362,8 +361,7 @@ describe("settle (ADR 0117): judged where a model is called directly, never gues
       now: NOW,
     });
     expect(calls).toBe(1);
-    expect(r.unjudged).toEqual([]);
-    expect([...r.results.values()].map((x) => [x.verdict, x.by])).toEqual([["yes", "model"]]);
+    expect([...r.values()].map((x) => [x.verdict, x.by])).toEqual([["yes", "model"]]);
     expect(
       (await store.get(COVERS_FIELD_SPEC.kind, judgmentKey(COVERS_FIELD_SPEC.kind, item.inputs)))
         ?.confirmedBy.by,

@@ -322,56 +322,50 @@ export async function judge(
 }
 
 /**
- * Whether a runtime calls a model directly, so a judgment costs the person no prompt: not a
- * hand-off (another round would be one more prompt for them) and not the test mock.
+ * Whether a step may ask the judge on its own: the runtime calls a model directly. Not the
+ * hand-off runtime (another round would cost the person a prompt; ADR 0117 §3) and not the
+ * mock one (it answers nothing of its own).
  */
-export const callsModelDirectly = (runtime: AiRuntime): boolean =>
-  runtime.kind !== "hand-off" && runtime.kind !== "mock";
+export const judgesDirectly = (runtime: AiRuntime | undefined): runtime is AiRuntime =>
+  !!runtime && runtime.kind !== "hand-off" && runtime.kind !== "mock";
 
-export interface SettleOptions extends Omit<JudgeOptions, "runtime" | "resume"> {
+export interface SettleOptions extends Omit<JudgeOptions, "runtime"> {
   /** The step's runtime; the judge is asked only when it calls a model directly. */
-  runtime?: AiRuntime;
-}
-
-export interface SettleResult {
-  /** The items settled: by the veto, a stored verdict, or the judge. */
-  results: Map<string, Judged>;
-  /** The keys of the items nothing settled: no fact, no stored verdict, and no direct model. */
-  unjudged: string[];
-  runs: RunSummary[];
+  runtime?: AiRuntime | undefined;
 }
 
 /**
- * Settle a kind's items without guessing (ADR 0117): the kind's veto first, then a verdict on
- * file, then the judge, but only where the runtime calls a model directly. With a hand-off (or
- * no runtime) no extra prompt is spent: an item nothing settled comes back unjudged, for the
- * caller to say so (a note, the critic's lens, a reviewer), never to read as yes or no.
+ * The verdicts a step can have without spending a person's prompt (ADR 0117): the veto, a
+ * judgment on file, and the judge where the runtime calls a model directly. An item with no
+ * verdict is open: the caller shows it to a person as unchecked or asks them, and never falls
+ * back to a word rule as if it were a judgment.
  */
 export async function settle(
   spec: JudgeSpec,
   items: JudgeItem[],
   o: SettleOptions,
-): Promise<SettleResult> {
-  const { runtime, ...rest } = o;
-  if (runtime && callsModelDirectly(runtime)) {
-    const r = await judge(spec, items, { ...rest, runtime });
-    const keys = [...new Set(items.map((it) => judgmentKey(spec.kind, it.inputs)))];
-    return { results: r.results, unjudged: keys.filter((k) => !r.results.has(k)), runs: r.runs };
-  }
-  const results = new Map<string, Judged>();
-  const unjudged: string[] = [];
+): Promise<Map<string, Judged>> {
+  if (judgesDirectly(o.runtime))
+    return (await judge(spec, items, { ...o, runtime: o.runtime })).results;
+  const out = new Map<string, Judged>();
   for (const item of items) {
     const key = judgmentKey(spec.kind, item.inputs);
-    if (results.has(key) || unjudged.includes(key)) continue;
+    if (out.has(key)) continue;
     const v = spec.veto?.(item);
     if (v) {
-      results.set(key, { key, verdict: v.verdict, by: "veto" });
+      out.set(key, { key, verdict: v.verdict, by: "veto" });
       continue;
     }
     const stored = await o.store.get(spec.kind, key);
     if (stored && typeof stored.verdict === "string")
-      results.set(key, { key, verdict: stored.verdict, judgment: stored, by: "stored" });
-    else unjudged.push(key);
+      out.set(key, { key, verdict: stored.verdict, judgment: stored, by: "stored" });
   }
-  return { results, unjudged, runs: [] };
+  return out;
 }
+
+/** An item's verdict from settle's results, or undefined while it is open. */
+export const verdictOf = (
+  results: Map<string, Judged>,
+  spec: JudgeSpec,
+  inputs: Record<string, unknown>,
+): Judged | undefined => results.get(judgmentKey(spec.kind, inputs));

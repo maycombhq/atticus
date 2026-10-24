@@ -1,0 +1,61 @@
+# Reaches cases (ADR 0117 addendum): what does a wiki sentence say about how one system reaches
+# another? `truth` is what the system's architect says: gateway (calls through the API gateway),
+# direct (calls directly), api-only (reads the other's data only through its API) or none. The
+# pair (from, to) is the mention index's fact; the judge reads only the meaning; `recorded` is its
+# recorded answer. The old rule (knowledge facts' VIA_GATEWAY, VIA_DIRECT and DATA_VIA_API
+# regexes) is scored on the same sentences.
+cases:
+  - id: through-the-gateway
+    sentence: portal-bff calls ledger-api through the gateway.
+    from: portal
+    to: ledger
+    truth: gateway
+    recorded: { verdict: gateway, quotes: [{ of: sentence, text: through the gateway }] }
+  - id: directly-not-through
+    sentence: portal-bff calls ledger-api directly, not through the gateway.
+    from: portal
+    to: ledger
+    truth: direct
+    recorded: { verdict: direct, quotes: [{ of: sentence, text: directly, not through the gateway }] }
+  - id: never-directly
+    sentence: portal-bff never calls ledger-api directly; every call goes through the gateway.
+    from: portal
+    to: ledger
+    truth: gateway
+    recorded: { verdict: gateway, quotes: [{ of: sentence, text: every call goes through the gateway }] }
+  - id: over-the-api-gateway
+    sentence: Since the migration, portal-bff talks to ledger-api over the API gateway.
+    from: portal
+    to: ledger
+    truth: gateway
+    recorded: { verdict: gateway, quotes: [{ of: sentence, text: over the API gateway }] }
+  - id: directly-owns
+    sentence: portal-bff calls ledger-api for balances; team-ledger directly owns both.
+    from: portal
+    to: ledger
+    truth: none
+    recorded: { verdict: none, quotes: [{ of: sentence, text: team-ledger directly owns both }] }
+  - id: reads-through-the-api
+    sentence: audit-svc reads account data through the Ledger API.
+    from: audit
+    to: ledger
+    truth: api-only
+    recorded: { verdict: api-only, quotes: [{ of: sentence, text: reads account data through the Ledger API }] }
+  - id: no-longer-through-the-api
+    sentence: audit-svc no longer reads account data through the Ledger API; it reads the table.
+    from: audit
+    to: ledger
+    truth: none
+    recorded: { verdict: none, quotes: [{ of: sentence, text: it reads the table }] }
+  - id: api-only-in-other-words
+    sentence: reports-job only ever uses the Ledger API for entries, never its tables.
+    from: reports
+    to: ledger
+    truth: api-only
+    recorded: { verdict: api-only, quotes: [{ of: sentence, text: never its tables }] }
+  - id: via-the-gateway-comma
+    sentence: portal-bff fetches the remaining limit from ledger-api, via the gateway.
+    from: portal
+    to: ledger
+    truth: gateway
+    recorded: { verdict: gateway, quotes: [{ of: sentence, text: via the gateway }] }

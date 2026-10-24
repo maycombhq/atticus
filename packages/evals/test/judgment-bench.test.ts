@@ -38,6 +38,74 @@ describe("the judgments' eval (ADR 0117)", () => {
         "date-scattered",
       ]),
     );
+    // The addendum's kinds (release views, critic, readiness bar, wiki facts): each word rule
+    // failed both ways, and the judge, checked by its facts, gets every case.
+    expect(by["breaking"]!.old.wrong).toEqual(
+      expect.arrayContaining([
+        "removed-inside-an-addition",
+        "drop-off-is-not-a-drop",
+        "always-present-now",
+        "new-error-to-handle",
+        "type-changes",
+        "must-now-send",
+      ]),
+    );
+    expect(by["undoes"]!.old.wrong).toEqual(
+      expect.arrayContaining([
+        "restore-is-a-feature",
+        "undo-is-a-feature",
+        "no-rollback-yet",
+        "redeploy-paraphrase",
+        "feature-flag-off",
+      ]),
+    );
+    expect(by["names-secret"]!.old.wrong).toEqual(
+      expect.arrayContaining([
+        "token-bucket",
+        "password-reset-link",
+        "certificate-of-deposit",
+        "hmac-signing-paraphrase",
+        "client-secret-identifier",
+        "access-key-in-the-text",
+      ]),
+    );
+    expect(by["personal-data"]!.old.wrong).toEqual(
+      expect.arrayContaining(["product-name", "ip-allowlist-flag", "msisdn", "given-names"]),
+    );
+    expect(by["asks-check"]!.old.wrong).toEqual(
+      expect.arrayContaining([
+        "acceptance-by-the-owner",
+        "user-interface-copy",
+        "waits-on-named",
+        "services-and-codebases",
+      ]),
+    );
+    expect(by["reaches"]!.old.wrong).toEqual(
+      expect.arrayContaining([
+        "directly-not-through",
+        "over-the-api-gateway",
+        "directly-owns",
+        "no-longer-through-the-api",
+        "api-only-in-other-words",
+      ]),
+    );
+    for (const k of [
+      "breaking",
+      "undoes",
+      "names-secret",
+      "personal-data",
+      "asks-check",
+      "reaches",
+    ]) {
+      // The judge gets every case, in one batched call; the hand-off guesses none (an open item
+      // is shown to a person, never a yes).
+      expect({ k, wrong: by[k]!.model.wrong, prompts: by[k]!.prompts }).toEqual({
+        k,
+        wrong: [],
+        prompts: 1,
+      });
+      expect({ k, handoffWrongYes: by[k]!.handoff.wrongYes }).toEqual({ k, handoffWrongYes: 0 });
+    }
     // A hand-off spends no judge call and reuses no answer it hasn't been shown.
     expect(by["same-question"]!.handoff.wrongYes).toBe(0);
     // One batched call per kind with open items.

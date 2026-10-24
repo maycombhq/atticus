@@ -100,8 +100,7 @@ function insideRepo(p: string): boolean {
  * strings and numbers, and never handed to plugin code: the plugin only ever sees objects made
  * in its own context.
  */
-const BOOTSTRAP = String.raw`(function (host) {
-  "use strict";
+const HARDEN = String.raw`  "use strict";
   const g = globalThis;
   const send = host;
   const blocked = (what) => {
@@ -168,7 +167,10 @@ const BOOTSTRAP = String.raw`(function (host) {
     if (ok) p.resolve(parse(text));
     else p.reject(new Error(text));
   }
-  async function drive(x, input) {
+`;
+
+/** Drives an extractor: its records, warnings and file reads, through the host. */
+const EXTRACTOR_DRIVER = String.raw`  async function drive(x, input) {
     const data = parse(input);
     if (!x || typeof x !== "object" || typeof x.scan !== "function")
       throw new Error("the entry file's default export isn't an extractor (id, version, claims, scan)");
@@ -195,8 +197,37 @@ const BOOTSTRAP = String.raw`(function (host) {
       (e) => send("error", 0, String(e && e.message !== undefined ? e.message : e)),
     );
   }
-  return Object.freeze({ answer, run });
+`;
+
+/**
+ * Drives a translator (ADR 0121 item 4): calls one function of the default export with data
+ * and sends back what it returns, as data. It has no file reads: a translator only turns data
+ * into data.
+ */
+const TRANSLATOR_DRIVER = String.raw`  function run(x, input) {
+    Promise.resolve()
+      .then(() => {
+        const data = parse(input);
+        if (!x || typeof x !== "object") throw new Error("the entry file has no default export");
+        send("meta", 0, stringify({ id: String(x.id), version: String(x.version) }));
+        if (typeof x[data.fn] !== "function")
+          throw new Error("the entry file's default export has no " + data.fn + " function");
+        return x[data.fn](data.arg);
+      })
+      .then(
+        (r) => send("result", 0, stringify(r === undefined ? null : r)),
+        (e) => send("error", 0, String(e && e.message !== undefined ? e.message : e)),
+      );
+  }
+`;
+
+const bootstrapWith = (driver: string) =>
+  `(function (host) {
+${HARDEN}${driver}  return Object.freeze({ answer, run });
 })`;
+
+const BOOTSTRAP = bootstrapWith(EXTRACTOR_DRIVER);
+const TRANSLATOR_BOOTSTRAP = bootstrapWith(TRANSLATOR_DRIVER);
 
 /**
  * The worker's own code (CommonJS, run with `eval: true`). It has Node, the plugin doesn't:
@@ -259,6 +290,41 @@ function contextData(ctx: ScanContext) {
   };
 }
 
+/** A fresh worker running the plugin's source in the sandbox, with its memory limit. */
+function spawnSandbox(o: {
+  id: string;
+  entry?: string | undefined;
+  source: string;
+  input: string;
+  bootstrap: string;
+  limits: { memoryMb: number };
+}): Worker {
+  const memoryMb = o.limits.memoryMb;
+  return new Worker(WORKER, {
+    eval: true,
+    workerData: {
+      source: o.source,
+      identifier: `plugin:${o.id}/${o.entry ?? "index.js"}`,
+      input: o.input,
+      bootstrap: o.bootstrap,
+    },
+    execArgv: ["--experimental-vm-modules", "--no-warnings"],
+    argv: [],
+    env: {},
+    stdout: true,
+    stderr: true,
+    stdin: false,
+    trackUnmanagedFds: true,
+    resourceLimits: {
+      maxOldGenerationSizeMb: memoryMb,
+      maxYoungGenerationSizeMb: Math.max(4, Math.min(16, Math.floor(memoryMb / 4))),
+      codeRangeSizeMb: 16,
+      stackSizeMb: 4,
+    },
+    name: `atticus-plugin-${o.id}`,
+  });
+}
+
 /** Run the plugin once over the repo in a fresh worker; resolves with its records. */
 function runInWorker(
   p: SandboxPlugin,
@@ -270,31 +336,13 @@ function runInWorker(
   const memoryMb = p.limits.memoryMb;
   return new Promise<CatalogRecord[]>((resolve, reject) => {
     let settled = false;
-    const worker = new Worker(WORKER, {
-      eval: true,
-      workerData: {
-        source: p.source,
-        identifier: `plugin:${p.id}/${p.entry ?? "index.js"}`,
-        input: JSON.stringify({
-          repo: { name: repo.name, commit: repo.commit },
-          ctx: contextData(ctx),
-        }),
-        bootstrap: BOOTSTRAP,
-      },
-      execArgv: ["--experimental-vm-modules", "--no-warnings"],
-      argv: [],
-      env: {},
-      stdout: true,
-      stderr: true,
-      stdin: false,
-      trackUnmanagedFds: true,
-      resourceLimits: {
-        maxOldGenerationSizeMb: memoryMb,
-        maxYoungGenerationSizeMb: Math.max(4, Math.min(16, Math.floor(memoryMb / 4))),
-        codeRangeSizeMb: 16,
-        stackSizeMb: 4,
-      },
-      name: `atticus-plugin-${p.id}`,
+    const worker = spawnSandbox({
+      ...p,
+      input: JSON.stringify({
+        repo: { name: repo.name, commit: repo.commit },
+        ctx: contextData(ctx),
+      }),
+      bootstrap: BOOTSTRAP,
     });
     // Its output goes nowhere: a plugin talks to the scan only through its records and warnings.
     worker.stdout.resume();
@@ -396,6 +444,94 @@ function runInWorker(
         e.code === "ERR_WORKER_OUT_OF_MEMORY"
           ? new PluginRunError(
               `stopped: it used more than its ${memoryMb} MB memory limit`,
+              "memory",
+            )
+          : new PluginRunError(`failed: ${e.message}`, "failed"),
+      ),
+    );
+    worker.on("exit", (code) =>
+      finish(new PluginRunError(`stopped before it finished (exit code ${code})`, "failed")),
+    );
+  });
+}
+
+/** A model-provider plugin's code (ADR 0121 item 4), as the sandbox runs it. */
+export interface TranslatorPlugin {
+  id: string;
+  version: string;
+  /** The entry file's text: an ES module whose default export has the functions called. */
+  source: string;
+  entry?: string;
+  limits: { timeoutMs: number; memoryMb: number };
+}
+
+/** Largest answer a translator may give back: a request body or an answer's text. */
+const MAX_RESULT_CHARS = 32 * 1024 * 1024;
+
+/**
+ * Call one function of a translator plugin (ADR 0121 item 4) in a fresh sandbox, with data, and
+ * resolve with the data it returns. It has no files, no network and no clock: it only turns a
+ * prompt into a request and an answer into text. What it tries that is forbidden, a time or
+ * memory limit passed, or an entry file that says it is another plugin rejects with
+ * PluginRunError.
+ */
+export function runTranslator(p: TranslatorPlugin, fn: string, arg: unknown): Promise<unknown> {
+  return new Promise<unknown>((resolve, reject) => {
+    let settled = false;
+    const worker = spawnSandbox({
+      ...p,
+      input: JSON.stringify({ fn, arg: arg ?? null }),
+      bootstrap: TRANSLATOR_BOOTSTRAP,
+    });
+    worker.stdout.resume();
+    worker.stderr.resume();
+    const finish = (err: PluginRunError | undefined, value?: unknown) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      void worker.terminate();
+      if (err) reject(err);
+      else resolve(value);
+    };
+    const timer = setTimeout(
+      () =>
+        finish(
+          new PluginRunError(`stopped after ${p.limits.timeoutMs} ms, its time limit`, "timeout"),
+        ),
+      p.limits.timeoutMs,
+    );
+    worker.on("message", (m: { t: string; id: number; arg: string }) => {
+      if (settled) return;
+      switch (m.t) {
+        case "meta": {
+          const meta = JSON.parse(m.arg) as { id: string; version: string };
+          if (meta.id !== p.id || meta.version !== p.version)
+            finish(
+              new PluginRunError(
+                `the entry file exports ${meta.id} ${meta.version}, but its manifest says ${p.id} ${p.version}`,
+                "invalid",
+              ),
+            );
+          return;
+        }
+        case "result":
+          if (m.arg.length > MAX_RESULT_CHARS)
+            return finish(new PluginRunError("gave back more than 32 MB", "invalid"));
+          return finish(undefined, JSON.parse(m.arg));
+        case "violation":
+          return finish(new PluginRunError(`blocked: tried to ${m.arg}`, "blocked"));
+        case "error":
+          return finish(new PluginRunError(`failed: ${m.arg}`, "failed"));
+        default:
+          // A translator has no files to read: anything else is refused.
+          return finish(new PluginRunError(`blocked: tried to ${m.t}`, "blocked"));
+      }
+    });
+    worker.on("error", (e: Error & { code?: string }) =>
+      finish(
+        e.code === "ERR_WORKER_OUT_OF_MEMORY"
+          ? new PluginRunError(
+              `stopped: it used more than its ${p.limits.memoryMb} MB memory limit`,
               "memory",
             )
           : new PluginRunError(`failed: ${e.message}`, "failed"),

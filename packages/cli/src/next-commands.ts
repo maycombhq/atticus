@@ -20,7 +20,7 @@ import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
 import type { Output } from "./commands.js";
 import { onboardingView } from "./ui-api-onboarding.js";
-import { ASSISTANT_FORMATS } from "@maycombhq/assistant-files";
+import { ASSISTANT_FORMATS, whatRunsWhere } from "@maycombhq/assistant-files";
 
 /**
  * atticus next [--all] [--json] (ADR 0086, plan principle 8): the next step to take, worked out
@@ -577,15 +577,32 @@ export async function nextCommand(
   }
   const state = await readNextState(root);
   const steps = nextSteps(state);
+  const runtime = await loadOrgPack(orgPackDirOf(root))
+    .then((op) => op.runtime)
+    .catch(() => undefined);
   if (o.json) {
-    io.out(JSON.stringify({ next: steps[0], steps, problems: state.problems }, null, 2));
+    // What runs a step here, in one line (ADR 0121 item 6), for the editors' Next view.
+    const runs = runtime ? whatRunsWhere(runtime) : undefined;
+    // Whether a step can run on runtime.yaml's model here (ADR 0121 item 5), as data: IntelliJ
+    // offers "Run on Atticus's configured model" only then.
+    const modelMode =
+      !!runtime &&
+      runtime.ai !== "off" &&
+      runtime.modes.allowed.includes("model") &&
+      !!runtime.adapters.model &&
+      runtime.adapters.model.type !== "mock";
+    io.out(
+      JSON.stringify(
+        { next: steps[0], steps, problems: state.problems, ...(runs ? { runs } : {}), modelMode },
+        null,
+        2,
+      ),
+    );
     return 0;
   }
   for (const p of state.problems) io.err(`Couldn't read ${p.file}: ${p.message}`);
   // Where to type it: the default assistant runtime.yaml names (ADR 0121).
-  const typeIn = await loadOrgPack(orgPackDirOf(root))
-    .then((op) => ASSISTANT_FORMATS[op.runtime.assistants.default].typeIn)
-    .catch(() => ASSISTANT_FORMATS.copilot.typeIn);
+  const typeIn = ASSISTANT_FORMATS[runtime?.assistants.default ?? "copilot"].typeIn;
   const slashLine = (x: NextStep) =>
     x.slash
       ? `In ${typeIn}${x.where && x.where !== METAREPO ? ` in ${x.where}` : ""}: ${x.slash}`
