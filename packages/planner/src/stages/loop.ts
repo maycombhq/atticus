@@ -250,6 +250,16 @@ export function stageGate(ctx: ChangeContext, stage: Stage): string | undefined 
 }
 
 /** What a person reads to finish the stage: the hand-off PR of its phase. */
+/** The states past design, where the change's own code is being built or is out. */
+const BUILT: ReadonlySet<string> = new Set([
+  "build",
+  "qa",
+  "release-ready",
+  "released",
+  "post-release-review",
+  "archived",
+]);
+
 export const stagePr = (change: string) => `atticus change handoff ${change} --approve`;
 
 export async function runStageLoop<A>(
@@ -406,6 +416,17 @@ export async function runStageLoop<A>(
     const cur = await spec.current();
     if (cur !== undefined) {
       issues = (await spec.check(cur, { onFile: true })).filter((i) => i.blocking);
+      // Past design, the change's own code is what moves today's flow: a design that was built
+      // isn't drafted again because a rescan reads the code it led to. Before build, a moved
+      // flow means the step numbers may point at other steps, so it is drafted again.
+      if (BUILT.has(change.state))
+        issues = issues.filter((i) => {
+          if (i.rule !== "delta.stale") return true;
+          notes.push(
+            `Today's flow ${i.target} changed since this design; the change is in ${change.state}, so the design stays as it was.`,
+          );
+          return false;
+        });
       if (issues.length === 0) return result("done", { answer: cur });
       notes.push("The stage's files changed since it was done; drafting again.");
     }
