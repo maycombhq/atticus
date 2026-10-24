@@ -33,6 +33,9 @@ Usage:
   atticus context walk <id> [--hops 1] [--kind k,k] [--limit n]  The links from one id, how each was made, at most two hops
   atticus context code <id> [--around 6]  The code a fact cites, a few lines around each cited line, from the workspace checkout
           [--repo r --path p --line n]  (or one line a fact cites)
+  atticus context grep "<pattern>" [--regex] [--ignore-case] [--repo r] [--paths glob] [--limit n]  The lines of the workspace clones that match, each repo:path:line; .gitignore'd files skipped
+  atticus context files "<glob>" [--repo r] [--limit n]  The clones' files whose paths match a glob
+  atticus context outline <repo> <path>  A file's declarations with their annotations, from its syntax tree; a document's headings
   atticus context tools [--json]       The read-only tools a step's model may call beside its pack, and their caps
   atticus context call <tool> --input <json> [--run <run>] [--round n] [--json]  Run one tool call a model made; with --run it is kept in the run's record
   atticus impact <id>                  What a change to a record reaches, with owners and open questions

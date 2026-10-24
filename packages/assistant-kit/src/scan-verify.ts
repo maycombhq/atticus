@@ -37,7 +37,7 @@ const INSTRUCTIONS = (
   repo: string,
 ) => `You are checking what Atticus's scan recorded for the repo ${repo} against the code (Atticus ADR 0082).
 
-Below are the records the last scan made, grouped by kind, each with its id and the file and line it was read from; the repo's folders; the repo's scan settings; and the code around each record's line, numbered as in the file. Read that code (and any other file you can open). Then list:
+Below are the records the last scan made, grouped by kind, each with its id and the file and line it was read from; the repo's folders; the repo's scan settings; and the code around each record's line, numbered as in the file. Read that code (and any other file you can open). When you have the tools grep, files and outline, search the repo for what the records may have missed (a house framework's own annotation, a helper that makes calls): a hit is where to look, and what you list still cites the file and line you read. Then list:
 
 1. What the scan MISSED: an entry point, a call to another system, a table, or a deployment that is in the code but not in the records.
 2. What the scan has WRONG: a record the code doesn't support, or records with the wrong path, method, table or target.

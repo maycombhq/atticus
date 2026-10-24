@@ -182,13 +182,16 @@ const STORIES = `stories:
     tasks:
       - id: "1.1"
         criteria:
-          - "Given a new order, when it is placed, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read"
+          - text: "Given a new order, when it is placed, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read"
+            checks: [sku, quantity, cardToken, verdict]
       - id: "1.2"
         criteria:
-          - "Given a rejected verdict, when the order is placed, then it is refused with 422 and no stock is reserved"
+          - text: "Given a rejected verdict, when the order is placed, then the verdict refuses it with 422 and no stock is reserved"
+            checks: [verdict]
       - id: "1.3"
         criteria:
-          - "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+          - text: "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+            checks: [sku, quantity, fraud_verdict]
 `;
 
 async function architected(root: string): Promise<void> {
@@ -226,7 +229,8 @@ describe("stories from a change that reads more flows than it changes", () => {
     const missing = STORIES.replace(
       `      - id: "1.3"
         criteria:
-          - "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+          - text: "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+            checks: [sku, quantity, fraud_verdict]
 `,
       `      - id: "1.3"
         criteria: []
@@ -248,7 +252,7 @@ describe("stories from a change that reads more flows than it changes", () => {
     const answer = join(dir(root), "stage/stories-answer.yaml");
     const fixed = (await readFile(answer, "utf8")).replace(
       '      - id: "1.3"\n        criteria: []',
-      '      - id: "1.3"\n        criteria:\n          - Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict',
+      '      - id: "1.3"\n        criteria:\n          - text: Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict\n            checks: [sku, quantity, fraud_verdict]',
     );
     expect(fixed).not.toBe(await readFile(answer, "utf8"));
     await writeFile(answer, fixed);

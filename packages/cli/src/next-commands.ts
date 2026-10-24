@@ -14,7 +14,7 @@ import {
   ScanVerifyProposal,
 } from "@maycombhq/core";
 import { changeStore } from "@maycombhq/changes";
-import { readKnowledge, snapshotDates } from "@maycombhq/knowledge";
+import { readKnowledge, snapshotDates, workingDays } from "@maycombhq/knowledge";
 import { readNeeds } from "@maycombhq/planner";
 import { readChangeFiles } from "@maycombhq/naysayer";
 import { readChangeTasks } from "@maycombhq/speckit";
@@ -192,7 +192,8 @@ export async function readNextState(root: string): Promise<NextState> {
       const longest = open
         .map((n) => ({
           n,
-          days: Number(/(\d+)\s*(working\s+)?days?/i.exec(n.leadTime ?? "")?.[1] ?? 0),
+          // The lead time as the knowledge scan read it (ADR 0117); a need with none sorts last.
+          days: n.leadTimeDays ? workingDays(n.leadTimeDays) : 0,
         }))
         .sort((a, b) => b.days - a.days)[0];
       changes.push({

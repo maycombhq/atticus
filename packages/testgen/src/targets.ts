@@ -52,7 +52,8 @@ export function repoPlace(
 
 export type Language = "java" | "node";
 
-const JAVA_TYPES = /java|jvm|kotlin|spring|quarkus|micronaut|jakarta|scala/i;
+// Whole words: "javascript-spa" is not Java.
+const JAVA_TYPES = /\b(java|jvm|kotlin|spring|quarkus|micronaut|jakarta|scala)\b/i;
 const NODE_TYPES =
   /node|spa|frontend|react|angular|vue|svelte|next|nest|express|typescript|javascript/i;
 

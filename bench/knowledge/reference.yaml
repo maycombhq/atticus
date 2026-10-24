@@ -354,7 +354,7 @@ items:
     id: tls-certificate-request
     title: TLS certificate
     applies_when: A new host name needs a certificate, or a certificate the cert manager does not renew is due to expire.
-    lead_time: "3 working days internal, 10 working days public"
+    lead_time: "3 working days for an internal certificate, 10 working days for a public one" # the page's words (ADR 0117)
     handled_by: PKI team
     catalogue_item: TLS certificate
     inputs: [certificate signing request, host names, environment, internal or public, owner team]

@@ -4,9 +4,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import {
+  fileJudgments,
+  makeJudgment,
+  parseRecord,
+  recordPath,
+  serializeRecord,
+} from "@maycombhq/core";
 import { MockRuntime, type AiRequest } from "@maycombhq/ai";
-import { reviewItem, writeReview, readKnowledge } from "@maycombhq/knowledge";
+import {
+  LEAD_TIME,
+  leadTimeInputs,
+  reviewItem,
+  writeReview,
+  readKnowledge,
+} from "@maycombhq/knowledge";
 import {
   findNeeds,
   markNeed,
@@ -246,8 +258,24 @@ describe("what a change needs", () => {
     expect(needQuoteProblem("Publish an export event")).toBeUndefined();
   });
 
-  it("works out when a need is needed from the item's lead time, not the assistant's word", async () => {
+  it("works out when a need is needed from the item's lead time as the scan read it, not the assistant's word", async () => {
     const { root } = await metarepo();
+    // The knowledge scan's readings of the two lead times (ADR 0117), as it keeps them.
+    const store = fileJudgments(root);
+    for (const [item, leadTime, days] of [
+      ["kafka-topic-request", "5 working days", 5],
+      ["sso-intake", "10 working days", 10],
+    ] as const)
+      await store.put(
+        makeJudgment({
+          kind: LEAD_TIME,
+          inputs: leadTimeInputs(item, leadTime),
+          verdict: "normalised",
+          value: { min: days, max: days, unit: "working-days" },
+          confirmedBy: { by: "check", rule: "numbers-in-span" },
+          at: "2026-10-23T12:00:00Z",
+        }),
+      );
     const answer = GOOD.replace("    when: before-build\n", "    when: before-release\n").replace(
       "not_needed:",
       `  - item: sso-intake
@@ -266,13 +294,20 @@ not_needed:`,
       "sso-intake": "before-build",
       "json-logging": null,
     });
-    expect(whenFromLeadTime("30 working days")).toBe("before-design");
-    expect(whenFromLeadTime("four weeks")).toBe("before-design");
-    expect(whenFromLeadTime("5 working days")).toBe("before-build");
-    expect(whenFromLeadTime("2 working days")).toBe("before-release");
-    expect(whenFromLeadTime("3 days")).toBe("before-release");
-    expect(whenFromLeadTime("none")).toBeUndefined();
-    expect(whenFromLeadTime("on request")).toBeUndefined();
+    const wd = (
+      min: number,
+      max = min,
+      unit: "working-days" | "calendar-days" | "hours" = "working-days",
+    ) => ({ min, max, unit });
+    expect(whenFromLeadTime(wd(30))).toBe("before-design");
+    expect(whenFromLeadTime(wd(20))).toBe("before-design");
+    expect(whenFromLeadTime(wd(5))).toBe("before-build");
+    expect(whenFromLeadTime(wd(2))).toBe("before-release");
+    expect(whenFromLeadTime(wd(3, 3, "calendar-days"))).toBe("before-release");
+    // "3 days per environment, 4 environments": the model reads it as 12 working days.
+    expect(whenFromLeadTime(wd(12))).toBe("before-build");
+    // No reading (a lead time of "none", "on request"): the assistant's word stands.
+    expect(whenFromLeadTime(undefined)).toBeUndefined();
   });
 
   it("keeps what a person did with a need when it runs again", async () => {
@@ -327,7 +362,7 @@ not_needed:`,
           step: 2,
           stepWhat: "sign in",
           why: 'The step meets "A new web application needs single sign-on."',
-          by: "match",
+          by: "judge",
           quote: SSO.kind === "ProcessDefinition" ? SSO.quote : (undefined as never),
           leadTime: "10 working days",
           handledBy: "Identity team",

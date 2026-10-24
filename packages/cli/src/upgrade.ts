@@ -12,6 +12,7 @@ import {
   migrateCatalog,
   migrateChangeTypesText,
   migrateGatesText,
+  migrateQuestions,
   specsDirOf,
   specsRelOf,
   WORKSPACE_SCHEMA_VERSION,
@@ -141,6 +142,13 @@ export const MIGRATIONS: Migration[] = [
       await writeFileAtomic(join(root, rel), r.text);
       return [rel];
     },
+  },
+  {
+    id: "questions-v2",
+    summary:
+      "Questions at schema version 2: a question can name the earlier one it may be the same as (ADR 0117)",
+    pending: (root) => migrateQuestions(root, { dryRun: true }),
+    apply: (root) => migrateQuestions(root),
   },
   {
     id: "starter-review",

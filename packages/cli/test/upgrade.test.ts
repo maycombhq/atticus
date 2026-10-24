@@ -40,6 +40,12 @@ async function oldMetarepo(): Promise<string> {
     join(FIXTURES, "estate/specs/forge-web/forge-web.save-customer.yaml"),
     join(root, "specs/forge-web/forge-web.save-customer.yaml"),
   );
+  // A question at schema version 1 (ADR 0117).
+  await mkdir(join(root, "questions"), { recursive: true });
+  await cp(
+    join(FIXTURES, "context/questions/q-0f1e2d3c4b5a.yaml"),
+    join(root, "questions/q-0f1e2d3c4b5a.yaml"),
+  );
   return root;
 }
 
@@ -61,10 +67,11 @@ describe("atticus upgrade", () => {
       // ADR 0087: the Forge pack's gates.yaml is at version 1.
       ["gates-v2", ["org-pack/gates.yaml"]],
       ["flow-schema-v2", ["specs/forge-web/forge-web.save-customer.yaml"]],
+      ["questions-v2", ["questions/q-0f1e2d3c4b5a.yaml"]],
     ]);
     const r = io();
     expect(await upgradeCommand(root, { check: true }, r.io, "1.0.0")).toBe(1);
-    expect(r.out[0]).toMatch(/5 upgrade steps to run/);
+    expect(r.out[0]).toMatch(/6 upgrade steps to run/);
     // A dry run changes nothing.
     const before = await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8");
     expect(await upgradeCommand(root, { dryRun: true }, io().io, "1.0.0")).toBe(0);
@@ -104,8 +111,12 @@ describe("atticus upgrade", () => {
       "gates-v2",
       "flow-schema-v2",
       "change-types-v2",
+      "questions-v2",
       "starter-review",
     ]);
+    expect(await readFile(join(root, "questions/q-0f1e2d3c4b5a.yaml"), "utf8")).toMatch(
+      /^schemaVersion: 2$/m,
+    );
     expect(
       await readFile(join(root, "specs/forge-web/forge-web.save-customer.yaml"), "utf8"),
     ).toMatch(/^schemaVersion: 2\r?\nkind: Flow/);
