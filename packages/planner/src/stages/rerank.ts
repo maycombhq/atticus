@@ -7,7 +7,7 @@ import {
   type ContextInput,
   type ContextSelection,
 } from "@maycombhq/index";
-import { judged, judgmentKey, yamlOf, type Judged, type Judgments } from "./judged.js";
+import { judged, yamlOf, type Judged, type Judgments } from "./judged.js";
 
 /**
  * The model's rerank of a step's candidates (ADR 0116): when what the engine found doesn't fit
@@ -86,17 +86,9 @@ export async function rerankFor(
   } finally {
     ix.close();
   }
-  const key = judgmentKey({
-    kind: "rerank",
-    input,
-    shown,
-    index: selection.version,
-    model: o.runtime.kind,
-    v: 1,
-  });
   const r = await judged<CheckedRerank>({
     kind: "rerank",
-    key,
+    inputs: { input, shown, index: selection.version, runtime: o.runtime.kind, v: 1 },
     agent: RERANK_AGENT,
     description: "Orders a step's context candidates by need, dropping what the step doesn't need.",
     change,

@@ -2,7 +2,7 @@
 
 - Status: accepted (pending review by the product owner; the model file pending the bank's approval)
 - Date: 2026-10-23
-- Builds on: ADR 0107 (the context engine), 0074 (the AI reads; every fact cites its code), 0103 (AI steps that hold with Copilot), 0112 (every prompt fits its model), 0002 (stack), 0052 (offline bundle and licences)
+- Builds on: ADR 0107 (the context engine), 0117 (judgments by the model, checked by facts), 0074 (the AI reads; every fact cites its code), 0103 (AI steps that hold with Copilot), 0112 (every prompt fits its model), 0002 (stack), 0052 (offline bundle and licences)
 - Amends: ADR 0107 points 2 and 3, ADR 0002
 
 ## Context
@@ -40,7 +40,7 @@ The product owner asked for search by meaning, and for agentic judgment rather t
 
 `packages/planner/src/stages/expand.ts`, called through `retrieve` in `engine.ts` before a step's selection (change needs, feature, architecture, stories): one small call (6,000 tokens) with the step's input and the estate's names and aliases (systems, components, stores, tables, glossary terms, flows, items; one source a kind, so the pack fits the model) asking for search terms in the estate's words and every proper name the input uses, each mapped to an id or said new, with the input's words it took it from. Atticus checks it: a name whose words aren't in the input is dropped, an id the index doesn't have is dropped (the name stays a gap), and each drop is recorded. The terms become rankings, the ids seeds (0.9, below an exact name), and the names the index doesn't know become the gaps: **the word lists are gone** (`NOT_NAME`, `VERBS`, `STEP_WORDS`, Title Case); `knownName` only checks that the index lacks a name. Without the expansion, only names the input marks by their form (an endpoint, a name in backticks) are asked about.
 
-The answer is kept in a judgments store (`judgments/expansion/<key>.yaml`, keyed by the input, the index's version and the runtime) behind one small interface, so it can move into the shared judgments store being designed alongside; the same commit and input give the same answer with no call. In hand-off mode the expansion is **a hand-off of its own, one prompt per round**: the step returns waiting on the `context-expander` run; the runner answers it and resumes the step with that run, which reads it in and hands off its own prompt. With no model or with it off, the engine falls back to point 1 and 2.
+The answer is kept in the judgments store of ADR 0117 (`judgments/expansion/<key>.yaml`, the key a hash of the input, the index's version and the runtime; answered by the run it names, its quotes the input's words, and a person can override it); the same commit and input give the same answer with no call. In hand-off mode the expansion is **a hand-off of its own, one prompt per round**: the step returns waiting on the `context-expander` run; the runner answers it and resumes the step with that run, which reads it in and hands off its own prompt. With no model or with it off, the engine falls back to point 1 and 2.
 
 **The run record, version 3** (C5): `retrieval` holds the expansion (its run, whether it was a kept answer, terms, names with their quotes, drops), the rerank, and whether similarity ranked. `migrateRunSummary` reads versions 1 and 2 as 3 with none. `atticus runs show`, the transcript (`GET /api/runs/{runId}/transcript`, `retrieval`; API 2.15.0) and the app's Model runs screen show it as text.
 

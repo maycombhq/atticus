@@ -119,13 +119,27 @@ const STORIES = `stories:
     tasks:
       - id: "1.1"
         criteria:
-          - "Given a new order, when it is placed, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read"
+          - text: "Given a new order, when it is placed, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read"
+            checks: [sku, quantity, cardToken, verdict]
       - id: "1.2"
         criteria:
-          - "Given a rejected verdict, when the order is placed, then it is refused with 422 and no stock is reserved"
+          - text: "Given a rejected verdict, when the order is placed, then the verdict refuses it with 422 and no stock is reserved"
+            checks: [verdict]
       - id: "1.3"
         criteria:
-          - "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+          - text: "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+            checks: [sku, quantity, fraud_verdict]
+requests:
+  - item: firewall-rule-request
+    flow: forge-orders.place-order
+    step: 1
+    why: The new call reaches the Northwind Pay host.
+    quote: "including every new vendor host"
+  - item: vendor-onboarding
+    flow: forge-orders.place-order
+    step: 1
+    why: The order's details go to Northwind Pay for the first time.
+    quote: "Before a service sends any data to a vendor for the first time."
 `;
 
 describe("the feature stage", () => {
@@ -252,10 +266,169 @@ describe("the loop in hand-off mode", () => {
     await rt().done(run2);
     const third = await featureStage(root, CHANGE, { runtime: rt(), now: NOW, resume: run2 });
     expect(third.state).toBe("done");
-    // In hand-off mode the critic ran its rules; its AI lenses run with /atticus-critic.
-    expect(third.notes.join("\n")).toContain(
-      "its AI lenses run with /atticus-critic add-fraud-check",
+    // The org pack has no AI rule at the define gate, so no lens had anything to review.
+    expect(third.notes.join("\n")).not.toContain("/atticus-critic");
+  });
+});
+
+describe("the critic's AI lenses in hand-off mode (ADR 0115)", () => {
+  /** The estate, with the define gate's two AI rules (a business lens and an architecture lens). */
+  async function withLenses(): Promise<string> {
+    const root = await estateRoot();
+    await cp(join(FIX, "lenses/checklists"), join(root, "org-pack/checklists"), {
+      recursive: true,
+    });
+    return root;
+  }
+  const runJson = async (root: string, run: string) =>
+    JSON.parse(await readFile(join(root, ".runs", CHANGE, run, "run.json"), "utf8")) as {
+      request: { outputPath: string; outputIn?: string };
+    };
+  const roundMeta = async (root: string, round: number) =>
+    parse(
+      await readFile(join(dir(root), "review/define", String(round), "meta/round.yaml"), "utf8"),
+    ) as { lenses: { lens: string; state: string; artifacts: string[]; runId?: string }[] };
+
+  it("hands each lens off after a draft passes the rules, hands a lens finding back, and is done when none blocks", async () => {
+    const root = await withLenses();
+    const rt = () => new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
+    const out = (run: string, file: string) => join(root, ".runs", CHANGE, run, file);
+    const step = (resume?: string) =>
+      featureStage(root, CHANGE, { runtime: rt(), now: NOW, ...(resume ? { resume } : {}) });
+
+    // The draft.
+    const first = await step();
+    expect(first.state).toBe("waiting");
+    const draft1 = first.waiting!.runId;
+    await writeFile(out(draft1, "feature-answer.yaml"), PLACED);
+    await rt().done(draft1);
+
+    // It passes the rules, so the business lens is handed off: the draft and the estate with it.
+    const second = await step(draft1);
+    expect(second.state).toBe("waiting");
+    expect(second.waiting).toMatchObject({ lens: "business" });
+    const business = second.waiting!.runId;
+    expect((await runJson(root, business)).request).toMatchObject({
+      outputPath: "findings-business.yaml",
+      outputIn: "run",
+    });
+    const prompt = await readFile(join(root, ".runs", CHANGE, business, "prompt.md"), "utf8");
+    expect(prompt).toContain(
+      "Review the draft against the estate and the brief, including what the draft left out",
     );
+    expect(prompt).toContain("Flow forge-stock.reserve-stock (read)");
+    expect(prompt).toContain("flow forge-orders.place-order (repo forge-orders");
+    // The round waits for both lenses; the rules ran.
+    expect((await roundMeta(root, 1)).lenses.map((l) => [l.lens, l.state])).toEqual([
+      ["business", "waiting"],
+      ["architecture", "waiting"],
+    ]);
+
+    // The business lens finds nothing; the architecture lens is next.
+    await writeFile(out(business, "findings-business.yaml"), "findings: []\n");
+    await rt().done(business);
+    const third = await step(business);
+    expect(third.state).toBe("waiting");
+    expect(third.waiting).toMatchObject({ lens: "architecture" });
+    const architecture = third.waiting!.runId;
+    expect(third.drafts).toBe(0);
+
+    // The architecture lens finds what no rule can: the screen changes how stock is reserved.
+    await writeFile(
+      out(architecture, "findings-architecture.yaml"),
+      `findings:
+  - rule: flow-use-matches-estate
+    artifact: feature.md
+    summary: Reserving stock now waits for the screen's verdict, so its steps change; the placement says it is only read.
+    why: A flow marked read gets no target flow, so the architecture stage would leave its new step out.
+    fix: Mark forge-stock.reserve-stock as changed.
+    evidence:
+      - { path: feature.md, quote: "Flow forge-stock.reserve-stock (read)" }
+`,
+    );
+    await rt().done(architecture);
+    const fourth = await step(architecture);
+    // The finding goes back to the next draft, as a rule's finding does.
+    expect(fourth.state).toBe("waiting");
+    expect(fourth.waiting!.lens).toBeUndefined();
+    const draft2 = fourth.waiting!.runId;
+    expect((await runJson(root, draft2)).request.outputPath).toBe("feature-answer.yaml");
+    expect(await readFile(join(root, ".runs", CHANGE, draft2, "prompt.md"), "utf8")).toContain(
+      "The critic (flow-use-matches-estate): Reserving stock now waits for the screen's verdict",
+    );
+    // The round records both lenses as run, and the finding.
+    expect((await roundMeta(root, 1)).lenses.map((l) => [l.lens, l.state])).toEqual([
+      ["business", "ran"],
+      ["architecture", "ran"],
+    ]);
+    expect((await roundMeta(root, 1)).lenses[0]!.artifacts).toContain("feature.md");
+
+    // The fixed draft; both lenses find nothing, and the stage is done.
+    await writeFile(
+      out(draft2, "feature-answer.yaml"),
+      PLACED.replace("    how: read\n", "    how: changed\n"),
+    );
+    await rt().done(draft2);
+    let r = await step(draft2);
+    const lenses: string[] = [];
+    while (r.state === "waiting" && r.waiting!.lens) {
+      lenses.push(r.waiting!.lens);
+      const id = r.waiting!.runId;
+      await writeFile(out(id, `findings-${r.waiting!.lens}.yaml`), "findings: []\n");
+      await rt().done(id);
+      r = await step(id);
+    }
+    expect(lenses).toEqual(["business", "architecture"]);
+    expect(r.state).toBe("done");
+    expect(r.iteration).toBe(2);
+    expect((await roundMeta(root, 2)).lenses.every((l) => l.state === "ran")).toBe(true);
+    const loop = parse(await readFile(join(dir(root), "stage/feature.yaml"), "utf8"));
+    expect(loop.state).toBe("done");
+    expect(loop.critic).toEqual([
+      { gate: "define", round: 1 },
+      { gate: "define", round: 2 },
+    ]);
+    expect(loop.review).toBeUndefined();
+  });
+
+  it("a rerun before a lens is answered says the lens is still waiting", async () => {
+    const root = await withLenses();
+    const rt = () => new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
+    const first = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
+    await writeFile(
+      join(root, ".runs", CHANGE, first.waiting!.runId, "feature-answer.yaml"),
+      PLACED,
+    );
+    await rt().done(first.waiting!.runId);
+    const second = await featureStage(root, CHANGE, {
+      runtime: rt(),
+      now: NOW,
+      resume: first.waiting!.runId,
+    });
+    const lens = second.waiting!.runId;
+    // Resumed before handoff done: the same lens again.
+    const again = await featureStage(root, CHANGE, { runtime: rt(), now: NOW, resume: lens });
+    expect(again.state).toBe("waiting");
+    expect(again.waiting).toEqual({ runId: lens, lens: "business" });
+    // Run without --resume: still waiting on it.
+    const plain = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
+    expect(plain.waiting).toEqual({ runId: lens, lens: "business" });
+  });
+
+  it("a draft that fails the stage's checks isn't sent to the lenses", async () => {
+    const root = await withLenses();
+    const rt = () => new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
+    const first = await featureStage(root, CHANGE, { runtime: rt(), now: NOW });
+    const run1 = first.waiting!.runId;
+    await writeFile(
+      join(root, ".runs", CHANGE, run1, "feature-answer.yaml"),
+      PLACED.replace("cap-ordering", "cap-checkout"),
+    );
+    await rt().done(run1);
+    const second = await featureStage(root, CHANGE, { runtime: rt(), now: NOW, resume: run1 });
+    expect(second.state).toBe("waiting");
+    expect(second.waiting!.lens).toBeUndefined();
+    expect((await roundMeta(root, 1)).lenses.every((l) => l.state === "skipped")).toBe(true);
   });
 });
 
@@ -491,20 +664,15 @@ describe("the stories stage", () => {
     expect(
       (await architectureStage(root, CHANGE, { runtime: assistant([DELTAS]), now: NOW })).state,
     ).toBe("done");
-    // The first wording forgets the fields in task 1.3's criteria.
-    const bad = STORIES.replace(
-      "then the orders row holds sku, quantity and fraud_verdict",
-      "then the order is saved",
-    );
+    // The first wording checks only some of task 1.3's fields.
+    const bad = STORIES.replace("checks: [sku, quantity, fraud_verdict]", "checks: [sku]");
     const prompts: string[] = [];
     const r = await storiesStage(root, CHANGE, {
       runtime: assistant([bad, STORIES], prompts),
       now: NOW,
     });
     expect(r.state).toBe("done");
-    expect(prompts[1]).toContain(
-      "Task 1.3's criteria name none of the fields it touches (sku, quantity, fraud_verdict)",
-    );
+    expect(prompts[1]).toContain("Task 1.3's criteria check no value of quantity, fraud_verdict");
     expect(r.stories.map((s) => [s.id, s.repo, s.tasks.map((t) => t.id)])).toEqual([
       ["s1-place-order", "forge-orders", ["1.1", "1.2", "1.3"]],
     ]);

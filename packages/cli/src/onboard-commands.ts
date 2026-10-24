@@ -40,6 +40,7 @@ import {
 } from "@maycombhq/extractors";
 import { fsRepo } from "@maycombhq/sdk";
 import { baseClonePath } from "@maycombhq/workspace";
+import { offerCodeDir } from "./code-tools.js";
 import type { Output } from "./commands.js";
 import { loadCatalog } from "./diagram-commands.js";
 
@@ -97,6 +98,8 @@ export async function onboardDraft(
     return 2;
   }
   const op = await loadOrgPack(orgPackDirOf(root));
+  // ADR 0118: the model's code search reads this repo by its id, wherever its folder is.
+  offerCodeDir(repo.id, repo.dir);
   const handle = fsRepo(repo.id, repo.dir, "0".repeat(40));
   const r = await draftDialect(handle, {
     name,
@@ -611,6 +614,8 @@ export async function scanSurvey(
   const op = await loadOrgPack(orgPackDirOf(root));
   // ADR 0078: the questions this survey asked before; the answers go in the prompt.
   const before = await listQuestions(root, { repo: repo.id, step: "scan-survey" });
+  // ADR 0118: the model's code search reads this repo by its id, wherever its folder is.
+  offerCodeDir(repo.id, repo.dir);
   const handle = fsRepo(repo.id, repo.dir, "0".repeat(40));
   const repoType = await matchedRepoType(handle, repo.id, op, io);
   const r = await surveyRepo(handle, {
@@ -708,6 +713,8 @@ export async function scanReview(
     return 2;
   }
   const { records } = await loadCatalog(root, { out: () => {}, err: (l) => io.err(l) });
+  // ADR 0118: the model's code search reads this repo by its id, wherever its folder is.
+  offerCodeDir(repo.id, repo.dir);
   const handle = fsRepo(repo.id, repo.dir, "0".repeat(40));
   const gaps = await findGaps(handle, records);
   if (gaps.length === 0) {

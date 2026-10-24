@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -161,6 +161,84 @@ describe("a stage run again while its hand-off waits (--handoff --json)", () => 
     expect(first.state).toBe("handoff");
     const again = await step();
     expect(again).toMatchObject({ state: "handoff", runId: first.runId, stillWaiting: true });
+  });
+});
+
+describe("atticus change feature --handoff --json with the critic's AI lenses (ADR 0115)", () => {
+  it("offers each lens after the draft, one hand-off at a time, and ends done", async () => {
+    const root = await estate();
+    await cp(join(FIXTURES, "stages/lenses/checklists"), join(root, "org-pack/checklists"), {
+      recursive: true,
+    });
+    const run = async (argv: string[]) => {
+      const out: string[] = [];
+      const err: string[] = [];
+      const code = await main(
+        argv,
+        { out: (l) => out.push(l), err: (l) => err.push(l) },
+        { quiet: true },
+      );
+      return { code, out, err };
+    };
+    const json = (out: string[]) =>
+      JSON.parse(out.join("\n")) as {
+        state: string;
+        runId: string;
+        lens?: string;
+        resultFile: string;
+        promptFile: string;
+        doneArgs: string[];
+        resumeArgs: string[];
+      };
+    const answer = async (h: ReturnType<typeof json>, text: string) => {
+      await writeFile(join(root, h.resultFile), text);
+      const done = await run(h.doneArgs);
+      expect(done.code).toBe(0);
+      return json((await run(h.resumeArgs)).out);
+    };
+
+    const draft = json(
+      (await run(["change", "feature", CHANGE, "--handoff", "--json", "--root", root])).out,
+    );
+    expect(draft.state).toBe("handoff");
+    expect(draft.lens).toBeUndefined();
+    expect(draft.resultFile).toMatch(/feature-answer\.yaml$/);
+
+    // The draft passes the rules: the business lens is offered, then the architecture lens.
+    const business = await answer(draft, PLACED);
+    expect(business).toMatchObject({ state: "handoff", lens: "business" });
+    expect(business.resultFile).toMatch(/\/findings-business\.yaml$/);
+    expect(business.resumeArgs).toEqual([
+      "change",
+      "feature",
+      CHANGE,
+      "--root",
+      root,
+      "--handoff",
+      "--json",
+      "--resume",
+      business.runId,
+    ]);
+    expect(await readFile(join(root, business.promptFile), "utf8")).toContain(
+      "Review the draft against the estate and the brief, including what the draft left out",
+    );
+    const architecture = await answer(business, "findings: []\n");
+    expect(architecture).toMatchObject({ state: "handoff", lens: "architecture" });
+    expect(architecture.runId).not.toBe(business.runId);
+
+    // Every lens is in and nothing blocks: the stage is done.
+    const end = await answer(architecture, "findings: []\n");
+    expect(end.state).toBe("done");
+    const round = parse(
+      await readFile(
+        join(root, "openspec/changes", CHANGE, "review/define/1/meta/round.yaml"),
+        "utf8",
+      ),
+    ) as { lenses: { lens: string; state: string }[] };
+    expect(round.lenses.map((l) => [l.lens, l.state])).toEqual([
+      ["business", "ran"],
+      ["architecture", "ran"],
+    ]);
   });
 });
 

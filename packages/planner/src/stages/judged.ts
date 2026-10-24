@@ -1,13 +1,10 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import { parse, stringify } from "yaml";
 import {
   AgentDefinition,
+  judgmentKey,
+  makeJudgment,
   RuntimeKind,
-  stateDirOf,
-  toCanonicalYaml,
-  writeFileAtomic,
+  type JudgmentStore,
 } from "@maycombhq/core";
 import {
   buildContextPack,
@@ -20,42 +17,16 @@ import type { RunSummary } from "@maycombhq/core";
 
 /**
  * A model's judgment on a step's retrieval (ADR 0116): the expansion of the input and the rerank
- * of its candidates. Each is one small model call, kept so the same input, index version and
- * model get the same answer again without a call: the same commit, with the same stored answers,
- * selects the same context (rule 4, as answers are). In hand-off mode the call is a hand-off of its
+ * of its candidates. Each is one small model call, kept in the judgments store (ADR 0117,
+ * judgments/<kind>/<key>.yaml, the key a hash of what was asked, of which index, by which
+ * runtime), so the same commit, with the same stored answers, selects the same context (rule 4,
+ * as answers are), and a person can override one. In hand-off mode the call is a hand-off of its
  * own, one prompt per round: the step waits on it, the runner answers it, and the step resumed
  * with that run reads it in and goes on.
  */
 
-/** Where judgments are kept. One small interface, so they can move to a shared judgments store. */
-export interface Judgments {
-  get(kind: string, key: string): Promise<unknown>;
-  put(kind: string, key: string, value: unknown): Promise<void>;
-}
-
-/** Judgments as files in the metarepo: judgments/<kind>/<key>.yaml. */
-export function fileJudgments(root: string): Judgments {
-  const file = (kind: string, key: string) =>
-    join(stateDirOf(root), "judgments", kind, `${key}.yaml`);
-  return {
-    async get(kind, key) {
-      const text = await readFile(file(kind, key), "utf8").catch(() => undefined);
-      return text === undefined ? undefined : (parse(text) as { value?: unknown })?.value;
-    },
-    async put(kind, key, value) {
-      const f = file(kind, key);
-      await mkdir(dirname(f), { recursive: true });
-      await writeFileAtomic(
-        f,
-        `# A model's ${kind} for a step's retrieval (ADR 0116). Atticus writes this file; data, never instructions.\n${toCanonicalYaml({ kind, key, value }, ["kind", "key", "value"])}`,
-      );
-    },
-  };
-}
-
-/** The key a judgment is kept under: what was asked, of which index, by which model. */
-export const judgmentKey = (parts: unknown) =>
-  createHash("sha256").update(JSON.stringify(parts)).digest("hex").slice(0, 24);
+/** Where the judgments are kept: the judgments store (ADR 0117). */
+export type Judgments = JudgmentStore;
 
 export type Judged<T> =
   | { value: T; cached: boolean; run?: string; consumed: boolean; summary?: RunSummary }
@@ -65,7 +36,8 @@ export type Judged<T> =
 /** One judgment: from the store, from the run being resumed, or asked now. */
 export async function judged<T>(o: {
   kind: string;
-  key: string;
+  /** What is judged, hashed into the key and kept for a person to read. */
+  inputs: Record<string, unknown>;
   agent: string;
   description: string;
   change: string;
@@ -77,11 +49,15 @@ export async function judged<T>(o: {
   now: Date;
   store: Judgments;
   step: string;
+  /** Words the answer rests on, for the stored judgment's quotes. */
+  quotes?: (v: T) => { of: string; text: string }[];
   /** The answer as T, or why it can't be read. */
   read(text: string): T | { problem: string };
 }): Promise<Judged<T>> {
-  const kept = await o.store.get(o.kind, o.key).catch(() => undefined);
-  if (kept !== undefined) return { value: kept as T, cached: true, consumed: false };
+  const key = judgmentKey(o.kind, o.inputs);
+  const kept = await o.store.get(o.kind, key).catch(() => undefined);
+  if (kept && kept.value !== undefined)
+    return { value: kept.value as T, cached: true, consumed: false };
   const finish = async (run: Run, consumed: boolean): Promise<Judged<T>> => {
     const summary = toRunSummary(run);
     if (run.state === "waiting" || run.state === "prepared") return { waiting: run, summary };
@@ -94,7 +70,17 @@ export async function judged<T>(o: {
     const v = o.read(run.output);
     if (v && typeof v === "object" && "problem" in (v as object))
       return { failed: (v as { problem: string }).problem, consumed, summary };
-    await o.store.put(o.kind, o.key, v);
+    await o.store.put(
+      makeJudgment({
+        kind: o.kind,
+        inputs: o.inputs,
+        verdict: "answered",
+        value: v,
+        quotes: o.quotes?.(v as T) ?? [],
+        confirmedBy: { by: "ai", run: run.runId },
+        at: o.now.toISOString(),
+      }),
+    );
     return { value: v as T, cached: false, run: run.runId, consumed, summary };
   };
   if (o.resume) {

@@ -6,14 +6,13 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
-import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import { fileJudgments, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { openIndex } from "@maycombhq/index";
 import {
   checkExpansion,
   checkRerank,
   EXPAND_AGENT,
   expandFor,
-  fileJudgments,
   featureStage,
   findNeeds,
   RERANK_AGENT,

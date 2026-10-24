@@ -9,6 +9,7 @@ import {
   orgPackDirOf,
   parseRecord,
   recordPath,
+  memoryJudgments,
   serializeRecord,
   zip,
   type CatalogRecord,
@@ -825,14 +826,10 @@ export function expansionInputFor(fx: string): NonNullable<RetrievalModeRun["inp
     const base: ContextInput = { text: c.text, ...(c.title ? { title: c.title } : {}) };
     const answer = recorded[c.id];
     if (!answer) return base;
-    const mem = new Map<string, unknown>();
     const r = await expandFor(root, c.root, base, {
       runtime: new MockRuntime(() => stringify(answer), { now: () => NOW }),
       now: NOW,
-      store: {
-        get: async (k, key) => mem.get(`${k}/${key}`),
-        put: async (k, key, v) => void mem.set(`${k}/${key}`, v),
-      },
+      store: memoryJudgments(),
       levels: ["public", "internal", "confidential", "restricted"],
       step: `retrieval case ${c.id}`,
     });

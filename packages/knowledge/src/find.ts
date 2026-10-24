@@ -14,7 +14,7 @@ import {
   type KnowledgeKind,
 } from "@maycombhq/core";
 import type { AiRuntime } from "@maycombhq/ai";
-import type { OrgPack } from "@maycombhq/core";
+import type { JudgmentStore, OrgPack } from "@maycombhq/core";
 import { scanKnowledge, type FailedItem, type KnowledgeRecord } from "./knowledge-scan.js";
 import { reviewItem, writeReview } from "./reviews.js";
 import type { Snapshot } from "./snapshot.js";
@@ -127,6 +127,8 @@ export async function findKnowledge(
     runtime: AiRuntime;
     items: KnowledgeRecord[];
     orgPack?: Pick<OrgPack, "agents" | "runtime" | "pack">;
+    /** Where the judgments of values are kept (ADR 0117). */
+    judgments?: JudgmentStore;
     now?: Date;
     resume?: string;
     maxAttempts?: number;
@@ -157,6 +159,7 @@ export async function findKnowledge(
     ...(o.resume ? { resume: o.resume } : {}),
     ...(o.maxAttempts ? { maxAttempts: o.maxAttempts } : {}),
     focus: { phrase, known },
+    ...(o.judgments ? { judgments: o.judgments } : {}),
   });
   const ids = new Set(o.items.map((i) => i.id));
   return {

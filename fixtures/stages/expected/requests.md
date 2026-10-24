@@ -3,11 +3,11 @@
 
 - [ ] R1 Network firewall rule (request, lead time 10 working days, handled by Network team, Network firewall rule)
   - For: forge-orders.place-order step 1 (Northwind Pay screens the order for fraud)
-  - Why: The step meets "A workload needs to reach a host or port it cannot reach today, including every new vendor host." (reach, host, vendor, network).
+  - Why: The new call reaches the Northwind Pay host. ("including every new vendor host")
   - Knowledge item: firewall-rule-request, quoting forge-wiki/service-desk-catalogue.md:14 (Network firewall rule, snapshot 2026-10-01): "Handled by: Network team. Lead time: 10 working days."
-  - Suggested by: Atticus, from the item's applies-when
+  - Suggested by: your assistant, quoting its applies-when
 - [ ] R2 Vendor onboarding (process, lead time 20 working days, handled by Procurement and Security)
   - For: forge-orders.place-order step 1 (Northwind Pay screens the order for fraud)
-  - Why: The step meets "Before a service sends any data to a vendor for the first time." (send, vendor).
+  - Why: The order's details go to Northwind Pay for the first time. ("Before a service sends any data to a vendor for the first time.")
   - Knowledge item: vendor-onboarding, quoting forge-wiki/vendor-onboarding.md:3 (When it applies, snapshot 2026-10-01): "Every vendor that receives our data is onboarded before the first call."
-  - Suggested by: Atticus, from the item's applies-when
+  - Suggested by: your assistant, quoting its applies-when

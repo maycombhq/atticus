@@ -2,17 +2,31 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
 import { z } from "zod";
-import { changesRelOf, type RecordOf } from "@maycombhq/core";
-import type { SourceInput } from "@maycombhq/ai";
+import {
+  changesRelOf,
+  fileJudgments,
+  judgmentKey,
+  quotedIn,
+  type JudgmentStore,
+  type RecordOf,
+} from "@maycombhq/core";
+import {
+  APPLIES_SPEC,
+  COVERS_FIELD_SPEC,
+  judge,
+  type AiRuntime,
+  type JudgeItem,
+  type JudgeOptions,
+  type SourceInput,
+} from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
 import { readKnowledge } from "@maycombhq/knowledge";
 import { mergeStoryRequests } from "../needs.js";
-import { looksPersonal } from "@maycombhq/naysayer";
 import { PlannerError } from "../errors.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
 import { estateContext } from "./estate-context.js";
 import { GENERATED_MARK } from "../render.js";
-import { contentWords, slug } from "../words.js";
+import { slug } from "../words.js";
 import { parseYamlAs } from "./answer.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./architecture.js";
 import { columnsOf, loadEstate, type Estate } from "./estate.js";
@@ -34,10 +48,11 @@ import type { DeltaStep, FlowDelta } from "./schema.js";
  * per repo from the flow deltas, one per flow, and a task per changed step, each with the
  * fields and evidence it touches and the prompt to implement it in Copilot or Claude Code.
  * Which stories and tasks there are is decided from the deltas, without AI; the assistant
- * words them and writes each task's acceptance criteria. The change tasks and service
- * requests the change needs are suggested from the knowledge items (ADR 0083): a step whose
- * kind and target meet a request's "applies when" suggests it, citing the item's quote and
- * the step. A person raises them; Atticus never does.
+ * words them and writes each task's acceptance criteria, saying which fields each criterion
+ * checks. The change tasks and service requests the change needs come from the knowledge items
+ * (ADR 0083): the story writer names each one a step meets, quoting the words of its "applies
+ * when", and where the runtime calls a model directly a judge asks of every other step and
+ * process whether it applies (ADR 0117). A person raises them; Atticus never does.
  */
 
 export const STORY_AGENT = "story-writer-flows";
@@ -81,7 +96,8 @@ export interface RequestTask {
   step: number;
   stepWhat: string;
   why: string;
-  by: "match" | "assistant";
+  /** The story writer named it, or a judge found it applies (ADR 0117). */
+  by: "assistant" | "judge";
   quote: Process["quote"];
   leadTime?: string;
   handledBy?: string;
@@ -154,14 +170,18 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
   return stories;
 }
 
-/** The words a step brings to the knowledge items' "applies when". */
-function stepWords(d: FlowDelta, s: DeltaStep, e: Estate): Set<string> {
+/**
+ * What the catalog says about a step, for a judge deciding whether a process applies to it:
+ * its kind and what it does, where it goes (and whether that is a vendor outside the estate),
+ * the table it uses and the columns it adds. Facts, not a match: the model reads them beside
+ * the process's applies-when.
+ */
+export function stepFacts(d: FlowDelta, s: DeltaStep, e: Estate): string[] {
   const today = e.flowById.get(d.flow)?.flow;
   const kind = s.kind ?? (s.step ? today?.steps[s.step - 1]?.kind : undefined);
-  const extra: string[] = [];
-  if (kind === "call-out") extra.push("call", "reach", "outbound", "send");
-  if (kind === "publish") extra.push("publish", "event", "topic", "queue", "message", "broker");
-  if (kind === "write") extra.push("write", "store", "stores", "table");
+  const out = [
+    `${s.op} a ${kind ?? "step"} step of flow ${d.flow} in repo ${d.repo}: ${s.what ?? ""}`.trim(),
+  ];
   if (s.to) {
     const target = e.byId.get(s.to.component) as
       { kind?: string; boundary?: string; system?: string } | undefined;
@@ -169,56 +189,86 @@ function stepWords(d: FlowDelta, s: DeltaStep, e: Estate): Set<string> {
       target?.kind === "System"
         ? target
         : (e.byId.get(target?.system ?? "") as { boundary?: string } | undefined);
-    if (system?.boundary === "vendor")
-      extra.push(
-        "vendor",
-        "external",
-        "partner",
-        "third-party",
-        "outside",
-        "host",
-        "network",
-        "internet",
-      );
-    if (s.to.new) extra.push("new");
+    out.push(
+      `it goes to ${s.to.component} ${s.to.entry}${s.to.new ? " (new)" : ""}${system?.boundary ? `, whose system's boundary is ${system.boundary}` : ""}`,
+    );
   }
   if (s.store) {
     const have = columnsOf(e, s.store.table);
     const added = s.store.new ? s.store.columns : s.store.columns.filter((c) => !have.has(c));
-    if (s.store.new) extra.push("new", "table");
-    if (added.length) extra.push("new", "column", "columns");
-    if (added.some((c) => looksPersonal(c))) extra.push("personal", "data");
+    out.push(
+      `it uses table ${s.store.table}${s.store.new ? " (a new table)" : ""}${added.length ? `, adding columns ${added.join(", ")}` : ""}`,
+    );
   }
-  return new Set(contentWords(`${s.what ?? ""} ${extra.join(" ")}`));
+  return out;
 }
 
-const WEAK = new Set(contentWords("new change service system data make step flow"));
+/** What an applies judgment is about, as hashed into its key. */
+const appliesInputs = (d: FlowDelta, i: number, p: Process, facts: string[]) => ({
+  v: 1,
+  process: p.id,
+  appliesWhen: p.appliesWhen,
+  flow: d.flow,
+  step: i + 1,
+  facts,
+});
 
-/** Requests and processes the knowledge items say the deltas need, deterministically. */
-export function suggestRequests(deltas: FlowDelta[], e: Estate, items: Process[]): RequestTask[] {
-  const out: RequestTask[] = [];
+/**
+ * The processes and requests a judge says apply to a step the story writer left without one
+ * (ADR 0117): a recall check behind the writer's own reading, run where the runtime can call
+ * a model directly. Each pair is asked once and kept in judgments/applies/; a hand-off relies
+ * on the writer's reading (its prompt lists the processes), so it costs no extra round.
+ */
+export async function judgedRequests(
+  deltas: FlowDelta[],
+  e: Estate,
+  items: Process[],
+  declared: { item: string; flow: string; step: number }[],
+  j: Omit<JudgeOptions, "store"> & { store: JudgmentStore },
+): Promise<RequestTask[]> {
+  const pairs: { d: FlowDelta; i: number; s: DeltaStep; p: Process; item: JudgeItem }[] = [];
   for (const d of deltas)
     d.steps.forEach((s, i) => {
       if (s.op === "remove") return;
-      const have = stepWords(d, s, e);
+      const facts = stepFacts(d, s, e);
       for (const p of items) {
-        const want = contentWords(`${p.appliesWhen} ${p.title}`).filter((w) => !WEAK.has(w));
-        const shared = want.filter((w) => have.has(w));
-        if (shared.length < 2) continue;
-        if (out.some((x) => x.item === p.id && x.flow === d.flow && x.step === i + 1)) continue;
-        out.push(
-          requestTask(
-            p,
-            d,
-            i + 1,
-            s,
-            `The step meets "${p.appliesWhen}" (${shared.join(", ")}).`,
-            "match",
-          ),
-        );
+        if (declared.some((x) => x.item === p.id && x.flow === d.flow && x.step === i + 1))
+          continue;
+        pairs.push({
+          d,
+          i,
+          s,
+          p,
+          item: {
+            inputs: appliesInputs(d, i, p, facts),
+            texts: { appliesWhen: p.appliesWhen, step: facts.join("; ") },
+          },
+        });
       }
     });
-  return out.map((r, i) => ({ ...r, id: `R${i + 1}` }));
+  if (!pairs.length) return [];
+  const r = await judge(
+    APPLIES_SPEC,
+    pairs.map((x) => x.item),
+    j,
+  );
+  const out: RequestTask[] = [];
+  for (const x of pairs) {
+    const v = r.results.get(judgmentKey(APPLIES_SPEC.kind, x.item.inputs));
+    if (v?.verdict !== "yes") continue;
+    const quote = v.judgment?.quotes.find((q) => q.of === "appliesWhen")?.text;
+    out.push(
+      requestTask(
+        x.p,
+        x.d,
+        x.i + 1,
+        x.s,
+        `${v.judgment?.why ?? "The step meets its applies-when."}${quote ? ` ("${quote}")` : ""}`,
+        "judge",
+      ),
+    );
+  }
+  return out;
 }
 
 function requestTask(
@@ -246,6 +296,34 @@ function requestTask(
   };
 }
 
+/**
+ * An acceptance criterion and the fields whose value its then clause asserts (ADR 0117): the
+ * story writer says which fields each criterion checks, and Atticus checks the set. A bare
+ * string (an answer written before checks) checks nothing.
+ */
+export const StoryCriterion = z.union([
+  z
+    .string()
+    .trim()
+    .min(1)
+    .transform((text) => ({ text, checks: [] as string[] })),
+  z.strictObject({
+    text: z.string().trim().min(1),
+    checks: z.array(z.string().trim().min(1)).default([]),
+  }),
+]);
+export type StoryCriterion = z.infer<typeof StoryCriterion>;
+
+/** A request the story writer says a step meets, with the words of its applies-when. */
+export const RequestIn = z.strictObject({
+  item: z.string(),
+  flow: z.string(),
+  step: z.number().int().positive(),
+  why: z.string().trim().min(1),
+  /** The words of the item's applies-when the step meets, copied exactly. */
+  quote: z.string().trim().min(1).optional(),
+});
+
 const Answer = z.strictObject({
   stories: z
     .array(
@@ -259,46 +337,46 @@ const Answer = z.strictObject({
           .array(
             z.strictObject({
               id: z.string(),
-              criteria: z.array(z.string().trim().min(1)).default([]),
+              criteria: z.array(StoryCriterion).default([]),
             }),
           )
           .default([]),
       }),
     )
     .default([]),
-  requests: z
-    .array(
-      z.strictObject({
-        item: z.string(),
-        flow: z.string(),
-        step: z.number().int().positive(),
-        why: z.string().trim().min(1),
-      }),
-    )
-    .default([]),
+  requests: z.array(RequestIn).default([]),
 });
 export type StoriesAnswer = z.infer<typeof Answer>;
 /** The story writer's answer's schema, for the fast path (ADR 0113). */
 export const StoriesAnswerSchema = Answer;
 
+/** A name folded for comparing as written: lower case, underscores and hyphens left out. */
+const foldName = (s: string) => s.toLowerCase().replace(/[_-]/g, "");
+
 /**
- * A criterion names a field when it holds it as written (renamedAt), or every word of three
- * letters or more in it (renamedAt, renamed_at: "renamed") as a word of the criterion ("the
- * renamed timestamp"): a test can check either. A small model wrote the words, never the name.
+ * Whether a criterion's then clause (the words after its first "then"; the whole criterion when
+ * it has none) writes a field's name (its last part: renamedAt for chat.renamedAt), as a word
+ * of its own, case and underscores aside (renamed_at is renamedAt). A fact a test can see; a
+ * field named only in the given, or in other words ("the time it was renamed"), is the model's
+ * claim, judged.
  */
-export function namesField(criterion: string, field: string): boolean {
-  const lower = criterion.toLowerCase();
-  if (lower.includes(field.toLowerCase())) return true;
-  const words = field
-    .split(".")
-    .at(-1)!
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .split(/[\s_-]+/)
-    .map((w) => w.toLowerCase())
-    .filter((w) => w.length >= 3);
-  if (!words.length) return false;
-  const said = new Set(lower.split(/[^a-z0-9]+/));
-  return words.every((w) => said.has(w));
+export function writesField(criterion: string, field: string): boolean {
+  const name = foldName(field.split(".").at(-1)!);
+  if (!name) return false;
+  const then = /\bthen\b/i.exec(criterion);
+  return criterion
+    .slice(then ? then.index + then[0].length : 0)
+    .split(/[^A-Za-z0-9_.-]+/)
+    .flatMap((w) => [w, ...w.split(".")])
+    .some((w) => foldName(w.replace(/^[.-]+|[.-]+$/g, "")) === name);
+}
+
+/** A criterion's claim that it checks a field, where the field isn't written in it. */
+export interface UnwrittenCheck {
+  task: string;
+  repo: string;
+  field: string;
+  criterion: string;
 }
 
 export function checkStories(
@@ -349,13 +427,24 @@ export function checkStories(
           `Task ${t.id} (${t.title}) has no acceptance criteria.`,
           t.repo,
         );
-      else if (t.fields.length && !c.some((x) => t.fields.some((f) => namesField(x, f))))
-        issue(
-          "stories.fields-not-named",
-          t.id,
-          `Task ${t.id}'s criteria name none of the fields it touches (${t.fields.join(", ")}).`,
-          t.repo,
-        );
+      else {
+        for (const x of c)
+          for (const f of x.checks.filter((f) => !t.fields.includes(f)))
+            issue(
+              "stories.unknown-check",
+              `${t.id}:${f}`,
+              `Task ${t.id}: a criterion says it checks ${f}, which isn't one of the task's fields (${t.fields.join(", ") || "none"}).`,
+              t.repo,
+            );
+        const unchecked = t.fields.filter((f) => !c.some((x) => x.checks.includes(f)));
+        if (unchecked.length)
+          issue(
+            "stories.field-not-checked",
+            t.id,
+            `Task ${t.id}'s criteria check no value of ${unchecked.join(", ")}: write a criterion whose then clause asserts each, and list it under that criterion's checks.`,
+            t.repo,
+          );
+      }
     }
   }
   for (const r of a.requests) {
@@ -365,6 +454,12 @@ export function checkStories(
         "stories.unknown-request",
         r.item,
         `Request ${r.item} isn't a process or request in the knowledge items.`,
+      );
+    else if (!r.quote || !quotedIn(p.appliesWhen, r.quote))
+      issue(
+        "stories.request-unquoted",
+        `${r.item}:${r.flow}#${r.step}`,
+        `Request ${r.item} for ${r.flow} step ${r.step}: quote the words of its applies-when ("${p.appliesWhen}") that the step meets, copied exactly.`,
       );
     const d = deltas.find((x) => x.flow === r.flow);
     if (!d || !d.steps[r.step - 1])
@@ -377,13 +472,86 @@ export function checkStories(
   return out;
 }
 
+/** The criteria's claims to check a field that the criterion doesn't write (writesField). */
+export function unwrittenChecks(a: StoriesAnswer, stories: DeltaStory[]): UnwrittenCheck[] {
+  const out: UnwrittenCheck[] = [];
+  for (const want of stories)
+    for (const t of want.tasks) {
+      const c =
+        a.stories.find((x) => x.id === want.id)?.tasks.find((x) => x.id === t.id)?.criteria ?? [];
+      for (const x of c)
+        for (const f of x.checks)
+          if (t.fields.includes(f) && !writesField(x.text, f))
+            out.push({ task: t.id, repo: t.repo, field: f, criterion: x.text });
+    }
+  return out;
+}
+
+/** A judge for criteria, where the runtime calls a model directly; none for hand-off and mock. */
+export const judgeRuntime = (runtime: AiRuntime): AiRuntime | undefined =>
+  runtime.kind === "hand-off" || runtime.kind === "mock" ? undefined : runtime;
+
+/**
+ * Whether each criterion checks the field it claims to and doesn't write (ADR 0117): a stored
+ * judgment, else the judge, asked once for all of them. "no" hands the criterion back, and so
+ * does "unsure". With no judge (hand-off: another round would cost the person a prompt) a claim
+ * the criterion doesn't write is handed back too, so the writer names the field: what a test
+ * checks is then on the page.
+ */
+export async function coverageIssues(
+  claims: UnwrittenCheck[],
+  j: { runtime?: AiRuntime; store: JudgmentStore; change: string; now: Date },
+): Promise<StageIssue[]> {
+  if (!claims.length) return [];
+  const items: JudgeItem[] = claims.map((c) => ({
+    inputs: { v: 1, field: c.field, criterion: c.criterion },
+    texts: { criterion: c.criterion },
+    facts: [`the field: ${c.field}`],
+  }));
+  const verdicts = new Map<string, string>();
+  for (const it of items) {
+    const key = judgmentKey(COVERS_FIELD_SPEC.kind, it.inputs);
+    const stored = await j.store.get(COVERS_FIELD_SPEC.kind, key);
+    if (stored && typeof stored.verdict === "string") verdicts.set(key, stored.verdict);
+  }
+  const open = items.filter((it) => !verdicts.has(judgmentKey(COVERS_FIELD_SPEC.kind, it.inputs)));
+  if (open.length && j.runtime) {
+    const r = await judge(COVERS_FIELD_SPEC, open, {
+      runtime: j.runtime,
+      store: j.store,
+      change: j.change,
+      now: j.now,
+    });
+    for (const [k, v] of r.results) verdicts.set(k, v.verdict);
+  }
+  const out: StageIssue[] = [];
+  claims.forEach((c, i) => {
+    const v = verdicts.get(judgmentKey(COVERS_FIELD_SPEC.kind, items[i]!.inputs));
+    if (v === "yes") return;
+    const why =
+      v === "no"
+        ? "its then clause doesn't assert that field's value"
+        : v === "unsure"
+          ? "a judge couldn't tell that it does"
+          : "it doesn't name it";
+    out.push({
+      rule: "stories.check-not-in-criterion",
+      target: `${c.task}:${c.field}`,
+      message: `Task ${c.task}: the criterion "${c.criterion}" says it checks ${c.field}, but ${why}: name ${c.field} in its then clause, or check it in another criterion.`,
+      blocking: true,
+      repo: c.repo,
+    });
+  });
+  return out;
+}
+
 const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
 
 export function taskPrompt(
   change: string,
   s: DeltaStory,
   t: DeltaTask,
-  criteria: string[],
+  criteria: StoryCriterion[],
 ): string {
   return [
     `Implement task ${t.id} of the change ${change} in the repo ${t.repo}.`,
@@ -395,7 +563,9 @@ export function taskPrompt(
       ? [`Today's code is at ${t.evidence.join(", ")}; read it first.`]
       : ["This is new code; follow the repo's patterns for its neighbours."]),
     "Acceptance criteria:",
-    ...criteria.map((c) => `- ${c}`),
+    ...criteria.map(
+      (c) => `- ${c.text}${c.checks.length ? ` (checks ${c.checks.join(", ")})` : ""}`,
+    ),
     "Change only this repo. Write a test for each criterion. Never push to a protected branch.",
   ].join("\n");
 }
@@ -415,7 +585,7 @@ function renderStoryFile(
     "",
   ];
   const crit = s.tasks.flatMap((t) => w.tasks.find((x) => x.id === t.id)?.criteria ?? []);
-  lines.push(...(crit.length ? crit.map((c) => `- ${sentence(c)}`) : ["- None yet."]), "");
+  lines.push(...(crit.length ? crit.map((c) => `- ${sentence(c.text)}`) : ["- None yet."]), "");
   lines.push(
     "## Traces to",
     "",
@@ -434,7 +604,7 @@ function renderStoryFile(
       ...(t.target ? [`- Goes to: ${t.target}`] : []),
       ...(t.store ? [`- Store: ${t.store}`] : []),
       "- Acceptance criteria:",
-      ...(c.length ? c.map((x) => `  - ${sentence(x)}`) : ["  - None yet."]),
+      ...(c.length ? c.map((x) => `  - ${sentence(x.text)}`) : ["  - None yet."]),
       "",
       "Prompt for Copilot or Claude Code:",
       "",
@@ -498,21 +668,24 @@ function renderRequests(requests: RequestTask[]): string {
       `  - For: ${r.flow} step ${r.step} (${r.stepWhat})`,
       `  - Why: ${r.why}`,
       `  - Knowledge item: ${r.item}, quoting ${q.source}/${q.page}${q.line ? `:${q.line}` : ""} (${q.section}, snapshot ${q.snapshot}): "${q.text}"`,
-      `  - Suggested by: ${r.by === "match" ? "Atticus, from the item's applies-when" : "your assistant"}`,
+      `  - Suggested by: ${r.by === "judge" ? "a judgment that the step meets its applies-when (judgments/applies/)" : "your assistant, quoting its applies-when"}`,
     );
   }
   lines.push("");
   return lines.join("\n");
 }
 
-/** Atticus's matches, then the assistant's extra ones that cite a real item and step. */
+/**
+ * The story writer's requests that cite a real item and step and quote its applies-when, then
+ * the ones a judge found (judgedRequests) that the writer left out.
+ */
 export function mergeRequests(
-  matched: RequestTask[],
   a: StoriesAnswer,
   deltas: FlowDelta[],
   items: Process[],
+  judged: RequestTask[] = [],
 ): RequestTask[] {
-  const all = [...matched];
+  const all: RequestTask[] = [];
   for (const r of a.requests) {
     const p = items.find((x) => x.id === r.item);
     const d = deltas.find((x) => x.flow === r.flow);
@@ -521,11 +694,15 @@ export function mergeRequests(
       !p ||
       !d ||
       !s ||
+      !r.quote ||
+      !quotedIn(p.appliesWhen, r.quote) ||
       all.some((x) => x.item === r.item && x.flow === r.flow && x.step === r.step)
     )
       continue;
-    all.push(requestTask(p, d, r.step, s, r.why, "assistant"));
+    all.push(requestTask(p, d, r.step, s, `${r.why} ("${r.quote}")`, "assistant"));
   }
+  for (const r of judged)
+    if (!all.some((x) => x.item === r.item && x.flow === r.flow && x.step === r.step)) all.push(r);
   return all.map((r, i) => ({ ...r, id: `R${i + 1}` }));
 }
 
@@ -632,9 +809,24 @@ export async function storiesStage(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
   const stories = storiesFromDeltas(deltas, estate);
-  const matched = suggestRequests(deltas, estate, items);
-  let requests = matched;
-  const merge = (a: StoriesAnswer) => mergeRequests(matched, a, deltas, items);
+  let requests: RequestTask[] = [];
+  const now = o.now ?? new Date();
+  const store = fileJudgments(root);
+  const judging = judgeRuntime(o.runtime);
+  const merge = async (a: StoriesAnswer) =>
+    mergeRequests(
+      a,
+      deltas,
+      items,
+      judging
+        ? await judgedRequests(deltas, estate, items, a.requests, {
+            runtime: judging,
+            store,
+            change: change.id,
+            now,
+          })
+        : [],
+    );
 
   const skeletonText = stories
     .map((s) =>
@@ -670,16 +862,6 @@ export async function storiesStage(
       classification: "internal",
       priority: 90,
     },
-    {
-      id: "suggested",
-      kind: "artifact",
-      origin: "atticus plan stories (deterministic)",
-      text:
-        matched.map((r) => `${r.item} for ${r.flow} step ${r.step}: ${r.why}`).join("\n") ||
-        "None.",
-      classification: "internal",
-      priority: 70,
-    },
   ];
   const FORMAT = `Reply with YAML only:
 
@@ -692,17 +874,19 @@ stories:
     tasks:
       - id: <task id, exactly as listed>
         criteria:
-          - "Given <situation>, when <action>, then <what can be checked>"
-requests:      # only requests or processes Atticus didn't already suggest, from the list below
+          - text: "Given <situation>, when <action>, then <what can be checked>"
+            checks: [<each of the task's fields whose value this then clause asserts>]
+requests:      # every request or process from the list below that a step meets
   - item: <process or request id>
     flow: <flow id>
     step: <the step's item number in that flow's target>
     why: <one sentence>
+    quote: "<the words of its applies when that the step meets, copied exactly>"
 
 Rules:
 - One entry per story and per task listed; don't add or drop any.
-- Every task has acceptance criteria a test can check, and names the fields it touches.
-- Suggest a request only when the knowledge item's "applies when" fits the step. Never raise it yourself.
+- Every task has acceptance criteria a test can check. Each of the task's fields is under the checks of a criterion whose then clause asserts its value; checks name only the task's fields.
+- Name a request only when the knowledge item's "applies when" fits the step, quoting those words. Never raise it yourself.
 - Plain, short English.`;
   const instructions = [
     "# Story writer",
@@ -779,10 +963,18 @@ Rules:
       const r = parseYamlAs(text, Answer, (d) => d, "stories");
       return { ...(r.value ? { answer: r.value } : {}), issues: r.issues };
     },
-    check: async (a) => checkStories(a, stories, deltas, items),
+    check: async (a) => [
+      ...checkStories(a, stories, deltas, items),
+      ...(await coverageIssues(unwrittenChecks(a, stories), {
+        ...(judging ? { runtime: judging } : {}),
+        store,
+        change: change.id,
+        now,
+      })),
+    ],
     write: async (a) => {
-      requests = merge(a);
-      return writeStories(root, change.id, stories, a, requests, o.now ?? new Date());
+      requests = await merge(a);
+      return writeStories(root, change.id, stories, a, requests, now);
     },
     current: () => readStoriesAnswer(dir),
   };
@@ -806,5 +998,5 @@ Rules:
     res.notes.unshift(
       `The architecture PR of ${change.id} isn't merged yet, so these stories rest on target flows a person hasn't approved.`,
     );
-  return { ...res, stories, requests: res.answer ? merge(res.answer) : requests };
+  return { ...res, stories, requests: res.answer ? await merge(res.answer) : requests };
 }

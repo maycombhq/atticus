@@ -3,6 +3,7 @@ import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@
 import { Lens, toCanonicalYaml } from "@maycombhq/core";
 import { toRunSummary, type Run } from "@maycombhq/ai";
 import { leftOut, parseLensOutput, type Discarded, type LensName, type LensRun } from "./ai.js";
+import { draftDocs } from "./critic.js";
 import { CriticError } from "./errors.js";
 import { mergeHits, readRound, readRoundMeta, reviewedGates, roundsOf } from "./findings.js";
 import { gateStatusOf, type GateStatus } from "./gates.js";
@@ -151,10 +152,15 @@ export async function completeLensRun(
   } else {
     const rules = applicable.filter((r) => entry.rules.includes(r.id));
     const out = leftOut(run.request.pack, entry.artifacts);
-    const docs = entry.artifacts
-      .filter((p) => !out.left.has(p))
-      .map((p) => ctx.files.docs.get(p))
-      .filter((d): d is NonNullable<typeof d> => d !== undefined);
+    const given = entry.artifacts.filter((p) => !out.left.has(p));
+    // A stage's draft the lens reviewed (ADR 0115) isn't an artifact: read it from the folder.
+    const docs = [
+      ...given.map((p) => ctx.files.docs.get(p)).filter((d) => d !== undefined),
+      ...(await draftDocs(
+        folder,
+        given.filter((p) => !ctx.files.docs.has(p)),
+      )),
+    ];
     const parsed = parseLensOutput(ctx, lens, run.output, rules, docs);
     discarded = parsed.discarded;
     const hits = mergeHits(parsed.hits, ctx.systemOf);

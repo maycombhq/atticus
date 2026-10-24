@@ -18,6 +18,7 @@ import { Dialect } from "./schema/dialect.js";
 import { FrameworkModel } from "./schema/frameworks.js";
 import { ScanSettings } from "./schema/scan-settings.js";
 import { Question } from "./schema/question.js";
+import { Judgment } from "./schema/judgment.js";
 import { RepoType } from "./schema/repo-type.js";
 import { DiagramLayout } from "./schema/layout.js";
 import { ScannerPlugin } from "./schema/plugin.js";
@@ -133,6 +134,7 @@ export function aiJsonSchemas(): Record<string, object> {
     ContextPackManifest: C5.ContextPackManifest,
     RunSummary: C5.RunSummary,
     Recording: C5.Recording,
+    Judgment,
   };
   const out: Record<string, object> = {};
   for (const [name, schema] of Object.entries(files)) {

@@ -4,6 +4,7 @@ import { parse, stringify } from "yaml";
 import { z } from "zod";
 import {
   AgentDefinition,
+  fileJudgments,
   KNOWLEDGE_KINDS,
   knowledgeKindOf,
   RecordId,
@@ -26,8 +27,10 @@ import {
   itemTitle,
   readKnowledge,
   type KnowledgeRecord,
+  leadTimeDaysOf,
+  type LeadTimeDays,
   type ReviewSummary,
-  valueTokens,
+  workingDays,
 } from "@maycombhq/knowledge";
 import type { RequestTask } from "./stages/stories.js";
 import {
@@ -84,6 +87,14 @@ export const Need = z.strictObject({
   /** Who found it: the assistant (atticus change needs) or the stories stage. */
   from: z.enum(["assistant", "stories"]),
   leadTime: z.string().optional(),
+  /** The lead time as the knowledge scan read it (ADR 0117): the model's normalised value. */
+  leadTimeDays: z
+    .strictObject({
+      min: z.number().min(0),
+      max: z.number().min(0),
+      unit: z.enum(["working-days", "calendar-days", "hours"]),
+    })
+    .optional(),
   handledBy: z.string().optional(),
   catalogueItem: z.string().optional(),
   inputs: z.array(z.string()).default([]),
@@ -150,39 +161,24 @@ export function needQuoteProblem(quote: string): string | undefined {
     : "quote at least 12 letters of the change's own words, with a word that says what calls for it";
 }
 
-/** Working days in a lead time: "10 working days", "two weeks", "1 month"; none for "none". */
-export function leadTimeDays(leadTime: string): number | undefined {
-  const t = valueTokens(leadTime);
-  const per: Record<string, number> = { hour: 1 / 8, day: 1, week: 5, month: 21, year: 250 };
-  let best: number | undefined;
-  for (let i = 0; i < t.length; i++) {
-    const unit = per[t[i]!];
-    if (unit === undefined) continue;
-    // The largest number before the unit ("5 to 10 working days" is 10), working days as they are
-    // and calendar days as five in seven.
-    const nums = t
-      .slice(Math.max(0, i - 4), i)
-      .filter((x) => /^\d+$/.test(x))
-      .map(Number);
-    if (!nums.length) continue;
-    const working = t[i - 1] === "working" || t[i - 1] === "business";
-    const days = Math.max(...nums) * (t[i] === "day" && !working ? 5 / 7 : unit);
-    best = Math.max(best ?? 0, Math.ceil(days));
-  }
-  return best && best > 0 ? best : undefined;
-}
-
 /**
- * ADR 0111: when a need is needed, from its item's lead time where it has one: 20 working days or
+ * ADR 0111, 0117: when a need is needed, from its item's lead time as the knowledge scan read it
+ * (the model's normalised { min, max, unit }, its words checked on the page): 20 working days or
  * more (about a month) is raised before design, so it is done by the time the build needs it; 5
- * or more before build; less before release. No lead time that reads as a duration: undefined,
- * and the assistant's word stands.
+ * or more before build; less before release. No reading: undefined, and the assistant's word
+ * stands. The words themselves are never parsed here.
  */
-export function whenFromLeadTime(leadTime: string | undefined): Need["when"] | undefined {
-  const d = leadTime ? leadTimeDays(leadTime) : undefined;
-  if (d === undefined) return undefined;
+export function whenFromLeadTime(days: LeadTimeDays | undefined): Need["when"] | undefined {
+  if (!days) return undefined;
+  const d = workingDays(days);
   return d >= 20 ? "before-design" : d >= 5 ? "before-build" : "before-release";
 }
+
+/** An item's lead time as the knowledge scan read it, kept under judgments/lead-time/. */
+const daysOf = (root: string, r: KnowledgeRecord) => {
+  const lt = (r as { leadTime?: unknown }).leadTime;
+  return leadTimeDaysOf(fileJudgments(root), r.id, typeof lt === "string" ? lt : undefined);
+};
 
 const stamp = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
 const key = (n: { item: string; for: string }) => `${n.item}|${n.for}`;
@@ -259,19 +255,21 @@ function needFrom(
   n: Omit<Need, "kind" | "title" | "inputs" | "steps" | "rules" | "urls" | "status"> & {
     status?: Need["status"];
   },
+  days?: LeadTimeDays,
 ): Need {
   const p = r as Record<string, unknown>;
   const str = (k: string) => (typeof p[k] === "string" && p[k] ? (p[k] as string) : undefined);
   const arr = (k: string) => (Array.isArray(p[k]) ? (p[k] as string[]) : []);
   const handler = str("handledBy") ?? str("owner") ?? str("ownedBy");
   // ADR 0111: the item's lead time says when it is needed; the finder's word only without one.
-  const when = whenFromLeadTime(str("leadTime")) ?? n.when;
+  const when = whenFromLeadTime(days) ?? n.when;
   return Need.parse({
     ...n,
     ...(when ? { when } : {}),
     kind: knowledgeKindOf(r),
     title: itemTitle(r),
     ...(str("leadTime") ? { leadTime: str("leadTime") } : {}),
+    ...(days ? { leadTimeDays: days } : {}),
     ...(handler ? { handledBy: handler } : {}),
     ...(str("catalogueItem") ? { catalogueItem: str("catalogueItem") } : {}),
     inputs: arr("inputs"),
@@ -718,14 +716,18 @@ export async function findNeeds(
         if (fold(lines.slice(0, j).join("\n")).length < at) line = j + 1;
         else break;
       fresh.push(
-        needFrom(r, {
-          item: n.item,
-          for: n.for,
-          why: n.why,
-          because: { file: file!, quote: n.because.quote, ...(line > 0 ? { line } : {}) },
-          ...(n.when ? { when: n.when } : {}),
-          from: "assistant",
-        }),
+        needFrom(
+          r,
+          {
+            item: n.item,
+            for: n.for,
+            why: n.why,
+            because: { file: file!, quote: n.because.quote, ...(line > 0 ? { line } : {}) },
+            ...(n.when ? { when: n.when } : {}),
+            from: "assistant",
+          },
+          await daysOf(root, r),
+        ),
       );
     }
     result.attempts.push({ attempt, runId: run.runId, problems });
@@ -824,7 +826,11 @@ export async function mergeStoryRequests(
     const item = byId.get(r.item);
     if (!item) continue;
     fresh.push(
-      needFrom(item, { item: r.item, for: `flow:${r.flow}`, why: r.why, from: "stories" }),
+      needFrom(
+        item,
+        { item: r.item, for: `flow:${r.flow}`, why: r.why, from: "stories" },
+        await daysOf(root, item),
+      ),
     );
   }
   const file = merge(await readNeeds(root, change), "stories", fresh, change, now);

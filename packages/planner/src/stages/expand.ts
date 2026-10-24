@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { AiRuntime, SourceInput } from "@maycombhq/ai";
 import type { RunRetrieval } from "@maycombhq/core";
 import { openIndex, type CatalogIndex, type ContextInput } from "@maycombhq/index";
-import { judged, judgmentKey, yamlOf, type Judged, type Judgments } from "./judged.js";
+import { judged, yamlOf, type Judged, type Judgments } from "./judged.js";
 
 /**
  * The model's expansion of a step's input (ADR 0116): one small call before the step's
@@ -174,16 +174,10 @@ export async function expandFor(
     };
   }
   try {
-    const key = judgmentKey({
-      kind: "expansion",
-      input,
-      index: ix.version,
-      model: o.runtime.kind,
-      v: 1,
-    });
     const r = await judged<CheckedExpansion>({
       kind: "expansion",
-      key,
+      inputs: { input, index: ix.version, runtime: o.runtime.kind, v: 1 },
+      quotes: (v) => v.names.map((n) => ({ of: "input", text: n.quote })),
       agent: EXPAND_AGENT,
       description:
         "Says what a step's input is about, in the estate's words, and the names it uses.",

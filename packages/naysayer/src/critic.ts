@@ -1,9 +1,11 @@
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
 import { Lens, toCanonicalYaml } from "@maycombhq/core";
-import type { AiRuntime, QuarantineItem } from "@maycombhq/ai";
+import type { AiRuntime, QuarantineItem, SourceInput } from "@maycombhq/ai";
 import { writeQuarantineItems } from "./defences.js";
 import { runLenses, type Discarded, type LensName, type LensRun } from "./ai.js";
+import { parseDoc, type Doc } from "./doc.js";
 import { artifactOf } from "./artifacts.js";
 import { checkRegistry } from "./checks/index.js";
 import { CriticError } from "./errors.js";
@@ -39,6 +41,22 @@ export interface RunCriticOptions {
   /** The model that wrote the artifacts, so the critic can pick another family. */
   authorModel?: string;
   maxClassification?: string;
+  /**
+   * A stage's draft (ADR 0115): the change-folder files it wrote, which the AI lenses review
+   * with the artifacts it was drafted from, and the estate the drafter read, as data.
+   */
+  review?: { stage: string; files: string[]; sources: SourceInput[] };
+}
+
+/** The change-folder files a lens reads that aren't artifacts (a stage's draft), as documents. */
+export async function draftDocs(dir: string, files: string[]): Promise<Doc[]> {
+  const out: Doc[] = [];
+  for (const rel of [...new Set(files)].sort()) {
+    if (rel.split("/").includes("..") || !/\.(md|ya?ml)$/.test(rel)) continue;
+    const text = await readFile(join(dir, ...rel.split("/")), "utf8").catch(() => undefined);
+    if (text !== undefined) out.push(parseDoc(rel, text));
+  }
+  return out;
 }
 
 export interface CriticResult {
@@ -159,6 +177,15 @@ export async function runCritic(
     lenses,
     failed,
     ...(opts.maxClassification ? { maxClassification: opts.maxClassification } : {}),
+    ...(opts.review
+      ? {
+          review: {
+            stage: opts.review.stage,
+            docs: await draftDocs(changeFolder(root, change.id), opts.review.files),
+            sources: opts.review.sources,
+          },
+        }
+      : {}),
     quarantined,
   });
   // What the defences left out of the lenses' packs, for a person (ADR 0042).

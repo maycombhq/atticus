@@ -1,5 +1,6 @@
 import { readToolCalls, recordToolCalls, TOOL_LIMITS, ToolSession } from "@maycombhq/ai";
-import { CONTEXT_TOOLS, contextToolBox, openIndex } from "@maycombhq/index";
+import { CONTEXT_TOOLS } from "@maycombhq/index";
+import { metarepoToolBox } from "./code-tools.js";
 import type { Output } from "./commands.js";
 
 /**
@@ -11,7 +12,7 @@ import type { Output } from "./commands.js";
  * Every one only reads.
  */
 
-const box = (root: string) => contextToolBox(root, () => openIndex(root));
+const box = (root: string) => metarepoToolBox(root);
 
 /** Run one tool for a person: its text, or the refusal as an error (exit 2). */
 async function runFor(
@@ -69,6 +70,51 @@ export function contextCode(
     },
     io,
   );
+}
+
+/**
+ * atticus context grep <pattern> [--regex] [--ignore-case] [--repo r] [--paths glob] [--limit n]
+ * (ADR 0118): the lines of the workspace clones that match, each repo:path:line.
+ */
+export function contextGrep(
+  root: string,
+  pattern: string,
+  o: { regex?: boolean; ignoreCase?: boolean; repo?: string; paths?: string; limit?: number },
+  io: Output,
+): Promise<number> {
+  return runFor(
+    root,
+    "grep",
+    {
+      pattern,
+      ...(o.regex ? { regex: true } : {}),
+      ...(o.ignoreCase ? { ignoreCase: true } : {}),
+      ...(o.repo ? { repo: o.repo } : {}),
+      ...(o.paths ? { paths: o.paths } : {}),
+      ...(o.limit ? { limit: o.limit } : {}),
+    },
+    io,
+  );
+}
+
+/** atticus context files <glob> [--repo r] [--limit n]: the clones' paths a glob matches. */
+export function contextFiles(
+  root: string,
+  glob: string,
+  o: { repo?: string; limit?: number },
+  io: Output,
+): Promise<number> {
+  return runFor(
+    root,
+    "files",
+    { glob, ...(o.repo ? { repo: o.repo } : {}), ...(o.limit ? { limit: o.limit } : {}) },
+    io,
+  );
+}
+
+/** atticus context outline <repo> <path>: a file's declarations, or its headings or keys. */
+export function contextOutline(root: string, repo: string, path: string, io: Output) {
+  return runFor(root, "outline", { repo, path }, io);
 }
 
 /** atticus context similar <id>: what reads like an id, by the local model (ADR 0116); a hint. */
@@ -129,7 +175,12 @@ export async function contextCall(
     io.err(`There is no run ${o.run}. atticus runs lists them.`);
     return 2;
   }
-  const session = new ToolSession(box(root), {}, existing?.tools);
+  // ADR 0118: show_code may show a line an earlier grep or outline call of the run returned.
+  const session = new ToolSession(
+    metarepoToolBox(root, existing?.tools?.calls),
+    {},
+    existing?.tools,
+  );
   const before = session.calls.length;
   const call = await session.run(o.round ?? 1, { name, input });
   if (o.run)

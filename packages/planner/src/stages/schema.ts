@@ -256,5 +256,31 @@ export const StageLoop = z.strictObject({
   read: z.array(z.string()).default([]),
   /** The critic rounds the loop ran, newest last. */
   critic: z.array(z.strictObject({ gate: text(), round: z.number().int().positive() })).default([]),
+  /**
+   * A draft whose critic round is waiting for its AI lenses, handed off one at a time (ADR
+   * 0115): the round, the draft's run and files, and what the stage's checks and the critic's
+   * rules found in it, which join the lenses' findings once every lens is in.
+   */
+  review: z
+    .strictObject({
+      gate: text(),
+      round: z.number().int().positive(),
+      draft: z.string().optional(),
+      files: z.array(z.string()).default([]),
+      issues: z
+        .array(
+          z.strictObject({
+            rule: text(),
+            target: text(),
+            evidence: z.string().optional(),
+            message: text(),
+            blocking: z.boolean(),
+            repo: z.string().optional(),
+            kind: z.enum(["decision", "drafting"]).optional(),
+          }),
+        )
+        .default([]),
+    })
+    .optional(),
 });
 export type StageLoop = z.infer<typeof StageLoop>;

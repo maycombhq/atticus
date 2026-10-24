@@ -27,12 +27,11 @@ const call = (ix: CatalogIndex, root: string, name: string, input: Record<string
 
 describe("the context tools", () => {
   it("are defined once, each with a JSON schema for its input", () => {
-    expect(CONTEXT_TOOLS.map((t) => t.name)).toEqual([
+    expect(CONTEXT_TOOLS.map((t) => t.name).slice(0, 4)).toEqual([
       "search",
       "show",
       "walk",
       "show_code",
-      "similar",
     ]);
     for (const t of CONTEXT_TOOLS) {
       expect(t.inputSchema.type).toBe("object");

@@ -35,7 +35,7 @@ import {
 } from "@maycombhq/scanner";
 import type { RepoHandle } from "@maycombhq/sdk";
 import { citationsOf, codeExcerpts, excerptSources } from "./excerpts.js";
-import type { SurveyRepoType } from "./scan-survey.js";
+import { SAME_AS_LINE, type SurveyRepoType } from "./scan-survey.js";
 
 /**
  * atticus spec draft (ADR 0079): the assistant reads a repo's catalog records, the spec
@@ -83,6 +83,8 @@ const INSTRUCTIONS = (
 ) => `You are drafting the spec of the repo ${repo} (Atticus ADR 0079): its flows.
 
 A flow is what happens, in order, when something enters the repo, as a person would draw it on a whiteboard: the trigger, then each step, with the data at each step by field, and the file and line of the code each step is read from. It is not a code tree: leave out plumbing a person wouldn't draw.
+
+When you have the tools grep, files and outline, use them to find code the excerpts below don't show (the method a step calls, where a field is mapped); every line you cite is checked, a hit itself is not a fact.
 
 Write one flow per trigger listed below. Where several triggers are near-identical (the same work on one resource: reads with reads, writes with writes), write one flow for one of them and list the others in its family. A read never stands for a write, nor a write for a read: their steps differ, and the estate pass won't join a call through such a family. Follow the spec template (${template}) below: the step kinds it lists and what each must record.
 
@@ -545,14 +547,15 @@ function askedBefore(questions: readonly Question[]): SourceInput[] {
     );
     for (const q of answered)
       lines.push(
-        `- ${q.question} (${q.evidence.join(", ")})`,
+        `- ${q.id}: ${q.question} (${q.evidence.join(", ")})`,
         `  Answer (${q.answer!.by}): ${answerWords(q)}`,
       );
   }
   if (open.length) {
     lines.push("Questions already asked and waiting for a person. Don't ask them again:");
-    for (const q of open) lines.push(`- ${q.question} (${q.evidence.join(", ")})`);
+    for (const q of open) lines.push(`- ${q.id}: ${q.question} (${q.evidence.join(", ")})`);
   }
+  lines.push(SAME_AS_LINE);
   return [
     {
       id: "3-questions",

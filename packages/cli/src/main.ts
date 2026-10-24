@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 import { createLog, SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
 import { gitUser } from "@maycombhq/workspace";
 import { basename, join, resolve } from "node:path";
+import { metarepoToolBox } from "./code-tools.js";
 import { type Output } from "./commands.js";
 import {
   AiOffError,
@@ -12,7 +13,6 @@ import {
   withPromptLimit,
   type AiRuntime,
 } from "@maycombhq/ai";
-import { contextToolBox, openIndex } from "@maycombhq/index";
 import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
 import { existsSync } from "node:fs";
 
@@ -406,6 +406,9 @@ Usage:
   atticus context code <id> [--around 6]  The code a fact cites, a few lines around each cited line, from the workspace checkout
           [--repo r --path p --line n]  (or one line a fact cites)
   atticus context similar <id> [--kind k,k] [--limit n]  What reads like one id, by the local embedding model: a hint where to look, never a link
+  atticus context grep "<pattern>" [--regex] [--ignore-case] [--repo r] [--paths glob] [--limit n]  The lines of the workspace clones that match, each repo:path:line; .gitignore'd files skipped
+  atticus context files "<glob>" [--repo r] [--limit n]  The clones' files whose paths match a glob
+  atticus context outline <repo> <path>  A file's declarations with their annotations, from its syntax tree; a document's headings
   atticus context tools [--json]       The read-only tools a step's model may call beside its pack, and their caps
   atticus context call <tool> --input <json> [--run <run>] [--round n] [--json]  Run one tool call a model made; with --run it is kept in the run's record
   atticus impact <id>                  What a change to a record reaches, with owners and open questions
@@ -597,7 +600,7 @@ Usage:
   atticus openspec check               Check the OpenSpec version and validate every change and spec
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
-  atticus <step> --handoff [--json]    On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, plan stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time): print only the prompt, the result file and the commands that finish it
+  atticus <step> --handoff [--json]    On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, plan stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time, as a stage offers its critic lenses after each draft): print only the prompt, the result file and the commands that finish it
   atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos
@@ -669,7 +672,7 @@ export async function main(
   // out of the box (ADR 0065); every command that builds a runtime finds them registered.
   registerBuiltInModelProviders();
   // ADR 0107 addendum: the model runtime offers the context tools to a provider that calls tools.
-  registerToolSource((at) => () => contextToolBox(at, () => openIndex(at)));
+  registerToolSource((at) => () => metarepoToolBox(at));
   const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
   const flags = [
     ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
@@ -747,6 +750,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       "context-tokens": { type: "string" },
       "whole-context": { type: "boolean" },
       search: { type: "boolean" },
+      regex: { type: "boolean" },
+      "ignore-case": { type: "boolean" },
+      paths: { type: "string" },
       // atticus context (ADR 0107 addendum): the context tools.
       input: { type: "string" },
       run: { type: "string" },
@@ -1378,6 +1384,53 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         io,
       );
     }
+    // ADR 0118: the model's code search, as commands.
+    const repoOpt = typeof values.repo === "string" && values.repo ? values.repo : undefined;
+    if (command === "grep") {
+      if (!target) {
+        io.err(
+          'Usage: atticus context grep "<pattern>" [--regex] [--ignore-case] [--repo r] [--paths glob] [--limit n]',
+        );
+        return 2;
+      }
+      return m.contextGrep(
+        root,
+        target,
+        {
+          ...(values.regex === true ? { regex: true } : {}),
+          ...(values["ignore-case"] === true ? { ignoreCase: true } : {}),
+          ...(repoOpt ? { repo: repoOpt } : {}),
+          ...(typeof values.paths === "string" && values.paths ? { paths: values.paths } : {}),
+          ...(num(values.limit) ? { limit: num(values.limit)! } : {}),
+        },
+        io,
+      );
+    }
+    if (command === "files") {
+      if (!target) {
+        io.err(
+          'Usage: atticus context files "<glob>" [--repo r] [--limit n], e.g. "src/**/*.java"',
+        );
+        return 2;
+      }
+      return m.contextFiles(
+        root,
+        target,
+        {
+          ...(repoOpt ? { repo: repoOpt } : {}),
+          ...(num(values.limit) ? { limit: num(values.limit)! } : {}),
+        },
+        io,
+      );
+    }
+    if (command === "outline") {
+      const file = positionals[3];
+      if (!target || !file) {
+        io.err("Usage: atticus context outline <repo> <path> (the file's path in the repo)");
+        return 2;
+      }
+      return m.contextOutline(root, target, file, io);
+    }
     if (command === "call") {
       if (!target) {
         io.err(
@@ -1412,7 +1465,9 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         io,
       );
     }
-    io.err(`context takes show, walk, code, similar, tools or call; not ${command ?? "nothing"}.`);
+    io.err(
+      `context takes show, walk, code, grep, files, outline, similar, tools or call; not ${command ?? "nothing"}.`,
+    );
     return 2;
   }
   if (group === "query") {

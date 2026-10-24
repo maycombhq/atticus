@@ -70,6 +70,16 @@ export function questionsDirOf(root: string): string {
   return join(root, ...questionsRelOf(root).split("/"));
 }
 
+/** Where judgments live (ADR 0117), relative to the root: `judgments`, or `.atticus/judgments` when adopted. */
+export function judgmentsRelOf(root: string): string {
+  return isAdopted(root) ? ".atticus/judgments" : "judgments";
+}
+
+/** The judgments folder (ADR 0117): judgments/<kind>/<key>.yaml. */
+export function judgmentsDirOf(root: string): string {
+  return join(root, ...judgmentsRelOf(root).split("/"));
+}
+
 /** Where repo specs live (ADR 0079), relative to the root: `specs`, or `.atticus/specs` when adopted. */
 export function specsRelOf(root: string): string {
   return isAdopted(root) ? ".atticus/specs" : "specs";

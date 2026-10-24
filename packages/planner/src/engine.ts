@@ -16,7 +16,8 @@ import {
 } from "@maycombhq/index";
 import type { ContextGap } from "./gaps.js";
 import { expandFor, expansionInput } from "./stages/expand.js";
-import { fileJudgments, type Judgments } from "./stages/judged.js";
+import { fileJudgments } from "@maycombhq/core";
+import type { Judgments } from "./stages/judged.js";
 import { rerankFor } from "./stages/rerank.js";
 
 /**
@@ -163,7 +164,8 @@ export interface ContextReport {
   /** Tokens it used. */
   tokens?: number;
   picked: { id: string; kind: string; level: "full" | "line"; score: number }[];
-  leftOut: { id: string; kind: string; score: number }[];
+  /** What didn't fit, by score; why, when a model's rerank judged it not needed (ADR 0116). */
+  leftOut: { id: string; kind: string; score: number; why?: string }[];
   /** Names the input uses that the index has nothing for. */
   unknown: string[];
   /** The unknown names as the step's gaps: where the change names them, and the question each became (ADR 0107 point 5). */
