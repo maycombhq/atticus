@@ -25,8 +25,14 @@ import {
   stageRetrievalAi,
   withoutResume,
 } from "./loop.js";
-import { FLOW_DELTA_SCHEMA_VERSION, FlowDelta, type FeaturePlacement } from "./schema.js";
+import {
+  fieldNames,
+  FLOW_DELTA_SCHEMA_VERSION,
+  FlowDelta,
+  type FeaturePlacement,
+} from "./schema.js";
 import { z } from "zod";
+import { schemaProblems } from "./schema-words.js";
 
 /**
  * `atticus change architecture <change>` (ADR 0087, plan 4.4): the target flows. From the
@@ -62,7 +68,7 @@ flows:
         what: <one sentence: what the step does once the change is in>
         to: { component: <component or system id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
         store: { table: <table id>, columns: [<columns>], new: <true only on the step that creates the table>, types: { <each column it adds>: <database type> }, classification: { <each column it adds>: <classification> }, migration: <migration file, when it adds columns or a table>, retention: <new tables: how long rows are kept> }   # read, lookup and write: the table goes here, never under to
-        fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..] }   # field names as the code names them
+        fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..], as: { <a field sent under another name>: <the column it is> } }   # field names as the code names them
         why: <one sentence>
 reads:
   - flow: <the flow id (from the specs, never an endpoint id) of a flow the change reads or relies on but doesn't change>
@@ -129,12 +135,11 @@ export async function readDeltas(
   for (const f of (await readdir(join(dir, TARGET_DIR)).catch(() => [] as string[])).sort()) {
     if (!f.endsWith(".yaml")) continue;
     try {
-      const r = FlowDelta.safeParse(parse(await readFile(join(dir, TARGET_DIR, f), "utf8")));
+      const text = await readFile(join(dir, TARGET_DIR, f), "utf8");
+      const r = FlowDelta.safeParse(parse(text));
       if (r.success) deltas.push(r.data);
-      else
-        problems.push(
-          `${TARGET_DIR}/${f}: ${r.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
-        );
+      // R2: each problem in plain words, with its file and line.
+      else problems.push(...schemaProblems(`${TARGET_DIR}/${f}`, text, r.error.issues));
     } catch (e) {
       problems.push(`${TARGET_DIR}/${f}: ${(e as Error).message.split("\n")[0]}`);
     }
@@ -331,6 +336,17 @@ export function migrationsOf(e: Estate, store: string): StoreMigrations {
   };
 }
 
+/**
+ * A table's name as SQL writes it: the catalog record's `name` (chat_pin for the id
+ * db.chat-pin), else the id's last part with its hyphens as underscores.
+ */
+export function sqlNameOf(e: Estate, table: string): string {
+  const own = (e.byId.get(table) as { name?: unknown } | undefined)?.name;
+  return typeof own === "string" && own.trim()
+    ? own.trim()
+    : table.split(".").at(-1)!.replace(/-/g, "_");
+}
+
 /** The next free migration name in the store's numbering, with these words. */
 export function nextMigration(m: StoreMigrations, words: string): string | undefined {
   const p = m.pattern;
@@ -485,6 +501,7 @@ export function storeRules(levels: string[]): string[] {
     `- Classify each column a step adds as one of the org pack's levels, written exactly: ${words(levels)}.`,
     "- Give each column a step adds its type under store.types, written as the store's columns are, and name its migration file as the store's migrations are named: the store-facts block lists both.",
     "- Every field a write sends is a column it stores (store.columns) or a key it matches rows by (fields.checks); leave anything else out of sends.",
+    "- A field a write sends under another name than its column (a path parameter id that is the order_id column) says which column it is under fields.as: { id: order_id }.",
   ];
 }
 
@@ -551,21 +568,8 @@ export function checkDeltas(
 
   // ---- the tables this change creates (A5): each is defined once, by the step that marks it
   // new; every other step that uses it names it and takes the rest from there.
-  type Def = {
-    flow: string;
-    change: number;
-    repo: string;
-    store: NonNullable<FlowDelta["steps"][number]["store"]>;
-  };
-  const defs = new Map<string, Def[]>();
-  for (const d of deltas)
-    d.steps.forEach((s, i) => {
-      if (s.op === "remove" || !s.store?.new) return;
-      if (isTable(s.store.table) && !o.onFile) return; // delta.table-exists
-      const list = defs.get(s.store.table) ?? [];
-      list.push({ flow: d.flow, change: i + 1, repo: d.repo, store: s.store });
-      defs.set(s.store.table, list);
-    });
+  // A table the catalog has, marked new, is delta.table-exists, not a definition.
+  const defs = tableDefinitions(deltas, (t) => !isTable(t) || !!o.onFile);
   const ref = (x: { flow: string; change: number }) => `change ${x.change} to ${x.flow}`;
   const defOf = (table: string) => defs.get(table)?.[0];
   const isDef = (table: string, flow: string, change: number) => {
@@ -831,17 +835,42 @@ export function checkDeltas(
               ...(["checks", "from", "to", "reads"] as const).flatMap((k) => s.fields?.[k] ?? []),
             ].map(leaf),
           );
-          for (const f of s.fields?.sends ?? [])
+          // R3: a field sent under another name says which column it is, as a fact the delta
+          // states (fields.as), never guessed from the words: { id: chat_id }.
+          const columns = new Set(
+            [
+              ...s.store.columns,
+              ...have,
+              ...(def?.store.columns ?? []),
+              ...(s.fields?.checks ?? []),
+            ].map(leaf),
+          );
+          const as = s.fields?.as ?? {};
+          for (const f of s.fields?.sends ?? []) {
+            const col = as[f];
+            if (col !== undefined) {
+              if (!columns.has(leaf(col)))
+                issue(
+                  "delta.sent-not-stored",
+                  `${at}:${f}`,
+                  `Change ${i + 1} to ${t} sends ${f} as column ${col} of ${table}, but the step neither stores ${col} (store.columns) nor matches rows by it (fields.checks), and ${table} has no such column: name a column the step stores or matches by, or add ${col} to store.columns with its type, classification and migration.`,
+                  d.repo,
+                );
+              continue;
+            }
             if (!said.has(leaf(f)))
               issue(
                 "delta.sent-not-stored",
                 `${at}:${f}`,
-                `Change ${i + 1} to ${t} sends ${f} to ${table} but stores it in no column: add it to store.columns, with its type, classification and migration if the table hasn't it; if it is a key the write matches rows by, name it under checks; or leave it out of sends.`,
+                `Change ${i + 1} to ${t} sends ${f} to ${table} but stores it in no column: if it is stored as, or matches rows by, a column of another name (a path parameter id that is the order_id column), say which under fields.as: { ${f}: <the column> }, with that column under store.columns or fields.checks; if it is a new column, add it to store.columns with its type, classification and migration; or leave it out of sends.`,
                 d.repo,
               );
+          }
         }
         if (s.store.migration?.trim()) {
-          const name = table.split(".").at(-1)!;
+          // R4: the table's SQL name from its catalog record; a table the catalog doesn't
+          // have yet has none, so the example uses its id's last part as a SQL word.
+          const name = sqlNameOf(e, table);
           const example = def ? `create_${name}` : `add_${added[0] ?? "columns"}_to_${name}`;
           const why = migrationProblem(s.store.migration.trim(), table, e, example, o.onFile);
           if (why) issue("delta.bad-migration", at, `Change ${i + 1} to ${t} ${why}`, d.repo);
@@ -856,7 +885,7 @@ export function checkDeltas(
           if (own.length && s.store.migration?.trim()) g.migration = true;
         }
       }
-      const named = Object.values(s.fields ?? {}).flat().length + (s.store?.columns.length ?? 0);
+      const named = fieldNames(s.fields).length + (s.store?.columns.length ?? 0);
       if (kind && MOVES_DATA.has(kind) && named === 0)
         issue(
           "delta.no-fields",
@@ -1025,6 +1054,54 @@ export function interfaceChanges(deltas: FlowDelta[], e: Estate) {
 }
 
 /** Data changes, from the deltas: new tables, and columns the catalog doesn't have. */
+/** A step that marks a table new: where the change defines it. */
+export interface TableDefinition {
+  flow: string;
+  /** The step's place in its delta's steps, from 1. */
+  change: number;
+  repo: string;
+  store: NonNullable<FlowDelta["steps"][number]["store"]>;
+}
+
+/**
+ * The tables the change creates, each with the steps that mark it new, the definition first
+ * (ADR 0111 addendum). Every delta of the change is read before any is rendered or checked, so
+ * a table created by a flow that sorts after the flows that use it is still the change's new
+ * table. Where several steps mark it new, the definition is the one that carries a migration,
+ * then the one with the most columns, then the first in flow order: the facts it holds, not
+ * where it sorts.
+ */
+export function tableDefinitions(
+  deltas: FlowDelta[],
+  counts: (table: string) => boolean = () => true,
+): Map<string, TableDefinition[]> {
+  const defs = new Map<string, TableDefinition[]>();
+  for (const d of deltas)
+    d.steps.forEach((s, i) => {
+      if (s.op === "remove" || !s.store?.new || !counts(s.store.table)) return;
+      const list = defs.get(s.store.table) ?? [];
+      list.push({ flow: d.flow, change: i + 1, repo: d.repo, store: s.store });
+      defs.set(s.store.table, list);
+    });
+  const weight = (x: TableDefinition) => [
+    x.store.migration?.trim() ? 1 : 0,
+    x.store.columns.length,
+  ];
+  for (const [t, list] of defs)
+    defs.set(
+      t,
+      list
+        .map((x, i) => ({ x, i }))
+        .sort((a, b) => {
+          const [ma, ca] = weight(a.x);
+          const [mb, cb] = weight(b.x);
+          return mb! - ma! || cb! - ca! || a.i - b.i;
+        })
+        .map((y) => y.x),
+    );
+  return defs;
+}
+
 export function dataChanges(deltas: FlowDelta[], e: Estate) {
   const out: {
     flow: string;
@@ -1036,26 +1113,31 @@ export function dataChanges(deltas: FlowDelta[], e: Estate) {
     migration?: string;
     retention?: string;
   }[] = [];
+  // R1: every table the change creates is known before any block is read, and is written once,
+  // from its definition; a block that uses it (in any flow, before or after) adds no columns.
+  const defs = tableDefinitions(deltas);
+  const extraOf = (store: TableDefinition["store"]) => ({
+    types: store.types ?? {},
+    classification: store.classification ?? {},
+    ...(store.migration ? { migration: store.migration } : {}),
+    ...(store.retention ? { retention: store.retention } : {}),
+  });
   for (const d of deltas)
     for (const s of d.steps) {
       if (!s.store || s.op === "remove") continue;
-      const extra = {
-        types: s.store.types ?? {},
-        classification: s.store.classification ?? {},
-        ...(s.store.migration ? { migration: s.store.migration } : {}),
-        ...(s.store.retention ? { retention: s.store.retention } : {}),
-      };
-      if (s.store.new) {
-        if (!out.some((x) => x.table === s.store!.table && x.change === "new table"))
+      const def = defs.get(s.store.table)?.[0];
+      if (def) {
+        if (!out.some((x) => x.table === def.store.table && x.change === "new table"))
           out.push({
-            flow: d.flow,
-            table: s.store.table,
+            flow: def.flow,
+            table: def.store.table,
             change: "new table",
-            columns: s.store.columns,
-            ...extra,
+            columns: def.store.columns,
+            ...extraOf(def.store),
           });
         continue;
       }
+      const extra = extraOf(s.store);
       const have = columnsOf(e, s.store.table);
       const add = s.store.columns.filter((c) => !have.has(c));
       if (
@@ -1138,7 +1220,7 @@ export function renderArchitecture(deltas: FlowDelta[], e: Estate, reads: ReadFl
       "",
     );
     for (const s of d.steps) {
-      const fields = [...Object.values(s.fields ?? {}).flat(), ...(s.store?.columns ?? [])];
+      const fields = [...fieldNames(s.fields), ...(s.store?.columns ?? [])];
       const where = s.op === "add" ? `after step ${s.after ?? 0}` : `step ${s.step}`;
       lines.push(
         `- ${s.op} ${where}${s.kind ? ` (${s.kind})` : ""}: ${s.what ?? today?.steps[(s.step ?? 1) - 1]?.what ?? ""}${s.to ? ` → ${s.to.component} ${s.to.entry}${s.to.new ? " (new)" : ""}` : ""}${s.store ? ` [${s.store.table}${s.store.new ? ", new" : ""}]` : ""}${fields.length ? `; fields ${[...new Set(fields)].join(", ")}` : ""}`,

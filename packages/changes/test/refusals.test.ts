@@ -182,6 +182,8 @@ describe("refusals", () => {
       touched: true,
       records: [{ id: "ledger-db.account.holder-name", classification: "personal" }],
       phase: "design",
+      // R5: which levels counted as personal, and from where.
+      counted: expect.objectContaining({ levels: expect.arrayContaining(["personal"]) }),
     });
     await handoff(root, ID, {
       gitHost: gh,

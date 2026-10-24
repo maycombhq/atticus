@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A new table's one definition everywhere, and plainer stage files (ADR 0111 addendum)
+
+- data.md and design.md read a new table from its one definition, however the flows sort. A flow that uses the table before the flow that creates it no longer turns its columns into "add column" rows with no migration, so the critic no longer raises false missing-migration findings. Where several steps still mark the table new, the step with the migration and the columns is the definition.
+- A stage file's schema problem is said in plain words, with its file and line: "target-flows/x.yaml:14: step 2's fields.sends is empty: write a list, such as [orderId], or leave sends out." The model's answer gets the same, at its line.
+- A target flow's write can say which column a field it sends is: `fields.as: { id: order_id }` (optional). A path parameter that is a column of another name is then stored as that column. The hand-back says to use it, not to put the field under `checks`.
+- A migration name's example uses the table's SQL name (`V4__create_order_pin.sql`), not its catalog id.
+- `atticus change status` reads the classifications in the change's target flows. A new column classified confidential now counts as personal data. The line says which levels count as personal and where that comes from: the change policy's `privacy.classifications` when they are the org pack's own levels, else that list and the pack's levels above internal. This can raise a change's risk where a catalog column is classified above internal.
+
 ### A person's fix is never drafted over, and a new table is defined once (ADR 0087, 0111, 0115 and 0116 addenda)
 
 - **A stage never drafts over a person's edit.** Atticus keeps the hash of every file a stage writes (`written` in `stage/<stage>.yaml`). When a stage's files differ from what it wrote, the person's version is the stage's draft. It is checked and reviewed as theirs, and nothing is redrafted. If it fails, the stage stops and says what still fails, with the file and line. A copy of the person's files is kept first, in `stage/<stage>-by-person/<n>/`, and the loop records the draft as a person's (`byPerson`). The assistant drafts again only with `--force`, or after a person answered a question, and then it starts from the person's files. This holds in every stage: feature, architecture, stories and the fast path. Before this, a person who fixed `target-flows/` as the stop message said, then ran the stage again, had their fix overwritten by three more drafts.

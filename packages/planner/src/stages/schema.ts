@@ -140,8 +140,20 @@ export const DeltaFields = z.strictObject({
   checks: z.array(text()).optional(),
   from: z.array(text()).optional(),
   to: z.array(text()).optional(),
+  /**
+   * A write's sent fields that are stored as, or match rows by, a column of another name, as
+   * the delta says it (ADR 0111 addendum, R3): `{ id: chat_id }` for a path parameter id that
+   * is the chat_id column. Optional and additive: the flow delta stays at version 2.
+   */
+  as: z.record(z.string(), text()).optional(),
 });
 export type DeltaFields = z.infer<typeof DeltaFields>;
+
+/** A step's field names, from its lists (sends, returns, reads, checks, from, to), not `as`. */
+export const fieldNames = (f: DeltaFields | undefined): string[] =>
+  f
+    ? (["sends", "returns", "reads", "checks", "from", "to"] as const).flatMap((k) => f[k] ?? [])
+    : [];
 
 export const DeltaStep = z.strictObject({
   op: z.enum(["add", "change", "remove"]),

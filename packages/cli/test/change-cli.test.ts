@@ -108,7 +108,7 @@ describe("atticus change", () => {
       "Risk: low (3): change type feature +2; 2 systems touched (ledger, portal) +1",
       "Hand-off: no PR yet; atticus change handoff add-transfer-limit --approve opens it, and merging it approves the define gate.",
       "Tests: unit, contract",
-      "Privacy: no personal data touched.",
+      "Privacy: no personal data touched (counted as personal: personal, pii, sensitive-personal, special-category, confidential, restricted; from the change policy's privacy.classifications and the org pack's levels above internal).",
       "Blocked by:",
       "  - brief.md still holds only the template.",
       "  - proposal.md is missing.",

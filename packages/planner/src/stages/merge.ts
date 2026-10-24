@@ -109,7 +109,12 @@ const fromDelta = (d: DeltaStep): Partial<MergedStep> => ({
         },
       }
     : {}),
-  ...(d.fields ? { data: d.fields } : {}),
+  // A flow step's data holds the field lists; `as` (which column a sent field is) stays the delta's.
+  ...(d.fields
+    ? {
+        data: Object.fromEntries(Object.entries(d.fields).filter(([k]) => k !== "as")),
+      }
+    : {}),
   ...(d.repeats ? { repeats: d.repeats } : {}),
   ...(d.why ? { why: d.why } : {}),
 });

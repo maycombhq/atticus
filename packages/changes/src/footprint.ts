@@ -1,5 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { parse } from "yaml";
 import type { CatalogRecord, ChangeLifecycle, RecordOf } from "@maycombhq/core";
 import { readChangeRepos } from "@maycombhq/workspace";
 import type { ChangeContext } from "./context.js";
@@ -23,6 +24,32 @@ export interface Footprint {
   vendors: string[];
   /** Catalog data with a personal classification that the change touches. */
   personal: { id: string; classification: string; field?: string }[];
+}
+
+/**
+ * Which classifications count as personal, and where that comes from (R5). The change policy's
+ * `privacy.classifications` when the org set them in its own levels (one of them is a level of
+ * pack.yaml's `classification`); else that list and the pack's levels above internal (with the
+ * built-in four, confidential and restricted).
+ */
+export function personalLevels(ctx: {
+  orgPack: { pack?: { classification: string[] } };
+  policy: { privacy: { classifications: string[] } };
+}): { levels: string[]; from: "change-policy" | "pack-levels" } {
+  const pack = ctx.orgPack.pack?.classification ?? [
+    "public",
+    "internal",
+    "confidential",
+    "restricted",
+  ];
+  const policy = ctx.policy.privacy.classifications;
+  if (policy.some((c) => pack.includes(c.toLowerCase())))
+    return { levels: policy, from: "change-policy" };
+  const i = pack.indexOf("internal");
+  return {
+    levels: [...new Set([...policy, ...(i >= 0 ? pack.slice(i + 1) : [])])],
+    from: "pack-levels",
+  };
 }
 
 const STATUSES = new Set(["planned-new", "planned-modify", "planned-retire"]);
@@ -132,9 +159,33 @@ export async function changeFootprint(
     (s) => (get("System", s)?.boundary ?? profileSystems.get(s)?.boundary) === "vendor",
   );
 
-  // personal data: columns of touched tables, touched columns, schema fields of touched interfaces
-  const personalSet = new Set(ctx.policy.privacy.classifications.map((c) => c.toLowerCase()));
+  // personal data: columns of touched tables, touched columns, schema fields of touched
+  // interfaces, and the columns the change's own target flows classify (R5)
+  const personalSet = new Set(personalLevels(ctx).levels.map((c) => c.toLowerCase()));
   const personal: Footprint["personal"] = [];
+  for (const f of (await readdir(join(dir, "target-flows")).catch(() => [] as string[])).sort()) {
+    if (!f.endsWith(".yaml")) continue;
+    let doc: unknown;
+    try {
+      doc = parse(await read(join(dir, "target-flows", f)));
+    } catch {
+      continue; // a target flow that doesn't read is the stage's to report
+    }
+    const steps = (doc as { steps?: unknown } | null)?.steps;
+    for (const s of Array.isArray(steps) ? steps : []) {
+      const store = (s as { store?: { table?: unknown; classification?: unknown } } | null)?.store;
+      if (!store || typeof store.table !== "string") continue;
+      const cls = store.classification;
+      if (!cls || typeof cls !== "object") continue;
+      for (const [col, level] of Object.entries(cls as Record<string, unknown>))
+        if (
+          typeof level === "string" &&
+          personalSet.has(level.toLowerCase()) &&
+          !personal.some((p) => p.id === store.table && p.field === col)
+        )
+          personal.push({ id: store.table, classification: level, field: col });
+    }
+  }
   for (const r of ctx.records) {
     if (r.kind !== "Column" || !r.classification) continue;
     if (!tables.has(r.table) && !change.touches.records.includes(r.id)) continue;
