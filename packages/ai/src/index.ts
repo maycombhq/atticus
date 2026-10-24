@@ -10,3 +10,4 @@ export * from "./tools.js";
 export * from "./embed.js";
 export * from "./judge.js";
 export * from "./judge-kinds.js";
+export * from "./judge-stand-in.js";

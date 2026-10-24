@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,6 +30,8 @@ async function forgeRoot(): Promise<string> {
   const base = await mkdtemp(join(tmpdir(), "atticus-cli-know-"));
   const root = join(base, "metarepo");
   await cp(join(FORGE, "metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
+  // A person's judgments of how the wiki's sentences say systems reach each other (ADR 0117).
+  await cp(join(FORGE, "metarepo/judgments"), join(root, "judgments"), { recursive: true });
   await cp(join(FORGE, "inputs/wiki"), join(base, "inputs/wiki"), { recursive: true });
   for (const r of parse(readFileSync(join(FORGE, "expected/scan.yaml"), "utf8")) as Record<
     string,
@@ -110,6 +112,22 @@ describe("atticus sources sync", () => {
       "ledger-solution-spec.md",
       "snow-firewall-request.md",
     ]);
+  });
+
+  it("with no judgment on file and no model to ask, shows a person the sentences no one judged (ADR 0117)", async () => {
+    const root = await forgeRoot();
+    await rm(join(root, "judgments"), { recursive: true });
+    const c = capture();
+    // runtime.yaml's runtime is the hand-off: nothing is asked, and no word rule reads them.
+    expect(await sourcesSync(root, c.io, {})).toBe(0);
+    const text = c.out.join("\n");
+    expect(text).not.toMatch(/conflicts? with code/);
+    expect(text).toMatch(
+      /3 sentences may say how two systems reach each other, but no model was asked to judge them; a person reads them:/,
+    );
+    expect(text).toMatch(
+      /\.\.\/inputs\/wiki\/ledger-solution-spec\.md:7 reports → ledger: "Reports read entries through the Ledger API"/,
+    );
   });
 
   it("prints JSON", async () => {

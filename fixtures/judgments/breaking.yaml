@@ -1,0 +1,64 @@
+# Breaking cases (ADR 0117 addendum): must a caller that uses an operation today change for what
+# interfaces.md says about its change? `truth` is what an API reviewer says. The new rule settles
+# a new or retired operation by the catalog's change kind (the veto) and asks the judge of the
+# others; `recorded` is the judge's recorded answer. The old rule (release notes' BREAKING,
+# NEW_ERROR and ADDITIVE regexes) is scored on the same cases: "check" counts as not saying yes.
+cases:
+  - id: field-no-longer-returned
+    change: planned-modify
+    notes: GET /orders no longer returns the legacy discount field.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: notes, text: no longer returns the legacy discount field }] }
+  - id: optional-field-added
+    change: planned-modify
+    notes: GET /orders gains an optional currency field.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: notes, text: gains an optional currency field }] }
+  - id: removed-inside-an-addition
+    change: planned-modify
+    notes: GET /orders gains a field that says why a line was removed from the basket.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: notes, text: gains a field }] }
+  - id: drop-off-is-not-a-drop
+    change: planned-modify
+    notes: POST /orders accepts an optional drop-off note for the courier.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: notes, text: accepts an optional drop-off note }] }
+  - id: always-present-now
+    change: planned-modify
+    notes: The response no longer leaves out the currency field when it is empty; it is always present.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: notes, text: it is always present }] }
+  - id: new-error-to-handle
+    change: planned-modify
+    notes: POST /transfers gains the LIMIT_EXCEEDED error (HTTP 422) and still goes through gw-ledger-v1.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: notes, text: gains the LIMIT_EXCEEDED error (HTTP 422) }] }
+  - id: type-changes
+    change: planned-modify
+    notes: The amount field changes from a string to a number.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: notes, text: changes from a string to a number }] }
+  - id: must-now-send
+    change: planned-modify
+    notes: Callers must now send the currency on every request.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: notes, text: Callers must now send the currency }] }
+  - id: field-renamed
+    change: planned-modify
+    notes: The field acct is renamed to accountId.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: notes, text: is renamed to accountId }] }
+  - id: retired-operation
+    change: planned-retire
+    notes: GET /v1/balances is retired; callers use GET /v2/balances.
+    truth: yes
+  - id: new-operation
+    change: planned-new
+    notes: GET /accounts/{id}/limit goes through gw-ledger-v1 like the other Portal calls.
+    truth: no
+  - id: unclear-new-event
+    change: planned-modify
+    notes: "POST /audit/events: portal-bff sends a limit-refused event to audit-svc."
+    truth: no
+    recorded: { verdict: unsure }

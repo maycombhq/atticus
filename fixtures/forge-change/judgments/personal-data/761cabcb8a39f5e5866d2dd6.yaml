@@ -1,0 +1,18 @@
+# A judgment (ADR 0117): personal-data, decided by avery. To override it, change verdict, set confirmedBy to { by: person, name: <your Git user> } and keep what it said under overrides; commit it for review.
+schemaVersion: 1
+kind: personal-data
+key: 761cabcb8a39f5e5866d2dd6
+verdict: no
+at: 2026-10-19T10:00:00Z
+confirmedBy:
+  by: person
+  name: avery
+inputs:
+  column: old_limit
+  table: limit_change
+  type: numeric(18,2)
+  v: 1
+quotes:
+  - of: column
+    text: old_limit
+why: A limit amount.

@@ -15,6 +15,12 @@
 //   e  namers, glossary,     collected into for-a-person.md; no pass or fail
 //      templates
 //
+// b and personal data (ADR 0117 addendum): a live sandbox holds no person's judgments, and in
+// hand-off mode the critic doesn't ask the judge, so whether a new column holds personal data
+// is asked of the table's owner as a knowledge gap. b07 counts as caught when the critic raises
+// that question to an owner and it names every column the fixture's person judged personal
+// (fixtures/forge-change/judgments/personal-data, verdict yes) in the seeded table.
+//
 // Why b reads the round as it is: `atticus handoff done <run>` on a critic lens parses the
 // answer with the critic's own lens parser (findings whose quotes are not on the cited line are
 // dropped, defences apply) and writes the findings into the round that was waiting, so the grader
@@ -107,18 +113,54 @@ async function gradeCritic(runDir) {
     "story-traces-to-spec": (a) => a === "stories.md" || a.startsWith("stories/"),
   };
   const used = new Set();
+  // The columns a person judged personal, by table: the repository's answer, not the run's.
+  const personal = new Map();
+  for (const [, j] of await yamlFiles(join(FORGE_CHANGE, "judgments/personal-data")))
+    if (j.verdict === "yes")
+      personal.set(j.inputs.table, [...(personal.get(j.inputs.table) ?? []), j.inputs.column]);
+  const names = (text, column) =>
+    new RegExp(`(^|[^A-Za-z0-9_])${column}($|[^A-Za-z0-9_])`).test(text);
+  // Under hand-off, a personal column is a question to the table's owner naming it (b07).
+  const askedPersonal = (s, f) =>
+    s.rule === f.rule &&
+    s.rule.endsWith("data-columns-classified") &&
+    s.kind === "issue" &&
+    f.kind === "knowledge-gap" &&
+    f.artifact === s.artifact &&
+    typeof f.question?.text === "string" &&
+    Boolean(f.question.owner) &&
+    [...personal].some(
+      ([table, cols]) =>
+        names(f.question.text, table) && cols.every((c) => names(f.question.text, c)),
+    );
   const judged = (s, f) =>
     f.rule === s.rule &&
     f.severity === s.severity &&
     f.kind === s.kind &&
     (f.artifact === s.artifact || (RELATED[s.rule]?.(f.artifact) ?? false));
   const hit = (s) => {
-    if (s.layer !== "ai") return found.some((f) => matches(s, f));
+    if (s.layer !== "ai") {
+      if (found.some((f) => matches(s, f))) return true;
+      const asked = found.find((f) => askedPersonal(s, f));
+      if (!asked) return false;
+      // The question about the seeded table, and the critic's same question about the other
+      // new columns, are this one problem asked of a person: none is unlisted.
+      for (const f of found)
+        if (
+          f.rule === s.rule &&
+          f.kind === "knowledge-gap" &&
+          /^Which of /.test(f.question?.text ?? "")
+        )
+          used.add(f);
+      askedOfAPerson.push(s.id);
+      return true;
+    }
     const exact = found.find((f) => !used.has(f) && matches(s, f));
     const f = exact ?? found.find((x) => !used.has(x) && judged(s, x));
     if (f) used.add(f);
     return Boolean(f);
   };
+  const askedOfAPerson = [];
   const caught = (list) => list.filter((s) => hit(s));
   const blocking = ex.seeded.filter((s) => s.severity === "blocking");
   const gaps = ex.seeded.filter((s) => s.kind === "knowledge-gap");
@@ -151,6 +193,10 @@ async function gradeCritic(runDir) {
     }`,
     `${unlisted.length} unlisted (for a person to review)`,
   ];
+  if (askedOfAPerson.length)
+    parts.push(
+      `${askedOfAPerson.join(", ")} caught as a question to the table's owner naming the personal columns (no model was asked in hand-off mode)`,
+    );
   if (discarded.length)
     parts.push(
       `${discarded.length} AI finding(s) discarded (quote not on the line, unknown rule, …)`,
@@ -159,6 +205,7 @@ async function gradeCritic(runDir) {
     blockingMissed: missedBlocking,
     gapsMissed: gaps.filter((s) => !gapsHit.includes(s)).map((s) => s.id),
     unlisted,
+    askedOfAPerson,
     discarded,
     lenses,
   };

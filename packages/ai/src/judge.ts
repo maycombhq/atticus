@@ -320,3 +320,52 @@ export async function judge(
   }
   return { results, runs };
 }
+
+/**
+ * Whether a step may ask the judge on its own: the runtime calls a model directly. Not the
+ * hand-off runtime (another round would cost the person a prompt; ADR 0117 §3) and not the
+ * mock one (it answers nothing of its own).
+ */
+export const judgesDirectly = (runtime: AiRuntime | undefined): runtime is AiRuntime =>
+  !!runtime && runtime.kind !== "hand-off" && runtime.kind !== "mock";
+
+export interface SettleOptions extends Omit<JudgeOptions, "runtime"> {
+  /** The step's runtime; the judge is asked only when it calls a model directly. */
+  runtime?: AiRuntime | undefined;
+}
+
+/**
+ * The verdicts a step can have without spending a person's prompt (ADR 0117): the veto, a
+ * judgment on file, and the judge where the runtime calls a model directly. An item with no
+ * verdict is open: the caller shows it to a person as unchecked or asks them, and never falls
+ * back to a word rule as if it were a judgment.
+ */
+export async function settle(
+  spec: JudgeSpec,
+  items: JudgeItem[],
+  o: SettleOptions,
+): Promise<Map<string, Judged>> {
+  if (judgesDirectly(o.runtime))
+    return (await judge(spec, items, { ...o, runtime: o.runtime })).results;
+  const out = new Map<string, Judged>();
+  for (const item of items) {
+    const key = judgmentKey(spec.kind, item.inputs);
+    if (out.has(key)) continue;
+    const v = spec.veto?.(item);
+    if (v) {
+      out.set(key, { key, verdict: v.verdict, by: "veto" });
+      continue;
+    }
+    const stored = await o.store.get(spec.kind, key);
+    if (stored && typeof stored.verdict === "string")
+      out.set(key, { key, verdict: stored.verdict, judgment: stored, by: "stored" });
+  }
+  return out;
+}
+
+/** An item's verdict from settle's results, or undefined while it is open. */
+export const verdictOf = (
+  results: Map<string, Judged>,
+  spec: JudgeSpec,
+  inputs: Record<string, unknown>,
+): Judged | undefined => results.get(judgmentKey(spec.kind, inputs));

@@ -1,18 +1,26 @@
 import { parseRecord, type CatalogRecord, type RecordOf } from "@maycombhq/core";
+import { REACHES_SPEC, settle, verdictOf, type AiRuntime, type JudgeItem } from "@maycombhq/ai";
 import type { ProfileSystem } from "@maycombhq/reconcile";
+import type { JudgmentStore } from "@maycombhq/core";
 import { sentences } from "./markdown.js";
 import { mentionIndex, type Mention } from "./mentions.js";
 import type { KnowledgePage } from "./sources.js";
 
 /**
- * Facts read from wiki text with fixed patterns (no AI, so the same page always gives the
- * same facts), compared with the catalog. Code wins: a claim that contradicts a fact read
- * from code is a conflict for triage, never a change to the catalog. A fact only a document
- * gives is proposed as an inferred record that waits for an owner to confirm it.
+ * Facts read from wiki text, compared with the catalog. Code wins: a claim that contradicts a
+ * fact read from code is a conflict for triage, never a change to the catalog. A fact only a
+ * document gives is proposed as an inferred record that waits for an owner to confirm it.
+ *
+ * What is a format is read as one: an owner line, a service level ("99.9% availability"), a peak
+ * load. How one system reaches another is a judgment (ADR 0117 addendum, `reaches`): which two
+ * systems a sentence names is the mention index's fact, and whether it says the one calls the
+ * other through the gateway, directly, or reads its data only through its API is the judge's,
+ * kept in the judgments store so the same sentence gives the same claim. A sentence no one has
+ * judged is a claim "unjudged", for a person to read; no word rule stands in for it.
  */
 
 export type FactType = "interaction" | "data-access" | "slo" | "volume" | "owner";
-export type ClaimStatus = "agrees" | "conflicts" | "document-only" | "unresolved";
+export type ClaimStatus = "agrees" | "conflicts" | "document-only" | "unresolved" | "unjudged";
 
 export interface Claim {
   doc: string;
@@ -61,6 +69,21 @@ export interface MapFactsInput {
   pages: KnowledgePage[];
   records: CatalogRecord[];
   systems: ProfileSystem[];
+  /**
+   * The reaches verdict of a sentence and its pair of systems (gateway, direct, api-only, none,
+   * unsure), or undefined while no one has judged it. judgeFacts settles them; without it every
+   * such sentence is unjudged.
+   */
+  reaches?: (item: JudgeItem) => string | undefined;
+}
+
+/** A sentence and the two systems it names, for the reaches judgment. */
+export function reachesItem(sentence: string, from: string, to: string): JudgeItem {
+  return {
+    inputs: { v: 1, sentence, from, to },
+    texts: { sentence },
+    facts: [`from: ${from}`, `to: ${to}`],
+  };
 }
 
 export interface MapFactsResult {
@@ -95,10 +118,6 @@ const SLO =
 const VOLUME =
   /peak(?:\s+load)?\s*(?::|of|is|at)?\s*(\d[\d,]*(?:\.\d+)?)\s+(requests?|calls?|messages?|transactions?|events?)\s+(?:per|an?|\/)\s*(second|minute|hour|day)/i;
 const OWNER = /^owner\s*:\s*(.+)$/i;
-const DATA_VIA_API =
-  /\b(?:reads?|quer(?:y|ies)|fetch(?:es)?|gets?|loads?)\b\s+(.*?)\s*\bthrough the\s+(.+?)\s+API\b/i;
-const VIA_GATEWAY = /\b(?:through|via) the (?:api )?gateway\b/i;
-const VIA_DIRECT = /\bdirect(?:ly)?\b/i;
 
 export function mapFacts(input: MapFactsInput): MapFactsResult {
   const { records, systems } = input;
@@ -227,27 +246,41 @@ export function mapFacts(input: MapFactsInput): MapFactsResult {
       }
       if (slo || vol) continue;
 
-      // "<reader> reads <data> through the <X> API": the reader should not read X's tables.
-      const api = DATA_VIA_API.exec(s.text);
-      if (api) {
-        const apiAt = api.index + api[0].lastIndexOf(api[2]!);
-        const target = mentions.find((m) => m.at >= apiAt)?.system;
-        const reader =
-          mentions.find((m) => m.at < apiAt && m.system !== target)?.system ??
-          (subject !== target ? subject : undefined);
-        const c: Claim = { ...head, factType: "data-access", status: "unresolved" };
-        if (!target || !reader) {
-          out.claims.push(c);
-          continue;
-        }
-        c.from = reader;
-        c.to = target;
-        const noun = singular((api[1]!.split(/\s+/).pop() ?? "").toLowerCase());
+      // How one system reaches another (ADR 0117 addendum): the pair is the mention index's
+      // fact; what the sentence says of it is the reaches judgment.
+      if (mentions.length === 0) continue;
+      const ends = callEnds(s.text, mentions, subject);
+      if (!ends) continue;
+      const verdict = input.reaches?.(reachesItem(s.text, ends.from, ends.to));
+      if (verdict === "none") continue;
+      if (verdict === undefined || verdict === "unsure") {
+        out.claims.push({
+          ...head,
+          factType: "interaction",
+          from: ends.from,
+          to: ends.to,
+          status: "unjudged",
+        });
+        continue;
+      }
+      if (verdict === "api-only") {
+        // The reader reads the target's data through its API: it should not read its tables.
+        const reader = ends.from;
+        const target = ends.to;
+        const c: Claim = {
+          ...head,
+          factType: "data-access",
+          status: "unresolved",
+          from: reader,
+          to: target,
+        };
+        const said = new Set([...words(s.text)].map(singular));
         const owned = tables.filter((t) => {
           const owner = t.ownerComponent ?? storeOwner.get(t.dataStore);
           return owner !== undefined && sysOf(owner) === target;
         });
-        const named = owned.filter((t) => singular(t.name.toLowerCase()) === noun);
+        // The tables the sentence names (a name written in it), else every table the target owns.
+        const named = owned.filter((t) => said.has(singular(t.name.toLowerCase())));
         const direct: { table: Table; comp: string }[] = [];
         for (const t of named.length ? named : owned)
           for (const comp of t.readers) if (sysOf(comp) === reader) direct.push({ table: t, comp });
@@ -264,22 +297,16 @@ export function mapFacts(input: MapFactsInput): MapFactsResult {
         out.claims.push(c);
         continue;
       }
-
-      // "<caller> calls <callee> through the gateway / directly".
-      const via = VIA_GATEWAY.test(s.text)
-        ? "gateway"
-        : VIA_DIRECT.test(s.text)
-          ? "direct"
-          : undefined;
-      if (!via || mentions.length === 0) continue;
-      const ends = callEnds(s.text, mentions, subject);
-      const c: Claim = { ...head, factType: "interaction", via, status: "unresolved" };
-      if (!ends) {
-        out.claims.push(c);
-        continue;
-      }
-      c.from = ends.from;
-      c.to = ends.to;
+      if (verdict !== "gateway" && verdict !== "direct") continue;
+      const via = verdict;
+      const c: Claim = {
+        ...head,
+        factType: "interaction",
+        via,
+        status: "unresolved",
+        from: ends.from,
+        to: ends.to,
+      };
       const calls = ifaces.filter(
         (i) => i.sync === "sync" && sysOf(i.from) === ends.from && sysOf(i.to) === ends.to,
       );
@@ -322,4 +349,39 @@ function callEnds(
   const only = distinct[0]!;
   if (!subject || subject === only.system) return undefined;
   return isTarget(only) ? { from: subject, to: only.system } : { from: only.system, to: subject };
+}
+
+/** The sentences mapFacts would judge with reaches: every one naming two ends it can resolve. */
+export function reachesItems(input: Omit<MapFactsInput, "reaches">): JudgeItem[] {
+  const index = mentionIndex(input.records, input.systems);
+  const out: JudgeItem[] = [];
+  for (const page of input.pages)
+    for (const s of sentences(page.doc)) {
+      if (OWNER.test(cleanClaim(s.text)) || SLO.test(s.text) || VOLUME.test(s.text)) continue;
+      const mentions = index.find(s.text);
+      if (mentions.length === 0) continue;
+      const ends = callEnds(s.text, mentions, page.subject);
+      if (ends) out.push(reachesItem(s.text, ends.from, ends.to));
+    }
+  return out;
+}
+
+/**
+ * mapFacts with its reaches judgments settled (ADR 0117 addendum): a judgment on file, else the
+ * judge where the runtime calls a model directly; a sentence neither settles is unjudged.
+ */
+export async function judgeFacts(
+  input: Omit<MapFactsInput, "reaches">,
+  o: { runtime?: AiRuntime; store: JudgmentStore; now: Date; change?: string },
+): Promise<MapFactsResult> {
+  const results = await settle(REACHES_SPEC, reachesItems(input), {
+    runtime: o.runtime,
+    store: o.store,
+    change: o.change ?? "knowledge-facts",
+    now: o.now,
+  });
+  return mapFacts({
+    ...input,
+    reaches: (item) => verdictOf(results, REACHES_SPEC, item.inputs)?.verdict,
+  });
 }

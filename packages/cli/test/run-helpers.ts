@@ -46,6 +46,8 @@ export async function speckitRoot(
   const root = await mkdtemp(join(tmpdir(), "atticus-speckit-"));
   await cp(join(FORGE, "metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
   await cp(join(FIXTURES, "forge-change/org-pack"), join(root, "org-pack"), { recursive: true });
+  // A person's judgments of the seeded change: which new columns hold personal data (ADR 0117).
+  await cp(join(FIXTURES, "forge-change/judgments"), join(root, "judgments"), { recursive: true });
   await cp(join(SPECKIT, "org-pack"), join(root, "org-pack"), { recursive: true });
   const rows = parse(readFileSync(join(FORGE, "expected/scan.yaml"), "utf8")) as Record<
     string,

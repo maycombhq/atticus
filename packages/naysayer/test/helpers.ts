@@ -16,10 +16,15 @@ export const NOW = "2026-10-20T09:00:00Z";
 /**
  * A temporary metarepo for the M3 exit fixture: the Forge org pack with the forge-change
  * additions (critic agents, the Ledger team's pack) laid over it, the Forge expected catalog
- * as catalog files, and the seeded change add-transfer-limit.
+ * as catalog files, the seeded change add-transfer-limit, and the judgments a person made of
+ * it (judgments/: which new columns hold personal data, ADR 0117 addendum).
  */
-export async function forgeChangeRoot(o: { change?: boolean } = {}): Promise<string> {
+export async function forgeChangeRoot(
+  o: { change?: boolean; judgments?: boolean } = {},
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "atticus-naysayer-"));
+  if (o.judgments !== false)
+    await cp(join(FORGE_CHANGE, "judgments"), join(root, "judgments"), { recursive: true });
   await cp(join(FORGE, "metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
   await cp(join(FORGE_CHANGE, "org-pack"), join(root, "org-pack"), { recursive: true });
   const rows = parse(readFileSync(join(FORGE, "expected/scan.yaml"), "utf8")) as Record<

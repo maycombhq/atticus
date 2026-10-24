@@ -16,18 +16,25 @@ import {
   type ReleaseForecast,
 } from "@maycombhq/release";
 import { changeStore } from "@maycombhq/changes";
+import type { AiRuntime } from "@maycombhq/ai";
 import type { Output } from "./commands.js";
+import { judgingRuntime } from "./judging.js";
 
 /**
  * atticus release … and atticus outcome …: the generated views of a change for releasing it
  * (deployment plan, forecast, evidence pack, release notes, security review draft) and the
  * outcome records people keep after release. Views are computed from files on every run, so
- * they never go stale. Exit 0 ok (gaps are part of the view, said in words), 1 refused (no
- * such change, a value before release), 2 usage.
+ * they never go stale. Whether an API change breaks callers, which sentences undo a step, which
+ * lines name a secret and which columns are personal are judgments (ADR 0117 addendum): read
+ * from judgments/, asked of the judge when runtime.yaml's runtime calls a model directly, and
+ * otherwise shown as not judged. Exit 0 ok (gaps are part of the view, said in words), 1
+ * refused (no such change, a value before release), 2 usage.
  */
 
 export interface ReleaseDeps {
   now?: () => Date;
+  /** The judge's runtime; default runtime.yaml's, null for none. */
+  runtime?: AiRuntime | null;
 }
 
 function fail(io: Output, e: unknown): number {
@@ -38,8 +45,13 @@ function fail(io: Output, e: unknown): number {
   throw e;
 }
 
-const load = (root: string, id: string, deps: ReleaseDeps) =>
-  loadRelease(root, id, deps.now ? { now: deps.now() } : {});
+const load = async (root: string, id: string, deps: ReleaseDeps) => {
+  const runtime = await judgingRuntime(root, deps.runtime);
+  return loadRelease(root, id, {
+    ...(deps.now ? { now: deps.now() } : {}),
+    ...(runtime ? { runtime } : {}),
+  });
+};
 
 function lines(io: Output, text: string) {
   for (const l of text.replace(/\n$/, "").split("\n")) io.out(l);
@@ -80,7 +92,7 @@ function planText(p: DeploymentPlan, f: ReleaseForecast): string[] {
   );
   for (const d of f.drivers) out.push(`  ${d.until}: ${d.what}. ${d.source}`);
   const gaps = p.gaps.filter(
-    (g) => !/^No rollback step written|^design\.md (has no|says nothing)/.test(g),
+    (g) => !/^No rollback step (written|judged)|^design\.md (has no|says nothing)/.test(g),
   );
   if (gaps.length) {
     out.push("", "Gaps:");
