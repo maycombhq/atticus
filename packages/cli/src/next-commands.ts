@@ -583,9 +583,17 @@ export async function nextCommand(
   if (o.json) {
     // What runs a step here, in one line (ADR 0121 item 6), for the editors' Next view.
     const runs = runtime ? whatRunsWhere(runtime) : undefined;
+    // Whether a step can run on runtime.yaml's model here (ADR 0121 item 5), as data: IntelliJ
+    // offers "Run on Atticus's configured model" only then.
+    const modelMode =
+      !!runtime &&
+      runtime.ai !== "off" &&
+      runtime.modes.allowed.includes("model") &&
+      !!runtime.adapters.model &&
+      runtime.adapters.model.type !== "mock";
     io.out(
       JSON.stringify(
-        { next: steps[0], steps, problems: state.problems, ...(runs ? { runs } : {}) },
+        { next: steps[0], steps, problems: state.problems, ...(runs ? { runs } : {}), modelMode },
         null,
         2,
       ),

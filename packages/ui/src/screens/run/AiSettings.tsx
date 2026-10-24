@@ -27,6 +27,44 @@ export interface AiForm {
   assistants: { allowed: string[]; default: string };
   provider: string;
   settings: Record<string, string>;
+  /** The models allowed and the budgets, as typed; sent only when the form has them. */
+  limits?: AiLimits;
+}
+
+/** The models allowed (one a line) and the budgets (a default, and agent: tokens lines). */
+export interface AiLimits {
+  models: string;
+  /** Kept as they are: the tab doesn't edit the recommended models yet. */
+  recommended: Record<string, string>;
+  defaultTokens: string;
+  perAgent: string;
+}
+
+const lines = (text: string) =>
+  text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+/** The limits as runtime.yaml takes them, or the first line that doesn't read. */
+export function limitsOf(l: AiLimits):
+  | {
+      models: { allowed: string[]; recommended: Record<string, string> };
+      budgets: { defaultTokens: number; perAgent: Record<string, number> };
+    }
+  | { error: string } {
+  const tokens = /^\d+$/.test(l.defaultTokens.trim()) ? Number(l.defaultTokens.trim()) : NaN;
+  if (!Number.isSafeInteger(tokens) || tokens <= 0) return { error: T.badDefaultTokens };
+  const perAgent: Record<string, number> = {};
+  for (const line of lines(l.perAgent)) {
+    const m = /^([a-z0-9][a-z0-9-]*)\s*:\s*(\d+)$/.exec(line);
+    if (!m || Number(m[2]) <= 0) return { error: T.badBudgetLine(line) };
+    perAgent[m[1]!] = Number(m[2]);
+  }
+  return {
+    models: { allowed: lines(l.models), recommended: l.recommended },
+    budgets: { defaultTokens: tokens, perAgent },
+  };
 }
 
 const MODES = ["hand-off", "model", "headless-claude-code"] as const;
@@ -34,7 +72,10 @@ const AI = ["on", "text-only", "off"] as const;
 
 /** The body of PUT /api/settings/ai: only what the tab changes, and no empty settings. */
 export function toSave(f: AiForm): Record<string, unknown> {
+  const limits = f.limits ? limitsOf(f.limits) : undefined;
+  if (limits && "error" in limits) throw new Error(limits.error);
   return {
+    ...(limits ?? {}),
     ai: f.ai,
     modes: f.modes,
     assistants: f.assistants,
@@ -60,6 +101,14 @@ const formOf = (d: AiSettings): AiForm => ({
   settings: Object.fromEntries(
     Object.entries(d.model?.settings ?? {}).map(([k, v]) => [k, String(v)]),
   ),
+  limits: {
+    models: d.models.allowed.join("\n"),
+    recommended: d.models.recommended,
+    defaultTokens: String(d.budgets.defaultTokens),
+    perAgent: Object.entries(d.budgets.perAgent)
+      .map(([a, n]) => `${a}: ${n}`)
+      .join("\n"),
+  },
 });
 
 const toggle = (list: string[], id: string, on: boolean) =>
@@ -261,6 +310,46 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
         )}
         <Note note={keep.note} />
       </fieldset>
+
+      {f.limits && (
+        <fieldset className="stack">
+          <legend className="hud">{T.budgetsLabel}</legend>
+          <label className="stack" htmlFor="ai-models">
+            <span>{T.modelsLabel}</span>
+            <span className="muted">{T.modelsHint}</span>
+          </label>
+          <textarea
+            id="ai-models"
+            className="field mono"
+            rows={3}
+            value={f.limits.models}
+            onChange={(e) => setF({ ...f, limits: { ...f.limits!, models: e.target.value } })}
+          />
+          <label className="row" style={{ gap: 8 }}>
+            <span style={{ minWidth: 140 }}>{T.defaultTokensLabel}</span>
+            <input
+              id="ai-default-tokens"
+              className="field mono"
+              inputMode="numeric"
+              value={f.limits.defaultTokens}
+              onChange={(e) =>
+                setF({ ...f, limits: { ...f.limits!, defaultTokens: e.target.value } })
+              }
+            />
+          </label>
+          <label className="stack" htmlFor="ai-per-agent">
+            <span>{T.perAgentLabel}</span>
+            <span className="muted">{T.perAgentHint}</span>
+          </label>
+          <textarea
+            id="ai-per-agent"
+            className="field mono"
+            rows={3}
+            value={f.limits.perAgent}
+            onChange={(e) => setF({ ...f, limits: { ...f.limits!, perAgent: e.target.value } })}
+          />
+        </fieldset>
+      )}
 
       <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
         <button type="submit" className="btn primary" disabled={save.busy}>

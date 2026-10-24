@@ -231,14 +231,23 @@ class CommandFlow(private val project: Project) {
         }
     }
 
-    /** An AI step isn't run here: Copilot in IntelliJ offers plugins no model, so the person runs its slash command in Copilot Chat. */
+    /**
+     * An AI step: Copilot in IntelliJ offers plugins no model, so the person runs its slash command
+     * in Copilot Chat; or, where runtime.yaml allows model mode with a provider (ADR 0121 item 5),
+     * Atticus runs it on that model, in a console here.
+     */
     fun aiStep(argv: List<String>, slash: String?) {
-        val actions =
-            listOfNotNull(
-                slash?.let { s -> Notify.action(Copy.copy(s)) { CopyPasteManager.getInstance().setContents(StringSelection(s)) } },
-                Notify.action(Copy.RUN_HANDOFF) { inConsole("hand-off", Commands.handoff(argv)) },
-            )
-        Notify.show(project, Copy.aiStep(slash), NotificationType.INFORMATION, *actions.toTypedArray()).also { it.setTitle(Copy.AI_TITLE) }
+        background("Reading how AI steps run here", { cli(listOf("next", "--json", "--root", cwd)) }) { r ->
+            val view = Next.parse(r.stdout)
+            val actions =
+                listOfNotNull(
+                    slash?.let { s -> Notify.action(Copy.copy(s)) { CopyPasteManager.getInstance().setContents(StringSelection(s)) } },
+                    if (view?.modelMode == true) Notify.action(Copy.RUN_MODEL) { inConsole("model", Commands.withModel(argv)) } else null,
+                    Notify.action(Copy.RUN_HANDOFF) { inConsole("hand-off", Commands.handoff(argv)) },
+                )
+            val text = Copy.aiStep(slash) + (view?.runs?.let { "<br>" + Copy.howStepsRun(it) } ?: "")
+            Notify.show(project, text, NotificationType.INFORMATION, *actions.toTypedArray()).also { it.setTitle(Copy.AI_TITLE) }
+        }
     }
 
     /** A shared write: a dry run, the person's yes, then the run with the approve flag. Never the write without the yes. */
@@ -369,6 +378,7 @@ class NextFlow(private val project: Project) {
                 if (action is NextAction.Person) append(Copy.PERSON_STEP).append(' ')
                 append(n.command)
                 if (slash != null) append("\n\nIn Copilot Chat: ").append(slash)
+                if (action is NextAction.Ai) view.runs?.let { append("\n\n").append(Copy.howStepsRun(it)) }
             }
         val copy = { s: String -> CopyPasteManager.getInstance().setContents(StringSelection(s)) }
         val openApp = { AtticusWindow.showTab(project, Copy.APP_TAB) }
@@ -377,6 +387,7 @@ class NextFlow(private val project: Project) {
                 is NextAction.Ai ->
                     listOfNotNull(
                         slash?.let { s -> Copy.copy(s) to { copy(s) } },
+                        if (view.modelMode) Copy.RUN_MODEL to { flow.inConsole("model", Commands.withModel(action.args)) } else null,
                         Copy.RUN_HANDOFF to { flow.inConsole("hand-off", Commands.handoff(action.args)) },
                     )
                 is NextAction.Answer -> listOfNotNull(Copy.OPEN_APP to openApp, slash?.let { s -> Copy.copy(s) to { copy(s) } })

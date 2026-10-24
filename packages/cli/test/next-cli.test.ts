@@ -90,8 +90,21 @@ describe("atticus next", () => {
     const r = await run(["next", "--root", root]);
     expect(r.out[1]).toBe("In Cursor's chat: /atticus-survey forge-notes-ui");
     // The editors' Next view shows what runs the step, in one line (ADR 0121 item 6).
-    const j = (await json(root)) as { runs?: string };
+    const j = (await json(root)) as { runs?: string; modelMode?: boolean };
     expect(j.runs).toBe("Hand-off to Cursor");
+    expect(j.modelMode).toBe(false);
+    // With model mode allowed and a provider set, a step can run on it (IntelliJ offers that).
+    await writeFile(
+      join(root, "org-pack", "runtime.yaml"),
+      [
+        "schemaVersion: 1",
+        "assistants: { allowed: [copilot], default: copilot }",
+        "modes: { allowed: [hand-off, model], default: hand-off }",
+        "adapters: { model: { type: vertex, settings: { model: gemini-2.5-pro } } }",
+        "",
+      ].join("\n"),
+    );
+    expect(((await json(root)) as { modelMode?: boolean }).modelMode).toBe(true);
   });
 
   it("with repos not cloned, says to sync, and lists the rest with --all", async () => {
