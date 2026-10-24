@@ -21,6 +21,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### Watch a change
+
+- Follow a change without being on it: `atticus watch <change>` (`--off` to stop), **Watch this change** on its cockpit, or on a change in VS Code's sidebar. It is kept in your own `.atticus/me.yaml`, never committed.
+- Your digest gains "Changes you watch", one line each: where it is, how many things block it, the questions that wait, and the next step. `atticus watch` with no change prints the same. Watched changes don't count as waiting on you.
+- The local API gains `PUT /api/me/watch`, and `GET /api/me` lists what you watch (API 2.21.0).
+- Not built yet: a status-bar count in the editors.
+
 ### A page for each system
 
 - Estate gains **Systems**: pick a system and read its guide (generated from the catalog, every fact citing code, with what it doesn't know yet), the open questions about it and the changes in flight in its repos, each opening the change at a glance. The ecosystem map's guide links to it.

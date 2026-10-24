@@ -46,7 +46,7 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.15.0 (ADR 0116): how a run's context was retrieved, retrieval in the transcript (the model's
  *   expansion and rerank); run records are at version 3.
  */
-export const API_VERSION = "2.20.0";
+export const API_VERSION = "2.21.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -945,6 +945,9 @@ export const EditRepoBranchesRequest = z.strictObject({
   defaultBranch: GitRef.optional(),
   branches: z.array(GitRef).optional(),
 });
+/** WP7.5: follow a change, or stop following it (the person's own .atticus/me.yaml). */
+export const WatchRequest = z.strictObject({ change: RecordId, watch: z.boolean() });
+
 /** WP7.2: the lines around each line a question cites. */
 export const QuestionEvidenceList = z.object({
   excerpts: z.array(
@@ -1604,6 +1607,17 @@ const OPS: Record<string, Record<string, Op>> = {
       summary: "How often the person wants their digest and where it goes (.atticus/me.yaml)",
       tag: "system",
       body: SaveNotifyRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Saved" },
+      errors: [400],
+    },
+  },
+  "/api/me/watch": {
+    put: {
+      id: "watchChange",
+      summary:
+        "Follow a change, or stop following it: the digest and the editors say how each watched change is doing (.atticus/me.yaml, never committed)",
+      tag: "system",
+      body: WatchRequest,
       ok: { status: 200, schema: { type: "object" }, description: "Saved" },
       errors: [400],
     },

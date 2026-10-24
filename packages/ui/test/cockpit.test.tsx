@@ -78,3 +78,15 @@ describe("the change cockpit (WP7.1)", () => {
     expect(stageMark({ ...DATA.stages[0]!, state: "done" })).toBe("done");
   });
 });
+
+describe("watching a change from its cockpit (WP7.5)", () => {
+  it("offers to watch, or to stop watching", async () => {
+    const { WatchButton } = await import("../src/screens/work/Cockpit.js");
+    expect(
+      renderToStaticMarkup(<WatchButton change="add-transfer-limit" watching={false} />),
+    ).toContain(esc(C.watch));
+    const on = renderToStaticMarkup(<WatchButton change="add-transfer-limit" watching />);
+    expect(on).toContain(esc(C.unwatch));
+    expect(on).toContain('aria-pressed="true"');
+  });
+});

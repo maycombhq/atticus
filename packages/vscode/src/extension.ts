@@ -490,6 +490,22 @@ ${view.next.why}`
       args: [change, ...(paths.length ? [paths] : [])],
     });
   });
+  // WP7.5: follow a change without being on it; the digest says how it is doing.
+  reg("atticus.watchChange", async (target?: Item | string) => {
+    const root = needRoot();
+    if (!root) return;
+    const change =
+      typeof target === "string"
+        ? target
+        : (target?.expand as { change?: string } | undefined)?.change;
+    if (!change) return vscode.commands.executeCommand("atticus.runCommand", "watch");
+    const r = await svc.cli(root)(["watch", change, "--root", root]);
+    const lines = [...r.stdout.trim().split("\n"), ...r.stderr.trim().split("\n")].filter(Boolean);
+    for (const l of lines) svc.log.appendLine(l);
+    void (r.code === 0
+      ? vscode.window.showInformationMessage(lines[0] ?? WORDS.endedWith(0))
+      : vscode.window.showErrorMessage(lines[0] ?? WORDS.endedWith(r.code)));
+  });
   // ADR 0122: a file for general knowledge goes to the metarepo's inputs/inbox/ (atticus intake
   // add), read by the knowledge source at the next sync; one for a change is attached to it.
   reg("atticus.addToKnowledge", (target?: vscode.Uri, selected?: vscode.Uri[]) => {

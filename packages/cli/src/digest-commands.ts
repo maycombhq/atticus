@@ -30,6 +30,8 @@ export interface Digest {
   lines: string[];
   revise: HandoffToRevise[];
   blocking: { change: string; open: number }[];
+  /** WP7.5: how each change the person watches is doing, one line each. */
+  watching: string[];
 }
 
 /** What waits on the person: hand-offs to revise, blocking findings on changes they are on. */
@@ -78,6 +80,12 @@ export async function buildDigest(root: string, user: string): Promise<Digest> {
     for (const b of blocking) lines.push(`- ${b.change}: ${b.open} open`);
   }
   if (!lines.length) lines.push("Nothing waits on you.");
+  // WP7.5: the changes the person watches, though they aren't on them; not counted as waiting.
+  const { readMe } = await import("./me-file.js");
+  const { watchLine } = await import("./watch-commands.js");
+  const watching: string[] = [];
+  for (const c of (await readMe(root)).watch) watching.push(await watchLine(root, c));
+  if (watching.length) lines.push("Changes you watch:", ...watching.map((w) => `- ${w}`));
   const n = revise.length + blocking.length;
   return {
     title: !n
@@ -89,6 +97,7 @@ export async function buildDigest(root: string, user: string): Promise<Digest> {
     lines,
     revise,
     blocking,
+    watching,
   };
 }
 

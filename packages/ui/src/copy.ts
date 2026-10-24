@@ -2246,6 +2246,10 @@ export const COPY = {
     noRepos: "No repo has a branch for this change yet: atticus workspace open makes them.",
     branchOn: (branch: string, base: string) => `${branch}, from ${base}`,
     pr: "the pull request",
+    watch: "Watch this change",
+    unwatch: "Stop watching",
+    watched: "You watch it: your digest says how it is doing.",
+    unwatched: "You no longer watch it.",
   },
   /** ADR 0123: Set up › Repos, each repo's branches. */
   repos: {
