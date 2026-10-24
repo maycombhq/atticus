@@ -50,7 +50,21 @@ const CONTRACTS: Contract[] = [
       ["Schema version", core.SCHEMA_VERSION],
       ["Versions readers accept", core.SUPPORTED_SCHEMA_VERSIONS.join(", ")],
     ],
-    sections: (core.RECORD_KINDS as string[]).map((name) => ({ name })),
+    sections: [
+      ...(core.RECORD_KINDS as string[]).map((name) => ({ name })),
+      ...[
+        "EntryFact",
+        "CallFact",
+        "StoreFact",
+        "FieldFact",
+        "DeployFact",
+        "ConfigFact",
+        "FlowFact",
+      ].map((name) => ({
+        name,
+        where: ".atticus/facts/<repo>.jsonl (one fact per line; ADR 0124)",
+      })),
+    ],
     extra: (ctx) => [
       "## Common fields",
       "",
@@ -78,6 +92,12 @@ const CONTRACTS: Contract[] = [
       "## Record kinds",
       "",
       (core.RECORD_KINDS as string[]).map((k) => `- [${k}](#${k.toLowerCase()})`).join("\n"),
+      "",
+      "## The facts file (ADR 0124)",
+      "",
+      "What an assistant writes when it reads a repo: one JSON line per fact, in six kinds plus flows, every one with a citation (`cite`: file, line, the claimed value, a short quote). The facts file is the assistant's input format, projected deterministically into the record kinds above by `projectFacts`; it is additive to C1 and changes the same way. A fact without a citation is not a fact; it is a question.",
+      "",
+      `Fact kinds: ${(core.FACT_KINDS as readonly string[]).map((k) => `\`${k}\``).join(", ")}.`,
     ],
   },
   {

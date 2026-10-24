@@ -26,6 +26,7 @@ import { SpecTemplate } from "./schema/spec.js";
 import { ChecklistPack, Finding } from "./schema/review.js";
 import * as C6 from "./schema/orgpack.js";
 import * as C5 from "./schema/ai.js";
+import { Fact, FactsFile } from "./schema/facts.js";
 
 /**
  * JSON Schema for every record kind, generated from the zod source of truth, for editors,
@@ -146,4 +147,12 @@ export function aiJsonSchemas(): Record<string, object> {
     };
   }
   return out;
+}
+
+/** The facts file the assistant writes (ADR 0124): one Fact per JSON line, or a FactsFile array. */
+export function factsJsonSchemas(): Record<"Fact" | "FactsFile", object> {
+  return {
+    Fact: z.toJSONSchema(Fact, { target: "draft-7", unrepresentable: "any" }),
+    FactsFile: z.toJSONSchema(FactsFile, { target: "draft-7", unrepresentable: "any" }),
+  };
 }
