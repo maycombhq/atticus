@@ -65,10 +65,10 @@ export async function forgeEstate(o = {}) {
   const root = join(top, "metarepo");
   await cp(join(FORGE_CHANGE, "org-pack"), join(root, "org-pack"), { recursive: true });
   // A person's judgments of the seeded change (which new columns hold personal data, ADR 0117
-  // addendum), kept in the metarepo as a team's would be. Live sandboxes keep them too: in
-  // hand-off mode the critic doesn't ask the judge (it would cost a round), so without them it
-  // asks a person which columns are personal instead of raising b07 itself.
-  await cp(join(FORGE_CHANGE, "judgments"), join(root, "judgments"), { recursive: true });
+  // addendum): an answer, so a live-run sandbox leaves them out. Under Copilot's hand-off the
+  // critic then asks the table's owner which columns are personal (the grade counts that, b).
+  if (answers)
+    await cp(join(FORGE_CHANGE, "judgments"), join(root, "judgments"), { recursive: true });
   await cp(join(SPECKIT, "org-pack"), join(root, "org-pack"), { recursive: true });
   await cp(join(OWN, "org-pack"), join(root, "org-pack"), { recursive: true });
   // The diagrams and documents a team drops into the metarepo's inputs/ folder.

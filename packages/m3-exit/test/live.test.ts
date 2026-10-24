@@ -194,8 +194,13 @@ describe("M3 exit live runs: grade.mjs", () => {
         "5 of 5 stories ready (100%, bar 90%); 13 of 13 gaps covered; 0 invented names",
       );
       expect(g("b").results[0]!.reason).toBe(
-        "14 of 14 blocking; 13 of 13 gaps (100%); 5 of 5 lenses ran; 0 unlisted (for a person to review)",
+        "14 of 14 blocking; 13 of 13 gaps (100%); 5 of 5 lenses ran; 0 unlisted (for a person to review); b07-personal-column-unclassified caught as a question to the table's owner naming the personal columns (no model was asked in hand-off mode)",
       );
+      // ADR 0117 addendum: the sandbox holds no person's judgments, so under hand-off the
+      // critic asks the table's owner which columns are personal; that question is b07.
+      expect(g("b").results[0]!.details).toMatchObject({
+        askedOfAPerson: ["b07-personal-column-unclassified"],
+      });
       expect(g("c").results[0]!.reason).toBe(
         "built in 1 attempt; No drift.; trace links code to s2",
       );
