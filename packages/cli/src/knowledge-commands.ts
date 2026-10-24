@@ -292,6 +292,31 @@ async function syncAll(root: string, io: Output, only?: string) {
   sync.problems.push(...gitProblems);
   if (inputs) {
     sync.skipped.push(...inputs.skipped);
+    // A page a wiki source already reads, copied into inputs/ too, is read once: from the wiki.
+    const wikiPage = new Map(
+      sync.pages.filter((p) => p.source !== INPUTS_SOURCE_ID).map((p) => [p.hash, p]),
+    );
+    const twice = new Set(
+      sync.pages
+        .filter((p) => p.source === INPUTS_SOURCE_ID && wikiPage.has(p.hash))
+        .map((p) => p.path),
+    );
+    if (twice.size) {
+      for (const p of sync.pages.filter(
+        (x) => twice.has(x.path) && x.source === INPUTS_SOURCE_ID,
+      )) {
+        const w = wikiPage.get(p.hash)!;
+        sync.skipped.push({
+          source: INPUTS_SOURCE_ID,
+          path: p.path,
+          reason: `the same page as ${w.path}, which the wiki source ${w.source} reads`,
+        });
+      }
+      sync.pages = sync.pages.filter((p) => !(p.source === INPUTS_SOURCE_ID && twice.has(p.path)));
+      sync.documents = sync.documents.filter(
+        (d) => !d.evidence.some((e) => e.path && twice.has(e.path)),
+      );
+    }
     // Every source is reported, a git wiki that couldn't be fetched too, and inputs/ with them.
     op = { ...op, sources: { ...op.sources, wikis: [...op.sources.wikis, INPUTS_SOURCE] } };
   }

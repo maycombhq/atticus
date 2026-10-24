@@ -169,3 +169,32 @@ describe("the Documents tab's list (ADR 0122 item 2)", () => {
     expect(l.commands).toContain("atticus knowledge scan --source inputs");
   });
 });
+
+describe("a page a wiki source already reads (ADR 0122)", () => {
+  it("is read once: the copy in inputs/ is skipped, naming the wiki's page", async () => {
+    const root = await metarepo();
+    // A wiki kept beside the metarepo, whose page was also copied into inputs/.
+    const wiki = join(root, "..", `wiki-${Date.now()}`);
+    await mkdir(wiki, { recursive: true });
+    await writeFile(join(wiki, "ledger-owns-limits.md"), ADR);
+    await writeFile(
+      join(root, "org-pack", "sources.yaml"),
+      `schemaVersion: 1\nwikis:\n  - { id: forge-wiki, type: markdown-folder, location: ${JSON.stringify(wiki)} }\n`,
+    );
+    const out: string[] = [];
+    await main(
+      ["sources", "sync", "--json", "--root", root],
+      { out: (l) => out.push(l), err: () => {} },
+      { quiet: true },
+    );
+    const j = JSON.parse(out.join("\n")) as {
+      pages: { source: string; path: string }[];
+      skipped: { source: string; path: string; reason: string }[];
+    };
+    const inputs = j.pages.filter((p) => p.source === "inputs").map((p) => p.path);
+    expect(inputs).not.toContain("inputs/decisions/ledger-owns-limits.md");
+    expect(j.pages.filter((p) => p.source === "forge-wiki")).toHaveLength(1);
+    const skip = j.skipped.find((s) => s.path === "inputs/decisions/ledger-owns-limits.md");
+    expect(skip?.reason).toMatch(/same page as .*ledger-owns-limits\.md.*forge-wiki/);
+  });
+});
