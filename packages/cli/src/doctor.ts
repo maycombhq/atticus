@@ -365,7 +365,9 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       rt.ai === "off"
         ? "AI is off here (runtime.yaml)"
         : !modelMode
-          ? "AI steps hand off to your assistant; runtime.yaml doesn't allow Atticus to call a model itself"
+          ? rt.modes.allowed.includes("headless-claude-code")
+            ? "AI steps hand off to your assistant, or run in headless Claude Code (--mode headless-claude-code); runtime.yaml doesn't allow Atticus to call a model's API itself"
+            : "AI steps hand off to your assistant; runtime.yaml doesn't allow Atticus to call a model itself"
           : !named
             ? "model mode is allowed, but runtime.yaml names no model provider"
             : keyEnv && !envName(env, keyEnv)

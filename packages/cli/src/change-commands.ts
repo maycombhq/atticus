@@ -120,6 +120,18 @@ export async function changeNew(
     io.err(
       'Usage: atticus change new "<title>" --type <change type> [--by <you>] [--template <id>]',
     );
+    // The types this metarepo has, so nobody has to open change-types.yaml to pick one (ADR 0119).
+    if (!o.type) {
+      try {
+        const op = await loadOrgPack(join(orgPackDirOf(root)));
+        if (op.changeTypes.types.length) {
+          io.err("The change types here:");
+          for (const t of op.changeTypes.types) io.err(`  ${t.id}  ${t.name}`);
+        }
+      } catch {
+        // No org pack here: the usage says enough.
+      }
+    }
     return 2;
   }
   const owners = parseOwners(o.owners ?? []);

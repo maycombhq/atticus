@@ -336,6 +336,16 @@ describe("change commands through main", () => {
     expect(err.join("\n")).toMatch(/Usage: atticus change new/);
   });
 
+  it("lists the change types when change new has none (ADR 0119)", async () => {
+    const { main } = await import("../src/main.js");
+    const root = await forgeRoot();
+    const err: string[] = [];
+    const io = { out: () => undefined, err: (l: string) => err.push(l) };
+    expect(await main(["change", "new", "A title", "--root", root, "--by", "pat"], io)).toBe(2);
+    expect(err.join("\n")).toContain("The change types here:");
+    expect(err.join("\n")).toMatch(/^ {2}feature {2}\S/m);
+  });
+
   it("records the metarepo's Git user when --by isn't given, and --by still overrides it", async () => {
     const { main } = await import("../src/main.js");
     const root = await forgeRoot();

@@ -187,6 +187,8 @@ describe("atticus doctor", () => {
     const handoff = byId(await doctorChecks(root, healthy()), "model");
     expect(handoff).toMatchObject({ status: "ok" });
     expect(handoff.detail).toMatch(/hand off to your assistant/);
+    // The Forge pack allows headless Claude Code: said, so nobody thinks only hand-off runs here.
+    expect(handoff.detail).toContain("headless Claude Code");
     const own = await mkdtemp(join(tmpdir(), "atticus-doctor-model-"));
     await cp(join(FIXTURES, "forge/metarepo"), own, { recursive: true });
     const rt = (adapter: string) =>
