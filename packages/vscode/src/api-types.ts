@@ -150,6 +150,8 @@ export interface CiteList {
       step: number;
       kind: string;
       confirmedBy?: string;
+      /** WP7.3: the changes in flight whose target flows touch this flow. */
+      changes?: string[];
     }[];
     records: { kind: string; id: string; name?: string; source: string }[];
   }[];

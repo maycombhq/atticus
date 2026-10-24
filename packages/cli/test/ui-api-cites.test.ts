@@ -89,3 +89,29 @@ describe("GET /api/cites (ADR 0094)", () => {
     ).toBe(true);
   });
 });
+
+describe("changes in flight on a cited line (WP7.3)", () => {
+  it("names the changes whose target flows touch a flow that cites the line, and not a released one", async () => {
+    const changes = join(root, "openspec", "changes");
+    for (const [id, state] of [
+      ["add-customer-tags", "design"],
+      ["old-customer-fix", "released"],
+    ] as const) {
+      await mkdir(join(changes, id, "target-flows"), { recursive: true });
+      await writeFile(
+        join(changes, id, "change.yaml"),
+        `schemaVersion: 1\nid: ${id}\nstate: ${state}\n`,
+      );
+      await writeFile(
+        join(changes, id, "target-flows", "forge-customers.create-customer.yaml"),
+        "schemaVersion: 2\nflow: forge-customers.create-customer\n",
+      );
+    }
+    const r = await get(
+      "/api/cites?repo=forge-customers&path=src/main/java/forge/customers/CustomerController.java",
+    );
+    const v = Api.CiteList.parse(r.body);
+    const line10 = v.lines.find((l) => l.line === 10)!;
+    expect(line10.flows[0]!.changes).toEqual(["add-customer-tags"]);
+  });
+});

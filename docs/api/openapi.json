@@ -19544,6 +19544,12 @@
                       },
                       "confirmedBy": {
                         "type": "string"
+                      },
+                      "changes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
                       }
                     },
                     "required": [

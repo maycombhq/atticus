@@ -1,7 +1,8 @@
-import { readdir, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   catalogDirOf,
+  changesDirOf,
   readRepoSpec,
   RecordId,
   specRepos,
@@ -9,6 +10,7 @@ import {
   type Api,
 } from "@maycombhq/core";
 import { badRequest, type Router, type ServerContext } from "@maycombhq/server";
+import { parse } from "yaml";
 import { catalogRecords } from "./site-commands.js";
 
 /**
@@ -100,6 +102,36 @@ async function build(root: string): Promise<Index> {
   return index;
 }
 
+/** States a change is no longer in flight in. */
+const DONE = new Set(["released", "archived", "post-release-review"]);
+
+/**
+ * The changes in flight on each flow (WP7.3): those whose target-flows/ hold that flow, read
+ * each time from the change folders (a handful of directory listings), by flow id.
+ */
+async function inFlight(root: string): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  const dir = changesDirOf(root);
+  for (const e of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    if (!e.isDirectory() || e.name === "archive") continue;
+    const yaml = await readFile(join(dir, e.name, "change.yaml"), "utf8").catch(() => "");
+    const state = (() => {
+      try {
+        return (parse(yaml) as { state?: unknown } | null)?.state;
+      } catch {
+        return undefined;
+      }
+    })();
+    if (!yaml || (typeof state === "string" && DONE.has(state))) continue;
+    for (const f of await readdir(join(dir, e.name, "target-flows")).catch(() => [] as string[]))
+      if (f.endsWith(".yaml")) {
+        const flow = f.slice(0, -".yaml".length);
+        out.set(flow, [...(out.get(flow) ?? []), e.name]);
+      }
+  }
+  return out;
+}
+
 export function uiCiteRoutes(r: Router, ctx: ServerContext): Router {
   const root = ctx.root;
   let cached: { print: string; index: Promise<Index> } | undefined;
@@ -121,8 +153,14 @@ export function uiCiteRoutes(r: Router, ctx: ServerContext): Router {
     const lines = [...((await indexNow()).get(repo)?.get(path)?.values() ?? [])].sort(
       (a, b) => a.line - b.line,
     );
-    for (const l of lines) l.flows.sort((a, b) => a.flow.localeCompare(b.flow) || a.step - b.step);
-    return { status: 200, body: { repo, path, lines } satisfies Api.CiteListT };
+    const flying = await inFlight(root);
+    const shown = lines.map((l) => ({
+      ...l,
+      flows: [...l.flows]
+        .sort((a, b) => a.flow.localeCompare(b.flow) || a.step - b.step)
+        .map((f) => (flying.get(f.flow)?.length ? { ...f, changes: flying.get(f.flow)! } : f)),
+    }));
+    return { status: 200, body: { repo, path, lines: shown } satisfies Api.CiteListT };
   });
   return r;
 }

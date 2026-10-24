@@ -627,6 +627,8 @@ export const CiteList = z.object({
           step: z.number().int().nonnegative(),
           kind: z.string(),
           confirmedBy: z.string().optional(),
+          /** WP7.3: the changes in flight whose target flows touch this flow. */
+          changes: z.array(z.string()).optional(),
         }),
       ),
       records: z.array(

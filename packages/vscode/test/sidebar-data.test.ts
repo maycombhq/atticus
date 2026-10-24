@@ -410,18 +410,52 @@ describe("one file's cited lines, as lenses", () => {
     expect(lenses.map((l) => [l.line, l.title])).toEqual([
       [10, "Atticus: A client creates a customer · start (endpoint)"],
       [10, "Atticus: Endpoint forge-customers.post-customer, Interface Customers API"],
+      [10, "Atticus: what breaks if this changes"],
       [12, "Atticus: Table db.customers"],
+      [12, "Atticus: what breaks if this changes"],
     ]);
+    expect(lenses[4]!.open).toEqual({ kind: "app", hash: "#/impact?q=db.customers" });
     expect(lenses[0]!.open).toEqual({
       kind: "app",
       hash: "#/flows?repo=forge-customers&flow=forge-customers.create-customer&step=0",
     });
-    expect(lenses[2]!.open).toEqual({
+    expect(lenses[3]!.open).toEqual({
       kind: "file",
       path: join(root, "catalog", "generated", "table", "db.customers.yaml"),
     });
     // Two records on a line: a pick between their files.
     expect(lenses[1]!.open).toMatchObject({ kind: "pick" });
+  });
+
+  it("says which changes are in flight on a flow through the line (WP7.3)", () => {
+    const flow = (changes: string[]) => ({
+      repo: "r",
+      flow: "r.f",
+      name: "A flow",
+      step: 1,
+      kind: "write",
+      changes,
+    });
+    const one = citeLenses(
+      { repo: "r", path: "a.ts", lines: [{ line: 3, flows: [flow(["add-tags"])], records: [] }] },
+      paths,
+    );
+    expect(one[1]).toMatchObject({
+      title: "Atticus: change add-tags is in flight here",
+      open: { kind: "app", hash: "#/cockpit?change=add-tags" },
+    });
+    const two = citeLenses(
+      {
+        repo: "r",
+        path: "a.ts",
+        lines: [{ line: 3, flows: [flow(["b-change", "a-change"])], records: [] }],
+      },
+      paths,
+    );
+    expect(two[1]).toMatchObject({
+      title: "Atticus: 2 changes in flight here",
+      open: { kind: "pick" },
+    });
   });
 
   it("can leave the records out", () => {

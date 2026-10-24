@@ -579,6 +579,26 @@ export function citeLenses(c: Api.CiteList, p: Paths, o: { records?: boolean } =
         open: { kind: "app", hash: flowHash(f.repo, f.flow, f.step) },
       });
     }
+    // WP7.3: the changes in flight on a flow that passes through this line.
+    const flying = [...new Set(l.flows.flatMap((f) => f.changes ?? []))].sort();
+    if (flying.length)
+      out.push({
+        line: l.line,
+        title: `Atticus: ${flying.length === 1 ? `change ${flying[0]} is in flight here` : `${flying.length} changes in flight here`}`,
+        tooltip: `Changes whose target flows touch a flow through this line: ${flying.join(", ")}. Open the change at a glance.`,
+        open:
+          flying.length === 1
+            ? { kind: "app", hash: cockpitHash(flying[0]!) }
+            : {
+                kind: "pick",
+                title: "Which change?",
+                choices: flying.map((c) => ({
+                  label: c,
+                  detail: "at a glance",
+                  open: { kind: "app", hash: cockpitHash(c) },
+                })),
+              },
+      });
     if (o.records === false || !l.records.length) continue;
     const named = l.records.map((r) => `${r.kind} ${r.name ?? r.id}`);
     out.push({
@@ -598,9 +618,31 @@ export function citeLenses(c: Api.CiteList, p: Paths, o: { records?: boolean } =
               })),
             },
     });
+    // WP7.3: what depends on what this line holds, on the Impact screen.
+    out.push({
+      line: l.line,
+      title: "Atticus: what breaks if this changes",
+      tooltip: `What depends on ${l.records.map((r) => r.name ?? r.id).join(", ")}: the Impact screen.`,
+      open:
+        l.records.length === 1
+          ? { kind: "app", hash: impactHash(l.records[0]!.id) }
+          : {
+              kind: "pick",
+              title: "What breaks if which one changes?",
+              choices: l.records.map((r) => ({
+                label: `${r.kind} ${r.name ?? r.id}`,
+                detail: r.id,
+                open: { kind: "app", hash: impactHash(r.id) },
+              })),
+            },
+    });
   }
   return out;
 }
+
+/** The app's change at a glance (WP7.1), and its Impact screen for one record. */
+export const cockpitHash = (change: string) => `#/cockpit?change=${encodeURIComponent(change)}`;
+export const impactHash = (id: string) => `#/impact?q=${encodeURIComponent(id)}`;
 
 // ------------------------------------------------------------------ flow steps in the code
 

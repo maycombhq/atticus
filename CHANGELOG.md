@@ -21,6 +21,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### What passes through a line of code
+
+- VS Code's lenses over a cited line now also say which changes are in flight on a flow through it ("change add-tags is in flight here"), opening the change at a glance, and offer "what breaks if this changes" for the records read from the line, opening the Impact screen. `GET /api/cites` gives each flow's changes in flight (those whose target flows touch it).
+- Not built yet: the same in IntelliJ (a gutter icon).
+
 ### A hand-off PR that reviews itself
 
 - The PR `atticus change handoff` opens now ends with what an approver would otherwise open the app for: what the change does as a picture (Mermaid, which GitHub and Azure DevOps draw), its estimate as a range with what drives it, and the findings still open at its gates, blocking first.
