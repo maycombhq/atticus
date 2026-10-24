@@ -22,7 +22,9 @@
     "bundle:test": "node scripts/bundle/test-bundle.mjs",
     "licences": "node scripts/bundle/check-licences.mjs",
     "docs:commands": "node scripts/write-command-doc.mjs",
-    "claude-plugin": "node scripts/write-claude-plugin.mjs"
+    "claude-plugin": "node scripts/write-claude-plugin.mjs",
+    "model:fetch": "node scripts/model/fetch.mjs --all",
+    "model:pins": "node scripts/model/write-pins.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

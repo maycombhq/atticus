@@ -7,6 +7,7 @@ import { changesDirOf, RecordId } from "@maycombhq/core";
  *
  *   workspace/<repo>/                        base clone of the default branch (scans read these)
  *   workspace/.worktrees/<change>/<repo>/    change worktree on branch change/<change>
+ *   workspace/.branches/<repo>/<branch>/     another branch, read-only, scanned beside (ADR 0123)
  *   workspace/<change>.code-workspace        VS Code workspace for the change
  *   workspace/.intellij/<change>/            IntelliJ project for the change
  *   openspec/changes/<change>/repos.yaml     the change's branch, worktree, PR and build per repo
@@ -26,6 +27,14 @@ function id(what: string, value: string): string {
 
 export function baseClonePath(root: string, repo: string): string {
   return join(root, WORKSPACE_DIR, id("repo id", repo));
+}
+
+/** A branch name as one folder name: what isn't a letter, digit, dot or hyphen becomes "-". */
+export const branchSlug = (branch: string) => branch.replace(/[^A-Za-z0-9.-]+/g, "-");
+
+/** Where another branch of a repo is checked out, read-only, to be scanned (ADR 0123). */
+export function branchCheckoutPath(root: string, repo: string, branch: string): string {
+  return join(root, WORKSPACE_DIR, ".branches", id("repo id", repo), branchSlug(branch));
 }
 
 export function changeWorktreesDir(root: string, change: string): string {

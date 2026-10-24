@@ -13,6 +13,12 @@ Home shows it until the catalog is accepted; `atticus setup` prints it. Each ste
 5. **The first scan is done** (`atticus scan`, or _Scan now_). Scans read files only: no network, no AI.
 6. **Existing knowledge is added** (optional): diagrams, partner specs and exports in `inputs/` (`atticus intake add <files>`), wikis in `sources.yaml` (`atticus sources add`).
 
+### Branches
+
+The catalog is read from each repo's `defaultBranch`: that is the baseline, the one the hand-off PRs build on. `atticus workspace sync` and `atticus doctor` say when a remote calls another branch its default; changing it is your decision, on **Set up › Repos** or in the manifest (ADR 0123).
+
+To see what another branch would bring, list it under `branches` in the manifest (or on Set up › Repos) and run `atticus scan --ref develop`. It reads each repo's `develop` in a read-only checkout beside its base clone, keeps the catalog in `catalog/branches/develop/`, and says what it adds, removes and changes against the baseline. A branch is never merged into the baseline.
+
 ### Knowledge as files
 
 Knowledge comes in two scopes (ADR 0122):

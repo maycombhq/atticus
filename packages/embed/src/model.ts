@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join, sep } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
 import { z } from "zod";
@@ -81,29 +81,52 @@ interface Ort {
   env?: { wasm?: { numThreads?: number; wasmBinary?: Uint8Array } };
 }
 
-/** Load onnxruntime-node, from `runtimeDir` when given (the bundle's), else beside Atticus. */
+/**
+ * The packages an ONNX runtime is found in, in order (ADR 0116 addendum): Atticus's repackaged
+ * CPU build for this platform (installed with @maycombhq/embed, no install script, no DirectML),
+ * then onnxruntime-node itself; for the fallback, Atticus's WASM package, then onnxruntime-web.
+ */
+export const runtimePackages = (kind: "native" | "wasm") =>
+  kind === "native"
+    ? [`@maycombhq/onnxruntime-${process.platform}-${process.arch}`, "onnxruntime-node"]
+    : ["@maycombhq/onnxruntime-wasm", "onnxruntime-web"];
+
+/** A package's folder, or undefined when it isn't installed where `req` looks. */
+export function packageDir(req: NodeJS.Require, name: string): string | undefined {
+  try {
+    return dirname(req.resolve(`${name}/package.json`));
+  } catch {
+    // onnxruntime-web doesn't export its package.json: find the folder from its entry.
+    try {
+      const entry = req.resolve(name);
+      const at = entry.lastIndexOf(`${sep}${name.split("/").join(sep)}${sep}`);
+      return at < 0 ? undefined : entry.slice(0, at + name.length + 1);
+    } catch {
+      return undefined;
+    }
+  }
+}
+
+/** Load an ONNX runtime, from `runtimeDir` when given, else from beside Atticus. */
 async function loadOrt(
-  name: "onnxruntime-node" | "onnxruntime-web",
+  kind: "native" | "wasm",
   runtimeDir?: string,
 ): Promise<{ ort: Ort; dir: string }> {
   const req = createRequire(runtimeDir ? join(runtimeDir, "noop.js") : import.meta.url);
-  // The package's folder, from its entry (onnxruntime-web doesn't export its package.json).
-  const entry = req.resolve(name);
-  const at = entry.lastIndexOf(`${sep}${name}${sep}`);
-  if (at < 0) throw new Error(`${name} resolved outside a ${name} folder: ${entry}`);
-  const dir = entry.slice(0, at + name.length + 1);
-  if (name === "onnxruntime-node") {
-    const m = (await import(pathToFileURL(join(dir, "dist", "index.js")).href)) as {
-      default?: Ort;
-    } & Ort;
+  for (const name of runtimePackages(kind)) {
+    const dir = packageDir(req, name);
+    if (!dir) continue;
+    const file = join(dir, "dist", kind === "native" ? "index.js" : "ort.wasm.min.mjs");
+    if (!existsSync(file)) continue;
+    // The native build is CommonJS with a .node addon: required, not imported, so no loader
+    // (a test runner's, a bundler's) rewrites it.
+    const m = (
+      kind === "native" ? createRequire(file)(file) : await import(pathToFileURL(file).href)
+    ) as { default?: Ort } & Ort;
     return { ort: m.default ?? m, dir };
   }
-  const m = (await import(pathToFileURL(join(dir, "dist", "ort.wasm.min.mjs")).href)) as {
-    default?: Ort;
-  } & Ort;
-  return { ort: m.default ?? m, dir };
+  throw new Error(`no ${kind} ONNX runtime is installed (${runtimePackages(kind).join(" or ")})`);
 }
-
 export interface OnnxOptions {
   /** A folder whose node_modules holds onnxruntime-node (and onnxruntime-web). */
   runtimeDir?: string;
@@ -159,7 +182,7 @@ export class OnnxEmbedder implements Embedder {
       let s: OrtSession | undefined;
       if (this.o.backend !== "wasm") {
         try {
-          loaded = await loadOrt("onnxruntime-node", this.o.runtimeDir);
+          loaded = await loadOrt("native", this.o.runtimeDir);
           s = await loaded.ort.InferenceSession.create(file, {
             executionProviders: ["cpu"],
             graphOptimizationLevel: "all",
@@ -171,7 +194,7 @@ export class OnnxEmbedder implements Embedder {
         }
       }
       if (!s) {
-        loaded = await loadOrt("onnxruntime-web", this.o.runtimeDir);
+        loaded = await loadOrt("wasm", this.o.runtimeDir);
         if (loaded.ort.env?.wasm) {
           loaded.ort.env.wasm.numThreads = 1;
           loaded.ort.env.wasm.wasmBinary = await readFile(

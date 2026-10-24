@@ -12,6 +12,7 @@ import { Runs } from "./runs/Runs.js";
 import { ChangeDiagram } from "./work/ChangeDiagram.js";
 import { Conformance } from "./work/Conformance.js";
 import { Dashboard } from "./work/Dashboard.js";
+import { ChangeCockpit } from "./work/Cockpit.js";
 import { Estimate } from "./work/Estimate.js";
 import { Onboarding } from "./work/Onboarding.js";
 import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work/Stage.js";
@@ -44,5 +45,6 @@ export const SCREEN_COMPONENTS: Record<string, Screen> = {
   history: History,
   "change-diagram": ChangeDiagram,
   estimate: Estimate,
+  cockpit: ChangeCockpit,
   conformance: Conformance,
 };

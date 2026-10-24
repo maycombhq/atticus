@@ -15,3 +15,9 @@ packages/intellij/.gradle/
 packages/intellij/.kotlin/
 packages/intellij/.intellijPlatform/
 plugins/atticus/
+# Pinned third-party files (ADR 0116 addendum): byte for byte as pinned, never reformatted
+packages/embed-model/tokenizer.json
+packages/embed-model/MODEL-CARD.md
+packages/embed-model/LICENSE
+packages/onnxruntime-*/LICENSE
+.cache/

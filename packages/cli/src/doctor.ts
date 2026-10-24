@@ -5,7 +5,14 @@ import { delimiter, join } from "node:path";
 import { ASSISTANT_FORMATS, generateAssistantFiles } from "@maycombhq/assistant-files";
 import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock } from "@maycombhq/core";
 import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
-import { createGit, type GitRunner } from "@maycombhq/workspace";
+import {
+  baseClonePath,
+  createGit,
+  isInPlace,
+  loadRepos,
+  remoteDefaultBranch,
+  type GitRunner,
+} from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { upgradeCheck } from "./upgrade.js";
 import { versionAtLeast } from "./version.js";
@@ -303,6 +310,26 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     fix: "Run atticus scan again: it brings the catalog up to date (every file it writes is whole).",
   });
 
+  // ADR 0123: the branch each repo is read from, against the one its remote calls its default
+  // (as the base clone last heard it at a sync: no network here).
+  const manifest = await loadRepos(root).catch(() => []);
+  const differ: string[] = [];
+  for (const r of manifest.filter((x) => !x.archived && !isInPlace(x.url))) {
+    const remote = await remoteDefaultBranch(baseClonePath(root, r.id), git);
+    if (remote && remote !== r.defaultBranch)
+      differ.push(`${r.id} (manifest ${r.defaultBranch}, remote ${remote})`);
+  }
+  if (manifest.length)
+    out.push({
+      id: "default-branches",
+      label: "Default branches",
+      status: differ.length ? "warn" : "ok",
+      detail: differ.length
+        ? `read from another branch than the remote's default: ${differ.join(", ")}`
+        : "each repo is read from the branch its manifest names",
+      fix: "If the remote's default is the one to read, set defaultBranch in the manifest (or on Set up › Repos), then run atticus workspace sync.",
+    });
+
   const up = await upgradeSoon;
   out.push({
     id: "upgrade",
@@ -419,8 +446,8 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     });
   }
 
-  // ADR 0116 and its addendum: the local embedding model for "similar in meaning", the bundled
-  // one by default. Where it or onnxruntime isn't installed, the context engine searches by
+  // ADR 0116 and its addendum: the local embedding model for "similar in meaning", the one installed
+  // with Atticus by default. Where it or onnxruntime isn't installed, the context engine searches by
   // words and names, never fails a step and downloads nothing; this says so. A default that
   // isn't installed is a note; a model runtime.yaml names that can't be used is a warning.
   {
@@ -443,11 +470,11 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
               : "warn",
       detail:
         e.setting === "off"
-          ? `off (runtime.yaml retrieval.embeddings); ${lexical}`
+          ? `off (${e.problem ?? "runtime.yaml retrieval.embeddings"}); ${lexical}`
           : e.problem
             ? `${e.problem}, so ${lexical}`
             : `${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}) in ${e.dir}; runtime: ${ort ?? `none found, so ${lexical}`}`,
-      fix: "Install the offline bundle that carries the model and onnxruntime, or point retrieval.embeddings.model at a model folder, then run atticus index embed. Set it to off to say the organisation doesn't use one. Nothing is ever downloaded.",
+      fix: "The model comes with Atticus (@maycombhq/embed-model and its onnxruntime packages, installed with @maycombhq/cli). Reinstall Atticus from your npm mirror or the offline bundle; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Set it to off to say the organisation doesn't use one. Nothing is ever downloaded.",
     });
   }
   const live = Object.entries(rt.adapters).filter(

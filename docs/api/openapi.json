@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.17.0",
+    "version": "2.19.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -2094,6 +2094,185 @@
         }
       }
     },
+    "/api/repos/branches": {
+      "get": {
+        "operationId": "listRepoBranches",
+        "summary": "Each repo's default branch (the manifest's and the remote's), its named branches, the commit the baseline was read from, and its branches scanned beside it (ADR 0123)",
+        "tags": [
+          "workspace"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoBranchesList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/compare": {
+      "get": {
+        "operationId": "compareBranch",
+        "summary": "What a branch scanned beside the baseline changes against it, for the repos it read: records added, removed and changed (ADR 0123)",
+        "tags": [
+          "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "branch",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BranchCompare"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repos/{repoId}/branches": {
+      "put": {
+        "operationId": "editRepoBranches",
+        "summary": "Set a repo's default branch and named branches in its manifest, keeping the rest of the file and its comments; commit it in a pull request (ADR 0123)",
+        "tags": [
+          "workspace"
+        ],
+        "parameters": [
+          {
+            "name": "repoId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "defaultBranch": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "branches": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/specs": {
       "get": {
         "operationId": "listSpecs",
@@ -2473,6 +2652,67 @@
           },
           "422": {
             "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/cockpit": {
+      "get": {
+        "operationId": "getChangeCockpit",
+        "summary": "One change at a glance: where it is, the next step with its slash command, what blocks it, each stage's progress, the risk, and each repo's change branch and base",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeCockpit"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2986,6 +3226,11 @@
                   "full": {
                     "default": false,
                     "type": "boolean"
+                  },
+                  "ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
                   }
                 },
                 "additionalProperties": false
@@ -18484,6 +18729,15 @@
             "minLength": 1,
             "maxLength": 200
           },
+          "branches": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
           "type": {
             "type": "string",
             "minLength": 1,
@@ -18618,6 +18872,7 @@
           "id",
           "url",
           "defaultBranch",
+          "branches",
           "type",
           "owner",
           "extractors",
@@ -18693,6 +18948,15 @@
                 },
                 "manifest": {
                   "type": "string"
+                },
+                "defaultBranch": {
+                  "type": "string"
+                },
+                "branches": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
                 },
                 "cloned": {
                   "type": "boolean"
@@ -20617,6 +20881,319 @@
         "required": [
           "added",
           "refused"
+        ],
+        "additionalProperties": false
+      },
+      "RepoBranchesList": {
+        "type": "object",
+        "properties": {
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120,
+                  "pattern": "^[a-z0-9][a-z0-9._-]*$"
+                },
+                "platform": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                },
+                "owner": {
+                  "type": "string"
+                },
+                "defaultBranch": {
+                  "type": "string"
+                },
+                "remoteDefault": {
+                  "type": "string"
+                },
+                "branches": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "commit": {
+                  "type": "string"
+                },
+                "scans": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "branch": {
+                        "type": "string"
+                      },
+                      "scannedAt": {
+                        "type": "string"
+                      },
+                      "commit": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "branch",
+                      "scannedAt",
+                      "commit"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "platform",
+                "url",
+                "type",
+                "owner",
+                "defaultBranch",
+                "branches",
+                "scans"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "repos"
+        ],
+        "additionalProperties": false
+      },
+      "BranchCompare": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "scannedAt": {
+            "type": "string"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "commit": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "commit"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "changed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "record": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "record",
+                "fields"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "branch",
+          "scannedAt",
+          "repos",
+          "added",
+          "removed",
+          "changed"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeCockpit": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "next": {
+            "type": "object",
+            "properties": {
+              "step": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "slash": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "step",
+              "command",
+              "why"
+            ],
+            "additionalProperties": {}
+          },
+          "nextStep": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "risk": {
+            "type": "object",
+            "properties": {
+              "level": {
+                "type": "string"
+              },
+              "score": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "level",
+              "score"
+            ],
+            "additionalProperties": false
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stage": {
+                  "type": "string",
+                  "enum": [
+                    "feature",
+                    "architecture",
+                    "stories"
+                  ]
+                },
+                "state": {
+                  "type": "string"
+                },
+                "drafts": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "rounds": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "openQuestions": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "stage",
+                "state",
+                "drafts",
+                "rounds",
+                "openQuestions"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "openQuestions": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "base": {
+                  "type": "string"
+                },
+                "pr": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "branch",
+                "base"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "state",
+          "nextStep",
+          "reasons",
+          "risk",
+          "stages",
+          "openQuestions",
+          "repos"
         ],
         "additionalProperties": false
       },

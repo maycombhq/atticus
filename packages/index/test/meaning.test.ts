@@ -18,13 +18,10 @@ const vectors = (ix: CatalogIndex) =>
   ).n;
 
 describe("similar in meaning (ADR 0116)", () => {
-  it("is the bundled model by default; where it isn't installed, words and names only, and it says so", async () => {
-    // This checkout doesn't carry @maycombhq/embed-model: the default falls back, never fails.
+  it("is off where the model is turned off (the test suites run with ATTICUS_EMBEDDINGS=off), and says so", async () => {
     const ix = await openIndex(await retrievalRoot());
     expect(ix.meaning().on).toBe(false);
-    expect(ix.meaning().note).toMatch(
-      /off: the bundled model \(@maycombhq\/embed-model\) isn't installed/,
-    );
+    expect(ix.meaning().note).toMatch(/off: ATTICUS_EMBEDDINGS is off for this process/);
     const s = await ix.select({ text: "the most a customer may send per day" }, { budget: 2000 });
     expect(s.meaning).toMatch(/off/);
     expect(s.picked.some((p) => /meaning/.test(p.via))).toBe(false);

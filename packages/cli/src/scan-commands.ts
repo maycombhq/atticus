@@ -34,6 +34,8 @@ export interface ScanCommandOptions {
   noDrift?: boolean;
   /** List every warning (files left out, rules that couldn't fill a template), not just the count. */
   warnings?: boolean;
+  /** Another branch, scanned beside the baseline into catalog/branches/<branch>/ (ADR 0123). */
+  ref?: string;
 }
 
 function driftLine(d: DriftAfterScan): string {
@@ -79,6 +81,19 @@ export async function scanCommand(
       );
   }
   try {
+    if (o.ref) {
+      const { scanBranch } = await import("./branch-scan-commands.js");
+      return await scanBranch(
+        root,
+        o.ref,
+        {
+          ...(o.repos ? { repos: o.repos } : {}),
+          ...(o.full ? { full: true } : {}),
+          ...(o.json ? { json: true } : {}),
+        },
+        io,
+      );
+    }
     return await scanLocked(root, o, io);
   } finally {
     await lock?.release();

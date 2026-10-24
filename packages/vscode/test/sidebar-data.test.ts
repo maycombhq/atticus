@@ -77,6 +77,8 @@ describe("the Repos section (ADR 0093)", () => {
         type: "forge-ui",
         owner: "team-web",
         manifest: "org-pack/profiles/forge/repos.manifest.yaml",
+        defaultBranch: "main",
+        branches: ["develop"],
         cloned: true,
         scanSettings: { path: "org-pack/scan/forge-web.yaml", present: true },
         lastScan: { records: 1535, kinds: {}, commit: "abc1234" },
@@ -96,10 +98,12 @@ describe("the Repos section (ADR 0093)", () => {
   it("shows each repo with its last scan, and what it holds", () => {
     const items = repoItems(onboarding);
     expect(items.map((i) => [i.label, i.description])).toEqual([
-      ["forge-web", "scanned · 1,535 records"],
+      ["forge-web", "main · scanned at abc1234 · 1,535 records"],
       ["forge-ledger", "not cloned"],
     ]);
     expect(items[0]!.expand).toEqual({ kind: "repo", repo: "forge-web" });
+    // ADR 0123: the other branches are named, and where to scan them.
+    expect(items[0]!.tooltip).toContain("Other branches: develop");
     const kids = repoChildren(onboarding.repos[0]!, 3, paths);
     expect(kids.map((k) => k.label)).toEqual(["Flows (3)", "Scan settings", "On the canvas"]);
     expect(kids[0]!.expand).toEqual({ kind: "flows", repo: "forge-web" });

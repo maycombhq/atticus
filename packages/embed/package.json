@@ -23,7 +23,16 @@
   "dependencies": {
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/core": "workspace:*",
+    "@maycombhq/embed-model": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
+  },
+  "optionalDependencies": {
+    "@maycombhq/onnxruntime-darwin-arm64": "workspace:*",
+    "@maycombhq/onnxruntime-linux-arm64": "workspace:*",
+    "@maycombhq/onnxruntime-linux-x64": "workspace:*",
+    "@maycombhq/onnxruntime-wasm": "workspace:*",
+    "@maycombhq/onnxruntime-win32-arm64": "workspace:*",
+    "@maycombhq/onnxruntime-win32-x64": "workspace:*"
   }
 }

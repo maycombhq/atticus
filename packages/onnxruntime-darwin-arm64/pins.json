@@ -1,0 +1,87 @@
+{
+  "sources": {
+    "onnxruntime-node": {
+      "url": "https://registry.npmjs.org/onnxruntime-node/-/onnxruntime-node-1.30.0.tgz",
+      "what": "onnxruntime-node 1.30.0 from the npm registry",
+      "sha256": "6e3390d6b783e7be946fad629292799da28d0b42f84856e50d2c1b0383291e75"
+    },
+    "ort-licence": {
+      "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/LICENSE",
+      "what": "onnxruntime's MIT licence at v1.30.0 (its npm packages carry none)",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    }
+  },
+  "files": [
+    {
+      "path": "dist/index.js",
+      "source": "onnxruntime-node",
+      "entry": "dist/index.js",
+      "sha256": "019eb02133b94b1f7fdf2d89eb93b590ce1288d271f7b280647fb3978e6391fa"
+    },
+    {
+      "path": "dist/index.js.map",
+      "source": "onnxruntime-node",
+      "entry": "dist/index.js.map",
+      "sha256": "08ed0bf4483b52c91c2c9271f4acb93f43f217a496ef8918aac05be0341a2b00"
+    },
+    {
+      "path": "dist/backend.js",
+      "source": "onnxruntime-node",
+      "entry": "dist/backend.js",
+      "sha256": "a79e8019e7276a282987023f9d38d41063a99e563e5e1a6f38a73a7d39ea83ab"
+    },
+    {
+      "path": "dist/backend.js.map",
+      "source": "onnxruntime-node",
+      "entry": "dist/backend.js.map",
+      "sha256": "507698a7c23feb4379f827f5ac88608db93b193e9c334000456f58661699ac0c"
+    },
+    {
+      "path": "dist/binding.js",
+      "source": "onnxruntime-node",
+      "entry": "dist/binding.js",
+      "sha256": "2a85ac5de943c7222aae5ca2897f52d73891f528d4295b701fab077470c668c0"
+    },
+    {
+      "path": "dist/binding.js.map",
+      "source": "onnxruntime-node",
+      "entry": "dist/binding.js.map",
+      "sha256": "9e874542b40ead4543c619adcbd3c1d03af7cff256350cf89269e4f256b68b26"
+    },
+    {
+      "path": "dist/version.js",
+      "source": "onnxruntime-node",
+      "entry": "dist/version.js",
+      "sha256": "0a1a7f532f4455ead0678966815c3114730150aa4368ebb5ebd9727425e9003b"
+    },
+    {
+      "path": "dist/version.js.map",
+      "source": "onnxruntime-node",
+      "entry": "dist/version.js.map",
+      "sha256": "dc33a306cd858dd8d4b11566d33c13db607eaa2587ed6f7c06809513f3dab50e"
+    },
+    {
+      "path": "bin/napi-v6/darwin/arm64/libonnxruntime.1.30.0.dylib",
+      "source": "onnxruntime-node",
+      "entry": "bin/napi-v6/darwin/arm64/libonnxruntime.1.30.0.dylib",
+      "sha256": "685d2be5dba1309c89d3a5324b7fd06a5c42f1a61bfea32d14c4cc28d072121d"
+    },
+    {
+      "path": "bin/napi-v6/darwin/arm64/libonnxruntime.1.dylib",
+      "source": "onnxruntime-node",
+      "entry": "bin/napi-v6/darwin/arm64/libonnxruntime.1.dylib",
+      "sha256": "685d2be5dba1309c89d3a5324b7fd06a5c42f1a61bfea32d14c4cc28d072121d"
+    },
+    {
+      "path": "bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
+      "source": "onnxruntime-node",
+      "entry": "bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
+      "sha256": "a3f993357759b06ae2411f70af60f5e041d04521ea7f0d12cb7546e411a527dd"
+    },
+    {
+      "path": "LICENSE",
+      "source": "ort-licence",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    }
+  ]
+}

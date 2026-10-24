@@ -135,12 +135,18 @@ export function repoItems(v: Api.OnboardingView): Item[] {
   return v.repos.map((r) => ({
     id: `repo:${r.id}`,
     label: r.id,
-    description: r.lastScan
-      ? `scanned · ${plural(r.lastScan.records, "record")}`
-      : r.cloned
-        ? "not scanned"
-        : "not cloned",
-    tooltip: `${r.id}: ${r.type}, owned by ${r.owner}. Listed in ${r.manifest}.${r.lastScan?.commit ? ` Last scan at ${r.lastScan.commit.slice(0, 7)}.` : ""}`,
+    // ADR 0123: the branch the catalog is read from, and the commit the last scan read.
+    description: [
+      r.defaultBranch,
+      r.lastScan
+        ? `scanned${r.lastScan.commit ? ` at ${r.lastScan.commit.slice(0, 7)}` : ""} · ${plural(r.lastScan.records, "record")}`
+        : r.cloned
+          ? "not scanned"
+          : "not cloned",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    tooltip: `${r.id}: ${r.type}, owned by ${r.owner}. Listed in ${r.manifest}.${r.defaultBranch ? ` Read from ${r.defaultBranch}.` : ""}${r.branches?.length ? ` Other branches: ${r.branches.join(", ")} (Set up › Repos scans them beside it).` : ""}${r.lastScan?.commit ? ` Last scan at ${r.lastScan.commit.slice(0, 7)}.` : ""}`,
     icon: "repo",
     expand: { kind: "repo", repo: r.id },
     context: "atticus.repo",

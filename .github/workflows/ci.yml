@@ -67,6 +67,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
+      # ADR 0116 addendum: the embedding model and this platform's onnxruntime, each checked
+      # against its committed sha256, kept between runs so they are downloaded once. pnpm bundle
+      # fills the packages from this cache; the check job never fetches them.
+      - uses: actions/cache@v4
+        with:
+          path: .cache/pinned
+          key: pinned-${{ runner.os }}-${{ hashFiles('packages/*/pins.json') }}
+      - run: node scripts/model/fetch.mjs --this-platform
       - run: pnpm bundle
       - run: node scripts/bundle/test-bundle.mjs dist/atticus-*-offline.zip
         shell: bash

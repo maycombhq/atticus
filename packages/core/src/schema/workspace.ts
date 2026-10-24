@@ -17,7 +17,7 @@ export const WORKSPACE_SCHEMA_VERSION = 1 as const;
 /** A Git branch name segment Atticus generates: no slashes, safe on every platform. */
 const BranchSegment = RecordId;
 
-const GitRef = z
+export const GitRef = z
   .string()
   .min(1)
   .max(200)
@@ -111,6 +111,11 @@ export const ManifestRepo = z.strictObject({
       "remove the password from the URL",
     ),
   defaultBranch: GitRef.default("main"),
+  /**
+   * Other branches people work on (develop, release/2026.11...), scanned on request beside the
+   * catalog of defaultBranch, never into it (ADR 0123): `atticus scan --ref <branch>`.
+   */
+  branches: z.array(GitRef).default([]),
   /** Repo type from the platform profile, e.g. spring-boot, gateway, infra. Maps to build commands. */
   type: RecordId,
   /** Owning team id (roles.yaml). */

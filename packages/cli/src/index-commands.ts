@@ -112,7 +112,8 @@ export async function searchCommand(
       io.err("--by is words, meaning or both.");
       return 2;
     }
-    const ix = await openIndex(root);
+    // A person asked for meaning: every node is embedded first (a step embeds at most 500 an open).
+    const ix = await openIndex(root, { embedOnOpen: Number.MAX_SAFE_INTEGER });
     try {
       const kinds = o.kind
         ?.split(",")

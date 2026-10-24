@@ -597,6 +597,8 @@ export const COPY = {
       learning: "Learning",
       settings: "Settings",
       ai: "AI",
+      repos: "Repos",
+      cockpit: "At a glance",
       runs: "Model runs",
       history: "Prompt history",
       changeDiagram: "Change diagram",
@@ -2194,6 +2196,67 @@ export const COPY = {
     draftRequests: "Draft requests",
   },
   /** ADR 0121: the AI tab, how AI runs here. */
+  /** WP7.1: the change cockpit, one change at a glance. */
+  cockpit: {
+    title: "This change at a glance",
+    none: "No change yet: start one on Changes.",
+    where: "Where it is",
+    state: (state: string, risk: string) => `In ${state}, ${risk} risk.`,
+    stages: { feature: "Placement", architecture: "Target flows", stories: "Stories" } as Record<
+      string,
+      string
+    >,
+    stageScreen: {
+      feature: "feature-design",
+      architecture: "architecture",
+      stories: "stories",
+    } as Record<string, string>,
+    marks: { done: "done", current: "in progress", todo: "to come" } as Record<string, string>,
+    stage: (name: string, mark: string) => `${name}: ${mark}`,
+    progress: (drafts: number, rounds: number, open: number) =>
+      [
+        `${drafts} draft${drafts === 1 ? "" : "s"}`,
+        `${rounds} critic round${rounds === 1 ? "" : "s"}`,
+        ...(open ? [`${open} question${open === 1 ? "" : "s"} to answer`] : []),
+      ].join(", "),
+    next: "What's next",
+    copySlash: "Copy the slash command",
+    copyCommand: "Copy the command",
+    blocks: "What blocks it",
+    questions: (n: number) => `${n} question${n === 1 ? "" : "s"} wait for a person`,
+    repos: "Repos and branches",
+    noRepos: "No repo has a branch for this change yet: atticus workspace open makes them.",
+    branchOn: (branch: string, base: string) => `${branch}, from ${base}`,
+    pr: "the pull request",
+  },
+  /** ADR 0123: Set up › Repos, each repo's branches. */
+  repos: {
+    title: "Repos and their branches",
+    intro:
+      "The catalog is read from each repo's default branch: that is the baseline, the one the hand-off PRs build on. Other branches people work on can be scanned beside it and compared with it, never merged into it.",
+    empty:
+      "No repo is listed yet: run atticus repos discover <folder>, or add one to a repos.manifest.yaml.",
+    typeOwner: (type: string, owner: string) => `${type} · ${owner}`,
+    url: "URL",
+    defaultBranch: "Default branch",
+    atCommit: (c: string) => `read at ${c}`,
+    remoteSays: (b: string) => `The remote's default is ${b}`,
+    branches: "Other branches",
+    noBranches: "None listed",
+    branchesHint:
+      "One a line, for example develop or release/2026.11. Each can be scanned beside the baseline.",
+    scanned: (b: string, date: string, c: string) => `${b} scanned on ${date}, at ${c}`,
+    scan: (b: string) => `Scan ${b}`,
+    scanStarted: (b: string) => `Scanning ${b} beside the baseline: follow it on Scans.`,
+    compare: (b: string, def: string) => `Compare ${b} with ${def}`,
+    comparedNow: "Compared.",
+    compared: (b: string, added: number, removed: number, changed: number) =>
+      `${b} against the baseline: ${added} added, ${removed} removed, ${changed} changed.`,
+    edit: "Edit branches",
+    save: "Save to the manifest",
+    saved:
+      "Saved to the manifest: commit it in a pull request. Run atticus workspace sync if the default branch changed.",
+  },
   aiSettings: {
     title: "How AI runs here",
     intro:

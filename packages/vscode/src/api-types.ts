@@ -16,6 +16,9 @@ export interface OnboardingRepo {
   type: string;
   owner: string;
   manifest: string;
+  /** ADR 0123: the branch the catalog is read from, and those scanned beside it. */
+  defaultBranch?: string;
+  branches?: string[];
   cloned: boolean;
   scanSettings: { path: string; present: boolean };
   lastScan: { records: number; kinds: Record<string, number>; commit?: string } | null;

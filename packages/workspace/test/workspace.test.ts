@@ -8,12 +8,14 @@ import { parse } from "yaml";
 import { RepoManifest, type ManifestRepo } from "@maycombhq/core";
 import {
   baseClonePath,
+  branchCheckoutPath,
   checkoutState,
   createWorkspace,
   ensureGitignore,
   intellijProjectPath,
   loadRepos,
   readChangeRepos,
+  remoteDefaultBranch,
   vscodeWorkspacePath,
   worktreePath,
   writeChangeRepos,
@@ -438,4 +440,71 @@ describe("manifests", () => {
   it("parses YAML written by people", () => {
     expect(parse("a: 1")).toEqual({ a: 1 });
   });
+});
+
+describe("the remote's default branch (ADR 0123)", () => {
+  it(
+    "says which branch the remote calls its default, at every sync, and reads it back offline",
+    async () => {
+      // A remote with main and develop, whose default is develop; the manifest says main.
+      const work = join(dir, "src", "forge-notes");
+      await mkdir(work, { recursive: true });
+      git(work, "init", "-q", "-b", "main");
+      await writeFile(join(work, "README.md"), "notes\n");
+      git(work, "add", "-A");
+      git(work, "commit", "-q", "-m", "first");
+      git(work, "checkout", "-q", "-b", "develop");
+      const url = join(dir, "remotes", "forge-notes.git");
+      git(dir, "clone", "-q", "--bare", work, url);
+      git(url, "symbolic-ref", "HEAD", "refs/heads/develop");
+      const notes = RepoManifest.parse({
+        schemaVersion: 1,
+        platform: "forge",
+        repos: [{ id: "forge-notes", url, type: "forge-service", owner: "team-ledger" }],
+      }).repos;
+      const ws = createWorkspace(root);
+      const first = await ws.sync(notes);
+      expect(first[0]).toMatchObject({ action: "cloned", remoteDefault: "develop" });
+      expect(await remoteDefaultBranch(baseClonePath(root, "forge-notes"))).toBe("develop");
+      const again = await ws.sync(notes);
+      expect(again[0]).toMatchObject({ action: "updated", remoteDefault: "develop" });
+      expect(await remoteDefaultBranch(join(dir, "nowhere"))).toBeUndefined();
+    },
+    T,
+  );
+});
+
+describe("another branch beside the base clone (ADR 0123)", () => {
+  it(
+    "checks out a named branch read-only, beside the base clone, and moves it on the next call",
+    async () => {
+      const ws = createWorkspace(root);
+      await ws.sync(repos.slice(0, 1));
+      const work = join(dir, "src", "forge-ledger");
+      git(work, "checkout", "-q", "-b", "develop");
+      await writeFile(join(work, "src", "Limits.java"), "class Limits {}\n");
+      git(work, "add", "-A");
+      git(work, "commit", "-q", "-m", "limits");
+      git(work, "push", "-q", "origin", "develop");
+      const first = await ws.checkoutBranch(repos[0]!, "develop");
+      expect(first.dir).toBe(branchCheckoutPath(root, "forge-ledger", "develop"));
+      expect(existsSync(join(first.dir, "src", "Limits.java"))).toBe(true);
+      expect(first.commit).toMatch(/^[0-9a-f]{40}$/);
+      // The base clone stays on main.
+      expect(existsSync(join(baseClonePath(root, "forge-ledger"), "src", "Limits.java"))).toBe(
+        false,
+      );
+      await writeFile(join(work, "src", "More.java"), "class More {}\n");
+      git(work, "add", "-A");
+      git(work, "commit", "-q", "-m", "more");
+      git(work, "push", "-q", "origin", "develop");
+      const next = await ws.checkoutBranch(repos[0]!, "develop");
+      expect(next.commit).not.toBe(first.commit);
+      expect(existsSync(join(next.dir, "src", "More.java"))).toBe(true);
+      await expect(ws.checkoutBranch(repos[0]!, "no-such-branch")).rejects.toThrow(
+        /no-such-branch/,
+      );
+    },
+    T,
+  );
 });
