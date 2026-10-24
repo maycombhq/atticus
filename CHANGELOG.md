@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The bench measures the assistant's facts, fields and config, and drafted stories (ADR 0124 §6)
+
+- `atticus bench facts [<repo>] [--facts file]` scores the facts file an assistant wrote against the bench reference: the facts are projected into the catalog as `atticus verify` projects them and scored with `bench run`'s matcher, per kind, so the numbers compare with the readers'.
+- Five bench references (spring-petclinic-rest, todo-csharp-sql, todo-nodejs-mongo, fastapi-template, podinfo) now cover fields (586: request and response fields of entries, columns of tables) and config (51 keys that name another system, a timeout or a flag), each cited to its line. `bench run` and `bench facts` score them where a reference covers them and report the old four kinds' total beside the total over all.
+- The stories bench: `bench/stories/rubric.md` says what a professional user story holds, three reference stories on public bench repos cite the code each criterion changes, and `atticus bench stories --draft <file>` scores a draft on changed steps, fields, error cases, invented fields (a failure) and the rubric's sections.
+
 ### The drafter checks its own draft, and a person's answer settles the judge (ADR 0087, 0111 and 0117 addenda)
 
 - A stage's drafter checks its draft with the stage's own checks before handing it in. In model mode it gets a `check_draft` tool. Headless Claude Code is told to run `atticus stage check <change> <stage> <file>`. With Copilot, `atticus handoff done` lists the problems with their lines and keeps the run open until the file is clean. After `draftSelfChecks` checks (change policy, default 3) the file is handed in as it is.

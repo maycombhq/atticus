@@ -1,7 +1,7 @@
 # Written by reading the code at the pinned commit, not from an Atticus scan.
 repo: fastapi-template
 commit: b1125d8839482cb7bbae603ddc6d0081bf87532e
-covers: [serves, calls, stores, deploys]
+covers: [serves, calls, stores, deploys, fields, config]
 notes: >-
   A FastAPI back end (backend/app) plus a React single-page front end (frontend/src) that the
   backend image builds and serves itself (backend/Dockerfile copies the built front end in;
@@ -36,6 +36,15 @@ notes: >-
   and is not a deployment. A second workflow (.github/workflows/deploy.yml:51) deploys the same
   app to FastAPI Cloud with fastapi deploy; that platform is not in the standard list and is
   recorded as fastapi-cloud.
+  Fields and config (ADR 0124 section 6, added 2026-10-24): request fields are each route's
+  Pydantic body model and its query parameters (skip, limit, email_to); the login form gives
+  username and password, the two fields the code reads (login.py:31), and the other OAuth2 form
+  fields are ignored. Response fields are the response_model or returned model; the HTML and
+  boolean responses have none. Columns are the SQLModel table fields of user and item
+  (relationships are not columns). Fields of calls are not judged. Config is the Settings keys that
+  name another system (DATABASE_URL, SENTRY_DSN, FRONTEND_HOST, the SMTP_ keys), a timeout (the two
+  token expiries) or a flag (FASTAPI_ENV), and the front end's VITE_API_URL; the API prefix,
+  project name, secret key, first superuser, email sender and compose and Traefik keys are ignored.
 serves:
   - {
       type: rest,
@@ -269,3 +278,820 @@ stores:
 deploys:
   - { platform: docker, at: "compose.deploy.yml:47" }
   - { platform: fastapi-cloud, at: ".github/workflows/deploy.yml:51" }
+fields:
+  - {
+      entry: "POST /api/v1/login/access-token",
+      side: "request",
+      name: "username",
+      type: "form str",
+      at: "backend/app/api/routes/login.py:31",
+    }
+  - {
+      entry: "POST /api/v1/login/access-token",
+      side: "request",
+      name: "password",
+      type: "form str",
+      at: "backend/app/api/routes/login.py:31",
+    }
+  - {
+      entry: "POST /api/v1/login/access-token",
+      side: "response",
+      name: "access_token",
+      type: "str",
+      at: "backend/app/models.py:115",
+    }
+  - {
+      entry: "POST /api/v1/login/access-token",
+      side: "response",
+      name: "token_type",
+      type: "str",
+      at: "backend/app/models.py:116",
+    }
+  - {
+      entry: "POST /api/v1/login/test-token",
+      side: "response",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:14",
+    }
+  - {
+      entry: "POST /api/v1/login/test-token",
+      side: "response",
+      name: "is_active",
+      type: "bool",
+      at: "backend/app/models.py:15",
+    }
+  - {
+      entry: "POST /api/v1/login/test-token",
+      side: "response",
+      name: "is_superuser",
+      type: "bool",
+      at: "backend/app/models.py:16",
+    }
+  - {
+      entry: "POST /api/v1/login/test-token",
+      side: "response",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:17",
+    }
+  - {
+      entry: "POST /api/v1/login/test-token",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:60",
+    }
+  - {
+      entry: "POST /api/v1/login/test-token",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:61",
+    }
+  - {
+      entry: "POST /api/v1/password-recovery/{email}",
+      side: "response",
+      name: "message",
+      type: "str",
+      at: "backend/app/models.py:110",
+    }
+  - {
+      entry: "POST /api/v1/reset-password/",
+      side: "request",
+      name: "token",
+      type: "str",
+      at: "backend/app/models.py:125",
+    }
+  - {
+      entry: "POST /api/v1/reset-password/",
+      side: "request",
+      name: "new_password",
+      type: "str",
+      at: "backend/app/models.py:126",
+    }
+  - {
+      entry: "POST /api/v1/reset-password/",
+      side: "response",
+      name: "message",
+      type: "str",
+      at: "backend/app/models.py:110",
+    }
+  - {
+      entry: "GET /api/v1/users/",
+      side: "request",
+      name: "skip",
+      type: "int",
+      at: "backend/app/api/routes/users.py:37",
+    }
+  - {
+      entry: "GET /api/v1/users/",
+      side: "request",
+      name: "limit",
+      type: "int",
+      at: "backend/app/api/routes/users.py:37",
+    }
+  - {
+      entry: "GET /api/v1/users/",
+      side: "response",
+      name: "data",
+      type: "list[UserPublic]",
+      at: "backend/app/models.py:65",
+    }
+  - {
+      entry: "GET /api/v1/users/",
+      side: "response",
+      name: "count",
+      type: "int",
+      at: "backend/app/models.py:66",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "request",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:14",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "request",
+      name: "is_active",
+      type: "bool",
+      at: "backend/app/models.py:15",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "request",
+      name: "is_superuser",
+      type: "bool",
+      at: "backend/app/models.py:16",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "request",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:17",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "request",
+      name: "password",
+      type: "str",
+      at: "backend/app/models.py:22",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "response",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:14",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "response",
+      name: "is_active",
+      type: "bool",
+      at: "backend/app/models.py:15",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "response",
+      name: "is_superuser",
+      type: "bool",
+      at: "backend/app/models.py:16",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "response",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:17",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:60",
+    }
+  - {
+      entry: "POST /api/v1/users/",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:61",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me",
+      side: "request",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:41",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me",
+      side: "request",
+      name: "email",
+      type: "EmailStr | None",
+      at: "backend/app/models.py:42",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me",
+      side: "response",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:14",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me",
+      side: "response",
+      name: "is_active",
+      type: "bool",
+      at: "backend/app/models.py:15",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me",
+      side: "response",
+      name: "is_superuser",
+      type: "bool",
+      at: "backend/app/models.py:16",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me",
+      side: "response",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:17",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:60",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:61",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me/password",
+      side: "request",
+      name: "current_password",
+      type: "str",
+      at: "backend/app/models.py:46",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me/password",
+      side: "request",
+      name: "new_password",
+      type: "str",
+      at: "backend/app/models.py:47",
+    }
+  - {
+      entry: "PATCH /api/v1/users/me/password",
+      side: "response",
+      name: "message",
+      type: "str",
+      at: "backend/app/models.py:110",
+    }
+  - {
+      entry: "GET /api/v1/users/me",
+      side: "response",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:14",
+    }
+  - {
+      entry: "GET /api/v1/users/me",
+      side: "response",
+      name: "is_active",
+      type: "bool",
+      at: "backend/app/models.py:15",
+    }
+  - {
+      entry: "GET /api/v1/users/me",
+      side: "response",
+      name: "is_superuser",
+      type: "bool",
+      at: "backend/app/models.py:16",
+    }
+  - {
+      entry: "GET /api/v1/users/me",
+      side: "response",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:17",
+    }
+  - {
+      entry: "GET /api/v1/users/me",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:60",
+    }
+  - {
+      entry: "GET /api/v1/users/me",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:61",
+    }
+  - {
+      entry: "DELETE /api/v1/users/me",
+      side: "response",
+      name: "message",
+      type: "str",
+      at: "backend/app/models.py:110",
+    }
+  - {
+      entry: "POST /api/v1/users/signup",
+      side: "request",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:26",
+    }
+  - {
+      entry: "POST /api/v1/users/signup",
+      side: "request",
+      name: "password",
+      type: "str",
+      at: "backend/app/models.py:27",
+    }
+  - {
+      entry: "POST /api/v1/users/signup",
+      side: "request",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:28",
+    }
+  - {
+      entry: "POST /api/v1/users/signup",
+      side: "response",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:14",
+    }
+  - {
+      entry: "POST /api/v1/users/signup",
+      side: "response",
+      name: "is_active",
+      type: "bool",
+      at: "backend/app/models.py:15",
+    }
+  - {
+      entry: "POST /api/v1/users/signup",
+      side: "response",
+      name: "is_superuser",
+      type: "bool",
+      at: "backend/app/models.py:16",
+    }
+  - {
+      entry: "POST /api/v1/users/signup",
+      side: "response",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:17",
+    }
+  - {
+      entry: "POST /api/v1/users/signup",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:60",
+    }
+  - {
+      entry: "POST /api/v1/users/signup",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:61",
+    }
+  - {
+      entry: "GET /api/v1/users/{user_id}",
+      side: "response",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:14",
+    }
+  - {
+      entry: "GET /api/v1/users/{user_id}",
+      side: "response",
+      name: "is_active",
+      type: "bool",
+      at: "backend/app/models.py:15",
+    }
+  - {
+      entry: "GET /api/v1/users/{user_id}",
+      side: "response",
+      name: "is_superuser",
+      type: "bool",
+      at: "backend/app/models.py:16",
+    }
+  - {
+      entry: "GET /api/v1/users/{user_id}",
+      side: "response",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:17",
+    }
+  - {
+      entry: "GET /api/v1/users/{user_id}",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:60",
+    }
+  - {
+      entry: "GET /api/v1/users/{user_id}",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:61",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "request",
+      name: "email",
+      type: "EmailStr | None",
+      at: "backend/app/models.py:33",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "request",
+      name: "is_active",
+      type: "bool | None",
+      at: "backend/app/models.py:34",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "request",
+      name: "is_superuser",
+      type: "bool | None",
+      at: "backend/app/models.py:35",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "request",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:36",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "request",
+      name: "password",
+      type: "str | None",
+      at: "backend/app/models.py:37",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "response",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:14",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "response",
+      name: "is_active",
+      type: "bool",
+      at: "backend/app/models.py:15",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "response",
+      name: "is_superuser",
+      type: "bool",
+      at: "backend/app/models.py:16",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "response",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:17",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:60",
+    }
+  - {
+      entry: "PATCH /api/v1/users/{user_id}",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:61",
+    }
+  - {
+      entry: "DELETE /api/v1/users/{user_id}",
+      side: "response",
+      name: "message",
+      type: "str",
+      at: "backend/app/models.py:110",
+    }
+  - {
+      entry: "POST /api/v1/utils/test-email/",
+      side: "request",
+      name: "email_to",
+      type: "EmailStr",
+      at: "backend/app/api/routes/utils.py:16",
+    }
+  - {
+      entry: "POST /api/v1/utils/test-email/",
+      side: "response",
+      name: "message",
+      type: "str",
+      at: "backend/app/models.py:110",
+    }
+  - {
+      entry: "GET /api/v1/items/",
+      side: "request",
+      name: "skip",
+      type: "int",
+      at: "backend/app/api/routes/items.py:15",
+    }
+  - {
+      entry: "GET /api/v1/items/",
+      side: "request",
+      name: "limit",
+      type: "int",
+      at: "backend/app/api/routes/items.py:15",
+    }
+  - {
+      entry: "GET /api/v1/items/",
+      side: "response",
+      name: "data",
+      type: "list[ItemPublic]",
+      at: "backend/app/models.py:104",
+    }
+  - {
+      entry: "GET /api/v1/items/",
+      side: "response",
+      name: "count",
+      type: "int",
+      at: "backend/app/models.py:105",
+    }
+  - {
+      entry: "GET /api/v1/items/{id}",
+      side: "response",
+      name: "title",
+      type: "str",
+      at: "backend/app/models.py:71",
+    }
+  - {
+      entry: "GET /api/v1/items/{id}",
+      side: "response",
+      name: "description",
+      type: "str | None",
+      at: "backend/app/models.py:72",
+    }
+  - {
+      entry: "GET /api/v1/items/{id}",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:98",
+    }
+  - {
+      entry: "GET /api/v1/items/{id}",
+      side: "response",
+      name: "owner_id",
+      type: "uuid",
+      at: "backend/app/models.py:99",
+    }
+  - {
+      entry: "GET /api/v1/items/{id}",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:100",
+    }
+  - {
+      entry: "POST /api/v1/items/",
+      side: "request",
+      name: "title",
+      type: "str",
+      at: "backend/app/models.py:71",
+    }
+  - {
+      entry: "POST /api/v1/items/",
+      side: "request",
+      name: "description",
+      type: "str | None",
+      at: "backend/app/models.py:72",
+    }
+  - {
+      entry: "POST /api/v1/items/",
+      side: "response",
+      name: "title",
+      type: "str",
+      at: "backend/app/models.py:71",
+    }
+  - {
+      entry: "POST /api/v1/items/",
+      side: "response",
+      name: "description",
+      type: "str | None",
+      at: "backend/app/models.py:72",
+    }
+  - {
+      entry: "POST /api/v1/items/",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:98",
+    }
+  - {
+      entry: "POST /api/v1/items/",
+      side: "response",
+      name: "owner_id",
+      type: "uuid",
+      at: "backend/app/models.py:99",
+    }
+  - {
+      entry: "POST /api/v1/items/",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:100",
+    }
+  - {
+      entry: "PUT /api/v1/items/{id}",
+      side: "request",
+      name: "title",
+      type: "str | None",
+      at: "backend/app/models.py:82",
+    }
+  - {
+      entry: "PUT /api/v1/items/{id}",
+      side: "request",
+      name: "description",
+      type: "str | None",
+      at: "backend/app/models.py:83",
+    }
+  - {
+      entry: "PUT /api/v1/items/{id}",
+      side: "response",
+      name: "title",
+      type: "str",
+      at: "backend/app/models.py:71",
+    }
+  - {
+      entry: "PUT /api/v1/items/{id}",
+      side: "response",
+      name: "description",
+      type: "str | None",
+      at: "backend/app/models.py:72",
+    }
+  - {
+      entry: "PUT /api/v1/items/{id}",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:98",
+    }
+  - {
+      entry: "PUT /api/v1/items/{id}",
+      side: "response",
+      name: "owner_id",
+      type: "uuid",
+      at: "backend/app/models.py:99",
+    }
+  - {
+      entry: "PUT /api/v1/items/{id}",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:100",
+    }
+  - {
+      entry: "DELETE /api/v1/items/{id}",
+      side: "response",
+      name: "message",
+      type: "str",
+      at: "backend/app/models.py:110",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "request",
+      name: "email",
+      type: "str",
+      at: "backend/app/api/routes/private.py:17",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "request",
+      name: "password",
+      type: "str",
+      at: "backend/app/api/routes/private.py:18",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "request",
+      name: "full_name",
+      type: "str",
+      at: "backend/app/api/routes/private.py:19",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "request",
+      name: "is_verified",
+      type: "bool",
+      at: "backend/app/api/routes/private.py:20",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "response",
+      name: "email",
+      type: "EmailStr",
+      at: "backend/app/models.py:14",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "response",
+      name: "is_active",
+      type: "bool",
+      at: "backend/app/models.py:15",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "response",
+      name: "is_superuser",
+      type: "bool",
+      at: "backend/app/models.py:16",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "response",
+      name: "full_name",
+      type: "str | None",
+      at: "backend/app/models.py:17",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "response",
+      name: "id",
+      type: "uuid",
+      at: "backend/app/models.py:60",
+    }
+  - {
+      entry: "POST /api/v1/private/users/",
+      side: "response",
+      name: "created_at",
+      type: "datetime | None",
+      at: "backend/app/models.py:61",
+    }
+  - { table: "user", name: "email", type: "EmailStr", at: "backend/app/models.py:14" }
+  - { table: "user", name: "is_active", type: "bool", at: "backend/app/models.py:15" }
+  - { table: "user", name: "is_superuser", type: "bool", at: "backend/app/models.py:16" }
+  - { table: "user", name: "full_name", type: "str | None", at: "backend/app/models.py:17" }
+  - { table: "user", name: "id", type: "uuid", at: "backend/app/models.py:52" }
+  - { table: "user", name: "hashed_password", type: "str", at: "backend/app/models.py:53" }
+  - { table: "user", name: "created_at", type: "datetime | None", at: "backend/app/models.py:54" }
+  - { table: "item", name: "title", type: "str", at: "backend/app/models.py:71" }
+  - { table: "item", name: "description", type: "str | None", at: "backend/app/models.py:72" }
+  - { table: "item", name: "id", type: "uuid", at: "backend/app/models.py:88" }
+  - { table: "item", name: "created_at", type: "datetime | None", at: "backend/app/models.py:89" }
+  - { table: "item", name: "owner_id", type: "uuid", at: "backend/app/models.py:90" }
+config:
+  - { key: "ACCESS_TOKEN_EXPIRE_MINUTES", value: "11520", at: "backend/app/core/config.py:25" }
+  - { key: "FRONTEND_HOST", value: "http://localhost:5173", at: "backend/app/core/config.py:26" }
+  - { key: "FASTAPI_ENV", value: "development", at: "backend/app/core/config.py:27" }
+  - { key: "SENTRY_DSN", source: "environment", at: "backend/app/core/config.py:30" }
+  - { key: "DATABASE_URL", source: ".env and compose.yml", at: "backend/app/core/config.py:31" }
+  - { key: "SMTP_TLS", value: "True", at: "backend/app/core/config.py:42" }
+  - { key: "SMTP_SSL", value: "False", at: "backend/app/core/config.py:43" }
+  - { key: "SMTP_PORT", value: "587", at: "backend/app/core/config.py:44" }
+  - { key: "SMTP_HOST", source: "environment", at: "backend/app/core/config.py:45" }
+  - { key: "SMTP_USER", source: "environment", at: "backend/app/core/config.py:46" }
+  - { key: "SMTP_PASSWORD", source: "environment", at: "backend/app/core/config.py:47" }
+  - { key: "EMAIL_RESET_TOKEN_EXPIRE_HOURS", value: "48", at: "backend/app/core/config.py:57" }
+  - { key: "VITE_API_URL", value: "http://localhost:8000", at: "frontend/src/main.tsx:18" }
+ignore:
+  fields:
+    - "entry rest post /api/v1/login/access-token | request *"
+    - "call *"
+  config:
+    - "api_v1_str"
+    - "secret_key"
+    - "project_name"
+    - "emails_from_*"
+    - "email_test_user"
+    - "first_superuser*"
+    - "postgres_*"
+    - "domain"
+    - "adminer_*"
+    - "traefik.*"
+    - "docker_image_*"
+    - "stack_name"
+    - "environment"
+    - "ci"
+    - "tag"

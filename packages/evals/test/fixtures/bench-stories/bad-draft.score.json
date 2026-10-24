@@ -1,0 +1,64 @@
+{
+  "story": "petclinic-pet-microchip",
+  "steps": {
+    "found": 1,
+    "total": 8,
+    "missed": [
+      "ui-form",
+      "ui-model",
+      "ui-submit",
+      "api-entity",
+      "api-duplicate",
+      "api-lookup",
+      "db-column"
+    ],
+    "extra": [
+      "ui"
+    ],
+    "coverage": 0.125
+  },
+  "fields": {
+    "found": 2,
+    "total": 4,
+    "missed": [
+      "name",
+      "type"
+    ],
+    "coverage": 0.5
+  },
+  "errors": {
+    "found": 0,
+    "total": 5,
+    "missed": [
+      "ui-form: microchip format",
+      "api-contract: microchip format",
+      "api-duplicate: microchip unique",
+      "api-duplicate: (no field) not-found",
+      "db-column: microchip unique"
+    ],
+    "coverage": 0
+  },
+  "invented": [
+    "chipVendor",
+    "implantDate",
+    "petName"
+  ],
+  "sections": {
+    "present": 5,
+    "total": 17,
+    "missing": [
+      "context",
+      "scope.in",
+      "scope.out",
+      "criteria.per-step",
+      "criteria.errors",
+      "nonFunctional.auth",
+      "nonFunctional.audit",
+      "nonFunctional.timeouts",
+      "nonFunctional.performance",
+      "tests",
+      "dependencies",
+      "definitionOfDone"
+    ]
+  }
+}

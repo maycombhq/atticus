@@ -6,10 +6,13 @@ Public open-source repos, each pinned to a commit, with a reference a person wro
 atticus bench fetch            # clone each repo at its pinned commit (outside this checkout)
 atticus bench run              # adopt and scan each with this Atticus, score it against its reference
 atticus bench run --repo eshop --json
+atticus bench facts podinfo --facts podinfo.jsonl   # score an assistant's facts file (ADR 0124) the same way
+atticus bench stories --draft story.yaml            # score a drafted user story against stories/
 ```
 
 - `repos.yaml`: the repos, their commits and stacks. Batch 1 is six repos; the rest of the approved list (22 in all) follows.
-- `references/<id>.yaml`: the reference. `covers` says which kinds are complete; only those are scored. `notes` records every judgement call.
+- `references/<id>.yaml`: the reference. `covers` says which kinds are complete; only those are scored. `notes` records every judgement call; `ignore` lists true facts outside a kind's scope (a logging level is config, but not config that names another system), which are neither found nor wrong.
+- `stories/`: the stories bench (Phase B): `rubric.md` and three reference stories.
 - Clones and results live in `%LOCALAPPDATA%\atticus\bench` (or `~/.cache/atticus/bench`); results are JSON per run, with what was missed and wrong per kind.
 
 ## How facts are compared
@@ -18,8 +21,12 @@ atticus bench run --repo eshop --json
 - **calls:** the same for outbound calls, plus `event Name` for events published.
 - **stores:** table names, without schema or letter case.
 - **deploys:** the platform a workload runs on (kubernetes, cloud-run, azure-container-apps, service-fabric...). Helm, Kustomize and Terraform are tooling, not platforms.
+- **fields** (five references, ADR 0124 §6): `entry <serves fact> | <side> <name>` for a top-level field of an entry's success request or response body (query parameters are request fields, path parameters are part of the path), `call <calls fact> | <side> <name>` for a call's, and `column <table> | <name>` for a column. Names compare without letter case, `_` or `-` (first_name is firstName). The owner matches as serves and calls do.
+- **config** (the same five): the key of a setting that names another system (a host, base URL, connection string, Key Vault, secret name), a timeout or retry, or a behaviour flag; without letter case, with `:` and `__` read as `.`. Values are recorded for a reader of the reference but not scored.
 
 Facts are compared as one set per repo, so the same route in two apps of one repo counts once. Found means in both; missed means in the reference only; wrong means in the scan only, for kinds the reference covers.
+
+Totals over every covered kind are reported, and beside them the total over serves, calls, stores and deploys only, which is what the baseline tables below measure.
 
 ## Baseline: today's built-in readers (2026-10-21, all 22 repos)
 
@@ -88,3 +95,41 @@ The four front ends that found no calls before: spring-petclinic-angular 30 of 3
 Biggest gains of the first step: spring-petclinic-rest 17% to 98% (precision and recall), fastapi-realworld 0% to 100% precision and 70% recall, node-realworld 21% to 100% and 89%, fastapi-template 0% to 100% and 53%, piggymetrics 31% to 100% and 14% to 52%; the Angular repo's generated `docs/` is no longer read (7 wrong calls gone).
 
 Still missed: front-end calls (none found in four UI repos: client base URLs come next), events and gRPC clients, conventional and legacy .NET routes, convention-named tables, some platforms. Wrong: spring-realworld and eshop-on-web route conventions the settings can't express yet.
+
+## Fields and config (ADR 0124 §6, 2026-10-24)
+
+Five references now also cover `fields` and `config`, one repo per stack, so every kind of fact the assistant writes is measured:
+
+| Reference             | Stack                    |  Fields | of which columns | Config |
+| --------------------- | ------------------------ | ------: | ---------------: | -----: |
+| spring-petclinic-rest | Java, Spring Boot, JPA   |     184 |               30 |     12 |
+| todo-csharp-sql       | .NET minimal API, EF     |      99 |               14 |      5 |
+| todo-nodejs-mongo     | Node Express, Cosmos DB  |     113 |               14 |     10 |
+| fastapi-template      | Python FastAPI, SQLModel |     122 |               12 |     13 |
+| podinfo               | Go, HTTP and gRPC        |      68 |                0 |     11 |
+| **All**               |                          | **586** |           **70** | **51** |
+
+How they were written and checked:
+
+- Read by hand at the pinned commits (fetched with `atticus bench fetch`): the OpenAPI document and H2 schema (petclinic), the request records and entity classes (.NET), the route handlers' body types (Node), the Pydantic and SQLModel models (FastAPI), and the JSON structs, map literals and protos (podinfo). The tables were typed once per schema and expanded per entry, so a schema shared by several entries is cited at the same property line each time.
+- Every item's `at` was checked by a script against the clone: the cited line, or one either side, names the field or key (case and `_` aside). Three node-config keys are nested (`database.endpoint` cites the line with `"endpoint"`) and were checked by hand.
+- The judgement calls are in each reference's `notes` and `ignore`: only success bodies (error bodies are not fields), PUT and DELETE responses of petclinic-rest ignored (the spec declares a body the controllers don't send), fields of calls not judged (the UIs' calls carry their APIs' bodies), Cosmos system properties and the OAuth2 form's unused fields ignored, and config limited to keys that name another system, a timeout or a flag (ports, own paths, logging and build settings ignored).
+- The four kinds scored before are unchanged by the new kinds: the readers score the same 8/38/38, 12/12/2, 12/14/0, 0/43/23 and 36/12/1 on these repos as in the baseline above.
+
+The built-in readers on the new kinds (no scan settings): fields 42 found, 544 missed, 0 wrong (28 of petclinic-rest's 30 columns, both missed ones on the `vet_specialties` join table, and all 14 EF columns of todo-csharp-sql; no request or response field anywhere); config 0 of 51 found, 0 wrong (podinfo's two manifest entries, the image and an env alias, are ignored).
+
+## Scoring an assistant's facts (ADR 0124)
+
+`atticus bench facts [<repo>] [--facts file]` projects the facts file the assistant wrote (`projectFacts`, the same projection `atticus verify` feeds the catalog) and scores the records with `bench run`'s matcher, so found, missed and wrong mean the same and the numbers compare with the readers' 58%/86% precision and 32%/58% recall. Without `--facts` it reads `<cache>/<repo>/.atticus/facts/<repo>.jsonl` (the assistant ran `/atticus map` in the clone) or `<cache>/facts/<repo>.jsonl`. It prints each repo's total, a line per kind, and the total over serves to deploys beside the total over every kind. Screens (no reference lists a UI's routes as served), their fields and flows (scored against `flows/`) are left out and counted; facts of another commit than the pin are refused. No clone is needed. The first measured run (A4: the assistant reading batch 1 with the verifier on) is recorded here when it is made.
+
+## The stories bench (Phase B)
+
+`stories/rubric.md` is the rubric for a professional user story, and three reference stories, written by reading the code with every changed step, criterion and error case cited, are the answers:
+
+| Story                          | Repos                                      | Steps | Criteria | Error cases | Fields |
+| ------------------------------ | ------------------------------------------ | ----: | -------: | ----------: | -----: |
+| petclinic-pet-microchip        | spring-petclinic-angular, -rest            |     8 |       10 |           5 |      4 |
+| microservices-demo-cart-limit  | microservices-demo (cartservice, frontend) |     2 |        6 |           4 |      3 |
+| fastapi-template-item-due-date | fastapi-template (back and front end)      |     8 |       10 |           5 |      5 |
+
+`atticus bench stories --draft <file>` scores a draft (the same format, `BenchStory` in `packages/evals/src/story-bench.ts`) on changed-step coverage, field coverage, error-case coverage, invented fields (fields known to neither the reference, the bench references of its repos nor the repos' facts; must be none, exit 1) and the rubric's 17 sections. Each reference story scores full marks against itself; golden tests score an invented good draft (7 of 8 steps, 4 of 4 fields, 4 of 5 error cases, nothing invented, 17 of 17 sections) and an invented bad one (1 of 8, 2 of 4, 0 of 5, three invented fields, 5 of 17).

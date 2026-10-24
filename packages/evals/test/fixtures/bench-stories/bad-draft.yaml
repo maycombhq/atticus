@@ -1,0 +1,35 @@
+# An invented draft of the petclinic microchip story that a reviewer should send back: few steps,
+# fields the code doesn't have, error cases missing, half the rubric's sections absent.
+schemaVersion: 1
+story: petclinic-pet-microchip
+title: Microchips
+repos: [spring-petclinic-rest]
+statement:
+  asA: user
+  iWant: microchips
+  soThat: pets have chips
+steps:
+  - id: api
+    repo: spring-petclinic-rest
+    what: Add chip fields to the pet API
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+  - id: ui
+    repo: spring-petclinic-angular
+    what: Show the chip on the owner page
+    at: "src/app/owners/owner-detail/owner-detail.component.html:40"
+criteria:
+  - id: c1
+    step: api
+    given: a pet
+    when: it is added with a chip
+    then: it is saved with chipVendor and implantDate
+    fields: [microchip, chipVendor, implantDate, petName, birth_date]
+interfaces:
+  - repo: spring-petclinic-rest
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    change: changed
+    breaking: false
+    fields:
+      - { name: chipVendor, side: request, type: string, required: true, change: added }
+data:
+  none: no database change

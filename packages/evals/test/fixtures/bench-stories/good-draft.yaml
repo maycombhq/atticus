@@ -1,0 +1,121 @@
+# An invented draft of the petclinic microchip story, as a careful assistant might write it:
+# most steps, every field, most error cases, nothing invented, every rubric section.
+schemaVersion: 1
+story: petclinic-pet-microchip
+title: Capture a pet's microchip when it is registered
+repos: [spring-petclinic-angular, spring-petclinic-rest]
+statement:
+  asA: clinic receptionist
+  iWant: to record the microchip number while adding a pet
+  soThat: found animals can be traced back to their owner
+context: >-
+  The Add Pet form has name, birth date and type and posts to POST /petclinic/api/owners/{ownerId}/pets.
+scope:
+  in: [Microchip on the Add Pet form, microchip in the add-pet API and the pets table]
+  out: [Editing a microchip, search by microchip]
+steps:
+  - id: form
+    repo: spring-petclinic-angular
+    what: Add a Microchip input with a 15-digit pattern to the Add Pet form
+    at: "src/app/pets/pet-add/pet-add.component.html:70"
+  - id: model
+    repo: spring-petclinic-angular
+    what: Pet gets microchipNumber
+    at: "src/app/pets/pet.ts:30"
+  - id: submit
+    repo: spring-petclinic-angular
+    what: Send the chip on submit
+    at: "src/app/pets/pet-add/pet-add.component.ts:76"
+  - id: spec
+    repo: spring-petclinic-rest
+    what: PetFields gets microchip with pattern ^[0-9]{15}$
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    at: "src/main/resources/openapi.yml:2159"
+  - id: entity
+    repo: spring-petclinic-rest
+    what: Pet entity column
+    at: "src/main/java/org/springframework/samples/petclinic/model/Pet.java:35"
+  - id: dup
+    repo: spring-petclinic-rest
+    what: Refuse a duplicate chip with 409
+    at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:146"
+  - id: schema
+    repo: spring-petclinic-rest
+    what: microchip column, unique, in every schema.sql
+    at: "src/main/resources/db/h2/schema.sql:45"
+criteria:
+  - id: c1
+    step: form
+    given: the Add Pet form
+    when: a 15-digit chip is entered with a valid name, birth date and type and saved
+    then: the request carries name, birthDate, type and microchipNumber and the API answers 201
+    fields: [microchipNumber, name, birthDate, type]
+    errors:
+      - { field: microchip, rule: format, when: the chip is not 15 digits, then: Save Pet is disabled }
+  - id: c2
+    step: spec
+    given: the API
+    when: a chip with letters is posted
+    then: 400 ProblemDetail
+    fields: [microchip]
+    errors:
+      - { field: microchip, rule: format, status: 400, when: not 15 digits, then: answers 400 }
+  - id: c3
+    step: dup
+    given: a pet with the chip exists
+    when: another pet is added with it
+    then: 409 Conflict and nothing stored
+    fields: [microchip]
+    errors:
+      - { field: microchip, rule: unique, status: 409, when: duplicate chip, then: answers 409 }
+      - { rule: not-found, status: 404, when: the owner is unknown, then: 404 as today }
+  - id: c4
+    step: entity
+    given: a stored pet with a chip
+    when: it is read
+    then: the response has microchip
+    fields: [microchip]
+  - id: c5
+    step: schema
+    given: the pets table
+    when: two pets get the same chip
+    then: the second insert fails
+    fields: [microchip]
+  - id: c6
+    step: model
+    given: the Pet type
+    when: the app builds
+    then: Pet has microchip
+    fields: [microchip]
+  - id: c7
+    step: submit
+    given: a blank chip
+    when: the form is saved
+    then: no microchip is sent
+    fields: [microchip]
+interfaces:
+  - repo: spring-petclinic-rest
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    change: changed
+    breaking: false
+    fields:
+      - { name: microchip, side: request, type: string, required: false, change: added }
+      - { name: microchip, side: response, type: string, required: false, change: added }
+data:
+  - repo: spring-petclinic-rest
+    table: pets
+    column: microchip
+    type: VARCHAR(15)
+    nullable: true
+    change: added
+    migration: schema.sql files plus ALTER TABLE for existing databases
+    classification: internal
+    retention: with the pet
+nonFunctional:
+  auth: unchanged (OWNER_ADMIN)
+  audit: none
+  timeouts: none
+  performance: unique index on microchip
+tests: [Controller tests for 201, 400 and 409]
+dependencies: [none]
+definitionOfDone: [Tests pass in both repos]

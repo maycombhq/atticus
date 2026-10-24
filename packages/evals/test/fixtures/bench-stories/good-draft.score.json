@@ -1,0 +1,32 @@
+{
+  "story": "petclinic-pet-microchip",
+  "steps": {
+    "found": 7,
+    "total": 8,
+    "missed": [
+      "api-lookup"
+    ],
+    "extra": [],
+    "coverage": 0.875
+  },
+  "fields": {
+    "found": 4,
+    "total": 4,
+    "missed": [],
+    "coverage": 1
+  },
+  "errors": {
+    "found": 4,
+    "total": 5,
+    "missed": [
+      "db-column: microchip unique"
+    ],
+    "coverage": 0.8
+  },
+  "invented": [],
+  "sections": {
+    "present": 17,
+    "total": 17,
+    "missing": []
+  }
+}

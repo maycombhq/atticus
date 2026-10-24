@@ -1,7 +1,7 @@
 # Written by reading the code at the pinned commit, not from an Atticus scan.
 repo: spring-petclinic-rest
 commit: afc8fc1d3b8ec8de69414482b3bd70a1da78cb95
-covers: [serves, calls, stores, deploys]
+covers: [serves, calls, stores, deploys, fields, config]
 notes: >-
   A Spring Boot REST API (no UI) for the petclinic domain. Endpoints are declared in
   src/main/resources/openapi.yml; the OpenAPI generator turns that into interfaces (generated
@@ -14,6 +14,17 @@ notes: >-
   MySQL and Postgres schemas define the same tables). Deploys is empty:
   docker-compose.yml only starts local MySQL/Postgres, and the GitHub workflow only builds and
   pushes an image to Docker Hub with Jib; no Kubernetes, Helm or cloud platform config exists.
+  Fields and config (ADR 0124 section 6, added 2026-10-24): fields are the top-level fields of each
+  entry's success request and response bodies as openapi.yml declares them (cited at the schema
+  property; allOf parents expanded), query parameters as request fields, and the columns of the H2
+  schema. Response fields of PUT and DELETE are ignored: the spec declares a body, but the
+  controllers answer 204 or no body (OwnerRestControllerV1.java:124 and :136), so neither listing
+  nor leaving them out is wrong. Error bodies (ProblemDetail) are not fields. The repo makes no
+  calls. Config is the keys that name another system (the datasource and the MySQL and Postgres
+  environment variables), a timeout or a flag (the active profiles, petclinic.security.enable, the
+  H2 console); a key set in several profile files is cited once, in the default h2 profile. The
+  service's own port and context path and the SQL init, JPA, messages and logging keys are true
+  config outside that scope and are ignored.
 serves:
   - {
       type: rest,
@@ -248,3 +259,1307 @@ stores:
   - { table: users, at: "src/main/resources/db/h2/schema.sql:62" }
   - { table: roles, at: "src/main/resources/db/h2/schema.sql:68" }
 deploys: []
+fields:
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "request",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1996",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "request",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2004",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "request",
+      name: "address",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2012",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "request",
+      name: "city",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2019",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "request",
+      name: "telephone",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2026",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "response",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1996",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "response",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2004",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "response",
+      name: "address",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2012",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "response",
+      name: "city",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2019",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "response",
+      name: "telephone",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2026",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2047",
+    }
+  - {
+      entry: "POST /petclinic/api/owners",
+      side: "response",
+      name: "pets",
+      type: "array<Pet>",
+      at: "src/main/resources/openapi.yml:2055",
+    }
+  - {
+      entry: "GET /petclinic/api/owners",
+      side: "request",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:105",
+    }
+  - {
+      entry: "GET /petclinic/api/owners",
+      side: "response",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1996",
+    }
+  - {
+      entry: "GET /petclinic/api/owners",
+      side: "response",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2004",
+    }
+  - {
+      entry: "GET /petclinic/api/owners",
+      side: "response",
+      name: "address",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2012",
+    }
+  - {
+      entry: "GET /petclinic/api/owners",
+      side: "response",
+      name: "city",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2019",
+    }
+  - {
+      entry: "GET /petclinic/api/owners",
+      side: "response",
+      name: "telephone",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2026",
+    }
+  - {
+      entry: "GET /petclinic/api/owners",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2047",
+    }
+  - {
+      entry: "GET /petclinic/api/owners",
+      side: "response",
+      name: "pets",
+      type: "array<Pet>",
+      at: "src/main/resources/openapi.yml:2055",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/owners",
+      side: "request",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:147",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/owners",
+      side: "request",
+      name: "page",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:154",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/owners",
+      side: "request",
+      name: "size",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:164",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/owners",
+      side: "response",
+      name: "content",
+      type: "array<Owner>",
+      at: "src/main/resources/openapi.yml:2069",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/owners",
+      side: "response",
+      name: "page",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2075",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/owners",
+      side: "response",
+      name: "size",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2082",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/owners",
+      side: "response",
+      name: "totalElements",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2089",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/owners",
+      side: "response",
+      name: "totalPages",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2096",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}",
+      side: "response",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1996",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}",
+      side: "response",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2004",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}",
+      side: "response",
+      name: "address",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2012",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}",
+      side: "response",
+      name: "city",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2019",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}",
+      side: "response",
+      name: "telephone",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2026",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2047",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}",
+      side: "response",
+      name: "pets",
+      type: "array<Pet>",
+      at: "src/main/resources/openapi.yml:2055",
+    }
+  - {
+      entry: "PUT /petclinic/api/owners/{ownerId}",
+      side: "request",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1996",
+    }
+  - {
+      entry: "PUT /petclinic/api/owners/{ownerId}",
+      side: "request",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2004",
+    }
+  - {
+      entry: "PUT /petclinic/api/owners/{ownerId}",
+      side: "request",
+      name: "address",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2012",
+    }
+  - {
+      entry: "PUT /petclinic/api/owners/{ownerId}",
+      side: "request",
+      name: "city",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2019",
+    }
+  - {
+      entry: "PUT /petclinic/api/owners/{ownerId}",
+      side: "request",
+      name: "telephone",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2026",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2159",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets",
+      side: "request",
+      name: "birthDate",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2165",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets",
+      side: "request",
+      name: "type",
+      type: "PetType",
+      at: "src/main/resources/openapi.yml:2172",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2159",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets",
+      side: "response",
+      name: "birthDate",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2165",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets",
+      side: "response",
+      name: "type",
+      type: "PetType",
+      at: "src/main/resources/openapi.yml:2172",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2185",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets",
+      side: "response",
+      name: "ownerId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2193",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets",
+      side: "response",
+      name: "visits",
+      type: "array<Visit>",
+      at: "src/main/resources/openapi.yml:2201",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}/pets/{petId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2159",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}/pets/{petId}",
+      side: "response",
+      name: "birthDate",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2165",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}/pets/{petId}",
+      side: "response",
+      name: "type",
+      type: "PetType",
+      at: "src/main/resources/openapi.yml:2172",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}/pets/{petId}",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2185",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}/pets/{petId}",
+      side: "response",
+      name: "ownerId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2193",
+    }
+  - {
+      entry: "GET /petclinic/api/owners/{ownerId}/pets/{petId}",
+      side: "response",
+      name: "visits",
+      type: "array<Visit>",
+      at: "src/main/resources/openapi.yml:2201",
+    }
+  - {
+      entry: "PUT /petclinic/api/owners/{ownerId}/pets/{petId}",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2159",
+    }
+  - {
+      entry: "PUT /petclinic/api/owners/{ownerId}/pets/{petId}",
+      side: "request",
+      name: "birthDate",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2165",
+    }
+  - {
+      entry: "PUT /petclinic/api/owners/{ownerId}/pets/{petId}",
+      side: "request",
+      name: "type",
+      type: "PetType",
+      at: "src/main/resources/openapi.yml:2172",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits",
+      side: "request",
+      name: "date",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2268",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits",
+      side: "request",
+      name: "description",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2274",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits",
+      side: "response",
+      name: "date",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2268",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2274",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2290",
+    }
+  - {
+      entry: "POST /petclinic/api/owners/{ownerId}/pets/{petId}/visits",
+      side: "response",
+      name: "petId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2298",
+    }
+  - {
+      entry: "GET /petclinic/api/pettypes",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2313",
+    }
+  - {
+      entry: "GET /petclinic/api/pettypes",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2329",
+    }
+  - {
+      entry: "POST /petclinic/api/pettypes",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2313",
+    }
+  - {
+      entry: "POST /petclinic/api/pettypes",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2313",
+    }
+  - {
+      entry: "POST /petclinic/api/pettypes",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2329",
+    }
+  - {
+      entry: "GET /petclinic/api/pettypes/{petTypeId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2313",
+    }
+  - {
+      entry: "GET /petclinic/api/pettypes/{petTypeId}",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2329",
+    }
+  - {
+      entry: "PUT /petclinic/api/pettypes/{petTypeId}",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2313",
+    }
+  - {
+      entry: "PUT /petclinic/api/pettypes/{petTypeId}",
+      side: "request",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2329",
+    }
+  - {
+      entry: "GET /petclinic/api/pets",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2159",
+    }
+  - {
+      entry: "GET /petclinic/api/pets",
+      side: "response",
+      name: "birthDate",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2165",
+    }
+  - {
+      entry: "GET /petclinic/api/pets",
+      side: "response",
+      name: "type",
+      type: "PetType",
+      at: "src/main/resources/openapi.yml:2172",
+    }
+  - {
+      entry: "GET /petclinic/api/pets",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2185",
+    }
+  - {
+      entry: "GET /petclinic/api/pets",
+      side: "response",
+      name: "ownerId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2193",
+    }
+  - {
+      entry: "GET /petclinic/api/pets",
+      side: "response",
+      name: "visits",
+      type: "array<Visit>",
+      at: "src/main/resources/openapi.yml:2201",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/pets",
+      side: "request",
+      name: "page",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:880",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/pets",
+      side: "request",
+      name: "size",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:890",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/pets",
+      side: "response",
+      name: "content",
+      type: "array<Pet>",
+      at: "src/main/resources/openapi.yml:2114",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/pets",
+      side: "response",
+      name: "page",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2120",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/pets",
+      side: "response",
+      name: "size",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2127",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/pets",
+      side: "response",
+      name: "totalElements",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2134",
+    }
+  - {
+      entry: "GET /petclinic/api/v2/pets",
+      side: "response",
+      name: "totalPages",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2141",
+    }
+  - {
+      entry: "GET /petclinic/api/pets/{petId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2159",
+    }
+  - {
+      entry: "GET /petclinic/api/pets/{petId}",
+      side: "response",
+      name: "birthDate",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2165",
+    }
+  - {
+      entry: "GET /petclinic/api/pets/{petId}",
+      side: "response",
+      name: "type",
+      type: "PetType",
+      at: "src/main/resources/openapi.yml:2172",
+    }
+  - {
+      entry: "GET /petclinic/api/pets/{petId}",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2185",
+    }
+  - {
+      entry: "GET /petclinic/api/pets/{petId}",
+      side: "response",
+      name: "ownerId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2193",
+    }
+  - {
+      entry: "GET /petclinic/api/pets/{petId}",
+      side: "response",
+      name: "visits",
+      type: "array<Visit>",
+      at: "src/main/resources/openapi.yml:2201",
+    }
+  - {
+      entry: "PUT /petclinic/api/pets/{petId}",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2159",
+    }
+  - {
+      entry: "PUT /petclinic/api/pets/{petId}",
+      side: "request",
+      name: "birthDate",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2165",
+    }
+  - {
+      entry: "PUT /petclinic/api/pets/{petId}",
+      side: "request",
+      name: "type",
+      type: "PetType",
+      at: "src/main/resources/openapi.yml:2172",
+    }
+  - {
+      entry: "PUT /petclinic/api/pets/{petId}",
+      side: "request",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2185",
+    }
+  - {
+      entry: "PUT /petclinic/api/pets/{petId}",
+      side: "request",
+      name: "ownerId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2193",
+    }
+  - {
+      entry: "PUT /petclinic/api/pets/{petId}",
+      side: "request",
+      name: "visits",
+      type: "array<Visit>",
+      at: "src/main/resources/openapi.yml:2201",
+    }
+  - {
+      entry: "GET /petclinic/api/visits",
+      side: "response",
+      name: "date",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2268",
+    }
+  - {
+      entry: "GET /petclinic/api/visits",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2274",
+    }
+  - {
+      entry: "GET /petclinic/api/visits",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2290",
+    }
+  - {
+      entry: "GET /petclinic/api/visits",
+      side: "response",
+      name: "petId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2298",
+    }
+  - {
+      entry: "POST /petclinic/api/visits",
+      side: "request",
+      name: "date",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2268",
+    }
+  - {
+      entry: "POST /petclinic/api/visits",
+      side: "request",
+      name: "description",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2274",
+    }
+  - {
+      entry: "POST /petclinic/api/visits",
+      side: "request",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2290",
+    }
+  - {
+      entry: "POST /petclinic/api/visits",
+      side: "request",
+      name: "petId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2298",
+    }
+  - {
+      entry: "POST /petclinic/api/visits",
+      side: "response",
+      name: "date",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2268",
+    }
+  - {
+      entry: "POST /petclinic/api/visits",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2274",
+    }
+  - {
+      entry: "POST /petclinic/api/visits",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2290",
+    }
+  - {
+      entry: "POST /petclinic/api/visits",
+      side: "response",
+      name: "petId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2298",
+    }
+  - {
+      entry: "GET /petclinic/api/visits/{visitId}",
+      side: "response",
+      name: "date",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2268",
+    }
+  - {
+      entry: "GET /petclinic/api/visits/{visitId}",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2274",
+    }
+  - {
+      entry: "GET /petclinic/api/visits/{visitId}",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2290",
+    }
+  - {
+      entry: "GET /petclinic/api/visits/{visitId}",
+      side: "response",
+      name: "petId",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2298",
+    }
+  - {
+      entry: "PUT /petclinic/api/visits/{visitId}",
+      side: "request",
+      name: "date",
+      type: "date",
+      at: "src/main/resources/openapi.yml:2268",
+    }
+  - {
+      entry: "PUT /petclinic/api/visits/{visitId}",
+      side: "request",
+      name: "description",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2274",
+    }
+  - {
+      entry: "GET /petclinic/api/specialties",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:1973",
+    }
+  - {
+      entry: "GET /petclinic/api/specialties",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1981",
+    }
+  - {
+      entry: "POST /petclinic/api/specialties",
+      side: "request",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:1973",
+    }
+  - {
+      entry: "POST /petclinic/api/specialties",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1981",
+    }
+  - {
+      entry: "POST /petclinic/api/specialties",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:1973",
+    }
+  - {
+      entry: "POST /petclinic/api/specialties",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1981",
+    }
+  - {
+      entry: "GET /petclinic/api/specialties/{specialtyId}",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:1973",
+    }
+  - {
+      entry: "GET /petclinic/api/specialties/{specialtyId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1981",
+    }
+  - {
+      entry: "PUT /petclinic/api/specialties/{specialtyId}",
+      side: "request",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:1973",
+    }
+  - {
+      entry: "PUT /petclinic/api/specialties/{specialtyId}",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/main/resources/openapi.yml:1981",
+    }
+  - {
+      entry: "GET /petclinic/api/vets",
+      side: "response",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2217",
+    }
+  - {
+      entry: "GET /petclinic/api/vets",
+      side: "response",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2225",
+    }
+  - {
+      entry: "GET /petclinic/api/vets",
+      side: "response",
+      name: "specialties",
+      type: "array<Specialty>",
+      at: "src/main/resources/openapi.yml:2233",
+    }
+  - {
+      entry: "GET /petclinic/api/vets",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2250",
+    }
+  - {
+      entry: "POST /petclinic/api/vets",
+      side: "request",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2217",
+    }
+  - {
+      entry: "POST /petclinic/api/vets",
+      side: "request",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2225",
+    }
+  - {
+      entry: "POST /petclinic/api/vets",
+      side: "request",
+      name: "specialties",
+      type: "array<Specialty>",
+      at: "src/main/resources/openapi.yml:2233",
+    }
+  - {
+      entry: "POST /petclinic/api/vets",
+      side: "request",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2250",
+    }
+  - {
+      entry: "POST /petclinic/api/vets",
+      side: "response",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2217",
+    }
+  - {
+      entry: "POST /petclinic/api/vets",
+      side: "response",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2225",
+    }
+  - {
+      entry: "POST /petclinic/api/vets",
+      side: "response",
+      name: "specialties",
+      type: "array<Specialty>",
+      at: "src/main/resources/openapi.yml:2233",
+    }
+  - {
+      entry: "POST /petclinic/api/vets",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2250",
+    }
+  - {
+      entry: "GET /petclinic/api/vets/{vetId}",
+      side: "response",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2217",
+    }
+  - {
+      entry: "GET /petclinic/api/vets/{vetId}",
+      side: "response",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2225",
+    }
+  - {
+      entry: "GET /petclinic/api/vets/{vetId}",
+      side: "response",
+      name: "specialties",
+      type: "array<Specialty>",
+      at: "src/main/resources/openapi.yml:2233",
+    }
+  - {
+      entry: "GET /petclinic/api/vets/{vetId}",
+      side: "response",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2250",
+    }
+  - {
+      entry: "PUT /petclinic/api/vets/{vetId}",
+      side: "request",
+      name: "firstName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2217",
+    }
+  - {
+      entry: "PUT /petclinic/api/vets/{vetId}",
+      side: "request",
+      name: "lastName",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2225",
+    }
+  - {
+      entry: "PUT /petclinic/api/vets/{vetId}",
+      side: "request",
+      name: "specialties",
+      type: "array<Specialty>",
+      at: "src/main/resources/openapi.yml:2233",
+    }
+  - {
+      entry: "PUT /petclinic/api/vets/{vetId}",
+      side: "request",
+      name: "id",
+      type: "integer",
+      at: "src/main/resources/openapi.yml:2250",
+    }
+  - {
+      entry: "POST /petclinic/api/users",
+      side: "request",
+      name: "username",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2343",
+    }
+  - {
+      entry: "POST /petclinic/api/users",
+      side: "request",
+      name: "password",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2350",
+    }
+  - {
+      entry: "POST /petclinic/api/users",
+      side: "request",
+      name: "enabled",
+      type: "boolean",
+      at: "src/main/resources/openapi.yml:2357",
+    }
+  - {
+      entry: "POST /petclinic/api/users",
+      side: "request",
+      name: "roles",
+      type: "array<Role>",
+      at: "src/main/resources/openapi.yml:2362",
+    }
+  - {
+      entry: "POST /petclinic/api/users",
+      side: "response",
+      name: "username",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2343",
+    }
+  - {
+      entry: "POST /petclinic/api/users",
+      side: "response",
+      name: "password",
+      type: "string",
+      at: "src/main/resources/openapi.yml:2350",
+    }
+  - {
+      entry: "POST /petclinic/api/users",
+      side: "response",
+      name: "enabled",
+      type: "boolean",
+      at: "src/main/resources/openapi.yml:2357",
+    }
+  - {
+      entry: "POST /petclinic/api/users",
+      side: "response",
+      name: "roles",
+      type: "array<Role>",
+      at: "src/main/resources/openapi.yml:2362",
+    }
+  - { table: "vets", name: "id", type: "INTEGER", at: "src/main/resources/db/h2/schema.sql:2" }
+  - {
+      table: "vets",
+      name: "first_name",
+      type: "VARCHAR(30)",
+      at: "src/main/resources/db/h2/schema.sql:3",
+    }
+  - {
+      table: "vets",
+      name: "last_name",
+      type: "VARCHAR(30)",
+      at: "src/main/resources/db/h2/schema.sql:4",
+    }
+  - {
+      table: "specialties",
+      name: "id",
+      type: "INTEGER",
+      at: "src/main/resources/db/h2/schema.sql:10",
+    }
+  - {
+      table: "specialties",
+      name: "name",
+      type: "VARCHAR(80)",
+      at: "src/main/resources/db/h2/schema.sql:11",
+    }
+  - {
+      table: "vet_specialties",
+      name: "vet_id",
+      type: "INTEGER",
+      at: "src/main/resources/db/h2/schema.sql:17",
+    }
+  - {
+      table: "vet_specialties",
+      name: "specialty_id",
+      type: "INTEGER",
+      at: "src/main/resources/db/h2/schema.sql:18",
+    }
+  - { table: "types", name: "id", type: "INTEGER", at: "src/main/resources/db/h2/schema.sql:25" }
+  - {
+      table: "types",
+      name: "name",
+      type: "VARCHAR(80)",
+      at: "src/main/resources/db/h2/schema.sql:26",
+    }
+  - { table: "owners", name: "id", type: "INTEGER", at: "src/main/resources/db/h2/schema.sql:32" }
+  - {
+      table: "owners",
+      name: "first_name",
+      type: "VARCHAR(30)",
+      at: "src/main/resources/db/h2/schema.sql:33",
+    }
+  - {
+      table: "owners",
+      name: "last_name",
+      type: "VARCHAR(30)",
+      at: "src/main/resources/db/h2/schema.sql:34",
+    }
+  - {
+      table: "owners",
+      name: "address",
+      type: "VARCHAR(255)",
+      at: "src/main/resources/db/h2/schema.sql:35",
+    }
+  - {
+      table: "owners",
+      name: "city",
+      type: "VARCHAR(80)",
+      at: "src/main/resources/db/h2/schema.sql:36",
+    }
+  - {
+      table: "owners",
+      name: "telephone",
+      type: "VARCHAR(20)",
+      at: "src/main/resources/db/h2/schema.sql:37",
+    }
+  - { table: "pets", name: "id", type: "INTEGER", at: "src/main/resources/db/h2/schema.sql:43" }
+  - {
+      table: "pets",
+      name: "name",
+      type: "VARCHAR(30)",
+      at: "src/main/resources/db/h2/schema.sql:44",
+    }
+  - {
+      table: "pets",
+      name: "birth_date",
+      type: "DATE",
+      at: "src/main/resources/db/h2/schema.sql:45",
+    }
+  - {
+      table: "pets",
+      name: "type_id",
+      type: "INTEGER",
+      at: "src/main/resources/db/h2/schema.sql:46",
+    }
+  - {
+      table: "pets",
+      name: "owner_id",
+      type: "INTEGER",
+      at: "src/main/resources/db/h2/schema.sql:47",
+    }
+  - { table: "visits", name: "id", type: "INTEGER", at: "src/main/resources/db/h2/schema.sql:55" }
+  - {
+      table: "visits",
+      name: "pet_id",
+      type: "INTEGER",
+      at: "src/main/resources/db/h2/schema.sql:56",
+    }
+  - {
+      table: "visits",
+      name: "visit_date",
+      type: "DATE",
+      at: "src/main/resources/db/h2/schema.sql:57",
+    }
+  - {
+      table: "visits",
+      name: "description",
+      type: "VARCHAR(255)",
+      at: "src/main/resources/db/h2/schema.sql:58",
+    }
+  - {
+      table: "users",
+      name: "username",
+      type: "VARCHAR(20)",
+      at: "src/main/resources/db/h2/schema.sql:63",
+    }
+  - {
+      table: "users",
+      name: "password",
+      type: "VARCHAR(255)",
+      at: "src/main/resources/db/h2/schema.sql:64",
+    }
+  - {
+      table: "users",
+      name: "enabled",
+      type: "BOOLEAN",
+      at: "src/main/resources/db/h2/schema.sql:65",
+    }
+  - { table: "roles", name: "id", type: "INTEGER", at: "src/main/resources/db/h2/schema.sql:69" }
+  - {
+      table: "roles",
+      name: "username",
+      type: "VARCHAR(20)",
+      at: "src/main/resources/db/h2/schema.sql:70",
+    }
+  - {
+      table: "roles",
+      name: "role",
+      type: "VARCHAR(20)",
+      at: "src/main/resources/db/h2/schema.sql:71",
+    }
+config:
+  - {
+      key: "spring.profiles.active",
+      value: "h2,spring-data-jpa",
+      at: "src/main/resources/application.properties:20",
+    }
+  - {
+      key: "petclinic.security.enable",
+      value: "false",
+      at: "src/main/resources/application.properties:49",
+    }
+  - {
+      key: "spring.datasource.url",
+      value: "jdbc:h2:mem:petclinic;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+      at: "src/main/resources/application-h2.properties:3",
+    }
+  - {
+      key: "spring.datasource.username",
+      value: "sa",
+      at: "src/main/resources/application-h2.properties:5",
+    }
+  - {
+      key: "spring.datasource.password",
+      source: "MYSQL_PASS or POSTGRES_PASS with the mysql or postgres profile; empty for h2",
+      at: "src/main/resources/application-h2.properties:6",
+    }
+  - {
+      key: "spring.h2.console.enabled",
+      value: "true",
+      at: "src/main/resources/application-h2.properties:15",
+    }
+  - {
+      key: "MYSQL_URL",
+      value: "jdbc:mysql://localhost/petclinic",
+      at: "src/main/resources/application-mysql.properties:3",
+    }
+  - {
+      key: "MYSQL_USER",
+      value: "petclinic",
+      at: "src/main/resources/application-mysql.properties:4",
+    }
+  - {
+      key: "MYSQL_PASS",
+      source: "environment",
+      at: "src/main/resources/application-mysql.properties:5",
+    }
+  - {
+      key: "POSTGRES_URL",
+      value: "jdbc:postgresql://localhost/petclinic",
+      at: "src/main/resources/application-postgres.properties:2",
+    }
+  - {
+      key: "POSTGRES_USER",
+      value: "petclinic",
+      at: "src/main/resources/application-postgres.properties:3",
+    }
+  - {
+      key: "POSTGRES_PASS",
+      source: "environment",
+      at: "src/main/resources/application-postgres.properties:4",
+    }
+ignore:
+  fields:
+    - "entry rest put * | response *"
+    - "entry rest delete * | response *"
+    - "call *"
+  config:
+    - "server.*"
+    - "spring.sql.*"
+    - "spring.jpa.*"
+    - "spring.messages.*"
+    - "logging.*"
+    - "springdoc.*"
+    - "spring.h2.console.path"
+    - "spring.datasource.driver*"
