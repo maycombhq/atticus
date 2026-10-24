@@ -71,6 +71,31 @@ describe("the AI tab (ADR 0121)", () => {
     expect(out).toContain(T.test);
   });
 
+  it("names the org pack's provider plugins, and says when one isn't pinned (ADR 0121 item 4)", () => {
+    const out = html(
+      <AiSettingsForm
+        data={{
+          ...DATA,
+          providers: [
+            ...DATA.providers,
+            {
+              type: "vertex",
+              settings: ["model", "keyEnv", "project", "region"],
+              plugin: true,
+              pinned: true,
+            },
+            { type: "northwind-gateway", settings: ["model"], plugin: true, pinned: false },
+          ],
+        }}
+      />,
+    );
+    expect(out).toContain(esc(T.pluginProvider("vertex", true)));
+    expect(out).toContain(esc(T.pluginProvider("northwind-gateway", false)));
+    expect(T.pluginProvider("northwind-gateway", false)).toContain(
+      "atticus plugin pin northwind-gateway",
+    );
+  });
+
   it("sends only what the tab changes, and no empty settings", () => {
     expect(
       toSave({

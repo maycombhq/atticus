@@ -15,6 +15,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - Atticus's configured model runs the step on `runtime.yaml`'s model provider, through the command line in model mode, so it needs `model` among the modes allowed. `atticus <step> --handoff --json --mode model` runs the step that way and prints its end as JSON.
 - One line says what runs a step here, for example "Hand-off to GitHub Copilot · model mode allowed: anthropic claude-opus-5-5". It is on Home (with a link to Set up › AI), at the top of VS Code's Next view (beside the model VS Code runs steps on; a click picks the model), in `atticus next --json` (`runs`) and in `GET /api/settings/ai`.
 - The setup checklist gains "Choose how AI runs here". It is optional, and done once `runtime.yaml` is no longer as `atticus init` wrote it.
+- **Model-provider plugins.** For a provider Atticus has no built-in for, an org pack can add `plugins/model-providers/<id>/`, and `runtime.yaml` names it as `adapters.model.type`.
+  - The plugin's code only translates: `request` builds the request and `response` reads the answer. It runs in the plugin sandbox.
+  - Atticus makes the call itself, over HTTPS to the hosts the manifest names, and adds the key. The plugin never sees the key.
+  - It is pinned by sha256 like a scanner plugin. `atticus plugin test` runs its request and answer golden files, and `atticus plugin pin` pins it.
+  - `atticus plugin add vertex` copies the Vertex AI plugin Atticus ships. It covers Anthropic's models through `rawPredict` and Gemini through `generateContent`.
+  - The AI tab lists plugins beside the built-ins, says when one isn't pinned, and its Test goes through the plugin.
+  - Not built yet: tool calls from a plugin, and refreshing a token.
 
 - `runtime.yaml` may now allow `cursor`, `gemini-cli`, `windsurf` and `agents-md` (Codex and any tool that reads `AGENTS.md`) beside `copilot` and `claude-code`. `atticus assistant-files` writes the same slash commands, instructions and skills for each one, in its own files:
   - Cursor: `.cursor/commands/` and an always-applied rule.

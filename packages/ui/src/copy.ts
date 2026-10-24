@@ -2160,7 +2160,9 @@ export const COPY = {
     providerLabel: "Model provider",
     noProvider: "None: AI steps hand off to the person's assistant",
     providerHint:
-      "Used when a step runs in model mode. A key never goes here: name the environment variable that holds it in keyEnv.",
+      "Used when a step runs in model mode. A key never goes here: name the environment variable that holds it in keyEnv. For a provider Atticus has no built-in for, add a plugin: atticus plugin add vertex, or your own in org-pack/plugins/model-providers/.",
+    pluginProvider: (id: string, pinned: boolean) =>
+      pinned ? `${id} (plugin)` : `${id} (plugin, not pinned yet: atticus plugin pin ${id})`,
     keySet: (name: string) => `${name} is set on this machine.`,
     keyNotSet: (name: string) =>
       `${name} isn't set on this machine: set it to the key before testing.`,

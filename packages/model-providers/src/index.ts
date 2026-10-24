@@ -23,12 +23,15 @@ export { copy } from "./messages.js";
 export * from "./network.js";
 export * from "./settings.js";
 export * from "./credentials.js";
+export * from "./plugin.js";
+export * from "./vertex-plugin.js";
 export * from "./sigv4.js";
 
 /**
  * The built-in model providers (ADR 0065), by runtime.yaml `adapters.model.type`:
  * `anthropic`, `openai-compatible`, `azure-openai` (openai-compatible with the Azure flavour)
- * and `bedrock`. `vertex` has no built-in provider yet.
+ * and `bedrock`. Vertex is a model-provider plugin Atticus ships (`atticus plugin add vertex`,
+ * ADR 0121 item 4), not a built-in.
  */
 export function builtInModelProviders(
   deps: ProviderDeps = {},

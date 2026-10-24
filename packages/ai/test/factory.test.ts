@@ -7,6 +7,8 @@ import { AgentDefinition, DEFAULT_RUNTIME, Runtime } from "@maycombhq/core";
 import {
   AiOffError,
   clearModelProviders,
+  providerFactoryFor,
+  registerModelProviderPluginLoader,
   registerModelProvider,
   registeredModelProviders,
   registerToolSource,
@@ -430,5 +432,38 @@ describe("runtimeForCli", () => {
     await expect(runtimeForCli(root, { env: {} })).rejects.toThrow(
       /org-pack\/runtime.yaml has problems/,
     );
+  });
+});
+
+describe("a model provider from the org pack's plugins (ADR 0121 item 4)", () => {
+  it("loads the plugin named as adapters.model.type, through the loader the program registered", async () => {
+    const loaded: string[] = [];
+    registerModelProviderPluginLoader(async (p) => {
+      loaded.push(`${p.manifest.id} in ${p.dir}`);
+      return (s) => ({
+        model: String(s.model),
+        complete: async () => ({ text: "OK", usage: { inputTokens: 1, outputTokens: 1 } }),
+      });
+    });
+    const op = {
+      ...rt({
+        modes: { allowed: ["model"], default: "model" },
+        adapters: { model: { type: "northwind-gateway", settings: { model: "nw-large" } } },
+      }),
+      modelProviders: [
+        {
+          manifest: { id: "northwind-gateway" } as never,
+          dir: "org-pack/plugins/model-providers/northwind-gateway",
+        },
+      ],
+    };
+    const r = await createRuntime(op, { root: await tmp() });
+    expect(r.kind).toBe("model");
+    expect(loaded).toEqual([
+      "northwind-gateway in org-pack/plugins/model-providers/northwind-gateway",
+    ]);
+    expect(await providerFactoryFor(op, "other")).toBeUndefined();
+    registerModelProviderPluginLoader(undefined);
+    await expect(createRuntime(op, { root: await tmp() })).rejects.toThrow(/can't load/);
   });
 });

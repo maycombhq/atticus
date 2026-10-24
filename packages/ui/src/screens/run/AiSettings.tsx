@@ -11,7 +11,8 @@ export interface AiSettings {
   ai: string;
   modes: { allowed: string[]; default: string };
   assistants: { id: string; name: string; allowed: boolean; default: boolean }[];
-  providers: { type: string; settings: string[] }[];
+  /** Built-in providers, then the org pack's model-provider plugins (ADR 0121 item 4). */
+  providers: { type: string; settings: string[]; plugin?: boolean; pinned?: boolean }[];
   model: { type: string; settings: Record<string, unknown> } | null;
   keySet: boolean;
   models: { allowed: string[]; recommended: Record<string, string> };
@@ -204,7 +205,7 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
           <option value="">{T.noProvider}</option>
           {p.data.providers.map((x) => (
             <option key={x.type} value={x.type}>
-              {x.type}
+              {x.plugin ? T.pluginProvider(x.type, !!x.pinned) : x.type}
             </option>
           ))}
         </select>

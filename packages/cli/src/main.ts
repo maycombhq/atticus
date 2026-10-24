@@ -14,6 +14,7 @@ import {
   type AiRuntime,
 } from "@maycombhq/ai";
 import { registerBuiltInModelProviders } from "@maycombhq/model-providers";
+import { registerModelProviderPlugins } from "./model-plugins.js";
 import { existsSync } from "node:fs";
 
 import { VERSION } from "./version.js";
@@ -337,6 +338,8 @@ const pluginTest: typeof import("./plugin-commands.js").pluginTest = (...a) =>
   loadPluginCommands().then((m) => m.pluginTest(...a));
 const pluginPin: typeof import("./plugin-commands.js").pluginPin = (...a) =>
   loadPluginCommands().then((m) => m.pluginPin(...a));
+const pluginAdd: typeof import("./plugin-commands.js").pluginAdd = (...a) =>
+  loadPluginCommands().then((m) => m.pluginAdd(...a));
 const loadFrameworkCommands = () => import("./framework-commands.js");
 const frameworksCheck: typeof import("./framework-commands.js").frameworksCheck = (...a) =>
   loadFrameworkCommands().then((m) => m.frameworksCheck(...a));
@@ -465,7 +468,8 @@ Usage:
   atticus dialect run <name> <repo>    Show the records a dialect produces from one repo [--json]
   atticus dialect kit [dir]            Export the dialect build kit for an assistant
   atticus dialect tree <file> [--language l]   Print a file's syntax tree, for syntax matches
-  atticus plugin test|pin <id>         Run a scanner plugin against its golden files, sandboxed; or pin its entry file's sha256
+  atticus plugin test|pin <id>         Run a scanner or model-provider plugin against its golden files, sandboxed; or pin its entry file's sha256
+  atticus plugin add <id>              Copy a model-provider plugin Atticus ships (vertex) into the org pack, to review and pin
   atticus onboard <repo> [--name n] [--attempts 3] [--mode m]   Your assistant drafts a dialect for a repo Atticus can't read; checked, kept as a proposal
   atticus onboard check <name> --repo <repo>   Check a proposal (drafted, handed off or hand-written)
   atticus onboard eval <dir> [--mode m] [--json]   Score the assistant's drafts against reference dialects
@@ -676,6 +680,8 @@ export async function main(
   // runtime.yaml adapters.model.type anthropic, openai-compatible, azure-openai and bedrock work
   // out of the box (ADR 0065); every command that builds a runtime finds them registered.
   registerBuiltInModelProviders();
+  // ADR 0121 item 4: and an org pack's own, from plugins/model-providers/<id>/ once pinned.
+  registerModelProviderPlugins();
   // ADR 0107 addendum: the model runtime offers the context tools to a provider that calls tools.
   registerToolSource((at) => () => metarepoToolBox(at));
   const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
@@ -2610,14 +2616,18 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       io,
     );
   }
-  if (group === "plugin" && (command === "test" || command === "pin")) {
+  if (group === "plugin" && (command === "test" || command === "pin" || command === "add")) {
     if (!arg) {
       io.err(
-        `plugin ${command} needs a plugin id, for example: atticus plugin ${command} forge-routes`,
+        `plugin ${command} needs a plugin id, for example: atticus plugin ${command} ${command === "add" ? "vertex" : "forge-routes"}`,
       );
       return 2;
     }
-    return command === "test" ? pluginTest(root, arg, io) : pluginPin(root, arg, io);
+    return command === "test"
+      ? pluginTest(root, arg, io)
+      : command === "pin"
+        ? pluginPin(root, arg, io)
+        : pluginAdd(root, arg, io);
   }
   if (group === "dialect") {
     const rest = positionals.slice(3);

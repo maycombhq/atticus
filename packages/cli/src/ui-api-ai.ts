@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 import { parse, stringify } from "yaml";
-import { makeModelProvider, type ModelProvider } from "@maycombhq/ai";
+import { providerFactoryFor, type ModelProvider, type ModelProviderFactory } from "@maycombhq/ai";
 import { ASSISTANT_FORMATS, whatRunsWhere } from "@maycombhq/assistant-files";
 import {
   ASSISTANTS,
@@ -11,8 +11,10 @@ import {
   orgPackDirOf,
   Runtime,
   writeFileAtomic,
+  type OrgPack,
 } from "@maycombhq/core";
 import {
+  COMMON_SETTINGS,
   defaultKeyStore,
   looksLikeKey,
   PROVIDER_SETTINGS,
@@ -50,15 +52,22 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
   const keys = () => deps.keys ?? defaultKeyStore();
   const file = () => join(orgPackDirOf(root), "runtime.yaml");
   const rel = () => relative(root, file()).split(sep).join("/");
-  const build =
-    deps.provider ??
-    ((type: string, settings: Record<string, unknown>) =>
-      makeModelProvider(type, settings as Parameters<typeof makeModelProvider>[1]));
+  // A built-in provider, or the org pack's plugin of that id (ADR 0121 item 4), once pinned.
+  const build = async (
+    op: OrgPack,
+    type: string,
+    settings: Record<string, unknown>,
+  ): Promise<ModelProvider | undefined> => {
+    if (deps.provider) return deps.provider(type, settings);
+    const make = await providerFactoryFor(op, type);
+    return make?.(settings as Parameters<ModelProviderFactory>[0]);
+  };
 
   return (
     r
       .add("GET", "/api/settings/ai", async () => {
-        const rt = (await loadOrgPack(orgPackDirOf(root))).runtime;
+        const op = await loadOrgPack(orgPackDirOf(root));
+        const rt = op.runtime;
         const model = rt.adapters.model;
         const keyEnv =
           typeof model?.settings.keyEnv === "string" ? model.settings.keyEnv : undefined;
@@ -74,10 +83,23 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
               allowed: rt.assistants.allowed.includes(id),
               default: rt.assistants.default === id,
             })),
-            providers: Object.entries(PROVIDER_SETTINGS).map(([type, settings]) => ({
-              type,
-              settings: [...settings],
-            })),
+            providers: [
+              ...Object.entries(PROVIDER_SETTINGS).map(([type, settings]) => ({
+                type,
+                settings: [...settings],
+              })),
+              // The org pack's model-provider plugins, with what each takes (ADR 0121 item 4).
+              ...op.modelProviders.map(({ manifest: m }) => ({
+                type: m.id,
+                settings: [
+                  ...COMMON_SETTINGS,
+                  ...(m.auth === "none" ? [] : ["keyEnv"]),
+                  ...m.settings,
+                ],
+                plugin: true,
+                pinned: !!m.sha256,
+              })),
+            ],
             model: model ? { type: model.type, settings: model.settings } : null,
             // Whether the key's variable is set here, by name: its value is never read out.
             keySet: keyEnv ? !!env[keyEnv]?.trim() || !!keys().get(keyEnv) : false,
@@ -155,12 +177,13 @@ export function uiAiRoutes(r: Router, ctx: ServerContext, deps: AiDeps = {}): Ro
         return { status: 200, body: { ok: true, name } };
       })
       .add("POST", "/api/settings/ai/test", async () => {
-        const model = (await loadOrgPack(orgPackDirOf(root))).runtime.adapters.model;
+        const op = await loadOrgPack(orgPackDirOf(root));
+        const model = op.runtime.adapters.model;
         if (!model || model.type === "mock")
           throw conflict("No model provider is set in runtime.yaml: choose one first.");
         const started = Date.now();
         try {
-          const p = build(model.type, model.settings);
+          const p = await build(op, model.type, model.settings);
           if (!p)
             return {
               status: 200,
