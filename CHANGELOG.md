@@ -11,8 +11,6 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A criterion that checks a field without naming it is no longer handed back with "name it in its then clause". Where a model is called directly a judge reads it (`covers-field`); with a hand-off it is a note under the criterion in the story file for the story lens and the reviewer, never a stop. New `settle()` in `@maycombhq/ai`.
 - The architecture and stories stages refuse while an earlier stage isn't finished (its loop not done, or its gate blocked), naming the stage, the gate and the command. They may still run before the earlier hand-off PR merges.
 
-### Any assistant (ADR 0121, first part)
-
 ### Any assistant, set up from the app (ADR 0121)
 
 - The app has an **AI** tab under Set up. It sets whether AI runs here, which assistants your people use and the default one, the modes a step may run in and the default, and the model provider, with one field for each setting the provider accepts. It shows whether the provider's key variable is set on this machine, by name.
