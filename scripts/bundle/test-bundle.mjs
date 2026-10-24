@@ -102,8 +102,13 @@ if (existsSync(join(dir, "node_modules", "@maycombhq", "embed-model", "atticus-m
   console.log("The bundled embedding model searches by meaning offline.");
 }
 
+// --show-token: since ADR 0119 the token is printed only when asked for (or for an editor).
 // The app answers.
-const ui = spawn(process.execPath, [installed, "ui", "--port", "0", "--root", root], { env });
+const ui = spawn(
+  process.execPath,
+  [installed, "ui", "--port", "0", "--show-token", "--root", root],
+  { env },
+);
 const url = await new Promise((resolve, reject) => {
   let text = "";
   const t = setTimeout(() => reject(new Error(`atticus ui didn't start: ${text}`)), 30000);
