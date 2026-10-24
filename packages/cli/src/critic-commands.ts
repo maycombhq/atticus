@@ -15,6 +15,8 @@ import {
   act,
   completeLensRun,
   gateStatus,
+  checkRoundRule,
+  ownerWaitsLine,
   roundsUsed,
   overrideStats,
   reviewedGates,
@@ -68,16 +70,20 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` :
 const capital = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** A gate's status in one line, for atticus critic, atticus findings and atticus change status. */
-export function statusLine(s: GateStatus): string {
+export function statusLine(s: GateStatus, change = "<change>"): string {
   if (s.waiting.length)
     return `The ${s.gate} gate is not decided: ${plural(s.waiting.length, "AI lens", "AI lenses")} ${s.waiting.length === 1 ? "is" : "are"} with your assistant. Run atticus handoff done <run> for each, then look at the findings again.`;
   const counts = `${s.open.blocking} blocking, ${s.open.gaps} open gap${s.open.gaps === 1 ? "" : "s"}`;
+  // The checking round's rule, said as a stop says it (ADR 0087 addendum).
   if (s.mayProceed)
     return s.checkRound
-      ? `The ${s.gate} gate may proceed: nothing blocking is open and a person acted since the last round. ${capital(roundsUsed(s))}, so one checking round past the limit may review what was done (atticus critic <change> --gate ${s.gate}).`
+      ? `The ${s.gate} gate may proceed: nothing blocking is open. ${capital(roundsUsed(s))}, but ${checkRoundRule(s.round)} (atticus critic ${change} --gate ${s.gate}).`
       : `The ${s.gate} gate may proceed: nothing blocking is open.`;
+  // An open gap with nothing blocking waits on its owner, as the stage's done says.
+  const owner = ownerWaitsLine(s, change);
+  if (owner) return owner;
   if (s.humanDecides)
-    return `The ${s.gate} gate is closed (${counts}) and ${roundsUsed(s)}: a person decides now.`;
+    return `The ${s.gate} gate is closed (${counts}) and ${roundsUsed(s)}: a person decides now. Once a person acts on round ${s.round}'s findings, ${checkRoundRule(s.round)}.`;
   return `The ${s.gate} gate is closed: ${counts}. Act on each with atticus finding <id> <action>.`;
 }
 

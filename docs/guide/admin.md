@@ -264,6 +264,8 @@ Every write to a shared outside system (the Git host, the work tracker, the serv
 
 `process/change-policy.yaml` may also set `stages`, the stage path (ADR 0087 addendum): for each stage its `phase`, the `loop` file it keeps, the `command` that runs it, the files it `writes` and the change type's `artifacts` it writes. A change whose folder holds a stage's loop file is on the stage path: `change status` and the hand-off then want each phase's stage done and its files, not `proposal.md` and `specs/`. Left out, the built-in feature, architecture and stories stages apply; a list you write replaces them, so add `snow` to the stories stage's `artifacts` if your plan hand-off needs `snow.md`.
 
+`process/change-policy.yaml` may also set `questionsPerStop` (default 5): the most questions one stop of a stage asks a person (ADR 0117 addendum). The rest wait, and are asked once those are answered; the stop says how many wait.
+
 ## Day to day
 
 | Task                                   | How                                                                                                                                                              |

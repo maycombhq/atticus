@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
 import {
@@ -37,6 +37,7 @@ import {
   type ChangeContext,
 } from "@maycombhq/changes";
 import {
+  checkRoundRule,
   completeLensRun,
   CriticError,
   failLens,
@@ -51,6 +52,7 @@ import {
 import type { ChangeLifecycle, RunRetrieval } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
 import { citeFiles } from "./cite.js";
+import { unfence, YAML_QUOTE_RULE } from "./answer.js";
 import { questionsOnFile, stepJudges } from "./questions-on-file.js";
 import type { ContextOptions, ContextReport, RetrievalAi } from "../engine.js";
 import { askGaps, type ContextGap } from "../gaps.js";
@@ -99,6 +101,17 @@ export interface StageIssue {
   options?: { label: string; means: string; changes: string }[];
   /** The question to ask a person, in plain words, when the check knows it. */
   ask?: string;
+  /** The answer isn't YAML at all (S5): handed back to the drafter once, spending no draft. */
+  syntax?: boolean;
+  /** The line of the answer it is at, when it is about the answer's text (S5). */
+  line?: number;
+  /**
+   * A doubt the drafter gets once more, with its reason, before it becomes a person's question
+   * (U3, the way the answered-by hold works).
+   */
+  holdOnce?: boolean;
+  /** Words to find in the stage's files, for the line a question about it cites (U3). */
+  locateText?: string;
 }
 
 export const issueFingerprint = (rule: string, target: string, evidence = "") =>
@@ -139,6 +152,11 @@ export interface StageSpec<A> {
   locate?(issue: StageIssue): Promise<string | undefined>;
   /** The questions the assistant raised in its answer. */
   questions?(answer: A): QuestionDraft[];
+  /**
+   * Data the critic's lenses get with the draft, worked out from the answer (S3): the target
+   * flows merged with today's, numbered in their final order. Data, never instructions.
+   */
+  reviewSources?(answer: A): SourceInput[];
   /**
    * The names the change uses that nothing Atticus has read says anything about (ADR 0107
    * point 5): each one the answer relies on becomes a question to a person, never a guess.
@@ -199,6 +217,15 @@ export interface StageResult<A> {
     source: string;
     findings: { rule: string; message: string; evidence?: string }[];
   };
+  /** The result is a person's edit, checked as the stage's draft (P1). */
+  byPerson?: boolean;
+  /** Questions due that this stop didn't ask, over the change policy's questionsPerStop (U3). */
+  moreQuestions?: number;
+  /**
+   * The files this run changed on disk, of those it wrote (`files`): a write whose hashes match
+   * what was there is no change ("kept your target flows").
+   */
+  changed?: string[];
 }
 
 const loopRel = (stage: Stage) => `stage/${stage}.yaml`;
@@ -353,6 +380,8 @@ export async function runStageLoop<A>(
   const notes: string[] = [];
   const runs: RunSummary[] = [];
   let drafts = 0;
+  /** The files this run's writes changed on disk. */
+  const changed = new Set<string>();
 
   let checks: Map<string, string> | undefined;
   const kindOf = async (f: { rule: string; kind: "issue" | "knowledge-gap" }) =>
@@ -381,11 +410,12 @@ export async function runStageLoop<A>(
       files: [],
       notes,
       runs,
+      changed: [...changed].sort(),
       ...(state === "done" ? { pr: stagePr(change.id) } : {}),
       ...(state === "questions" && stoppedOn().length
         ? {
             stopped: {
-              source: `${rel}/${spec.source}`,
+              source: `${rel}/${loop.failedAnswer ?? spec.source}`,
               findings: stoppedOn().map((f) => ({
                 rule: f.rule,
                 message: f.message,
@@ -433,12 +463,28 @@ export async function runStageLoop<A>(
     throw new PlannerError("stopped", [message, ...lines].join("\n"), lines);
   };
 
+  // What the lenses read with the draft: the drafter's sources and what the stage works out (S3).
+  const reviewSources = (a: A | undefined): SourceInput[] => [
+    ...spec.sources,
+    ...(a !== undefined && spec.reviewSources ? spec.reviewSources(a) : []),
+  ];
   // Every write of the stage's files keeps their hashes, so a person's edit is a fact (P1).
   const write = async (a: A): Promise<string[]> => {
+    // What was on disk before, so a write that changes nothing says so.
+    const before = await hashFiles(dir, [
+      ...new Set([...Object.keys(loop.written ?? {}), ...(await sourceFiles(dir, spec.source))]),
+    ]);
     const files = await spec.write(a);
     loop.written = await hashFiles(dir, [
       ...new Set([...files, ...(await sourceFiles(dir, spec.source))]),
     ]);
+    for (const f of files) if (before[f] !== loop.written[f]) changed.add(f);
+    // An answer that read was written: a copy of one that didn't is no longer the stage's (S5).
+    if (loop.failedAnswer) {
+      if (loop.failedAnswer !== spec.source)
+        await rm(join(dir, ...loop.failedAnswer.split("/")), { force: true });
+      delete loop.failedAnswer;
+    }
     return files;
   };
   // A stop on a person's own draft: what still fails, with file and line; never drafted over.
@@ -558,10 +604,42 @@ export async function runStageLoop<A>(
         kept,
         how: "checked",
       });
-      const cur = await spec.current();
-      const problems = (await spec.currentProblems?.()) ?? [];
+      let cur: A | undefined = await spec.current();
+      let problems = (await spec.currentProblems?.()) ?? [];
+      // S6: the answer a person fixed is their draft. The file the stop named (a copy of the
+      // answer that didn't read), or the stage's answer file when its result was never written,
+      // is read as the model's answer is, and gets the same checks.
+      const answerFile =
+        loop.failedAnswer && edited.includes(loop.failedAnswer)
+          ? loop.failedAnswer
+          : cur === undefined && !spec.source.endsWith("/") && edited.includes(spec.source)
+            ? spec.source
+            : undefined;
+      if (answerFile) {
+        const text = await readFile(join(dir, ...answerFile.split("/")), "utf8").catch(
+          () => undefined,
+        );
+        if (text !== undefined) {
+          const p = spec.parse(text);
+          const bad = p.issues.filter((i) => i.blocking);
+          if (p.answer !== undefined && !bad.length) {
+            cur = p.answer;
+            problems = [];
+          } else
+            problems = bad.map(
+              (i) =>
+                `${answerFile}:${i.line ?? 1}: ${i.message.replace(/^In your answer at line \d+: /, "")}`,
+            );
+        }
+      }
+      // Never "nothing in it reads": a stage that can't take the edit says how to go on.
       if (cur === undefined && !problems.length)
-        problems.push(`${spec.source}: nothing in it reads`);
+        await stopNow(
+          `The ${spec.stage} stage can't take your edit of ${edited.map((f) => `${rel}/${f}`).join(", ")} as its draft: there is no answer in it to check.`,
+          [
+            `Run ${rerunOf(spec.stage, change.id)} --force to have your assistant draft again from your files; a copy of them is in ${kept}.`,
+          ],
+        );
       const failing = cur === undefined ? [] : (await spec.check(cur)).filter((i) => i.blocking);
       if (cur === undefined || problems.length || failing.length)
         await personStop(edited, kept, failing, problems, "check");
@@ -571,7 +649,7 @@ export async function runStageLoop<A>(
       const files = await write(cur!);
       const c = await criticRound(root, ctx, change, spec, o, loop, notes, kindOf, {
         files,
-        sources: spec.sources,
+        sources: reviewSources(cur!),
       });
       if (c.stop) await stopNow(c.stop.message, c.stop.lines);
       if (c.waiting)
@@ -585,7 +663,7 @@ export async function runStageLoop<A>(
       loop.state = "done";
       loop.updatedAt = at;
       await writeLoop(dir, loop);
-      return result("done", { files, answer: cur! });
+      return result("done", { files, answer: cur!, byPerson: true });
     }
   }
 
@@ -636,7 +714,7 @@ export async function runStageLoop<A>(
         const files = await write(cur);
         const c = await criticRound(root, ctx, change, spec, o, loop, notes, kindOf, {
           files,
-          sources: spec.sources,
+          sources: reviewSources(cur),
         });
         if (c.stop) await stopNow(c.stop.message, c.stop.lines);
         if (c.waiting)
@@ -670,6 +748,8 @@ export async function runStageLoop<A>(
     const found: StageIssue[] = [];
     let files: string[] = [];
     let reviewed: QuestionDraft[] | undefined;
+    /** This draft's answer, when it didn't read (S5). */
+    let failedOutput: string | undefined;
     let review = resume || reviewAgain ? loop.review : undefined;
     reviewAgain = false;
     // A resume names a lens of the round the draft waits on; a draft run resumed while an older
@@ -813,6 +893,66 @@ export async function runStageLoop<A>(
         await writeLoop(dir, loop);
         return result("waiting", { waiting: { runId: run.runId } });
       }
+      // S5: an answer that isn't YAML at all goes back to the drafter once, with its line and how
+      // to quote, before it counts as a draft (the lens read-again of naysayer's ai.ts). Its
+      // answer stands as the draft, whatever it is: once only.
+      const wasReadAgain = loop.readAgain !== undefined && loop.readAgain === run.runId;
+      delete loop.readAgain;
+      const slip =
+        !wasReadAgain && run.output !== undefined && run.state !== "failed"
+          ? spec.parse(citeFiles(run.output, sources)).issues.find((i) => i.syntax)
+          : undefined;
+      if (slip) {
+        const again = await o.runtime.prepare({
+          change: change.id,
+          agent,
+          pack: buildContextPack({
+            change: change.id,
+            agent: agent.id,
+            budget: agent.tokenBudget,
+            sources: [
+              ...sources,
+              {
+                id: "0-read-again",
+                kind: "instruction",
+                origin: "atticus",
+                text: READ_AGAIN_RULE,
+                classification: "public",
+                trusted: true,
+              },
+              // The problem quotes the model's own line, so it goes as data with the answer.
+              {
+                id: "last-answer",
+                kind: "artifact",
+                origin: "your last answer, which isn't YAML",
+                text: `The problem: ${slip.message}\n\nYour last answer:\n${unfence(run.output!)}`,
+                classification: "internal",
+                priority: 995,
+              },
+            ],
+            levels,
+            maxClassification: levels.includes("internal") ? "internal" : levels[0]!,
+            now,
+            step: `${spec.stage === "stories" ? "plan" : "change"} ${spec.stage} ${change.id} (read again)`,
+          }),
+          outputPath: spec.output,
+          outputIn: "run",
+        });
+        const second = await o.runtime.run(again.runId);
+        runs.push(toRunSummary(second));
+        if (second.state === "waiting" || second.state === "prepared") {
+          loop.state = "waiting";
+          loop.run = second.runId;
+          loop.readAgain = second.runId;
+          loop.updatedAt = at;
+          await writeLoop(dir, loop);
+          notes.push(
+            `Your assistant's answer isn't YAML; it is handed back once to be written again, without counting as a draft (run ${second.runId}).`,
+          );
+          return result("waiting", { waiting: { runId: second.runId } });
+        }
+        if (second.output !== undefined && second.state !== "failed") run = second;
+      }
       delete loop.run;
       drafts++;
       personDraft = undefined;
@@ -832,6 +972,8 @@ export async function runStageLoop<A>(
         const p = spec.parse(citeFiles(run.output, sources));
         found.push(...p.issues);
         answer = p.answer;
+        // Kept to copy into the change folder if the loop stops on it (S5).
+        if (answer === undefined) failedOutput = unfence(run.output);
         if (answer !== undefined) {
           found.push(...(await spec.check(answer)));
           files = await write(answer);
@@ -843,7 +985,7 @@ export async function runStageLoop<A>(
       if (answer !== undefined && !found.some((i) => i.blocking)) {
         const c = await criticRound(root, ctx, change, spec, o, loop, notes, kindOf, {
           files,
-          sources: spec.sources,
+          sources: reviewSources(answer),
         });
         if (c.stop) await stopNow(c.stop.message, c.stop.lines);
         if (c.waiting)
@@ -915,7 +1057,17 @@ export async function runStageLoop<A>(
     const drafted: { repo: string; q: QuestionDraft; f?: LoopFinding }[] = [];
     const evidenceFor = async (e: string | undefined) =>
       e && (await lineExists(root, e)) ? e : `${rel}/${loopRel(spec.stage)}:1`;
-    for (const { f, issue } of toAsk)
+    // U3: a doubt the drafter gets once more, with its reason, before a person is asked.
+    const doubts = new Set(loop.handedBack ?? []);
+    let heldDoubts = 0;
+    for (const { f, issue } of toAsk) {
+      if (issue.holdOnce && !doubts.has(f.fingerprint)) {
+        loop.handedBack = [...new Set([...(loop.handedBack ?? []), f.fingerprint])].sort();
+        heldDoubts++;
+        continue;
+      }
+      // The line the question is about: the stage's files, where the check can point at it.
+      const at = issue.locateText ? await spec.locate?.(issue) : undefined;
       drafted.push({
         f,
         repo: issue.repo ?? change.id,
@@ -926,10 +1078,15 @@ export async function runStageLoop<A>(
             issue.ask ??
             `${f.seenIn.at(-2)! < n - 1 ? "This came back after a draft had fixed it" : "Three drafts in a row had this problem"}: ${issue.message} What should the ${STAGE_WORDS[spec.stage] ?? spec.stage} say?`,
           options: issue.options ?? [],
-          evidence: [await evidenceFor(f.evidence)],
+          evidence: [at && (await lineExists(root, at)) ? at : await evidenceFor(f.evidence)],
           scope: "repo",
         },
       });
+    }
+    if (heldDoubts)
+      notes.push(
+        `Handed back ${heldDoubts === 1 ? "a doubt" : `${heldDoubts} doubts`} to your assistant once more, with the judge's reason, before asking a person.`,
+      );
     // A draft read back after its lenses: its questions waited with it (the file has none).
     const own = reviewed ?? (answer !== undefined && spec.questions ? spec.questions(answer) : []);
     for (const q of own) {
@@ -944,6 +1101,11 @@ export async function runStageLoop<A>(
     // A question an answer on file may decide, that nothing settled: handed back to the drafter
     // once, with the answer, rather than put to the person again (ADR 0117 addendum).
     const held: HeldQuestion[] = [];
+    // U3: at most the change policy's questionsPerStop go to a person at one stop; the rest wait
+    // as findings, handed back with the next draft and asked once these are answered.
+    const cap = ctx.policy.questionsPerStop;
+    const waitingMore = Math.max(0, drafted.length - cap);
+    if (waitingMore) drafted.splice(cap);
     if (drafted.length) {
       const qs: Question[] = [];
       const judges = stepJudges(root, o.runtime, change.id, now);
@@ -1025,9 +1187,36 @@ export async function runStageLoop<A>(
       );
       await writeLoop(dir, loop);
     }
+    // S5: a stop on an answer that didn't read copies it where the stop says to fix it, keeping
+    // the stage's answer that read aside when it is the same file. Lines are the answer's.
+    const keepFailed = async (): Promise<StopFile | undefined> => {
+      if (failedOutput === undefined) return undefined;
+      const to = failedAnswerRel(spec);
+      let kept: string | undefined;
+      if (to === spec.source) {
+        const valid = await readFile(join(dir, ...to.split("/")), "utf8").catch(() => undefined);
+        if (valid !== undefined && valid !== failedOutput) {
+          await writeFileAtomic(join(dir, ...lastValidRel(spec).split("/")), valid);
+          kept = `${rel}/${lastValidRel(spec)}`;
+        }
+      }
+      await writeFileAtomic(join(dir, ...to.split("/")), failedOutput);
+      loop.failedAnswer = to;
+      // Recorded as Atticus wrote it, so a person's fix of it is seen as their edit (S6).
+      loop.written = { ...(loop.written ?? {}), [to]: sha(failedOutput) };
+      const lines = new Map(
+        found
+          .filter((i) => i.line)
+          .map((i) => [issueFingerprint(i.rule, i.target, i.evidence ?? ""), i.line!]),
+      );
+      return { file: `${rel}/${to}`, ...(kept ? { lastValid: kept } : {}), lines };
+    };
     if (ignored.length && !open.length) {
       for (const f of ignored) f.stoppedAt = n;
-      const stop = stopMessage(spec, rel, n, ignored, rerunOf(spec.stage, change.id));
+      const stop = stopMessage(spec, rel, n, ignored, rerunOf(spec.stage, change.id), {
+        ...(await keepFailed().then((x) => (x ? { failed: x } : {}))),
+        repeated: loop.findings,
+      });
       await stopNow(
         `The ${spec.stage} stage stopped after ${n} draft${n === 1 ? "" : "s"}: a person answered ${[...new Set(ignored.map((f) => f.question!))].join(", ")}, and your assistant's draft still doesn't follow the answer.`,
         stop.lines,
@@ -1035,7 +1224,12 @@ export async function runStageLoop<A>(
     }
     if (toStop.length) {
       for (const f of toStop) f.stoppedAt = n;
-      const stop = stopMessage(spec, rel, n, toStop, rerunOf(spec.stage, change.id));
+      const failed = await keepFailed();
+      const stop = stopMessage(spec, rel, n, toStop, rerunOf(spec.stage, change.id), {
+        ...(failed ? { failed } : {}),
+        repeated: loop.findings,
+      });
+      if (failed) await writeLoop(dir, loop);
       // With questions open too, the stop is one end report (stageEnd): the questions first,
       // then these findings, which the next draft is handed with the answers.
       if (!open.length) {
@@ -1055,7 +1249,11 @@ export async function runStageLoop<A>(
     if (open.length) {
       loop.state = "questions";
       await writeLoop(dir, loop);
-      return result("questions", { files, ...(answer !== undefined ? { answer } : {}) });
+      return result("questions", {
+        files,
+        ...(answer !== undefined ? { answer } : {}),
+        ...(waitingMore ? { moreQuestions: waitingMore } : {}),
+      });
     }
     if (blocking.length === 0 && heldIssues.length === 0) {
       loop.state = "done";
@@ -1083,22 +1281,72 @@ export function stopMessage(
   spec: Pick<StageSpec<unknown>, "stage" | "source">,
   rel: string,
   drafts: number,
-  findings: Pick<LoopFinding, "message" | "rule" | "evidence">[],
+  findings: (Pick<LoopFinding, "message" | "rule" | "evidence"> & { fingerprint?: string })[],
   rerun: string,
+  o: {
+    /** The answer that didn't read, copied where a person fixes it (S5), and its lines. */
+    failed?: StopFile;
+    /** Every finding of the loop, for what the drafts kept failing on (S5). */
+    repeated?: LoopFinding[];
+  } = {},
 ): { message: string; lines: string[] } {
-  const source = `${rel}/${spec.source}`;
+  const source = o.failed?.file ?? `${rel}/${spec.source}`;
   const one = findings.length === 1;
   const elsewhere = findings.some((f) => f.evidence && !f.evidence.startsWith(source));
+  const where = (f: (typeof findings)[number]) => {
+    const line = f.fingerprint ? o.failed?.lines.get(f.fingerprint) : undefined;
+    return f.evidence ?? (line ? `${source}:${line}` : source);
+  };
   return {
     message: `The ${spec.stage} stage stopped after ${drafts} draft${drafts === 1 ? "" : "s"}: your assistant kept getting ${one ? "this" : "these"} wrong, and ${one ? "it isn't a question" : "they aren't questions"} for a person to decide.`,
     lines: [
       ...findings.map(
-        (f) =>
-          `  - ${f.message} (rule ${f.rule.replace(/^critic:/, "")}; in ${f.evidence ?? source})`,
+        (f) => `  - ${f.message} (rule ${f.rule.replace(/^critic:/, "")}; in ${where(f)})`,
       ),
-      `Fix ${source}${elsewhere ? " (the stage writes the files above from it)" : ""}, or tell your assistant how; then run ${rerun} again. Atticus checks your fix before it drafts again.`,
+      // What else kept failing: the rules the stop names above are left out.
+      ...(o.repeated
+        ? repeatedFindings(o.repeated.filter((f) => !findings.some((x) => x.rule === f.rule)))
+        : []),
+      o.failed
+        ? `Fix ${source}, the answer that doesn't read, or tell your assistant how; then run ${rerun} again. Atticus checks your fix before it drafts again.${o.failed.lastValid ? ` The last answer that read is kept in ${o.failed.lastValid}.` : ""}`
+        : `Fix ${source}${elsewhere ? " (the stage writes the files above from it)" : ""}, or tell your assistant how; then run ${rerun} again. Atticus checks your fix before it drafts again.`,
     ],
   };
+}
+
+/** The copy of an answer that didn't read (S5): where it is, the answer kept aside, its lines. */
+export interface StopFile {
+  file: string;
+  lastValid?: string;
+  /** Each finding's line in the file, by fingerprint. */
+  lines: Map<string, number>;
+}
+
+/**
+ * What the drafts kept failing on (S5): each rule whose blocking findings were seen in two drafts
+ * or more, with the drafts, how many findings, and one finding's words as the example (for the
+ * judge's covers-field refusals, the criterion it refused). Counted from the loop's record.
+ */
+export function repeatedFindings(findings: LoopFinding[]): string[] {
+  const by = new Map<string, LoopFinding[]>();
+  for (const f of findings.filter((x) => x.blocking))
+    by.set(f.rule, [...(by.get(f.rule) ?? []), f]);
+  const rows = [...by.entries()]
+    .map(([rule, fs]) => {
+      const drafts = [...new Set(fs.flatMap((f) => f.seenIn))].sort((a, b) => a - b);
+      const example = [...fs].sort((a, b) => b.seenIn.length - a.seenIn.length)[0]!;
+      return { rule, fs, drafts, example };
+    })
+    .filter((r) => r.drafts.length >= 2)
+    .sort((a, b) => b.drafts.length - a.drafts.length || a.rule.localeCompare(b.rule));
+  if (!rows.length) return [];
+  return [
+    "What the drafts kept failing on:",
+    ...rows.map(
+      (r) =>
+        `  - ${r.rule.replace(/^critic:/, "")}: in ${r.drafts.length} drafts (${r.drafts[0]} to ${r.drafts.at(-1)})${r.fs.length > 1 ? `, ${r.fs.length} findings` : ""}, for example: ${r.example.message}`,
+    ),
+  ];
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
@@ -1122,6 +1370,11 @@ export function stageEnd(r: StageResult<unknown>, rerun: string): string[] {
   const out = [
     `The ${STAGE_NAMES[r.stage]} stage stopped after ${plural(r.iteration, "draft")}: ${plural(r.questions.length, "question")} for a person to answer${problems.length ? `, and ${plural(problems.length, "problem")} your assistant kept getting wrong` : ""}.`,
     ...r.questions.map((q) => `  ${q.id}: ${q.question}`),
+    ...(r.moreQuestions
+      ? [
+          `${r.moreQuestions} more question${r.moreQuestions === 1 ? " waits; it is" : "s wait; they are"} asked once these are answered.`,
+        ]
+      : []),
     `Answer each with atticus questions answer <id> --option <n> (or --text "..."), or with /atticus-answer.`,
   ];
   if (problems.length)
@@ -1142,6 +1395,18 @@ export function rerunOf(stage: Stage, change: string): string {
     ? `atticus plan stories ${change}`
     : `atticus change ${stage} ${change}`;
 }
+
+/**
+ * What the drafter is told when its answer isn't YAML (S5), in Atticus's words; the problem and
+ * the answer go with it as data.
+ */
+export const READ_AGAIN_RULE = `Your last answer isn't YAML, so it doesn't count as a draft yet; the "last-answer" data block holds the problem, the line it is at, and the answer. Write the same answer again as the YAML asked for, with that line fixed: ${YAML_QUOTE_RULE}, and in a flow list such as [a, b] quote each item that holds one.`;
+
+/** Where an answer that didn't read is copied when the loop stops on it (S5). */
+export const failedAnswerRel = (spec: Pick<StageSpec<unknown>, "output">) => `stage/${spec.output}`;
+/** Where the stage's own answer file is kept aside when a failing answer is copied over it. */
+export const lastValidRel = (spec: Pick<StageSpec<unknown>, "stage">) =>
+  `stage/${spec.stage}-answer.last-valid.yaml`;
 
 /** The data block that carries a person's edited files when the assistant drafts from them. */
 export const PERSON_DRAFT = "current-draft";
@@ -1513,7 +1778,7 @@ function checkRoundStop(
     message: `The ${stage} stage stopped: round ${round} at the ${gate} gate, the checking round past its limit, found ${blocking.length === 1 ? "a blocking finding" : `${blocking.length} blocking findings`} in what was done. A person decides now.`,
     lines: [
       ...blocking.map((i) => `  - ${i.message}${i.evidence ? ` (${i.evidence})` : ""}`),
-      `See atticus findings ${change}. Fix each by hand and apply it, waive it with a reason, or dismiss it as not relevant; once every one is acted on, run ${rerunOf(stage, change)} again for one more checking round. Or return the change.`,
+      `See atticus findings ${change}. Fix each by hand and apply it, waive it with a reason, or dismiss it as not relevant; once every one is acted on, ${checkRoundRule(round)}: run ${rerunOf(stage, change)} again. Or return the change.`,
     ],
   };
 }

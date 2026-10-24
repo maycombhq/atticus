@@ -1,6 +1,6 @@
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { parse, stringify } from "yaml";
+import { stringify } from "yaml";
 import { z } from "zod";
 import {
   changesRelOf,
@@ -31,7 +31,7 @@ import { GENERATED_MARK } from "../render.js";
 import { slug } from "../words.js";
 import { parseYamlAs } from "./answer.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./architecture.js";
-import { columnsOf, loadEstate, type Estate } from "./estate.js";
+import { columnsOf, estateIndex, loadEstate, type Estate } from "./estate.js";
 import {
   runStageLoop,
   stageBudget,
@@ -502,7 +502,15 @@ const coversItem = (c: UnwrittenCheck): JudgeItem => ({
 async function settleCoverage(
   claims: UnwrittenCheck[],
   j: { runtime?: AiRuntime; store: JudgmentStore; change: string; now: Date },
-): Promise<{ claim: UnwrittenCheck; verdict: string | undefined }[]> {
+): Promise<
+  {
+    claim: UnwrittenCheck;
+    verdict: string | undefined;
+    /** The judge's words: its quote of the criterion and why, when it gave them. */
+    quote?: string;
+    why?: string;
+  }[]
+> {
   if (!claims.length) return [];
   const items = claims.map(coversItem);
   const r = await settle(COVERS_FIELD_SPEC, items, {
@@ -511,12 +519,22 @@ async function settleCoverage(
     change: j.change,
     now: j.now,
   });
-  return claims.map((claim, i) => ({
-    claim,
-    // No entry in settle's results: nothing settled it, so the claim is unjudged.
-    verdict: r.get(judgmentKey(COVERS_FIELD_SPEC.kind, items[i]!.inputs))?.verdict,
-  }));
+  return claims.map((claim, i) => {
+    const j = r.get(judgmentKey(COVERS_FIELD_SPEC.kind, items[i]!.inputs));
+    const quote = j?.judgment?.quotes.find((q) => q.of === "criterion")?.text;
+    return {
+      claim,
+      // No entry in settle's results: nothing settled it, so the claim is unjudged.
+      verdict: j?.verdict,
+      ...(quote ? { quote } : {}),
+      ...(j?.judgment?.why ? { why: j.judgment.why } : {}),
+    };
+  });
 }
+
+/** "a, b and c". */
+const andList = (xs: string[]) =>
+  xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : (xs[0] ?? "");
 
 /**
  * Whether each criterion checks the field it claims to and doesn't write (ADR 0117). Whether
@@ -531,19 +549,22 @@ export async function coverageIssues(
   j: { runtime?: AiRuntime; store: JudgmentStore; change: string; now: Date },
 ): Promise<StageIssue[]> {
   const out: StageIssue[] = [];
-  for (const { claim: c, verdict: v } of await settleCoverage(claims, j)) {
+  // U3: one finding, and so one question, per criterion the judge refused, naming every field it
+  // refused there, with the judge's reason; never one per field.
+  const refused = new Map<
+    string,
+    { c: UnwrittenCheck; fields: string[]; quote?: string; why?: string }
+  >();
+  for (const { claim: c, verdict: v, quote, why } of await settleCoverage(claims, j)) {
     if (v === "yes") continue;
-    if (v === "no")
-      out.push({
-        rule: "stories.check-not-in-criterion",
-        target: `${c.task}:${c.field}`,
-        message: `Task ${c.task}: the criterion "${c.criterion}" says it checks ${c.field}, but a judge read its then clause and says it doesn't assert that field's value: make the then clause assert it, or check it in another criterion.`,
-        blocking: true,
-        kind: "decision",
-        repo: c.repo,
-        ask: `Does the criterion "${c.criterion}" of task ${c.task} check ${c.field}? A judge read it and says no.`,
-      });
-    else
+    if (v === "no") {
+      const key = `${c.task}\n${c.criterion}`;
+      const r = refused.get(key) ?? { c, fields: [] };
+      r.fields.push(c.field);
+      r.quote ??= quote;
+      r.why ??= why;
+      refused.set(key, r);
+    } else
       out.push({
         rule: "stories.check-unjudged",
         target: `${c.task}:${c.field}`,
@@ -551,6 +572,40 @@ export async function coverageIssues(
         blocking: false,
         repo: c.repo,
       });
+  }
+  for (const { c, fields, quote, why } of refused.values()) {
+    const them = andList(fields);
+    const one = fields.length === 1;
+    const reason = `${quote ? `, quoting "${quote}"` : ""}${why ? `: ${why}` : "."}`;
+    out.push({
+      rule: "stories.check-not-in-criterion",
+      target: `${c.task}:${[...fields].sort().join(",")}`,
+      message: `Task ${c.task}: the criterion "${c.criterion}" says it checks ${them}, but a judge read its then clause and says it doesn't assert ${one ? "that field's value" : "their values"}${reason} Make the then clause assert ${one ? "it" : "them"}, and what happens when ${one ? "it doesn't" : "they don't"} match, or check ${one ? "it" : "them"} in another criterion.`,
+      blocking: true,
+      kind: "decision",
+      repo: c.repo,
+      // A doubt goes back to the drafter once more, with the judge's reason, before a person.
+      holdOnce: true,
+      locateText: c.criterion,
+      ask: `Does the criterion "${c.criterion}" of task ${c.task} check ${them}, and show what happens when ${one ? "it doesn't" : "they don't"} match? A judge read it and says no${reason}`,
+      options: [
+        {
+          label: "yes, it checks them",
+          means: `The criterion checks ${them} as written`,
+          changes: `The criterion stands; the judge's no is overruled by a person`,
+        },
+        {
+          label: "no: add a criterion for the refusal",
+          means: `Task ${c.task} needs a criterion that shows what happens when ${them} ${one ? "doesn't" : "don't"} match`,
+          changes: `The next draft adds that criterion`,
+        },
+        {
+          label: "not needed",
+          means: `${them} ${one ? "needs" : "need"} no criterion of ${one ? "its" : "their"} own; say why with --text`,
+          changes: `The criterion stands, with the reason given`,
+        },
+      ],
+    });
   }
   return out;
 }
@@ -790,8 +845,23 @@ export async function writeStories(
 export async function readStoriesAnswer(dir: string): Promise<StoriesAnswer | undefined> {
   const t = await readFile(join(dir, ...ANSWER_FILE.split("/")), "utf8").catch(() => undefined);
   if (t === undefined) return undefined;
-  const r = Answer.safeParse(parse(t));
-  return r.success ? r.data : undefined;
+  // The same reader as the model's answer (S6): relies_on_gaps and a code fence read as there.
+  return parseYamlAs(t, Answer, (d) => d, "stories").value;
+}
+
+/** The line of a story file that holds the words, as metarepo path:line (U3). */
+async function locateInStories(
+  dir: string,
+  rel: string,
+  words: string,
+): Promise<string | undefined> {
+  for (const f of (await readdir(join(dir, "stories")).catch(() => [] as string[])).sort()) {
+    if (!f.endsWith(".md")) continue;
+    const lines = (await readFile(join(dir, "stories", f), "utf8")).split(/\r?\n/);
+    const n = lines.findIndex((l) => l.includes(words));
+    if (n >= 0) return `${rel}/stories/${f}:${n + 1}`;
+  }
+  return undefined;
 }
 
 export interface StoriesStageResult extends StageResult<StoriesAnswer> {
@@ -945,11 +1015,23 @@ Rules:
     classification: "internal",
     priority: 80,
   };
+  // T1/U1: the stories stage selects from the estate too, on every path: its input is the brief,
+  // the target flows and the design, and the flows it changes lead to their records. Without the
+  // estate it selected only processes, so a draft had no record of the estate at all.
+  const brief = await readFile(join(dir, "brief.md"), "utf8").catch(() => "");
+  const design = await readFile(join(dir, "design.md"), "utf8").catch(() => "");
   const selected = await estateContext(
     root,
     "stories",
-    { text: [skeletonText, stringify(deltas, { lineWidth: 0 })].join("\n\n"), title: change.title },
     {
+      text: [brief, skeletonText, stringify(deltas, { lineWidth: 0 }), design]
+        .filter((x) => x.trim())
+        .join("\n\n"),
+      title: change.title,
+      ids: [...new Set(deltas.map((d) => d.flow))],
+    },
+    {
+      estate,
       budget: stageBudget(ctx, STORY_AGENT),
       others: [instructionSource(instructions), ...sources],
       ...(o.context ? { context: o.context } : {}),
@@ -982,7 +1064,14 @@ Rules:
     sources.push(...selected.sources);
     context = selected.report;
   } else {
-    sources.push(whole);
+    sources.push(whole, {
+      id: "estate-index",
+      kind: "catalog",
+      origin: "atticus plan stories (deterministic)",
+      text: estateIndex(estate),
+      classification: "internal",
+      priority: 70,
+    });
     if (selected) context = { ...context, note: selected.note };
   }
 
@@ -1020,6 +1109,7 @@ Rules:
       return writeStories(root, change.id, stories, a, requests, now, open);
     },
     current: () => readStoriesAnswer(dir),
+    locate: async (i) => (i.locateText ? locateInStories(dir, rel, i.locateText) : undefined),
   };
   const retrieved = selected && "sources" in selected ? selected : undefined;
   if (retrieved?.retrieval && (retrieved.retrieval.expansion || retrieved.retrieval.rerank))

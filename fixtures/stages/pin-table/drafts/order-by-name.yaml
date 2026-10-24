@@ -1,0 +1,25 @@
+# S3 (ADR 0111 addendum): a live run's critic said "respond is placed after 5, the same
+# position as the author lookup, so nothing makes sure the author is looked up first". The merge
+# keeps adds with the same after in the order they are written, so the lookup is step 5 and the
+# respond step 6: the finding was false. Retold on Forge: the order's response names who placed
+# it. Invented, written by hand.
+flows:
+  - flow: forge-orders.place-order
+    repo: forge-orders
+    change: modify
+    why: The saved order says who placed it.
+    steps:
+      - op: add
+        after: 4
+        kind: lookup
+        what: The name of the shopper who placed the order is looked up
+        store: { table: forge-orders-db.orders, columns: [quantity] }
+        fields: { returns: [placedByName] }
+      - op: add
+        after: 4
+        kind: respond
+        what: 201 Created with the saved order and who placed it
+        fields: { returns: [id, sku, quantity, placedByName] }
+      - op: remove
+        step: 5
+        why: The new respond step replaces it.

@@ -6,6 +6,7 @@ import type { SourceInput } from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
 import { changeInputSources } from "@maycombhq/intake";
 import { readKnowledge } from "@maycombhq/knowledge";
+import { MERGED_FLOWS } from "@maycombhq/naysayer";
 import { PlannerError } from "../errors.js";
 import { parseYamlAs } from "./answer.js";
 import { columnsOf, endpointKey, estateIndex, loadEstate, type Estate } from "./estate.js";
@@ -67,7 +68,7 @@ flows:
         kind: <add, or when the kind changes: entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry>
         what: <one sentence: what the step does once the change is in>
         to: { component: <component or system id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
-        store: { table: <table id>, columns: [<columns>], new: <true only on the step that creates the table>, types: { <each column it adds>: <database type> }, classification: { <each column it adds>: <classification> }, migration: <migration file, when it adds columns or a table>, retention: <new tables: how long rows are kept> }   # read, lookup and write: the table goes here, never under to
+        store: { table: <table id>, columns: [<columns>], new: <true only on the step that creates the table>, types: { <each column it adds>: <database type> }, classification: { <each column it adds>: <classification> }, migration: <migration file, when it adds columns or a table>, retention: <new tables: how long rows are kept>, keys: { <a column it adds that references another table's row>: { references: <db>.<table>.<column>, onDelete: set-null | cascade | restrict | no-action } } }   # read, lookup and write: the table goes here, never under to
         fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..], as: { <a field sent under another name>: <the column it is> } }   # field names as the code names them
         why: <one sentence>
 reads:
@@ -77,7 +78,7 @@ reads:
 Rules:
 - Cover every flow the feature says is changed, and every new flow it lists.
 - A flow under flows adds, changes or removes at least one step. A flow whose steps all stay as they are is context: put it under reads, never under flows with no steps.
-- Number steps as today's flow lists them (1 is the first). Don't renumber after an add.
+- Number steps as today's flow lists them (1 is the first). Don't renumber after an add. Adds with the same after (and a new flow's steps) run in the order you write them, so write a step that gives a field before the step that returns or sends it.
 - Name fields at every step that moves data: what a call sends and returns, what a write stores, what a transform maps. A key a write or read matches rows by goes under checks.
 - Use component, system and table ids from the index. Something that doesn't exist yet is marked new: true.
 - Follow the integration patterns and standards below where they apply; say in why when one shapes a step.
@@ -251,6 +252,161 @@ function fieldsFromNowhere(
       if (!was.includes(fold(f)) && !given.has(fold(f))) out.push({ change: i + 1, field: f });
   });
   return out;
+}
+
+/**
+ * S3 (ADR 0111 addendum): every field an added or changed respond step newly returns, or an added
+ * or changed call-out or publish newly sends, has a source earlier in the merged target flow:
+ * the trigger's input (its entry's path parameters, the entry step's fields), a read, a lookup,
+ * or an earlier step's fields or store. The order is the merge's (adds with the same after in the
+ * order they are written), a fact. `later` is the step that gives it after, when one does.
+ */
+function returnedBeforeGiven(
+  d: FlowDelta,
+  today: { steps: { kind: string; data?: Record<string, string[] | undefined> }[] } | undefined,
+  e: Estate,
+): {
+  step: number;
+  change: number;
+  kind: string;
+  field: string;
+  verb: "returns" | "sends";
+  later?: { step: number; kind: string; change?: number };
+}[] {
+  const fold = (c: string) => c.replace(/[_-]/g, "").toLowerCase();
+  const leaf = (f: string) => fold(f.split(".").at(-1)!);
+  const m = mergeDelta(d, today as never);
+  const steps = m.steps.filter((s) => s.mark !== "removed");
+  const gives = (s: (typeof steps)[number]): Set<string> => {
+    const out = new Set<string>();
+    if (s.kind === "respond") return out;
+    const data = (s.data ?? {}) as Record<string, string[] | undefined>;
+    const back = ["call-out", "lookup", "read"].includes(s.kind) ? ["returns"] : [];
+    for (const k of ["reads", "sends", "to", "from", "checks", ...back])
+      for (const f of data[k] ?? []) out.add(leaf(f));
+    for (const c of s.store?.columns ?? []) out.add(fold(c));
+    if (s.store) for (const c of columnsOf(e, s.store.table)) out.add(fold(c));
+    return out;
+  };
+  // The trigger's input: the path parameters of its entry ("PUT /orders/{orderId}/pin").
+  const given = new Set<string>();
+  for (const p of (d.trigger?.entry ?? "").matchAll(/\{([^}]+)\}/g)) given.add(fold(p[1]!));
+  const each = steps.map(gives);
+  const out: ReturnType<typeof returnedBeforeGiven> = [];
+  steps.forEach((s, i) => {
+    const verb =
+      s.kind === "respond"
+        ? "returns"
+        : s.kind === "call-out" || s.kind === "publish"
+          ? "sends"
+          : undefined;
+    if (verb && (s.mark === "added" || s.mark === "changed") && s.change) {
+      const was =
+        s.mark === "changed" && s.today
+          ? (today?.steps[s.today - 1]?.data?.[verb] ?? []).map(leaf)
+          : [];
+      for (const f of ((s.data ?? {}) as Record<string, string[] | undefined>)[verb] ?? []) {
+        if (was.includes(leaf(f)) || given.has(leaf(f))) continue;
+        const j = each.findIndex((g, k) => k > i && g.has(leaf(f)));
+        // Given nowhere in a changed flow: today's flow may carry it in a step no field list
+        // names (delta.field-from-nowhere says so for what a respond returns). Only a new flow's
+        // steps are all on the page, so there "nowhere" is a fact too.
+        if (j < 0 && m.change === "modify") continue;
+        out.push({
+          step: s.target!,
+          change: s.change,
+          kind: s.kind,
+          field: f,
+          verb,
+          ...(j >= 0
+            ? {
+                later: {
+                  step: steps[j]!.target!,
+                  kind: steps[j]!.kind,
+                  ...(steps[j]!.change ? { change: steps[j]!.change } : {}),
+                },
+              }
+            : {}),
+        });
+      }
+    }
+    for (const f of each[i]!) given.add(f);
+  });
+  return out;
+}
+
+/**
+ * A change's target flows as they will be once it is in, for the critic's lenses (S3, S4): each
+ * flow's steps in their final order, numbered as the merge numbers them, with what each step
+ * stores and the keys the change declares. The lenses read the order from it as a fact.
+ */
+export function mergedFlowsText(deltas: FlowDelta[], e: Estate): string {
+  const lines = [
+    "The target flows as they will be once the change is in (ADR 0095): each flow's steps in their final order, numbered as the target flow numbers them. Adds with the same after run in the order they are written. Read the order from these numbers; never work it out from after.",
+  ];
+  const defs = tableDefinitions(deltas);
+  const keysOf = (keys: Record<string, { references: string; onDelete: string }> | undefined) =>
+    Object.entries(keys ?? {})
+      .map(([c, k]) => `${c} references ${k.references}, on delete ${k.onDelete}`)
+      .join("; ");
+  const fieldsOf = (data: Record<string, string[] | undefined> | undefined) =>
+    Object.entries(data ?? {})
+      .filter(([, v]) => v?.length)
+      .map(([k, v]) => `${k} ${v!.join(", ")}`)
+      .join("; ");
+  const end = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
+  for (const d of deltas) {
+    const today = d.change === "new" ? undefined : e.flowById.get(d.flow)?.flow;
+    const m = mergeDelta(d, today);
+    lines.push("", `# ${d.flow} (${d.change}, repo ${d.repo}): ${m.name}`);
+    for (const s of m.steps) {
+      const store = s.store
+        ? ` Store: ${s.store.table}${s.store.new ? " (new)" : ""}${s.store.columns.length ? ` columns ${s.store.columns.join(", ")}` : ""}${s.store.keys ? `; keys: ${keysOf(s.store.keys)}` : ""}.`
+        : "";
+      const to = s.to ? ` To: ${s.to.component} ${s.to.entry}${s.to.new ? " (new)" : ""}.` : "";
+      const fields = fieldsOf(s.data as Record<string, string[] | undefined> | undefined);
+      const body = `${end(s.what)}${to}${store}${fields ? ` Fields: ${fields}.` : ""}`;
+      if (s.mark === "removed") lines.push(`removed: today's step ${s.today} (${s.kind}): ${body}`);
+      else {
+        const how =
+          s.mark === "same"
+            ? "same"
+            : s.mark === "added"
+              ? `added, change ${s.change}`
+              : `changed, today's step ${s.today}, change ${s.change}`;
+        lines.push(`${s.target}. ${s.kind} (${how}): ${body}`);
+      }
+    }
+  }
+  const declared = [...defs.entries()].flatMap(([t, list]) =>
+    list[0]?.store.keys && Object.keys(list[0].store.keys).length
+      ? [`- ${t}: ${keysOf(list[0].store.keys)}`]
+      : [],
+  );
+  for (const d of deltas)
+    for (const s of d.steps)
+      if (s.store?.keys && !defs.has(s.store.table) && Object.keys(s.store.keys).length)
+        declared.push(`- ${s.store.table}: ${keysOf(s.store.keys)}`);
+  lines.push(
+    "",
+    "Keys the change declares (store.keys):",
+    ...(declared.length ? [...new Set(declared)] : ["- none"]),
+  );
+  return lines.join("\n");
+}
+
+export { MERGED_FLOWS };
+
+/** The merged target flows as the lenses' data block (S3). */
+export function mergedFlowsSource(deltas: FlowDelta[], e: Estate, rel: string): SourceInput {
+  return {
+    id: MERGED_FLOWS,
+    kind: "artifact",
+    origin: `${rel}/${TARGET_DIR}/ merged with today's flows (atticus, deterministic)`,
+    text: mergedFlowsText(deltas, e),
+    classification: "internal",
+    priority: 8,
+  };
 }
 
 /** "a, b, c or d". */
@@ -502,6 +658,7 @@ export function storeRules(levels: string[]): string[] {
     "- Give each column a step adds its type under store.types, written as the store's columns are, and name its migration file as the store's migrations are named: the store-facts block lists both.",
     "- Every field a write sends is a column it stores (store.columns) or a key it matches rows by (fields.checks); leave anything else out of sends.",
     "- A field a write sends under another name than its column (a path parameter id that is the order_id column) says which column it is under fields.as: { id: order_id }.",
+    "- A column a step adds that references another table's row says so under store.keys on the table's one definition (or, for a table the catalog has, on the step that adds the column): { pinned_by: { references: <db>.<table>.<column>, onDelete: set-null, cascade, restrict or no-action } }. The table and column it references are in the index or added by this change.",
   ];
 }
 
@@ -875,6 +1032,58 @@ export function checkDeltas(
           const why = migrationProblem(s.store.migration.trim(), table, e, example, o.onFile);
           if (why) issue("delta.bad-migration", at, `Change ${i + 1} to ${t} ${why}`, d.repo);
         }
+        // S4: a foreign key is checked as facts: it is on the table's one definition, keys one of
+        // the table's columns, and references a table and column the catalog or the change has.
+        const keys = Object.entries(s.store.keys ?? {});
+        if (keys.length && def && !defining)
+          issue(
+            "delta.key-not-on-definition",
+            at,
+            `Change ${i + 1} to ${t} gives keys for ${table}, which ${ref(def)} creates: give its keys on that step, the table's one definition.`,
+            d.repo,
+          );
+        else
+          for (const [col, key] of keys) {
+            const tableCols = def ? def.store.columns : [...have, ...s.store.columns];
+            if (!tableCols.includes(col)) {
+              issue(
+                "delta.key-unknown-column",
+                `${at}:${col}`,
+                `Change ${i + 1} to ${t} gives a key for column ${col}, which isn't one of ${table}'s columns (${tableCols.join(", ")}): key a column the table has, or add it under store.columns.`,
+                d.repo,
+              );
+              continue;
+            }
+            const parts = key.references.split(".");
+            const refCol = parts.at(-1)!;
+            const refTable = parts.slice(0, -1).join(".");
+            const refDef = defs.get(refTable)?.[0];
+            if (!isTable(refTable) && !refDef) {
+              issue(
+                "delta.key-unknown-reference",
+                `${at}:${col}`,
+                `Change ${i + 1} to ${t} says column ${col} of ${table} references ${key.references}, but neither the catalog nor this change has a table ${refTable}. Name a table and column the catalog or this change has, as <db>.<table>.<column>.`,
+                d.repo,
+              );
+              continue;
+            }
+            const refCols = new Set([
+              ...columnsOf(e, refTable),
+              ...(refDef?.store.columns ?? []),
+              ...deltas.flatMap((x) =>
+                x.steps.flatMap((y) =>
+                  y.store?.table === refTable ? Object.keys(y.store.types ?? {}) : [],
+                ),
+              ),
+            ]);
+            if (!refCols.has(refCol))
+              issue(
+                "delta.key-unknown-reference",
+                `${at}:${col}`,
+                `Change ${i + 1} to ${t} says column ${col} of ${table} references ${key.references}, but ${refTable} has no column ${refCol} (its columns: ${[...refCols].sort().join(", ")}). Name a column it has, as <db>.<table>.<column>.`,
+                d.repo,
+              );
+          }
         // Gathered for the table, so each property is asked for once (below).
         const g = gainOf(table, (def ?? d).repo);
         const own = added.filter((x) => !twins.has(x));
@@ -902,6 +1111,16 @@ export function checkDeltas(
           `Change ${x.change} to ${t} returns ${x.field}, but no step of the flow receives, reads, writes or works it out, and no table the flow uses has it: add the step that gives it (a write with the new column, its type and its migration), or leave it out.`,
           d.repo,
         );
+    // S3: what a respond returns or a call sends comes from a step before it, in merged order.
+    for (const x of returnedBeforeGiven(d, today?.flow, e))
+      issue(
+        "delta.returned-before-given",
+        `${t}#${x.change}:${x.field}`,
+        x.later
+          ? `Step ${x.step} of the target of ${t} (${x.kind}, change ${x.change}) ${x.verb} ${x.field}, but no step before it gives it: step ${x.later.step} (${x.later.kind}${x.later.change ? `, change ${x.later.change}` : ""}) gives it after. Adds with the same after keep the order they are written in, so write the step that gives ${x.field} first, or give it an earlier after.`
+          : `Step ${x.step} of the target of ${t} (${x.kind}, change ${x.change}) ${x.verb} ${x.field}, but no step before it gives it (the trigger's input, a read, a lookup, or an earlier step's fields or store): add the step that gives it before step ${x.step}, or leave it out.`,
+        d.repo,
+      );
   }
   // ---- what belongs to a table, once a table (A3, A5)
   for (const [table, g] of gains) {
@@ -1112,6 +1331,7 @@ export function dataChanges(deltas: FlowDelta[], e: Estate) {
     classification: Record<string, string>;
     migration?: string;
     retention?: string;
+    keys?: Record<string, { references: string; onDelete: string }>;
   }[] = [];
   // R1: every table the change creates is known before any block is read, and is written once,
   // from its definition; a block that uses it (in any flow, before or after) adds no columns.
@@ -1121,6 +1341,7 @@ export function dataChanges(deltas: FlowDelta[], e: Estate) {
     classification: store.classification ?? {},
     ...(store.migration ? { migration: store.migration } : {}),
     ...(store.retention ? { retention: store.retention } : {}),
+    ...(store.keys && Object.keys(store.keys).length ? { keys: store.keys } : {}),
   });
   for (const d of deltas)
     for (const s of d.steps) {
@@ -1182,6 +1403,12 @@ export function renderData(deltas: FlowDelta[], e: Estate): string | undefined {
       (c) =>
         `- Rows of ${name(c.table)} are kept for ${c.retention!.replace(/^kept for\s+/i, "")}.`,
     );
+  const keyed = changes.flatMap((c) =>
+    Object.entries(c.keys ?? {}).map(
+      ([col, k]) =>
+        `- ${name(c.table)}.${col} references ${k.references}; on delete ${k.onDelete}.`,
+    ),
+  );
   return [
     `${MARK} from the target flows (target-flows/). Edit the flows and run the stage again. -->`,
     "# Data",
@@ -1196,6 +1423,8 @@ export function renderData(deltas: FlowDelta[], e: Estate): string | undefined {
     "",
     ...(classified.length || kept.length ? [...classified, ...kept] : ["- Nothing stated yet."]),
     "",
+    // S4: the foreign keys the change declares, from the table's one definition.
+    ...(keyed.length ? ["## Keys", "", ...keyed, ""] : []),
     "## Where each change comes from",
     "",
     ...changes.map((c) => `- ${c.table}: ${c.change} ${c.columns.join(", ")}, for flow ${c.flow}.`),
@@ -1549,6 +1778,7 @@ export async function architectureStage(
         ...(c?.onFile ? { onFile: true } : {}),
       }),
     write: (answer) => writeTargetFlows(dir, answer, estate),
+    reviewSources: (a) => [mergedFlowsSource(a.flows, estate, rel)],
     current: () => readTargetFlows(dir),
     currentProblems: async () => (await readDeltas(dir)).problems,
     locate: (i) => locateInTargetFlows(dir, rel, i.target),

@@ -1,0 +1,24 @@
+# S3: the same change with the two adds written the other way round. Adds with the same after
+# keep the order they are written in, so the respond is step 5 and the lookup step 6: the
+# respond returns placedByName before any step gives it. A fact, handed back with the numbers.
+# Invented, written by hand.
+flows:
+  - flow: forge-orders.place-order
+    repo: forge-orders
+    change: modify
+    why: The saved order says who placed it.
+    steps:
+      - op: add
+        after: 4
+        kind: respond
+        what: 201 Created with the saved order and who placed it
+        fields: { returns: [id, sku, quantity, placedByName] }
+      - op: add
+        after: 4
+        kind: lookup
+        what: The name of the shopper who placed the order is looked up
+        store: { table: forge-orders-db.orders, columns: [quantity] }
+        fields: { returns: [placedByName] }
+      - op: remove
+        step: 5
+        why: The new respond step replaces it.

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FlowRecord } from "@maycombhq/core";
-import type { DeltaStep, FlowDelta } from "./schema.js";
+import type { DeltaStep, FlowDelta, StoreKey } from "./schema.js";
 
 /**
  * The version of today's flow a delta is written against (ADR 0111): the sha-256 of its steps'
@@ -56,7 +56,14 @@ export interface MergedStep {
   what: string;
   to?: { component: string; entry: string; new?: boolean };
   /** migration: the file that changes the table, when the change alters its columns. */
-  store?: { table: string; columns: string[]; new?: boolean; migration?: string };
+  store?: {
+    table: string;
+    columns: string[];
+    new?: boolean;
+    migration?: string;
+    /** The foreign keys the change declares on the table's columns (ADR 0111 addendum, S4). */
+    keys?: Record<string, StoreKey>;
+  };
   data?: NonNullable<FlowStep["data"]>;
   repeats?: { from: number; to: number };
   /** Today's citations, on a kept, changed or removed step. */
@@ -66,6 +73,8 @@ export interface MergedStep {
   was?: { kind: string; what: string; to?: { component: string; entry: string } };
   /** The delta's reason for this step. */
   why?: string;
+  /** The delta step that adds or changes it, by its place in the delta's steps, from 1. */
+  change?: number;
 }
 
 export interface MergedFlow {
@@ -106,6 +115,7 @@ const fromDelta = (d: DeltaStep): Partial<MergedStep> => ({
           columns: d.store.columns,
           ...(d.store.new ? { new: true } : {}),
           ...(d.store.migration ? { migration: d.store.migration } : {}),
+          ...(d.store.keys && Object.keys(d.store.keys).length ? { keys: d.store.keys } : {}),
         },
       }
     : {}),
@@ -148,6 +158,7 @@ export function mergeDelta(d: FlowDelta, today: FlowRecord | undefined): MergedF
     what: s.what ?? "",
     evidence: [],
     ...fromDelta(s),
+    change: d.steps.indexOf(s) + 1,
   });
 
   if (d.change === "new") {
@@ -184,6 +195,7 @@ export function mergeDelta(d: FlowDelta, today: FlowRecord | undefined): MergedF
               today: n,
               ...fromToday(s),
               ...fromDelta(ch),
+              change: d.steps.indexOf(ch) + 1,
               was: {
                 kind: s.kind,
                 what: s.what,

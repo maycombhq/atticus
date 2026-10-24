@@ -153,7 +153,7 @@ export function inCodeSources(inCode: NameInCode[]): SourceInput[] {
 
 /** Said to the model when the step has gaps: list them, never guess. Atticus's own words. */
 export const GAP_RULE =
-  "The names in context-gaps are gaps: nothing Atticus has read says what they are. Never guess a fact about one. When your answer needs a fact about one, list it, as it is listed, under relies_on_gaps: [<name>, ...] at the top level of your answer, and Atticus asks a person. A gap you leave out or only mention is not asked.";
+  'The names in context-gaps are gaps: nothing Atticus has read says what they are. Never guess a fact about one. When your answer needs a fact about one, list it at the top level of your answer, one name a line, each in double quotes (a name may hold { } [ ] : or #):\nrelies_on_gaps:\n  - "<name, as it is listed>"\nand Atticus asks a person. Leave relies_on_gaps out when your answer needs no fact about a gap. A gap you leave out or only mention is not asked.';
 
 /** The gaps as the model reads them (data: the names come from the change) and the rule. */
 export function gapSources(gaps: ContextGap[], searched?: string[]): SourceInput[] {

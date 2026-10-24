@@ -4,6 +4,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The order of a flow's steps, foreign keys, and answers a person can fix (ADR 0087, 0111 and 0117 addenda)
+
+- The critic's lenses read each target flow as it will be, with its steps numbered in their final order (`target-flows-merged`). They no longer work the order out from `after`, so they no longer raise findings like "placed after 5, the same position as the lookup". A new check hands back a respond step that returns a field, or a call that sends one, before any step gives it (`delta.returned-before-given`), naming both steps.
+- A store block can declare a foreign key: `keys: { order_id: { references: forge-orders-db.orders.id, onDelete: cascade } }`. It is optional, on the table's one definition. The referenced table and column must be in the catalog or this change, and the column one of the table's. data.md lists keys, and the lenses see them. The flow delta stays at version 2.
+- When a stage stops on an answer that doesn't read, the answer is copied to the file the stop names (`stage/<stage>-answer.yaml`; a valid one there is kept aside). The stop quotes the failing line and its number. An answer that isn't YAML goes back to the drafter once, with that line and how to quote, before it counts as a draft. The stop also lists the other findings the drafts kept failing on, by rule, with a count and an example.
+- A person who fixes the named file and runs the stage again gets it checked as their draft, and the stage is done when it passes. "Nothing in it reads" is gone: when a stage can't take an edit, it says to use `--force`.
+- The gap rule shows `relies_on_gaps` as a quoted block list, and the stories stage reads its own answer file with the same reader as the model's answer.
+- The stories stage now selects estate records as context on every path, from the brief, the target flows and the design. Before, it selected none.
+- The covers-field judge asks one question per criterion, not one per field. The question gives the judge's quote and why, has three options, and cites the criterion's line in the story file. A doubt goes back to the drafter once before a person is asked. One stop asks at most `questionsPerStop` questions (change policy, default 5) and says how many more wait.
+- `edit-and-apply` names the files the person changed. A stage that wrote nothing new says "Kept your target flows: nothing changed." An open gap with nothing blocking is said the same way in `change status` and in the stage's done: it waits on its owner, and the hand-off waits for the answer. Every message states the checking round as one rule: "a person acted since round N, so one more checking round is due".
+
 ### A new table's one definition everywhere, and plainer stage files (ADR 0111 addendum)
 
 - data.md and design.md read a new table from its one definition, however the flows sort. A flow that uses the table before the flow that creates it no longer turns its columns into "add column" rows with no migration, so the critic no longer raises false missing-migration findings. Where several steps still mark the table new, the step with the migration and the columns is the definition.

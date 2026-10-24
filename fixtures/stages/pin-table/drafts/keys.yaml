@@ -1,0 +1,40 @@
+# S4 (ADR 0111 addendum): the table's one definition declares its foreign key, so nobody has to
+# answer it in a step's why. order_id references the orders row; deleting the order deletes its
+# pin. Invented, written by hand.
+flows:
+  - flow: forge-orders.pin-note
+    repo: forge-orders
+    change: new
+    name: Pin a note
+    trigger: { kind: endpoint, what: A shopper pins a note of an order, entry: "PUT /orders/{orderId}/pin" }
+    why: A shopper pins one note to the top of the order's notes.
+    steps:
+      - op: add
+        after: 0
+        kind: entry
+        what: OrderController receives the note to pin
+        fields: { reads: [orderId, noteId] }
+      - op: add
+        after: 1
+        kind: write
+        what: The pin is saved, replacing the order's earlier pin
+        store: { table: forge-orders-db.order_pin, columns: [order_id, note_id, pinned_by], new: true, types: { order_id: BIGINT, note_id: BIGINT, pinned_by: VARCHAR(40) }, classification: { order_id: internal, note_id: internal, pinned_by: confidential }, migration: V4__create_order_pin.sql, retention: as long as the order, keys: { order_id: { references: forge-orders-db.orders.id, onDelete: cascade } } }
+        fields: { sends: [orderId, noteId, pinnedBy], checks: [orderId] }
+  - flow: forge-orders.unpin-note
+    repo: forge-orders
+    change: new
+    name: Unpin a note
+    trigger: { kind: endpoint, what: A shopper unpins the note of an order, entry: "DELETE /orders/{orderId}/pin" }
+    why: A shopper unpins the pinned note.
+    steps:
+      - op: add
+        after: 0
+        kind: entry
+        what: OrderController receives the unpin
+        fields: { reads: [orderId] }
+      - op: add
+        after: 1
+        kind: write
+        what: The order's pin is deleted
+        store: { table: forge-orders-db.order_pin, columns: [order_id] }
+        fields: { checks: [orderId] }

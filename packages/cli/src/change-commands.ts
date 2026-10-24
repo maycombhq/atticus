@@ -24,7 +24,7 @@ import {
   loadRepos,
   type GitRunner,
 } from "@maycombhq/workspace";
-import { gateStatus, reviewedGates } from "@maycombhq/naysayer";
+import { gateStatus, ownerWaitsLine, reviewedGates } from "@maycombhq/naysayer";
 import type { Output } from "./commands.js";
 import { statusLine } from "./critic-commands.js";
 import { table } from "./index-commands.js";
@@ -267,7 +267,8 @@ async function usedUpGates(root: string, id: string): Promise<string[]> {
   const out: string[] = [];
   for (const g of await reviewedGates(root, id).catch(() => [] as string[])) {
     const s = await gateStatus(root, id, g).catch(() => undefined);
-    if (s && (s.humanDecides || s.checkRound)) out.push(statusLine(s));
+    // An open gap waiting on its owner is said too, in the words the stage's done uses.
+    if (s && (s.humanDecides || s.checkRound || ownerWaitsLine(s, id))) out.push(statusLine(s, id));
   }
   return out;
 }

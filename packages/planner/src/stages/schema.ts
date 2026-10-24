@@ -155,6 +155,19 @@ export const fieldNames = (f: DeltaFields | undefined): string[] =>
     ? (["sends", "returns", "reads", "checks", "from", "to"] as const).flatMap((k) => f[k] ?? [])
     : [];
 
+/** What a delete of the referenced row does to the rows that reference it. */
+export const ON_DELETE = ["set-null", "cascade", "restrict", "no-action"] as const;
+
+/** A foreign key: the column it references, as `<db>.<table>.<column>`, and its on-delete. */
+export const StoreKey = z.strictObject({
+  references: z
+    .string()
+    .trim()
+    .regex(/^[^.\s]+(\.[^.\s]+){2,}$/, "write the column it references as <db>.<table>.<column>"),
+  onDelete: z.enum(ON_DELETE),
+});
+export type StoreKey = z.infer<typeof StoreKey>;
+
 export const DeltaStep = z.strictObject({
   op: z.enum(["add", "change", "remove"]),
   /** change and remove: the step's position in today's flow, from 1. */
@@ -180,6 +193,12 @@ export const DeltaStep = z.strictObject({
       migration: z.string().optional(),
       /** A new table: how long its rows are kept. */
       retention: z.string().optional(),
+      /**
+       * The foreign keys of the columns this change adds (ADR 0111 addendum, S4): each column to
+       * the `<db>.<table>.<column>` it references, and what a delete of that row does. Optional
+       * and additive, on the table's one definition: the flow delta stays at version 2.
+       */
+      keys: z.record(z.string(), StoreKey).optional(),
     })
     .optional(),
   fields: DeltaFields.optional(),
@@ -272,6 +291,13 @@ export const StageLoop = z.strictObject({
    * that goes to a person.
    */
   handedBack: z.array(z.string()).optional(),
+  /**
+   * An answer that didn't read, copied into the change folder when the loop stopped on it (S5),
+   * change-folder relative: the file the stop tells a person to fix, read back on the next run.
+   */
+  failedAnswer: z.string().optional(),
+  /** A read-again of an answer that isn't YAML, handed off and waited for (S5): no draft spent. */
+  readAgain: z.string().optional(),
   /** The critic rounds the loop ran, newest last. */
   critic: z.array(z.strictObject({ gate: text(), round: z.number().int().positive() })).default([]),
   /**

@@ -26,6 +26,7 @@ import {
   storeFacts,
   storeRules,
   writeTargetFlows,
+  mergedFlowsSource,
 } from "./architecture.js";
 import { dropUncitedQuestions } from "./uncited.js";
 import { estateContext } from "./estate-context.js";
@@ -157,7 +158,7 @@ targetFlows:         # one per flow it adds, changes or removes a step of, or ad
         kind: <entry, lookup, read, write, call-out, publish, transform, validate, branch, log, respond, loop, retry>
         what: <one sentence: what the step does once the change is in>
         to: { component: <id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
-        store: { table: <table id>, columns: [..], new: <true for a new table>, types: {..}, classification: {..}, migration: <file>, retention: <new tables> }   # read, lookup and write: the table goes here, never under to
+        store: { table: <table id>, columns: [..], new: <true for a new table>, types: {..}, classification: {..}, migration: <file>, retention: <new tables>, keys: { <a column it adds that references another table's row>: { references: <db>.<table>.<column>, onDelete: set-null | cascade | restrict | no-action } } }   # read, lookup and write: the table goes here, never under to
         fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..] }
         why: <one sentence>
 reads:               # flows it only reads or relies on
@@ -496,6 +497,9 @@ export async function smallStage(
       );
       return out;
     },
+    reviewSources: (a) => [
+      mergedFlowsSource(splitAnswer({ flows: a.targetFlows }).deltas, estate, rel),
+    ],
     write: async (a) => {
       const d = derive(a);
       // ADR 0117: where a model can be called directly, a judge asks of every other step and
