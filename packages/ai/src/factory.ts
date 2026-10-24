@@ -100,35 +100,78 @@ export type HeadlessRunner = (i: HeadlessInvocation) => Promise<HeadlessResult>;
  */
 export function claudeCodeCliRunner(o: { command?: string } = {}): HeadlessRunner {
   return (i) =>
-    new Promise((resolve, reject) => {
-      const child = spawn(o.command ?? "claude", i.args, {
-        cwd: i.cwd,
-        env: { ...process.env, ...i.env },
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true,
-        ...(i.signal ? { signal: i.signal } : {}),
-      });
-      let stdout = "";
-      let stderr = "";
-      const timer = setTimeout(() => child.kill("SIGINT"), i.timeoutMs);
-      child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
-      child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
-      child.on("error", (e) => {
-        clearTimeout(timer);
-        reject(
-          new RuntimeError(
-            (e as NodeJS.ErrnoException).code === "ENOENT"
-              ? "Claude Code (claude) is not on PATH; install it or use hand-off mode"
-              : e.message,
-          ),
-        );
-      });
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        resolve({ exitCode: code, stdout, stderr });
-      });
-      child.stdin.end(i.prompt, "utf8");
+    collectChild(
+      () =>
+        spawn(o.command ?? "claude", i.args, {
+          cwd: i.cwd,
+          env: { ...process.env, ...i.env },
+          stdio: ["pipe", "pipe", "pipe"],
+          windowsHide: true,
+          ...(i.signal ? { signal: i.signal } : {}),
+        }),
+      i.prompt,
+      i.timeoutMs,
+    );
+}
+
+/** What collectChild needs of a child process: its three streams, kill, and its events. */
+export interface ChildLike {
+  stdin: NodeJS.EventEmitter & { end(text: string, encoding: BufferEncoding): unknown };
+  stdout: NodeJS.EventEmitter & { setEncoding(e: BufferEncoding): NodeJS.EventEmitter };
+  stderr: NodeJS.EventEmitter & { setEncoding(e: BufferEncoding): NodeJS.EventEmitter };
+  kill(signal?: NodeJS.Signals): unknown;
+  on(event: string, fn: (...a: never[]) => void): unknown;
+}
+
+/**
+ * Run a child to its end: the prompt on stdin, what it prints collected, settled once. An error
+ * on the process or on any of its streams (a pipe Windows closes, ENOTCONN) fails the run with
+ * the reason, instead of an unhandled error that stops the command line.
+ */
+export function collectChild(
+  start: () => ChildLike,
+  prompt: string,
+  timeoutMs: number,
+): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    // Set once the child runs; a failure before that has no timer to clear.
+    const timer: { id?: ReturnType<typeof setTimeout> } = {};
+    const fail = (e: unknown) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer.id);
+      const code = (e as NodeJS.ErrnoException).code;
+      reject(
+        new RuntimeError(
+          code === "ENOENT"
+            ? "Claude Code (claude) is not on PATH; install it or use hand-off mode"
+            : `Claude Code couldn't be run: ${(e as Error).message}`,
+        ),
+      );
+    };
+    let child: ChildLike;
+    try {
+      child = start();
+    } catch (e) {
+      fail(e);
+      return;
+    }
+    let stdout = "";
+    let stderr = "";
+    timer.id = setTimeout(() => child.kill("SIGINT"), timeoutMs);
+    for (const s of [child.stdin, child.stdout, child.stderr]) s.on("error", fail);
+    child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
+    child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
+    child.on("error", fail);
+    child.on("close", (code: number | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer.id);
+      resolve({ exitCode: code, stdout, stderr });
     });
+    child.stdin.end(prompt, "utf8");
+  });
 }
 
 export type PermissionMode = "acceptEdits" | "plan" | "dontAsk";
