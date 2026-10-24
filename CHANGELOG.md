@@ -39,6 +39,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### One question at a time
+
+- `atticus questions show <id> [--json]` shows one question on file with its options, evidence and answer. A subcommand `questions` hasn't (`questions shwo`) is refused with the three it has, instead of listing the knowledge gaps.
+- Answering a stage's question says it was answered "for this change, <id>", not "for this repo".
+
 ### Ask through MCP
 
 - The MCP server gains `ask` (a plain question read as a catalog query or an impact walk, as `atticus ask` does, saying the query it ran) and `knowledge_ask` (the knowledge items that may answer a question, by words and meaning, each with its quote and page; the assistant answers only from them and cites each, or says none answers). Both are read-only, like every tool.
