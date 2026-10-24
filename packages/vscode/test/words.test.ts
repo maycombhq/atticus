@@ -6,6 +6,8 @@ import {
   modelPickRows,
   modelSetting,
   optionHint,
+  ownerFrom,
+  ownerProblem,
   pastChangeRows,
   startupNotice,
   statusText,
@@ -233,5 +235,19 @@ describe("start from an earlier change (WP7.6)", () => {
       detail: "Business customers hit the daily transfer limit.",
       value: "2026-05-12-raise-transfer-limit",
     });
+  });
+});
+
+describe("the org pack's owner as a form (WP4.4)", () => {
+  it("takes one handle, refuses one with spaces, and reads the current owner back", () => {
+    expect(ownerProblem("priya.nair")).toBeUndefined();
+    expect(ownerProblem("team-platform")).toBeUndefined();
+    expect(ownerProblem("Priya Nair")).toMatch(/no spaces/);
+    expect(ownerFrom("team-platform looks after the org pack (org-pack/pack.yaml).")).toBe(
+      "team-platform",
+    );
+    expect(
+      ownerFrom("No one looks after the org pack yet: atticus orgpack owner <handle> sets it."),
+    ).toBeUndefined();
   });
 });

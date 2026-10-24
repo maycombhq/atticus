@@ -48,6 +48,8 @@ import type { StepEnd } from "./runner";
 import { discoveredFrom, freeFolder, isMetarepoName } from "./start";
 import {
   optionHint,
+  ownerFrom,
+  ownerProblem,
   pastChangeRows,
   startupNotice,
   WORDS,
@@ -1676,32 +1678,21 @@ export class CommandUi {
   }
 
   /** The org pack's pack.yaml, to name its owner (the setup step org-pack-owner). */
+  /** WP4.4: who looks after the org pack, asked in a form and written by atticus orgpack owner. */
   async openOrgPackOwner(root: string) {
-    const file =
-      [join(root, "org-pack", "pack.yaml"), join(root, ".atticus", "org-pack", "pack.yaml")].find(
-        (f) => existsSync(f),
-      ) ?? join(root, "org-pack", "pack.yaml");
-    try {
-      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
-      const line = Math.max(
-        0,
-        doc
-          .getText()
-          .split(/\r?\n/)
-          .findIndex((l) => /^owner:/.test(l)),
-      );
-      await vscode.window.showTextDocument(doc, {
-        preview: false,
-        selection: new vscode.Range(line, 0, line, doc.lineAt(line).text.length),
-      });
-      void vscode.window.showInformationMessage(
-        "Set owner to the person who looks after the org pack (normally the platform lead), then commit it.",
-      );
-    } catch {
-      void vscode.window.showWarningMessage(
-        `${file} isn't there. Run atticus upgrade, or atticus init.`,
-      );
-    }
+    const now = await this.captured(root, ["orgpack", "owner"]);
+    if (now.code !== 0) return this.showPrinted(["orgpack", "owner"], now);
+    const handle = await vscode.window.showInputBox({
+      title: WORDS.ownerTitle,
+      prompt: WORDS.ownerPrompt,
+      value: ownerFrom(now.lines[0] ?? "") ?? "",
+      validateInput: (v) => ownerProblem(v),
+      ignoreFocusOut: true,
+    });
+    if (handle === undefined) return;
+    const argv = ["orgpack", "owner", handle.trim()];
+    this.showPrinted(argv, await this.captured(root, argv));
+    this.d.refreshAll();
   }
 
   /** Accept the catalog as the baseline, after walking the map with the architect. */

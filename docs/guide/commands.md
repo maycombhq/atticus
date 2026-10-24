@@ -228,6 +228,7 @@ Usage:
                                        Check a catalog, org pack, dialect, plugin or executor against the spec
   atticus alias "<name>" <id>          Record that a name used in diagrams or documents means a catalog id
           [--reason text]
+  atticus orgpack owner [<handle>]     Who looks after the org pack: shown, or set in pack.yaml (the rest of the file stays)
   atticus orgpack validate [dir]       Check an org pack against its schemas (default: <root>/org-pack)
   atticus orgpack draft                Draft the profile's systems from the knowledge items: the products and vendors the wikis name, with their aliases and owners, each citing its item [--platform <p>] [--json]
   atticus orgpack accept <platform>    Put the drafted systems into profile.yaml [--only <id,id>] [--verified-only] [--dry-run] [--json]
