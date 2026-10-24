@@ -9,7 +9,14 @@ import { parseDoc, type Doc } from "./doc.js";
 import { artifactOf } from "./artifacts.js";
 import { checkRegistry } from "./checks/index.js";
 import { CriticError } from "./errors.js";
-import { countedRounds, markNeedHit, mergeHits, roundsOf, type RuledHit } from "./findings.js";
+import {
+  checkRoundDue,
+  countedRounds,
+  markNeedHit,
+  mergeHits,
+  roundsOf,
+  type RuledHit,
+} from "./findings.js";
 import { gateStatusOf, maxRoundsOf, type GateStatus } from "./gates.js";
 import type { DeterministicCheckDef } from "./hits.js";
 import { criticModel, type ModelChoice } from "./model.js";
@@ -78,6 +85,11 @@ export interface CriticResult {
   /** Artifacts with blocking layer-1 findings; they were kept out of layer 2. */
   failedLayer1: string[];
   model: ModelChoice;
+  /**
+   * The round ran past the gate's round limit, to check what a person did about every blocking
+   * finding of the round before (ADR 0115 addendum). A blocking finding it raises goes to a person.
+   */
+  checkRound?: true;
   status: GateStatus;
 }
 
@@ -85,8 +97,9 @@ export interface CriticResult {
  * Run the critic on a change at a gate: layer 1 (deterministic checks and needs), then layer 2
  * (AI lenses on what passed layer 1), and write round N's findings to
  * `review/<gate>/<N>/<id>.yaml`. When the gate sets `maxAuthorRounds`, at most that many
- * rounds; after that a person decides and a further run is refused. A version 2 gates.yaml
- * with no limit has none (ADR 0087).
+ * rounds; after that a person decides and a further run is refused, until a person has acted on
+ * every blocking finding of the newest round: then one checking round reviews what they did
+ * (ADR 0115 addendum). A version 2 gates.yaml with no limit has none (ADR 0087).
  */
 export async function runCritic(
   root: string,
@@ -97,11 +110,19 @@ export async function runCritic(
   const rounds = await roundsOf(root, change.id, gate.id);
   const round = (rounds.at(-1) ?? 0) + 1;
   const max = maxRoundsOf(lifecycle, gate.id);
-  if (max !== undefined && (await countedRounds(root, change.id, gate.id)).length >= max)
+  const counted = max === undefined ? [] : await countedRounds(root, change.id, gate.id);
+  // A person acted on every blocking finding of the newest round: one checking round past the
+  // limit reviews their fixes (ADR 0115 addendum). Its own blocking findings go to a person.
+  const actedOn =
+    max !== undefined && counted.length >= max ? await checkRoundDue(root, change.id, gate.id) : [];
+  if (max !== undefined && counted.length >= max && actedOn.length === 0) {
+    const past = counted.length - max;
     throw new CriticError(
       "round-limit",
-      `The ${gate.id} gate has had ${max} critic round${max > 1 ? "s" : ""}, the most it allows. A person decides now: fix and dismiss, waive (stage owner), or return the change.`,
+      `The ${gate.id} gate has had ${max} critic round${max > 1 ? "s" : ""}, the most it allows${past > 0 ? `, and ${past === 1 ? "a checking round" : `${past} checking rounds`} past it` : ""}. A person decides now: act on each blocking finding of round ${counted.at(-1)} (fix it by hand and apply, waive it with a reason, or dismiss it as not relevant), and one checking round past the limit reviews the fixes; or return the change.`,
     );
+  }
+  const checkRound = actedOn.length ? { after: counted.at(-1)!, actedOn } : undefined;
   const now = opts.now ?? new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   const { ctx, applicable, layered, problems, skipped } = await prepareLayers(
     root,
@@ -256,6 +277,8 @@ export async function runCritic(
         discarded: ai.discarded,
         failedLayer1: [...failed].sort(),
         model,
+        // A checking round past the gate's limit, and the findings a person acted on that allowed it.
+        ...(checkRound ? { checkRound } : {}),
       },
       ROUND_LEADING,
     ),
@@ -273,6 +296,7 @@ export async function runCritic(
     discarded: ai.discarded,
     failedLayer1: [...failed].sort(),
     model,
+    ...(checkRound ? { checkRound: true } : {}),
     status: await gateStatusOf(root, lifecycle, change, gate.id),
   };
 }

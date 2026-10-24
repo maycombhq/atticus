@@ -12,6 +12,7 @@ import {
 import type { ChangeContext } from "./context.js";
 import type { Reason } from "./errors.js";
 import type { Footprint } from "./footprint.js";
+import type { StageStep } from "./policy.js";
 import { isFilled } from "./markdown.js";
 import { changeFolder } from "./store.js";
 import type { Artifact, PhaseId } from "./types.js";
@@ -95,6 +96,105 @@ export function requiredArtifacts(
     if (a === "data") return footprint.dataStores.length + footprint.tables.length > 0;
     return true;
   });
+}
+
+/**
+ * The stage a change is on for a phase (ADR 0087), or undefined when the change is on the
+ * change-draft path: its folder holds no stage's loop state, or the policy has no stage for the
+ * phase. A change is on the stage path once any stage of the path has run.
+ */
+export async function phaseStage(
+  ctx: ChangeContext,
+  change: ChangeLifecycle,
+  phase: PhaseId,
+): Promise<StageStep | undefined> {
+  const step = ctx.policy.stages.find((x) => x.phase === phase);
+  if (!step) return undefined;
+  const dir = changeFolder(ctx.root, change.id);
+  for (const x of ctx.policy.stages)
+    if (
+      await readFile(join(dir, ...x.loop.split("/"))).then(
+        () => true,
+        () => false,
+      )
+    )
+      return step;
+  return undefined;
+}
+
+/** A stage's command for a change. */
+export const stageCommand = (step: StageStep, change: string) =>
+  step.command.replaceAll("<change>", change);
+
+/**
+ * Why a phase's stage isn't done (ADR 0087): its loop state, as `stage/<stage>.yaml` says it,
+ * isn't done, or a file the stage writes is missing. Empty when the stage is done.
+ */
+export async function checkStage(
+  root: string,
+  change: ChangeLifecycle,
+  step: StageStep,
+): Promise<Reason[]> {
+  const dir = changeFolder(root, change.id);
+  const run = stageCommand(step, change.id);
+  const reason = (message: string): Reason[] => [{ code: "stage-not-done", message }];
+  const text = await readFile(join(dir, ...step.loop.split("/")), "utf8").catch(() => undefined);
+  if (text === undefined) return reason(`The ${step.stage} stage hasn't run yet: run ${run}.`);
+  let loop: { state?: unknown; run?: unknown } | null;
+  try {
+    loop = parse(text) as typeof loop;
+  } catch {
+    loop = null;
+  }
+  const state = typeof loop?.state === "string" ? loop.state : undefined;
+  switch (state) {
+    case "done":
+      break;
+    case "stopped":
+      return reason(
+        `The ${step.stage} stage stopped and isn't done: see what stopped it, then run ${run} again.`,
+      );
+    case "questions":
+      return reason(
+        `The ${step.stage} stage waits for a person to answer its questions: answer them (atticus questions), then run ${run} again.`,
+      );
+    case "waiting":
+      return reason(
+        `The ${step.stage} stage is with your assistant${typeof loop?.run === "string" ? ` (run ${loop.run})` : ""}: finish the hand-off, then run ${run} again.`,
+      );
+    case "drafting":
+      return reason(`The ${step.stage} stage is still drafting and isn't done: run ${run}.`);
+    default:
+      return reason(`${step.loop} doesn't read as a stage's loop state: run ${run} again.`);
+  }
+  const out: Reason[] = [];
+  for (const w of step.writes.filter((x) => !x.endsWith("/") && !x.startsWith("stage/")))
+    if (
+      !(await readFile(join(dir, ...w.split("/"))).then(
+        () => true,
+        () => false,
+      ))
+    )
+      out.push(
+        ...reason(`${w} is missing, though the ${step.stage} stage is done: run ${run} again.`),
+      );
+  return out;
+}
+
+/** The files a stage wrote that exist, relative to the change folder, with its loop state. */
+export async function stageFiles(dir: string, step: StageStep): Promise<string[]> {
+  const out: string[] = [];
+  for (const w of [...step.writes, step.loop]) {
+    if (w.endsWith("/")) out.push(...(await walk(dir, w.slice(0, -1))));
+    else if (
+      await readFile(join(dir, ...w.split("/"))).then(
+        () => true,
+        () => false,
+      )
+    )
+      out.push(w);
+  }
+  return [...new Set(out)].sort();
 }
 
 async function walk(dir: string, rel = ""): Promise<string[]> {

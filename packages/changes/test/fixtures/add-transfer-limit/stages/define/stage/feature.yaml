@@ -1,0 +1,12 @@
+# The feature stage's loop (ADR 0087): drafts, the findings each one had, and the questions it raised. Atticus writes this file.
+schemaVersion: 1
+change: add-transfer-limit
+stage: feature
+iteration: 1
+state: done
+updatedAt: 2026-10-19T09:30:00Z
+critic:
+  - { gate: define, round: 1 }
+findings: []
+questions: []
+read: []

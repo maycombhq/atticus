@@ -47,6 +47,7 @@ import {
   mergeRequests,
   RequestIn,
   storiesFromDeltas,
+  unjudgedChecks,
   unwrittenChecks,
   writeStories,
   type DeltaStory,
@@ -498,6 +499,7 @@ export async function smallStage(
           d.wording,
           d.requests,
           o.now ?? new Date(),
+          await unjudgedChecks(unwrittenChecks(d.wording, d.stories), judging),
         )),
       ];
       const own = await readFile(join(dir, "proposal.md"), "utf8").catch(() => undefined);

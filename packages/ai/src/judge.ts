@@ -320,3 +320,58 @@ export async function judge(
   }
   return { results, runs };
 }
+
+/**
+ * Whether a runtime calls a model directly, so a judgment costs the person no prompt: not a
+ * hand-off (another round would be one more prompt for them) and not the test mock.
+ */
+export const callsModelDirectly = (runtime: AiRuntime): boolean =>
+  runtime.kind !== "hand-off" && runtime.kind !== "mock";
+
+export interface SettleOptions extends Omit<JudgeOptions, "runtime" | "resume"> {
+  /** The step's runtime; the judge is asked only when it calls a model directly. */
+  runtime?: AiRuntime;
+}
+
+export interface SettleResult {
+  /** The items settled: by the veto, a stored verdict, or the judge. */
+  results: Map<string, Judged>;
+  /** The keys of the items nothing settled: no fact, no stored verdict, and no direct model. */
+  unjudged: string[];
+  runs: RunSummary[];
+}
+
+/**
+ * Settle a kind's items without guessing (ADR 0117): the kind's veto first, then a verdict on
+ * file, then the judge, but only where the runtime calls a model directly. With a hand-off (or
+ * no runtime) no extra prompt is spent: an item nothing settled comes back unjudged, for the
+ * caller to say so (a note, the critic's lens, a reviewer), never to read as yes or no.
+ */
+export async function settle(
+  spec: JudgeSpec,
+  items: JudgeItem[],
+  o: SettleOptions,
+): Promise<SettleResult> {
+  const { runtime, ...rest } = o;
+  if (runtime && callsModelDirectly(runtime)) {
+    const r = await judge(spec, items, { ...rest, runtime });
+    const keys = [...new Set(items.map((it) => judgmentKey(spec.kind, it.inputs)))];
+    return { results: r.results, unjudged: keys.filter((k) => !r.results.has(k)), runs: r.runs };
+  }
+  const results = new Map<string, Judged>();
+  const unjudged: string[] = [];
+  for (const item of items) {
+    const key = judgmentKey(spec.kind, item.inputs);
+    if (results.has(key) || unjudged.includes(key)) continue;
+    const v = spec.veto?.(item);
+    if (v) {
+      results.set(key, { key, verdict: v.verdict, by: "veto" });
+      continue;
+    }
+    const stored = await o.store.get(spec.kind, key);
+    if (stored && typeof stored.verdict === "string")
+      results.set(key, { key, verdict: stored.verdict, judgment: stored, by: "stored" });
+    else unjudged.push(key);
+  }
+  return { results, unjudged, runs: [] };
+}

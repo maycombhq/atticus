@@ -267,7 +267,8 @@ async function coversFieldRow(repoRoot: string): Promise<JudgmentRow> {
     cases: f.cases.length,
     old: rows((c) => oldNamesField(c.criterion, c.field)),
     model: rows((c) => writesField(c.criterion, c.field) || j.verdicts.get(c.id) === "yes"),
-    // Hand-off: a field the then clause doesn't write is handed back to the writer to name.
+    // Hand-off: only a field the then clause writes is settled; the rest are left unjudged (a
+    // note for the story lens and the reviewer, never a yes), with no extra prompt.
     handoff: rows((c) => writesField(c.criterion, c.field)),
     prompts: j.prompts,
   };

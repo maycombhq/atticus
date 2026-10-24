@@ -1,10 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { join, normalize, sep } from "node:path";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
-import { Finding, FindingAction } from "@maycombhq/core";
+import { Finding, FindingAction, gateRoundLimit } from "@maycombhq/core";
 import { z } from "zod";
 import { CriticError } from "./errors.js";
 import {
+  checkRoundDue,
+  countedRounds,
   readRound,
   reviewedGates,
   roundsOf,
@@ -199,11 +201,9 @@ export async function act(
       throw e;
     }
     patched = f.artifact;
-    message = `Applied the fix to ${f.artifact}; the next critic round checks it.`;
-  } else if (act === "apply")
-    message = `${f.id} has no patch; marked applied. The next critic round checks the fix.`;
-  else if (act === "edit-and-apply")
-    message = `Recorded your edit to ${f.artifact}; the next critic round checks it.`;
+    message = `Applied the fix to ${f.artifact}.`;
+  } else if (act === "apply") message = `${f.id} has no patch; marked applied.`;
+  else if (act === "edit-and-apply") message = `Recorded your edit to ${f.artifact}.`;
   else if (act === "ask")
     message = `Asked ${askedOf}. The gap stops blocking while the question is open.`;
   else if (act === "waive")
@@ -211,5 +211,33 @@ export async function act(
   else message = `Dismissed ${f.id} as not relevant.`;
 
   await writeFinding(root, next.data);
+  // What comes next: the next critic round checks a fix, unless the gate has none left.
+  const after = act === "ask" ? undefined : await afterLimit(root, change.id, next.data);
+  if (after) message = `${message} ${after}`;
+  else if (act === "apply" || act === "edit-and-apply")
+    message =
+      patched || act === "edit-and-apply"
+        ? `${message.replace(/\.$/, "")}; the next critic round checks it.`
+        : `${message} The next critic round checks the fix.`;
   return { finding: next.data, path: found.path, ...(patched ? { patched } : {}), message };
+}
+
+/**
+ * What comes after a person's decision on a blocking finding when the gate's critic rounds are
+ * used up (ADR 0115 addendum): the other blocking findings of the round still to act on, or the
+ * one checking round past the limit that reviews what was done. Undefined while rounds are left.
+ */
+async function afterLimit(root: string, change: string, f: Finding): Promise<string | undefined> {
+  if (f.severity !== "blocking") return undefined;
+  const ctx = await loadChangeContext(root);
+  const max = gateRoundLimit(ctx.orgPack.gates, f.gate);
+  if (max === undefined || (await countedRounds(root, change, f.gate)).length < max)
+    return undefined;
+  const left = (await readRound(root, change, f.gate, f.round)).findings.filter(
+    (x) => x.finding.severity === "blocking" && x.finding.state === "open",
+  ).length;
+  if (left)
+    return `But no critic round is left at the ${f.gate} gate: act on the other ${left} blocking finding${left === 1 ? "" : "s"} of round ${f.round}, and one checking round past the limit reviews what was done.`;
+  if ((await checkRoundDue(root, change, f.gate)).length === 0) return undefined;
+  return `The ${f.gate} gate has no critic round left, so it allows one checking round past the limit: run atticus critic ${change} --gate ${f.gate}, or run the change's stage again, to review what was done. If that round finds something blocking, a person decides again.`;
 }

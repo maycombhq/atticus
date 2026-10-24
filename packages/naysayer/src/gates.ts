@@ -8,6 +8,7 @@ import {
 import { gateRoundLimit, type ChangeLifecycle } from "@maycombhq/core";
 import { CriticError } from "./errors.js";
 import {
+  checkRoundDue,
   countedRounds,
   readRound,
   readRoundMeta,
@@ -39,6 +40,11 @@ export interface GateStatus {
   mayProceed: boolean;
   /** The rounds are used up and something still blocks: a person decides (waive, fix by hand, or return). */
   humanDecides: boolean;
+  /**
+   * The rounds are used up and a person acted on every blocking finding of the newest round: one
+   * checking round past the limit reviews what they did (ADR 0115 addendum).
+   */
+  checkRound: boolean;
   /** AI lenses of the newest round that are still with the person's assistant (hand-off). */
   waiting: { lens: string; runId: string }[];
   /** Why the hand-off may not proceed, as the lifecycle reports it. */
@@ -85,6 +91,8 @@ export async function gateStatusOf(
     ),
   ];
   const maxRounds = maxRoundsOf(lifecycle, gate);
+  const usedUp =
+    maxRounds !== undefined && (await countedRounds(root, change.id, gate)).length >= maxRounds;
   return {
     gate,
     ...(round ? { round } : {}),
@@ -92,10 +100,8 @@ export async function gateStatusOf(
     open: count(open),
     total: count(findings),
     mayProceed: reasons.length === 0,
-    humanDecides:
-      blocking.length > 0 &&
-      maxRounds !== undefined &&
-      (await countedRounds(root, change.id, gate)).length >= maxRounds,
+    humanDecides: blocking.length > 0 && usedUp,
+    checkRound: usedUp && (await checkRoundDue(root, change.id, gate)).length > 0,
     waiting,
     reasons,
     findings,

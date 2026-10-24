@@ -46,3 +46,19 @@ cases:
     criterion: Given an order of quantity 3, when it is placed, then it is accepted
     truth: no
     recorded: { verdict: no, quotes: [{ of: criterion, text: then it is accepted }] }
+  # Found on a real metarepo: the count depends on lastReadAt without naming it, so the old
+  # hand-off rule ("name it in its then clause") refused it three drafts running.
+  - id: count-depends-on-last-read
+    field: lastReadAt
+    criterion: Given a room never opened, when four messages arrive after joinedAt, then unreadCount is 4, counting messages after joinedAt
+    truth: yes
+    recorded:
+      {
+        verdict: yes,
+        quotes: [{ of: criterion, text: "unreadCount is 4, counting messages after joinedAt" }],
+      }
+  - id: count-ignores-last-read
+    field: lastReadAt
+    criterion: Given a room with four messages, when it is listed, then the room's name is shown
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: criterion, text: "then the room's name is shown" }] }

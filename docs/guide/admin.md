@@ -215,6 +215,8 @@ Every write to a shared outside system (the Git host, the work tracker, the serv
 
 `roles.yaml` is deprecated. A pack that has one still loads and validates, but nothing reads it: not its `mappings`, `approvals` or `separation`, nor the `approvers` and `minApprovals` in `gates.yaml`, the `approvals` in `change-types.yaml`, or `privacy.role`, `risk.approvals` and `selfApproval` in `process/change-policy.yaml`. `atticus init` no longer writes it. Move what it said to branch protection and CODEOWNERS, then delete it.
 
+`process/change-policy.yaml` may also set `stages`, the stage path (ADR 0087 addendum): for each stage its `phase`, the `loop` file it keeps, the `command` that runs it, the files it `writes` and the change type's `artifacts` it writes. A change whose folder holds a stage's loop file is on the stage path: `change status` and the hand-off then want each phase's stage done and its files, not `proposal.md` and `specs/`. Left out, the built-in feature, architecture and stories stages apply; a list you write replaces them, so add `snow` to the stories stage's `artifacts` if your plan hand-off needs `snow.md`.
+
 ## Day to day
 
 | Task                                   | How                                                                                                   |

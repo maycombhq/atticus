@@ -6,6 +6,8 @@ import { changeFootprint, type Footprint } from "./footprint.js";
 import {
   checkArtifacts,
   checkFindings,
+  checkStage,
+  phaseStage,
   checkMandatoryRounds,
   mandatoryGates,
   handoffName,
@@ -72,8 +74,15 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
     return { ...base, blockers: reasons, reasons };
   }
 
+  // On the stage path (ADR 0087) a phase is due what its stage writes and its stage done; the
+  // change-draft artifacts the stages never write (proposal.md, specs/) aren't.
+  const stage = await phaseStage(ctx, change, phase);
+  const due = requiredArtifacts(ctx, type, phase, footprint).filter(
+    (a) => !stage || stage.artifacts.includes(a),
+  );
   const blockers: Reason[] = [
-    ...(await checkArtifacts(ctx.root, change, requiredArtifacts(ctx, type, phase, footprint))),
+    ...(stage ? await checkStage(ctx.root, change, stage) : []),
+    ...(await checkArtifacts(ctx.root, change, due)),
     ...(await checkFindings(ctx.root, change, phaseFindingGates(ctx, phase))),
     ...(await checkMandatoryRounds(
       ctx.root,
@@ -120,8 +129,9 @@ export interface Readiness {
 
 /**
  * Whether a change can move to its next state now: required artifacts exist and are filled
- * in, no open blocking finding or knowledge gap sits on the phase's gate (newest round),
- * and the hand-off PR has merged (as last synced from the Git host).
+ * in (on the stage path, what the phase's stage writes, and its loop done: ADR 0087), no open
+ * blocking finding or knowledge gap sits on the phase's gate (newest round), and the hand-off
+ * PR has merged (as last synced from the Git host).
  */
 export async function canAdvance(
   change: ChangeLifecycle | string,

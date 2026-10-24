@@ -14,6 +14,10 @@ import { ChangeArtifact, Phase, RecordId } from "@maycombhq/core";
  *   PR says so.
  * - `risk`: weights for the deterministic risk score and the score at which a change becomes
  *   medium or high risk.
+ * - `stages`: the stage path (ADR 0087): each stage, the phase it serves, the loop state it
+ *   keeps, the command that runs it, the files it writes and the type's artifacts it writes. A
+ *   change whose folder holds any stage's loop state is on the stage path: each phase is due
+ *   what its stage writes and its stage's loop done, not the change-draft artifacts.
  *
  * Deprecated (ADR 0073), still validated and not read: `privacy.role`, `risk.approvals` and
  * `selfApproval`. A gate is approved when its hand-off PR merges; the Git host decides who may
@@ -36,6 +40,48 @@ const DEFAULT_ARTIFACT_PHASES = {
   tasks: "plan",
   snow: "plan",
 } as const satisfies Record<z.infer<typeof ChangeArtifact>, z.infer<typeof Phase>>;
+
+/** One stage of the stage path (ADR 0087). */
+export const StageStep = z.strictObject({
+  stage: RecordId,
+  phase: Phase,
+  /** The stage's loop state, relative to the change folder (ADR 0087, `stage/<stage>.yaml`). */
+  loop: z.string().min(1),
+  /** The command that runs it; `<change>` stands for the change's id. */
+  command: z.string().min(1),
+  /** Files it writes, relative to the change folder; a folder ends in "/". They ride with the hand-off. */
+  writes: z.array(z.string().min(1)).default([]),
+  /** The change type's artifacts of the phase that this stage writes: on the stage path, only these are due. */
+  artifacts: z.array(ChangeArtifact).default([]),
+});
+export type StageStep = z.infer<typeof StageStep>;
+
+const DEFAULT_STAGES: StageStep[] = [
+  {
+    stage: "feature",
+    phase: "define",
+    loop: "stage/feature.yaml",
+    command: "atticus change feature <change>",
+    writes: ["feature.yaml", "feature.md", "design/"],
+    artifacts: [],
+  },
+  {
+    stage: "architecture",
+    phase: "design",
+    loop: "stage/architecture.yaml",
+    command: "atticus change architecture <change>",
+    writes: ["target-flows/"],
+    artifacts: ["design", "data"],
+  },
+  {
+    stage: "stories",
+    phase: "plan",
+    loop: "stage/stories.yaml",
+    command: "atticus plan stories <change>",
+    writes: ["requests.md", "stage/stories-answer.yaml"],
+    artifacts: ["stories", "tasks"],
+  },
+];
 
 const Privacy = z.strictObject({
   role: RecordId.default("privacy-officer"),
@@ -104,6 +150,11 @@ export const ChangePolicy = z.strictObject({
     phases: ["design"],
   }),
   risk: Risk.default(() => Risk.parse({})),
+  /** The stage path (ADR 0087); a team's list replaces the built-in one. */
+  stages: z
+    .array(StageStep)
+    .default(() => DEFAULT_STAGES.map((x) => ({ ...x })))
+    .refine((xs) => new Set(xs.map((x) => x.phase)).size === xs.length, "one stage per phase"),
   /** By default the product owner may approve the Define hand-off of their own brief. */
   selfApproval: z
     .array(SelfApproval)
@@ -145,4 +196,9 @@ export async function loadChangePolicy(
       message: `${i.path.map(String).join(".") || "(file)"}: ${i.message}`,
     })),
   };
+}
+
+/** The stage path of a change policy: its stages in phase order (ADR 0087). */
+export function stagePathOf(policy: ChangePolicy): StageStep[] {
+  return policy.stages;
 }

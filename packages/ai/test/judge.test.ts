@@ -3,10 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { stringify } from "yaml";
-import { judgmentKey, memoryJudgments, type QuestionPair } from "@maycombhq/core";
+import { judgmentKey, memoryJudgments, type QuestionPair, type RuntimeKind } from "@maycombhq/core";
 import {
+  COVERS_FIELD_SPEC,
   HandoffRuntime,
+  callsModelDirectly,
   judge,
+  settle,
   judgeInstructions,
   MockRuntime,
   questionJudge,
@@ -276,5 +279,94 @@ describe("judge (ADR 0117)", () => {
     const j = questionJudge({ runtime: rt, store: memoryJudgments(), change: "pay", now: NOW });
     expect([...(await j([p])).entries()]).toEqual([[p.key, "narrower"]]);
     expect(judgeInstructions(SAME_QUESTION_SPEC)).toContain("- narrower:");
+  });
+});
+
+/** A runtime that calls a model directly: the mock, under another kind. */
+class DirectRuntime extends MockRuntime {
+  constructor(
+    respond: (r: AiRequest) => string,
+    override readonly kind: RuntimeKind = "model",
+  ) {
+    super(respond, { now: () => NOW });
+  }
+}
+
+describe("settle (ADR 0117): judged where a model is called directly, never guessed", () => {
+  // The criterion from a real metarepo: the count depends on lastReadAt without naming it.
+  const criterion =
+    "Given a room never opened, when four messages arrive after joinedAt, then unreadCount is 4, counting messages after joinedAt";
+  const item: JudgeItem = {
+    inputs: { v: 1, field: "lastReadAt", criterion },
+    texts: { criterion },
+    facts: ["the field: lastReadAt"],
+  };
+
+  it("with a hand-off asks nothing and leaves the item unjudged; a stored verdict still settles it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-settle-"));
+    const rt = new HandoffRuntime({ root, validate: async () => [], now: () => NOW });
+    expect(callsModelDirectly(rt)).toBe(false);
+    const store = memoryJudgments();
+    const r = await settle(COVERS_FIELD_SPEC, [item], {
+      runtime: rt,
+      store,
+      change: "c",
+      now: NOW,
+    });
+    const key = judgmentKey(COVERS_FIELD_SPEC.kind, item.inputs);
+    expect(r.unjudged).toEqual([key]);
+    expect(r.results.size).toBe(0);
+    expect(r.runs).toEqual([]);
+    // No run was handed off: no prompt for the person.
+    await expect(readdir(join(root, ".runs"))).rejects.toThrow();
+    // A verdict on file (a person's, or an earlier model's) settles it with no call.
+    await store.put({
+      schemaVersion: 1,
+      kind: COVERS_FIELD_SPEC.kind,
+      key,
+      verdict: "yes",
+      quotes: [{ of: "criterion", text: "unreadCount is 4, counting messages after joinedAt" }],
+      inputs: item.inputs,
+      confirmedBy: { by: "person", name: "pat" },
+      at: "2026-10-23T12:00:00Z",
+    });
+    const again = await settle(COVERS_FIELD_SPEC, [item], {
+      runtime: rt,
+      store,
+      change: "c",
+      now: NOW,
+    });
+    expect(again.unjudged).toEqual([]);
+    expect(again.results.get(key)).toMatchObject({ verdict: "yes", by: "stored" });
+  });
+
+  it("with a direct model asks the judge once, and keeps its verdict", async () => {
+    let calls = 0;
+    const rt = new DirectRuntime(() => {
+      calls++;
+      return answer([
+        {
+          item: 1,
+          verdict: "yes",
+          quotes: [{ of: "criterion", text: "unreadCount is 4, counting messages after joinedAt" }],
+          why: "The count is of messages after the last read; never opened, that is joinedAt.",
+        },
+      ]);
+    });
+    expect(callsModelDirectly(rt)).toBe(true);
+    const store = memoryJudgments();
+    const r = await settle(COVERS_FIELD_SPEC, [item], {
+      runtime: rt,
+      store,
+      change: "c",
+      now: NOW,
+    });
+    expect(calls).toBe(1);
+    expect(r.unjudged).toEqual([]);
+    expect([...r.results.values()].map((x) => [x.verdict, x.by])).toEqual([["yes", "model"]]);
+    expect(
+      (await store.get(COVERS_FIELD_SPEC.kind, judgmentKey(COVERS_FIELD_SPEC.kind, item.inputs)))
+        ?.confirmedBy.by,
+    ).toBe("ai");
   });
 });

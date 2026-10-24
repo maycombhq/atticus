@@ -1,0 +1,13 @@
+# The architecture stage's loop (ADR 0087): drafts, the findings each one had, and the questions it raised. Atticus writes this file.
+schemaVersion: 1
+change: add-transfer-limit
+stage: architecture
+iteration: 3
+state: stopped
+updatedAt: 2026-10-19T12:00:00Z
+critic:
+  - { gate: design, round: 1 }
+  - { gate: design, round: 2 }
+findings: []
+questions: []
+read: []
