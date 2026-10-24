@@ -605,6 +605,7 @@ export const COPY = {
       ai: "AI",
       repos: "Repos",
       cockpit: "At a glance",
+      systems: "Systems",
       runs: "Model runs",
       history: "Prompt history",
       changeDiagram: "Change diagram",
@@ -2202,6 +2203,17 @@ export const COPY = {
     draftRequests: "Draft requests",
   },
   /** ADR 0121: the AI tab, how AI runs here. */
+  /** WP7.7: a system's page. */
+  systems: {
+    title: "Systems",
+    pick: "Which system",
+    empty: "No system in the catalog yet: scan the repos first.",
+    openPage: "Open its page",
+    inFlight: "Changes in flight in its repos",
+    noChanges: "No change in flight touches its repos.",
+    questions: "Open questions about it",
+    noQuestions: "No open question about it.",
+  },
   /** WP7.1: the change cockpit, one change at a glance. */
   cockpit: {
     title: "This change at a glance",

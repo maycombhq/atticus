@@ -21,6 +21,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### A page for each system
+
+- Estate gains **Systems**: pick a system and read its guide (generated from the catalog, every fact citing code, with what it doesn't know yet), the open questions about it and the changes in flight in its repos, each opening the change at a glance. The ecosystem map's guide links to it.
+
 ### Review mode for knowledge
 
 - Knowledge items has **Review what no one has checked**: it walks the items nobody has reviewed, or whose page changed since, one after another, with the quote and its page beside the item. Keys: j or ↓ next, k or ↑ back, v verify and go on, c correct, r reject. The keys act while the item's panel has the focus, never while typing in a form.

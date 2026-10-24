@@ -43,12 +43,23 @@ const CELL: Record<string, { bg: string; label: string }> = {
   unknown: { bg: "var(--cov-unknown)", label: "unknown" },
 };
 
-function SystemGuide({ system }: { system: string }) {
+export function SystemGuide({ system, link }: { system: string; link?: boolean }) {
   const g = useApi<{ markdown: string; gaps: string[] }>(
     `/api/guide/${encodeURIComponent(system)}`,
   );
   return (
-    <Panel title={T.guide(system)} span="1 / -1" meta={T.generatedFromTheCatalog}>
+    <Panel
+      title={T.guide(system)}
+      span="1 / -1"
+      meta={
+        link ? (
+          // WP7.7: the system's own page, with its questions and the changes in its repos.
+          <a href={`#/systems?system=${encodeURIComponent(system)}`}>{COPY.systems.openPage}</a>
+        ) : (
+          T.generatedFromTheCatalog
+        )
+      }
+    >
       <View of={g}>
         {(d) => (
           <div
@@ -136,7 +147,7 @@ export function EcosystemMap() {
         </View>
       </Panel>
       {focus && cov.state === "ready" && cov.data.systems.some((x) => x.system === focus) && (
-        <SystemGuide system={focus} />
+        <SystemGuide system={focus} link />
       )}
       <Panel title={T.whatTheCatalogKnows} span="span 8">
         <View of={cov} empty={(c) => c.systems.length === 0} emptyText={T.noSystemsYet}>

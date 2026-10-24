@@ -66,6 +66,8 @@ export const SCREENS: ScreenDef[] = [
   // The estate: what the code says, searched, drawn and followed.
   { id: "explore", label: S.explore, section: "Estate" },
   { id: "map", label: S.map, section: "Estate" },
+  // WP7.7: one system's page.
+  { id: "systems", label: S.systems, section: "Estate" },
   { id: "flows", label: COPY.flows.title, section: "Estate" },
   { id: "impact", label: S.impact, section: "Estate" },
   { id: "features", label: S.features, section: "Estate" },

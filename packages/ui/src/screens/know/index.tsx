@@ -1,4 +1,5 @@
 import type { Screen } from "../registry.js";
+import { Systems } from "./Systems.js";
 import { Contracts, Diagrams, Initiatives, Reconcile } from "./Design.js";
 import {
   EcosystemMap,
@@ -13,6 +14,7 @@ import { ArchReview, Breakdown, Brief, Mappings, Tasks, TestTrace, UX } from "./
 /** Screens of the Know, Define, Design, Plan and Build groups. */
 export const KNOW_SCREENS: Record<string, Screen> = {
   map: () => <EcosystemMap />,
+  systems: Systems,
   impact: ImpactExplorer,
   features: Features,
   orgpack: () => <OrgPackScreen />,
