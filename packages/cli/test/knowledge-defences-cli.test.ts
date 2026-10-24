@@ -27,6 +27,6 @@ describe("atticus sources sync with ingested-content defences", () => {
     expect(text).toMatch(/forge-wiki: 5 pages read, 0 skipped/);
     expect(text).toMatch(/ {2}! .*handover\.md is held back from every AI step/);
     expect(text).toMatch(/Flagged .*portal-note\.md: medium risk, Visible instruction-like text/);
-    expect(text).not.toMatch(/The wiki agrees with the catalog/);
+    expect(text).not.toMatch(/agrees with the catalog/);
   });
 });

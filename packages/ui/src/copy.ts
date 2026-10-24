@@ -190,12 +190,66 @@ export const COPY = {
   knowledge: {
     nav: {
       sources: "Knowledge sources",
+      documents: "Documents",
       items: "Knowledge items",
       search: "Search the wikis",
       parties: "Teams, vendors and products",
       orgpack: "Org pack from the wikis",
     },
     emptyGo: "Open Knowledge sources to add or sync a wiki",
+    /** ADR 0122: the files in the metarepo's inputs/, general knowledge. */
+    documents: {
+      title: "Documents",
+      intro:
+        "Files dropped in the metarepo's inputs/ are general knowledge: decisions, runbooks, specs, request forms and slides. Sync reads them into a snapshot, and your assistant reads that into knowledge items, each quote checked against the file. A file for one change only goes in that change's Files attached instead.",
+      add: "Add files",
+      adding: "Adding…",
+      added: (n: number) =>
+        `Added ${n} file${n === 1 ? "" : "s"} to inputs/inbox/. Commit them through a pull request.`,
+      sync: "Sync inputs/",
+      syncing: "Syncing…",
+      syncedNow: "inputs/ is read into a new snapshot. Your assistant reads it into items next.",
+      listTitle: "Files in inputs/",
+      empty: "Nothing in inputs/ yet. Add files here, or run atticus intake add <files>.",
+      neverSynced: "Not synced yet: Sync reads what can be read into a snapshot.",
+      synced: (date: string, read: number, all: number) =>
+        `Snapshot of ${date}: ${read} of ${all} file${all === 1 ? "" : "s"} read.`,
+      kindLabel: "Kind",
+      anyKind: "Any kind",
+      systemLabel: "System",
+      anySystem: "Any system",
+      filtered: "documents",
+      kinds: {
+        document: "Document",
+        spreadsheet: "Spreadsheet",
+        diagram: "Diagram",
+        image: "Picture",
+        openapi: "OpenAPI spec",
+        swagger: "Swagger spec",
+        asyncapi: "AsyncAPI spec",
+        payload: "Payload sample",
+        "ticket-export": "Ticket export",
+        unknown: "Unknown",
+      } as Record<string, string>,
+      states: { read: "Read", skipped: "Not read", "not-synced": "Not synced yet" } as Record<
+        string,
+        string
+      >,
+      inbox: "In the inbox",
+      systems: (list: string) => `About ${list}`,
+      noSystems: "Names no system",
+      age: (days: number) =>
+        days === 0 ? "changed today" : `changed ${days} day${days === 1 ? "" : "s"} ago`,
+      items: (n: number, verified: number) =>
+        `${n} knowledge item${n === 1 ? "" : "s"}, ${verified} verified`,
+      verified: "verified",
+      why: (reason: string) => `Not read: ${reason}.`,
+      newer: (path: string) => `A newer version is ${path}.`,
+      duplicate: (path: string) => `The same file as ${path}.`,
+      readTitle: "Read them into knowledge items",
+      readWhy:
+        "Your assistant reads the snapshot of inputs/ into patterns, standards, processes, requests, decisions and constraints. Atticus checks every quote against the file.",
+    },
     kinds: {
       pattern: "Pattern",
       standard: "Standard",
@@ -1187,6 +1241,10 @@ export const COPY = {
     runWithAi: "Run with AI",
     // ADR 0113: files attached to a change.
     inputs: "Files attached",
+    promote: "Copy to general knowledge",
+    promoteFor: (path: string) => `Copy ${path} to general knowledge`,
+    promoted: (path: string) =>
+      `${path} is copied to the metarepo's inputs/inbox/: general knowledge, read at the next sync. This change keeps its copy. Commit both through a pull request.`,
     attachLabel: "Attach a file",
     attachHelp:
       "A spec, screenshot, PDF, email export or document. It is copied into the change's inputs/, and the change's steps read it as data, citing it by line or page.",

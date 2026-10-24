@@ -185,6 +185,15 @@ describe("tags on knowledge sources", () => {
       }).success,
     ).toBe(true);
   });
+
+  it("keeps inputs for the metarepo's own inputs/ folder (ADR 0122)", () => {
+    const r = Sources.safeParse({
+      schemaVersion: 1,
+      wikis: [{ id: "inputs", type: "markdown-folder", location: "../inputs" }],
+    });
+    expect(r.success).toBe(false);
+    expect(JSON.stringify(r.error?.issues)).toContain("metarepo's own inputs/ folder");
+  });
 });
 
 describe("a wiki kept in git (ADR 0101)", () => {

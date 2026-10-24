@@ -489,6 +489,14 @@ ${view.next.why}`
       args: [change, ...(paths.length ? [paths] : [])],
     });
   });
+  // ADR 0122: a file for general knowledge goes to the metarepo's inputs/inbox/ (atticus intake
+  // add), read by the knowledge source at the next sync; one for a change is attached to it.
+  reg("atticus.addToKnowledge", (target?: vscode.Uri, selected?: vscode.Uri[]) => {
+    const root = needRoot();
+    if (!root) return;
+    const paths = attachPaths(target instanceof vscode.Uri ? target : undefined, selected);
+    void commands.pickAndRun(root, "intake add", { args: paths.length ? [paths] : [] });
+  });
   /**
    * A step the app in a panel asks to run (ADR 0106): only the catalogue's AI steps, no argument
    * that starts with "-", run as the sidebar runs them (runAi: Copilot, consent, the checks), its

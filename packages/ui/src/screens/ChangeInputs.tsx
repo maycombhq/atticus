@@ -24,6 +24,8 @@ export function toBase64(bytes: Uint8Array): string {
 export function ChangeInputs({ change }: { change: string }) {
   const list = useApi<Api.ChangeInputListT>(`/api/changes/${change}/inputs`);
   const attach = useAction();
+  // ADR 0122: a file for this change can become general knowledge too.
+  const promote = useAction();
   const input = useRef<HTMLInputElement>(null);
   const id = useId();
   useLiveEvents((e) => {
@@ -68,6 +70,7 @@ export function ChangeInputs({ change }: { change: string }) {
             {T.attachHelp}
           </span>
           <Note note={attach.note} />
+          <Note note={promote.note} />
         </div>
         <View of={list} empty={(d) => d.files.length === 0} emptyText={T.noInputs}>
           {(d) => (
@@ -102,7 +105,29 @@ export function ChangeInputs({ change }: { change: string }) {
                         )}
                       </span>
                     </td>
-                    <td>{T.inputWhen(f.addedBy, f.addedAt)}</td>
+                    <td>
+                      <span className="stack" style={{ gap: 4, alignItems: "flex-start" }}>
+                        <span>{T.inputWhen(f.addedBy, f.addedAt)}</span>
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={promote.busy}
+                          aria-label={T.promoteFor(f.path)}
+                          onClick={() =>
+                            void promote.run(
+                              () =>
+                                api(
+                                  `/api/changes/${change}/inputs/${encodeURIComponent(f.path.replace(/^inputs\//, ""))}/promote`,
+                                  { method: "POST" },
+                                ),
+                              T.promoted(f.path),
+                            )
+                          }
+                        >
+                          {T.promote}
+                        </button>
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

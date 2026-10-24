@@ -142,6 +142,9 @@ object Commands {
     /** ADR 0113: attach files to a change, as `atticus change attach` takes them. */
     fun attachArgv(change: String, paths: List<String>): List<String> = listOf("change", "attach", change) + paths
 
+    /** ADR 0122: files into general knowledge, the metarepo's inputs/inbox/. */
+    fun addToKnowledgeArgv(paths: List<String>): List<String> = listOf("intake", "add") + paths
+
     /** ADR 0113: a task's context for an assistant, as Markdown. */
     fun taskContextArgv(change: String, task: String): List<String> = listOf("task", "context", change, task, "--markdown")
 

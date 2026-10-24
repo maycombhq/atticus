@@ -54,6 +54,7 @@ import {
   type ServerContext,
 } from "@maycombhq/server";
 import { sourcesAdd, sourcesSync } from "./knowledge-commands.js";
+import { INPUTS_SOURCE_ID } from "./inputs-knowledge.js";
 
 /**
  * Knowledge in the app (ADR 0102, C4 2.7.0): everything ADR 0101 put on the command line, for
@@ -292,7 +293,8 @@ export function uiKnowledgeRoutes(
       .add("POST", "/api/knowledge/sources/{sourceId}/sync", async ({ params }) => {
         const id = idOf(params.sourceId!, "source");
         const op = await loadOrgPack(orgPackDirOf(root));
-        if (!op.sources.wikis.some((w) => w.id === id))
+        // ADR 0122: inputs is the metarepo's own inputs/ folder, a source not in sources.yaml.
+        if (id !== INPUTS_SOURCE_ID && !op.sources.wikis.some((w) => w.id === id))
           throw notFound(`There is no source ${id} in org-pack/sources.yaml.`);
         const c = capture();
         const code = await sourcesSync(root, c.io, { source: id, now: stamp(now()) });

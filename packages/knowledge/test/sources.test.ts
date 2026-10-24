@@ -317,3 +317,30 @@ describe("API wikis through an adapter (mock only, no network)", () => {
     expect(res.documents[0]).toMatchObject({ id: "doc.conf.arch-42", version: "3" });
   });
 });
+
+describe("an adapter for one source by its id (ADR 0122)", () => {
+  it("reads the source with the adapter given for its id, before the one for its type", async () => {
+    const res = await syncSources({
+      root: FIXTURES,
+      orgPack: await hubPack([
+        { id: "inputs", type: "markdown-folder", location: "../inputs", spaces: [] },
+      ]),
+      records: HUB_RECORDS,
+      adaptersById: {
+        inputs: {
+          pages: async () => [
+            {
+              pagePath: "partner/hub-runbook.pdf",
+              path: "inputs/partner/hub-runbook.pdf",
+              content: "# Hub runbook\n\nThe Hub API calls Contoso Ledger directly.\n",
+            },
+          ],
+        },
+      },
+    });
+    expect(res.problems).toEqual([]);
+    expect(res.pages.map((p) => [p.source, p.path, p.title])).toEqual([
+      ["inputs", "inputs/partner/hub-runbook.pdf", "Hub runbook"],
+    ]);
+  });
+});

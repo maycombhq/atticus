@@ -2,6 +2,7 @@ import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   fileJudgments,
+  inputsDirOf,
   loadOrgPack,
   Sources,
   type CatalogRecord,
@@ -28,6 +29,7 @@ import { isSeq, parseDocument } from "yaml";
 import type { Output } from "./commands.js";
 import { judgingRuntime } from "./judging.js";
 import { table } from "./index-commands.js";
+import { INPUTS_SOURCE, INPUTS_SOURCE_ID, inputsPages } from "./inputs-knowledge.js";
 
 const WIKI_TYPES = ["confluence", "ado-wiki", "sharepoint", "markdown-folder", "git"] as const;
 type WikiType = (typeof WIKI_TYPES)[number];
@@ -227,13 +229,23 @@ async function syncAll(root: string, io: Output, only?: string) {
   const loaded = await load(root, io);
   const { orgPackDir, records } = loaded;
   let op = loaded.op;
-  if (op.sources.wikis.length === 0) {
+  // ADR 0122: the metarepo's inputs/ is a source of its own, read with the wikis (or alone).
+  const inputs =
+    (!only || only === INPUTS_SOURCE_ID) &&
+    (await stat(inputsDirOf(root)).then(
+      (s) => s.isDirectory(),
+      () => false,
+    ))
+      ? await inputsPages(root, op)
+      : undefined;
+  if (op.sources.wikis.length === 0 && !inputs) {
     io.err(
-      "No wikis in org-pack/sources.yaml. Add one with: atticus sources add <type> <location>",
+      "No wikis in org-pack/sources.yaml, and nothing in inputs/. Add a wiki with atticus sources add <type> <location>, or drop documents in inputs/ (atticus intake add <files>).",
     );
     return undefined;
   }
-  if (only) {
+  if (only === INPUTS_SOURCE_ID) op = { ...op, sources: { ...op.sources, wikis: [] } };
+  else if (only) {
     const wikis = op.sources.wikis.filter((w) => w.id === only);
     if (!wikis.length) {
       io.err(
@@ -260,7 +272,10 @@ async function syncAll(root: string, io: Output, only?: string) {
     ...op,
     sources: {
       ...op.sources,
-      wikis: op.sources.wikis.filter((w) => w.type !== "git" || checkouts.has(w.id)),
+      wikis: [
+        ...op.sources.wikis.filter((w) => w.type !== "git" || checkouts.has(w.id)),
+        ...(inputs ? [INPUTS_SOURCE] : []),
+      ],
     },
   };
   const sync = await syncSources({
@@ -270,8 +285,16 @@ async function syncAll(root: string, io: Output, only?: string) {
     records,
     now: now(),
     adapters: { git: gitWikiAdapter(checkouts) },
+    ...(inputs
+      ? { adaptersById: { [INPUTS_SOURCE_ID]: { pages: async () => inputs.pages } } }
+      : {}),
   });
   sync.problems.push(...gitProblems);
+  if (inputs) {
+    sync.skipped.push(...inputs.skipped);
+    // Every source is reported, a git wiki that couldn't be fetched too, and inputs/ with them.
+    op = { ...op, sources: { ...op.sources, wikis: [...op.sources.wikis, INPUTS_SOURCE] } };
+  }
   const runtime = await judgingRuntime(root);
   const facts = await judgeFacts(
     { pages: sync.pages, records, systems: systemsOf(op) },
@@ -371,7 +394,7 @@ export async function sourcesSync(
       for (const c of unjudged) io.out(`  ${c.doc}:${c.line} ${c.from} → ${c.to}: "${c.claim}"`);
     }
     if (!n && !f && !unjudged.length && !sync.problems.length)
-      io.out("The wiki agrees with the catalog.");
+      io.out("What the pages say agrees with the catalog.");
   }
   return sync.problems.length || facts.documentConflicts.length ? 1 : 0;
 }

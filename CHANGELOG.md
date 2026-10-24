@@ -4,6 +4,19 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Knowledge files in the metarepo's inputs/ (ADR 0122)
+
+- Files dropped in the metarepo's `inputs/` are now general knowledge. `atticus sources sync` reads them as a source called `inputs`, with the wikis or alone (`--source inputs`), and needs no wiki configured. The knowledge scan reads the snapshot into items, each quote checked against the file.
+  - Intake decides which copy counts: a file dropped twice is read once, and an older version is kept but not read.
+  - Markdown, text, HTML, Word, PowerPoint, Excel and PDF are read into text; Markdown as it is, so a quote's line is the file's line.
+  - A picture goes to a person. Specs, diagrams and payload samples are left to intake. Each is listed with the reason.
+  - `sources.yaml` may no longer call a wiki `inputs`.
+- Knowledge has a **Documents** tab. It lists every file in `inputs/` with its kind, the systems it names, whether it was read (or why not), its age and the items that quote it, filtered by kind, system or words. It has **Add files** and **Sync inputs/** buttons, and the knowledge scan's command for the assistant.
+- A file attached to a change can become general knowledge. **Copy to general knowledge** on the change's Files attached panel, or `atticus change attach <change> --promote inputs/<file>`, copies it into `inputs/inbox/`; the change keeps its copy.
+- VS Code and IntelliJ have **Add to Atticus knowledge** on the right-click menu, beside **Attach to Atticus change**.
+- The local API gains `GET` and `POST /api/knowledge/documents` and `POST /api/changes/{id}/inputs/{name}/promote` (API 2.17.0). `atticus intake add` and the upload share one function.
+- Not built: OCR for a scanned PDF with no text layer; listing the changes whose steps cite a file's items.
+
 ### Four fixes from a live run of the stages (ADR 0087, 0115 and 0117 addenda)
 
 - A fix a person applies when the gate has no critic round left no longer leaves the change stuck. Once a person has acted on every blocking finding of the gate's newest round (applied, waived or dismissed), the gate allows one checking round past its limit; `atticus critic` and the stage run it. If it finds something blocking, a person decides again, and the stage stops without drafting over their fix. `atticus finding … apply` says what really comes next instead of "the next critic round checks the fix". `gateStatus` and `atticus findings --json` show `checkRound`.

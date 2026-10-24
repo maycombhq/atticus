@@ -20,6 +20,8 @@ export const SCREENS = [
   "wiki-search?q=transfer",
   "parties",
   "orgpack-draft",
+  // ADR 0122: the files in inputs/.
+  "documents",
   // ADR 0121: how AI runs here.
   "ai",
   "intake",
