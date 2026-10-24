@@ -59,7 +59,8 @@ export function systemKeyStore(
 
   if (platform === "win32") {
     const dir =
-      o.dir ?? join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "atticus", "keys");
+      o.dir ??
+      join(process.env.APPDATA ?? join(homedir(), "AppData", "Roaming"), "atticus", "keys");
     const file = (name: string) => join(dir, name);
     const ps = (script: string, name: string, input?: string) =>
       run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {

@@ -45,7 +45,12 @@ describe("the system key store (ADR 0121)", () => {
 
   it("on Windows, keeps the key encrypted for this Windows user through PowerShell", () => {
     const f = fake();
-    const store = systemKeyStore({ platform: "win32", run: f.run, dir: "C:/keys", exists: () => false });
+    const store = systemKeyStore({
+      platform: "win32",
+      run: f.run,
+      dir: "C:/keys",
+      exists: () => false,
+    });
     store.set("ATTICUS_MODEL_KEY", KEY);
     expect(f.calls[0]!.cmd).toBe("powershell.exe");
     expect(f.calls[0]!.input).toBe(KEY);
