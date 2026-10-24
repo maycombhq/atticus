@@ -1,5 +1,6 @@
 import { readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { HeadlessClaudeCodeRuntime, type HeadlessInvocation } from "@maycombhq/ai";
 import { runCritic } from "../src/index.js";
@@ -7,11 +8,13 @@ import { CHANGE, NOW, forgeChangeRoot } from "./helpers.js";
 
 /**
  * The critic's lenses on headless Claude Code (the stage loop fails closed, so a lens that may
- * not run there would stop every headless stage). Each lens runs in its own run folder: the
- * only file it can write is its findings, never the draft it reviews.
+ * not run there would stop every headless stage). Each lens runs in an empty folder of its own
+ * under the system's temp folder (outside the metarepo, and a short path Windows can start a
+ * program in): the only file it can write is its findings, never the draft it reviews. The
+ * findings are kept in its run folder.
  */
 describe("the critic's lenses on headless Claude Code", () => {
-  it("runs every lens, each in its run folder, and reads the findings it wrote there", async () => {
+  it("runs every lens in a short folder of its own, and keeps the findings it wrote in its run folder", async () => {
     const root = await forgeChangeRoot();
     // The built-in lens agents, as a metarepo whose org pack names none has (the fixture's own
     // critics are its choice of runtimes).
@@ -42,8 +45,12 @@ describe("the critic's lenses on headless Claude Code", () => {
     );
     expect(seen).toHaveLength(ran.length);
     for (const i of seen) {
-      expect(i.cwd.startsWith(join(root, ".runs", CHANGE))).toBe(true);
+      expect(i.cwd.startsWith(tmpdir())).toBe(true);
+      expect(i.cwd.startsWith(root)).toBe(false);
       expect(await readFile(i.promptFile, "utf8")).not.toContain("atticus handoff done");
+      // The findings it wrote are in its run folder, beside its prompt.
+      const file = /Write the result to (findings-[a-z-]+\.yaml)\./.exec(i.prompt)![1]!;
+      expect(await readFile(join(dirname(i.promptFile), file), "utf8")).toBe("findings: []\n");
     }
   });
 });
