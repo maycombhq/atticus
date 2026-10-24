@@ -157,6 +157,8 @@ export async function estateContext(
     sources.push(...g.sources);
   }
   if (final.retrieval.expansion || final.retrieval.rerank) report.retrieval = final.retrieval;
-  if (final.note) report.note = final.note;
+  // The first round's note too: an expansion that was left out says why (ADR 0116 addendum).
+  const notes = [...new Set([first.note, final.note].filter((n): n is string => !!n))];
+  if (notes.length) report.note = notes.join("; ");
   return { sources, report, retrieval: final.retrieval, consumed };
 }

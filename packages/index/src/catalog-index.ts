@@ -43,7 +43,9 @@ export interface OpenOptions {
   rebuild?: boolean;
   /**
    * The embedding model for "similar in meaning" (ADR 0116): "auto" (the default) reads
-   * runtime.yaml's retrieval.embeddings (off unless set), "off", or an embedder (tests, the eval).
+   * runtime.yaml's retrieval.embeddings (the bundled model unless it says otherwise; where the
+   * model or onnxruntime isn't installed, words and names only, and the selection says why), "off",
+   * or an embedder (tests, the eval).
    */
   embeddings?: "auto" | "off" | Embedder;
   /**
@@ -63,9 +65,14 @@ async function embedderOf(
 ): Promise<{ embedder?: Embedder; why?: string }> {
   if (setting === "off") return { why: "turned off for this command" };
   if (setting && setting !== "auto") return { embedder: setting };
-  const { embedderFor } = await import("@maycombhq/embed");
-  const r = await embedderFor(root);
-  return r.embedder ? { embedder: r.embedder } : { why: r.state.problem ?? "no embedding model" };
+  // Never fails the open: without a model the engine searches by words and names, and says why.
+  try {
+    const { embedderFor } = await import("@maycombhq/embed");
+    const r = await embedderFor(root);
+    return r.embedder ? { embedder: r.embedder } : { why: r.state.problem ?? "no embedding model" };
+  } catch (e) {
+    return { why: `the embedding model couldn't be read: ${(e as Error).message.split("\n")[0]}` };
+  }
 }
 
 /**

@@ -16,7 +16,7 @@ import {
 } from "@maycombhq/index";
 import type { ContextGap } from "./gaps.js";
 import { expandFor, expansionInput } from "./stages/expand.js";
-import { fileJudgments } from "@maycombhq/core";
+import { fileJudgments, retrievalOf } from "@maycombhq/core";
 import type { Judgments } from "./stages/judged.js";
 import { rerankFor } from "./stages/rerank.js";
 
@@ -47,10 +47,10 @@ export interface ContextOptions {
   tokens?: number;
   /**
    * The model's expansion of the input before the selection (ADR 0116). Default: the org pack's
-   * runtime.yaml retrieval.expansion (off unless on).
+   * runtime.yaml retrieval.expansion (on unless it says off, ADR 0116's addendum).
    */
   expand?: boolean;
-  /** The model's rerank of the candidates when they don't fit. Default: retrieval.rerank (off). */
+  /** The model's rerank of the candidates when they don't fit. Default: retrieval.rerank (off unless on). */
   rerank?: boolean;
 }
 
@@ -64,7 +64,7 @@ export interface RetrievalAi {
   resume?: string;
   now: Date;
   levels: readonly string[];
-  /** runtime.yaml's retrieval section. */
+  /** runtime.yaml's retrieval switches (retrievalOf); left out, its defaults. */
   settings?: { expansion?: boolean; rerank?: boolean };
   store?: Judgments;
   /** The step's name for the packs, e.g. "change feature add-x". */
@@ -103,7 +103,8 @@ export async function retrieve(
   const store = ai?.store ?? fileJudgments(root);
   const notes: string[] = [];
   let used = input;
-  if (ai && (context?.expand ?? ai.settings?.expansion ?? false)) {
+  const defaults = retrievalOf(undefined);
+  if (ai && (context?.expand ?? ai.settings?.expansion ?? defaults.expansion)) {
     const e = await expandFor(root, change, input, {
       runtime: ai.runtime,
       ...(resume ? { resume } : {}),
@@ -128,7 +129,7 @@ export async function retrieve(
     ai &&
     got.selection &&
     got.selection.leftOut.length > 0 &&
-    (context?.rerank ?? ai.settings?.rerank ?? false)
+    (context?.rerank ?? ai.settings?.rerank ?? defaults.rerank)
   ) {
     const r = await rerankFor(root, change, used, got.selection, {
       runtime: ai.runtime,

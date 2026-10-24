@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Retrieval's defaults: the best-scoring model, and the expansion on (ADR 0116 addendum)
+
+- The product owner's decision ("use the best model", "turn rewording on"): `runtime.yaml` `retrieval` now defaults to `embeddings.model: bundled` (all-MiniLM-L6-v2: 0.96 recall on the retrieval cases, against 0.81 by words alone and 0.84 for arctic-embed-xs) and `expansion: true`. `rerank` stays off: it isn't measured. A pack without the section and one with `retrieval: {}` get the same defaults, from one helper (`retrievalOf` in `@maycombhq/core`) every reader uses. An organisation can still set `model: off` or `expansion: false`.
+- Where the bundled model or onnxruntime isn't installed, the context engine searches by words and names, never fails a step and downloads nothing. `atticus doctor` says so under "Embedding model": a note when it is the default, a warning when `runtime.yaml` names a model that can't be used.
+- With the expansion on, a vendor or system the brief names only in prose is a gap again (a fixture: the invented Northwind Pay in a sentence, unknown to the estate).
+- In hand-off mode the expansion is one extra round per step, first. Its answer is now kept by what the model was shown (the input and the estate's names) rather than the index's generation, so a stage's own drafts don't make it ask again: a feature stage is the expansion, then its drafts, as before. Run again without `--resume`, a step waits on the same expansion prompt, or reads in its answer, rather than handing a new one off. An answer that fails its check is left out with a note in the step's context, and the step goes on by words and names.
+- The context eval's step rows run with the model and the expansion off in their roots, so they measure the engine itself, the same on every machine.
+
 ### Retrieval by meaning in the context engine (ADR 0116)
 
 - A harder eval: 61 retrieval cases in `fixtures/retrieval` (identifier words, paraphrases, glossary synonyms, two links away, 208 look-alike records, facts only in a Word document, a sentence deep in a long wiki section, exact names, inputs nothing answers), scored by recall, precision, MRR and tokens at a normal and a tight budget in each mode. `pnpm --filter @maycombhq/evals eval:context` writes `docs/evidence/context-eval.md`. All answered cases: 0.72 recall before, 0.81 now without a model, 0.96 with the local model's recorded vectors.

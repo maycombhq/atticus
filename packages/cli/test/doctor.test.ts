@@ -219,6 +219,32 @@ describe("atticus doctor", () => {
     expect(JSON.stringify(set)).not.toContain("sk-secret-value");
   });
 
+  it("says when the default embedding model isn't installed and search is by words and names; warns when runtime.yaml names one it can't use (ADR 0116 addendum)", async () => {
+    // The default is the bundled model; this checkout doesn't carry it: a note, not a failure.
+    const dflt = byId(await doctorChecks(root, healthy()), "embeddings");
+    expect(dflt.status).toBe("ok");
+    expect(dflt.detail).toMatch(
+      /@maycombhq\/embed-model\) isn't installed, so the context engine searches by words and names only/,
+    );
+    const own = await mkdtemp(join(tmpdir(), "atticus-doctor-embed-"));
+    await cp(join(FIXTURES, "forge/metarepo"), own, { recursive: true });
+    const rt = (model: string) =>
+      writeFile(
+        join(own, "org-pack/runtime.yaml"),
+        [
+          "schemaVersion: 1",
+          "assistants: { allowed: [copilot], default: copilot }",
+          `retrieval: { embeddings: { model: ${model} } }`,
+        ].join("\n"),
+      );
+    await rt("bundled");
+    expect(byId(await doctorChecks(own, healthy()), "embeddings").status).toBe("warn");
+    await rt("off");
+    const off = byId(await doctorChecks(own, healthy()), "embeddings");
+    expect(off).toMatchObject({ status: "ok" });
+    expect(off.detail).toMatch(/^off/);
+  });
+
   it("puts the machine first on the setup checklist", async () => {
     const ok = await setupSteps(root, { doctor: await doctorChecks(root, healthy()) });
     expect(ok.steps[0]).toMatchObject({ id: "machine", done: true });

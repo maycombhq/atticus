@@ -1,0 +1,3 @@
+- name: Northwind Pay
+  evidence: openspec/changes/add-fraud-check/brief.md:9
+  state: listed
