@@ -3,3 +3,4 @@ export * from "./mermaid.js";
 export * from "./drawio.js";
 export * from "./hierarchy.js";
 export * from "./layout-score.js";
+export * from "./flow-sequence.js";

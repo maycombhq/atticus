@@ -1,0 +1,44 @@
+openapi: 3.1.0
+info:
+  title: ledger-api
+  version: 0123abc
+  description: The REST entries of ledger-api as forge-ledger's code shows them at 0123abc, from the assistant's verified facts (ADR 0124). Rendered by atticus map render forge-ledger; don't edit.
+paths:
+  /accounts/{accountId}:
+    get:
+      operationId: ledger-api.get-account
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        default:
+          description: The response isn't read yet.
+      x-atticus-auth: oauth2
+      x-atticus-evidence: src/main/java/forge/ledger/AccountController.java:18
+  /accounts/{accountId}/entries:
+    post:
+      operationId: ledger-api.post-entry
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                amount:
+                  type: number
+                currency:
+                  type: string
+      responses:
+        default:
+          description: The response isn't read yet.
+      x-atticus-evidence: src/main/java/forge/ledger/EntryController.java:22

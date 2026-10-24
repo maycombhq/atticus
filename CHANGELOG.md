@@ -4,6 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The assistant's facts become the catalog, and the map is rendered from it (ADR 0124, A3b)
+
+- `atticus verify <repo> --write` puts the kept facts in the catalog when nothing is rejected: they replace the records from that repo, every other repo's records stay as they were, and the scan's merge and your curated decisions apply over them. The flows go to `specs/<repo>/`.
+- A call to a host no repo lists asks which repo answers on it; any other call with no target asks which repo or system answers it. The answer is read on the next write.
+- `atticus map render <repo>` (also run by `--write`) writes `map/<repo>/map.md` with a trust line and every fact linked to its file and line, a page per flow with its sequence diagram, and an OpenAPI 3.1 file per component.
+
 ### The drafter checks its own draft, and a person's answer settles the judge (ADR 0087, 0111 and 0117 addenda)
 
 - A stage's drafter checks its draft with the stage's own checks before handing it in. In model mode it gets a `check_draft` tool. Headless Claude Code is told to run `atticus stage check <change> <stage> <file>`. With Copilot, `atticus handoff done` lists the problems with their lines and keeps the run open until the file is clean. After `draftSelfChecks` checks (change policy, default 3) the file is handed in as it is.

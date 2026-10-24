@@ -1,0 +1,496 @@
+schemaVersion: 2
+kind: Column
+id: ledger-db.entry.account_id
+status: current
+confidence: verified
+classification: internal
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 3
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    source: migration
+name: account_id
+nullable: false
+table: ledger-db.entry
+type: bigint
+---
+schemaVersion: 2
+kind: Column
+id: ledger-db.entry.amount
+status: current
+confidence: asserted
+classification: confidential
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 4
+    path: src/main/resources/db/migration/V2__create_entry.sql
+    repo: forge-ledger
+    source: migration
+  - by: dana.okafor
+    source: manual
+name: amount
+nullable: false
+table: ledger-db.entry
+type: numeric(18,2)
+---
+schemaVersion: 2
+kind: Component
+id: ledger-api
+status: current
+confidence: verified
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 31
+    path: src/main/java/forge/ledger/FxClient.java
+    repo: forge-ledger
+    source: code
+repo: forge-ledger
+runtime: kubernetes
+system: ledger
+type: service
+---
+schemaVersion: 2
+kind: Component
+id: notify-api
+status: current
+confidence: verified
+evidence:
+  - commit: 9f8e7d6
+    line: 1
+    path: build.gradle
+    repo: forge-notify
+    source: code
+repo: forge-notify
+system: messaging
+type: service
+---
+schemaVersion: 2
+kind: DataStore
+id: ledger-db
+status: current
+confidence: verified
+entitiesHeld:
+  - account
+  - entry
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 12
+    path: src/main/java/forge/ledger/AccountRepository.java
+    repo: forge-ledger
+    source: code
+ownerComponent: ledger-api
+storeType: relational
+---
+schemaVersion: 2
+kind: DataStore
+id: notify-db
+status: current
+confidence: verified
+entitiesHeld:
+  - outbox
+evidence:
+  - commit: 9f8e7d6
+    line: 1
+    path: src/main/resources/db/migration/V1__outbox.sql
+    repo: forge-notify
+    source: migration
+ownerComponent: notify-api
+storeType: relational
+---
+schemaVersion: 2
+kind: Deployment
+id: ledger-api.prod
+status: current
+confidence: verified
+component: ledger-api
+env: prod
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 7
+    path: k8s/ledger-api.yaml
+    repo: forge-ledger
+    source: infrastructure
+networkPolicies: []
+platform: kubernetes
+replicas: 3
+---
+schemaVersion: 2
+kind: Endpoint
+id: ledger-api.get-account
+status: current
+confidence: verified
+auth: oauth2
+component: ledger-api
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 18
+    path: src/main/java/forge/ledger/AccountController.java
+    repo: forge-ledger
+    side: callee
+    source: code
+method: GET
+normalizedPath: /accounts/{}
+pathOrTopic: /accounts/{accountId}
+schemaRefs: []
+---
+schemaVersion: 2
+kind: Endpoint
+id: ledger-api.on-forge-payments-settled
+status: current
+confidence: verified
+component: ledger-api
+endpointType: event-topic
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 14
+    path: src/main/java/forge/ledger/SettlementListener.java
+    repo: forge-ledger
+    side: callee
+    source: code
+pathOrTopic: forge.payments.settled
+schemaRefs: []
+---
+schemaVersion: 2
+kind: Endpoint
+id: ledger-api.post-entry
+status: current
+confidence: verified
+component: ledger-api
+endpointType: rest
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 22
+    path: src/main/java/forge/ledger/EntryController.java
+    repo: forge-ledger
+    side: callee
+    source: code
+method: POST
+normalizedPath: /accounts/{}/entries
+pathOrTopic: /accounts/{accountId}/entries
+schemaRefs:
+  - ledger-api.post-entry.request
+---
+schemaVersion: 2
+kind: Endpoint
+id: notify-api.post-notify
+status: current
+confidence: verified
+component: notify-api
+endpointType: rest
+evidence:
+  - commit: 9f8e7d6
+    line: 12
+    path: src/main/java/forge/notify/NotifyController.java
+    repo: forge-notify
+    side: callee
+    source: code
+method: POST
+normalizedPath: /notify
+pathOrTopic: /notify
+schemaRefs: []
+---
+schemaVersion: 2
+kind: Interface
+id: if-0bb6f0b5cb457f7f
+status: current
+confidence: verified
+conflicts: []
+direction: outbound
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 31
+    path: src/main/java/forge/ledger/FxClient.java
+    repo: forge-ledger
+    side: caller
+    source: code
+from: ledger-api
+method: GET
+normalizedPath: /v1/rates/{}
+sync: sync
+to: northwind-fx
+via: direct
+---
+schemaVersion: 2
+kind: Interface
+id: if-3bbb3af22ed63158
+status: current
+confidence: verified
+auth: oauth2
+conflicts: []
+direction: outbound
+endpoint: ledger-api.get-account
+evidence:
+  - commit: 9f8e7d6
+    line: 20
+    path: src/main/java/forge/notify/LedgerClient.java
+    repo: forge-notify
+    side: caller
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 18
+    path: src/main/java/forge/ledger/AccountController.java
+    repo: forge-ledger
+    side: callee
+    source: code
+from: notify-api
+method: GET
+normalizedPath: /accounts/{}
+sync: sync
+to: ledger-api
+via: direct
+---
+schemaVersion: 2
+kind: Schema
+id: if-0bb6f0b5cb457f7f.request
+status: current
+confidence: verified
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 31
+    path: src/main/java/forge/ledger/FxClient.java
+    repo: forge-ledger
+    source: code
+fields:
+  - name: pair
+    type: string
+format: other
+ref: if-0bb6f0b5cb457f7f
+---
+schemaVersion: 2
+kind: Schema
+id: ledger-api.post-entry.request
+status: current
+confidence: verified
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 7
+    path: src/main/java/forge/ledger/EntryRequest.java
+    repo: forge-ledger
+    source: code
+  - by: assistant
+    commit: 0123abc
+    line: 8
+    path: src/main/java/forge/ledger/EntryRequest.java
+    repo: forge-ledger
+    source: code
+fields:
+  - name: amount
+    type: decimal
+  - name: currency
+    type: string
+format: other
+ref: ledger-api.post-entry
+---
+schemaVersion: 2
+kind: Setting
+id: ledger-api.fx.client.base-url
+status: current
+confidence: verified
+component: ledger-api
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 12
+    path: src/main/resources/application.yml
+    repo: forge-ledger
+    source: config
+key: fx.client.base-url
+settingKind: config
+target: northwind-fx
+valueOrRef: https://fx.northwind.example/api
+---
+schemaVersion: 2
+kind: Setting
+id: ledger-api.fx.client.read-timeout
+status: current
+confidence: verified
+component: ledger-api
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 13
+    path: src/main/resources/application.yml
+    repo: forge-ledger
+    source: config
+key: fx.client.read-timeout
+settingKind: timeout
+target: northwind-fx
+valueOrRef: 1500ms
+---
+schemaVersion: 2
+kind: Setting
+id: ledger-api.spring.datasource.password
+status: current
+confidence: verified
+component: ledger-api
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 21
+    path: src/main/resources/application.yml
+    repo: forge-ledger
+    source: config
+key: spring.datasource.password
+settingKind: config
+valueOrRef: env:LEDGER_DB_PASSWORD
+---
+schemaVersion: 2
+kind: System
+id: ledger
+status: current
+confidence: verified
+accessGroup: everyone
+boundary: product
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 31
+    path: src/main/java/forge/ledger/FxClient.java
+    repo: forge-ledger
+    source: code
+name: Ledger
+owner: team-ledger
+repos:
+  - forge-ledger
+tags: []
+---
+schemaVersion: 2
+kind: System
+id: messaging
+status: current
+confidence: verified
+accessGroup: everyone
+boundary: product
+evidence:
+  - commit: 9f8e7d6
+    line: 1
+    path: build.gradle
+    repo: forge-notify
+    source: code
+name: Messaging
+owner: team-notify
+repos:
+  - forge-notify
+tags: []
+---
+schemaVersion: 2
+kind: System
+id: northwind-fx
+status: current
+confidence: inferred
+accessGroup: everyone
+boundary: vendor
+evidence:
+  - path: org-pack/profiles/forge/profile.yaml
+    source: config
+name: Northwind FX
+repos: []
+tags:
+  - saas
+---
+schemaVersion: 2
+kind: Table
+id: ledger-db.account
+status: current
+confidence: verified
+dataStore: ledger-db
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 12
+    path: src/main/java/forge/ledger/AccountRepository.java
+    repo: forge-ledger
+    source: code
+name: account
+ownerComponent: ledger-api
+readers:
+  - ledger-api
+tableKind: table
+writers: []
+---
+schemaVersion: 2
+kind: Table
+id: ledger-db.entry
+status: current
+confidence: verified
+dataStore: ledger-db
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 8
+    path: src/main/java/forge/ledger/EntryRepository.java
+    repo: forge-ledger
+    source: code
+name: entry
+ownerComponent: ledger-api
+readers: []
+tableKind: table
+writers:
+  - ledger-api
+---
+schemaVersion: 2
+kind: Table
+id: notify-db.outbox
+status: current
+confidence: verified
+dataStore: notify-db
+evidence:
+  - commit: 9f8e7d6
+    line: 1
+    path: src/main/resources/db/migration/V1__outbox.sql
+    repo: forge-notify
+    source: migration
+name: outbox
+ownerComponent: notify-api
+readers: []
+tableKind: table
+writers:
+  - notify-api
+---
+schemaVersion: 2
+kind: Unresolved
+id: unresolved.c-notify
+status: current
+confidence: inferred
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 9
+    path: src/main/java/forge/ledger/Notifier.java
+    repo: forge-ledger
+    side: caller
+    source: code
+owner: ledger-api
+raw: POST http://notify.internal/notify
+unresolvedKind: http-call
+---
+schemaVersion: 2
+kind: Unresolved
+id: unresolved.ledger-api.on-forge-payments-settled
+status: current
+confidence: verified
+evidence:
+  - by: assistant
+    commit: 0123abc
+    line: 14
+    path: src/main/java/forge/ledger/SettlementListener.java
+    repo: forge-ledger
+    side: callee
+    source: code
+owner: ledger-api
+raw: forge.payments.settled
+unresolvedKind: event-subscribe

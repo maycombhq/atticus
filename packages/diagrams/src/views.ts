@@ -50,12 +50,23 @@ export interface FlowView {
 }
 
 export type SequenceStep =
-  | { kind: "message"; from: string; to: string; label: string; async: boolean; legend?: Legend }
-  | { kind: "note"; over: [string, string]; text: string };
+  | {
+      kind: "message";
+      from: string;
+      to: string;
+      label: string;
+      async: boolean;
+      legend?: Legend;
+      /** A response going back (drawn dashed). */
+      reply?: boolean;
+    }
+  | { kind: "note"; over: [string] | [string, string]; text: string };
 
 export interface SequenceView {
   type: "sequence";
   title: string;
+  /** Set when the view was drawn from a file (a flow's spec file) rather than the catalog. */
+  source?: string;
   participants: { id: string; label: string; legend?: Legend }[];
   steps: SequenceStep[];
 }

@@ -1211,6 +1211,9 @@ importers:
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+      '@maycombhq/diagrams':
+        specifier: workspace:*
+        version: link:../diagrams
       '@maycombhq/sdk':
         specifier: workspace:*
         version: link:../sdk

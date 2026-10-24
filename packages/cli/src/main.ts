@@ -397,6 +397,8 @@ Usage:
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force] [--max-tokens n]
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept] [--max-tokens n]
   atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus map) against its code: the claim on each cited line, the quote, references, secrets, coverage; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
+          [--write]                    When nothing is rejected: put the facts in the catalog, the flows in specs/<repo>/, ask about calls nothing joins, and render the map
+  atticus map render <repo> [--json]   Render the repo's map from the catalog: map.md, a page per flow with its sequence diagram, an OpenAPI file per component, under map/<repo>/
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
   atticus estate join [--json]         Join each repo's call-outs to the flows their targets start; writes specs/estate.yaml
@@ -1227,31 +1229,52 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     }
   }
   if (group === "verify") {
-    const repo = command;
+    // --write is a switch here (elsewhere it takes a path): read the arguments again with it as
+    // one, so it never swallows the flag or the repo after it.
+    const v = parseArgs({
+      args: argv,
+      allowPositionals: true,
+      options: { ...OPTIONS, write: { type: "boolean" } },
+      strict: false,
+    });
+    const repo = v.positionals[1];
     if (!repo) {
-      io.err("Usage: atticus verify <repo> [--dir path] [--commit sha] [--routed a,b] [--json]");
+      io.err(
+        "Usage: atticus verify <repo> [--write] [--dir path] [--commit sha] [--routed a,b] [--json]",
+      );
       return 2;
     }
-    const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+    const text = (x: unknown) => (typeof x === "string" ? x : undefined);
     const { verifyCommand } = await import("./verify-commands.js");
     return verifyCommand(
       root,
       repo,
       {
-        ...(text(values.dir) ? { dir: resolve(text(values.dir)!) } : {}),
-        ...(text(values.commit) ? { commit: text(values.commit)! } : {}),
-        ...(text(values.routed)
+        ...(text(v.values.dir) ? { dir: resolve(text(v.values.dir)!) } : {}),
+        ...(text(v.values.commit) ? { commit: text(v.values.commit)! } : {}),
+        ...(text(v.values.routed)
           ? {
-              routed: text(values.routed)!
+              routed: text(v.values.routed)!
                 .split(",")
                 .map((x) => x.trim())
                 .filter(Boolean),
             }
           : {}),
-        json: values.json === true,
+        write: v.values.write === true,
+        json: v.values.json === true,
       },
       io,
     );
+  }
+  if (group === "map" && command === "render") {
+    // atticus map render <repo> (ADR 0124, A3b); `atticus map <repo>` is the reading hand-off.
+    const repo = positionals[2];
+    if (!repo) {
+      io.err("Usage: atticus map render <repo> [--json]");
+      return 2;
+    }
+    const { mapRenderCommand } = await import("./map-commands.js");
+    return mapRenderCommand(root, repo, { json: values.json === true }, io);
   }
   if (group === "scan" && command === "verify") {
     const text = (v: unknown) => (typeof v === "string" ? v : undefined);

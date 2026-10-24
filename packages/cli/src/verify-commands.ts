@@ -29,6 +29,11 @@ export interface VerifyCommandOptions {
   commit?: string;
   /** Files the reader opened through Atticus's tools. */
   routed?: string[];
+  /**
+   * Write the kept facts into the catalog, the flows into specs/<repo>/ and render the map
+   * (ADR 0124, A3b), only when nothing is rejected.
+   */
+  write?: boolean;
   json?: boolean;
 }
 
@@ -119,8 +124,23 @@ export async function verifyCommand(
   };
   await writeFile(join(factsDirOf(root), `${repo}.verify.yaml`), stringify(summary), "utf8");
 
+  // --write (ADR 0124, A3b): the kept facts become the catalog, only when none was rejected,
+  // so a half-fixed read never replaces the repo's records.
+  const rejectedNote = `Nothing written to the catalog: ${report.rejected.length} facts were rejected. Fix them and run atticus verify ${repo} --write again.`;
   if (o.json) {
-    io.out(JSON.stringify(summary, null, 2));
+    let written;
+    if (o.write && !report.rejected.length) {
+      const { writeFactsIntoCatalog } = await import("./map-commands.js");
+      written = await writeFactsIntoCatalog(
+        root,
+        repo,
+        report.accepted,
+        { dir, command: `atticus verify ${repo} --write` },
+        { ...io, out: () => undefined },
+      );
+      if (!written) return 1;
+    } else if (o.write) io.err(rejectedNote);
+    io.out(JSON.stringify({ ...summary, ...(written ? { written } : {}) }, null, 2));
     return report.rejected.length ? 1 : 0;
   }
   const pct = Math.round(report.coverage.ratio * 100);
@@ -138,5 +158,24 @@ export async function verifyCommand(
       `Next: read the ${report.coverage.unknown.length} unknown files (listed in ${rel}/${repo}.verify.yaml), or exclude generated code in org-pack/scan/${repo}.yaml.`,
     );
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);
-  return report.rejected.length ? 1 : 0;
+  if (report.rejected.length) {
+    if (o.write) io.err(rejectedNote);
+    return 1;
+  }
+  if (!o.write) {
+    io.out(
+      `When the read is complete: atticus verify ${repo} --write puts the facts in the catalog, the flows in specs/${repo}/, and renders the map.`,
+    );
+    return 0;
+  }
+  // Loaded here: the catalog writer brings the scanner, which a check alone never needs.
+  const { writeFactsIntoCatalog } = await import("./map-commands.js");
+  const written = await writeFactsIntoCatalog(
+    root,
+    repo,
+    report.accepted,
+    { dir, command: `atticus verify ${repo} --write` },
+    io,
+  );
+  return written ? 0 : 1;
 }
