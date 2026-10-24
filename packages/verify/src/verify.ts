@@ -285,7 +285,10 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   const accepted: Fact[] = facts
     .filter((f) => !rejected.has(f.id))
     .map((f) => {
-      const verified = f.verified === "person" || f.verified === "sample" ? f.verified : "line";
+      // A reader can't vouch for itself: only a fact a person made keeps a person's mark, and a
+      // sample session's mark stands only on a fact a person made too (the sample check writes
+      // its own results, not this file). Everything else is verified by the line check.
+      const verified = f.by === "person" && f.verified !== "none" ? f.verified : "line";
       const base = { ...f, verified, cite: fixQuote(f.cite) } as Fact;
       if (base.kind === "flow")
         return {

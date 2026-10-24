@@ -47,6 +47,7 @@ import { baseClonePath, checkoutState } from "@maycombhq/workspace";
 import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
 import { curatedDirOf, estateMergeInput, estateRepos } from "./merge-input.js";
+import { factsForScan } from "./facts-scan.js";
 import {
   applyClients,
   applyPrefixes,
@@ -398,6 +399,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
 
   const repos = estateRepos(op, o.repos);
   const results: RepoScan[] = [];
+  const factNotes: string[] = [];
   /** Each repo's structured files, to tell which no record cites. */
   const structuredOf = new Map<string, string[]>();
   /** Each repo's modules with their own component (ADR 0057): the manifest's, else found. */
@@ -523,10 +525,16 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
         source: rej.extractor,
         message: `invalid record: ${rej.issues.map((i) => `${i.path}: ${i.message}`).join("; ")}`,
       });
-    results.push({
-      ...scan,
-      records: applyClients(applyPrefixes(scan.records, settings.prefixes), settings.clients),
-    });
+    const readerRecords = applyClients(
+      applyPrefixes(scan.records, settings.prefixes),
+      settings.clients,
+    );
+    // ADR 0124 §3: a repo the assistant has read takes its verified facts over its readers'
+    // records; the readers stay as a cross-check, said as a note. Facts of another commit are
+    // stale: the readers stand in until the repo is read again.
+    const fromFacts = await factsForScan(o.root, op, r.id, state.commit, readerRecords);
+    if (fromFacts.note) factNotes.push(fromFacts.note);
+    results.push({ ...scan, records: fromFacts.records ?? readerRecords });
     o.onProgress?.(++done, repos.length, r.id);
   }
 
@@ -597,7 +605,7 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     orgPackDir,
   });
   // The glossary is an enrichment: what it can't read (a missing wiki folder) is a note, not a scan failure.
-  const notes = [...merged.notes, ...glossary.problems.map((p) => `glossary: ${p}`)];
+  const notes = [...factNotes, ...merged.notes, ...glossary.problems.map((p) => `glossary: ${p}`)];
   const withFeatures = [...glossary.records, ...fedRecords].sort((a, b) =>
     a.kind === b.kind ? a.id.localeCompare(b.id) : a.kind.localeCompare(b.kind),
   );

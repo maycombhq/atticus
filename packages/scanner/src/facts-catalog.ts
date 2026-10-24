@@ -227,7 +227,18 @@ export function targetsFromAnswers(
   return out;
 }
 
-export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
+/**
+ * A repo's facts as the records a scan merges (ADR 0124): projected, with a person's named targets
+ * applied, the manifest's component and system, and the loose ends a scan's merge can join (a
+ * call to a URL, a publish, a listener). Flows apart, for specs/<repo>/. Used by `verify --write`
+ * and by a scan, which takes a repo's facts over its readers' records.
+ */
+export function factsRecords(input: {
+  repo: string;
+  facts: readonly Fact[];
+  op: OrgPack;
+  targets?: Readonly<Record<string, string>>;
+}) {
   const { repo, op } = input;
   const manifest = estateRepos(op).find((r) => r.id === repo);
   // A fact with no component belongs to the component the manifest names for the repo.
@@ -283,6 +294,12 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
     ...(extra as CatalogRecord[]),
   ];
   const newFlows = projected.records.filter((r): r is FlowRecord => r.kind === "Flow");
+  return { facts, projected, factById, newRecords, newFlows, loose, looseFact };
+}
+
+export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
+  const { repo, op } = input;
+  const { projected, newRecords, newFlows, looseFact } = factsRecords(input);
 
   // ---- the existing catalog without what came from this repo
   const mine = (e: unknown) => (e as Ev).repo === repo;

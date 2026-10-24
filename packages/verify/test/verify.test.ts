@@ -131,12 +131,17 @@ describe("verifyFacts: the claim on the cited line (ADR 0124)", () => {
     expect(r.redacted).toBe(1);
   });
 
-  it("keeps a person's verification stronger than the line check", async () => {
+  it("keeps a person's verification on a fact a person made, never on one the reader marked itself", async () => {
     const facts = load("forge-ledger.facts.jsonl").map((f) =>
-      f.id === "d-prod" ? { ...f, verified: "person" as const } : f,
+      f.id === "d-prod"
+        ? { ...f, by: "person" as const, verified: "person" as const }
+        : f.id === "k-fx-base"
+          ? { ...f, verified: "person" as const }
+          : f,
     );
     const r = await verifyFacts({ facts, source: dirSource(repo), commit: "0123abc" });
     expect(r.accepted.find((f) => f.id === "d-prod")!.verified).toBe("person");
+    expect(r.accepted.find((f) => f.id === "k-fx-base")!.verified).toBe("line");
   });
 });
 

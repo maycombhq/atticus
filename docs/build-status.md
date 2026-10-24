@@ -156,6 +156,8 @@ Decided on 2026-10-24 (ADR 0124, from the design "Atticus 2 — AI Reads, Code V
 
 - [x] **B-error-case. Every task that can fail has an error criterion** (Part 3): a story criterion carries `outcome: success | error`; `stories.no-error-case` asks for an error criterion on every task whose step validates, writes, calls out or publishes; the drafter's rules say so. Not blocking yet, so recorded replays keep passing; it becomes blocking when Phase B re-records the stage fixtures.
 
+- [x] **A3c. A scan takes a repo's verified facts over its readers** (ADR 0124 §3; the product owner's open question from A3b, taken with the recommended option): `factsForScan` in `packages/scanner/src/facts-scan.ts`, using `factsRecords` factored out of `catalogWithFacts`; the readers become a cross-check, said as a note (what they found that the facts don't have); facts of another commit, or not verified, aren't used and the note says what to run. So intake, features, glossary and federation run over the facts on every scan. And the verifier no longer keeps a `person` or `sample` mark the reader wrote on its own facts: only a fact a person made keeps it.
+
 Phases B to D (one change end to end with the stories bench and `knowledge.yaml`; the estate; surfaces, flags and the release) follow the design doc and are ticketed when Phase A's numbers are in.
 
 ### B. The core loop: scan → change → stories (what the product is for)
