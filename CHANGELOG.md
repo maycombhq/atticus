@@ -39,6 +39,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### VS Code runs a next step without a terminal
+
+- A next step that is a command now runs as Run a command runs it: with progress and Cancel, what it printed in a notice, the dry run and a person's yes for a shared write, and the views read again when it ends. Only a server (`atticus ui`, a stub) opens a terminal. Not yet tried in a live VS Code.
+
 ### The hand-off PR says what changed since the last round
 
 - The PR body gains **Since the last round**: for each reviewed gate, its newest critic round against the one before (which findings closed, which are new, how many stay open), or that it is the first round.
