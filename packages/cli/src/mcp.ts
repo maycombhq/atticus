@@ -108,7 +108,7 @@ export const MCP_TOOLS: McpTool[] = [
   {
     name: "ask",
     description:
-      "A plain question about the estate (\"who calls ledger-api?\"), read as a catalog query or an impact walk and run; it says the query it ran, and every record cites its file and line (atticus ask).",
+      'A plain question about the estate ("who calls ledger-api?"), read as a catalog query or an impact walk and run; it says the query it ran, and every record cites its file and line (atticus ask).',
     args: [s("question", "The question, in plain words.")],
     argv: (a) => ["ask", String(a.question), "--json"],
   },
