@@ -1,25 +1,25 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parse, stringify } from "yaml";
-import {
-  factsDirOf,
-  factsRelOf,
-  isAdopted,
-  orgPackDirOf,
-  parseFacts,
-  serializeFacts,
-} from "@maycombhq/core";
+import { factsDirOf, factsRelOf, parseFacts } from "@maycombhq/core";
 import { dirSource, verifyFacts } from "@maycombhq/verify";
-import { createGit } from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
-import { repoFor } from "./onboard-commands.js";
+import {
+  checkoutOf,
+  excludesOf,
+  headOf,
+  raiseReadQuestions,
+  writeVerifyFiles,
+  type QuestionProblem,
+} from "./facts-files.js";
 
 /**
  * atticus verify <repo> (ADR 0124): check the facts the assistant wrote for a repo against the
  * repo's code at its commit. Reads `facts/<repo>.jsonl` (`.atticus/facts/` when adopted); writes
  * the kept facts back in canonical form marked verified, the rejected ones with their reasons to
  * `<repo>.rejected.jsonl` for the assistant to fix, and `<repo>.verify.yaml` with the coverage.
+ * The questions the assistant wrote to `<repo>.questions.jsonl` are raised for a person (ADR 0078),
+ * each evidence line checked; one that can't be raised goes to the rejected file too.
  * Exit code 1 while anything is rejected, so a reading loop knows to go again.
  */
 export interface VerifyCommandOptions {
@@ -30,27 +30,25 @@ export interface VerifyCommandOptions {
   /** Files the reader opened through Atticus's tools. */
   routed?: string[];
   json?: boolean;
+  now?: () => Date;
 }
 
-async function headOf(dir: string): Promise<string | undefined> {
-  try {
-    const r = await createGit({ timeoutMs: 30_000 })(["rev-parse", "HEAD"], dir);
-    return r.stdout.trim() || undefined;
-  } catch {
-    return undefined;
+/** The JSON objects of a questions file; a line that isn't JSON is a problem. */
+function questionLines(text: string): { lines: unknown[]; problems: QuestionProblem[] } {
+  const lines: unknown[] = [];
+  const problems: QuestionProblem[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    if (!raw.trim()) continue;
+    try {
+      lines.push(JSON.parse(raw));
+    } catch (e) {
+      problems.push({
+        line: JSON.stringify(raw),
+        message: `not JSON: ${(e as Error).message}`,
+      });
+    }
   }
-}
-
-/** Exclusion globs a person accepted for this repo (ADR 0075 scan settings). */
-async function excludesOf(root: string, repo: string): Promise<string[]> {
-  const file = join(orgPackDirOf(root), "scan", `${repo}.yaml`);
-  if (!existsSync(file)) return [];
-  try {
-    const doc = parse(await readFile(file, "utf8")) as { exclude?: { path?: string }[] } | null;
-    return (doc?.exclude ?? []).map((e) => e.path).filter((p): p is string => !!p);
-  } catch {
-    return [];
-  }
+  return { lines, problems };
 }
 
 export async function verifyCommand(
@@ -63,7 +61,7 @@ export async function verifyCommand(
   const file = join(factsDirOf(root), `${repo}.jsonl`);
   if (!existsSync(file)) {
     io.err(
-      `No facts for ${repo} at ${rel}/${repo}.jsonl. Run /atticus map in your assistant first; it writes that file.`,
+      `No facts for ${repo} at ${rel}/${repo}.jsonl. Run /atticus-map ${repo} in your assistant first (or atticus map ${repo} to read it in batches); it writes that file.`,
     );
     return 2;
   }
@@ -75,7 +73,7 @@ export async function verifyCommand(
     if (parsed.issues.length > 20) io.err(`  ... and ${parsed.issues.length - 20} more`);
     return 2;
   }
-  const dir = o.dir ?? (isAdopted(root) ? root : ((await repoFor(root, repo))?.dir ?? undefined));
+  const dir = await checkoutOf(root, repo, o.dir);
   if (!dir) {
     io.err(
       `No checkout of ${repo}: clone it (atticus workspace sync) or give its folder with --dir.`,
@@ -83,45 +81,36 @@ export async function verifyCommand(
     return 2;
   }
   const commit = o.commit ?? (await headOf(dir));
+  const source = dirSource(dir);
   const report = await verifyFacts({
     facts: parsed.facts,
-    source: dirSource(dir),
+    source,
     ...(commit ? { commit } : {}),
     ...(o.routed ? { routed: o.routed } : {}),
     exclude: await excludesOf(root, repo),
   });
 
-  await mkdir(factsDirOf(root), { recursive: true });
-  await writeFile(file, serializeFacts(report.accepted), "utf8");
-  const rejectedFile = join(factsDirOf(root), `${repo}.rejected.jsonl`);
-  if (report.rejected.length)
-    await writeFile(
-      rejectedFile,
-      report.rejected
-        .map((r) => JSON.stringify({ code: r.code, message: r.message, fact: r.fact }))
-        .join("\n") + "\n",
-      "utf8",
-    );
-  else await rm(rejectedFile, { force: true });
-  const summary = {
-    repo,
-    ...(commit ? { commit } : {}),
-    accepted: report.accepted.length,
-    rejected: report.rejected.length,
-    redacted: report.redacted,
-    coverage: {
-      ratio: report.coverage.ratio,
-      read: report.coverage.read.length,
-      unknown: report.coverage.unknown,
-      excluded: report.coverage.excluded,
-    },
-    rejections: report.rejected.map((r) => ({ id: r.fact.id, code: r.code, message: r.message })),
-  };
-  await writeFile(join(factsDirOf(root), `${repo}.verify.yaml`), stringify(summary), "utf8");
+  // ADR 0078: what the code can't settle, raised for a person.
+  const qFile = join(factsDirOf(root), `${repo}.questions.jsonl`);
+  let raised = 0;
+  const qProblems: QuestionProblem[] = [];
+  if (existsSync(qFile)) {
+    const q = questionLines(await readFile(qFile, "utf8"));
+    qProblems.push(...q.problems);
+    const r = await raiseReadQuestions(root, repo, q.lines, source, {
+      command: `atticus verify ${repo}`,
+      at: (o.now?.() ?? new Date()).toISOString(),
+    });
+    raised = r.raised.length;
+    qProblems.push(...r.problems);
+  }
+
+  const summary = await writeVerifyFiles(root, repo, report, commit, qProblems);
+  const failed = report.rejected.length + qProblems.length > 0;
 
   if (o.json) {
-    io.out(JSON.stringify(summary, null, 2));
-    return report.rejected.length ? 1 : 0;
+    io.out(JSON.stringify({ ...summary, questions: { raised, problems: qProblems } }, null, 2));
+    return failed ? 1 : 0;
   }
   const pct = Math.round(report.coverage.ratio * 100);
   io.out(
@@ -129,14 +118,19 @@ export async function verifyCommand(
   );
   for (const r of report.rejected.slice(0, 15)) io.out(`  ${r.code}: ${r.message}`);
   if (report.rejected.length > 15) io.out(`  ... and ${report.rejected.length - 15} more`);
-  if (report.rejected.length)
+  if (raised)
     io.out(
-      `Fix them from ${rel}/${repo}.rejected.jsonl (read the lines again, then rewrite or drop each fact) and run atticus verify ${repo} again.`,
+      `${raised} question${raised === 1 ? "" : "s"} raised for a person (atticus questions list): a person answers, never the assistant.`,
+    );
+  for (const q of qProblems) io.out(`  bad-question: ${q.message}`);
+  if (failed)
+    io.out(
+      `Fix them from ${rel}/${repo}.rejected.jsonl (read the lines again, then rewrite or drop each fact or question) and run atticus verify ${repo} again.`,
     );
   else if (report.coverage.unknown.length)
     io.out(
       `Next: read the ${report.coverage.unknown.length} unknown files (listed in ${rel}/${repo}.verify.yaml), or exclude generated code in org-pack/scan/${repo}.yaml.`,
     );
   if (report.redacted) io.out(`${report.redacted} quotes had a secret value redacted.`);
-  return report.rejected.length ? 1 : 0;
+  return failed ? 1 : 0;
 }

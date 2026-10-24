@@ -40,7 +40,10 @@ const STEPS = new Set([
 ]);
 
 export const isHandoffStep = (group: string | undefined, command: string | undefined) =>
-  STEPS.has(`${group ?? ""} ${command ?? ""}`) || isCritic(group, command);
+  STEPS.has(`${group ?? ""} ${command ?? ""}`) ||
+  isCritic(group, command) ||
+  // ADR 0124 §4: atticus map <repo>, the batched read, one batch per hand-off.
+  (group === "map" && !!command && !command.startsWith("-"));
 
 /**
  * `atticus critic <change>` (ADR 0106 addendum): its AI lenses wait together, one run each, so

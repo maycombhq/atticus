@@ -19,7 +19,11 @@ Usage:
           [--json]                     Print the result as JSON
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force] [--max-tokens n]
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept] [--max-tokens n]
-  atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus map) against its code: the claim on each cited line, the quote, references, secrets, coverage; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
+  atticus map <repo>                   Read a repo into facts in batches that fit your model, one hand-off at a time, each answer verified at once; for an assistant without file tools (ADR 0124; /atticus-map reads it in one session) [--mode m] [--max-tokens n] [--next] [--resume run] [--force] [--dir path] [--commit sha] [--json]
+          [--estimate]                 Say what the first read costs: the checkout, commit, facts file, source files, tokens, your assistant's tier and the batches at the limit
+          [--copy]                     Print the next batch's prompt to paste into a chat
+          [--answer <file>]            With --copy: read the pasted answer back from a file (- for stdin)
+  atticus verify <repo>                Check the facts your assistant wrote for a repo (/atticus-map) against its code: the claim on each cited line, the quote, references, secrets, coverage; raises the questions it wrote for a person; rejected facts go back to the assistant (ADR 0124) [--dir path] [--commit sha] [--routed a,b] [--json]
   atticus spec draft <repo>            Your assistant writes the repo's flows, one per trigger, each step cited and checked [--attempts 3] [--resume run] [--force] [--mode m] [--max-tokens n]
   atticus spec check <repo> [--json]   Check the repo's flows against the catalog, the template and the code; confirms steps on their cited lines
   atticus estate join [--json]         Join each repo's call-outs to the flows their targets start; writes specs/estate.yaml
@@ -46,7 +50,7 @@ Usage:
   atticus ask "<question>"             Answer a plain question from the catalog, showing the query it ran
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
-  atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant
+  atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, and the tier your assistant reads a repo at
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
   atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first)
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
@@ -238,7 +242,7 @@ Usage:
   atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean)
   atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
-  atticus <step> --handoff [--json]    On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, plan stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time, as a stage offers its critic lenses after each draft): print only the prompt, the result file and the commands that finish it
+  atticus <step> --handoff [--json]    On map, scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, plan stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time, as a stage offers its critic lenses after each draft): print only the prompt, the result file and the commands that finish it
   atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
   atticus workspace sync               Clone or update the base clone of every repo in the manifests
           [--repos a,b]                Only these repos

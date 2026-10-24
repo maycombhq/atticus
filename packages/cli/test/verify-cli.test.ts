@@ -1,4 +1,12 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -64,10 +72,47 @@ describe("atticus verify <repo> (ADR 0124)", () => {
     const root = adoptedRepo("");
     const o = io();
     expect(await verifyCommand(root, "other", {}, o.io)).toBe(2);
-    expect(o.err[0]).toMatch(/Run \/atticus map/);
+    expect(o.err[0]).toMatch(/Run \/atticus-map other/);
     writeFileSync(join(root, ".atticus", "facts", "bad.jsonl"), "{not json}\n");
     const p = io();
     expect(await verifyCommand(root, "bad", {}, p.io)).toBe(2);
     expect(p.err.join("\n")).toMatch(/line 1/);
+  });
+
+  it("raises the questions the reader wrote beside the facts, each evidence line checked (ADR 0078)", async () => {
+    const root = adoptedRepo(readFileSync(join(fixtures, "forge-ledger.facts.jsonl"), "utf8"));
+    const good = {
+      question: "Is notify.internal the production host of the notifier, or a test stand-in?",
+      options: [
+        { label: "Production", means: "it is the real host", changes: "the call goes to it" },
+        { label: "Stand-in", means: "a test double", changes: "the call is left unresolved" },
+      ],
+      evidence: ["src/main/java/forge/ledger/Notifier.java:9"],
+    };
+    const bad = { question: "Is this used?", evidence: ["src/Nowhere.java:3"] };
+    writeFileSync(
+      join(root, ".atticus", "facts", "forge-ledger.questions.jsonl"),
+      `${JSON.stringify(good)}\n${JSON.stringify(bad)}\n`,
+    );
+    const o = io();
+    const code = await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, o.io);
+    expect(code).toBe(1);
+    const questions = readdirSync(join(root, ".atticus", "questions"));
+    expect(questions).toHaveLength(1);
+    const q = parse(readFileSync(join(root, ".atticus", "questions", questions[0]!), "utf8"));
+    expect(q.question).toBe(good.question);
+    expect(q.askedBy.step).toBe("map");
+    expect(q.rerun).toBe("atticus map forge-ledger");
+    const rejected = readFileSync(
+      join(root, ".atticus", "facts", "forge-ledger.rejected.jsonl"),
+      "utf8",
+    );
+    expect(rejected).toContain('"code":"bad-question"');
+    expect(rejected).toContain("src/Nowhere.java:3 is no line of the repo");
+    expect(o.out.join("\n")).toMatch(/1 question raised for a person/);
+    // Asked again by the next verify: the same question, the same file.
+    const p = io();
+    await verifyCommand(root, "forge-ledger", { commit: "0123abc" }, p.io);
+    expect(readdirSync(join(root, ".atticus", "questions"))).toHaveLength(1);
   });
 });
