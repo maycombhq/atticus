@@ -1,9 +1,11 @@
-import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
+import { CHECKLISTS_README, STARTER_CHECKLISTS_README } from "@maycombhq/adopt";
+import { starterReviewText } from "@maycombhq/naysayer";
 import { doctorChecks } from "../src/doctor.js";
 import { upgradeCheck, upgradeCommand } from "../src/upgrade.js";
 
@@ -110,6 +112,7 @@ describe("atticus upgrade", () => {
       "flow-schema-v2",
       "change-types-v2",
       "questions-v2",
+      "starter-review",
     ]);
     expect(await readFile(join(root, "questions/q-0f1e2d3c4b5a.yaml"), "utf8")).toMatch(
       /^schemaVersion: 2$/m,
@@ -169,5 +172,109 @@ describe("atticus upgrade", () => {
     });
     // The installed CLI reports its own version (1.0.0-rc.1 here), older than 2.1.0.
     expect(doctor.find((c) => c.id === "upgrade")).toMatchObject({ status: "fail" });
+  });
+});
+
+describe("atticus upgrade and the starter review (ADR 0119)", () => {
+  /** An org's own checklist with deterministic rules only: no AI review of its own. */
+  const HOUSE = [
+    "# The Forge house rules",
+    "schemaVersion: 1",
+    "name: house",
+    "version: 1.0.0",
+    "rules:",
+    "  - id: house.hop-has-pattern",
+    "    title: Every hop names a pattern",
+    "    layer: org",
+    "    lens: architecture",
+    "    appliesTo: { artifacts: [interfaces] }",
+    "    severity: risk",
+    "    check: { type: deterministic, check: interface-has-pattern }",
+    "    waivable: false",
+    "    source: Forge architecture review",
+    "",
+  ].join("\n");
+
+  async function withoutReview(): Promise<string> {
+    const root = await oldMetarepo();
+    await rm(join(root, "org-pack/checklists"), { recursive: true, force: true });
+    await mkdir(join(root, "org-pack/checklists"), { recursive: true });
+    await writeFile(join(root, "org-pack/checklists/house.yaml"), HOUSE);
+    await writeFile(join(root, "org-pack/checklists/README.md"), CHECKLISTS_README);
+    return root;
+  }
+
+  it("adds the starter review once, beside the org's own checklist, which it leaves as it was", async () => {
+    const root = await withoutReview();
+    const c = await upgradeCheck(root, "1.0.0");
+    expect(c.pending.find((p) => p.id === "starter-review")?.files).toEqual([
+      "org-pack/checklists/README.md",
+      "org-pack/checklists/review.yaml",
+    ]);
+    const r = io();
+    expect(
+      await upgradeCommand(
+        root,
+        { by: "pat", now: new Date("2026-10-23T10:00:00Z") },
+        r.io,
+        "1.0.0",
+      ),
+    ).toBe(0);
+    expect(r.out.join("\n")).toMatch(/Done: The starter review/);
+    expect(await readFile(join(root, "org-pack/checklists/review.yaml"), "utf8")).toBe(
+      await starterReviewText(),
+    );
+    expect(await readFile(join(root, "org-pack/checklists/house.yaml"), "utf8")).toBe(HOUSE);
+    expect(await readFile(join(root, "org-pack/checklists/README.md"), "utf8")).toBe(
+      STARTER_CHECKLISTS_README,
+    );
+    // Backed up like every migration: the README as it was.
+    expect(
+      await readFile(
+        join(root, ".atticus/backups/20261023-100000/org-pack/checklists/README.md"),
+        "utf8",
+      ),
+    ).toBe(CHECKLISTS_README);
+    expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
+
+    // The org turns the starter review off: a later upgrade doesn't add it back.
+    await rm(join(root, "org-pack/checklists/review.yaml"));
+    expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
+    // Nor on another clone, without this machine's stamp: the README says it was there.
+    await rm(join(root, ".atticus/metarepo.yaml"));
+    expect((await upgradeCheck(root, "1.0.0")).pending.map((p) => p.id)).not.toContain(
+      "starter-review",
+    );
+  });
+
+  it("leaves a pack that already has an AI review, or a review.yaml of its own, alone", async () => {
+    // The Forge pack's architecture checklist has AI rules.
+    const forge = await oldMetarepo();
+    expect((await upgradeCheck(forge, "1.0.0")).pending.map((p) => p.id)).not.toContain(
+      "starter-review",
+    );
+    const own = await withoutReview();
+    const theirs = HOUSE.replace("name: house", "name: review");
+    await writeFile(join(own, "org-pack/checklists/review.yaml"), theirs);
+    expect((await upgradeCheck(own, "1.0.0")).pending.map((p) => p.id)).not.toContain(
+      "starter-review",
+    );
+    await upgradeCommand(own, { by: "pat" }, io().io, "1.0.0");
+    expect(await readFile(join(own, "org-pack/checklists/review.yaml"), "utf8")).toBe(theirs);
+  });
+
+  it("keeps an org's own README and still adds the starter review", async () => {
+    const root = await withoutReview();
+    await writeFile(join(root, "org-pack/checklists/README.md"), "# Our rules\n");
+    expect(
+      (await upgradeCheck(root, "1.0.0")).pending.find((p) => p.id === "starter-review")?.files,
+    ).toEqual(["org-pack/checklists/review.yaml"]);
+    await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0");
+    expect(await readFile(join(root, "org-pack/checklists/README.md"), "utf8")).toBe(
+      "# Our rules\n",
+    );
+    expect(await readFile(join(root, "org-pack/checklists/review.yaml"), "utf8")).toBe(
+      await starterReviewText(),
+    );
   });
 });

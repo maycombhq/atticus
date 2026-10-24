@@ -24,7 +24,7 @@ The lenses also didn't see the draft. The critic reads the change folder's artif
 - With Copilot, every draft that passes the rules is reviewed by a model before the next draft or the stage's PR. The loop is AI → deterministic → AI again.
 - Each lens is one more prompt per draft. With the default feature type and an org pack with AI rules at every lens, that is up to six. Each lens prompt carries the draft and the estate, so it is bigger than a critic lens's prompt on artifacts alone.
 - No contract changes: the C3 finding and the round meta keep their shapes (a lens's `artifacts` may now name a draft file), C5 is unchanged, and `stage/<stage>.yaml` gains an optional field (no version bump). The `--handoff --json` output gains an optional field.
-- Not built: a lens that judges a draft without an AI rule in the org pack (the built-in constitution has only deterministic rules, so a pack with no AI rule gets no lens review), and the IntelliJ plugin, which runs no hand-off loop of its own.
+- Not built: a lens that judges a draft without an AI rule in the org pack (the built-in constitution has only deterministic rules, so a pack with no AI rule gets no lens review; changed by ADR 0119: every new metarepo gets a starter review of AI rules), and the IntelliJ plugin, which runs no hand-off loop of its own.
 
 ## Addendum (2026-10-23): what an adversarial review found
 

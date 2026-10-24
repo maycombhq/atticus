@@ -62,6 +62,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - `atticus knowledge ask` meets "process" with "processes"; testgen no longer reads a `javascript-spa` repo as Java.
 - The evals score each replaced judgment against the rule it replaced, on `fixtures/judgments/` (the audit's failing examples among them).
 
+### A starter review every metarepo gets (ADR 0119)
+
+- `atticus init` and `atticus adopt` write `org-pack/checklists/review.yaml`: ten AI rules for the critic's business, architecture, story and delivery lenses, each a plain-words prompt that judges a draft's meaning against the estate and the brief and quotes the line it cites. Define: every outcome is placed; a flow the change alters isn't marked only read; a capability the brief assumes that nothing in the estate does is named as a gap. Design: every outcome has its target-flow steps; data a step returns or shows comes from somewhere; a new column has its classification and migration; each hop's pattern fits it. Plan: each outcome has a story; criteria are testable and name their data; requests are raised in time. With the default gates and change types, a new metarepo's drafts are now reviewed by a model, with Copilot too.
+- It is the organisation's configuration, not the constitution: change, waive, retire or delete its rules, or delete the file to turn it off. `init --from <pack>` doesn't add it.
+- `atticus upgrade` adds it once to a metarepo whose org pack has no AI review of its own, with the checklists README beside it, backed up first; it leaves a `review.yaml` or any checklist with an AI rule alone, and doesn't add it back once deleted.
+- In a stage's review, the change's brief now goes to every lens with the draft, so a lens whose rules read other artifacts (the story lens) still judges against the brief.
+
 ### What a live run with Copilot found (ADR 0111 addendum)
 
 - The fast path and the architecture stage check that every field a plan returns comes from somewhere, that a write stores what it sends, and that a read or write names its table under `store`; a column in other casing, a classification outside the org pack's levels and a misnamed Flyway migration are handed back.

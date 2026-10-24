@@ -706,6 +706,57 @@ describe("the stories stage", () => {
   });
 });
 
+describe("the starter review at each stage (ADR 0119)", () => {
+  it("the lenses review each draft with the starter rules, and the brief rides with every lens", async () => {
+    const root = await estateRoot();
+    await cp(
+      join(HERE, "../../naysayer/starter/review.yaml"),
+      join(root, "org-pack/checklists/review.yaml"),
+    );
+    let lenses: { lens: string; prompt: string }[] = [];
+    const rt = (drafts: string[]) => {
+      let n = 0;
+      return new MockRuntime(
+        (req: AiRequest) => {
+          if (req.agent.id.endsWith("-critic")) {
+            lenses.push({ lens: req.agent.id.replace(/-critic$/, ""), prompt: req.pack.prompt });
+            return "findings: []";
+          }
+          return drafts[Math.min(n++, drafts.length - 1)]!;
+        },
+        { now: () => NOW },
+      );
+    };
+    const brief = /id="brief\.md"/;
+
+    expect((await featureStage(root, CHANGE, { runtime: rt([PLACED]), now: NOW })).state).toBe(
+      "done",
+    );
+    expect(lenses.map((l) => l.lens)).toEqual(["business", "architecture"]);
+    expect(lenses[0]!.prompt).toContain("review.brief-outcomes-placed");
+    expect(lenses[1]!.prompt).toContain("review.assumed-capability-named");
+    for (const l of lenses) expect(l.prompt, l.lens).toMatch(brief);
+
+    lenses = [];
+    expect((await architectureStage(root, CHANGE, { runtime: rt([DELTAS]), now: NOW })).state).toBe(
+      "done",
+    );
+    expect(lenses.map((l) => l.lens)).toEqual(["business", "architecture"]);
+    expect(lenses[1]!.prompt).toContain("review.shown-data-has-a-source");
+
+    lenses = [];
+    expect((await storiesStage(root, CHANGE, { runtime: rt([STORIES]), now: NOW })).state).toBe(
+      "done",
+    );
+    expect(lenses.map((l) => l.lens)).toEqual(["business", "architecture", "story", "delivery"]);
+    const story = lenses.find((l) => l.lens === "story")!.prompt;
+    expect(story).toContain("review.outcome-has-story");
+    // The story lens's rules read the stories only; it judges them against the brief all the same.
+    expect(story).toMatch(brief);
+    expect(lenses.find((l) => l.lens === "delivery")!.prompt).toMatch(/id="needs\.yaml"/);
+  });
+});
+
 describe("readFigma", () => {
   it("reads screens, fields and actions from the bench's export", () => {
     const d = readFigma(
