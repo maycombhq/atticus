@@ -1,0 +1,5 @@
+# What the architecture stage's checks give drafts/wrong-order.yaml, as rule, target and whether
+# it blocks, in order: the migration before the code that needs it, then the callee before its
+# caller.
+- [delta.deploy-order, "deploy:V4__add_hold_id.sql>forge-orders", true]
+- [delta.deploy-order, "deploy:forge-stock>forge-orders", true]

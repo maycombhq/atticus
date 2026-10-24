@@ -1,0 +1,48 @@
+# The target flows once every check passes. forge-stock's reservation response returns a hold's
+# id in place of the reservation id, which breaks forge-orders (it calls POST /stock/reservations
+# in its spec flow), so the delta lists it. forge-orders widens quantity from INT to BIGINT,
+# which breaks forge-reports (it reads the orders table), so the write lists it. The deploy
+# order runs the migration before forge-orders, and forge-stock (the callee) before forge-orders
+# (its caller).
+flows:
+  - flow: forge-stock.reserve-stock
+    repo: forge-stock
+    change: modify
+    why: The reservation becomes a hold that ends.
+    consumers: [forge-orders]
+    steps:
+      - op: add
+        after: 1
+        kind: transform
+        what: The reservation is made a hold, with its id and when it ends
+        fields: { to: [holdId, expiresAt] }
+      - op: change
+        step: 2
+        kind: respond
+        what: 201 Created with the hold's id and when it ends
+        fields: { returns: [holdId, expiresAt] }
+        why: A hold replaces the reservation, so its id replaces the reservation id.
+  - flow: forge-orders.place-order
+    repo: forge-orders
+    change: modify
+    why: The order keeps the hold's id, and counts large quantities.
+    steps:
+      - op: change
+        step: 2
+        kind: call-out
+        what: The stock service holds the quantity and returns the hold's id
+        fields: { sends: [sku, quantity], returns: [holdId] }
+      - op: change
+        step: 4
+        kind: write
+        what: The order is inserted with the hold's id
+        store: { table: forge-orders-db.orders, columns: [sku, quantity, hold_id], types: { hold_id: VARCHAR(36), quantity: BIGINT }, classification: { hold_id: internal }, migration: V4__add_hold_id.sql, consumers: [forge-reports] }
+        fields: { sends: [sku, quantity, holdId], as: { holdId: hold_id } }
+deploy:
+  - repo: forge-orders
+    migration: V4__add_hold_id.sql
+    why: The orders table gains hold_id and quantity widens before any code writes them.
+  - repo: forge-stock
+    why: forge-orders calls the changed reservation, so forge-stock goes first.
+  - repo: forge-orders
+    why: It writes the hold's id once the column is there and the stock service holds.

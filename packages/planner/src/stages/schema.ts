@@ -205,9 +205,21 @@ export const DeltaStep = z.strictObject({
        * and additive, on the table's one definition: the flow delta stays at version 2.
        */
       keys: z.record(z.string(), StoreKey).optional(),
+      /**
+       * The components that read or write the table, from the map (ADR 0124 addendum B-arch):
+       * given when the step's change to the table breaks them (a column the table has gets
+       * another type, or the step is marked breaking). Optional and additive: version 2 stays.
+       */
+      consumers: z.array(Id).optional(),
     })
     .optional(),
   fields: DeltaFields.optional(),
+  /**
+   * The drafter says the step's change breaks who uses it today, where no field is dropped
+   * (ADR 0124 addendum B-arch): a field now required, or one whose meaning changes. On a step
+   * that stores into a table it is the table's change; on any other, the flow's entry's.
+   */
+  breaking: z.boolean().optional(),
   /** loop and retry: the steps it repeats, by their numbers in the target flow (ADR 0095). */
   repeats: z
     .strictObject({ from: z.number().int().positive(), to: z.number().int().positive() })
@@ -236,6 +248,12 @@ export const FlowDelta = z.strictObject({
     .strictObject({ kind: z.enum(FLOW_TRIGGER_KINDS), what: text(), entry: z.string().optional() })
     .optional(),
   why: text(),
+  /**
+   * The components (or systems) that call the flow's entry today, from the map (ADR 0124
+   * addendum B-arch): given when the change breaks what the entry reads or returns, or removes
+   * the flow. Optional and additive: the flow delta stays at version 2.
+   */
+  consumers: z.array(Id).optional(),
   steps: z.array(DeltaStep).default([]),
   /**
    * Written by Atticus, never the assistant (ADR 0111): the sha-256 of today's flow's steps (each
@@ -245,6 +263,19 @@ export const FlowDelta = z.strictObject({
   base: z.strictObject({ steps: z.string().regex(/^[0-9a-f]{64}$/) }).optional(),
 });
 export type FlowDelta = z.infer<typeof FlowDelta>;
+
+/**
+ * One step of a change's deploy order across its repos (ADR 0124 addendum B-arch), in the order
+ * they deploy: a repo's code, or, with `migration`, a migration (the file a target flow names
+ * under store.migration) run from that repo. Kept in stage/architecture-deploy.yaml.
+ */
+export const DeployStep = z.strictObject({
+  repo: Id,
+  migration: z.string().trim().min(1).optional(),
+  /** Why it sits where it does, in one plain sentence. */
+  why: z.string().optional(),
+});
+export type DeployStep = z.infer<typeof DeployStep>;
 
 // ------------------------------------------------------------------ stage/<stage>.yaml
 

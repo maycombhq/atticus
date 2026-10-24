@@ -1,0 +1,50 @@
+# Added to ../../specs/catalog.yaml, ../catalog-extra.yaml and ../pin-table/catalog.yaml (its
+# three Flyway migrations) for the architecture checks scenario (ADR 0124 addendum B-arch): who
+# uses what the change touches, as the map knows it. forge-web calls POST /orders (an Interface
+# record); forge-reports reads the orders table (the Table's readers, so this record replaces
+# the one in ../../specs/catalog.yaml). forge-orders calls POST /stock/reservations in its spec
+# flow (../specs/forge-orders/forge-orders.place-order.yaml, step 2). Invented, written by hand.
+- kind: Component
+  schemaVersion: 2
+  id: forge-web
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-web, path: src/app/orders/order.service.ts, line: 1 }]
+  system: forge
+  repo: forge-web
+  type: web
+- kind: Component
+  schemaVersion: 2
+  id: forge-reports
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-reports, path: src/reports/daily_orders.py, line: 1 }]
+  system: forge
+  repo: forge-reports
+  type: job
+- kind: Interface
+  schemaVersion: 2
+  id: if-446819711bae9430
+  status: current
+  confidence: verified
+  evidence:
+    - { source: code, repo: forge-web, path: src/app/orders/order.service.ts, line: 12 }
+  from: forge-web
+  to: forge-orders
+  endpoint: forge-orders.post-orders
+  via: direct
+  method: POST
+  normalizedPath: /orders
+  sync: sync
+- kind: Table
+  schemaVersion: 2
+  id: forge-orders-db.orders
+  status: current
+  confidence: verified
+  evidence: [{ source: code, repo: forge-orders, path: src/main/resources/schema.sql, line: 1 }]
+  dataStore: forge-orders-db
+  name: orders
+  tableKind: table
+  ownerComponent: forge-orders
+  readers: [forge-reports]
+  writers: [forge-orders]

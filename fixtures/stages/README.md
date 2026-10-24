@@ -37,4 +37,14 @@ two classifications left to a person; `sends-extra.yaml` and `sends-extra-no-ret
 a field sent and never stored; and `answered.yaml`, which is right. `expected/live-findings.yaml`
 holds the findings the checks give `live.yaml`. The tests copy it in themselves.
 
+`hold-stock/` is the architecture checks scenario (ADR 0124 addendum B-arch): the change
+`hold-stock` ("hold stock instead of reserving it"), placed on both repos' flows.
+`catalog.yaml` adds who uses what it touches: forge-web calls POST /orders (an Interface) and
+forge-reports reads the orders table (the Table's readers). `drafts/` holds the architecture
+answers: `no-consumers.yaml`, whose two breaking changes (the reservation response drops
+reservationId; quantity widens from INT to BIGINT) list no consumers and which gives no deploy
+order; `wrong-order.yaml`, which deploys forge-orders before its migration and before
+forge-stock; and `clean.yaml`, which is right. `expected/` holds the findings of the first two
+and the sections design.md gains from the third. The tests copy it in themselves.
+
 Everything here is invented.
