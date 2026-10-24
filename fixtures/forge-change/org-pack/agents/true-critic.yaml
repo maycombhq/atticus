@@ -1,0 +1,11 @@
+# Contract C5 agent definition (fixture). The critic's true lens (ADR 0124 addendum, Part 4): is the
+# change true to the code? Run in a fresh session.
+schemaVersion: 1
+id: true-critic
+role: architect
+description: Reviews the design, interfaces and data changes against how the code and the estate behave.
+inputs: [brief, proposal, specs, interfaces, mappings, data, design, catalog-slice, patterns, checklist]
+outputArtifact: findings
+checklist: forge-architecture
+tokenBudget: 80000
+allowedRuntimes: [hand-off, mock, replay]

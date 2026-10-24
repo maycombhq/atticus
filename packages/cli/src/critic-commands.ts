@@ -17,7 +17,7 @@ import {
   statePhase,
 } from "@maycombhq/changes";
 import { parse } from "yaml";
-import { Lens, runsDirOf, runsRelOf } from "@maycombhq/core";
+import { CriticQuestion, LEGACY_LENSES, Lens, runsDirOf, runsRelOf } from "@maycombhq/core";
 import {
   CriticError,
   act,
@@ -158,7 +158,9 @@ export async function critic(
   }
   if (o.resume) return resumeLenses(root, changeId, o, io, deps);
   if (o.lens && !Lens.safeParse(o.lens).success) {
-    io.err(`Unknown lens ${o.lens}. Use one of: ${Lens.options.join(", ")}.`);
+    io.err(
+      `Unknown lens ${o.lens}. Use one of: ${CriticQuestion.options.join(", ")} (an old lens name, ${LEGACY_LENSES.join(", ")}, asks the question that took it over).`,
+    );
     return 2;
   }
   // W4: a stage that stopped on its own draft hasn't a draft worth reviewing; the critic's

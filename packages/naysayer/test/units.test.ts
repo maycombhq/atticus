@@ -11,7 +11,7 @@ import {
   parseDoc,
   runCritic,
 } from "../src/index.js";
-import { CHANGE, NOW, forgeChangeRoot } from "./helpers.js";
+import { CHANGE, NOW, forgeChangeRoot, keepUxStatesRule } from "./helpers.js";
 
 describe("patches", () => {
   const text = "a\nb\nc\nd\n";
@@ -144,11 +144,12 @@ describe("AI lens output", () => {
     why: Nothing is shown while the limit loads.
     evidence: [{ path: ux.md, line: 1, quote: "under the amount field" }]
 `;
+    await keepUxStatesRule(root);
     const rt = new MockRuntime(
       (req) =>
-        req.agent.id === "ux-critic"
+        req.agent.id === "complete-critic"
           ? ux
-          : req.agent.id === "story-critic"
+          : req.agent.id === "ship-critic"
             ? "{{ not yaml"
             : "findings: []",
       { now: () => new Date(NOW) },
@@ -156,12 +157,13 @@ describe("AI lens output", () => {
     const r = await runCritic(root, CHANGE, { now: NOW, runtime: rt });
     const reasons = r.discarded.map((d) => d.reason);
     expect(reasons).toEqual([
-      expect.stringMatching(/^the output is not YAML/),
+      // design-concurrency-handled asks the safe question, not the complete lens's.
       "it names rule design-concurrency-handled, which this lens wasn't asked to apply",
       "it is about design.md, which this lens wasn't given",
       "none of its evidence is in the files it was given",
       "a knowledge gap without an owner question",
       "its question was cut at a comma (the text needs quotes, or block style: question: then text: on the next lines)",
+      expect.stringMatching(/^the output is not YAML/),
     ]);
     const kept = r.findings.filter((f) => f.layer === "ai");
     expect(kept).toHaveLength(1);
@@ -190,9 +192,11 @@ describe("AI lens output", () => {
 `;
     const ux = `findings:
 ${finding("{ path: ux.md, line: 3 }")}${finding('{ path: ux.md, line: 3, quote: "amount" }')}${finding('{ path: ux.md, line: 1, quote: "The transfer screen shows" }')}`;
-    const rt = new MockRuntime((req) => (req.agent.id === "ux-critic" ? ux : "findings: []"), {
-      now: () => new Date(NOW),
-    });
+    await keepUxStatesRule(root);
+    const rt = new MockRuntime(
+      (req) => (req.agent.id === "complete-critic" ? ux : "findings: []"),
+      { now: () => new Date(NOW) },
+    );
     const r = await runCritic(root, CHANGE, { now: NOW, runtime: rt });
     expect(r.discarded.map((d) => d.reason)).toEqual([
       "its evidence quotes nothing: each entry needs the exact words (at least 12 characters) on the line it cites",
@@ -208,7 +212,8 @@ ${finding("{ path: ux.md, line: 3 }")}${finding('{ path: ux.md, line: 3, quote: 
     const root = await forgeChangeRoot();
     const r = await runCritic(root, CHANGE, { now: NOW, runtime: new ReplayRuntime([]) });
     const failed = r.lenses.filter((l) => l.state === "failed");
-    expect(failed.length).toBe(5);
+    // One lens per question the gate's AI rules ask: complete, safe and ship.
+    expect(failed.map((l) => l.lens)).toEqual(["complete", "safe", "ship"]);
     for (const l of failed)
       expect(l.reason).toMatch(
         new RegExp(`no recording for agent ${l.agent} with prompt ${l.promptSha256}`),

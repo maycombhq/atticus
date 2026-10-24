@@ -300,7 +300,7 @@ describe("rule layering", () => {
     });
     expect(loosenings(base, next)).toEqual([
       "it stops requiring evidence",
-      "it moves the rule from the architecture lens to delivery",
+      "it moves the rule from the complete question to ship",
       "it no longer looks at design",
       "it applies to fewer change types",
       "it swaps a deterministic check for a ai one",

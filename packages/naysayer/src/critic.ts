@@ -2,21 +2,25 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
 import {
+  CriticQuestion,
   fileJudgments,
   judgmentKey,
-  Lens,
   runsDirOf,
   toCanonicalYaml,
   type JudgmentStore,
 } from "@maycombhq/core";
 import {
+  BREAKING_SPEC,
   PERSONAL_DATA_SPEC,
   settle,
   type AiRuntime,
+  type Judged,
   type QuarantineItem,
   type SourceInput,
 } from "@maycombhq/ai";
 import { personalItems } from "./checks/data.js";
+import { breakingItems } from "./checks/questions.js";
+import { questionsOf, questionOfRule } from "./questions.js";
 import { writeQuarantineItems } from "./defences.js";
 import { runLenses, type Discarded, type LensName, type LensRun } from "./ai.js";
 import { parseDoc, type Doc } from "./doc.js";
@@ -50,7 +54,11 @@ export { CONSTITUTION_FILE_LABEL, type CriticFinding } from "./round.js";
 export interface RunCriticOptions {
   /** Gate id from gates.yaml. Default: the gate of the change's current phase. */
   gate?: string;
-  /** Lenses whose findings are written. Layer 1 always runs whole, to decide what reaches layer 2. */
+  /**
+   * The questions whose findings are written (ADR 0124 addendum, Part 4), by question or by an
+   * old lens's name (read as the question it maps to). Layer 1 always runs whole, to decide what
+   * reaches layer 2.
+   */
   lenses?: LensName[];
   /**
    * The AI runtime for layer 2 (mock or replay in tests), and for the judgments the checks read
@@ -162,18 +170,25 @@ export async function runCritic(
     { lifecycle, change, type, gate },
     now,
     opts.teamPacks ?? [],
+    opts.checks ?? [],
   );
 
   // The judgments of meaning the checks read (ADR 0117 addendum), settled before they run: a fact
   // that settles one, a judgment on file, and the judge where the runtime calls a model.
-  const personal = await settle(PERSONAL_DATA_SPEC, personalItems(ctx), {
+  const judging = {
     runtime: opts.runtime,
     store: opts.judgments ?? fileJudgments(root),
     change: change.id,
     now: new Date(now),
-  });
-  ctx.judged = (kind, inputs) =>
-    kind === PERSONAL_DATA_SPEC.kind ? personal.get(judgmentKey(kind, inputs))?.verdict : undefined;
+  };
+  const settled = new Map<string, Map<string, Judged>>([
+    [PERSONAL_DATA_SPEC.kind, await settle(PERSONAL_DATA_SPEC, personalItems(ctx), judging)],
+  ]);
+  // Whether a changed operation breaks its other consumers (the safe question's check).
+  const breaking = breakingItems(ctx);
+  if (breaking.length)
+    settled.set(BREAKING_SPEC.kind, await settle(BREAKING_SPEC, breaking, judging));
+  ctx.judged = (kind, inputs) => settled.get(kind)?.get(judgmentKey(kind, inputs))?.verdict;
 
   // Layer 1: deterministic checks and needs, all lenses (it decides what reaches layer 2).
   const registry = checkRegistry(opts.checks);
@@ -241,7 +256,8 @@ export async function runCritic(
   );
 
   // Layer 2: AI lenses, only on artifacts that passed layer 1.
-  const lenses = opts.lenses ?? [...Lens.options];
+  // One lens per question (ADR 0124 addendum, Part 4); an old lens's name asks its question.
+  const lenses = opts.lenses ? questionsOf(opts.lenses) : [...CriticQuestion.options];
   const quarantined: QuarantineItem[] = [];
   const draft = opts.review
     ? await draftDocs(changeFolder(root, change.id), opts.review.files)
@@ -271,7 +287,7 @@ export async function runCritic(
   ran.push(...ai.runs.filter((r) => r.state === "ran").flatMap((r) => r.rules));
 
   const all = mergeHits([...merged1, ...ai.hits], ctx.systemOf).filter((h) =>
-    lenses.includes(h.rule.lens),
+    lenses.includes(questionOfRule(h.rule)),
   );
 
   const findings = await writeHits(root, all, {

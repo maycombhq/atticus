@@ -7,15 +7,21 @@
 # make a blocking rule not waivable, retire a rule (status: retired) or delete it, and add your own.
 # A rule runs from the first gate where its artifacts are due (brief: define; design, data and
 # interfaces: design; stories and tasks: plan), and again at each later gate. Contract C3.
+#
+# Each rule asks part of one of the critic's four questions (ADR 0124 addendum, Part 4): is it true
+# to the code, is it complete, is it safe to build, can it ship. `question` says which, and that
+# question's lens applies it; `lens` names the role lens it was written for, which decides the
+# change types it applies to (a type lists the lenses it uses).
 schemaVersion: 1
 name: review
 version: 1.0.0
-description: The starter review. AI rules for the business, architecture, story and delivery lenses, from the define gate to the plan gate.
+description: The starter review. AI rules for the critic's true, complete, safe and ship lenses, from the define gate to the plan gate.
 rules:
   # ---- define: the feature placement, against the brief and the estate
   - id: review.brief-outcomes-placed
     title: Every outcome the brief states is placed
     lens: business
+    question: complete
     layer: org
     appliesTo: { artifacts: [brief] }
     severity: blocking
@@ -33,6 +39,7 @@ rules:
   - id: review.changed-flow-not-read
     title: A flow the change alters isn't marked only read
     lens: architecture
+    question: "true"
     layer: org
     appliesTo: { artifacts: [brief] }
     severity: blocking
@@ -50,6 +57,7 @@ rules:
   - id: review.assumed-capability-named
     title: A capability the brief assumes but nothing in the estate does is named as a gap
     lens: architecture
+    question: "true"
     layer: org
     appliesTo: { artifacts: [brief] }
     severity: blocking
@@ -69,6 +77,7 @@ rules:
   - id: review.outcome-has-target-steps
     title: Every outcome has the target-flow steps that deliver it
     lens: architecture
+    question: complete
     layer: org
     appliesTo: { artifacts: [design] }
     severity: blocking
@@ -86,6 +95,7 @@ rules:
   - id: review.shown-data-has-a-source
     title: Data a step returns or shows comes from somewhere
     lens: architecture
+    question: "true"
     layer: org
     appliesTo: { artifacts: [design, data] }
     severity: blocking
@@ -103,6 +113,7 @@ rules:
   - id: review.new-column-complete
     title: A new column has its classification and its migration
     lens: architecture
+    question: safe
     layer: org
     appliesTo: { artifacts: [data, design] }
     severity: blocking
@@ -120,6 +131,7 @@ rules:
   - id: review.hop-pattern-fits
     title: Each integration hop follows an approved pattern that fits it
     lens: architecture
+    question: safe
     layer: org
     appliesTo: { artifacts: [interfaces, design] }
     severity: risk
@@ -139,6 +151,7 @@ rules:
   - id: review.outcome-has-story
     title: Each outcome has a story
     lens: story
+    question: complete
     layer: org
     appliesTo: { artifacts: [stories] }
     severity: blocking
@@ -154,6 +167,7 @@ rules:
   - id: review.criteria-testable
     title: Each story's criteria are testable and name the data they check
     lens: story
+    question: complete
     layer: org
     appliesTo: { artifacts: [stories] }
     severity: risk
@@ -171,6 +185,7 @@ rules:
   - id: review.requests-raised-in-time
     title: Requests and approvals are raised before the phase that needs them
     lens: delivery
+    question: ship
     layer: org
     appliesTo: { artifacts: [tasks] }
     severity: risk

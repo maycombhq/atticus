@@ -8,6 +8,7 @@ const GIVEN_WHEN_THEN = /\bgiven\b[\s\S]*\bwhen\b[\s\S]*\bthen\b/i;
 
 export const storyHasAcceptanceCriteria: DeterministicCheckDef = {
   id: "story-has-acceptance-criteria",
+  question: "complete",
   description:
     "Every story file has acceptance criteria in Given/When/Then form, and every story in the index has a file.",
   params: z.strictObject({}),
@@ -75,6 +76,7 @@ export const storyHasAcceptanceCriteria: DeterministicCheckDef = {
 
 export const specScenariosPresent: DeterministicCheckDef = {
   id: "spec-scenarios-present",
+  question: "complete",
   description: "Every requirement in the delta specs has at least one scenario with WHEN and THEN.",
   params: z.strictObject({}),
   run(ctx) {
@@ -109,6 +111,7 @@ export const specScenariosPresent: DeterministicCheckDef = {
 
 export const mappingsCoverInterfaces: DeterministicCheckDef = {
   id: "mappings-cover-interfaces",
+  question: "complete",
   description:
     "Every new or modified hop in interfaces.md has a section in mappings.md (or says no mapping change).",
   params: z.strictObject({}),
@@ -151,6 +154,7 @@ export const mappingsCoverInterfaces: DeterministicCheckDef = {
 
 export const tasksCoverStories: DeterministicCheckDef = {
   id: "tasks-cover-stories",
+  question: "complete",
   description:
     "Every story has a task, in every repo it lists, and every task names a known story.",
   params: z.strictObject({}),
@@ -232,6 +236,7 @@ const aimedAtAi = (s: DefenceSignal) =>
 
 export const noEmbeddedInstructions: DeterministicCheckDef = {
   id: "no-embedded-instructions",
+  question: "safe",
   description:
     "Artifacts hold no text that tries to instruct an AI agent or reviewer (comments included).",
   params: z.strictObject({ phrases: z.array(z.string()).optional() }),

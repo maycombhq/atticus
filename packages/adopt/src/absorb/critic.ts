@@ -1,5 +1,5 @@
 import { parse, stringify } from "yaml";
-import { ChecklistPack, ChecklistRule, type Lens } from "@maycombhq/core";
+import { ChecklistPack, ChecklistRule, type LegacyLens } from "@maycombhq/core";
 import { BUILT_IN_CHECKS } from "@maycombhq/naysayer";
 import type { z } from "zod";
 import { slug } from "../files.js";
@@ -29,7 +29,7 @@ type Artifact = RuleInput["appliesTo"]["artifacts"][number];
 interface Mapping {
   re: RegExp;
   check: string;
-  lens: Lens;
+  lens: LegacyLens;
   artifacts: Artifact[];
   params?: (text: string) => Record<string, unknown>;
 }
@@ -157,7 +157,7 @@ const ALL_MAPPINGS: Mapping[] = [
 const MAPPINGS = ALL_MAPPINGS.filter((m) => known.has(m.check));
 
 /** Lens guess for an item no built-in check covers, from its words and its section. */
-function lensOf(t: string): Lens {
+function lensOf(t: string): LegacyLens {
   if (/\b(tests?|coverage|lint|dependency|library|libraries|code)\b/i.test(t))
     return "code-and-test";
   if (/\b(story|stories|sprint|acceptance|persona|user journey)\b/i.test(t)) return "story";
@@ -169,7 +169,8 @@ function lensOf(t: string): Lens {
   return "architecture";
 }
 
-const ARTIFACTS_BY_LENS: Record<Lens, Artifact[]> = {
+// Rules it writes name the old role lens their words fit; the critic reads each as its question.
+const ARTIFACTS_BY_LENS: Record<LegacyLens, Artifact[]> = {
   business: ["brief", "proposal"],
   architecture: ["design", "interfaces"],
   story: ["stories"],

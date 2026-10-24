@@ -77,13 +77,8 @@ describe("the critic in hand-off mode", () => {
     const root = await forgeChangeRoot();
     const r = await runCritic(root, CHANGE, { now: NOW, runtime: handoff(root) });
     const runs = lensRuns(r);
-    expect(runs.map((l) => l.lens)).toEqual([
-      "business",
-      "architecture",
-      "story",
-      "ux",
-      "delivery",
-    ]);
+    // One lens per question the plan gate's AI rules ask (ADR 0124 addendum, Part 4).
+    expect(runs.map((l) => l.lens)).toEqual(["complete", "safe", "ship"]);
     for (const l of runs) {
       expect(l.state, l.lens).toBe("waiting");
       expect(l.runId).toMatch(/^run-\d+-\d+$/);
@@ -105,7 +100,7 @@ describe("the critic in hand-off mode", () => {
     expect(r.status.mayProceed).toBe(false);
     expect(r.status.waiting.map((w) => w.lens)).toEqual(runs.map((l) => l.lens));
     expect(r.status.reasons.join("\n")).toContain(
-      `The business lens is still with your assistant: run atticus handoff done ${runs[0]!.runId}.`,
+      `The complete lens is still with your assistant: run atticus handoff done ${runs[0]!.runId}.`,
     );
 
     // The round on disk says the same, and lists the runs.
@@ -122,9 +117,9 @@ describe("the critic in hand-off mode", () => {
     );
     // The answer goes to a file in the run's own folder: nothing stale from an earlier round can
     // be taken for this round's answer, and the change folder keeps only the round.
-    expect(prompt).toContain("# business-critic: write findings-business.yaml for change");
+    expect(prompt).toContain("# complete-critic: write findings-complete.yaml for change");
     expect(prompt).toContain(
-      `Write the result to .runs/${CHANGE}/${runs[0]!.runId}/findings-business.yaml.`,
+      `Write the result to .runs/${CHANGE}/${runs[0]!.runId}/findings-complete.yaml.`,
     );
   });
 
@@ -181,7 +176,7 @@ describe("the critic in hand-off mode", () => {
     expect(await waitingLenses(root, CHANGE, "plan")).toEqual([]);
     // A run summary for each lens, finished.
     const summary = parse(
-      await readFile(join(changeDir(root), "review/plan/1/meta/runs/business-critic.yaml"), "utf8"),
+      await readFile(join(changeDir(root), "review/plan/1/meta/runs/complete-critic.yaml"), "utf8"),
     ) as { state: string; runtime: string };
     expect(summary).toMatchObject({ state: "validated", runtime: "hand-off" });
     // And a second critic run is round 2, as always.
@@ -192,7 +187,7 @@ describe("the critic in hand-off mode", () => {
     const root = await forgeChangeRoot();
     const rt = handoff(root);
     const r = await runCritic(root, CHANGE, { now: NOW, runtime: rt });
-    const l = lensRuns(r).find((x) => x.lens === "architecture")!;
+    const l = lensRuns(r).find((x) => x.lens === "safe")!;
     const rule = l.rules[0]!;
     const artifact = l.artifacts[0]!;
     const text = [
@@ -212,12 +207,8 @@ describe("the critic in hand-off mode", () => {
       "it is about nowhere.md, which this lens wasn't given",
     ]);
     const meta = await roundMeta(root);
-    expect(meta.discarded.map((d) => d.lens)).toEqual([
-      "architecture",
-      "architecture",
-      "architecture",
-    ]);
-    expect(meta.lenses.find((x) => x.lens === "architecture")!.state).toBe("ran");
+    expect(meta.discarded.map((d) => d.lens)).toEqual(["safe", "safe", "safe"]);
+    expect(meta.lenses.find((x) => x.lens === "safe")!.state).toBe("ran");
     expect(meta.findings.filter((f) => f.layer === "ai")).toEqual([]);
   });
 
@@ -261,7 +252,7 @@ describe("the critic in hand-off mode", () => {
     expect(c.lens).toMatchObject({
       lens: first!.lens,
       state: "failed",
-      reason: "findings-business.yaml was not written",
+      reason: "findings-complete.yaml was not written",
     });
     expect(c.findings).toEqual([]);
     expect(c.waiting.length).toBe(lensRuns(r).length - 1);
@@ -359,7 +350,7 @@ describe("the critic in hand-off mode", () => {
     const run = await answer(root, rt, l);
     await completeLensRun(root, run, { now: LATER });
     await expect(completeLensRun(root, run, { now: LATER })).rejects.toThrow(
-      /The business lens of round 1 at the plan gate has already been read in/,
+      /The complete lens of round 1 at the plan gate has already been read in/,
     );
     const other = { ...run, runId: "run-20261020090000-0099" };
     await expect(completeLensRun(root, other, { now: LATER })).rejects.toBeInstanceOf(CriticError);

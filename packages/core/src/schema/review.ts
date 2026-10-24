@@ -9,8 +9,20 @@ import { RECORD_KINDS, RECORD_SCHEMAS, type RecordKind } from "./kinds.js";
  */
 export const REVIEW_SCHEMA_VERSION = 1 as const;
 
-/** The seven critic lenses. On screen the critic is always called "Critic". */
-export const Lens = z.enum([
+/**
+ * The four questions the critic asks of every draft (ADR 0124 addendum, Part 4): is it true to
+ * the code, is it complete, is it safe to build, can it ship. Each is answered by code first (the
+ * deterministic checks) and then by one AI lens in a fresh session. On screen the critic is
+ * always called "Critic".
+ */
+export const CriticQuestion = z.enum(["true", "complete", "safe", "ship"]);
+export type CriticQuestion = z.infer<typeof CriticQuestion>;
+
+/**
+ * The seven role lenses the critic ran before the four questions (ADR 0034). Still read, so an
+ * org pack written for them keeps working: each maps to the question that took it over.
+ */
+export const LEGACY_LENSES = [
   "business",
   "architecture",
   "story",
@@ -18,8 +30,47 @@ export const Lens = z.enum([
   "delivery",
   "code-and-test",
   "release",
-]);
+] as const;
+export type LegacyLens = (typeof LEGACY_LENSES)[number];
+
+/**
+ * A rule's lens: one of the four questions, or one of the seven old role lenses (read as the
+ * question it maps to). C3, widened additively; no schema version bump.
+ */
+export const Lens = z.enum([...CriticQuestion.options, ...LEGACY_LENSES]);
 export type Lens = z.infer<typeof Lens>;
+
+/** The question an old lens's rules now answer, by what the lens looked for. */
+const LEGACY_QUESTION: Record<LegacyLens, CriticQuestion> = {
+  business: "complete",
+  architecture: "true",
+  story: "complete",
+  ux: "complete",
+  delivery: "ship",
+  "code-and-test": "complete",
+  release: "ship",
+};
+
+/** The architecture lens reviewed security and privacy as well as the design against the code. */
+const LEGACY_COVERS: Partial<Record<LegacyLens, CriticQuestion[]>> = {
+  architecture: ["true", "safe"],
+};
+
+export const isCriticQuestion = (l: string): l is CriticQuestion =>
+  (CriticQuestion.options as readonly string[]).includes(l);
+
+/** The question a lens asks: itself for a question, the question that took over an old lens. */
+export function questionOfLens(l: Lens): CriticQuestion {
+  return isCriticQuestion(l) ? l : LEGACY_QUESTION[l];
+}
+
+/**
+ * The questions a lens covers when a change type lists it: a question covers itself; an old
+ * lens covers what it used to review (the architecture lens also reviewed what is now safe).
+ */
+export function lensCovers(l: Lens): CriticQuestion[] {
+  return isCriticQuestion(l) ? [l] : (LEGACY_COVERS[l] ?? [LEGACY_QUESTION[l]]);
+}
 
 /** Where a rule comes from. Constitution rules can never be waived. */
 export const Layer = z.enum(["constitution", "org", "team"]);
@@ -100,6 +151,12 @@ export const ChecklistRule = z
     description: z.string().optional(),
     layer: Layer,
     lens: Lens,
+    /**
+     * Which of the four questions the rule answers (ADR 0124 addendum, Part 4). Optional (C3,
+     * additive): left out, a question lens answers itself, a deterministic check's own question
+     * applies, and an old lens maps to the question that took it over.
+     */
+    question: CriticQuestion.optional(),
     appliesTo: z.strictObject({
       artifacts: z.array(ReviewArtifact).min(1),
       /** Change types from change-types.yaml; empty means all. */
@@ -131,6 +188,12 @@ export const ChecklistRule = z
         code: "custom",
         path: ["tightens"],
         message: "use extends or tightens, not both",
+      });
+    if (r.question && isCriticQuestion(r.lens) && r.question !== r.lens)
+      ctx.addIssue({
+        code: "custom",
+        path: ["question"],
+        message: `lens ${r.lens} already names the question; question ${r.question} contradicts it`,
       });
     if (r.waivable && r.severity !== "blocking") {
       ctx.addIssue({

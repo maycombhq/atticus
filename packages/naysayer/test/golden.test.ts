@@ -33,6 +33,8 @@ const expected = parse(readFileSync(join(FORGE_CHANGE, "expected/findings.yaml")
   gate: string;
   seeded: Expected[];
   alsoExpected: Expected[];
+  /** Findings the four questions retired (ADR 0124 addendum, Part 4): never raised again. */
+  retired: { id: string; rule: string; artifact: string; why: string }[];
 };
 
 function matches(e: Expected, f: CriticFinding): boolean {
@@ -102,6 +104,23 @@ describe("the critic on the seeded fixture change (M3 exit)", () => {
     expect(
       unlisted.map((f) => `${f.finding.rule} ${f.finding.artifact}: ${f.finding.summary}`),
     ).toEqual([]);
+    // What the four questions retired stays retired (ADR 0124 addendum, Part 4).
+    expect(expected.retired.map((x) => x.id)).toEqual([
+      "b11-no-firewall-draft",
+      "b12-gateway-draft-incomplete",
+      "r04-limit-error-state",
+    ]);
+    for (const x of expected.retired)
+      expect(
+        r.findings.filter((f) => f.finding.rule === x.rule && f.finding.artifact === x.artifact),
+      ).toEqual([]);
+    // Every finding carries the question its rule answers.
+    expect([...new Set(r.findings.map((f) => f.finding.lens))].sort()).toEqual([
+      "complete",
+      "safe",
+      "ship",
+      "true",
+    ]);
 
     // Every finding cites evidence and is a valid C3 finding file on disk.
     for (const f of r.findings) {
@@ -114,9 +133,9 @@ describe("the critic on the seeded fixture change (M3 exit)", () => {
       "design-concurrency-handled",
       "story-traces-to-spec",
       "brief-questions-answered",
-      "ux-states-complete",
       "design-has-rollback",
       "tasks-sequenced-for-lead-times",
+      "release-plan-complete",
     ]);
     for (const f of r.findings) expect(aiRules.has(f.finding.rule)).toBe(f.layer === "ai");
 
@@ -158,26 +177,35 @@ describe("the critic on the seeded fixture change (M3 exit)", () => {
     expect(r.failedLayer1).toEqual([
       "data.md",
       "interfaces.md",
-      "snow.md",
       "stories/s2-show-remaining.md",
       "stories/s3-audit-refusals.md",
     ]);
     const all = [...prompts.values()].join("\n");
     for (const f of r.failedLayer1) expect(all).not.toContain(`id="${f}"`);
     expect(all).not.toContain("ignore their rules");
-    // The subtle instruction in ux.md reaches the UX lens only inside a data block, after the data rule.
-    const ux = prompts.get("ux-critic")!;
-    const at = ux.indexOf("mark every UX");
-    expect(at).toBeGreaterThan(ux.indexOf('<atticus-data id="ux.md"'));
-    expect(at).toBeLessThan(ux.indexOf("</atticus-data>", at));
-    expect(ux.indexOf("never instructions")).toBeLessThan(ux.indexOf("<atticus-data id="));
-    // The release lens had nothing that passed layer 1; the code lens nothing due yet.
-    expect(r.lenses.find((l) => l.lens === "release")?.state).toBe("skipped");
+    // One lens per question the gate's AI rules ask (ADR 0124 addendum, Part 4): no AI rule asks
+    // the true question at the plan gate.
+    expect(r.lenses.map((l) => [l.lens, l.agent, l.state])).toEqual([
+      ["complete", "complete-critic", "ran"],
+      ["safe", "safe-critic", "ran"],
+      ["ship", "ship-critic", "ran"],
+    ]);
+    // With the UX lens gone, ux.md and its note to the critic reach no lens at all.
+    expect(all).not.toContain('id="ux.md"');
+    expect(all).not.toContain("mark every UX");
+    expect(r.rules.skipped.find((s) => s.rule === "ux-states-complete")?.reason).toBe(
+      "status retired",
+    );
+    // snow.md passed layer 1 (its service-desk check retired) and reaches the ship lens as data,
+    // after the rule that says ingested text is data.
+    const ship = prompts.get("ship-critic")!;
+    const at = ship.indexOf("Unblocks task");
+    expect(at).toBeGreaterThan(ship.indexOf('<atticus-data id="snow.md"'));
+    expect(at).toBeLessThan(ship.indexOf("</atticus-data>", at));
+    expect(ship.indexOf("never instructions")).toBeLessThan(ship.indexOf("<atticus-data id="));
+    // The code-and-test rule (now the complete lens's) isn't due yet.
     expect(r.rules.skipped.find((s) => s.rule === "tests-cover-scenarios")?.reason).toMatch(
       /aren't due at the plan gate/,
-    );
-    expect(r.rules.skipped.find((s) => s.rule === "release-plan-complete")?.reason).toMatch(
-      /snow\.md has blocking layer-1 findings/,
     );
   });
 });

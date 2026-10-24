@@ -4,6 +4,7 @@ import {
   API_VERSION,
   fastPathOf,
   Lens,
+  questionOfLens,
   RECORD_KINDS,
   SCHEMA_VERSION,
   Severity,
@@ -324,7 +325,8 @@ export function apiRoutes(r: Router, ctx: Context): Router {
           if (
             (!gate || f.gate === gate) &&
             (!state || f.state === state) &&
-            (!lens || f.lens === lens) &&
+            // A lens filter asks its question: an old lens name finds what its question raised.
+            (!lens || questionOfLens(f.lens) === questionOfLens(lens)) &&
             (!severity || f.severity === severity)
           )
             body.push(f);

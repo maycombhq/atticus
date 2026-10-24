@@ -1,4 +1,4 @@
-import type { FindingEvidence, FindingLocator } from "@maycombhq/core";
+import type { CriticQuestion, FindingEvidence, FindingLocator } from "@maycombhq/core";
 import { z } from "zod";
 import type { FoundAt } from "./code.js";
 import type { CriticContext } from "./context.js";
@@ -48,6 +48,12 @@ export interface CheckResult {
 export interface DeterministicCheckDef {
   id: string;
   description: string;
+  /**
+   * Which of the critic's four questions the check answers (ADR 0124 addendum, Part 4): a rule
+   * that names the check and says no question of its own answers this one. Optional for plugin
+   * checks (C4, additive); every built-in check names one.
+   */
+  question?: CriticQuestion;
   params: z.ZodType<Record<string, unknown>>;
   run(ctx: CriticContext, params: Record<string, unknown>, rule: EffectiveRule): CheckResult;
 }

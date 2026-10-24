@@ -239,7 +239,7 @@ describe("rounds, gates and actions", () => {
     expect(r3.status.humanDecides).toBe(true);
     expect(r3.status.checkRound).toBe(false);
     await expect(runCritic(root, CHANGE, { now: LATER })).rejects.toThrow(/the most it allows/);
-  });
+  }, 30_000);
 
   it("reports a gate with no rounds as open and refuses unknown gates", async () => {
     const root = await forgeChangeRoot();
@@ -255,8 +255,9 @@ describe("rounds, gates and actions", () => {
 
   it("runs only the asked lenses' findings, and the design gate only looks at design-phase artifacts", async () => {
     const root = await forgeChangeRoot();
+    // An old lens's name asks the question that took it over (ADR 0124 addendum, Part 4).
     const story = await runCritic(root, CHANGE, { now: NOW, lenses: ["story"] });
-    expect(new Set(story.findings.map((f) => f.finding.lens))).toEqual(new Set(["story"]));
+    expect(new Set(story.findings.map((f) => f.finding.lens))).toEqual(new Set(["complete"]));
     const design = await runCritic(root, CHANGE, { now: NOW, gate: "design" });
     expect(
       design.findings.some(

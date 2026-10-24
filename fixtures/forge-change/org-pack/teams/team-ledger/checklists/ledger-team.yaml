@@ -1,6 +1,11 @@
 # The Ledger team's checklist (fixture). Contract C3, team layer: it applies to changes that
 # touch a system team-ledger owns. A team pack may add rules or tighten others; it can never
 # drop or loosen a constitution or org rule.
+#
+# Each rule's lens is the question it asks (ADR 0124 addendum, Part 4): true, complete, safe or
+# ship. The fixture was re-baselined for the four questions: ux-states-complete is retired (its
+# concern, a screen state the specs imply, is the complete lens's to read, and the rule is kept
+# here as a record), and every other rule keeps what it checks.
 schemaVersion: 1
 name: ledger-team
 version: 0.1.0
@@ -9,7 +14,7 @@ rules:
   - id: vendor-rate-limit-known
     title: The vendor's rate limit is known
     layer: team
-    lens: architecture
+    lens: ship
     appliesTo: { artifacts: [interfaces, catalog] }
     severity: risk
     check:
@@ -31,7 +36,7 @@ rules:
   - id: vendor-contact-known
     title: There is a named contact at each vendor
     layer: team
-    lens: delivery
+    lens: ship
     appliesTo: { artifacts: [interfaces, catalog] }
     severity: risk
     check:
@@ -51,7 +56,7 @@ rules:
   - id: vendor-operation-known
     title: Vendor operations exist in the vendor's published spec
     layer: team
-    lens: architecture
+    lens: "true"
     appliesTo: { artifacts: [interfaces, catalog] }
     severity: risk
     check:
@@ -67,7 +72,7 @@ rules:
   - id: slo-known
     title: Touched products have a latency SLO
     layer: team
-    lens: release
+    lens: ship
     appliesTo: { artifacts: [design, catalog] }
     severity: risk
     check:
@@ -89,7 +94,7 @@ rules:
   - id: capacity-known
     title: Touched data stores have a known daily volume
     layer: team
-    lens: architecture
+    lens: ship
     appliesTo: { artifacts: [data, catalog] }
     severity: risk
     check:
@@ -110,7 +115,7 @@ rules:
   - id: mappings-cover-interfaces
     title: Every new or changed interface has a mapping
     layer: team
-    lens: architecture
+    lens: complete
     appliesTo: { artifacts: [interfaces, mappings] }
     severity: risk
     check:
@@ -122,7 +127,7 @@ rules:
   - id: tasks-cover-stories
     title: Every story has tasks in each repo it lists
     layer: team
-    lens: delivery
+    lens: complete
     appliesTo: { artifacts: [stories, tasks] }
     severity: risk
     check:
@@ -134,7 +139,7 @@ rules:
   - id: design-concurrency-handled
     title: The design says how concurrent requests are serialised
     layer: team
-    lens: architecture
+    lens: safe
     appliesTo: { artifacts: [design] }
     severity: blocking
     check:
@@ -146,7 +151,7 @@ rules:
   - id: brief-questions-answered
     title: Open questions and partner failures are answered before planning
     layer: team
-    lens: business
+    lens: complete
     appliesTo: { artifacts: [brief, proposal, specs] }
     severity: blocking
     check:
@@ -158,7 +163,7 @@ rules:
   - id: story-traces-to-spec
     title: Every story traces to a spec requirement
     layer: team
-    lens: story
+    lens: complete
     appliesTo: { artifacts: [stories, specs] }
     severity: blocking
     check:
@@ -170,7 +175,7 @@ rules:
   - id: ux-states-complete
     title: The UX covers loading, empty and error states
     layer: team
-    lens: ux
+    lens: complete
     appliesTo: { artifacts: [ux, specs] }
     severity: risk
     check:
@@ -178,11 +183,14 @@ rules:
       prompt: Read the UX notes against the specs. Report a finding for each screen state the specs imply but the UX doesn't describe, such as an error when data can't be loaded or a partner doesn't answer. Quote the UX line nearest the missing state.
     waivable: false
     source: Ledger team practice
+    # Retired with the four questions (ADR 0124 addendum, Part 4): the UX lens is gone, and a screen
+    # state the specs imply is one of the things the complete lens looks for.
+    status: retired
 
   - id: tasks-sequenced-for-lead-times
     title: Tasks start service-desk requests early enough
     layer: team
-    lens: delivery
+    lens: ship
     appliesTo: { artifacts: [tasks, snow] }
     severity: risk
     check:
@@ -194,7 +202,10 @@ rules:
   - id: tests-cover-scenarios
     title: Tests cover every spec scenario
     layer: team
+    # The spec hand-up reviews code and tests with the code-and-test lens's agent (packages/speckit);
+    # at the gates this rule asks the complete question.
     lens: code-and-test
+    question: complete
     appliesTo: { artifacts: [code, tests] }
     severity: risk
     check:
@@ -206,7 +217,7 @@ rules:
   - id: release-plan-complete
     title: The release plan names its checks and its fallback
     layer: team
-    lens: release
+    lens: ship
     appliesTo: { artifacts: [release, snow] }
     severity: risk
     check:

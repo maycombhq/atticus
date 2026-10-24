@@ -176,27 +176,29 @@ describe("a lens run that is lost, or whose answer failed its check (B1, M6)", (
     const first = await h.step();
     await h.answer(first.waiting!.runId, "feature-answer.yaml", PLACED);
     const second = await h.step(first.waiting!.runId);
-    expect(second.waiting).toMatchObject({ lens: "business" });
-    // The business lens's run folder goes (a cleaned .runs/, another machine).
+    // The lenses go out in the questions' order (ADR 0124 addendum, Part 4): the architecture
+    // rule asks whether the draft is true to the code, the business rule whether it is complete.
+    expect(second.waiting).toMatchObject({ lens: "true" });
+    // The true lens's run folder goes (a cleaned .runs/, another machine).
     await rm(join(root, ".runs", CHANGE, second.waiting!.runId), { recursive: true, force: true });
     const third = await h.step();
     // The draft isn't thrown away: the other lens is offered.
     expect(third.drafts).toBe(0);
-    expect(third.waiting).toMatchObject({ lens: "architecture" });
+    expect(third.waiting).toMatchObject({ lens: "complete" });
     expect(third.notes.join("\n")).toContain(`Run ${second.waiting!.runId} is no longer there`);
     expect((await roundMeta(root, 1)).lenses.map((l) => [l.lens, l.state])).toEqual([
-      ["business", "failed"],
-      ["architecture", "waiting"],
+      ["true", "failed"],
+      ["complete", "waiting"],
     ]);
-    await h.answer(third.waiting!.runId, "findings-architecture.yaml", "findings: []\n");
+    await h.answer(third.waiting!.runId, "findings-complete.yaml", "findings: []\n");
     // Every lens is in, but one never reviewed: the stage stops rather than say it is done.
     const e = await stopped(h.step(third.waiting!.runId));
-    expect(e.message).toContain("The critic's business lens didn't review draft 1");
+    expect(e.message).toContain("The critic's true lens didn't review draft 1");
     expect((await loopOf(root)).review).toBeUndefined();
     // Run again: the same draft goes to a new critic round's lenses; nothing is drafted.
     const again = await h.step();
     expect(again.drafts).toBe(0);
-    expect(again.waiting).toMatchObject({ lens: "business" });
+    expect(again.waiting).toMatchObject({ lens: "true" });
     expect((await roundMeta(root, 2)).lenses.map((l) => l.state)).toEqual(["waiting", "waiting"]);
   });
 
@@ -222,7 +224,7 @@ describe("a lens run that is lost, or whose answer failed its check (B1, M6)", (
     );
     await rt().done(first.waiting!.runId);
     const lens = (await step(first.waiting!.runId)).waiting!;
-    await writeFile(join(root, ".runs", CHANGE, lens.runId, "findings-business.yaml"), "");
+    await writeFile(join(root, ".runs", CHANGE, lens.runId, "findings-true.yaml"), "");
     expect((await rt().done(lens.runId)).state).toBe("failed");
     // Resumed, or run again: the same lens, to be fixed and sent again.
     const resumed = await step(lens.runId);
@@ -236,13 +238,13 @@ describe("a lens run that is lost, or whose answer failed its check (B1, M6)", (
     const h = handoff(root);
     const first = await h.step();
     await h.answer(first.waiting!.runId, "feature-answer.yaml", PLACED);
-    const business = (await h.step(first.waiting!.runId)).waiting!;
-    await h.answer(business.runId, "findings-business.yaml", "");
-    const architecture = (await h.step(business.runId)).waiting!;
-    expect(architecture.lens).toBe("architecture");
-    await h.answer(architecture.runId, "findings-architecture.yaml", "findings: []\n");
-    const e = await stopped(h.step(architecture.runId));
-    expect(e.message).toContain("business lens didn't review");
+    const truth = (await h.step(first.waiting!.runId)).waiting!;
+    await h.answer(truth.runId, "findings-true.yaml", "");
+    const complete = (await h.step(truth.runId)).waiting!;
+    expect(complete.lens).toBe("complete");
+    await h.answer(complete.runId, "findings-complete.yaml", "findings: []\n");
+    const e = await stopped(h.step(complete.runId));
+    expect(e.message).toContain("true lens didn't review");
     expect((await roundMeta(root, 1)).lenses.map((l) => l.state)).toEqual(["failed", "ran"]);
   });
 });
@@ -253,14 +255,14 @@ describe("a newer critic round at the gate while the stage waits on its lenses (
     const h = handoff(root);
     const first = await h.step();
     await h.answer(first.waiting!.runId, "feature-answer.yaml", PLACED);
-    const business = (await h.step(first.waiting!.runId)).waiting!;
+    const truth = (await h.step(first.waiting!.runId)).waiting!;
     // A person runs the critic by hand at the same gate (rules only): round 2.
     expect((await runCritic(root, CHANGE, { gate: "define" })).round).toBe(2);
-    const r = await h.step(business.runId);
-    expect(r).toMatchObject({ state: "waiting", waiting: business });
-    await h.answer(business.runId, "findings-business.yaml", "findings: []\n");
-    const next = await h.step(business.runId);
-    expect(next.waiting).toMatchObject({ lens: "architecture" });
+    const r = await h.step(truth.runId);
+    expect(r).toMatchObject({ state: "waiting", waiting: truth });
+    await h.answer(truth.runId, "findings-true.yaml", "findings: []\n");
+    const next = await h.step(truth.runId);
+    expect(next.waiting).toMatchObject({ lens: "complete" });
   });
 });
 
@@ -285,7 +287,7 @@ gates:
     await limited(root);
     const rt = new MockRuntime(
       (req: AiRequest) =>
-        req.agent.id === "architecture-critic"
+        req.agent.id === "true-critic"
           ? FINDING
           : req.agent.id.endsWith("-critic")
             ? "findings: []"
@@ -324,11 +326,11 @@ gates:
   // Found on a real metarepo: round 2 of 2 had one real blocking finding; a person fixed the
   // draft by hand and applied the finding, and the stage still said "a person decides now".
   describe("a fix a person applied when no critic round is left", () => {
-    // The architecture lens finds the flow marked read until the placement marks it changed.
+    // The true lens (the old architecture rule) finds the flow marked read until the placement marks it changed.
     const lens = () =>
       new MockRuntime(
         (req: AiRequest) =>
-          req.agent.id === "architecture-critic"
+          req.agent.id === "true-critic"
             ? req.pack.prompt.includes("Flow forge-stock.reserve-stock (read)")
               ? FINDING
               : "findings: []"
@@ -696,14 +698,16 @@ describe("what a lens is checked against, and what the drafter is given (L3, M1,
     const h = handoff(root);
     const first = await h.step();
     await h.answer(first.waiting!.runId, "feature-answer.yaml", PLACED);
-    const business = (await h.step(first.waiting!.runId)).waiting!;
-    await h.answer(business.runId, "findings-business.yaml", "findings: []\n");
-    const architecture = (await h.step(business.runId)).waiting!;
+    // The true lens (the old architecture rule) goes out first, in the questions' order.
+    const truth = (await h.step(first.waiting!.runId)).waiting!;
     // A person edits feature.md before the lens's answer is read in.
     const md = join(root, "openspec/changes", CHANGE, "feature.md");
     await writeFile(md, (await readFile(md, "utf8")).replace("(read)", "(changed)"));
-    await h.answer(architecture.runId, "findings-architecture.yaml", FINDING);
-    const r = await h.step(architecture.runId);
+    await h.answer(truth.runId, "findings-true.yaml", FINDING);
+    const complete = (await h.step(truth.runId)).waiting!;
+    expect(complete.lens).toBe("complete");
+    await h.answer(complete.runId, "findings-complete.yaml", "findings: []\n");
+    const r = await h.step(complete.runId);
     // The finding stands: it quoted what the lens was given.
     expect(r.state).toBe("waiting");
     expect(r.waiting!.lens).toBeUndefined();
@@ -792,7 +796,7 @@ gates:
   const rt = (draft: string) =>
     new MockRuntime(
       (req: AiRequest) =>
-        req.agent.id === "architecture-critic" && req.pack.prompt.includes(TARGET)
+        req.agent.id === "true-critic" && req.pack.prompt.includes(TARGET)
           ? BRANCH_FINDING
           : req.agent.id.endsWith("-critic")
             ? "findings: []"

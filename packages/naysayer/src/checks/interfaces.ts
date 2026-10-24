@@ -42,7 +42,7 @@ const noPattern = (code: string) => code === "" || /^none\b/i.test(code) || code
 const hopName = (h: Hop) =>
   `${h.caller || "?"} → ${h.callee || "?"} (${h.operation || "no operation"})`;
 
-function rowLocator(doc: Doc, line: number) {
+export function rowLocator(doc: Doc, line: number) {
   const heading = headingAt(doc, line);
   return { line, ...(heading ? { heading } : {}) };
 }
@@ -128,6 +128,7 @@ const Statuses = z.strictObject({ statuses: z.array(z.string()).optional() });
 
 export const interfacePatternApproved: DeterministicCheckDef = {
   id: "interface-pattern-approved",
+  question: "safe",
   description:
     "Every hop in interfaces.md names a pattern that is in the registry with an approved status.",
   params: Statuses,
@@ -143,6 +144,7 @@ export const interfacePatternApproved: DeterministicCheckDef = {
 
 export const patternCodeInRegistry: DeterministicCheckDef = {
   id: "pattern-code-in-registry",
+  question: "true",
   description: "Every pattern code in interfaces.md is in the registry.",
   params: Statuses,
   run: (ctx, p) => ({
@@ -157,6 +159,7 @@ export const patternCodeInRegistry: DeterministicCheckDef = {
 
 export const interfaceHasPattern: DeterministicCheckDef = {
   id: "interface-has-pattern",
+  question: "complete",
   description: "Every hop in interfaces.md names a pattern code.",
   params: z.strictObject({}),
   run: (ctx) => ({ hits: patternProblems(ctx, { missing: true, unknown: false }), subjects: [] }),
@@ -164,6 +167,7 @@ export const interfaceHasPattern: DeterministicCheckDef = {
 
 export const interfaceEndsInCatalog: DeterministicCheckDef = {
   id: "interface-ends-in-catalog",
+  question: "true",
   description:
     "Every caller and callee in interfaces.md is a component or system the catalog knows.",
   params: z.strictObject({}),
@@ -199,6 +203,7 @@ export const interfaceEndsInCatalog: DeterministicCheckDef = {
 
 export const interfaceIdsInCatalog: DeterministicCheckDef = {
   id: "interface-ids-in-catalog",
+  question: "true",
   description:
     "Rows for existing hops use their catalog interface id; rows for new hops say new and planned-new.",
   params: z.strictObject({}),
@@ -270,9 +275,9 @@ export const interfaceIdsInCatalog: DeterministicCheckDef = {
 
 // ------------------------------------------------------------------ resilience
 
-type SettingKind = "timeout" | "retry" | "circuit-breaker";
+export type SettingKind = "timeout" | "retry" | "circuit-breaker";
 
-const KIND_WORDS: Record<SettingKind, RegExp> = {
+export const KIND_WORDS: Record<SettingKind, RegExp> = {
   timeout: /time[- ]?outs?\b/i,
   retry: /\bretr(y|ies|ied)\b/i,
   "circuit-breaker": /circuit[- ]?breakers?\b/i,
@@ -288,7 +293,7 @@ export function patternSettingKinds(p: IntegrationPattern): SettingKind[] {
   return out;
 }
 
-interface Call {
+export interface Call {
   caller: string;
   callee: string;
   operation: string;
@@ -299,7 +304,7 @@ interface Call {
 }
 
 /** Hops from interfaces.md plus touched catalog interfaces that have no row. */
-function calls(ctx: CriticContext): Call[] {
+export function calls(ctx: CriticContext): Call[] {
   const out: Call[] = [];
   const rowIds = new Set(ctx.hops.map((h) => h.id));
   for (const h of ctx.hops) {
@@ -334,7 +339,7 @@ function calls(ctx: CriticContext): Call[] {
 }
 
 /** Lines that talk about a call: its notes in interfaces.md and design.md lines naming the callee or path. */
-function callLines(ctx: CriticContext, c: Call): { doc: Doc; n: number; text: string }[] {
+export function callLines(ctx: CriticContext, c: Call): { doc: Doc; n: number; text: string }[] {
   const out: { doc: Doc; n: number; text: string }[] = [];
   const ifaces = docOf(ctx.files, IFACES);
   if (ifaces && c.hop) for (const l of hopNotes(ctx.files, c.hop)) out.push({ doc: ifaces, ...l });
@@ -351,6 +356,7 @@ const say = (k: SettingKind) => k.replace("-", " ");
 
 export const settingsPresent: DeterministicCheckDef = {
   id: "settings-present",
+  question: "safe",
   description:
     "Planned calls have the resilience settings their pattern (or the rule) requires, in the catalog or stated in interfaces.md or design.md.",
   params: z.strictObject({
@@ -437,6 +443,7 @@ export const settingsPresent: DeterministicCheckDef = {
 
 export const interfaceViaMatchesPattern: DeterministicCheckDef = {
   id: "interface-via-matches-pattern",
+  question: "safe",
   description:
     "Hops governed by a pattern take the route it requires (for a gateway pattern, they name the gateway route).",
   params: z.strictObject({ pattern: z.string(), via: z.string() }),

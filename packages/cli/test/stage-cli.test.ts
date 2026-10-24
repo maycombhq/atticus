@@ -222,11 +222,13 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
     expect(draft.lens).toBeUndefined();
     expect(draft.resultFile).toMatch(/feature-answer\.yaml$/);
 
-    // The draft passes the rules: the business lens is offered, then the architecture lens.
-    const business = await answer(draft, PLACED);
-    expect(business).toMatchObject({ state: "handoff", lens: "business" });
-    expect(business.resultFile).toMatch(/\/findings-business\.yaml$/);
-    expect(business.resumeArgs).toEqual([
+    // The draft passes the rules: the lenses of the questions its rules ask are offered in the
+    // questions' order (ADR 0124 addendum, Part 4): true (the old architecture rule), then complete
+    // (the old business rule).
+    const truth = await answer(draft, PLACED);
+    expect(truth).toMatchObject({ state: "handoff", lens: "true" });
+    expect(truth.resultFile).toMatch(/\/findings-true\.yaml$/);
+    expect(truth.resumeArgs).toEqual([
       "change",
       "feature",
       CHANGE,
@@ -235,17 +237,17 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
       "--handoff",
       "--json",
       "--resume",
-      business.runId,
+      truth.runId,
     ]);
-    expect(await readFile(join(root, business.promptFile), "utf8")).toContain(
+    expect(await readFile(join(root, truth.promptFile), "utf8")).toContain(
       "Review the draft against the estate and the brief, including what the draft left out",
     );
-    const architecture = await answer(business, "findings: []\n");
-    expect(architecture).toMatchObject({ state: "handoff", lens: "architecture" });
-    expect(architecture.runId).not.toBe(business.runId);
+    const complete = await answer(truth, "findings: []\n");
+    expect(complete).toMatchObject({ state: "handoff", lens: "complete" });
+    expect(complete.runId).not.toBe(truth.runId);
 
     // Every lens is in and nothing blocks: the stage is done.
-    const end = await answer(architecture, "findings: []\n");
+    const end = await answer(complete, "findings: []\n");
     expect(end.state).toBe("done");
     const round = parse(
       await readFile(
@@ -254,8 +256,8 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
       ),
     ) as { lenses: { lens: string; state: string }[] };
     expect(round.lenses.map((l) => [l.lens, l.state])).toEqual([
-      ["business", "ran"],
-      ["architecture", "ran"],
+      ["true", "ran"],
+      ["complete", "ran"],
     ]);
   });
 });
@@ -306,8 +308,8 @@ describe("the starter review on a metarepo atticus init made (ADR 0120)", () => 
     while (h.state === "handoff" && h.lens) {
       offered.push(h.lens);
       const prompt = await readFile(join(root, h.promptFile), "utf8");
-      if (h.lens === "business") expect(prompt).toContain("review.brief-outcomes-placed");
-      if (h.lens === "architecture") {
+      if (h.lens === "complete") expect(prompt).toContain("review.brief-outcomes-placed");
+      if (h.lens === "true") {
         expect(prompt).toContain("review.changed-flow-not-read");
         expect(prompt).toContain("review.assumed-capability-named");
       }
@@ -315,7 +317,7 @@ describe("the starter review on a metarepo atticus init made (ADR 0120)", () => 
       await finish(h.doneArgs);
       h = await run(h.resumeArgs);
     }
-    expect(offered).toEqual(["business", "architecture"]);
+    expect(offered).toEqual(["true", "complete"]);
     expect(h.state).toBe("done");
     const round = parse(
       await readFile(
@@ -324,8 +326,8 @@ describe("the starter review on a metarepo atticus init made (ADR 0120)", () => 
       ),
     ) as { lenses: { lens: string; state: string; rules: string[] }[] };
     expect(round.lenses.map((l) => [l.lens, l.state, l.rules])).toEqual([
-      ["business", "ran", ["review.brief-outcomes-placed"]],
-      ["architecture", "ran", ["review.changed-flow-not-read", "review.assumed-capability-named"]],
+      ["true", "ran", ["review.changed-flow-not-read", "review.assumed-capability-named"]],
+      ["complete", "ran", ["review.brief-outcomes-placed"]],
     ]);
     // init, then a draft and two lenses, each a command of its own.
   }, 180_000);
@@ -397,7 +399,7 @@ describe("a stage's --handoff --json offers its own run, named as data (M5, M6)"
     await writeFile(join(root, draft.resultFile as string), PLACED);
     await run(root, draft.doneArgs as string[]);
     const lens = (await run(root, draft.resumeArgs as string[])).j;
-    expect(lens).toMatchObject({ state: "handoff", lens: "business" });
+    expect(lens).toMatchObject({ state: "handoff", lens: "true" });
     // Copilot answered with nothing: the check fails it.
     await writeFile(join(root, lens.resultFile as string), "");
     expect((await run(root, lens.doneArgs as string[])).code).toBe(1);
@@ -405,7 +407,7 @@ describe("a stage's --handoff --json offers its own run, named as data (M5, M6)"
     expect(again).toMatchObject({
       state: "handoff",
       runId: lens.runId,
-      lens: "business",
+      lens: "true",
       stillWaiting: true,
     });
   });

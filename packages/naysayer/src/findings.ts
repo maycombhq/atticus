@@ -6,6 +6,7 @@ import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
 import { changeAnswers } from "./answers.js";
 import { decidedAt, decidedReason } from "./recorded.js";
 import type { Hit } from "./hits.js";
+import { questionOfRule } from "./questions.js";
 import { layerRank, severityRank, type EffectiveRule } from "./rules.js";
 
 /** Keys printed first in a finding file, in this order; the rest alphabetical. */
@@ -179,7 +180,8 @@ export function toFinding(
     round: o.round,
     rule: h.rule.id,
     layer,
-    lens: h.rule.lens,
+    // The question the rule answers (ADR 0124 addendum, Part 4), whatever lens it was written with.
+    lens: questionOfRule(h.rule),
     severity,
     artifact: h.hit.artifact,
     locator: h.hit.locator,
@@ -226,7 +228,8 @@ function foundNote(
     round: o.round,
     rule: h.rule.id,
     layer,
-    lens: h.rule.lens,
+    // The question the rule answers (ADR 0124 addendum, Part 4), whatever lens it was written with.
+    lens: questionOfRule(h.rule),
     severity: "idea",
     artifact: h.hit.artifact,
     locator: h.hit.locator,

@@ -4,8 +4,6 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
-
-
 ### The architecture stage checks who a change breaks and the order it deploys in (ADR 0124 addendum B-arch)
 
 - A change that breaks who uses an entry or a table today lists them: `consumers` on the target flow, or `store.consumers` on the step. Breaking means a field the response returns is gone, the entry reads one field in place of another, the entry, the response or the flow is removed, a column gets another type, or the step is marked `breaking`. The consumers come from the map (Interface records, the specs' calls, the table's readers and writers), and the architect sees them before its first draft. One the map knows that the draft leaves out goes back to the drafter.
@@ -14,7 +12,6 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A call to a component the map has no entry of is a note: nothing confirms it. So is a breaking change to a flow whose trigger names no endpoint.
 - No deploy order is a note for now, not blocking, so drafts recorded before it keep passing.
 
-<<<<<<< HEAD
 ### A path written across lines can be cited (ADR 0124, A4)
 
 - **`cite.with`** in a fact: the other lines its path is built from (a class prefix, a base URL, a context path, a route template, a proto package). `atticus verify` checks every part is written on one of the lines.
@@ -27,6 +24,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **Map › Trust** says, per repo, how far to trust its map: the facts the verifier kept and rejected, how much of the code they cover and which files no fact cites, whether the facts are of the commit the checkout is at, whether the catalog is built from the facts or the built-in readers, and the command to run next (`GET /api/trust`, API 2.22.0).
 - **Change › Feature design** lists the org knowledge that applies to the change (`knowledge.yaml`), with Confirm and Exclude. The app writes the file and shows the `git commit` command to run (`GET /api/changes/{id}/knowledge`, `POST /api/changes/{id}/knowledge/{item}`).
 - The app now also updates when `facts/` changes, and the tour names the six entries.
+
+### The critic asks four questions (ADR 0124 addendum, Part 4)
+
+- **Four questions instead of seven lenses.** The critic asks every draft: is it true to the code, is it complete, is it safe to build, can it ship. Each rule and check answers one of them (a rule may say which with `question`), and one AI lens per question reviews what the rules can't, in a fresh session, bound to evidence as before. Findings carry the question as their lens.
+- **Code answers more before a model is asked.** Four new constitution checks: a synchronous call with no timeout, an entry another system calls with no auth fact (asked of its owner when unknown, blocking when the catalog says none), a change to an operation other consumers call that the change doesn't plan for (retired breaks them; a change is the `breaking` judgment, asked of a person when nobody has made it), and a table written with no rollback step in design.md.
+- **Org packs written for the old lenses keep working.** Business, story, UX and code-and-test rules ask the complete question; architecture rules ask true; delivery and release rules ask ship. Change types keep their lens lists, `--lens` takes an old name, and old lens agents are combined into the question's agent, as strict as they were. Define `<question>-critic` (true-critic, complete-critic, safe-critic, ship-critic) to set a lens's agent yourself.
+- **Service-desk drafts are a manual step.** The constitution no longer blocks on snow.md: `atticus plan` drafts each request the change triggers and `atticus release plan` lists them, with their missing fields, for a person to file.
 
 ### Your assistant reads a repo into facts, at any tier (ADR 0124, A3a)
 

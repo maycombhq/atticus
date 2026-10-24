@@ -22,6 +22,12 @@ import {
   settingsPresent,
 } from "./interfaces.js";
 import {
+  breakingDeltaConsumers,
+  callTimeoutStated,
+  publicEntryAuth,
+  storeWriteRollback,
+} from "./questions.js";
+import {
   mappingsCoverInterfaces,
   noEmbeddedInstructions,
   specScenariosPresent,
@@ -55,6 +61,11 @@ export const BUILT_IN_CHECKS: readonly DeterministicCheckDef[] = [
   vendorOperationKnown,
   mappingsCoverInterfaces,
   tasksCoverStories,
+  // Added with the four questions (ADR 0124 addendum, Part 4).
+  callTimeoutStated,
+  publicEntryAuth,
+  breakingDeltaConsumers,
+  storeWriteRollback,
 ];
 
 export function checkRegistry(

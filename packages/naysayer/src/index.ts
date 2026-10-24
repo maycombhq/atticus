@@ -10,6 +10,8 @@ export * from "./needs.js";
 export * from "./checks/index.js";
 export { nearestCode, patternSettingKinds } from "./checks/interfaces.js";
 export { personalItems } from "./checks/data.js";
+export { breakingItems } from "./checks/questions.js";
+export * from "./questions.js";
 export * from "./findings.js";
 export * from "./model.js";
 export * from "./ai.js";
