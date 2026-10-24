@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Your assistant reads a repo into facts, at any tier (ADR 0124, A3a)
+
+- **`/atticus-map <repo>`** is the reading protocol for an assistant that opens files and runs commands itself (Claude Code, Cursor, Copilot agent mode, Gemini CLI, Windsurf, AGENTS.md tools), generated for each one and for the Claude Code plugin. Outline the repo, read whole only the files that hold facts, write one cited fact per line to the facts file (the field list is generated from the facts schema), keep secrets out (`source: env:NAME`), ask what the code can't settle, then loop on `atticus verify` until it passes.
+- **`atticus map <repo>`** reads a repo in batches for an assistant without file tools. It orders the source files (build and deploy files, config and entry points first) and slices them into prompts that fit `--max-tokens`. Each batch goes through the hand-off (`--handoff`, `--next`) or is printed to paste (`--copy`, the answer read back with `--answer <file>` or `-`). Each answer is verified at once, and what it rejected goes back in the next prompt with the lines it cited. In model mode every batch runs in one call. `--estimate` says what the first read costs.
+- **`atticus verify`** also raises the questions the assistant wrote to `<repo>.questions.jsonl` for a person, each evidence line checked.
+- **The tier** your assistant reads at is said by `atticus doctor`, `atticus init` and `atticus adopt`, from runtime.yaml's assistants and editors.
+
 ### The drafter checks its own draft, and a person's answer settles the judge (ADR 0087, 0111 and 0117 addenda)
 
 - A stage's drafter checks its draft with the stage's own checks before handing it in. In model mode it gets a `check_draft` tool. Headless Claude Code is told to run `atticus stage check <change> <stage> <file>`. With Copilot, `atticus handoff done` lists the problems with their lines and keeps the run open until the file is clean. After `draftSelfChecks` checks (change policy, default 3) the file is handed in as it is.

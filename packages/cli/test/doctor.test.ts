@@ -219,6 +219,24 @@ describe("atticus doctor", () => {
     expect(JSON.stringify(set)).not.toContain("sk-secret-value");
   });
 
+  it("says at which tier the assistant reads a repo, and how to see what the first read costs (ADR 0124 §4)", async () => {
+    const tier = byId(await doctorChecks(root, healthy()), "tier");
+    expect(tier.status).toBe("ok");
+    expect(tier.label).toBe("First read of a repo");
+    expect(tier.detail).toMatch(/^agentic \(tier 1\): Copilot in VS Code agent mode/);
+    expect(tier.detail).toContain("atticus map <repo> --handoff --max-tokens");
+    expect(tier.detail).toContain("atticus map <repo> --estimate");
+    const own = await mkdtemp(join(tmpdir(), "atticus-doctor-tier-"));
+    await cp(join(FIXTURES, "forge/metarepo"), own, { recursive: true });
+    await writeFile(
+      join(own, "org-pack/runtime.yaml"),
+      "schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\neditors: [intellij]\n",
+    );
+    expect(byId(await doctorChecks(own, healthy()), "tier").detail).toMatch(
+      /^copy-paste \(tier 3\).*atticus map <repo> --copy/,
+    );
+  });
+
   it("reports the embedding model: off for the test suites, never a failure by default, a warning when runtime.yaml names one it can't use (ADR 0116 addenda)", async () => {
     // The test suites run with ATTICUS_EMBEDDINGS=off (vitest.shared.mjs): a note that says so.
     const env = byId(await doctorChecks(root, healthy()), "embeddings");

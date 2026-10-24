@@ -15,7 +15,22 @@ import {
   type RefreshResult,
   type RepoListing,
 } from "@maycombhq/adopt";
+import { assistantTier, tierLine } from "@maycombhq/assistant-files";
+import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import type { Output } from "./commands.js";
+
+/**
+ * ADR 0124 §4: the tier the org pack's assistant reads a repo at, said once at set-up, with where
+ * to see what the first read costs. Nothing when the org pack can't be read.
+ */
+async function tierAt(root: string, io: Output): Promise<void> {
+  try {
+    const op = await loadOrgPack(orgPackDirOf(root));
+    io.out(`Your assistant reads a repo at: ${tierLine(assistantTier(op.runtime))}`);
+  } catch {
+    // the org pack's own problems are reported above
+  }
+}
 
 /**
  * Setup commands: `init`, `adopt`, `unadopt`, `repos discover`, `absorb`, and the zero-install
@@ -64,6 +79,7 @@ export async function initCommand(
     for (const p of r.problems)
       io.err(`org-pack/${p.file}: ${p.path ? `${p.path}: ` : ""}${p.message}`);
     for (const q of r.questions) io.out(`Question: ${q}`);
+    await tierAt(dir, io);
     io.out(
       "Next: atticus repos discover <folder of clones>, then atticus workspace sync and atticus scan.",
     );
@@ -132,6 +148,7 @@ export async function adoptCommand(
       io.out(
         `${plural(r.questions.length, "question")} for people are in .atticus/proposals/repos/${r.platform}/QUESTIONS.md.`,
       );
+    await tierAt(r.root, io);
     io.out(`Next: atticus scan --root ${path}. To remove Atticus: atticus unadopt ${path}.`);
     return r.problems.length ? 1 : 0;
   } catch (e) {

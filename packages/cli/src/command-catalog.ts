@@ -318,7 +318,7 @@ export function commandCatalog(help: string): CommandInfo[] {
     // `critic <change>` takes --handoff too (its lenses one at a time); `critic --resume` is a
     // person's way to read answers in, and `critic stats` reads.
     const runs: Runs =
-      isHandoffStep(c.words[0], c.words[1]) || c.id === "critic"
+      isHandoffStep(c.words[0], c.words[1]) || c.id === "critic" || c.id === "map"
         ? "ai"
         : SERVES.has(c.id)
           ? "serve"

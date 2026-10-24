@@ -2,7 +2,12 @@ import { existsSync } from "node:fs";
 import { access, constants, mkdir, readFile, rm, statfs, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { delimiter, join } from "node:path";
-import { ASSISTANT_FORMATS, generateAssistantFiles } from "@maycombhq/assistant-files";
+import {
+  ASSISTANT_FORMATS,
+  assistantTier,
+  generateAssistantFiles,
+  tierLine,
+} from "@maycombhq/assistant-files";
 import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock } from "@maycombhq/core";
 import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
 import {
@@ -387,6 +392,13 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
         ? `none of ${editors.join(", ")} is on PATH`
         : "no editor listed in runtime.yaml",
     fix: "Change worktrees open as VS Code or IntelliJ workspaces: install one, or add its command to PATH.",
+  });
+  // ---- The tier the assistant reads a repo at (ADR 0124 §4), from runtime.yaml and the registry.
+  out.push({
+    id: "tier",
+    label: "First read of a repo",
+    status: "ok",
+    detail: tierLine(assistantTier(rt)),
   });
   // ---- How AI steps run here, and whether model mode can (ADR 0119). Names only, no call:
   // doctor makes no network call, so a provider is checked for being named and keyed, not reached.

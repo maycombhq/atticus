@@ -1,0 +1,171 @@
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { ASSISTANTS, FACT_KINDS, Fact, loadOrgPack, Runtime } from "@maycombhq/core";
+import {
+  ASSISTANT_FORMATS,
+  assistantTier,
+  claudeCodePluginFiles,
+  factsReference,
+  GUARD,
+  mapBatchInstructions,
+  mapCommand,
+  metarepoCommands,
+  renderAssistantFiles,
+} from "../src/index.js";
+
+const FORGE = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../fixtures/forge/metarepo/org-pack",
+);
+
+/** Every field a kind takes, straight from the zod schema the verifier parses with. */
+function fieldsOf(kind: string): string[] {
+  const opt = Fact.options.find((o) => o.shape.kind.value === kind)!;
+  return Object.keys(opt.shape);
+}
+
+describe("the facts reference is generated from the schema, so it can't drift (ADR 0124)", () => {
+  const ref = factsReference();
+
+  it("names every field of every kind, on that kind's line or the common line", () => {
+    const lines = ref.split("\n");
+    const common = lines.find((l) => l.startsWith("Every fact:"))!;
+    expect(common).toBeDefined();
+    for (const kind of FACT_KINDS) {
+      const line = lines.find((l) => l.startsWith(`- ${kind}:`));
+      expect(line, kind).toBeDefined();
+      for (const f of fieldsOf(kind)) {
+        if (f === "kind") continue;
+        const named = new RegExp(`\\b${f}\\??:`);
+        expect(named.test(line!) || named.test(common), `${kind}.${f}`).toBe(true);
+      }
+    }
+  });
+
+  it("gives each enum's values and marks what may be left out", () => {
+    expect(ref).toContain("entryType: rest|grpc|soap|graphql|event-topic");
+    expect(ref).toContain("op: read|write|delete");
+    expect(ref).toMatch(/cite: \{file: text, line: number, value: text, quote\?: text/);
+    expect(ref).toMatch(/\bhandler\?: text/);
+    expect(ref).toMatch(/\bconf\?: declared\|inferred/);
+  });
+});
+
+describe("/atticus-map: the reading protocol as one command for every assistant", () => {
+  it("is one of the metarepo's commands, guarded like every step", () => {
+    const c = metarepoCommands().find((x) => x.name === "atticus-map");
+    expect(c).toBeDefined();
+    expect(c).toEqual(mapCommand());
+    expect(c!.body.startsWith(GUARD)).toBe(true);
+  });
+
+  it("says outline first, cite every fact, keep secrets out, ask what code can't settle, loop on verify", () => {
+    const b = mapCommand().body;
+    expect(b).toContain("atticus map {{ARGS}} --estimate");
+    expect(b).toMatch(/outline/i);
+    expect(b).toContain(factsReference());
+    expect(b).toContain("env:NAME");
+    expect(b).toContain(".questions.jsonl");
+    expect(b).toContain("atticus verify {{ARGS}}");
+    expect(b).toContain(".rejected.jsonl");
+    expect(b).toMatch(/until it exits 0/);
+    expect(b).toContain(".verify.yaml");
+    expect(b).toMatch(/exclu/);
+  });
+
+  it("renders for Claude Code, Copilot, Cursor and AGENTS.md tools, and the Claude Code plugin", async () => {
+    const op = await loadOrgPack(FORGE);
+    const files = renderAssistantFiles({
+      orgPack: {
+        ...op,
+        runtime: { ...op.runtime, assistants: { allowed: [...ASSISTANTS], default: "copilot" } },
+      },
+      commands: [],
+      profile: { kind: "metarepo" },
+    });
+    const body = (p: string) => files.find((f) => f.path === p)?.content ?? "";
+    expect(body(".claude/commands/atticus-map.md")).toContain("atticus verify $ARGUMENTS");
+    expect(body(".github/prompts/atticus-map.prompt.md")).toContain("atticus verify ${input:args}");
+    expect(body(".github/prompts/atticus-map.prompt.md")).toContain("agent: agent");
+    expect(body(".cursor/commands/atticus-map.md")).toContain("atticus verify <the words");
+    expect(body(".atticus/prompts/atticus-map.md")).toContain("atticus verify <the words");
+    expect(body("AGENTS.md")).toContain("`/atticus-map`: `.atticus/prompts/atticus-map.md`");
+    for (const id of ASSISTANTS)
+      expect(body(ASSISTANT_FORMATS[id].commandPath("atticus-map")), id).not.toBe("");
+    const plugin = claudeCodePluginFiles("0.0.0");
+    expect(plugin.find((f) => f.path === "commands/atticus-map.md")?.content).toContain(
+      "atticus verify $ARGUMENTS",
+    );
+  });
+});
+
+describe("the batch prompt's instructions (tiers 2 and 3)", () => {
+  it("asks for JSON lines only, citing the numbered lines it was given, with the same rules", () => {
+    const t = mapBatchInstructions({ repo: "forge-ledger", commit: "0123abc", batch: 2, of: 5 });
+    expect(t).toContain("forge-ledger");
+    expect(t).toContain("0123abc");
+    expect(t).toContain("batch 2 of 5");
+    expect(t).toContain(factsReference());
+    expect(t).toContain("env:NAME");
+    expect(t).toMatch(/one JSON object per line/i);
+    expect(t).toMatch(/"question"/);
+    // No tools at this tier: nothing about running commands or opening files.
+    expect(t).not.toContain("atticus verify");
+  });
+});
+
+describe("the capability probe: which tier this person's assistant reads at (ADR 0124 §4)", () => {
+  const rt = (o: Record<string, unknown>) => Runtime.parse({ schemaVersion: 1, ...o });
+
+  it("Claude Code, Cursor and the other agent tools read a repo in one session", () => {
+    for (const id of ["claude-code", "cursor", "gemini-cli", "windsurf", "agents-md"] as const) {
+      const t = assistantTier(rt({ assistants: { allowed: [id], default: id } }));
+      expect(t.tier, id).toBe(1);
+      expect(t.assistant).toBe(id);
+      expect(t.how).toContain("/atticus-map <repo>");
+    }
+  });
+
+  it("Copilot in VS Code is agentic through agent mode, with the batched hand-off as its fallback", () => {
+    const t = assistantTier(rt({ assistants: { allowed: ["copilot"], default: "copilot" } }));
+    expect(t.tier).toBe(1);
+    expect(t.how).toMatch(/agent mode/);
+    expect(t.fallback).toMatch(/atticus map <repo> --handoff --max-tokens/);
+  });
+
+  it("Copilot in IntelliJ only is copy-paste", () => {
+    const t = assistantTier(
+      rt({ assistants: { allowed: ["copilot"], default: "copilot" }, editors: ["intellij"] }),
+    );
+    expect(t.tier).toBe(3);
+    expect(t.how).toContain("atticus map <repo> --copy");
+  });
+
+  it("prefers the default assistant, then any allowed agent tool", () => {
+    const t = assistantTier(
+      rt({
+        assistants: { allowed: ["copilot", "claude-code"], default: "copilot" },
+        editors: ["intellij"],
+      }),
+    );
+    expect(t.tier).toBe(1);
+    expect(t.assistant).toBe("claude-code");
+  });
+
+  it("says when AI is off, and when Atticus can read through the configured model itself", () => {
+    expect(
+      assistantTier(rt({ assistants: { allowed: ["copilot"], default: "copilot" }, ai: "off" }))
+        .tier,
+    ).toBe("off");
+    const m = assistantTier(
+      rt({
+        assistants: { allowed: ["copilot"], default: "copilot" },
+        modes: { allowed: ["hand-off", "model"], default: "hand-off" },
+        adapters: { model: { type: "anthropic", settings: { maxInput: 50000 } } },
+      }),
+    );
+    expect(m.model).toMatch(/atticus map <repo> --mode model/);
+    expect(m.maxTokens).toBe(50000);
+  });
+});
