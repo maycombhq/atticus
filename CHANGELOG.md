@@ -39,6 +39,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### The hand-off PR says what changed since the last round
+
+- The PR body gains **Since the last round**: for each reviewed gate, its newest critic round against the one before (which findings closed, which are new, how many stay open), or that it is the first round.
+
 ### What the words mean
 
 - Twenty of Atticus's own words (metarepo, org pack, hand-off, gate, lens, critic, target flow, dialect, base clone, service desk and the rest), each in one plain sentence: on a new page, **Atticus › What the words mean**, with a **Words** link beside Help, and from `atticus explain <word>` (a word Atticus knows, before a command of the same name).
