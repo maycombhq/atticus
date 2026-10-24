@@ -8,6 +8,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - A feature stage run with `--mode headless-claude-code` no longer stops because its lenses may not run there. The built-in lens agents allow headless Claude Code, and each lens runs in its own run folder, so the only file it can write is its findings, never the draft it reviews. Found by a run on a real metarepo.
 - An org pack's own lens agents keep the runtimes they list; a stage that can't run them stops and names the agent and its allowed runtimes.
+- A lens answer that doesn't read (a value with ": " left unquoted, say) goes back to that lens once in the same round, with why and its earlier answer as data, before the lens counts as failed. In hand-off mode `handoff done` already offers it again.
 - A critic round in which every lens failed to start (Claude Code missing, a timeout, an outage) no longer counts toward the gate's round limit: it reviewed nothing.
 - A done architecture stage of a change in build or later stays done when a rescan moves today's flow: the change's own code moved it. It says so in a note; before build, it drafts again as before.
 - The VS Code chat records the change a request ran on in the prompt history (`history add --change`), once the participant has resolved it. A prompt is written as soon as its change is known, not when the step ends.
