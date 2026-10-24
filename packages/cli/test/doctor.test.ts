@@ -223,7 +223,10 @@ describe("atticus doctor", () => {
     const tier = byId(await doctorChecks(root, healthy()), "tier");
     expect(tier.status).toBe("ok");
     expect(tier.label).toBe("First read of a repo");
-    expect(tier.detail).toMatch(/^agentic \(tier 1\): Copilot in VS Code agent mode/);
+    // No probe ran here (ADR 0124 addendum A-probe): read off runtime.yaml, and said so.
+    expect(tier.detail).toMatch(
+      /^agentic \(tier 1\), from runtime\.yaml: Copilot in VS Code agent mode/,
+    );
     expect(tier.detail).toContain("atticus map <repo> --handoff --max-tokens");
     expect(tier.detail).toContain("atticus map <repo> --estimate");
     const own = await mkdtemp(join(tmpdir(), "atticus-doctor-tier-"));
@@ -233,7 +236,7 @@ describe("atticus doctor", () => {
       "schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\neditors: [intellij]\n",
     );
     expect(byId(await doctorChecks(own, healthy()), "tier").detail).toMatch(
-      /^copy-paste \(tier 3\).*atticus map <repo> --copy/,
+      /^copy-paste \(tier 3\), from runtime\.yaml: .*atticus map <repo> --copy/,
     );
   });
 

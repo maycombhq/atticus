@@ -68,9 +68,11 @@ describe("atticus init", () => {
     expect(await initCommand(dir, { name: "shop", platform: "shop" }, t.io)).toBe(0);
     expect(t.out[0]).toMatch(/^Created the shop metarepo in /);
     expect(t.out).toContain("OpenSpec is set up with the org-flow schema.");
-    // ADR 0124 §4: the tier the assistant reads a repo at, and where to see the first read's cost.
+    // ADR 0124 §4: the tier the assistant reads a repo at, and where to see the first read's cost;
+    // a new metarepo has no probe on file, so it is from runtime.yaml, with the command that
+    // measures it (addendum A-probe).
     expect(t.out.at(-2)).toMatch(
-      /^Your assistant reads a repo at: agentic \(tier 1\): .*atticus map <repo> --estimate/,
+      /^Your assistant reads a repo at: agentic \(tier 1\), from runtime\.yaml: .*atticus probe measures it with your assistant\. atticus map <repo> --estimate/,
     );
     expect(t.out.at(-1)).toBe(
       "Next: atticus repos discover <folder of clones>, then atticus workspace sync and atticus scan.",
@@ -143,7 +145,9 @@ describe("atticus adopt, other commands with --root, and unadopt", () => {
       "Found Spec Kit (.specify/); a constitution (.specify/memory/constitution.md); prompts in .github/prompts.",
     );
     expect(a.out[2]).toBe("Repos: order-export (node).");
-    expect(a.out.join("\n")).toMatch(/^Your assistant reads a repo at: agentic \(tier 1\)/m);
+    expect(a.out.join("\n")).toMatch(
+      /^Your assistant reads a repo at: agentic \(tier 1\), from runtime\.yaml/m,
+    );
 
     // Other commands against the adopted repo (--root). The org pack validates where it is.
     const v = io();

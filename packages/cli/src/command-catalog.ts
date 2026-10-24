@@ -73,6 +73,7 @@ const AREA_BY_WORD: Record<string, string> = {
   unadopt: "start",
   setup: "start",
   doctor: "start",
+  probe: "start",
   secret: "start",
   upgrade: "start",
   support: "start",

@@ -6,6 +6,7 @@ import {
   ASSISTANT_FORMATS,
   assistantTier,
   generateAssistantFiles,
+  readProbes,
   tierLine,
 } from "@maycombhq/assistant-files";
 import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock } from "@maycombhq/core";
@@ -393,12 +394,17 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
         : "no editor listed in runtime.yaml",
     fix: "Change worktrees open as VS Code or IntelliJ workspaces: install one, or add its command to PATH.",
   });
-  // ---- The tier the assistant reads a repo at (ADR 0124 §4), from runtime.yaml and the registry.
+  // ---- The tier the assistant reads a repo at (ADR 0124 §4): measured by atticus probe on this
+  // machine (addendum A-probe), else from runtime.yaml and the registry.
+  const probes = await readProbes(root);
+  const tier = assistantTier(rt, { probes: probes.results });
+  const stale = tier.measured?.stale === true;
   out.push({
     id: "tier",
     label: "First read of a repo",
-    status: "ok",
-    detail: tierLine(assistantTier(rt)),
+    status: stale || probes.problems.length ? "warn" : "ok",
+    detail: [tierLine(tier), ...probes.problems.map((p) => `${p}; left out.`)].join(" "),
+    fix: "Run atticus probe and follow what it prints in your assistant: it measures the tier again.",
   });
   // ---- How AI steps run here, and whether model mode can (ADR 0119). Names only, no call:
   // doctor makes no network call, so a provider is checked for being named and keyed, not reached.

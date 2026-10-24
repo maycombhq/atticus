@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The tier your assistant reads a repo at is measured, not assumed (ADR 0124 addendum A-probe)
+
+- **`atticus probe`** writes a file holding a code it never prints and says what to do in your assistant: **`/atticus-probe`** asks it to open the file, write the code to `answer.txt` beside it and run `atticus probe answer <code>` itself. An assistant that can't run commands gives you the line to paste with `--pasted`; a web chat answers `none`. Opened, wrote and ran is agentic (tier 1); opened and wrote is the batched hand-off (tier 2); anything less is copy-paste (tier 3). A wrong code records nothing, and a probe more than a day old must be started again.
+- **The model's limit is only what someone states**: `--max-tokens n` on `atticus probe` or on the answer. Nothing guesses it.
+- The result is kept per assistant in `.atticus/probe/<assistant>.yaml`, on this machine only (never committed; `probe/` joins `.atticus/.gitignore`, which `atticus upgrade` adds to an existing metarepo). No shared system is touched.
+- **`atticus doctor`, `init`, `adopt` and `map --estimate` prefer the measured tier** and say which it is: "measured on 2026-10-24" or "from runtime.yaml" (with `atticus probe` as the way to measure it). A measurement older than 90 days is still used, and doctor warns to measure again. `map --estimate` and a hand-off or copy read use the limit stated at the probe when `--max-tokens` isn't given; `map --estimate --json` adds `maxTokensFrom`, and its tier adds `source` and `measured`.
+- `map --estimate` now says "Your assistant: <tier>, <where it comes from>." where it said "The org's assistant (runtime.yaml)".
+
 ### The architecture stage checks who a change breaks and the order it deploys in (ADR 0124 addendum B-arch)
 
 - A change that breaks who uses an entry or a table today lists them: `consumers` on the target flow, or `store.consumers` on the step. Breaking means a field the response returns is gone, the entry reads one field in place of another, the entry, the response or the flow is removed, a column gets another type, or the step is marked `breaking`. The consumers come from the map (Interface records, the specs' calls, the table's readers and writers), and the architect sees them before its first draft. One the map knows that the draft leaves out goes back to the drafter.

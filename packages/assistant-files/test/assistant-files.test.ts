@@ -61,6 +61,7 @@ const METAREPO_PATHS = [
   ".claude/commands/atticus-needs.md",
   ".claude/commands/atticus-next.md",
   ".claude/commands/atticus-plan.md",
+  ".claude/commands/atticus-probe.md",
   ".claude/commands/atticus-release.md",
   ".claude/commands/atticus-small.md",
   ".claude/commands/atticus-snow.md",
@@ -98,6 +99,7 @@ const METAREPO_PATHS = [
   ".github/prompts/atticus-needs.prompt.md",
   ".github/prompts/atticus-next.prompt.md",
   ".github/prompts/atticus-plan.prompt.md",
+  ".github/prompts/atticus-probe.prompt.md",
   ".github/prompts/atticus-release.prompt.md",
   ".github/prompts/atticus-small.prompt.md",
   ".github/prompts/atticus-snow.prompt.md",
@@ -278,6 +280,7 @@ describe("step slash commands (ADR 0086)", () => {
     [".github/prompts/atticus-task.prompt.md", "atticus-task.prompt.md"],
     [".claude/commands/atticus-small.md", "atticus-small.claude.md"],
     [".claude/commands/atticus-map.md", "atticus-map.claude.md"],
+    [".github/prompts/atticus-probe.prompt.md", "atticus-probe.prompt.md"],
   ] as const)
     it(`${rel} matches its golden file`, async () => {
       const want = (await readFile(join(STEP_GOLDEN, golden), "utf8")).replace(/\r\n/g, "\n");
@@ -455,7 +458,9 @@ describe("every step command starts with the check (WP3.4)", () => {
   it("checks the command line, the metarepo and the files first, and stops with what it said", () => {
     const steps = stepCommands();
     expect(steps.length).toBeGreaterThan(10);
-    for (const c of steps) {
+    // ADR 0124 addendum A-probe: /atticus-probe measures whether the assistant can run a command
+    // at all, so it can't start by running one (probe.test.ts checks it says what to do instead).
+    for (const c of steps.filter((x) => x.name !== "atticus-probe")) {
       expect(c.body.startsWith(GUARD), c.name).toBe(true);
     }
     expect(GUARD).toContain("atticus assistant-files --check");

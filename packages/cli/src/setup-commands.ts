@@ -15,18 +15,23 @@ import {
   type RefreshResult,
   type RepoListing,
 } from "@maycombhq/adopt";
-import { assistantTier, tierLine } from "@maycombhq/assistant-files";
+import { assistantTier, readProbes, tierLine } from "@maycombhq/assistant-files";
 import { loadOrgPack, orgPackDirOf } from "@maycombhq/core";
 import type { Output } from "./commands.js";
 
 /**
  * ADR 0124 §4: the tier the org pack's assistant reads a repo at, said once at set-up, with where
- * to see what the first read costs. Nothing when the org pack can't be read.
+ * to see what the first read costs: measured, when atticus probe ran on this machine (addendum
+ * A-probe), else from runtime.yaml with the command that measures it. Nothing when the org pack
+ * can't be read.
  */
 async function tierAt(root: string, io: Output): Promise<void> {
   try {
     const op = await loadOrgPack(orgPackDirOf(root));
-    io.out(`Your assistant reads a repo at: ${tierLine(assistantTier(op.runtime))}`);
+    const { results } = await readProbes(root);
+    io.out(
+      `Your assistant reads a repo at: ${tierLine(assistantTier(op.runtime, { probes: results }))}`,
+    );
   } catch {
     // the org pack's own problems are reported above
   }

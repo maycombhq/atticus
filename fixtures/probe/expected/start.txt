@@ -1,0 +1,6 @@
+Probing Claude Code (another assistant runtime.yaml allows: --assistant <id>).
+In Claude Code, run /atticus-probe. It asks the assistant to open .runs/probe/challenge.md, write the code it holds to .runs/probe/answer.txt, and run atticus probe answer <code> itself.
+An assistant that can't run commands gives you a line to paste in this terminal instead: atticus probe answer <code> --pasted.
+A chat with no /atticus-probe (a web chat) can't open files here: run atticus probe answer none --pasted.
+Give your model's limit, the most tokens it takes in one prompt, with --max-tokens <n> on the answer if you know it: Atticus never guesses it.
+The probe is open for 24 hours. Nothing leaves this machine: the answer is checked here and kept in .atticus/probe/claude-code.yaml.
