@@ -368,6 +368,12 @@ export function registerModelProvider(type: string, factory: ModelProviderFactor
   registered.set(type, factory);
 }
 
+/** A registered provider, built from runtime.yaml's settings; undefined for a type none registered. */
+export function makeModelProvider(type: string, settings: Settings): ModelProvider | undefined {
+  const make = registered.get(type);
+  return make ? make(settings) : undefined;
+}
+
 /** The registered model-provider types (for messages and checks). */
 export function registeredModelProviders(): string[] {
   return [...registered.keys()].sort();

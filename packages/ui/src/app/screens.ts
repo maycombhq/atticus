@@ -78,6 +78,8 @@ export const SCREENS: ScreenDef[] = [
   { id: "intake", label: S.intake, section: "SetUp" },
   { id: "orgpack", label: S.orgpack, section: "SetUp" },
   { id: "orgpack-draft", label: K.orgpack, section: "SetUp" },
+  // ADR 0121: how AI runs here, chosen in a form.
+  { id: "ai", label: S.ai, section: "SetUp" },
   { id: "settings", label: S.settings, section: "SetUp" },
   // Atticus itself: what it asked a model (ADR 0106), what people asked theirs (ADR 0110).
   { id: "runs", label: S.runs, section: "Atticus" },

@@ -53,6 +53,8 @@ assistants: { allowed: [copilot, claude-code, cursor], default: copilot }
 
 They can be `copilot`, `claude-code`, `cursor`, `gemini-cli`, `windsurf` or `agents-md`. Use `agents-md` for Codex and any other tool that reads `AGENTS.md`. `atticus assistant-files` writes the same slash commands, instructions and skills for each allowed assistant, in the files that tool reads (ADR 0121). `atticus next` tells people to type the command in the default assistant, and `atticus doctor` looks for each one's program.
 
+In the app, **Set up › AI** sets all of this with a form: the assistants, the modes, and the model provider with its settings. Saving writes `runtime.yaml`; commit it in a pull request. **Test the provider** checks that the provider answers.
+
 ### What AI may do here
 
 `runtime.yaml` holds one line for it:

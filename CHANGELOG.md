@@ -4,7 +4,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
-### Any assistant (ADR 0121, first part)
+### Any assistant, set up from the app (ADR 0121)
+
+- The app has an **AI** tab under Set up. It sets whether AI runs here, which assistants your people use and the default one, the modes a step may run in and the default, and the model provider, with one field for each setting the provider accepts. It shows whether the provider's key variable is set on this machine, by name.
+- **Save** writes the org pack's `runtime.yaml`. It keeps everything the tab doesn't change, is checked against the schema, refuses anything that looks like a key, and says to commit the file in a pull request.
+- **Test the provider** asks the configured provider one short question, with nothing of the estate in it, and says whether it answered.
+- The local API gains `GET` and `PUT /api/settings/ai` and `POST /api/settings/ai/test` (API 2.16.0). `@maycombhq/model-providers` exports each provider's accepted settings (`PROVIDER_SETTINGS`).
 
 - `runtime.yaml` may now allow `cursor`, `gemini-cli`, `windsurf` and `agents-md` (Codex and any tool that reads `AGENTS.md`) beside `copilot` and `claude-code`. `atticus assistant-files` writes the same slash commands, instructions and skills for each one, in its own files:
   - Cursor: `.cursor/commands/` and an always-applied rule.

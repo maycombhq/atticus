@@ -30,7 +30,7 @@ const declinedOf = (
       ? "refusal"
       : undefined;
 
-const SETTINGS = [
+export const OPENAI_SETTINGS = [
   ...COMMON_SETTINGS,
   "flavour",
   "baseUrl",
@@ -67,7 +67,7 @@ export class OpenAiCompatibleProvider extends BaseProvider {
   constructor(settings: RawSettings, deps: ProviderDeps & { flavour?: OpenAiFlavour } = {}) {
     const forced = deps.flavour;
     const name = forced === "azure" ? "azure-openai" : "openai-compatible";
-    const s = new SettingsReader(name, settings, SETTINGS);
+    const s = new SettingsReader(name, settings, OPENAI_SETTINGS);
     super(s, deps);
     this.flavour = forced ?? s.oneOf("flavour", ["openai", "azure"] as const, "openai");
     const azure = this.flavour === "azure";

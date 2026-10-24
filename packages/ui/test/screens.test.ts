@@ -80,6 +80,7 @@ describe("the app's map: six sections, every page a tab (ADR 0119)", () => {
       "intake",
       "orgpack",
       "orgpack-draft",
+      "ai",
       "settings",
     ]);
     expect(of("Atticus")).toEqual(["runs", "history", "evals", "learning"]);
