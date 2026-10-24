@@ -1,0 +1,72 @@
+# Undoes cases (ADR 0117 addendum): does a sentence of design.md or data.md say how a deployment
+# step is undone? `truth` is what a release manager says. A step is its kind and the names it
+# goes by (repo, component, tables, migration, route); `others` are the other steps' names. The
+# new rule vetoes a sentence that names another step and not this one, and asks the judge of the
+# rest; `recorded` is the judge's recorded answer. The old rule (the release plan's ROLLBACK
+# regex, then names, then "migration, schema, column or table" for a sentence naming no step) is
+# scored on the same pairs.
+steps:
+  migration: { kind: migration, names: [ledger-db, account, limit_change, V3__add_daily_limit.sql] }
+  ledger: { kind: code, names: [forge-ledger, ledger-api] }
+  bff: { kind: code, names: [forge-portal-bff, portal-bff] }
+  ui: { kind: code, names: [forge-portal-ui, portal-ui] }
+cases:
+  - id: expand-only-migration
+    step: migration
+    sentence: V3__add_daily_limit.sql is expand-only, so rolling back needs no down migration.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: sentence, text: rolling back needs no down migration }] }
+  - id: redeploy-own-image
+    step: ledger
+    sentence: To roll back ledger-api, redeploy the previous ledger-api image; the new column stays.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: sentence, text: redeploy the previous ledger-api image }] }
+  - id: another-steps-rollback
+    step: bff
+    sentence: To roll back ledger-api, redeploy the previous ledger-api image; the new column stays.
+    truth: no
+  - id: generic-redeploy
+    step: bff
+    sentence: Roll back the other repos by redeploying their previous release.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: sentence, text: redeploying their previous release }] }
+  - id: generic-redeploy-not-a-migration
+    step: migration
+    sentence: Roll back the other repos by redeploying their previous release.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: sentence, text: the other repos }] }
+  - id: restore-is-a-feature
+    step: ui
+    sentence: portal-ui will restore the filter a customer last chose after a reload.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: sentence, text: restore the filter a customer last chose }] }
+  - id: undo-is-a-feature
+    step: ui
+    sentence: portal-ui lets a support agent undo a limit change within five minutes.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: sentence, text: undo a limit change within five minutes }] }
+  - id: no-rollback-yet
+    step: bff
+    sentence: There is no rollback plan for portal-bff yet.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: sentence, text: There is no rollback plan }] }
+  - id: redeploy-paraphrase
+    step: ledger
+    sentence: If the limit check misbehaves, put the previous ledger-api image back.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: sentence, text: put the previous ledger-api image back }] }
+  - id: feature-flag-off
+    step: ledger
+    sentence: Switching the daily-limit flag off in ledger-api turns the check off without a deploy.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: sentence, text: Switching the daily-limit flag off }] }
+  - id: rollout-order
+    step: ledger
+    sentence: Migration first, then ledger-api, then portal-bff and portal-ui.
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: sentence, text: Migration first, then ledger-api }] }
+  - id: table-sentence-for-a-migration
+    step: migration
+    sentence: Reverting the release leaves the new table in place, which is safe because nothing else reads it.
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: sentence, text: leaves the new table in place }] }
