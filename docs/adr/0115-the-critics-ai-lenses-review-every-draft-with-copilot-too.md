@@ -25,3 +25,17 @@ The lenses also didn't see the draft. The critic reads the change folder's artif
 - Each lens is one more prompt per draft. With the default feature type and an org pack with AI rules at every lens, that is up to six. Each lens prompt carries the draft and the estate, so it is bigger than a critic lens's prompt on artifacts alone.
 - No contract changes: the C3 finding and the round meta keep their shapes (a lens's `artifacts` may now name a draft file), C5 is unchanged, and `stage/<stage>.yaml` gains an optional field (no version bump). The `--handoff --json` output gains an optional field.
 - Not built: a lens that judges a draft without an AI rule in the org pack (the built-in constitution has only deterministic rules, so a pack with no AI rule gets no lens review), and the IntelliJ plugin, which runs no hand-off loop of its own.
+
+## Addendum (2026-10-23): what an adversarial review found
+
+An adversarial review of the loop found these failures. The fixes keep the decision above. They make each failure fail closed, and they carry the step's facts as data.
+
+1. **A lens that didn't review is not a review.** A lens answer without a `findings` list (empty, a refusal, prose) fails `handoff done` (`yamlAnswerProblems`), and is offered again. In model mode `parseLensOutput` returns `malformed` and the lens is recorded `failed`. A failed lens in the newest round of a gate is a hand-off reason (`lens-failed`), as a waiting one is. A lens whose run is gone or was cancelled is recorded `failed` (`failLens`).
+2. **The stage stops instead of reporting done** when a lens of the draft's round didn't review, or when the gate's round limit leaves the draft without a critic round. Running the stage again from a stop re-checks the draft on file and opens a new critic round on it. The stage's own blocking findings go back before any critic round, so a round is used only on a draft worth reviewing.
+3. **The draft's own round.** `loop.review` is dropped whenever a fresh draft starts. A resume must name a lens of that round, or this stage's own draft (`request.change` and `outputPath`). Anything else is refused. `waitingLenses` takes the round.
+4. **Ids, not words.** The loop links a finding to the question it became by id (`raiseQuestions`' `of`, ADR 0117). ADR 0117's judge decides which questions are the same. A finding answered and back in a draft that was given the answer stops the loop. `--handoff --json` offers the run the step reports through `Output.report` (`{ handoff: { runId, lens } }`), filtered to the step's change. A batched scan reports `pagesLeft`, and the end JSON carries it.
+5. **Data, not instructions.** The last draft's findings and the answers people gave go in an untrusted `hand-backs` source. The trusted instructions only point to it.
+6. **The text a lens saw.** The draft is copied into the lens run's folder (`draft/`) at the hand-off, and `completeLensRun` checks quotes against that copy.
+7. **Checked again once merged.** `StageSpec.check(answer, { onFile })`: a done stage's result is checked again with `onFile`. A migration the catalog now has under the same file name, and a table or entry the delta marked new, are the change's own.
+
+No contract shape changes: `ReasonCode` gains `lens-failed`, and the `--handoff --json` end object may carry `pagesLeft`.

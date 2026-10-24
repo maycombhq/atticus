@@ -153,6 +153,48 @@ describe("atticus change attach", () => {
       2,
     );
   });
+
+  it("keeps a file named like one attached beside it, and replaces it only with --replaces", async () => {
+    const root = await estate();
+    const dir = await mkdtemp(join(tmpdir(), "atticus-attach-src-"));
+    await writeFile(join(dir, "checkout-note.md"), "# Checkout\n\nShow the order time as HH:MM.\n");
+    await writeFile(join(dir, "checkout-note.txt"), "Show the order time as HH:MM:SS.\n");
+    const run = async (...args: string[]) => {
+      const o = io();
+      const code = await main(
+        ["change", "attach", CHANGE, ...args, "--by", "pat", "--root", root],
+        o.io,
+        {
+          quiet: true,
+        },
+      );
+      return { code, ...o };
+    };
+    expect((await run(join(dir, "checkout-note.md"))).code).toBe(0);
+    const alike = await run(join(dir, "checkout-note.txt"));
+    expect(alike.code).toBe(0);
+    expect(alike.out.join("\n")).toContain(
+      "checkout-note.txt has a name like inputs/checkout-note.md's: both are kept, and the steps read both. If it replaces that file, attach it again with --replaces inputs/checkout-note.md.",
+    );
+    const said = await run(join(dir, "checkout-note.txt"), "--replaces", "inputs/checkout-note.md");
+    expect(said.code).toBe(0);
+    expect(said.out[0]).toContain(", a newer version of inputs/checkout-note.md");
+    const index = parse(
+      await readFile(join(root, "openspec/changes", CHANGE, "inputs/index.yaml"), "utf8"),
+    );
+    expect(index.files[0]).toMatchObject({ supersededBy: "inputs/checkout-note.txt" });
+    // --replaces takes one file.
+    expect(
+      (
+        await run(
+          join(dir, "checkout-note.md"),
+          join(dir, "checkout-note.txt"),
+          "--replaces",
+          "inputs/x.md",
+        )
+      ).code,
+    ).toBe(2);
+  });
 });
 
 describe("atticus task context", () => {

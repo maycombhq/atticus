@@ -53,6 +53,21 @@ describe("a question that cites no file and line", () => {
       ["repair.question-evidence", false],
     ]);
   });
+
+  it("keeps a cited line whose path has a space in it (L6)", async () => {
+    const { dropUncitedQuestions } = await import("../src/stages/uncited.js");
+    const d = {
+      questions: [
+        {
+          question: "Which window?",
+          options: [],
+          evidence: ["openspec/changes/x/inputs/refund rules.md:4"],
+        },
+      ],
+    };
+    expect(dropUncitedQuestions(d)).toEqual([]);
+    expect(d.questions[0]!.evidence).toEqual(["openspec/changes/x/inputs/refund rules.md:4"]);
+  });
 });
 
 describe("a criterion that writes a field's name (ADR 0117)", () => {

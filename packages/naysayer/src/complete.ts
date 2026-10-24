@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
-import { Lens, toCanonicalYaml } from "@maycombhq/core";
+import { Lens, runsDirOf, toCanonicalYaml } from "@maycombhq/core";
 import { toRunSummary, type Run } from "@maycombhq/ai";
 import { leftOut, parseLensOutput, type Discarded, type LensName, type LensRun } from "./ai.js";
-import { draftDocs } from "./critic.js";
+import { draftDocs, DRAFT_DIR } from "./critic.js";
 import { CriticError } from "./errors.js";
 import { mergeHits, readRound, readRoundMeta, reviewedGates, roundsOf } from "./findings.js";
 import { gateStatusOf, type GateStatus } from "./gates.js";
@@ -44,13 +44,17 @@ export interface WaitingLens {
   round: number;
 }
 
-/** The AI lenses of the newest round at a gate that are still with the person's assistant. */
+/**
+ * The AI lenses of a round at a gate that are still with the person's assistant: the newest
+ * round, or the round given (a stage waits on its own round, whatever ran at the gate since).
+ */
 export async function waitingLenses(
   root: string,
   change: string,
   gate: string,
+  of?: number,
 ): Promise<WaitingLens[]> {
-  const round = (await roundsOf(root, change, gate)).at(-1);
+  const round = of ?? (await roundsOf(root, change, gate)).at(-1);
   if (round === undefined) return [];
   const meta = await readRoundMeta(root, change, gate, round);
   return (meta?.lenses ?? [])
@@ -153,12 +157,16 @@ export async function completeLensRun(
     const rules = applicable.filter((r) => entry.rules.includes(r.id));
     const out = leftOut(run.request.pack, entry.artifacts);
     const given = entry.artifacts.filter((p) => !out.left.has(p));
-    // A stage's draft the lens reviewed (ADR 0115) isn't an artifact: read it from the folder.
+    // A stage's draft the lens reviewed (ADR 0115) isn't an artifact: read it as the lens was
+    // given it (the copy kept in the run's folder at the hand-off), else from the change folder.
+    const drafts = given.filter((p) => !ctx.files.docs.has(p));
+    const kept = await draftDocs(join(runsDirOf(root), changeId, run.runId, DRAFT_DIR), drafts);
     const docs = [
       ...given.map((p) => ctx.files.docs.get(p)).filter((d) => d !== undefined),
+      ...kept,
       ...(await draftDocs(
         folder,
-        given.filter((p) => !ctx.files.docs.has(p)),
+        drafts.filter((p) => !kept.some((d) => d.path === p)),
       )),
     ];
     const parsed = parseLensOutput(ctx, lens, run.output, rules, docs);
@@ -174,7 +182,10 @@ export async function completeLensRun(
       priorRound: prior,
       taken: new Set(existing.findings.map((s) => s.finding.id)),
     });
-    outcome = { ...base, state: "ran", ...(out.reason ? { reason: out.reason } : {}) };
+    // An answer that isn't a review (empty, a refusal, prose) is a failed lens, never a clean one.
+    outcome = parsed.malformed
+      ? { ...base, state: "failed", reason: parsed.malformed }
+      : { ...base, state: "ran", ...(out.reason ? { reason: out.reason } : {}) };
   }
 
   // The round records the lens as read in (or failed), its findings and what was discarded.
@@ -223,4 +234,28 @@ export async function completeLensRun(
     waiting: await waitingLenses(root, changeId, gateId),
     status: await gateStatusOf(root, lifecycle, change, gateId),
   };
+}
+
+/**
+ * Record a lens of a round as failed without an answer to read: its run is gone (a cleaned
+ * runs folder, another machine) or was cancelled. The round then says the lens never reviewed,
+ * and the gate stays closed on it rather than waiting for ever or opening.
+ */
+export async function failLens(
+  root: string,
+  change: string,
+  gate: string,
+  round: number,
+  runId: string,
+  reason: string,
+): Promise<void> {
+  const meta = await readRoundMeta(root, change, gate, round);
+  if (!meta || !meta.lenses.some((l) => l.runId === runId && l.state === "waiting")) return;
+  const lenses = meta.lenses.map((l) =>
+    l.runId === runId ? { ...l, state: "failed" as const, reason } : l,
+  );
+  await writeFileAtomic(
+    join(changeFolder(root, change), "review", gate, String(round), "meta", "round.yaml"),
+    toCanonicalYaml({ ...meta, lenses }, ROUND_LEADING),
+  );
 }

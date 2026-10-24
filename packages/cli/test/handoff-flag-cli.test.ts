@@ -279,3 +279,23 @@ prefixes:
     expect((f.errors as string[])[0]).toMatch(/isn't a cloned repo/);
   });
 });
+
+describe("what a step reports as data (A4)", () => {
+  it("gives a batched scan's pages left as pagesLeft, never read from its words", async () => {
+    const { handoffStep } = await import("../src/handoff-flag.js");
+    const root = await mkdtemp(join(tmpdir(), "atticus-facts-"));
+    const out: string[] = [];
+    const code = await handoffStep(
+      root,
+      ["knowledge", "scan", "--handoff", "--json"],
+      { out: (l) => out.push(l), err: () => {} },
+      async (_argv, io) => {
+        io.out("Read 4 pages; the rest are for the next batch.");
+        io.report?.({ pagesLeft: 3 });
+        return 0;
+      },
+    );
+    expect(code).toBe(0);
+    expect(JSON.parse(out.join("\n"))).toMatchObject({ state: "done", pagesLeft: 3 });
+  });
+});

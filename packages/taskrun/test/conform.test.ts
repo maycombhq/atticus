@@ -9,6 +9,8 @@ import { act, gateStatus } from "@maycombhq/naysayer";
 import {
   conformanceOf,
   conformChange,
+  conformFindingId,
+  conformScanDir,
   CONFORM_GATE,
   runTask,
   type CommandRunner,
@@ -204,4 +206,31 @@ describe("does the code do what the design says? (ADR 0114)", () => {
     },
     T,
   );
+});
+
+describe("conformance findings and scans, one at a time (L4, M9)", () => {
+  it("gives each missing column of a step its own finding id", () => {
+    const missing = (what: string) => ({
+      status: "missing" as const,
+      check: "column" as const,
+      flow: "forge-ledger.post-transfer",
+      item: 2,
+      what,
+      at: [],
+    });
+    const cents = "forge-ledger-db.transfers has no column limit_cents (step 2).";
+    const a = conformFindingId(missing(cents));
+    const b = conformFindingId(
+      missing("forge-ledger-db.transfers has no column limit_set_at (step 2)."),
+    );
+    expect(a).not.toBe(b);
+    expect(a).toBe(conformFindingId(missing(cents)));
+  });
+
+  it("scans each commit in a folder of its own, so two scans of one commit don't share one", () => {
+    const one = conformScanDir("/m", "forge-ledger", "0123456789abcdef");
+    const two = conformScanDir("/m", "forge-ledger", "0123456789abcdef");
+    expect(one).not.toBe(two);
+    expect(one.replace(/\\/g, "/")).toContain("/.index/conform/forge-ledger-0123456789ab-");
+  });
 });

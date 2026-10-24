@@ -47,7 +47,7 @@ describe("attaching files to a change", () => {
     expect(yaml.files[0]).toMatchObject({ path: "inputs/refund-rules-v1.md", addedBy: "pat" });
   });
 
-  it("refuses a file already attached, by its bytes, and keeps a newer version beside the old", async () => {
+  it("refuses a file already attached, by its bytes, and never takes a file for another's newer version by its name", async () => {
     const dir = await changeDir();
     await attachToChange(dir, [file("refund-rules-v1.md")], { by: "pat", at: AT });
     const again = await attachToChange(
@@ -58,15 +58,76 @@ describe("attaching files to a change", () => {
     expect(again.refused).toEqual([
       { name: "copy.md", why: "It is already attached as inputs/refund-rules-v1.md." },
     ]);
-    expect(again.added[0]).toMatchObject({
+    // Both are kept and both are read: which one replaces which is a person's to say.
+    expect(again.added[0]).toMatchObject({ path: "inputs/refund-rules-v2.md", version: "2" });
+    expect(again.added[0]!.supersedes).toBeUndefined();
+    expect(again.notes.join("\n")).toContain(
+      "refund-rules-v2.md has a name like inputs/refund-rules-v1.md's: both are kept, and the steps read both. If it replaces that file, attach it again with --replaces inputs/refund-rules-v1.md.",
+    );
+    expect((await readChangeInputs(dir)).files.every((f) => !f.supersededBy)).toBe(true);
+    // A file whose name says nothing of a version (a .txt beside a .md) is never a replacement.
+    const txt = await attachToChange(
+      dir,
+      [{ name: "refund-rules.txt", bytes: new TextEncoder().encode("Refunds within 14 days.\n") }],
+      { by: "sam", at: "2026-10-23T11:00:00Z" },
+    );
+    expect(txt.added[0]!.supersedes).toBeUndefined();
+    expect((await changeInputSources(dir, REL)).map((s) => s.id)).toEqual([
+      "inputs/refund-rules-v1.md",
+      "inputs/refund-rules-v2.md",
+      "inputs/refund-rules.txt",
+    ]);
+  });
+
+  it("replaces a file only when a person says so, also for a file already attached", async () => {
+    const dir = await changeDir();
+    await attachToChange(dir, [file("refund-rules-v1.md"), file("refund-rules-v2.md")], {
+      by: "pat",
+      at: AT,
+    });
+    // Attached before the person said: the same bytes with --replaces mark it, nothing is copied.
+    const said = await attachToChange(dir, [file("refund-rules-v2.md")], {
+      by: "pat",
+      at: AT,
+      replaces: "inputs/refund-rules-v1.md",
+    });
+    expect(said.refused).toEqual([]);
+    expect(said.added[0]).toMatchObject({
       path: "inputs/refund-rules-v2.md",
-      version: "2",
       supersedes: "inputs/refund-rules-v1.md",
     });
     const index = await readChangeInputs(dir);
     expect(index.files.find((f) => f.path === "inputs/refund-rules-v1.md")?.supersededBy).toBe(
       "inputs/refund-rules-v2.md",
     );
+    expect((await changeInputSources(dir, REL)).map((s) => s.id)).toEqual([
+      "inputs/refund-rules-v2.md",
+    ]);
+    // A file that isn't attached can't be replaced.
+    const none = await attachToChange(dir, [file("refund-form.png")], {
+      by: "pat",
+      at: AT,
+      replaces: "inputs/nothing.md",
+    });
+    expect(none.refused).toEqual([
+      {
+        name: "refund-form.png",
+        why: "inputs/nothing.md isn't attached to this change, so it can't be replaced.",
+      },
+    ]);
+  });
+
+  it("never reads a file outside the change's inputs/read/, whatever index.yaml says", async () => {
+    const dir = await changeDir();
+    await attachToChange(dir, [file("refund-rules-v1.md")], { by: "pat", at: AT });
+    const index = parse(await readFile(join(dir, "inputs/index.yaml"), "utf8"));
+    index.files[0].readAs = "inputs/read/../../secret.env";
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(join(dir, "inputs/index.yaml"), JSON.stringify(index));
+    await writeFile(join(dir, "secret.env"), "TOKEN=abc\n");
+    const s = await changeInputSources(dir, REL);
+    expect(s.map((x) => x.text).join("\n")).not.toContain("TOKEN");
+    expect((await readChangeInputs(dir)).files).toEqual([]);
   });
 
   it("names a file that is already in the metarepo's inputs, and still attaches it", async () => {
@@ -84,18 +145,23 @@ describe("attaching files to a change", () => {
 
   it("gives the steps each current file's text, every line or page cited", async () => {
     const dir = await changeDir();
+    await attachToChange(dir, [file("refund-rules-v1.md")], { by: "pat", at: AT });
+    await attachToChange(dir, [file("refund-rules-v2.md")], {
+      by: "pat",
+      at: AT,
+      replaces: "inputs/refund-rules-v1.md",
+    });
     await attachToChange(
       dir,
       [
-        file("refund-rules-v1.md"),
-        file("refund-rules-v2.md"),
         file("refund-form.png"),
         file("partner-letter.pdf", join(HERE, "../../ingestors/test/fixtures/documents")),
       ],
       { by: "pat", at: AT },
     );
     const s = await changeInputSources(dir, REL);
-    // The older version is left out; the picture is named, not read.
+    // The version a person said it replaces is left out; the picture is named, not read. Each
+    // part is cited by the file's path in the change folder: the id the steps' data block has.
     expect(s.map((x) => x.id)).toEqual([
       "inputs/refund-rules-v2.md",
       "inputs/refund-form.png",
@@ -106,7 +172,7 @@ describe("attaching files to a change", () => {
       readFileSync(join(FIX, "expected/refund-rules-v2.read.md"), "utf8").replace(/\r\n/g, "\n"),
     );
     expect(s[1]!.text).toMatch(/a picture; Atticus doesn't read pictures/);
-    expect(s[2]!.text).toMatch(/\[partner-letter\.pdf page 1\]/);
+    expect(s[2]!.text).toMatch(/\[inputs\/partner-letter\.pdf page 1\]/);
     // What was read is kept beside the file, for the index and for people.
     expect(await readFile(join(dir, "inputs/read/refund-rules-v2.md.md"), "utf8")).toBe(s[0]!.text);
   });
