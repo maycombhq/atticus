@@ -5,7 +5,14 @@ import { delimiter, join } from "node:path";
 import { ASSISTANT_FORMATS, generateAssistantFiles } from "@maycombhq/assistant-files";
 import { DEFAULT_PORT, loadOrgPack, orgPackDirOf, readLock } from "@maycombhq/core";
 import { createOpenSpec, isSupportedVersion, OPENSPEC_PINNED } from "@maycombhq/openspec-adapter";
-import { createGit, type GitRunner } from "@maycombhq/workspace";
+import {
+  baseClonePath,
+  createGit,
+  isInPlace,
+  loadRepos,
+  remoteDefaultBranch,
+  type GitRunner,
+} from "@maycombhq/workspace";
 import type { Output } from "./commands.js";
 import { upgradeCheck } from "./upgrade.js";
 import { versionAtLeast } from "./version.js";
@@ -302,6 +309,26 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       : "finished",
     fix: "Run atticus scan again: it brings the catalog up to date (every file it writes is whole).",
   });
+
+  // ADR 0123: the branch each repo is read from, against the one its remote calls its default
+  // (as the base clone last heard it at a sync: no network here).
+  const manifest = await loadRepos(root).catch(() => []);
+  const differ: string[] = [];
+  for (const r of manifest.filter((x) => !x.archived && !isInPlace(x.url))) {
+    const remote = await remoteDefaultBranch(baseClonePath(root, r.id), git);
+    if (remote && remote !== r.defaultBranch)
+      differ.push(`${r.id} (manifest ${r.defaultBranch}, remote ${remote})`);
+  }
+  if (manifest.length)
+    out.push({
+      id: "default-branches",
+      label: "Default branches",
+      status: differ.length ? "warn" : "ok",
+      detail: differ.length
+        ? `read from another branch than the remote's default: ${differ.join(", ")}`
+        : "each repo is read from the branch its manifest names",
+      fix: "If the remote's default is the one to read, set defaultBranch in the manifest (or on Set up › Repos), then run atticus workspace sync.",
+    });
 
   const up = await upgradeSoon;
   out.push({

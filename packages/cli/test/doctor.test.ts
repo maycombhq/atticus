@@ -1,4 +1,4 @@
-import { cp, mkdtemp, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -268,5 +268,24 @@ describe("atticus doctor", () => {
     });
     expect(bad.steps[0]).toMatchObject({ id: "machine", done: false });
     expect(bad.steps[0]!.fix).toMatch(/Node 22\.13\.0 or later/);
+  });
+});
+
+describe("default branches (ADR 0123)", () => {
+  it("warns when a repo is read from another branch than its remote's default, offline", async () => {
+    const at = await mkdtemp(join(tmpdir(), "atticus-doctor-branches-"));
+    await cp(join(FIXTURES, "forge/metarepo"), at, { recursive: true });
+    await upgradeCommand(at, { by: "pat" }, { out: () => undefined, err: () => undefined });
+    await mkdir(join(at, "workspace", "forge-ledger"), { recursive: true });
+    const base = gitWith({ "user.name": "Pat", "user.email": "pat@example.com" });
+    const git: GitRunner = async (args, cwd) =>
+      args[0] === "symbolic-ref" && cwd?.endsWith("forge-ledger")
+        ? { stdout: "origin/develop\n", stderr: "" }
+        : base(args, cwd);
+    const c = byId(await doctorChecks(at, healthy({ git })), "default-branches");
+    expect(c.status).toBe("warn");
+    expect(c.detail).toContain("forge-ledger (manifest main, remote develop)");
+    expect(c.fix).toMatch(/defaultBranch/);
+    expect(byId(await doctorChecks(root, healthy()), "default-branches").status).toBe("ok");
   });
 });

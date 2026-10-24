@@ -76,6 +76,7 @@ describe("the app's map: six sections, every page a tab (ADR 0119)", () => {
     expect(of("Knowledge")).toEqual(["knowledge", "wikis", "documents", "wiki-search", "parties"]);
     expect(of("SetUp")).toEqual([
       "onboarding",
+      "repos",
       "scans",
       "intake",
       "orgpack",
@@ -89,7 +90,7 @@ describe("the app's map: six sections, every page a tab (ADR 0119)", () => {
         .filter((x) => x.group === g)
         .map((x) => x.id);
     expect(PHASES.map(groupLabel)).toEqual(["Define", "Design", "Plan", "Build", "Release"]);
-    expect(phase("Define")).toEqual(["brief", "ux", "feature-design"]);
+    expect(phase("Define")).toEqual(["cockpit", "brief", "ux", "feature-design"]);
     expect(phase("Design")).toEqual(["architecture", "arch-review", "change-diagram"]);
     expect(phase("Plan")).toEqual(["stories", "breakdown", "estimate"]);
     expect(phase("Build")).toEqual(["task-list", "tasks", "conformance", "trace", "todo"]);

@@ -277,7 +277,8 @@ function stageOf(
   }
 }
 
-function changeSteps(c: NextState["changes"][number]): NextStep[] {
+/** One change's steps, in order (the cockpit shows the first). */
+export function changeSteps(c: NextState["changes"][number]): NextStep[] {
   const stage = stageSteps(c);
   const id = c.id;
   // ADR 0101: once the feature is placed, what the change needs from the organisation, early,

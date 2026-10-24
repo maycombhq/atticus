@@ -62,6 +62,9 @@ export async function onboardingView(root: string): Promise<View> {
             type: r.type,
             owner: r.owner,
             manifest: rel(path),
+            // ADR 0123: the branch the catalog is read from, and those scanned beside it.
+            defaultBranch: r.defaultBranch,
+            branches: r.branches,
           },
         });
       }

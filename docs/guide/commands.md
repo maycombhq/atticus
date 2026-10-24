@@ -15,6 +15,7 @@ Usage:
           [--full]                     Ignore the scan cache
           [--dry-run]                  Show what would change; write nothing
           [--warnings]                 List what the scan left out or couldn't read, not just how many
+          [--ref <branch>]             Scan another branch beside the baseline, into catalog/branches/<branch>/, and say what it changes
           [--json]                     Print the result as JSON
   atticus scan survey <repo>           Your assistant reads the repo and drafts its scan settings (folders to leave out, path prefixes, client base URLs); checked against the code [--attempts 3] [--force] [--max-tokens n]
   atticus scan verify <repo>           Your assistant compares the code with the last scan: what it missed, what it has wrong, a fix for each; checked, kept in proposals/scan/ [--attempts 3] [--json] [--accept] [--max-tokens n]

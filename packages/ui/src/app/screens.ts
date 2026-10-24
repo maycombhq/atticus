@@ -36,6 +36,8 @@ export const SCREENS: ScreenDef[] = [
   { id: "questions", label: COPY.questions.title, section: "Home", under: "home" },
   // Changes: the list, then each phase's pages.
   { id: "changes", label: S.changes, section: "Changes" },
+  // WP7.1: one change at a glance, the first of its pages.
+  { id: "cockpit", label: S.cockpit, section: "Changes", group: "Define" },
   { id: "brief", label: S.brief, section: "Changes", group: "Define" },
   { id: "ux", label: S.ux, section: "Changes", group: "Define" },
   { id: "feature-design", label: N.feature, section: "Changes", group: "Define" },
@@ -75,6 +77,7 @@ export const SCREENS: ScreenDef[] = [
   { id: "initiatives", label: S.initiatives, section: "Estate" },
   // Set up: the repos, their scans, what was dropped in, the org pack, this machine.
   { id: "onboarding", label: N.onboarding, section: "SetUp" },
+  { id: "repos", label: S.repos, section: "SetUp" },
   { id: "scans", label: S.scans, section: "SetUp" },
   { id: "intake", label: S.intake, section: "SetUp" },
   { id: "orgpack", label: S.orgpack, section: "SetUp" },

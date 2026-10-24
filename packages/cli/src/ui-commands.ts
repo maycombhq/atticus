@@ -20,6 +20,8 @@ import { uiModelRunRoutes } from "./ui-api-runs.js";
 import { uiHistoryRoutes } from "./ui-api-history.js";
 import { uiAiRoutes } from "./ui-api-ai.js";
 import { uiDocumentRoutes } from "./ui-api-documents.js";
+import { uiRepoRoutes } from "./ui-api-repos.js";
+import { uiCockpitRoutes } from "./ui-api-cockpit.js";
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export async function startUi(
@@ -58,11 +60,18 @@ export async function startUi(
       // ADR 0106: the model runs, what they were asked and answered.
       // ADR 0110: the prompts people sent their assistant and the responses they got.
       // ADR 0121: the AI tab, how AI runs here.
-      // ADR 0122: general knowledge as files, in inputs/.
-      return uiDocumentRoutes(
-        uiAiRoutes(
-          uiHistoryRoutes(
-            uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+      // ADR 0122: general knowledge as files, in inputs/. ADR 0123: branches you can see.
+      // WP7.1: one change at a glance.
+      return uiCockpitRoutes(
+        uiRepoRoutes(
+          uiDocumentRoutes(
+            uiAiRoutes(
+              uiHistoryRoutes(
+                uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+                ctx,
+              ),
+              ctx,
+            ),
             ctx,
           ),
           ctx,

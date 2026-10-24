@@ -4,6 +4,18 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Branches you can see and choose (ADR 0123)
+
+- `atticus workspace sync` asks each remote which branch it calls its default. When it isn't the manifest's `defaultBranch`, it says so, and `atticus doctor` warns, offline. Atticus never changes the default by itself.
+- A manifest repo may list `branches`: the other branches people work on. `atticus scan --ref <branch>` reads each listed repo's branch in a read-only checkout beside its base clone, and keeps the catalog in `catalog/branches/<branch>/`, never in `catalog/generated`. It says what the branch adds, removes and changes against the baseline. `--repos` names repos instead.
+- **Set up › Repos** shows each repo's default branch with the commit the baseline was read from, the remote's default when it differs, and the other branches with their scans. It can scan a branch, compare it with the default, and edit the branches in the manifest.
+- VS Code's repo rows show the branch and the scanned commit.
+- The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
+
+### One change at a glance (the change cockpit)
+
+- A change's first page is now **At a glance**, its cockpit. It shows where the change is on its stage path, with each stage's drafts, critic rounds and open questions; the next step with its slash command and command; what blocks it; and each repo's change branch, base and pull request (`GET /api/changes/{id}/cockpit`, API 2.19.0).
+
 ### Knowledge files in the metarepo's inputs/ (ADR 0122)
 
 - Files dropped in the metarepo's `inputs/` are now general knowledge. `atticus sources sync` reads them as a source called `inputs`, with the wikis or alone (`--source inputs`), and needs no wiki configured. The knowledge scan reads the snapshot into items, each quote checked against the file.

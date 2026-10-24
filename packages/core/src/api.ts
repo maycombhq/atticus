@@ -13,7 +13,7 @@ import {
 import { ChangeArtifact, Phase } from "./schema/orgpack.js";
 import { Finding, FindingAction, Lens, Severity } from "./schema/review.js";
 import { Question, QuestionScopeLevel } from "./schema/question.js";
-import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
+import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
 
 /**
  * Contract C4, local API. The UI only calls this API and the API only reads and writes
@@ -46,7 +46,7 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.15.0 (ADR 0116): how a run's context was retrieved, retrieval in the transcript (the model's
  *   expansion and rerank); run records are at version 3.
  */
-export const API_VERSION = "2.17.0";
+export const API_VERSION = "2.19.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -499,6 +499,9 @@ export const OnboardingRepo = z.object({
   owner: RecordId,
   /** The manifest file that lists it, relative to the metarepo. */
   manifest: z.string(),
+  /** The branch the catalog is read from, and the others scanned beside it (ADR 0123). */
+  defaultBranch: z.string().optional(),
+  branches: z.array(z.string()).optional(),
   cloned: z.boolean(),
   /** org-pack/scan/<repo>.yaml (ADR 0075). */
   scanSettings: z.object({ path: z.string(), present: z.boolean() }),
@@ -906,7 +909,74 @@ export const ScanRequest = z.strictObject({
   repos: z.array(RecordId).optional(),
   /** Ignore the cache and rescan everything. */
   full: z.boolean().default(false),
+  /** Another branch, scanned beside the baseline into catalog/branches/<branch>/ (ADR 0123). */
+  ref: GitRef.optional(),
 });
+
+/** ADR 0123: each repo's branches, as the Repos screen shows them. */
+export const RepoBranchesView = z.object({
+  id: RecordId,
+  platform: z.string(),
+  url: z.string(),
+  type: z.string(),
+  owner: z.string(),
+  defaultBranch: z.string(),
+  /** The branch the remote calls its default, as the base clone last heard it. */
+  remoteDefault: z.string().optional(),
+  branches: z.array(z.string()),
+  /** The base clone's commit: what the baseline catalog was read from. */
+  commit: z.string().optional(),
+  /** Its branches scanned beside the baseline, with when and at which commit. */
+  scans: z.array(z.object({ branch: z.string(), scannedAt: z.string(), commit: z.string() })),
+});
+export const RepoBranchesList = z.object({ repos: z.array(RepoBranchesView) });
+/** What a branch's catalog changes against the baseline, for the repos it read. */
+export const BranchCompare = z.object({
+  branch: z.string(),
+  scannedAt: z.string(),
+  repos: z.array(z.object({ id: z.string(), commit: z.string() })),
+  added: z.array(z.string()),
+  removed: z.array(z.string()),
+  changed: z.array(z.object({ record: z.string(), fields: z.array(z.string()) })),
+});
+export const EditRepoBranchesRequest = z.strictObject({
+  defaultBranch: GitRef.optional(),
+  branches: z.array(GitRef).optional(),
+});
+/** WP7.1: the change cockpit, what a person needs to follow one change. */
+export const ChangeCockpit = z.object({
+  id: z.string(),
+  state: z.string(),
+  next: z
+    .object({
+      step: z.string(),
+      command: z.string(),
+      slash: z.string().optional(),
+      why: z.string(),
+    })
+    .passthrough()
+    .optional(),
+  nextStep: z.string(),
+  reasons: z.array(z.object({ code: z.string(), message: z.string() })),
+  risk: z.object({ level: z.string(), score: z.number() }),
+  stages: z.array(
+    z.object({
+      stage: z.enum(["feature", "architecture", "stories"]),
+      state: z.string(),
+      drafts: z.number().int(),
+      rounds: z.number().int(),
+      openQuestions: z.number().int(),
+    }),
+  ),
+  openQuestions: z.number().int(),
+  repos: z.array(
+    z.object({ id: z.string(), branch: z.string(), base: z.string(), pr: z.string().optional() }),
+  ),
+});
+export type ChangeCockpitT = z.infer<typeof ChangeCockpit>;
+export type RepoBranchesViewT = z.infer<typeof RepoBranchesView>;
+export type RepoBranchesListT = z.infer<typeof RepoBranchesList>;
+export type BranchCompareT = z.infer<typeof BranchCompare>;
 
 export const NewChangeRequest = z.strictObject({
   id: RecordId,
@@ -1922,6 +1992,38 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: arrayOf("RepoView"), description: "OK" },
     },
   },
+  "/api/repos/branches": {
+    get: {
+      id: "listRepoBranches",
+      summary:
+        "Each repo's default branch (the manifest's and the remote's), its named branches, the commit the baseline was read from, and its branches scanned beside it (ADR 0123)",
+      tag: "workspace",
+      ok: { status: 200, schema: "RepoBranchesList", description: "OK" },
+    },
+  },
+  "/api/repos/compare": {
+    get: {
+      id: "compareBranch",
+      summary:
+        "What a branch scanned beside the baseline changes against it, for the repos it read: records added, removed and changed (ADR 0123)",
+      tag: "workspace",
+      params: [{ ...q("branch"), required: true }],
+      ok: { status: 200, schema: "BranchCompare", description: "OK" },
+      errors: [400, 404],
+    },
+  },
+  "/api/repos/{repoId}/branches": {
+    put: {
+      id: "editRepoBranches",
+      summary:
+        "Set a repo's default branch and named branches in its manifest, keeping the rest of the file and its comments; commit it in a pull request (ADR 0123)",
+      tag: "workspace",
+      params: [p("repoId")],
+      body: EditRepoBranchesRequest,
+      ok: { status: 200, schema: { type: "object" }, description: "Written" },
+      errors: [400, 404],
+    },
+  },
   "/api/specs": {
     get: {
       id: "listSpecs",
@@ -1981,6 +2083,17 @@ const OPS: Record<string, Record<string, Op>> = {
       body: AttachFileRequest,
       ok: { status: 201, schema: "AttachResult", description: "Attached, or refused with why" },
       errors: [400, 404, 413, 422],
+    },
+  },
+  "/api/changes/{changeId}/cockpit": {
+    get: {
+      id: "getChangeCockpit",
+      summary:
+        "One change at a glance: where it is, the next step with its slash command, what blocks it, each stage's progress, the risk, and each repo's change branch and base",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ChangeCockpit", description: "OK" },
+      errors: [400, 404],
     },
   },
   "/api/changes/{changeId}/inputs/{name}/promote": {
@@ -2990,6 +3103,9 @@ export function openApiDocument(): Record<string, unknown> {
     AttachResult,
     DocumentList,
     AddDocumentResult,
+    RepoBranchesList,
+    BranchCompare,
+    ChangeCockpit,
     PromoteResult,
     ChangeConformance,
     OrgPackView,

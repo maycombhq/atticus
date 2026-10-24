@@ -11,6 +11,7 @@ import { readChangeRepos, writeChangeRepos } from "./files.js";
 import { createGit, GitError, type GitRunner } from "./git.js";
 import {
   baseClonePath,
+  branchCheckoutPath,
   changeWorktreesDir,
   ensureGitignore,
   toRepoRelative,
@@ -23,12 +24,22 @@ export interface SyncResult {
   action: "cloned" | "updated" | "skipped" | "failed";
   sha?: string;
   reason?: string;
+  /**
+   * The branch the remote calls its default (ADR 0123), read at this sync: a warning when the
+   * manifest's defaultBranch is another one. Undefined when the remote didn't say.
+   */
+  remoteDefault?: string;
 }
 
 export interface WorkspaceManager {
   readonly root: string;
   /** Clone missing base clones and fast-forward existing ones to the default branch. One failure doesn't stop the rest. */
   sync(repos: ManifestRepo[]): Promise<SyncResult[]>;
+  /**
+   * Another branch of a repo, checked out read-only beside its base clone (ADR 0123), fetched
+   * first: what `atticus scan --ref` reads. Nothing is ever committed there.
+   */
+  checkoutBranch(repo: ManifestRepo, branch: string): Promise<{ dir: string; commit: string }>;
   /** Create (or reuse) a worktree on change/<id> in each repo, record them in repos.yaml and write the editor workspaces. */
   openChange(change: string, repos: ManifestRepo[]): Promise<ChangeRepos>;
   /**
@@ -49,6 +60,23 @@ export function isInPlace(url: string): boolean {
   return url === "." || url.startsWith("./");
 }
 
+/**
+ * The remote's default branch as the base clone last heard it (refs/remotes/origin/HEAD, which
+ * every sync refreshes): read offline, for doctor and the Repos screen. Undefined when unknown.
+ */
+export async function remoteDefaultBranch(
+  dir: string,
+  git: GitRunner = createGit(),
+): Promise<string | undefined> {
+  if (!existsSync(dir)) return undefined;
+  try {
+    const r = (await git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], dir)).stdout;
+    return r.trim().replace(/^origin\//, "") || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function createWorkspace(root: string, git: GitRunner = createGit()): WorkspaceManager {
   const g = (args: string[], cwd = root) => git(args, cwd);
   const head = async (cwd: string) => (await g(["rev-parse", "HEAD"], cwd)).stdout.trim();
@@ -61,6 +89,17 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
     } catch {
       return false;
     }
+  };
+
+  // Ask the remote which branch it calls its default (ADR 0123); never fails the sync.
+  const remoteDefault = async (cwd: string): Promise<{ remoteDefault?: string }> => {
+    try {
+      await g(["remote", "set-head", "origin", "--auto"], cwd);
+    } catch {
+      // the remote didn't say; what the clone knew stays
+    }
+    const b = await remoteDefaultBranch(cwd, git);
+    return b ? { remoteDefault: b } : {};
   };
 
   async function syncOne(repo: ManifestRepo): Promise<SyncResult> {
@@ -81,7 +120,12 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
         args.push("--", repo.url, dest);
         await g(args);
         if (repo.sparse.length > 0) await g(["sparse-checkout", "set", "--", ...repo.sparse], dest);
-        return { id: repo.id, action: "cloned", sha: await head(dest) };
+        return {
+          id: repo.id,
+          action: "cloned",
+          sha: await head(dest),
+          ...(await remoteDefault(dest)),
+        };
       }
       if (await dirty(dest)) {
         return {
@@ -97,7 +141,12 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
       );
       await g(["checkout", "--quiet", "-B", branch, `refs/remotes/origin/${branch}`], dest);
       if (repo.sparse.length > 0) await g(["sparse-checkout", "set", "--", ...repo.sparse], dest);
-      return { id: repo.id, action: "updated", sha: await head(dest) };
+      return {
+        id: repo.id,
+        action: "updated",
+        sha: await head(dest),
+        ...(await remoteDefault(dest)),
+      };
     } catch (err) {
       return { id: repo.id, action: "failed", reason: (err as Error).message };
     }
@@ -154,6 +203,24 @@ export function createWorkspace(root: string, git: GitRunner = createGit()): Wor
       const out: SyncResult[] = [];
       for (const repo of repos) out.push(await syncOne(repo));
       return out;
+    },
+
+    async checkoutBranch(repo, branch) {
+      const base = baseClonePath(root, repo.id);
+      if (!existsSync(base))
+        throw new Error(`no base clone for ${repo.id}; run atticus workspace sync first`);
+      const ref = `refs/remotes/origin/${branch}`;
+      try {
+        await g(["fetch", "--no-tags", "origin", `+refs/heads/${branch}:${ref}`], base);
+      } catch {
+        throw new Error(`${repo.id} has no branch ${branch} on its remote`);
+      }
+      const dir = branchCheckoutPath(root, repo.id, branch);
+      if (!existsSync(dir)) {
+        await mkdir(dirname(dir), { recursive: true });
+        await g(["worktree", "add", "--detach", "--", dir, ref], base);
+      } else await g(["checkout", "--quiet", "--force", "--detach", ref], dir);
+      return { dir, commit: await head(dir) };
     },
 
     async openChange(change, repos) {

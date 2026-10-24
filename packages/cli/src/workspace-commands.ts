@@ -67,6 +67,12 @@ export async function workspaceSync(
     const line = `${r.id}: ${r.action}${sha}${r.reason ? ` (${r.reason})` : ""}`;
     if (r.action === "failed") io.err(line);
     else io.out(line);
+    // ADR 0123: the manifest names one default branch; the remote may call another its default.
+    const named = repos.find((x) => x.id === r.id)?.defaultBranch;
+    if (r.remoteDefault && named && r.remoteDefault !== named)
+      io.err(
+        `${r.id}: the manifest says ${named}, the remote's default is ${r.remoteDefault}. The catalog is read from ${named}; if ${r.remoteDefault} is the one to read, set defaultBranch: ${r.remoteDefault} in the manifest (or on Set up › Repos).`,
+      );
   }
   return results.some((r) => r.action === "failed") ? 1 : 0;
 }

@@ -597,7 +597,13 @@ export function uiRoutes(r: Router, ctx: ServerContext, deps: UiDeps = {}): Rout
           const res = await run((io) =>
             scanCommand(
               root,
-              { ...(b.repos ? { repos: b.repos } : {}), full: b.full, json: true },
+              {
+                ...(b.repos ? { repos: b.repos } : {}),
+                full: b.full,
+                json: true,
+                // ADR 0123: another branch, scanned beside the baseline.
+                ...(b.ref ? { ref: b.ref } : {}),
+              },
               io,
             ),
           );

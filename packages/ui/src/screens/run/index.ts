@@ -3,6 +3,7 @@ import { Evals } from "./Evals.js";
 import { Governance } from "./Governance.js";
 import { Learning } from "./Learning.js";
 import { Release } from "./Release.js";
+import { Repos } from "./Repos.js";
 import { ServiceDesk } from "./ServiceDesk.js";
 import { AiSettings } from "./AiSettings.js";
 import { Settings } from "./Settings.js";
@@ -18,4 +19,5 @@ export const RUN_SCREENS: Record<string, Screen> = {
   learning: Learning,
   settings: Settings,
   ai: AiSettings,
+  repos: Repos,
 };
