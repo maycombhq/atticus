@@ -1,4 +1,5 @@
 import {
+  currentSignal,
   RUN_SCHEMA_VERSION,
   type AgentDefinition,
   type RunState,
@@ -175,7 +176,9 @@ export abstract class OneShotRuntime implements AiRuntime {
     return run;
   }
 
-  async run(runId: string, signal?: AbortSignal): Promise<Run> {
+  async run(runId: string, given?: AbortSignal): Promise<Run> {
+    // A run started inside a job the app can cancel stops with it (ADR 0119).
+    const signal = given ?? currentSignal();
     let run = this.get(runId);
     if (signal?.aborted) {
       run = transition(run, "cancelled", this.now());

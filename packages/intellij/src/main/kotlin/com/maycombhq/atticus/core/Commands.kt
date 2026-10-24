@@ -47,13 +47,14 @@ object Commands {
             // ADR 0113: the fast path's one step.
             "change small" to "/atticus-small",
             "plan stories" to "/atticus-stories",
-            "change draft" to "/atticus-plan",
+            "change draft" to "/atticus-draft",
             "change needs" to "/atticus-needs",
             "knowledge find" to "/atticus-find",
+            "knowledge ask" to "/atticus-knowledge-ask",
         )
 
-    /** The AI steps, by their first two words: those with a slash command, and knowledge ask (a hand-off only). */
-    val AI_STEPS: Set<String> = SLASH.keys + "knowledge ask"
+    /** The AI steps, by their first two words: each has a slash command (ADR 0119). */
+    val AI_STEPS: Set<String> = SLASH.keys
 
     /** An AI step's words: one of AI_STEPS, or `critic <change>`, its lenses one at a time (ADR 0106 addendum). */
     fun isAiStep(args: List<String>): Boolean =
@@ -149,6 +150,9 @@ object Commands {
 
     /** The slash command that runs an AI step in Copilot Chat, with its repo or change. */
     fun slashFor(argv: List<String>): String? {
+        // `critic <change>`: its AI lenses, one at a time (ADR 0119).
+        if (argv.firstOrNull() == "critic" && argv.size > 1 && argv[1] != "stats" && !argv[1].startsWith("--"))
+            return "/atticus-critic ${argv[1]}"
         val slash = SLASH[argv.take(2).joinToString(" ")] ?: return null
         val target = argv.getOrNull(2)?.takeIf { !it.startsWith("--") }
         return if (target != null) "$slash $target" else slash

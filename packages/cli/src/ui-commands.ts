@@ -126,6 +126,24 @@ export function untilStopped(
 }
 
 /**
+ * What `atticus ui` prints once it runs. The token drives the API, so it is printed only for an
+ * editor that started the app (it reads it from here) or on request, not into every terminal and
+ * its scrollback (ADR 0119).
+ */
+export function startedLines(
+  url: string,
+  token: string,
+  o: { showToken?: boolean; embed?: "vscode"; parent?: number },
+): string[] {
+  return [
+    `Atticus is running at ${url} (Ctrl+C stops it).`,
+    o.showToken || o.embed || o.parent !== undefined
+      ? `For assistants and scripts, the session token is ${token}`
+      : "The page has the session token; --show-token prints it for an assistant or a script.",
+  ];
+}
+
+/**
  * atticus ui [--port n] [--open] [--by handle]: serve the app on 127.0.0.1 until Ctrl+C. The session token
  * is new each start and is handed to the app inside its page, so only this machine's browser,
  * on a page from this server, can drive the API.
@@ -139,6 +157,8 @@ export async function uiCommand(
     user?: string;
     embed?: "vscode";
     parent?: number;
+    /** Print the session token (ADR 0119): an editor that starts the app reads it, a person rarely needs it. */
+    showToken?: boolean;
   },
   io: Output,
 ): Promise<number> {
@@ -159,8 +179,7 @@ export async function uiCommand(
     );
     return 1;
   }
-  io.out(`Atticus is running at ${srv.url} (Ctrl+C stops it).`);
-  io.out(`For assistants and scripts, the session token is ${srv.token}`);
+  for (const l of startedLines(srv.url, srv.token, o)) io.out(l);
   const p = srv.person;
   io.out(
     p.source === "git"

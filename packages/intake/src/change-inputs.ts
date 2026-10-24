@@ -5,7 +5,7 @@ import { parse } from "yaml";
 import { toCanonicalYaml, writeFileAtomic } from "@maycombhq/core";
 import { documentFormat, readDocument } from "@maycombhq/ingestors";
 import { classify, type Classification } from "./classify.js";
-import { compareVersions, nameParts } from "./scan-inputs.js";
+import { nameParts } from "./scan-inputs.js";
 import { screenFile } from "./screen-file.js";
 
 /**
@@ -101,7 +101,14 @@ export async function readChangeInputs(dir: string): Promise<ChangeInputsIndex> 
     typeof (f as ChangeInput).path === "string" &&
     (f as ChangeInput).path.startsWith(`${INPUTS_DIR}/`) &&
     !(f as ChangeInput).path.includes("..") &&
-    typeof (f as ChangeInput).sha256 === "string";
+    typeof (f as ChangeInput).sha256 === "string" &&
+    // What was read is only ever read from inputs/read/: a committed index can't point a step
+    // at any other file (its text would go to the model provider).
+    ((f as ChangeInput).readAs === undefined ||
+      (typeof (f as ChangeInput).readAs === "string" &&
+        (f as ChangeInput).readAs!.startsWith(`${INPUTS_READ_DIR}/`) &&
+        !(f as ChangeInput).readAs!.split(/[\\/]/).includes("..") &&
+        !(f as ChangeInput).readAs!.includes("\\")));
   return {
     schemaVersion: CHANGE_INPUTS_SCHEMA_VERSION,
     files: Array.isArray(files) ? files.filter(ok) : [],
@@ -167,7 +174,9 @@ const FORMAT_WORD: Record<string, string> = {
 /** What a reader reads from the file, each part cited, as data; undefined: nothing to read. */
 function readText(input: ChangeInput, bytes: Uint8Array, older?: ChangeInput): string | undefined {
   if (!input.citeBy) return undefined;
-  const base = input.path.slice(`${INPUTS_DIR}/`.length);
+  // Each part is cited by the file's path in the change folder (inputs/<name>), the id of the
+  // data block the steps read it in, so a citation maps to the file's line (cite.ts).
+  const base = input.path;
   const lines: string[] = [];
   if (input.citeBy === "line") {
     const text = new TextDecoder().decode(bytes).replace(/\r\n?/g, "\n");
@@ -207,19 +216,31 @@ function readText(input: ChangeInput, bytes: Uint8Array, older?: ChangeInput): s
 
 /**
  * Attach files to the change whose folder is `dir`. A name with a folder in it, an empty file,
- * and a file already attached (the same bytes) are refused; a file of the same name family as
- * one attached, with a later version or date (or neither: attached later), is its newer version.
- * `elsewhere` says where the same bytes already are in the metarepo's own inputs/, if anywhere.
+ * and a file already attached (the same bytes) are refused. Which file replaces which is a
+ * person's to say, never guessed from a name: with `replaces` (an attached file's inputs/
+ * path) the file attached is its newer version, and the older one's text is left out of the
+ * steps; a file already attached is marked so without being copied again. Without it, a file
+ * whose name is like one attached is kept beside it, both read, and a note says how to say it
+ * replaces it. `elsewhere` says where the same bytes already are in the metarepo's inputs/.
  */
 export async function attachToChange(
   dir: string,
   files: { name: string; bytes: Uint8Array }[],
-  o: { by: string; at: string; elsewhere?: (sha: string) => string | undefined },
+  o: {
+    by: string;
+    at: string;
+    elsewhere?: (sha: string) => string | undefined;
+    replaces?: string;
+  },
 ): Promise<AttachResult> {
   const index = await readChangeInputs(dir);
   const out: AttachResult = { added: [], refused: [], notes: [] };
   const taken = new Set(await readdir(join(dir, INPUTS_DIR)).catch(() => [] as string[]));
   taken.add("index.yaml").add("read");
+  const replaced = o.replaces
+    ? index.files.find((x) => x.path === o.replaces!.trim().replace(/\\/g, "/"))
+    : undefined;
+  let changed = false;
   for (const f of files) {
     const name = f.name.trim();
     if (!name || /[\\/]/.test(name) || name === "." || name === ".." || name.includes("..")) {
@@ -230,8 +251,23 @@ export async function attachToChange(
       out.refused.push({ name, why: "It is empty." });
       continue;
     }
+    if (o.replaces && !replaced) {
+      out.refused.push({
+        name,
+        why: `${o.replaces} isn't attached to this change, so it can't be replaced.`,
+      });
+      continue;
+    }
     const hash = sha256(f.bytes);
     const same = index.files.find((x) => x.sha256 === hash);
+    if (same && replaced && same.path !== replaced.path) {
+      // Attached before the person said what it replaces: mark it now.
+      same.supersedes = replaced.path;
+      replaced.supersededBy = same.path;
+      changed = true;
+      out.added.push(same);
+      continue;
+    }
     if (same) {
       out.refused.push({ name, why: `It is already attached as ${same.path}.` });
       continue;
@@ -261,21 +297,23 @@ export async function attachToChange(
       ...(parts.version ? { version: parts.version } : {}),
       ...(parts.date ? { date: parts.date } : {}),
     };
-    // A newer version of a file already attached: same family, later version or date, or later.
-    const older = index.files
-      .filter((x) => !x.supersededBy)
-      .find((x) => {
-        const s = x.path.slice(INPUTS_DIR.length + 1);
-        const xd = s.lastIndexOf(".");
-        const p = nameParts(xd > 0 ? s.slice(0, xd) : s);
-        if (!p.base || p.base !== parts.base) return false;
-        if (x.version && input.version) return compareVersions(input.version, x.version) > 0;
-        if (x.date && input.date) return input.date > x.date;
-        return true;
-      });
+    // The file it replaces, when a person said so; a name alone never says it.
+    const older = replaced && !replaced.supersededBy ? replaced : undefined;
     if (older) {
       input.supersedes = older.path;
       older.supersededBy = input.path;
+    } else {
+      const alike = index.files.find((x) => {
+        if (x.supersededBy) return false;
+        const s = x.path.slice(INPUTS_DIR.length + 1);
+        const xd = s.lastIndexOf(".");
+        const p = nameParts(xd > 0 ? s.slice(0, xd) : s);
+        return !!p.base && p.base === parts.base;
+      });
+      if (alike)
+        out.notes.push(
+          `${name} has a name like ${alike.path}'s: both are kept, and the steps read both. If it replaces that file, attach it again with --replaces ${alike.path}.`,
+        );
     }
     const screen = screenFile(target, f.bytes);
     if (
@@ -300,7 +338,7 @@ export async function attachToChange(
     index.files.push(input);
     out.added.push(input);
   }
-  if (out.added.length) await writeIndex(dir, index);
+  if (out.added.length || changed) await writeIndex(dir, index);
   return out;
 }
 

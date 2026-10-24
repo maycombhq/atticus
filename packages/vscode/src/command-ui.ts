@@ -44,8 +44,8 @@ import { itemTitle, reviewLook, type NeedEntry } from "./knowledge-data";
 import { readKnowledgeList } from "./knowledge-read";
 import { pickLoading } from "./pick";
 import type { StepEnd } from "./runner";
-import { discoveredFrom, isMetarepoName } from "./start";
-import { optionHint } from "./words";
+import { discoveredFrom, freeFolder, isMetarepoName } from "./start";
+import { optionHint, startupNotice, WORDS, type StartupItem } from "./words";
 
 /**
  * Every Atticus command in VS Code (ADR 0096). The list comes from `atticus commands --json`, so
@@ -68,6 +68,8 @@ export interface CommandUiDeps {
   ) => Promise<StepEnd | undefined>;
   inTerminal: (root: string, name: string, args: string[], run?: boolean) => vscode.Terminal;
   refreshAll: () => void;
+  /** The startup notice the person said Don't show again to (ADR 0119), kept per machine. */
+  dismissed?: { get(): string | undefined; set(signature: string): Thenable<void> };
 }
 
 /** What a run printed, kept for the chat. */
@@ -109,7 +111,7 @@ export class CommandUi {
       const c = this.svc
         .cli(root)(["commands", "--json"])
         .then((r) => {
-          if (r.code !== 0) throw new Error(r.stderr.trim() || `atticus commands exited ${r.code}`);
+          if (r.code !== 0) throw new Error(r.stderr.trim() || WORDS.endedWith(r.code));
           return normaliseCatalog(JSON.parse(r.stdout) as Catalog);
         });
       this.catalog = c;
@@ -790,10 +792,12 @@ export class CommandUi {
    * read again, the next stage) never waits on it.
    */
   showPrinted(argv: string[], p: Printed): void {
-    const first = p.lines[0] ?? (p.code === 0 ? "Done." : `It exited ${p.code}.`);
+    const first = p.lines[0] ?? WORDS.endedWith(p.code);
     const show =
       p.code === 0 ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
-    void show(`atticus ${argv.slice(0, 2).join(" ")}: ${first}`, "Show the output").then((pick) => {
+    // What happened, in its own words; the command it ran is in the output (ADR 0119).
+    this.svc.log.appendLine(`atticus ${argv.join(" ")}: ${first}`);
+    void show(`Atticus: ${first}`, WORDS.showOutput).then((pick) => {
       if (pick) this.svc.log.show(true);
     });
   }
@@ -1003,7 +1007,7 @@ export class CommandUi {
   private async openWhenDone(p: Printed, folder: string, what: string) {
     if (p.code !== 0) {
       const pick = await vscode.window.showErrorMessage(
-        `${what} didn't work: ${p.lines.at(-1) ?? `exit ${p.code}`}`,
+        `${what} didn't work: ${p.lines.at(-1) ?? WORDS.endedWith(p.code)}`,
         "Show the output",
       );
       if (pick) this.svc.log.show(true);
@@ -1102,7 +1106,8 @@ export class CommandUi {
   async practiceSandbox() {
     const parent = await this.pickParent("Where should the practice metarepo go?");
     if (!parent) return;
-    const dir = join(parent, "atticus-practice");
+    // A second practice run gets a folder of its own, as IntelliJ's does (ADR 0119).
+    const dir = freeFolder(parent, "atticus-practice");
     const p = await this.plain(parent, ["sandbox", "create", dir]);
     await this.openWhenDone(p, join(dir, "metarepo"), "Made the practice metarepo");
   }
@@ -1661,7 +1666,7 @@ export class CommandUi {
   }
 
   /** Doctor and the upgrade check, when the window opens: say what needs a look. */
-  async checkHealth(root: string, quiet: boolean) {
+  async checkHealth(root: string, quiet: boolean, found: StartupItem[] = []) {
     if (!quiet)
       return vscode.window.withProgress(
         {
@@ -1670,7 +1675,44 @@ export class CommandUi {
         },
         () => this.checkHealthNow(root, false),
       );
-    return this.checkHealthNow(root, true);
+    return this.startupCheck(root, found);
+  }
+
+  /**
+   * When a window opens (ADR 0119): what the window found (Copilot missing), an upgrade to run and
+   * what doctor says, in one notice, with Don't show again until the set changes.
+   */
+  private async startupCheck(root: string, found: StartupItem[]) {
+    const up = await this.svc.cli(root)(["upgrade", "--check", "--root", root]);
+    const doc = await this.svc.cli(root)(["doctor", "--json", "--root", root]);
+    let problems: string[];
+    try {
+      problems = healthProblems(JSON.parse(doc.stdout) as Api.Doctor);
+    } catch {
+      problems = doc.code === 0 ? [] : [doc.stderr.trim() || "atticus doctor couldn't run"];
+    }
+    const items: StartupItem[] = [
+      ...found,
+      ...(up.code === 1 ? [{ id: "upgrade", text: `${upgradeNotice(up.stdout)}.` }] : []),
+      ...problems.map((p) => ({ id: `doctor:${p.split(":")[0]}`, text: p })),
+    ];
+    for (const i of items) this.svc.log.appendLine(`When the window opened: ${i.text}`);
+    if (up.code === 1) this.svc.log.appendLine(up.stdout.trimEnd());
+    const notice = startupNotice(items, this.d.dismissed?.get());
+    if (!notice) return;
+    const actions = [
+      ...(found.some((i) => i.id === "copilot") ? [WORDS.setUpCopilot] : []),
+      ...(up.code === 1 ? [WORDS.upgrade] : []),
+      WORDS.showAll,
+      WORDS.dontShowAgain,
+    ];
+    void vscode.window.showWarningMessage(notice.message, ...actions).then((pick) => {
+      if (pick === WORDS.upgrade) void this.pickAndRun(root, "upgrade");
+      else if (pick === WORDS.setUpCopilot)
+        void vscode.commands.executeCommand("atticus.installCopilot");
+      else if (pick === WORDS.showAll) this.svc.log.show(true);
+      else if (pick === WORDS.dontShowAgain) void this.d.dismissed?.set(notice.signature);
+    });
   }
 
   private async checkHealthNow(root: string, quiet: boolean) {

@@ -3,7 +3,8 @@ import type { StageIssue } from "./loop.js";
 type Raw = Record<string, unknown>;
 const isObj = (x: unknown): x is Raw => !!x && typeof x === "object" && !Array.isArray(x);
 
-const CITED = /^[^\s:]+:\d+$/;
+// A path (it may hold spaces, never at its ends) and a line number.
+const CITED = /^(?=\S)[^:\n]*[^\s:]:\d+$/;
 
 /**
  * A question for a person rests on a line someone can open (ADR 0078). A question the answer

@@ -1,8 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { groupLabel, MAIN, MORE_GROUPS, MORE, SCREENS, screenOf } from "../src/app/screens.js";
+import {
+  changeOf,
+  groupLabel,
+  landingOf,
+  PHASES,
+  SCREENS,
+  screenOf,
+  sectionLabel,
+  SECTIONS,
+  tabHref,
+  tabsOf,
+  type Section,
+} from "../src/app/screens.js";
 import { SCREEN_COMPONENTS } from "../src/screens/registry.js";
 
-/** Every screen the app had before the six (plan 4.5): none is removed, each stays reachable. */
+/** Every screen the app had before (plan 4.5): none is removed, each stays reachable. */
 const BEFORE = [
   "home",
   "questions",
@@ -38,93 +50,99 @@ const BEFORE = [
   "settings",
 ];
 
-describe("the app's menu (plan 4.5, B1; ADR 0105)", () => {
-  it("shows the day's work first: Dashboard, Waiting on you, Changes, the phases, Knowledge", () => {
-    expect(MAIN.map((s) => s.label)).toEqual([
-      "Dashboard",
-      "Waiting on you",
+describe("the app's map: six sections, every page a tab (ADR 0119)", () => {
+  it("has the six sections in the order a person uses them, each opening on its first tab", () => {
+    expect(SECTIONS.map(sectionLabel)).toEqual([
+      "Home",
       "Changes",
-      "Onboarding",
-      "Feature design",
-      "Architecture",
-      "Stories",
-      "Tasks",
       "Knowledge",
+      "Estate",
+      "Set up",
+      "Atticus",
     ]);
-    expect(MAIN.map((s) => s.id)).toEqual([
-      "dashboard",
+    expect(SECTIONS.map((s) => landingOf(s).id)).toEqual([
       "home",
       "changes",
-      "onboarding",
-      "feature-design",
-      "architecture",
-      "stories",
-      "task-list",
       "knowledge",
+      "explore",
+      "onboarding",
+      "runs",
     ]);
   });
 
-  it("groups More by what each page is about (ADR 0105)", () => {
-    expect(MORE_GROUPS.map(groupLabel)).toEqual([
-      "Code",
-      "Knowledge",
-      "Org pack",
-      "Define",
-      "Design",
-      "Plan",
-      "Build",
-      "Release",
-      "Run",
+  it("puts each page in its section, and a change's pages under their phase", () => {
+    const of = (s: Section) => tabsOf(s).map((x) => x.id);
+    expect(of("Home")).toEqual(["home", "dashboard"]);
+    expect(of("Knowledge")).toEqual(["knowledge", "wikis", "wiki-search", "parties"]);
+    expect(of("SetUp")).toEqual([
+      "onboarding",
+      "scans",
+      "intake",
+      "orgpack",
+      "orgpack-draft",
+      "settings",
     ]);
-    const of = (g: string) => MORE.filter((s) => groupLabel(s.group) === g).map((s) => s.id);
-    expect(of("Code")).toEqual(["explore", "flows", "map", "impact", "features", "scans"]);
-    expect(of("Knowledge")).toEqual(["wikis", "wiki-search", "parties"]);
-    expect(of("Org pack")).toEqual(["orgpack", "orgpack-draft", "intake", "settings"]);
-    expect(of("Define")).toEqual(["brief", "ux"]);
-    expect(of("Design")).toEqual([
-      "arch-review",
-      "diagrams",
-      "change-diagram",
-      "reconcile",
-      "contracts",
-      "mappings",
-    ]);
-    expect(of("Plan")).toEqual(["breakdown", "estimate", "initiatives"]);
-    expect(of("Build")).toEqual(["tasks", "conformance", "trace", "todo"]);
-    expect(of("Release")).toEqual(["release", "service-desk"]);
-    expect(of("Run")).toEqual(["governance", "evals", "learning", "runs", "history"]);
+    expect(of("Atticus")).toEqual(["runs", "history", "evals", "learning"]);
+    const phase = (g: string) =>
+      tabsOf("Changes")
+        .filter((x) => x.group === g)
+        .map((x) => x.id);
+    expect(PHASES.map(groupLabel)).toEqual(["Define", "Design", "Plan", "Build", "Release"]);
+    expect(phase("Define")).toEqual(["brief", "ux", "feature-design"]);
+    expect(phase("Design")).toEqual(["architecture", "arch-review", "change-diagram"]);
+    expect(phase("Plan")).toEqual(["stories", "breakdown", "estimate"]);
+    expect(phase("Build")).toEqual(["task-list", "tasks", "conformance", "trace", "todo"]);
+    expect(phase("Release")).toEqual(["release", "service-desk"]);
   });
 
-  it("keeps every screen reachable and removes none; Questions is a section of Waiting on you", () => {
+  it("keeps every page and every address; Questions is part of Waiting on you", () => {
     const ids = new Set(SCREENS.map((s) => s.id));
     expect(ids.size).toBe(SCREENS.length);
     expect(BEFORE.filter((id) => !ids.has(id))).toEqual([]);
-    // Screens added since, each with its ADR.
-    const ADDED = [
-      "flows", // ADR 0092
-      ...["wikis", "knowledge", "wiki-search", "parties", "orgpack-draft"], // ADR 0102
-      "runs", // ADR 0106
-      "history", // ADR 0110
-    ];
-    const menu = [...MAIN, ...MORE].map((s) => s.id);
-    expect(menu).not.toContain("questions");
-    expect([...menu, "questions"].sort()).toEqual(
-      [...new Set([...BEFORE, ...ADDED, ...MAIN.map((s) => s.id)])].sort(),
-    );
-    expect(MORE.every((s) => (MORE_GROUPS as readonly string[]).includes(s.group))).toBe(true);
+    for (const id of [
+      "flows",
+      "wikis",
+      "knowledge",
+      "wiki-search",
+      "parties",
+      "orgpack-draft",
+      "runs",
+      "history",
+      "dashboard",
+      "onboarding",
+      "feature-design",
+      "stories",
+      "task-list",
+    ])
+      expect(ids.has(id), id).toBe(true);
+    expect(SECTIONS.flatMap((s) => tabsOf(s)).map((s) => s.id)).not.toContain("questions");
     expect(screenOf("#/questions/q-1")).toMatchObject({ id: "questions", under: "home" });
   });
 
-  it("routes a hash to its screen, and anything unknown to the dashboard", () => {
+  it("routes a hash to its page, and anything unknown to Home", () => {
     expect(screenOf("#/changes/add-transfer-limit").id).toBe("changes");
     expect(screenOf("#/explore?q=daily").id).toBe("explore");
     expect(screenOf("#/home").id).toBe("home");
+    expect(screenOf("#/dashboard").id).toBe("dashboard");
     expect(screenOf("#/runs?run=run-20261023034001-0001").id).toBe("runs");
     expect(screenOf("#/history?change=add-transfer-limit").id).toBe("history");
     expect(screenOf("#/flows?repo=forge-web&flow=forge-web.save-customer").id).toBe("flows");
     expect(screenOf("#/stories?change=add-transfer-limit").id).toBe("stories");
-    expect(screenOf("").id).toBe("dashboard");
-    expect(screenOf("#/nope").id).toBe("dashboard");
+    expect(screenOf("").id).toBe("home");
+    expect(screenOf("#/nope").id).toBe("home");
+  });
+
+  it("keeps the change when moving between a change's tabs", () => {
+    expect(changeOf("#/changes/add-transfer-limit")).toBe("add-transfer-limit");
+    expect(changeOf("#/estimate?change=add-fraud-check")).toBe("add-fraud-check");
+    expect(changeOf("#/explore?q=x")).toBeUndefined();
+    const estimate = SCREENS.find((s) => s.id === "estimate")!;
+    const list = SCREENS.find((s) => s.id === "changes")!;
+    const map = SCREENS.find((s) => s.id === "map")!;
+    expect(tabHref(estimate, "add-fraud-check")).toBe("#/estimate?change=add-fraud-check");
+    expect(tabHref(list, "add-fraud-check")).toBe("#/changes/add-fraud-check");
+    expect(tabHref(estimate, undefined)).toBe("#/estimate");
+    expect(tabHref(map, "add-fraud-check")).toBe("#/map");
   });
 
   it("builds every screen", () => {

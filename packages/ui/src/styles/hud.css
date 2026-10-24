@@ -351,6 +351,58 @@ a:hover {
   padding: 12px 12px 4px;
 }
 
+/* A section's tabs above its page (ADR 0119): where you are, then every page of the section, a
+   change's grouped by phase. They wrap on a narrow window instead of scrolling sideways. */
+.section-tabs {
+  margin: 0 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.section-tabs .crumbs {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.section-tabs .tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  padding-bottom: 6px;
+}
+.section-tabs .tabs a {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 12.5px;
+}
+.section-tabs .tabs a:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.section-tabs .tabs a[aria-current="page"] {
+  background: var(--picked);
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.section-tabs .tab-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding-left: 8px;
+  margin-left: 4px;
+  border-left: 1px solid var(--line-soft);
+}
+.section-tabs .tab-group-name {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-right: 4px;
+}
+
 .nav .ask {
   margin-top: 12px;
   border: 1px solid var(--accent);

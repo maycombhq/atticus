@@ -25,12 +25,12 @@ With tools (ADR 0107 addendum) the model is a scripted mock, the same on every r
 | feature | forge: add-transfer-limit | tight | whole lists | 0.00 | 0.00 | 0 / 7 | 1413 | 0 | - | audit, ledger, ledger-api.post-transfer, ledger-db.account, ledger-db.limit-change, northwind-pay, portal |
 | feature | forge: add-transfer-limit | tight | engine | 0.86 | 0.33 | 18 / 7 | 1575 | 162 | - | ledger-db.limit-change |
 | feature | forge: add-transfer-limit | tight | engine + tools | 0.86 | 0.27 | 22 / 7 | 3657 | 2244 | 10 | ledger-db.limit-change |
-| architecture | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.25 | 12 / 3 | 2308 | 370 | - | none |
-| architecture | shop: add-fraud-check | org pack | engine | 1.00 | 0.25 | 12 / 3 | 2309 | 371 | - | none |
-| architecture | shop: add-fraud-check | org pack | engine + tools | 1.00 | 0.25 | 12 / 3 | 3398 | 1460 | 6 | none |
-| architecture | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 0 / 3 | 1938 | 0 | - | forge-orders-db.orders, forge-orders.place-order, northwind-pay |
-| architecture | shop: add-fraud-check | tight | engine | 1.00 | 0.25 | 12 / 3 | 2091 | 153 | - | none |
-| architecture | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.23 | 13 / 3 | 3950 | 2012 | 12 | none |
+| architecture | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.25 | 12 / 3 | 2345 | 370 | - | none |
+| architecture | shop: add-fraud-check | org pack | engine | 1.00 | 0.25 | 12 / 3 | 2346 | 371 | - | none |
+| architecture | shop: add-fraud-check | org pack | engine + tools | 1.00 | 0.23 | 13 / 3 | 3579 | 1604 | 6 | none |
+| architecture | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 0 / 3 | 1975 | 0 | - | forge-orders-db.orders, forge-orders.place-order, northwind-pay |
+| architecture | shop: add-fraud-check | tight | engine | 1.00 | 0.25 | 12 / 3 | 2128 | 153 | - | none |
+| architecture | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.21 | 14 / 3 | 4131 | 2156 | 12 | none |
 | stories | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.67 | 3 / 2 | 1079 | 149 | - | none |
 | stories | shop: add-fraud-check | org pack | engine | 1.00 | 1.00 | 2 / 2 | 1042 | 112 | - | none |
 | stories | shop: add-fraud-check | org pack | engine + tools | 1.00 | 1.00 | 2 / 2 | 1042 | 112 | 0 | none |
@@ -49,7 +49,7 @@ With tools, a step's pack may start smaller only where the engine with tools at 
 
 - needs: recall holds with the tight pack and tools; 2558 tokens in all with tools against 1400 for the engine's full pack, so the pack stays as it is
 - feature: recall holds with the tight pack and tools; 6318 tokens in all with tools against 2718 for the engine's full pack, so the pack stays as it is
-- architecture: recall holds with the tight pack and tools; 3950 tokens in all with tools against 2309 for the engine's full pack, so the pack stays as it is
+- architecture: recall holds with the tight pack and tools; 4131 tokens in all with tools against 2346 for the engine's full pack, so the pack stays as it is
 - stories: recall holds with the tight pack and tools; 1516 tokens in all with tools against 1042 for the engine's full pack, so the pack stays as it is
 
 ## Retrieval cases (ADR 0116)

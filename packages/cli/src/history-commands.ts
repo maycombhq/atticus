@@ -40,7 +40,7 @@ const offWhy = (r: Api.HistoryRecording) =>
 
 export async function historyAddCli(
   root: string,
-  o: { surface?: string; kind?: string; session?: string; command?: string },
+  o: { surface?: string; kind?: string; session?: string; command?: string; change?: string },
   readText: () => Promise<string>,
   io: Output,
 ): Promise<number> {
@@ -65,6 +65,7 @@ export async function historyAddCli(
     text,
     ...(o.session ? { session: o.session } : {}),
     ...(o.command ? { command: o.command } : {}),
+    ...(o.change ? { change: o.change } : {}),
   });
   if (r.off) {
     io.out(`Recording is off (${offWhy(r.off)}); nothing was recorded.`);

@@ -437,6 +437,8 @@ export async function handleMcp(
           name: t.name,
           description: t.description,
           inputSchema: schema(t),
+          // Every tool only reads (ADR 0104); said in the protocol too (ADR 0119).
+          annotations: { readOnlyHint: true, destructiveHint: false },
         })),
       });
     case "tools/call": {

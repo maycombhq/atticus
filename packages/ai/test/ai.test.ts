@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AgentDefinition, RunSummary } from "@maycombhq/core";
+import { AgentDefinition, RunSummary, withSignal } from "@maycombhq/core";
 import {
   buildContextPack,
   DATA_RULE,
@@ -175,6 +175,14 @@ describe("one-shot runtimes", () => {
     const c = new AbortController();
     c.abort();
     expect((await rt.run((await rt.prepare(request())).runId, c.signal)).state).toBe("cancelled");
+  });
+
+  it("cancels when the job it runs in was cancelled, with no signal passed (ADR 0119)", async () => {
+    const rt = new MockRuntime(() => "x");
+    const c = new AbortController();
+    c.abort();
+    const run = await withSignal(c.signal, async () => rt.run((await rt.prepare(request())).runId));
+    expect(run.state).toBe("cancelled");
   });
 
   it("replays a recording for the exact prompt, and fails loudly for any other", async () => {

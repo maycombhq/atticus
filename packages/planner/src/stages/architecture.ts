@@ -1,7 +1,7 @@
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { parse, stringify } from "yaml";
-import { changesRelOf, serializeRecord } from "@maycombhq/core";
+import { changesRelOf, serializeRecord, specTemplateFor, type SpecTemplate } from "@maycombhq/core";
 import type { SourceInput } from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
 import { changeInputSources } from "@maycombhq/intake";
@@ -69,7 +69,7 @@ Rules:
 - Cover every flow the feature says is changed, and every new flow it lists.
 - A flow under flows adds, changes or removes at least one step. A flow whose steps all stay as they are is context: put it under reads, never under flows with no steps.
 - Number steps as today's flow lists them (1 is the first). Don't renumber after an add.
-- Name fields at every step that moves data: what a call sends and returns, what a write stores, what a transform maps.
+- Name fields at every step that moves data: what a call sends and returns, what a write stores, what a transform maps. A key a write or read matches rows by goes under checks.
 - Use component, system and table ids from the index. Something that doesn't exist yet is marked new: true.
 - Follow the integration patterns and standards below where they apply; say in why when one shapes a step.
 - Plain, short English.`;
@@ -252,12 +252,25 @@ const words = (xs: string[]) =>
  * What is wrong with a migration's name, from how the table's store names its migrations
  * today: a file name, and with Flyway `V<next>__<words>.sql`. Undefined when it reads right.
  */
-function migrationProblem(name: string, table: string, e: Estate): string | undefined {
+function migrationProblem(
+  name: string,
+  table: string,
+  e: Estate,
+  onFile = false,
+): string | undefined {
   const file = name.split(/[\\/]/).at(-1)!;
   const store = (e.byId.get(table) as { dataStore?: string } | undefined)?.dataStore;
-  const theirs = (e.records as { kind: string; dataStore?: string; file?: string; tool?: string }[])
-    .filter((r) => r.kind === "Migration" && r.dataStore === store)
-    .map((r) => ({ tool: r.tool, n: Number(/(?:^|[\\/])V(\d+)__/.exec(r.file ?? "")?.[1]) }));
+  const records = (
+    e.records as { kind: string; dataStore?: string; file?: string; tool?: string }[]
+  ).filter((r) => r.kind === "Migration" && r.dataStore === store);
+  // Target flows on file, checked again once the change's code merged: the migration the
+  // catalog now has by this very file name is the change's own (H4), not one to number past.
+  if (onFile && records.some((r) => (r.file ?? "").split(/[\\/]/).at(-1) === file))
+    return undefined;
+  const theirs = records.map((r) => ({
+    tool: r.tool,
+    n: Number(/(?:^|[\\/])V(\d+)__/.exec(r.file ?? "")?.[1]),
+  }));
   const flyway = theirs.filter((m) => m.tool === "flyway" && Number.isFinite(m.n));
   if (flyway.length) {
     const newest = Math.max(...flyway.map((m) => m.n));
@@ -277,10 +290,34 @@ export function checkDeltas(
   e: Estate,
   p: FeaturePlacement,
   reads: ReadFlow[] = [],
-  /** The org pack's data classification levels (pack.yaml), lowest first. */
-  o: { levels?: string[] } = {},
+  o: {
+    /** The org pack's data classification levels (pack.yaml), lowest first. */
+    levels?: string[];
+    /**
+     * The org pack's spec templates (ADR 0079): what each step kind must name. A step kind
+     * that must name a table (store) and not a target has no `to`.
+     */
+    templates?: readonly SpecTemplate[];
+    /**
+     * The target flows are the stage's result on file, checked again after it was done
+     * (H4): what the change itself adds (a table or entry it marks new, its migration) may
+     * be in the catalog now because its code merged, so that is not held against it.
+     */
+    onFile?: boolean;
+  } = {},
 ): StageIssue[] {
   const out: StageIssue[] = [];
+  /** Whether a step kind names a table and never a target, by the flow's spec template. */
+  const storeOnly = (kind: string, flow: string, repo: string) => {
+    const ref =
+      e.flowById.get(flow)?.flow.template ??
+      [...e.flowById.values()].find((f) => f.repo === repo)?.flow.template;
+    const step = specTemplateFor(o.templates ?? [], ref?.split("@")[0]).steps.find(
+      (s) => s.kind === kind,
+    );
+    const needs = step?.requires ?? [];
+    return needs.some((x) => x.startsWith("store.")) && !needs.includes("to");
+  };
   for (const r of reads) {
     if (!e.flowById.has(r.flow))
       out.push({
@@ -382,8 +419,8 @@ export function checkDeltas(
         );
       if (s.op === "remove") return;
       const kind = s.kind ?? (s.step ? today?.flow.steps[s.step - 1]?.kind : undefined);
-      // A read, lookup or write reaches a table (store), never a component (to).
-      if (s.to && (kind === "read" || kind === "lookup" || kind === "write"))
+      // A step the spec template says names a table (store) reaches no component (to).
+      if (s.to && kind && storeOnly(kind, t, d.repo))
         issue(
           "delta.to-on-store-step",
           at,
@@ -421,7 +458,7 @@ export function checkDeltas(
             `Change ${i + 1} to ${t} calls ${s.to.entry} on ${s.to.component}${/^METHOD\s/i.test(s.to.entry) ? `: write the HTTP method itself (GET, POST, PUT, PATCH or DELETE), not METHOD. ${s.to.component} has` : ", which the catalog doesn't have; it has"} ${nearestEntries(s.to.entry, [...have.values()]).join(", ")}${have.size > 8 ? ` and ${have.size - 8} more` : ""}. Use one of them, or new: true for an entry this change adds.`,
             d.repo,
           );
-        if (s.to.new && known)
+        if (s.to.new && known && !o.onFile)
           issue(
             "delta.entry-exists",
             at,
@@ -429,7 +466,7 @@ export function checkDeltas(
             d.repo,
           );
       }
-      if (s.store && s.store.new && e.byId.get(s.store.table)?.kind === "Table") {
+      if (s.store && s.store.new && e.byId.get(s.store.table)?.kind === "Table" && !o.onFile) {
         issue(
           "delta.table-exists",
           at,
@@ -480,7 +517,7 @@ export function checkDeltas(
         const fold = (c: string) => c.replace(/[_-]/g, "").toLowerCase();
         const twins = new Map(
           added.flatMap((c) => {
-            const t = [...have].find((h) => fold(h) === fold(c));
+            const t = [...have].find((h) => h !== c && fold(h) === fold(c));
             return t ? [[c, t] as const] : [];
           }),
         );
@@ -501,22 +538,31 @@ export function checkDeltas(
                 `Change ${i + 1} to ${t} classifies column ${c} as ${level}, which isn't one of the org pack's levels: ${words(o.levels)}.`,
                 d.repo,
               );
-        // A write that sends a field it stores nowhere has left a column out (seen with a small
-        // model: the new column the brief asked for was sent but never added).
-        if (kind === "write")
+        // A write that sends a field its own step says nothing else about has left a column out
+        // (seen with a small model: the new column the brief asked for was sent but never added).
+        // What a field is for is the model's to say, never guessed from its name: a field it
+        // stores is a column, and a key the write matches rows by is under checks (or mapped
+        // under from and to). Only a field the step says nothing about is handed back.
+        if (kind === "write") {
+          const leaf = (f: string) => fold(f.split(".").at(-1)!);
+          const said = new Set(
+            [
+              ...s.store.columns,
+              ...have,
+              ...(["checks", "from", "to", "reads"] as const).flatMap((k) => s.fields?.[k] ?? []),
+            ].map(leaf),
+          );
           for (const f of s.fields?.sends ?? [])
-            if (
-              !s.store.columns.some((c) => fold(c) === fold(f)) &&
-              ![...have].some((h) => fold(h) === fold(f))
-            )
+            if (!said.has(leaf(f)))
               issue(
                 "delta.sent-not-stored",
                 `${at}:${f}`,
-                `Change ${i + 1} to ${t} sends ${f} to ${s.store.table} but stores it in no column: add it to store.columns, with its type, classification and migration if the table hasn't it, or leave it out of sends.`,
+                `Change ${i + 1} to ${t} sends ${f} to ${s.store.table} but stores it in no column: add it to store.columns, with its type, classification and migration if the table hasn't it; if it is a key the write matches rows by, name it under checks; or leave it out of sends.`,
                 d.repo,
               );
+        }
         if (s.store.migration?.trim()) {
-          const why = migrationProblem(s.store.migration.trim(), s.store.table, e);
+          const why = migrationProblem(s.store.migration.trim(), s.store.table, e, o.onFile);
           if (why) issue("delta.bad-migration", at, `Change ${i + 1} to ${t} ${why}`, d.repo);
         }
         for (const c of added.filter((x) => !twins.has(x))) {
@@ -906,10 +952,11 @@ export async function architectureStage(
     .join("\n---\n");
   const sources: SourceInput[] = [
     {
+      // As it is on disk, so a line the drafter cites (feature.yaml:N) is the file's line N.
       id: "feature.yaml",
       kind: "artifact",
       origin: `${rel}/feature.yaml`,
-      text: stringify(placement, { lineWidth: 0 }),
+      text: (await readFile(join(dir, "feature.yaml"), "utf8")).replace(/\r\n/g, "\n"),
       classification: "internal",
       priority: 100,
     },
@@ -1037,8 +1084,12 @@ export async function architectureStage(
       const { deltas, reads } = splitAnswer(r.value);
       return { answer: { flows: deltas, reads }, issues };
     },
-    check: async (a) =>
-      checkDeltas(a.flows, estate, placement, a.reads, { levels: classificationLevels(ctx) }),
+    check: async (a, c) =>
+      checkDeltas(a.flows, estate, placement, a.reads, {
+        levels: classificationLevels(ctx),
+        templates: ctx.orgPack.specTemplates,
+        ...(c?.onFile ? { onFile: true } : {}),
+      }),
     write: (answer) => writeTargetFlows(dir, answer, estate),
     current: () => readTargetFlows(dir),
   };

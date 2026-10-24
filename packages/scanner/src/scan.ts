@@ -19,6 +19,7 @@ import {
   applyCurated,
   loadOrgPack,
   mergeCatalog,
+  throwIfCancelled,
   type CatalogRecord,
   type Dialect,
   type FrameworkModel,
@@ -406,6 +407,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const readers = new Map<string, ModelReading>();
   let done = 0;
   for (const r of repos) {
+    // A scan the app cancelled stops between repos, before anything is written (ADR 0119).
+    throwIfCancelled();
     const dir = o.repoDir?.(r.id) ?? inPlace(o.root, r.url) ?? baseClonePath(o.root, r.id);
     let state: { commit: string; dirty: boolean };
     // No folder: say it isn't cloned, not what git said about a folder that isn't there.

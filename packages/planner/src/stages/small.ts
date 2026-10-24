@@ -444,12 +444,14 @@ export async function smallStage(
         issues: [...repairs, ...r.issues, ...emptyDeltaIssues(r.value.targetFlows)],
       };
     },
-    check: async (a) => {
+    check: async (a, c) => {
       const d = derive(a);
       const out = [
         ...checkPlacement(d.placement, estate),
         ...checkDeltas(d.deltas, estate, d.placement, d.reads, {
           levels: classificationLevels(ctx),
+          templates: ctx.orgPack.specTemplates,
+          ...(c?.onFile ? { onFile: true } : {}),
         }),
       ];
       if (!d.deltas.length)

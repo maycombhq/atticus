@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
-import { Lens, toCanonicalYaml } from "@maycombhq/core";
+import { Lens, runsDirOf, toCanonicalYaml } from "@maycombhq/core";
 import type { AiRuntime, QuarantineItem, SourceInput } from "@maycombhq/ai";
 import { writeQuarantineItems } from "./defences.js";
 import { runLenses, type Discarded, type LensName, type LensRun } from "./ai.js";
@@ -58,6 +58,12 @@ export async function draftDocs(dir: string, files: string[]): Promise<Doc[]> {
   }
   return out;
 }
+
+/**
+ * Where a hand-off lens run keeps the draft it was given, in the run's own folder: its answer is
+ * checked against the text it reviewed, even when the draft is edited before it is read in.
+ */
+export const DRAFT_DIR = "draft";
 
 export interface CriticResult {
   change: string;
@@ -172,22 +178,27 @@ export async function runCritic(
   // Layer 2: AI lenses, only on artifacts that passed layer 1.
   const lenses = opts.lenses ?? [...Lens.options];
   const quarantined: QuarantineItem[] = [];
+  const draft = opts.review
+    ? await draftDocs(changeFolder(root, change.id), opts.review.files)
+    : [];
   const ai = await runLenses(ctx, applicable, {
     ...(opts.runtime ? { runtime: opts.runtime } : {}),
     lenses,
     failed,
     ...(opts.maxClassification ? { maxClassification: opts.maxClassification } : {}),
     ...(opts.review
-      ? {
-          review: {
-            stage: opts.review.stage,
-            docs: await draftDocs(changeFolder(root, change.id), opts.review.files),
-            sources: opts.review.sources,
-          },
-        }
+      ? { review: { stage: opts.review.stage, docs: draft, sources: opts.review.sources } }
       : {}),
     quarantined,
   });
+  // A lens handed off keeps the draft as it was given, so its answer is checked against that.
+  for (const r of ai.runs)
+    if (r.state === "waiting" && r.runId)
+      for (const d of draft)
+        await writeFileAtomic(
+          join(runsDirOf(root), change.id, r.runId, DRAFT_DIR, ...d.path.split("/")),
+          d.raw,
+        );
   // What the defences left out of the lenses' packs, for a person (ADR 0042).
   await writeQuarantineItems(root, change.id, `${gate.id}-${round}`, quarantined);
   skipped.push(...ai.skipped);

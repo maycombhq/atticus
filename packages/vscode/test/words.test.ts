@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandTitle, optionHint, statusText, stepTitle } from "../src/words";
+import { commandTitle, optionHint, startupNotice, statusText, stepTitle } from "../src/words";
 
 /** ADR 0098: the extension speaks in plain words first; the command is beside it, not instead. */
 
@@ -114,5 +114,24 @@ describe("an option's hint in Run a command", () => {
     expect(optionHint({ value: "3" })).toBe("you give its value, such as 3");
     expect(optionHint({ value: "f.json" })).toBe("you give its value, such as f.json");
     expect(optionHint({})).toBe("");
+  });
+});
+
+describe("the one notice a window shows when it opens (ADR 0119)", () => {
+  const copilot = { id: "copilot", text: "Copilot isn't set up." };
+  const upgrade = { id: "upgrade", text: "the metarepo has 2 upgrade steps to run." };
+  it("says nothing when nothing was found", () => {
+    expect(startupNotice([], undefined)).toBeUndefined();
+  });
+  it("says one thing as itself, and several as how many with the first", () => {
+    expect(startupNotice([copilot], undefined)?.message).toBe("Atticus: Copilot isn't set up.");
+    expect(startupNotice([copilot, upgrade], undefined)?.message).toBe(
+      "Atticus: 2 things to look at. Copilot isn't set up.",
+    );
+  });
+  it("stays quiet for the set the person dismissed, and speaks again when it changes", () => {
+    const first = startupNotice([copilot, upgrade], undefined)!;
+    expect(startupNotice([upgrade, copilot], first.signature)).toBeUndefined();
+    expect(startupNotice([copilot], first.signature)?.message).toContain("Copilot");
   });
 });

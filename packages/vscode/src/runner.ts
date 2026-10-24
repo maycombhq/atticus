@@ -11,6 +11,7 @@ import {
   type OpenQuestion,
   type StepModel,
 } from "./types";
+import { WORDS } from "./words";
 
 /**
  * The step runner (ADR 0090): one AI step's whole loop with Copilot's model. It runs
@@ -39,6 +40,8 @@ export interface HandoffJson {
   messages?: string[];
   errors?: string[];
   questions?: OpenQuestion[];
+  /** A batched knowledge scan's pages left for the next batch (ADR 0106). */
+  pagesLeft?: number;
   /** The read-only tools the model may call, and how to run a call (ADR 0107 addendum). */
   tools?: HandoffTools;
 }
@@ -76,6 +79,8 @@ export type StepEnd = (
       messages: string[];
       errors: string[];
       questions: OpenQuestion[];
+      /** A batched knowledge scan's pages left for the next batch. */
+      pagesLeft?: number;
     }
   | ({ state: "too-long"; tokens: number; max: number; model: string } & Waiting)
   | ({ state: "cancelled" } & Partial<Waiting>)
@@ -116,13 +121,9 @@ const failed = (message: string, rounds: number): StepEnd => ({
   questions: [],
 });
 
-/** How many pages a batched knowledge scan says it left for the next batch. */
-export function pagesLeft(messages: string[]): number {
-  for (const m of messages) {
-    const x = /^(\d+) pages? left to read/.exec(m);
-    if (x) return Number(x[1]);
-  }
-  return 0;
+/** How many pages a batched knowledge scan left for the next batch: its `pagesLeft`, as data. */
+export function pagesLeft(end: { pagesLeft?: number }): number {
+  return typeof end.pagesLeft === "number" && end.pagesLeft > 0 ? end.pagesLeft : 0;
 }
 
 const MAX_BATCHES = 50;
@@ -154,7 +155,7 @@ export async function runStep(args: string[], given: RunnerDeps, token: Cancel):
   for (let batch = 1; ; batch++) {
     const end = await runOnce(argv, d, token);
     if (end.state !== "done") return end;
-    const left = pagesLeft(end.messages);
+    const left = pagesLeft(end);
     if (!left || batch >= MAX_BATCHES) {
       if (batch === 1) return end;
       return {
@@ -214,6 +215,7 @@ async function loop(
         messages: h.messages ?? [],
         errors: h.errors ?? [],
         questions: h.questions ?? [],
+        ...(typeof h.pagesLeft === "number" ? { pagesLeft: h.pagesLeft } : {}),
       };
     if (!h.runId || !h.promptFile || !h.resultFile || !h.doneArgs || !h.resumeArgs)
       return failed("atticus handed the step off without its files or commands.", rounds);
@@ -345,7 +347,7 @@ async function toolConversation(
       const text =
         typeof out?.output === "string"
           ? out.output
-          : `The tool didn't run: ${(r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`).split("\n")[0]}`;
+          : `The tool didn't run: ${(r.stderr.trim() || r.stdout.trim() || WORDS.endedWith(r.code)).split("\n")[0]}`;
       used += await model.countTokens(text, token);
       results.push({ id: c.id, name: c.name, text });
     }

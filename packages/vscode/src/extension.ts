@@ -30,7 +30,7 @@ import { commandText } from "./cli";
 import { copilotSetup, describeEnd, endActions, endFiles } from "./describe";
 import { aiProgressTitle, runProgressTitle } from "./feedback";
 import { pickLoading } from "./pick";
-import { statusText, stepTitle } from "./words";
+import { statusText, stepTitle, WORDS } from "./words";
 import type { StepEnd } from "./runner";
 import { checkRunStep, runEndMessage, runProgressMessage, runRefusedMessage } from "./run-step";
 import type * as Api from "./api-types";
@@ -358,7 +358,16 @@ ${view.next.why}`
     reg(command, () => setFilter(view, ""));
 
   // ADR 0096: every command the command line has, from its own catalogue.
-  const commands = new CommandUi(svc, { runAi, inTerminal, refreshAll });
+  const DISMISSED = "atticus.startupNoticeDismissed";
+  const commands = new CommandUi(svc, {
+    runAi,
+    inTerminal,
+    refreshAll,
+    dismissed: {
+      get: () => context.globalState.get<string>(DISMISSED),
+      set: (signature) => context.globalState.update(DISMISSED, signature),
+    },
+  });
   const withRoot = (f: (root: string) => unknown) => () => {
     const root = needRoot();
     if (root) void f(root);
@@ -412,10 +421,20 @@ ${view.next.why}`
     if (!change) return;
     let task = item?.task?.id;
     if (!task) {
-      const tasks = await svc
-        .api(root)
-        .then((x) => x.get<Api.Task[]>(`/api/changes/${encodeURIComponent(change)}/tasks`))
-        .catch(() => [] as Api.Task[]);
+      let tasks: Api.Task[];
+      try {
+        tasks = await svc
+          .api(root)
+          .then((x) => x.get<Api.Task[]>(`/api/changes/${encodeURIComponent(change)}/tasks`));
+      } catch (e) {
+        // A read that failed is not "no tasks" (ADR 0119): say so, with the output.
+        const why = e instanceof Error ? e.message : String(e);
+        svc.log.appendLine(START_WORDS.tasksFailed(change, why));
+        void vscode.window
+          .showErrorMessage(START_WORDS.tasksFailed(change, why), WORDS.showOutput)
+          .then((p) => p && svc.log.show());
+        return;
+      }
       if (!tasks.length) {
         void vscode.window.showWarningMessage(START_WORDS.noTasks(change));
         return;
@@ -438,7 +457,7 @@ ${view.next.why}`
     );
     if (r.code !== 0) {
       void vscode.window.showErrorMessage(
-        START_WORDS.failed(r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`),
+        START_WORDS.failed(r.stderr.trim() || r.stdout.trim() || WORDS.endedWith(r.code)),
       );
       return;
     }
@@ -1079,7 +1098,11 @@ ${view.next.why}`
     for (const l of done.lines) svc.log.appendLine(l);
     const first = done.lines[0] ?? (done.ok ? `Answered ${q.id}.` : `Couldn't answer ${q.id}.`);
     const next = done.lines.find((l) => l.startsWith("Next: "));
-    if (done.ok) void vscode.window.showInformationMessage(next ? `${first} ${next}` : first);
+    // The step waited on this answer: offer to carry on, one click (ADR 0119).
+    if (done.ok)
+      void vscode.window
+        .showInformationMessage(next ? `${first} ${next}` : first, WORDS.runNextStep)
+        .then((p) => p && vscode.commands.executeCommand("atticus.runNext"));
     else
       void vscode.window
         .showErrorMessage(first, "Show details")
@@ -1153,16 +1176,18 @@ ${view.next.why}`
   const toApp = (event: { type: string; path?: string }) => {
     if (panel && panelMode === "bundled") void panel.webview.postMessage({ type: "event", event });
   };
+  // The app also follows what the sidebar doesn't: proposals, inputs, the model runs and the
+  // prompt history (ADR 0119), so its Model runs and Prompt history screens update too.
+  const appFiles = vscode.workspace.createFileSystemWatcher(
+    "**/{specs,catalog,openspec,questions,knowledge,org-pack,proposals,inputs,.runs,history}/**/*",
+  );
+  const toAppPath = (u: vscode.Uri) =>
+    toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u, false) });
   context.subscriptions.push(
-    files.onDidChange((u) =>
-      toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u) }),
-    ),
-    files.onDidCreate((u) =>
-      toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u) }),
-    ),
-    files.onDidDelete((u) =>
-      toApp({ type: "file.changed", path: vscode.workspace.asRelativePath(u) }),
-    ),
+    appFiles,
+    appFiles.onDidChange(toAppPath),
+    appFiles.onDidCreate(toAppPath),
+    appFiles.onDidDelete(toAppPath),
   );
   reg("atticus.showApp", async (hash?: string, o?: { beside?: boolean }) => {
     const root = needRoot();
@@ -1235,41 +1260,43 @@ ${view.next.why}`
     }
     panel.reveal(undefined, !!o?.beside);
   });
+  // Picked, never typed (ADR 0119): the whole estate first, then each repo the metarepo has.
   reg("atticus.diagram", async (target?: string) => {
-    const t =
-      target ??
-      (await vscode.window.showInputBox({
-        title: "Atticus: open on the Architecture canvas",
-        prompt:
-          "Which repo? Its name, or a node id such as system:payments; add a flow's id or words to open a flow. Empty: the estate.",
-        ignoreFocusOut: true,
-      }));
-    if (t === undefined) return;
+    let t = target;
+    if (t === undefined) {
+      const root = needRoot();
+      if (!root) return;
+      const picked = await vscode.window.showQuickPick(
+        svc
+          .api(root)
+          .then((x) => x.get<Api.OnboardingView>("/api/onboarding"))
+          .then((o) => [
+            { label: WORDS.wholeEstate, value: "" },
+            ...o.repos.map((r) => ({ label: r.id, value: r.id })),
+          ])
+          .catch(() => [{ label: WORDS.wholeEstate, value: "" }]),
+        { title: WORDS.diagramPick, ignoreFocusOut: true },
+      );
+      if (!picked) return;
+      t = picked.value;
+    }
     await vscode.commands.executeCommand("atticus.showApp", diagramHash(t));
   });
 
   // ADR 0108: a change's picture, in the Atticus tab.
   reg("atticus.changeDiagram", async (change?: string) => {
-    const c =
-      change ??
-      (await vscode.window.showInputBox({
-        title: "Atticus: the Change diagram",
-        prompt: "Which change? Its id, such as add-transfer-limit.",
-        ignoreFocusOut: true,
-      }));
+    const root = change ? undefined : needRoot();
+    if (!change && !root) return;
+    const c = change ?? (await commands.pickTarget(root!, "change", WORDS.changeDiagramPick));
     if (!c?.trim()) return;
     await vscode.commands.executeCommand("atticus.showApp", changeDiagramHash(c.trim()));
   });
 
   // ADR 0109: a change's estimate, in the Atticus tab.
   reg("atticus.estimate", async (change?: string) => {
-    const c =
-      change ??
-      (await vscode.window.showInputBox({
-        title: "Atticus: the Estimate",
-        prompt: "Which change? Its id, such as add-transfer-limit.",
-        ignoreFocusOut: true,
-      }));
+    const root = change ? undefined : needRoot();
+    if (!change && !root) return;
+    const c = change ?? (await commands.pickTarget(root!, "change", WORDS.estimatePick));
     if (!c?.trim()) return;
     await vscode.commands.executeCommand("atticus.showApp", estimateHash(c.trim()));
   });
@@ -1310,14 +1337,22 @@ ${view.next.why}`
   const ready = updateContext().then(() => {
     refreshAll();
     // Only where Atticus is in use: the extension also starts in other windows, for the walkthrough.
-    if (svc.root && !vscode.extensions.getExtension("GitHub.copilot-chat"))
+    // One notice for everything the window found (ADR 0119), not a toast for each.
+    const found =
+      svc.root && !vscode.extensions.getExtension("GitHub.copilot-chat")
+        ? [{ id: "copilot", text: WORDS.copilotMissing }]
+        : [];
+    if (svc.root && svc.cliOk)
+      void commands
+        .checkHealth(svc.root, true, found)
+        .catch((e: unknown) =>
+          svc.log.appendLine(WORDS.healthFailed(e instanceof Error ? e.message : String(e))),
+        );
+    // Without the command line there is no check to fold it into; its welcome view says the rest.
+    else if (found.length)
       void vscode.window
-        .showWarningMessage(
-          "Atticus's AI steps run with GitHub Copilot, which isn't set up in this VS Code yet.",
-          "Set up Copilot",
-        )
+        .showWarningMessage(WORDS.copilotMissing, WORDS.setUpCopilot)
         .then((p) => p && vscode.commands.executeCommand("atticus.installCopilot"));
-    if (svc.root && svc.cliOk) void commands.checkHealth(svc.root, true).catch(() => undefined);
   });
   return {
     ready,

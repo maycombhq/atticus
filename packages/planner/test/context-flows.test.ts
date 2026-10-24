@@ -270,8 +270,12 @@ describe("a critic finding about drafting quality", () => {
     const root = await estateRoot();
     await architected(root);
     // Criteria that name the fields but aren't Given/When/Then: the stage's check passes, the
-    // critic's story rule (a drafting check) doesn't, three drafts in a row.
-    const plain = STORIES.replace(/"Given [^,]+, when [^,]+, then /g, '"');
+    // critic's story rule (a drafting check) doesn't, three drafts in a row. (The critic reviews
+    // only a draft that passes the stage's checks, so task 1.2's criterion still names verdict.)
+    const plain = STORIES.replace(/"Given [^,]+, when [^,]+, then /g, '"').replace(
+      '"it is refused with 422',
+      '"an order with a rejected verdict is refused with 422',
+    );
     const e = await stopOf(storiesStage(root, CHANGE, { runtime: assistant([plain]), now: NOW }));
     expect(e.code).toBe("stopped");
     expect(e.message).toContain(

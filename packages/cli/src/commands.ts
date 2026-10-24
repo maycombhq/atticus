@@ -17,7 +17,16 @@ import {
 export interface Output {
   out(line: string): void;
   err(line: string): void;
+  /**
+   * What a step says as data beside its lines, for a tool that runs it (`--handoff --json`):
+   * the run it handed off or waits on, how many pages a batched scan left. Never read back from
+   * the printed words.
+   */
+  report?(fact: StepFact): void;
 }
+
+/** One fact a step reports as data (Output.report). */
+export type StepFact = { handoff: { runId: string; lens?: string } } | { pagesLeft: number };
 
 /**
  * Write JSON Schema files: one per record kind under `<dir>/catalog/`, and the workspace

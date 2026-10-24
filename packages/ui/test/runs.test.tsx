@@ -304,6 +304,38 @@ describe("which Run button an AI step gets (ADR 0106)", () => {
     expect(html(<RunStepView choice={{ kind: "copy" }} state={idle} />)).toBe("");
   });
 
+  it("offers Cancel while a step runs on the server, and says it is stopping (ADR 0119)", () => {
+    const state = { phase: "running" as const, lines: ["Started on the server with anthropic."] };
+    const model = { kind: "model" as const, model: "anthropic" };
+    const can = html(<RunStepView choice={model} state={state} onCancel={() => undefined} />);
+    expect(can).toContain(`>${S.cancel}</button>`);
+    expect(can).toContain(esc(S.cancelHint));
+    const stopping = html(
+      <RunStepView choice={model} state={state} onCancel={() => undefined} stopping />,
+    );
+    expect(stopping).toContain(S.cancelling);
+    // Copilot stops in its own chat: no Cancel here.
+    expect(html(<RunStepView choice={{ kind: "copilot" }} state={state} />)).not.toContain(
+      `>${S.cancel}</button>`,
+    );
+  });
+
+  it("tells the page the server job's id, so it can cancel it", async () => {
+    let told: string | undefined;
+    const calls: string[] = [];
+    await runOnServer(["change", "feature", "add-transfer-limit"], {
+      call: async <R,>(path: string) => {
+        calls.push(path);
+        if (path === "/api/runs") return { jobId: "job-7", model: "anthropic" } as R;
+        return { state: "cancelled", startedAt: "2026-10-23T00:00:00Z", errors: [] } as R;
+      },
+      wait: async () => undefined,
+      onLine: () => undefined,
+      onJob: (j) => (told = j),
+    });
+    expect(told).toBe("job-7");
+  });
+
   it("is disabled while the step runs and says why, shows the lines as they come, then the end", () => {
     const running = html(
       <RunStepView

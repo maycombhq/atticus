@@ -58,7 +58,7 @@ const EST: Api.ChangeEstimateT = {
 };
 
 describe("the Estimate (ADR 0109)", () => {
-  it("is a screen under More, in Plan", () => {
+  it("is a tab of a change, in Plan (ADR 0119)", () => {
     expect(screenOf("#/estimate?change=add-fraud-check")).toMatchObject({
       id: "estimate",
       group: "Plan",

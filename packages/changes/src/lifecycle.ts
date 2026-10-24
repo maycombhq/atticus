@@ -194,16 +194,23 @@ export async function checkFindings(
     if (rounds.length === 0) continue;
     const round = Math.max(...rounds);
     const dir = join(base, String(round));
-    // A round started in hand-off mode isn't decided until every AI lens has answered.
+    // A round started in hand-off mode isn't decided until every AI lens has answered; a lens
+    // that failed (no answer, or an answer that isn't a review) never reviewed, so it stops the
+    // gate too, until a new critic round reviews.
     try {
       const meta = parse(await readFile(join(dir, "meta", "round.yaml"), "utf8")) as {
-        lenses?: { lens?: string; state?: string; runId?: string }[];
+        lenses?: { lens?: string; state?: string; runId?: string; reason?: string }[];
       } | null;
       for (const l of meta?.lenses ?? [])
         if (l.state === "waiting")
           reasons.push({
             code: "lens-waiting",
             message: `The ${l.lens ?? "AI"} lens on the ${gate} gate (round ${round}) is waiting for its hand-off answer${l.runId ? ` (atticus handoff done ${l.runId})` : ""}.`,
+          });
+        else if (l.state === "failed")
+          reasons.push({
+            code: "lens-failed",
+            message: `The ${l.lens ?? "AI"} lens on the ${gate} gate (round ${round}) didn't review${l.reason ? ` (${l.reason})` : ""}: run atticus critic ${change.id} --gate ${gate} again.`,
           });
     } catch {
       // No meta/round.yaml: an older round, judged by its finding files alone.

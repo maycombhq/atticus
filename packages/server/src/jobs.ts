@@ -1,7 +1,10 @@
+import { withSignal } from "@maycombhq/core";
+
 /**
  * Long work (scans, syncs, reconciles, intake) runs as a job (ADR 0015): the call returns 202 with
  * a job id, progress goes out as live events, and the job can be read or cancelled. Cancelling
- * is cooperative: the work checks `cancelled` between steps.
+ * is cooperative: the work runs inside the job's abort signal (ADR 0119), which a model call
+ * stops on at once and a scan checks between repos, and `cancelled` says so between steps.
  */
 
 export type JobKind = "scan" | "sync" | "reconcile" | "index" | "intake" | "step";
@@ -32,6 +35,7 @@ type Publish = (e: { type: string } & Record<string, unknown>) => void;
 export class JobManager {
   private jobs = new Map<string, Job>();
   private cancelledIds = new Set<string>();
+  private aborts = new Map<string, AbortController>();
   private seq = 0;
   private running = new Map<JobKind, string>();
 
@@ -62,6 +66,8 @@ export class JobManager {
     };
     this.jobs.set(id, job);
     this.running.set(kind, id);
+    const abort = new AbortController();
+    this.aborts.set(id, abort);
     const cancelled = this.cancelledIds;
     const control: JobControl = {
       progress: (done, total, message) => {
@@ -74,14 +80,18 @@ export class JobManager {
     };
     void (async () => {
       try {
-        const out = await work(control);
+        const out = await withSignal(abort.signal, () => work(control));
         if (out?.result) job.result = out.result;
         if (out?.errors?.length) job.errors.push(...out.errors);
         job.state = this.cancelledIds.has(id) ? "cancelled" : job.errors.length ? "failed" : "done";
       } catch (e) {
-        job.errors.push(e instanceof Error ? e.message : String(e));
-        job.state = "failed";
+        if (this.cancelledIds.has(id)) job.state = "cancelled";
+        else {
+          job.errors.push(e instanceof Error ? e.message : String(e));
+          job.state = "failed";
+        }
       }
+      this.aborts.delete(id);
       job.finishedAt = this.now().toISOString();
       if (this.running.get(kind) === id) this.running.delete(kind);
       this.publish({ type: "job.done", jobId: id, state: job.state });
@@ -94,6 +104,7 @@ export class JobManager {
     const j = this.jobs.get(id);
     if (!j || j.state !== "running") return false;
     this.cancelledIds.add(id);
+    this.aborts.get(id)?.abort();
     return true;
   }
 

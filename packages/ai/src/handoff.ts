@@ -5,6 +5,7 @@ import {
   changesRelOf,
   runsDirOf,
   runsRelOf,
+  writeFileAtomic,
   type RuntimeKind,
 } from "@maycombhq/core";
 import {
@@ -50,10 +51,10 @@ export class HandoffRuntime implements AiRuntime {
       ? join(this.runDir(r.request.change, r.runId), r.request.outputPath)
       : join(changesDirOf(this.o.root), r.request.change, r.request.outputPath);
 
+  // Atomic: a step reading run.json while `handoff done` writes it never sees half a file.
   private async save(run: Run): Promise<Run> {
     const dir = this.runDir(run.request.change, run.runId);
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, "run.json"), JSON.stringify(run, null, 2) + "\n", "utf8");
+    await writeFileAtomic(join(dir, "run.json"), JSON.stringify(run, null, 2) + "\n");
     return run;
   }
 

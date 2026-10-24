@@ -1,31 +1,27 @@
 import { COPY } from "../copy.js";
 
 /**
- * The app's screens (plan 4.5, B1; ADR 0105). The menu goes in the order of a working day:
- * the Dashboard, what waits on you, your changes, the phase screens, then Knowledge. Every
- * other page is under More, grouped by what it is about: the code, the wikis, the org pack,
- * the phases and running Atticus. Questions is a section of Waiting on you, out of the menu
- * but still at its address. No route is removed or renamed.
+ * The app's map (ADR 0119; before it, plan 4.5, B1 and ADR 0105). Six sections, the same on every
+ * surface and in the order a person uses them: Home (what waits on you), Changes, Knowledge, the
+ * Estate, Set up, and Atticus itself. Every page is a tab of one section; the pages of a change
+ * are grouped by phase. There is no More: the menu has the six, the section shows its tabs. No
+ * route is removed or renamed, so every old address still opens its page.
  */
 
-export const MORE_GROUPS = [
-  "Code",
-  "Knowledge",
-  "OrgPack",
-  "Define",
-  "Design",
-  "Plan",
-  "Build",
-  "Release",
-  "Run",
-] as const;
-export type MoreGroup = (typeof MORE_GROUPS)[number];
+export const SECTIONS = ["Home", "Changes", "Knowledge", "Estate", "SetUp", "Atticus"] as const;
+export type Section = (typeof SECTIONS)[number];
+
+/** The phases a change's pages are grouped by, within Changes. */
+export const PHASES = ["Define", "Design", "Plan", "Build", "Release"] as const;
+export type Phase = (typeof PHASES)[number];
 
 export interface ScreenDef {
   id: string;
   label: string;
-  group: "Main" | MoreGroup;
-  /** A page out of the menu: the menu entry it is a section of. */
+  section: Section;
+  /** Within Changes: the phase the page belongs to. */
+  group?: Phase;
+  /** A page out of the tabs: the tab it is a part of. */
   under?: string;
 }
 
@@ -33,73 +29,97 @@ const N = COPY.nav;
 const S = COPY.nav.screens;
 const K = COPY.knowledge.nav;
 
-export const MAIN: ScreenDef[] = [
-  { id: "dashboard", label: N.dashboard, group: "Main" },
-  { id: "home", label: S.home, group: "Main" },
-  { id: "changes", label: S.changes, group: "Main" },
-  { id: "onboarding", label: N.onboarding, group: "Main" },
-  { id: "feature-design", label: N.feature, group: "Main" },
-  { id: "architecture", label: N.architecture, group: "Main" },
-  { id: "stories", label: N.stories, group: "Main" },
-  { id: "task-list", label: N.tasks, group: "Main" },
-  // ADR 0102: knowledge managed in the metarepo.
-  { id: "knowledge", label: N.knowledge, group: "Main" },
-];
-
-export const MORE: ScreenDef[] = [
-  { id: "explore", label: S.explore, group: "Code" },
-  { id: "flows", label: COPY.flows.title, group: "Code" },
-  { id: "map", label: S.map, group: "Code" },
-  { id: "impact", label: S.impact, group: "Code" },
-  { id: "features", label: S.features, group: "Code" },
-  { id: "scans", label: S.scans, group: "Code" },
-  { id: "wikis", label: K.sources, group: "Knowledge" },
-  { id: "wiki-search", label: K.search, group: "Knowledge" },
-  { id: "parties", label: K.parties, group: "Knowledge" },
-  { id: "orgpack", label: S.orgpack, group: "OrgPack" },
-  { id: "orgpack-draft", label: K.orgpack, group: "OrgPack" },
-  { id: "intake", label: S.intake, group: "OrgPack" },
-  { id: "settings", label: S.settings, group: "OrgPack" },
-  { id: "brief", label: S.brief, group: "Define" },
-  { id: "ux", label: S.ux, group: "Define" },
-  { id: "arch-review", label: S.archReview, group: "Design" },
-  { id: "diagrams", label: S.diagrams, group: "Design" },
+export const SCREENS: ScreenDef[] = [
+  // Home: what waits on you first, then the estate at a glance.
+  { id: "home", label: S.home, section: "Home" },
+  { id: "dashboard", label: N.dashboard, section: "Home" },
+  { id: "questions", label: COPY.questions.title, section: "Home", under: "home" },
+  // Changes: the list, then each phase's pages.
+  { id: "changes", label: S.changes, section: "Changes" },
+  { id: "brief", label: S.brief, section: "Changes", group: "Define" },
+  { id: "ux", label: S.ux, section: "Changes", group: "Define" },
+  { id: "feature-design", label: N.feature, section: "Changes", group: "Define" },
+  { id: "architecture", label: N.architecture, section: "Changes", group: "Design" },
+  { id: "arch-review", label: S.archReview, section: "Changes", group: "Design" },
   // ADR 0108: a change's picture, from its target flows.
-  { id: "change-diagram", label: S.changeDiagram, group: "Design" },
-  { id: "reconcile", label: S.reconcile, group: "Design" },
-  { id: "contracts", label: S.contracts, group: "Design" },
-  { id: "mappings", label: S.mappings, group: "Design" },
-  { id: "breakdown", label: S.breakdown, group: "Plan" },
+  { id: "change-diagram", label: S.changeDiagram, section: "Changes", group: "Design" },
+  { id: "stories", label: N.stories, section: "Changes", group: "Plan" },
+  { id: "breakdown", label: S.breakdown, section: "Changes", group: "Plan" },
   // ADR 0109: a change's estimate, from its target flows.
-  { id: "estimate", label: S.estimate, group: "Plan" },
-  { id: "initiatives", label: S.initiatives, group: "Plan" },
-  { id: "tasks", label: S.tasks, group: "Build" },
+  { id: "estimate", label: S.estimate, section: "Changes", group: "Plan" },
+  { id: "task-list", label: N.tasks, section: "Changes", group: "Build" },
+  { id: "tasks", label: S.tasks, section: "Changes", group: "Build" },
   // ADR 0114: does the code do what the design says?
-  { id: "conformance", label: S.conformance, group: "Build" },
-  { id: "trace", label: S.trace, group: "Build" },
-  { id: "todo", label: S.todo, group: "Build" },
-  { id: "release", label: S.release, group: "Release" },
-  { id: "service-desk", label: S.serviceDesk, group: "Release" },
-  { id: "governance", label: S.governance, group: "Run" },
-  { id: "evals", label: S.evals, group: "Run" },
-  { id: "learning", label: S.learning, group: "Run" },
-  // ADR 0106: what Atticus asked a model and what it answered.
-  { id: "runs", label: S.runs, group: "Run" },
-  // ADR 0110: what people asked their assistant and what it answered.
-  { id: "history", label: S.history, group: "Run" },
+  { id: "conformance", label: S.conformance, section: "Changes", group: "Build" },
+  { id: "trace", label: S.trace, section: "Changes", group: "Build" },
+  { id: "todo", label: S.todo, section: "Changes", group: "Build" },
+  { id: "release", label: S.release, section: "Changes", group: "Release" },
+  { id: "service-desk", label: S.serviceDesk, section: "Changes", group: "Release" },
+  // Knowledge (ADR 0102): the items, the wikis they come from, searching them, the parties.
+  { id: "knowledge", label: N.knowledge, section: "Knowledge" },
+  { id: "wikis", label: K.sources, section: "Knowledge" },
+  { id: "wiki-search", label: K.search, section: "Knowledge" },
+  { id: "parties", label: K.parties, section: "Knowledge" },
+  // The estate: what the code says, searched, drawn and followed.
+  { id: "explore", label: S.explore, section: "Estate" },
+  { id: "map", label: S.map, section: "Estate" },
+  { id: "flows", label: COPY.flows.title, section: "Estate" },
+  { id: "impact", label: S.impact, section: "Estate" },
+  { id: "features", label: S.features, section: "Estate" },
+  { id: "contracts", label: S.contracts, section: "Estate" },
+  { id: "mappings", label: S.mappings, section: "Estate" },
+  { id: "diagrams", label: S.diagrams, section: "Estate" },
+  { id: "reconcile", label: S.reconcile, section: "Estate" },
+  { id: "governance", label: S.governance, section: "Estate" },
+  { id: "initiatives", label: S.initiatives, section: "Estate" },
+  // Set up: the repos, their scans, what was dropped in, the org pack, this machine.
+  { id: "onboarding", label: N.onboarding, section: "SetUp" },
+  { id: "scans", label: S.scans, section: "SetUp" },
+  { id: "intake", label: S.intake, section: "SetUp" },
+  { id: "orgpack", label: S.orgpack, section: "SetUp" },
+  { id: "orgpack-draft", label: K.orgpack, section: "SetUp" },
+  { id: "settings", label: S.settings, section: "SetUp" },
+  // Atticus itself: what it asked a model (ADR 0106), what people asked theirs (ADR 0110).
+  { id: "runs", label: S.runs, section: "Atticus" },
+  { id: "history", label: S.history, section: "Atticus" },
+  { id: "evals", label: S.evals, section: "Atticus" },
+  { id: "learning", label: S.learning, section: "Atticus" },
 ];
 
-/** Pages out of the menu, each a section of a menu entry (ADR 0105). */
-export const SECTIONS: ScreenDef[] = [
-  { id: "questions", label: COPY.questions.title, group: "Main", under: "home" },
-];
+/** A section's name as the menu shows it. */
+export const sectionLabel = (s: Section): string => N.sections[s];
 
-export const SCREENS: ScreenDef[] = [...MAIN, ...MORE, ...SECTIONS];
+/** A phase's name, as a group of a change's pages. */
+export const groupLabel = (g: Phase): string => N.groups[g];
 
-/** A menu group's name as the menu shows it. */
-export const groupLabel = (g: ScreenDef["group"]): string => COPY.nav.groups[g];
+/** The tabs of a section, in order: every page of it but those that are part of another. */
+export const tabsOf = (s: Section): ScreenDef[] =>
+  SCREENS.filter((x) => x.section === s && !x.under);
 
+/** Where a section opens: its first tab. */
+export const landingOf = (s: Section): ScreenDef => tabsOf(s)[0]!;
+
+/** The page a hash opens; an unknown one opens Home, what waits on you. */
 export function screenOf(hash: string): ScreenDef {
-  const id = hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "dashboard";
-  return SCREENS.find((s) => s.id === id) ?? MAIN[0]!;
+  const id = hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "home";
+  return SCREENS.find((s) => s.id === id) ?? SCREENS[0]!;
+}
+
+/**
+ * The change a page is about, from its address (`?change=` or `#/changes/<id>`), so moving between
+ * a change's tabs keeps the change.
+ */
+export function changeOf(hash: string): string | undefined {
+  const path = hash.replace(/^#\/?/, "");
+  const m = /^changes\/([^/?]+)/.exec(path);
+  if (m) return decodeURIComponent(m[1]!);
+  const q = path.split("?")[1];
+  return q ? (new URLSearchParams(q).get("change") ?? undefined) : undefined;
+}
+
+/** A tab's address: a change's pages keep the change they are about. */
+export function tabHref(s: ScreenDef, change: string | undefined): string {
+  if (s.section !== "Changes" || !change) return `#/${s.id}`;
+  if (s.id === "changes") return `#/changes/${encodeURIComponent(change)}`;
+  return `#/${s.id}?change=${encodeURIComponent(change)}`;
 }

@@ -14,7 +14,7 @@ import { parseJson } from "./cli";
 import { block, describeEnd, endFiles } from "./describe";
 import { ChatSessions, promptText, recordChat, recordingStream } from "./history";
 import type { StepEnd } from "./runner";
-import { stepTitle } from "./words";
+import { stepTitle, WORDS } from "./words";
 import type { Service } from "./service";
 import type { NextStep, OpenQuestion } from "./types";
 
@@ -204,7 +204,7 @@ async function runTyped(
     Boolean,
   );
   stream.markdown(
-    `${how.mode === "approve" ? "The dry run of" : "Ran"} ${inline(`atticus ${dryArgv.join(" ")}`)} (exit ${r.code}):${block(out.slice(0, 200).length ? out.slice(0, 200) : ["(nothing printed)"])}`,
+    `${how.mode === "approve" ? "The dry run of" : "Ran"} ${inline(`atticus ${dryArgv.join(" ")}`)} : ${WORDS.endedWith(r.code)}${block(out.slice(0, 200).length ? out.slice(0, 200) : ["(nothing printed)"])}`,
   );
   if (out.length > 200)
     stream.markdown(`${out.length - 200} more lines are in the Atticus output.`);
@@ -297,7 +297,7 @@ function participant(svc: Service, commands?: () => CommandUi): vscode.ChatReque
       const r = await svc.cli(root)(["change", "map", change, "--json", "--root", root], token);
       const m = parseJson<ChangeMapJson>(r.stdout);
       if (!m) {
-        stream.markdown(block([r.stderr.trim() || `atticus change map ended with exit ${r.code}`]));
+        stream.markdown(block([r.stderr.trim() || WORDS.endedWith(r.code)]));
         return;
       }
       stream.markdown(changeMapMarkdown(m));

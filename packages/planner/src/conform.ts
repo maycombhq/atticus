@@ -391,7 +391,18 @@ export function conform(input: ConformInput): ConformResult {
     function storeChecks(d: ConformDelta, item: number, s: DeltaStep, line: number): void {
       const st = s.store!;
       if (st.migration) {
-        const file = input.files.find((f) => posix.basename(f) === st.migration);
+        // A migration named as a file, or with its folder (db/migration/V5__x.sql, as the
+        // stage's check and the task context accept it): the repo's file ends with it.
+        const want = st.migration
+          .trim()
+          .replace(/\\/g, "/")
+          .replace(/^\.?\//, "");
+        const file = input.files.find(
+          (f) =>
+            f === want ||
+            f.endsWith(`/${want}`) ||
+            (!want.includes("/") && posix.basename(f) === want),
+        );
         push(
           file
             ? {
@@ -411,7 +422,27 @@ export function conform(input: ConformInput): ConformResult {
         );
       }
       const table = tableOf(after, st.table);
-      if (st.new || table) {
+      // A table the scans found but whose columns neither scan read (a custom ORM, mapper XML):
+      // its columns can't be checked here, which is not the same as missing.
+      const noColumns =
+        !!table && ![...before, ...after].some((r) => r.kind === "Column" && r.table === st.table);
+      if (noColumns && st.columns.length) {
+        if (st.new)
+          push({
+            status: "found",
+            check: "table",
+            item,
+            what: `The table ${st.table} exists.`,
+            record: table.id,
+            at: citesIn(table, repo),
+          });
+        unchecked.push({
+          flow: d.delta.flow,
+          item,
+          kind: s.kind ?? "step",
+          why: `The scans read no column of ${st.table} (its columns are kept where the reader doesn't look), so ${st.columns.join(", ")} can't be checked here.`,
+        });
+      } else if (st.new || table) {
         if (st.new)
           push(
             table

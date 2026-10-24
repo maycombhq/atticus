@@ -122,12 +122,19 @@ const ENDED = new Set(["done", "failed", "cancelled"]);
  */
 export async function runOnServer(
   args: string[],
-  o: { call: Call; wait: (ms: number) => Promise<void>; onLine: (line: string) => void },
+  o: {
+    call: Call;
+    wait: (ms: number) => Promise<void>;
+    onLine: (line: string) => void;
+    /** Told the job's id once it started, so the page can cancel it (ADR 0119). */
+    onJob?: (jobId: string) => void;
+  },
 ): Promise<StepEnd> {
   const started = await o.call<{ jobId: string; model: string }>("/api/runs", {
     method: "POST",
     body: { args },
   });
+  o.onJob?.(started.jobId);
   o.onLine(T.started(started.model));
   let last = "";
   for (;;) {
@@ -183,8 +190,17 @@ export function endText(end: StepEnd): string {
   return T.ends[end.state] ?? T.ended(end.state);
 }
 
-/** The Run button and what it shows: the lines as they come, then the end or the refusal. */
-export function RunStepView(p: { choice: RunChoice; state: RunState; onRun?: () => void }) {
+/**
+ * The Run button and what it shows: the lines as they come, then the end or the refusal. While a
+ * step runs on the server, Cancel stops it (ADR 0119); Copilot's own chat has its own stop.
+ */
+export function RunStepView(p: {
+  choice: RunChoice;
+  state: RunState;
+  onRun?: () => void;
+  onCancel?: () => void;
+  stopping?: boolean;
+}) {
   const id = useId();
   if (p.choice.kind === "copy") return null;
   const label = p.choice.kind === "copilot" ? T.withCopilot : T.withModel(p.choice.model);
@@ -203,8 +219,19 @@ export function RunStepView(p: { choice: RunChoice; state: RunState; onRun?: () 
         >
           {running ? T.running : label}
         </button>
+        {running && p.onCancel && (
+          <button
+            type="button"
+            className="btn"
+            disabled={p.stopping}
+            title={T.cancelHint}
+            onClick={p.onCancel}
+          >
+            {p.stopping ? T.cancelling : T.cancel}
+          </button>
+        )}
         <span id={`${id}-why`} className="muted" style={{ fontSize: 12 }}>
-          {running ? T.busy : hint}
+          {running ? (p.onCancel ? T.cancelHint : T.busy) : hint}
         </span>
       </div>
       <div aria-live="polite" className="runstep-live">
@@ -249,6 +276,8 @@ export function RunStep({ command }: { command: string }) {
   const bridge = hostBridge();
   const serverModel = useServerModel(!!args && !bridge);
   const [state, set] = useState<RunState>({ phase: "idle", lines: [] });
+  const [jobId, setJobId] = useState<string | undefined>();
+  const [stopping, setStopping] = useState(false);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -263,12 +292,17 @@ export function RunStep({ command }: { command: string }) {
   };
   const onRun = () => {
     set({ phase: "running", lines: [] });
+    setJobId(undefined);
+    setStopping(false);
     const run = bridge
       ? bridge.runStep(args, onLine)
       : runOnServer(args, {
           call: (path, o) => api(path, o ?? {}),
           wait: (ms) => new Promise((r) => setTimeout(r, ms)),
           onLine,
+          onJob: (j) => {
+            if (live.current) setJobId(j);
+          },
         });
     run.then(
       (end) => {
@@ -279,5 +313,23 @@ export function RunStep({ command }: { command: string }) {
       },
     );
   };
-  return <RunStepView choice={choice} state={state} onRun={onRun} />;
+  const onCancel = jobId
+    ? () => {
+        setStopping(true);
+        // A job that already ended answers 409; its end still arrives through the poll.
+        void api(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
+          method: "POST",
+          body: {},
+        }).catch(() => undefined);
+      }
+    : undefined;
+  return (
+    <RunStepView
+      choice={choice}
+      state={state}
+      onRun={onRun}
+      {...(onCancel ? { onCancel } : {})}
+      stopping={stopping}
+    />
+  );
 }

@@ -4,11 +4,23 @@ import { dirname, join } from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { startUi, untilStopped } from "../src/ui-commands.js";
+import { startedLines, startUi, untilStopped } from "../src/ui-commands.js";
 
 const FORGE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/forge");
 
 describe("atticus ui", () => {
+  it("prints the session token only for an editor that started it, or when asked (ADR 0119)", () => {
+    const url = "http://127.0.0.1:4321";
+    const said = (o: Parameters<typeof startedLines>[2]) =>
+      startedLines(url, "tok-1", o).join("\n");
+    expect(said({})).not.toContain("tok-1");
+    expect(said({})).toContain("--show-token");
+    expect(said({ showToken: true })).toContain("the session token is tok-1");
+    // The editors read it from this line: VS Code (--embed) and IntelliJ (--parent).
+    expect(said({ embed: "vscode" })).toContain("the session token is tok-1");
+    expect(said({ parent: 42 })).toContain("the session token is tok-1");
+  });
+
   it("serves the built app with its session token and the API on 127.0.0.1", async () => {
     const root = await mkdtemp(join(tmpdir(), "atticus-ui-cmd-"));
     await cp(join(FORGE, "metarepo"), root, { recursive: true });

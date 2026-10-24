@@ -1,6 +1,20 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 /**
  * Starting from nothing, and adding repos without editing YAML (ADR 0098). No `vscode` here.
  */
+
+/** `name` in `parent`, or `name-2`, `name-3`… when it is taken (a second practice run, ADR 0119). */
+export function freeFolder(
+  parent: string,
+  name: string,
+  exists: (path: string) => boolean = existsSync,
+): string {
+  let dir = join(parent, name);
+  for (let n = 2; exists(dir); n++) dir = join(parent, `${name}-${n}`);
+  return dir;
+}
 
 export interface Discovered {
   repos: { id: string; type: string; evidence?: string }[];

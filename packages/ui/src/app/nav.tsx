@@ -1,7 +1,6 @@
-import { useEffect, useState } from "react";
 import { COPY } from "../copy.js";
 import "../screens/work/work.css";
-import { groupLabel, MAIN, MORE, MORE_GROUPS, type ScreenDef } from "./screens.js";
+import { landingOf, sectionLabel, SECTIONS, type ScreenDef } from "./screens.js";
 
 const T = COPY.menu;
 
@@ -31,29 +30,12 @@ function Logo() {
   );
 }
 
-function Link({ s, current }: { s: ScreenDef; current: ScreenDef }) {
-  return (
-    <a
-      href={`#/${s.id}`}
-      aria-current={s.id === current.id ? "page" : s.id === current.under ? "true" : undefined}
-    >
-      {s.label}
-    </a>
-  );
-}
-
 /**
- * One navigation for everyone (ADR 0073, plan 4.5, ADR 0105): the main screens in the order of a
- * working day, then More, a button that opens every other page in its group. More is open when
- * the page shown is one of its pages, so the current page is always visible in the menu; a
- * page out of the menu (Questions) marks the entry it is a section of.
+ * One navigation for everyone (ADR 0073), in six sections, the same on every surface (ADR 0119):
+ * Home, Changes, Knowledge, the Estate, Set up and Atticus. Each opens on its first tab; the
+ * section of the page shown is marked, and its tabs are above the page.
  */
 export function Nav({ current }: { current: ScreenDef }) {
-  const inMore = current.group !== "Main";
-  const [open, setOpen] = useState(inMore);
-  useEffect(() => {
-    if (inMore) setOpen(true);
-  }, [inMore]);
   return (
     <nav aria-label={COPY.nav.main} className="nav">
       <div className="brand">
@@ -61,30 +43,18 @@ export function Nav({ current }: { current: ScreenDef }) {
         {T.atticus}
       </div>
       <div role="group" aria-label={COPY.nav.main}>
-        {MAIN.map((s) => (
-          <Link key={s.id} s={s} current={current} />
-        ))}
-      </div>
-      <button
-        type="button"
-        className="more"
-        aria-expanded={open}
-        aria-controls="nav-more"
-        title={COPY.nav.moreHint}
-        onClick={() => setOpen((o) => !o)}
-      >
-        {COPY.nav.more}
-        <span aria-hidden="true">{open ? "▾" : "▸"}</span>
-      </button>
-      <div id="nav-more" hidden={!open}>
-        {MORE_GROUPS.map((g) => (
-          <div key={g} role="group" aria-label={groupLabel(g)}>
-            <div className="group">{groupLabel(g)}</div>
-            {MORE.filter((s) => s.group === g).map((s) => (
-              <Link key={s.id} s={s} current={current} />
-            ))}
-          </div>
-        ))}
+        {SECTIONS.map((s) => {
+          const to = landingOf(s);
+          return (
+            <a
+              key={s}
+              href={`#/${to.id}`}
+              aria-current={current.section === s ? "page" : undefined}
+            >
+              {sectionLabel(s)}
+            </a>
+          );
+        })}
       </div>
       <a className="ask" href="#/explore">
         <span

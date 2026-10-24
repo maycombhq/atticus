@@ -46,7 +46,14 @@ describe("atticus mcp (ADR 0104)", () => {
 
   it("lists read-only tools, each with what it does and the arguments it takes", async () => {
     const r = (await handleMcp({ jsonrpc: "2.0", id: 2, method: "tools/list" }, fake([]), "1")) as {
-      result: { tools: { name: string; description: string; inputSchema: { type: string } }[] };
+      result: {
+        tools: {
+          name: string;
+          description: string;
+          inputSchema: { type: string };
+          annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
+        }[];
+      };
     };
     const names = r.result.tools.map((t) => t.name);
     expect(names).toEqual(MCP_TOOLS.map((t) => t.name));
@@ -65,6 +72,8 @@ describe("atticus mcp (ADR 0104)", () => {
     for (const t of r.result.tools) {
       expect(t.description.length).toBeGreaterThan(20);
       expect(t.inputSchema.type).toBe("object");
+      // Said in the protocol too, so an assistant can call them without asking (ADR 0119).
+      expect(t.annotations).toEqual({ readOnlyHint: true, destructiveHint: false });
     }
   });
 

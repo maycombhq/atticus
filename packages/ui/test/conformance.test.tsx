@@ -92,7 +92,7 @@ const VIEW: Api.ChangeConformanceT = {
 };
 
 describe("Code against design (ADR 0114)", () => {
-  it("is a screen under More, in Build", () => {
+  it("is a tab of a change, in Build (ADR 0119)", () => {
     expect(screenOf("#/conformance?change=add-transfer-limit")).toMatchObject({
       id: "conformance",
       group: "Build",

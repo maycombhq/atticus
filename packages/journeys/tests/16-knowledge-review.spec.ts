@@ -298,7 +298,9 @@ test("needs across changes: every open need, marked as on a change's page (ADR 0
     "#/questions",
   );
   await expect(
-    page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Waiting on you" }),
+    page
+      .getByRole("navigation", { name: "Home pages" })
+      .getByRole("link", { name: "Waiting on you" }),
   ).toHaveAttribute("aria-current", "page");
 });
 
