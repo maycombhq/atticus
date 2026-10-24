@@ -11,12 +11,31 @@ export interface SqlColumn {
   default?: string;
   primaryKey: boolean;
   references?: { table: string; columns: string[] };
+  /** The values its definition allows: a CHECK (column IN (...)) on it, or an ENUM(...) type. */
+  allowed?: { values: string[]; line: number };
+  line: number;
+}
+
+/** A table's CHECK (column IN (...)) constraint: the values the column allows. */
+export interface SqlCheck {
+  name?: string;
+  column: string;
+  values: string[];
+  line: number;
+}
+
+/** CREATE TYPE name AS ENUM (...): the values a column of that type allows. */
+export interface SqlEnum {
+  name: string;
+  values: string[];
   line: number;
 }
 
 export interface SqlTable {
   name: string;
   columns: SqlColumn[];
+  /** CHECK (column IN (...)) constraints written on the table, not on a column. */
+  checks: SqlCheck[];
   primaryKey: { columns: string[]; line: number } | undefined;
   foreignKeys: {
     name?: string;
@@ -69,6 +88,12 @@ export interface SqlDdl {
   /** Column actions of ALTER TABLE statements, in file order. */
   alters: SqlAlter[];
   drops: SqlDrop[];
+  /** CREATE TYPE ... AS ENUM statements. */
+  enums: SqlEnum[];
+  /** CHECK (column IN (...)) constraints ALTER TABLE ... ADD adds. */
+  checks: (SqlCheck & { table: string })[];
+  /** Constraints ALTER TABLE ... DROP CONSTRAINT drops, by name. */
+  droppedConstraints: { table: string; name: string; line: number }[];
   /** Human-readable operations, e.g. "create table entry", "create index idx_entry_account". */
   operations: string[];
 }
@@ -120,6 +145,31 @@ const normType = (t: string) =>
 const DEFAULT_RE = /default\s+('(?:[^']|'')*'|[^\s,]+)/i;
 const NAME = String.raw`[\w"\x60[\]]+`;
 
+/**
+ * A list of literal values as written ('a', 'b' or 1, 2), each without its quotes; undefined
+ * when any item isn't a plain string or number (an expression is for the model to read).
+ */
+function literals(list: string): string[] | undefined {
+  const out: string[] = [];
+  for (const raw of list.split(/,(?=(?:[^']*'[^']*')*[^']*$)/)) {
+    const v = raw.trim();
+    const q = /^'((?:[^']|'')*)'$/.exec(v);
+    if (q) out.push(q[1]!.replace(/''/g, "'"));
+    else if (/^-?\d+(?:\.\d+)?$/.test(v)) out.push(v);
+    else return undefined;
+  }
+  return out.length && out.every((v) => v.length) ? out : undefined;
+}
+
+/** CHECK (column IN (...)), anywhere in a text: the column and its values. */
+const CHECK_IN_RE = /check\s*\(\s*\(?\s*([\w"`[\]]+)\s+in\s*\(([^()]*)\)\s*\)?\s*\)/i;
+
+function checkIn(text: string): { column: string; values: string[] } | undefined {
+  const m = CHECK_IN_RE.exec(text);
+  const values = m ? literals(m[2]!) : undefined;
+  return m && values ? { column: unquote(m[1]!), values } : undefined;
+}
+
 /** A column definition: `name type [constraints]`. */
 function parseColumn(text: string, line: number): SqlColumn | undefined {
   const nm = new RegExp(String.raw`^(${NAME})\s+([\s\S]*)$`).exec(text.trim());
@@ -129,12 +179,20 @@ function parseColumn(text: string, line: number): SqlColumn | undefined {
   const rest = tm[2] ?? "";
   const ref = /references\s+([\w."`]+)\s*\(([^)]*)\)/i.exec(rest);
   const def = DEFAULT_RE.exec(rest);
+  const name = unquote(nm[1]!);
+  // The values its own definition allows: ENUM('a', 'b') as its type, or CHECK (name IN (...)).
+  const enumType = /^enum\s*\(([^)]*)\)/i.exec(tm[1]!.trim());
+  const check = checkIn(rest);
+  const values =
+    (enumType && literals(enumType[1]!)) ??
+    (check && check.column === name ? check.values : undefined);
   return {
-    name: unquote(nm[1]!),
+    name,
     type: normType(tm[1]!),
     nullable: !/not\s+null|primary\s+key/i.test(rest),
     primaryKey: /primary\s+key/i.test(rest),
     ...(def ? { default: def[1]! } : {}),
+    ...(values ? { allowed: { values, line } } : {}),
     ...(ref
       ? { references: { table: unquote(ref[1]!.split(".").pop()!), columns: cols(ref[2]!) } }
       : {}),
@@ -163,6 +221,7 @@ function parseAlterActions(
   start: number,
   alters: SqlAlter[],
   operations: string[],
+  constraints: Pick<SqlDdl, "checks" | "droppedConstraints">,
 ): void {
   const body = sql.slice(start, statementEnd(sql, start));
   const op = (a: SqlAlter, text: string) => {
@@ -176,6 +235,22 @@ function parseAlterActions(
     const line = lineAt(sql, start + part.offset + lead);
     if (/^add\s+(?:constraint|primary|foreign|unique|check|index|key)\b/i.test(text)) {
       operations.push(`alter table ${table} add constraint`);
+      const named = /^add\s+constraint\s+([\w"`[\]]+)\s+check\b/i.exec(text);
+      const c = /^add\s+(?:constraint\s+[\w"`[\]]+\s+)?check\b/i.test(text)
+        ? checkIn(text)
+        : undefined;
+      if (c)
+        constraints.checks.push({
+          table,
+          ...(named ? { name: unquote(named[1]!) } : {}),
+          ...c,
+          line,
+        });
+      continue;
+    }
+    const dropped = /^drop\s+constraint\s+(?:if\s+exists\s+)?([\w"`[\]]+)/i.exec(text);
+    if (dropped) {
+      constraints.droppedConstraints.push({ table, name: unquote(dropped[1]!), line });
       continue;
     }
     const multi = /^add\s*\(([\s\S]*)\)$/i.exec(text);
@@ -259,6 +334,20 @@ export function parseDdl(source: string): SqlDdl {
   const operations: string[] = [];
   const alters: SqlAlter[] = [];
   const drops: SqlDrop[] = [];
+  const enums: SqlEnum[] = [];
+  const constraints: Pick<SqlDdl, "checks" | "droppedConstraints"> = {
+    checks: [],
+    droppedConstraints: [],
+  };
+
+  const enumRe = /create\s+type\s+([\w."`[\]]+)\s+as\s+enum\s*\(([^)]*)\)/gi;
+  for (const m of sql.matchAll(enumRe)) {
+    const values = literals(m[2]!);
+    if (!values) continue;
+    const name = unquote(m[1]!.split(".").pop()!);
+    enums.push({ name, values, line: lineAt(sql, m.index!) });
+    operations.push(`create type ${name}`);
+  }
 
   const tableRe =
     /create\s+(?:or\s+replace\s+)?(?:temporary\s+)?table\s+(?:if\s+not\s+exists\s+)?([\w."`[\]]+)\s*\(/gi;
@@ -275,6 +364,7 @@ export function parseDdl(source: string): SqlDdl {
     const t: SqlTable = {
       name,
       columns: [],
+      checks: [],
       primaryKey: undefined,
       foreignKeys: [],
       line: lineAt(sql, m.index!),
@@ -301,6 +391,12 @@ export function parseDdl(source: string): SqlDdl {
           refColumns: cols(fk[4]!),
           line,
         });
+        continue;
+      }
+      const ck = /^(?:constraint\s+([\w"`[\]]+)\s+)?check\b/i.exec(text);
+      if (ck) {
+        const c = checkIn(text);
+        if (c) t.checks.push({ ...(ck[1] ? { name: unquote(ck[1]) } : {}), ...c, line });
         continue;
       }
       if (/^(constraint|unique|check|index|key)\b/i.test(text)) continue;
@@ -342,6 +438,7 @@ export function parseDdl(source: string): SqlDdl {
       m.index! + m[0].length,
       alters,
       operations,
+      constraints,
     );
   const dropRe = /drop\s+(table|index)\s+(?:concurrently\s+)?(?:if\s+exists\s+)?([\w."`]+)/gi;
   for (const m of sql.matchAll(dropRe)) {
@@ -350,7 +447,7 @@ export function parseDdl(source: string): SqlDdl {
     drops.push({ kind, name, line: lineAt(sql, m.index!) });
     operations.push(`drop ${kind} ${name}`);
   }
-  return { tables, indexes, alters, drops, operations };
+  return { tables, indexes, alters, drops, enums, ...constraints, operations };
 }
 
 export interface TableAccess {

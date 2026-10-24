@@ -8,7 +8,14 @@ import { changeInputSources } from "@maycombhq/intake";
 import { readKnowledge } from "@maycombhq/knowledge";
 import { PlannerError } from "../errors.js";
 import { parseYamlAs } from "./answer.js";
-import { columnsOf, endpointKey, estateIndex, loadEstate, type Estate } from "./estate.js";
+import {
+  allowedValuesSource,
+  columnsOf,
+  endpointKey,
+  estateIndex,
+  loadEstate,
+  type Estate,
+} from "./estate.js";
 import { baseProblem, deltaBase, flowBase, mergeDelta } from "./merge.js";
 import { readPlacement } from "./feature.js";
 import { instructionSource, wholeLists, type ContextReport } from "../engine.js";
@@ -472,6 +479,18 @@ export function storesFor(e: Estate, p: FeaturePlacement): string[] {
     if (repo && repos.has(repo)) out.add(r.id);
   }
   return [...out].sort().slice(0, 5);
+}
+
+/** The tables a change may store into: those today's touched flows use, and the stores' tables. */
+export function tablesFor(e: Estate, p: FeaturePlacement): string[] {
+  const out = new Set<string>();
+  for (const f of p.flows)
+    for (const s of e.flowById.get(f.id)?.flow.steps ?? []) if (s.store) out.add(s.store.table);
+  const stores = new Set(storesFor(e, p));
+  for (const r of e.records as Rec[])
+    if (r.kind === "Table" && typeof r.dataStore === "string" && stores.has(r.dataStore))
+      out.add(r.id);
+  return [...out].sort();
 }
 
 /** The store facts as a data block of the step's pack, when the change may write a store. */
@@ -1426,6 +1445,8 @@ export async function architectureStage(
     },
     // ADR 0111 addendum: how the stores the change may write name their migrations and types.
     ...storeFactsSource(estate, placement),
+    // S2: the values the code allows in the columns of the tables the change may store into.
+    ...allowedValuesSource(estate, tablesFor(estate, placement)),
     // ADR 0113: the files attached to the change, each cited by file and line or page.
     ...(await changeInputSources(dir, rel)).map((s): SourceInput => ({
       id: s.id,

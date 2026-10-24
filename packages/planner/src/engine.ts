@@ -173,6 +173,8 @@ export interface ContextReport {
   gaps?: ContextGap[];
   /** Unknown names a repo's code names, with the line: not gaps (ADR 0116 addendum, ADR 0118). */
   inCode?: { name: string; at: string }[];
+  /** Unknown names known otherwise, with where: the change's target flows, a migration, an answer (T2, U2). Not gaps. */
+  known?: { name: string; at: string; how: "target-flow" | "migration" | "answer" }[];
   /** The repos whose code was searched for the unknown names. */
   searched?: string[];
   version?: string;

@@ -1,18 +1,30 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { SourceInput } from "@maycombhq/ai";
+import { loadChangeContext } from "@maycombhq/changes";
 import {
   answerWords,
   changesDirOf,
   changesRelOf,
   listQuestions,
   raiseQuestions,
+  type CatalogRecord,
   type Question,
   type QuestionDraft,
 } from "@maycombhq/core";
 import { parse } from "yaml";
-import { GAP_STEP, gapNameOf, gapQuestion, namesInCode } from "@maycombhq/index";
+import {
+  GAP_STEP,
+  gapNameOf,
+  gapQuestion,
+  namesInCode,
+  type ContextToolOptions,
+} from "@maycombhq/index";
 import { unfence } from "./stages/answer.js";
+import { FlowDelta } from "./stages/schema.js";
+
+/** The change's target flows folder (stages/architecture.ts's TARGET_DIR). */
+const TARGET_DIR = "target-flows";
 
 /**
  * What neither the wikis nor the repos say (ADR 0107 point 5), in the steps that use the
@@ -86,50 +98,220 @@ export async function gapsOf(
   return out;
 }
 
-/** A name the change uses that a repo's code names: not a gap, and where the code names it. */
+/** A name the change uses that a repo's code has: not a gap, and where the code has it. */
 export interface NameInCode {
   name: string;
-  /** repo:path:line of the first line that names it, as a whole word. */
+  /** repo:path:line of its declaration, or repo:path of the file it names. */
   at: string;
+}
+
+/** A name the change uses that is known without the index: not a gap, and why (T2, U2). */
+export interface KnownName {
+  name: string;
+  /** Where it is known from: the target flow's file and line, a migration's file, a question. */
+  at: string;
+  /** target-flow: the change's own target flows add it; migration: the catalog records the file; answer: a person answered about it for this change. */
+  how: "target-flow" | "migration" | "answer";
+}
+
+/**
+ * The code readers namesInCode uses (ADR 0118, S1): the outline from the syntax trees the
+ * extractors parse, and their own test of which files have a grammar. Loaded on first use.
+ */
+export async function codeReaders(): Promise<Pick<ContextToolOptions, "outline" | "outlines">> {
+  const x = await import("@maycombhq/extractors");
+  return {
+    outline: (path, text) => x.declarationOutline(path, text),
+    outlines: (path) => x.syntaxLanguageOf(path) !== undefined,
+  };
+}
+
+/** "PUT /a/{id}/" → "PUT /a/{}"; undefined when it isn't METHOD /path. */
+function endpointOf(s: string): string | undefined {
+  const m = /^\s*(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(\/\S*)\s*$/i.exec(s);
+  if (!m) return undefined;
+  const path = m[2]!
+    .replace(/\?.*$/, "")
+    .replace(/\{[^}]*\}/g, "{}")
+    .replace(/(.)\/$/, "$1");
+  return `${m[1]!.toUpperCase()} ${path.toLowerCase()}`;
+}
+
+const sameName = (a: string, b: string) => {
+  if (fold(a).trim() === fold(b).trim()) return true;
+  const x = endpointOf(a);
+  return !!x && x === endpointOf(b);
+};
+
+/**
+ * What the change's own target flows add (T2): a new flow's id, name and trigger entry; a step's
+ * new target component and entry; a new table (its id and its name) and the columns a step adds
+ * (those it gives types for, or every column of a new table). Each with the file and line that
+ * says it. These are facts of the change itself: never gaps.
+ */
+export async function ownNames(
+  root: string,
+  change: string,
+): Promise<{ name: string; at: string }[]> {
+  const rel = `${changesRelOf(root)}/${change}/${TARGET_DIR}`;
+  const dir = join(changesDirOf(root), change, TARGET_DIR);
+  const out: { name: string; at: string }[] = [];
+  for (const f of (await readdir(dir).catch(() => [] as string[])).sort()) {
+    if (!/\.ya?ml$/.test(f)) continue;
+    const text = await readFile(join(dir, f), "utf8").catch(() => undefined);
+    if (text === undefined) continue;
+    let d: FlowDelta;
+    try {
+      const r = FlowDelta.safeParse(parse(text));
+      if (!r.success) continue;
+      d = r.data;
+    } catch {
+      continue;
+    }
+    const lines = text.split(/\r?\n/);
+    const add = (name: string | undefined, key?: string) => {
+      if (!name?.trim()) return;
+      let i = lines.findIndex((l) => l.includes(name) && (!key || l.includes(key)));
+      if (i < 0) i = lines.findIndex((l) => l.includes(name));
+      out.push({ name, at: `${rel}/${f}:${i + 1}` });
+    };
+    if (d.change === "new") {
+      add(d.flow, "flow:");
+      add(d.name, "name:");
+      add(d.trigger?.entry, "entry:");
+    }
+    for (const s of d.steps) {
+      if (s.to?.new) {
+        add(s.to.entry);
+        add(s.to.component);
+      }
+      if (s.store?.new) {
+        add(s.store.table);
+        const short = s.store.table.split(".").pop();
+        if (short && short !== s.store.table) out.push({ name: short, at: out.at(-1)!.at });
+      }
+      const added = s.store?.new ? s.store.columns : Object.keys(s.store?.types ?? {});
+      for (const c of added) add(c);
+    }
+  }
+  return out;
 }
 
 /**
  * The gap sources and the answered gaps for a change's selection, with the tokens they take,
- * so the step can give the selection that much less room. A name the index doesn't know that a
- * repo in the workspace names in its code is no gap (ADR 0116 addendum, ADR 0118): it is listed
- * with its line, so the model reads it there. Only a name found in neither is a gap.
+ * so the step can give the selection that much less room. A name the index doesn't know is no
+ * gap when (each a fact Atticus checks, never a judgment):
+ *
+ * - the change's own target flows add it (T2), cited to their line;
+ * - a person answered about it for this change (U2), cited to the question;
+ * - a repo in the workspace declares it in a source file, or has a file of that name (ADR 0116
+ *   addendum, ADR 0118, S1, T2), cited to the line or the file;
+ * - the catalog records a migration of that file name (T2).
+ *
+ * Only a name found in none of them is a gap.
  */
 export async function gapContext(
   root: string,
   change: string,
   unknown: string[],
+  o: {
+    /** The catalog's records, when the step has them; else read when a file name needs them. */
+    records?: CatalogRecord[];
+    /** The code readers (the default loads the extractors'). */
+    readers?: Pick<ContextToolOptions, "outline" | "outlines">;
+  } = {},
 ): Promise<{
   gaps: ContextGap[];
   inCode: NameInCode[];
+  known: KnownName[];
   searched: string[];
   sources: SourceInput[];
 }> {
-  const none = { found: new Map<string, string>(), repos: [] as string[] };
-  const code = unknown.length ? await namesInCode(root, unknown).catch(() => none) : none;
+  const known: KnownName[] = [];
+  let open = [...new Set(unknown)];
+  const own = open.length ? await ownNames(root, change) : [];
+  const answers = await gapAnswers(root, change);
+  open = open.filter((n) => {
+    const t = own.find((x) => sameName(x.name, n));
+    if (t) {
+      known.push({ name: n, at: t.at, how: "target-flow" });
+      return false;
+    }
+    const q = answers.answered.find((x) => sameName(gapNameOf(x) ?? "", n));
+    if (q) {
+      known.push({ name: n, at: `question ${q.id}`, how: "answer" });
+      return false;
+    }
+    return true;
+  });
+  const none = {
+    found: new Map<string, string>(),
+    how: new Map<string, "declaration" | "file">(),
+    repos: [] as string[],
+  };
+  const readers = open.length ? (o.readers ?? (await codeReaders().catch(() => ({})))) : {};
+  const code = open.length ? await namesInCode(root, open, readers).catch(() => none) : none;
   const inCode = [...code.found]
     .map(([name, at]) => ({ name, at }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const gaps = await gapsOf(
-    root,
-    change,
-    unknown.filter((n) => !code.found.has(n)),
-  );
-  const answers = await gapAnswers(root, change);
+  open = open.filter((n) => !code.found.has(n));
+  // A migration file the catalog records, by its name or the end of its path.
+  const files = open.filter((n) => /\.[A-Za-z0-9]+$/.test(n) && !/\s/.test(n));
+  if (files.length) {
+    const records =
+      o.records ??
+      (await loadChangeContext(root)
+        .then((c) => c.records)
+        .catch(() => []));
+    for (const r of records) {
+      if (r.kind !== "Migration") continue;
+      const file = (r as { file?: string }).file ?? "";
+      const n = files.find((x) => file === x || file.endsWith(`/${x}`));
+      if (!n || known.some((k) => k.name === n)) continue;
+      const repo = r.evidence.find((e) => e.repo)?.repo;
+      known.push({ name: n, at: repo ? `${repo}:${file}` : file, how: "migration" });
+    }
+    open = open.filter((n) => !known.some((k) => k.name === n));
+  }
+  known.sort((a, b) => a.name.localeCompare(b.name));
+  const gaps = await gapsOf(root, change, open);
   return {
     gaps,
     inCode,
+    known,
     searched: code.repos,
     sources: [
       ...gapSources(gaps, code.repos),
       ...inCodeSources(inCode),
+      ...knownSources(known),
       ...(answers.source ? [answers.source] : []),
     ],
   };
+}
+
+/** The names known without the index, as data for the model: why each is known, and where. */
+export function knownSources(known: KnownName[]): SourceInput[] {
+  if (!known.length) return [];
+  const why = (k: KnownName) =>
+    k.how === "target-flow"
+      ? `the change's own target flow (${k.at})`
+      : k.how === "answer"
+        ? `answered (${k.at})`
+        : `a migration the catalog records (${k.at})`;
+  return [
+    {
+      id: "known-names",
+      kind: "document",
+      origin: "atticus (the change's target flows, the catalog's migrations, answered questions)",
+      text: [
+        "Names the change uses that are known, though the index has no record of them; they are not gaps:",
+        ...known.slice(0, 30).map((k) => `- ${k.name}: ${why(k)}`),
+        ...(known.length > 30 ? [`- and ${known.length - 30} more`] : []),
+      ].join("\n"),
+      classification: "internal",
+      priority: 60,
+    },
+  ];
 }
 
 /** The names the code has, as data for the model: where to read each (show_code, grep). */

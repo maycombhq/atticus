@@ -1,11 +1,13 @@
-# What the architecture step reports for the expansion in expansion.yaml.
+# What the architecture step reports for the expansion in expansion.yaml. NewOrder is used by
+# the controller (a parameter's type) but no file of the workspace declares it, so since S1 it
+# is a gap: a use or a word is not a declaration.
 gaps:
+  - name: NewOrder
+    state: listed
   - name: Northwind Pay
     evidence: openspec/changes/add-fraud-check/brief.md:9
     state: listed
 inCode:
-  - name: NewOrder
-    at: forge-orders:src/main/java/forge/orders/OrderController.java:10
   - name: OrderController
     at: forge-orders:src/main/java/forge/orders/OrderController.java:5
 searched: [forge-orders]

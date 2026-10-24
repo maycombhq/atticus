@@ -1,4 +1,5 @@
 import { readdir } from "node:fs/promises";
+import type { SourceInput } from "@maycombhq/ai";
 import { readRepoSpec, specsDirOf, type CatalogRecord, type FlowRecord } from "@maycombhq/core";
 
 /**
@@ -124,9 +125,62 @@ export function estateLine(e: Estate, kind: string, id: string, rec?: Rec): stri
       .filter((x) => x.kind === "Column" && str(x.table) === r.id)
       .map((x) => str(x.name) ?? x.id.split(".").pop()!)
       .sort();
-    return `table ${r.id}: columns ${cols.join(", ") || "unknown"}`;
+    const allowed = allowedValuesOf(e, r.id).map((a) => `${a.column} (${a.values.join(", ")})`);
+    return `table ${r.id}: columns ${cols.join(", ") || "unknown"}${allowed.length ? `; allowed values: ${allowed.join("; ")}` : ""}`;
   }
   return undefined;
+}
+
+/** A column's allowed values, as the catalog's Column record states them, cited (C1). */
+export interface AllowedValues {
+  column: string;
+  id: string;
+  values: string[];
+  /** repo:path:line of the line that states them. */
+  at: string;
+}
+
+/** The allowed values of a table's columns the catalog knows, by column name. */
+export function allowedValuesOf(e: Estate, table: string): AllowedValues[] {
+  const out: AllowedValues[] = [];
+  for (const r of e.records as Rec[]) {
+    if (r.kind !== "Column" || str(r.table) !== table) continue;
+    const a = r.allowedValues as
+      { values?: unknown; evidence?: { repo?: string; path?: string; line?: number } } | undefined;
+    const values = arr(a?.values);
+    if (!a || !values.length) continue;
+    const ev = a.evidence ?? {};
+    const at = [ev.repo, ev.path, ev.line].filter((x) => x !== undefined && x !== "").join(":");
+    out.push({ column: str(r.name) ?? r.id.split(".").pop()!, id: r.id, values, at });
+  }
+  return out.sort((x, y) => x.column.localeCompare(y.column));
+}
+
+/**
+ * The values the code allows in the columns of the tables a step stores into (S2): facts from
+ * the catalog, each cited to the migration line that states them, so the model and the lenses
+ * read a value the code defines instead of calling it unknown. At most 40 lines.
+ */
+export function allowedValuesSource(e: Estate, tables: Iterable<string>): SourceInput[] {
+  const lines: string[] = [];
+  for (const t of [...new Set(tables)].sort())
+    for (const a of allowedValuesOf(e, t))
+      lines.push(`- ${a.id}: ${a.values.join(", ")}${a.at ? ` (${a.at})` : ""}`);
+  if (!lines.length) return [];
+  return [
+    {
+      id: "allowed-values",
+      kind: "catalog",
+      origin: "the catalog's columns, as their migrations state them (deterministic)",
+      text: [
+        "The values the code allows in the columns of the tables the change's steps store into, each cited to the line that states them. These values are known: never call one of these unknown or ask what it is.",
+        ...lines.slice(0, 40),
+        ...(lines.length > 40 ? [`- and ${lines.length - 40} more`] : []),
+      ].join("\n"),
+      classification: "internal",
+      priority: 88,
+    },
+  ];
 }
 
 /** The kinds the compact index lists. */

@@ -222,6 +222,17 @@ export const Column = record("Column", {
   type: str(),
   nullable: z.boolean().optional(),
   default: z.string().optional(),
+  /**
+   * The values the code allows in the column, as its migration states them (a CHECK
+   * (column IN (...)) constraint, an ENUM type), cited to the line that states them. Optional
+   * and additive (ADR 0116 addendum S2): left out when the code states no such list.
+   */
+  allowedValues: z
+    .strictObject({
+      values: z.array(str()).min(1),
+      evidence: Evidence,
+    })
+    .optional(),
   classification: Classification.optional(),
   glossaryTerm: Ref.optional(),
 });

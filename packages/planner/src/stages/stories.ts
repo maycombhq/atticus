@@ -31,7 +31,7 @@ import { GENERATED_MARK } from "../render.js";
 import { slug } from "../words.js";
 import { parseYamlAs } from "./answer.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./architecture.js";
-import { columnsOf, loadEstate, type Estate } from "./estate.js";
+import { allowedValuesSource, columnsOf, loadEstate, type Estate } from "./estate.js";
 import {
   runStageLoop,
   stageBudget,
@@ -899,6 +899,11 @@ export async function storiesStage(
       classification: "internal",
       priority: 90,
     },
+    // S2: the values the code allows in the columns of the tables the steps store into.
+    ...allowedValuesSource(
+      estate,
+      deltas.flatMap((d) => d.steps.flatMap((s) => (s.store ? [s.store.table] : []))),
+    ),
   ];
   const FORMAT = `Reply with YAML only:
 

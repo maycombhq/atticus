@@ -390,4 +390,38 @@ describe("gaps (ADR 0107 point 5)", () => {
     ).toBeUndefined();
     ix.close();
   });
+
+  it("an answered gap that is an endpoint is known however the input names its parameters (U2)", async () => {
+    const root = await contextRoot();
+    const text = "Pin a note with PUT /orders/{orderId}/notes/{noteId}/pin.\n";
+    const named = { terms: [], ids: [], unknown: ["PUT /orders/{orderId}/notes/{noteId}/pin"] };
+    await writeFile(
+      join(root, "questions/q-b1b2c3d4e5f6.yaml"),
+      stringify({
+        schemaVersion: 1,
+        id: "q-b1b2c3d4e5f6",
+        askedBy: {
+          step: GAP_STEP,
+          command: "atticus change stories pin-note",
+          at: "2026-10-24T09:00:00Z",
+        },
+        repo: "pin-note",
+        question: gapQuestion("PUT /orders/{id}/notes/{noteId}/pin"),
+        options: [],
+        evidence: ["openspec/changes/pin-note/brief.md:1"],
+        scope: { level: "repo", id: "pin-note" },
+        state: "answered",
+        rerun: "atticus change stories pin-note",
+        answer: {
+          text: "This change adds it: the trigger of the new flow.",
+          by: "sam",
+          at: "2026-10-24T10:00:00Z",
+          scope: { level: "repo", id: "pin-note" },
+        },
+      }),
+    );
+    const ix = await openIndex(root);
+    expect(ix.selectContext({ text, expansion: named }, { budget: 3000 }).unknown).toEqual([]);
+    ix.close();
+  });
 });

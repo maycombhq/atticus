@@ -1,0 +1,28 @@
+schemaVersion: 2
+flow: forge-boards.pin-note
+repo: forge-boards
+change: new
+name: Pin a note
+trigger:
+  kind: endpoint
+  what: A member pins a note to the board
+  entry: PUT /api/boards/{id}/notes/{noteId}/pin
+why: Members pin the note everyone should read first.
+steps:
+  - op: add
+    after: 0
+    kind: write
+    what: The pin is stored
+    store:
+      table: forge-boards-db.note_pin
+      columns: [board_id, note_id, pinned_by]
+      new: true
+      types: { board_id: bigint, note_id: bigint, pinned_by: varchar(64) }
+      classification: { board_id: internal, note_id: internal, pinned_by: internal }
+      migration: V8__note_pin.sql
+      retention: while the board exists
+  - op: add
+    after: 1
+    kind: call-out
+    what: The board's watchers are told
+    to: { component: forge-board-feed, entry: "POST /feed/pins", new: true }

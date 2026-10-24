@@ -228,6 +228,12 @@ export interface ContextToolOptions {
   /** A file's declarations from its syntax tree (the CLI passes the extractors' reader). */
   outline?: Outliner;
   /**
+   * Whether the outline has a grammar for a file, by its path (the extractors' own test,
+   * `syntaxLanguageOf`): the source files namesInCode reads. Without it every file is offered
+   * to the outline, which says undefined for a file it has no reader for.
+   */
+  outlines?: (path: string) => boolean;
+  /**
    * The lines grep and outline returned in this run, as `repo\0path\0line`: grep and outline
    * add to it, and show_code may show what it holds (ADR 0118).
    */
@@ -668,17 +674,31 @@ export function pointersIn(name: string, output: string): string[] {
 }
 
 /**
- * Where the workspace's code names each of these names (ADR 0118's code search, used as a fact
- * check by the context gaps, ADR 0116 addendum): the first line, as repo:path:line, that holds
- * the name as a whole word (no letter, digit or underscore just before or after it). One walk
- * over every clone, with grep's guards: .gitignore and .git skipped, no binary, files and bytes
- * capped. A name found is in the code; what it is, the model reads there.
+ * Where the workspace's code has each of these names (ADR 0118's code search, used as a fact
+ * check by the context gaps, ADR 0116 addendum and its S1 fix):
+ *
+ * - a file of a repo's tree whose name, or the end of whose path, is the name (a migration, a
+ *   controller's .java file), as repo:path;
+ * - a declaration of it in a source file (a class, interface, record, enum, function or type the
+ *   outline reads from the file's syntax tree, `o.outline`), as repo:path:line of its name.
+ *
+ * A source file is one the outline has a grammar for (`o.outlines`, the readers' own test, so
+ * the list of languages is the readers', never one kept here); a Markdown plan, a comment or a
+ * use of the name is never a declaration, and without an outline nothing is found by its words.
+ * One walk over every clone, with grep's guards: .gitignore and .git skipped, no binary, files
+ * and bytes capped, and only source files that hold the name read. A name found is in the code;
+ * what it is, the model reads there.
  */
 export async function namesInCode(
   root: string,
   names: string[],
   o: ContextToolOptions = {},
-): Promise<{ found: Map<string, string>; repos: string[]; cut: boolean }> {
+): Promise<{
+  found: Map<string, string>;
+  how: Map<string, "declaration" | "file">;
+  repos: string[];
+  cut: boolean;
+}> {
   const B = CONTEXT_TOOL_BOUNDS;
   const found = new Map<string, string>();
   const want = [...new Set(names.filter((n) => n.trim().length >= 2))];
@@ -688,21 +708,25 @@ export async function namesInCode(
     const dir = (o.codeDir ?? ((x) => defaultCodeDir(root, x)))(r);
     if (dir && RecordId.safeParse(r).success) repos.push({ repo: r, dir });
   }
-  const word = /[A-Za-z0-9_]/;
-  const has = (line: string, n: string) => {
-    for (let at = line.indexOf(n); at >= 0; at = line.indexOf(n, at + 1)) {
-      const before = at > 0 ? line[at - 1]! : "";
-      const after = line[at + n.length] ?? "";
-      if (!word.test(before) && !word.test(after)) return true;
-    }
-    return false;
-  };
-  let read = 0;
+  const how = new Map<string, "declaration" | "file">();
+  let walked = 0;
   let bytes = 0;
   let cut = false;
   for (const { repo, dir } of repos) {
     if (found.size === want.length) break;
-    const walked = await walkClone(dir, B.walkFiles - read, async (p) => {
+    const w = await walkClone(dir, B.walkFiles - walked, async (p) => {
+      walked++;
+      const open = want.filter((n) => !found.has(n));
+      // A file of the repo's tree, by its name or the end of its path (V10__chat.sql).
+      for (const n of open)
+        if (p === n || p.endsWith(`/${n.replace(/^\/+/, "")}`)) {
+          found.set(n, `${repo}:${p}`);
+          how.set(n, "file");
+        }
+      // A source file: one the outline reads from a syntax tree. Nothing else is read.
+      if (!o.outline || (o.outlines && !o.outlines(p))) return;
+      const names = open.filter((n) => !found.has(n) && DECLARABLE.test(n));
+      if (!names.length) return;
       const buf = await readFile(join(dir, ...p.split("/"))).catch(() => undefined);
       if (!buf || buf.length > B.codeFileBytes) return;
       if (buf.subarray(0, 8000).includes(0)) return;
@@ -711,23 +735,35 @@ export async function namesInCode(
         cut = true;
         return false;
       }
-      read++;
-      const open = want.filter((n) => !found.has(n));
       const text = buf.toString("utf8");
-      if (!open.some((n) => text.includes(n))) return;
-      const lines = text.split(/\r?\n/);
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]!.slice(0, 2000);
-        for (const n of open)
-          if (!found.has(n) && has(line, n)) found.set(n, `${repo}:${p}:${i + 1}`);
+      if (!names.some((n) => text.includes(n))) return;
+      const decls = await o.outline(p, text).catch(() => undefined);
+      for (const d of decls ?? []) {
+        if (!isTypeDeclaration(d.kind)) continue;
+        const n = names.find((x) => x === d.name);
+        if (n && !found.has(n)) {
+          found.set(n, `${repo}:${p}:${d.line}`);
+          how.set(n, "declaration");
+        }
       }
       if (found.size === want.length) return false;
     });
-    if (walked.cut) cut = true;
+    if (w.cut) cut = true;
     if (cut) break;
   }
-  return { found, repos: repos.map((r) => r.repo), cut };
+  return { found, how, repos: repos.map((r) => r.repo), cut };
 }
+
+/** A name a declaration can have: a word of letters, digits, _ and $ (no spaces, no path). */
+const DECLARABLE = /^[A-Za-z_$][\w$]*$/;
+
+/**
+ * A declaration of a type or a top-level function, by the grammar's node name as the outline
+ * gives it (class, interface, record, enum, struct, trait, object, type alias, function and
+ * the like): not a method, constructor, field or property of one.
+ */
+export const isTypeDeclaration = (kind: string): boolean =>
+  !/method|constructor|field|property|variable|parameter|accessor|getter|setter/.test(kind);
 
 /** Every clone under workspace/ (and .atticus/workspace/), by repo id. */
 export function workspaceRepos(root: string): string[] {
