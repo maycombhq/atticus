@@ -38,6 +38,8 @@ class AtticusToolWindowFactory :
         val cf = ContentFactory.getInstance()
         val app = AppPanel(project, toolWindow.disposable)
         toolWindow.contentManager.addContent(cf.createContent(app, Copy.APP_TAB, false))
+        // WP6.2: what waits on you, as a native tree beside the app.
+        toolWindow.contentManager.addContent(cf.createContent(WaitingPanel(project, toolWindow.disposable), Copy.WAITING_TAB, false))
         toolWindow.contentManager.addContent(cf.createContent(LogPanel(project, toolWindow.disposable), Copy.OUTPUT_TAB, false))
         val service = AtticusApp.of(project)
         if (service.state == AppState.Checking) service.refresh() else app.show(service.state)
@@ -52,7 +54,7 @@ class AppPanel(private val project: Project, parent: Disposable) : SimpleToolWin
 
     init {
         val group = DefaultActionGroup()
-        for (id in listOf("Atticus.Refresh", "Atticus.OpenInBrowser", "Atticus.RunCommand", "Atticus.NextStep", "Atticus.WaitingOnYou", "Atticus.ModelRuns", "Atticus.PromptHistory")) {
+        for (id in listOf("Atticus.Refresh", "Atticus.OpenInBrowser", "Atticus.RunCommand", "Atticus.NextStep", "Atticus.AnswerQuestion", "Atticus.WaitingOnYou", "Atticus.ModelRuns", "Atticus.PromptHistory")) {
             ActionManager.getInstance().getAction(id)?.let { group.add(it) }
         }
         val bar = ActionManager.getInstance().createActionToolbar("AtticusToolWindow", group, true)

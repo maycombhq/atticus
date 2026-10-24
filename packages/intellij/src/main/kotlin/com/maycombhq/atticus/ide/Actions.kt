@@ -37,7 +37,9 @@ class NextStepAction : AtticusAction() {
 
 class RefreshAction : AtticusAction() {
     override fun actionPerformed(e: AnActionEvent) {
-        AtticusApp.of(e.project ?: return).reload()
+        val p = e.project ?: return
+        AtticusApp.of(p).reload()
+        AtticusStatus.of(p).refresh()
     }
 }
 
@@ -57,7 +59,7 @@ class OpenInBrowserAction : AtticusAction() {
 }
 
 /** Open a screen of the app in the Atticus tool window (ADR 0105, 0106). */
-private fun openScreen(project: Project, hash: String) {
+internal fun openScreen(project: Project, hash: String) {
     ToolWindowManager.getInstance(project).getToolWindow("Atticus")?.show()
     AtticusApp.of(project).open(hash)
 }
@@ -69,31 +71,60 @@ class WaitingOnYouAction : AtticusAction() {
     }
 }
 
-/** A change's picture (ADR 0108): asks which change, then opens #/change-diagram on it. */
+/** A change's picture (ADR 0108): picks the change from those the metarepo has, then opens #/change-diagram on it. */
 class ChangeDiagramAction : AtticusAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val change =
-            com.intellij.openapi.ui.Messages.showInputDialog(
-                project,
-                Copy.CHANGE_DIAGRAM_ASK,
-                Copy.CHANGE_DIAGRAM,
-                null,
-            )?.trim()
-        if (change.isNullOrEmpty()) return
+        val change = CommandFlow(project).pickChange(Copy.CHANGE_DIAGRAM, Copy.CHANGE_DIAGRAM_ASK) ?: return
         openScreen(project, Commands.changeDiagramHash(change))
     }
 }
 
-/** A change's estimate (ADR 0109): asks which change, then opens #/estimate on it. */
+/** A change's estimate (ADR 0109): picks the change, then opens #/estimate on it. */
 class EstimateAction : AtticusAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val change =
-            com.intellij.openapi.ui.Messages.showInputDialog(project, Copy.CHANGE_DIAGRAM_ASK, Copy.ESTIMATE, null)
-                ?.trim()
-        if (change.isNullOrEmpty()) return
+        val change = CommandFlow(project).pickChange(Copy.ESTIMATE, Copy.CHANGE_DIAGRAM_ASK) ?: return
         openScreen(project, Commands.estimateHash(change))
+    }
+}
+
+/** WP6.2: a question answered here, in a dialog, beside what it read. */
+class AnswerQuestionAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        PeerFlows(e.project ?: return).pickAndAnswer()
+    }
+}
+
+/** WP7.5: follow a change without being on it. */
+class WatchChangeAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        PeerFlows(e.project ?: return).watch()
+    }
+}
+
+/** A new change, offering an earlier one like it to start from (WP7.6). */
+class NewChangeAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        PeerFlows(e.project ?: return).newChange()
+    }
+}
+
+class CreateMetarepoAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        StartFlow(e.project ?: return).createMetarepo()
+    }
+}
+
+class AdoptAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        StartFlow(e.project ?: return).adopt()
+    }
+}
+
+class SandboxAction : AtticusAction() {
+    override fun actionPerformed(e: AnActionEvent) {
+        StartFlow(e.project ?: return).sandbox()
     }
 }
 

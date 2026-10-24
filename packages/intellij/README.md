@@ -29,11 +29,21 @@ The Atticus app in a tool window, every `atticus` command from a menu, and the n
 - **Attach to Atticus Change…** (ADR 0113): right-click files in the Project view or an editor tab, pick the change, and `atticus change attach` copies them into its `inputs/`, where its steps read them as data, cited by line or page.
 - **Add to Atticus Knowledge** (ADR 0122): right-click files in the Project view or an editor tab. `atticus intake add` copies them into the metarepo's `inputs/inbox/`: general knowledge, read by the next sync and the knowledge scan.
 - **Atticus: Start a Task in Copilot** (the Tools menu, ADR 0113): pick the change and the task; the plugin reads `atticus task context` and puts it on the clipboard, with `/atticus-task <change> <task>` to copy. Paste either into Copilot Chat in agent mode. Copilot in IntelliJ gives plugins no way to open its chat, so the plugin can't do that for you.
+- **The Waiting on you tab** (WP6): a tree of what waits on you, read from `atticus waiting --json` in the background and again when the metarepo's files change. Double-click a question to answer it, a change to open its At a glance page in the app, or the knowledge no one has checked to review it in the app.
 - **The Output tab** lists every `atticus` command the plugin ran, with what it printed and its exit code. The app's session token is kept out of it.
+
+**The status bar** says how many questions wait, the next step and how many changes you watch, as VS Code's does; its tooltip says how each watched change is doing, and a click shows the next step.
+
+**Atticus: Answer a Question…** (the Tools menu and the Waiting tab): pick an open question, then answer it in a dialog with each choice and what it means, or in your own words, beside the lines it read. It runs `atticus questions answer`.
+
+**Atticus: New Change…** asks for the title, then offers the archived changes nearest it (`atticus change similar`); one you pick is attached as an example (`--like`). **Atticus: Watch a Change…** follows a change without being on it (`atticus watch`). Create a metarepo, Use Atticus in this project and Try a practice metarepo are actions too, and Use Atticus in this project asks first.
+
+**In the editor's gutter** (WP7.3): when a file of the metarepo's workspace opens, a mark on each line a spec flow or a catalog record cites (`atticus cites --file`). Its tooltip names the flows, the changes in flight on them and the records; a click opens the flow, a change, or what breaks if it changes, in the app. A line with a change in flight has a warning mark.
 
 **Atticus: Run a Command…** (the Tools menu, the tool window's toolbar, or Find Action, Ctrl+Shift+A). It reads `atticus commands --json` and lists every command by area, with what it does first and the command beside it. Atticus's own developer commands are hidden unless you turn them on in the settings.
 
 1. The plugin asks for each argument:
+   - each list is searchable: type to narrow it, or type a value that isn't in it;
    - repos: a list from `org-pack/profiles/*/repos.manifest.yaml`;
    - changes: a list from `atticus change list --json`;
    - open questions: a list from `atticus questions list`;
@@ -54,15 +64,18 @@ How it runs depends on the command:
 
 **Atticus: Next Step** reads `atticus next --json` and says what the next step does in plain words, for example "Review and accept nadiengine's scan proposal". Below that come the reason and the command. What you can do from there depends on the step:
 
-- An AI step: copy its slash command, run it on Atticus's configured model (where model mode is allowed), or run its hand-off.
+- An AI step: copy its slash command, run it on Atticus's configured model (where model mode is allowed), or run its hand-off. When the metarepo has no Copilot prompt file for the slash command, it says so and offers to write them (`atticus assistant-files`).
 - Open questions: open the app, or copy `/atticus-answer`.
 - A command: run it, by the same rules as above.
 - A step only a person takes: open the app, or copy the command.
 
-**Settings → Tools → Atticus** has two settings:
+**Settings → Tools → Atticus**:
 
-- The path to `atticus`. Leave it empty to use `atticus` on PATH, or give its full path: `atticus`, `atticus.cmd` or its `bin.js`.
+- The path to `atticus`, with Browse and **Check** (runs `atticus --version` with the path as typed). Leave it empty to use `atticus` on PATH, or give its full path: `atticus`, `atticus.cmd` or its `bin.js`.
 - Whether to show the developer commands.
+- Whether to say, when a project opens, that the command line can't be found (the notice has **Don't show again** too).
+
+The next step is read in the background, so the IDE never waits on it.
 
 ## How it runs `atticus`
 
@@ -103,6 +116,9 @@ None of it needs the IDE. The IDE parts, in `ide/`, only ask and show. The user-
 
 ## What it doesn't do yet
 
-- It has been compiled and checked with the Plugin Verifier against IntelliJ IDEA 2026.2 ("Compatible"), but it hasn't been run inside the IDE yet.
-- There are no Questions, Repos or Changes tree views like the VS Code sidebar, and no CodeLens. The app in the tool window covers them.
+- It has been compiled, its logic tested and the plugin built, but the WP6 pieces (the Waiting tab, the status bar, the answer dialog, the gutter, the searchable lists) haven't been run inside the IDE yet.
+- Copilot in IntelliJ offers plugins no way to open its chat or run a slash command, so an AI step is copied, or run on Atticus's configured model, or as a hand-off in a console.
+- There is one native tree, Waiting on you; repos, changes and knowledge are the app's screens in the tool window.
+- The gutter reads files in the metarepo's own workspace (`workspace/<repo>/`, a change's worktree, another branch's checkout) or an adopted repo; a code repo opened as its own project, away from the metarepo, gets no marks.
 - It doesn't check whether the metarepo needs `atticus upgrade` or run `atticus doctor` when the project opens.
+- Every VS Code command has its place here (an action, Run a Command, a screen of the app, or a tab), listed in `core/Parity.kt` and checked by `ParityTest`. Only two are VS Code only: picking one of VS Code's language models, and installing Copilot in VS Code.

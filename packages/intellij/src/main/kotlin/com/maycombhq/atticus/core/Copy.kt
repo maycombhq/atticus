@@ -148,10 +148,69 @@ object Copy {
     const val OPEN = "Open"
     const val NOT_NOW = "Not now"
 
+    // WP6: IntelliJ as a peer
+    const val WAITING_TAB = "Waiting on you"
+    const val WAITING_QUESTIONS = "Questions to answer"
+    const val WAITING_CHANGES = "Changes"
+    const val WAITING_NOTHING = "Nothing waits on you."
+    const val WAITING_READING = "Reading what waits on you…"
+
+    fun waitingKnowledge(n: Int) = "$n knowledge item${if (n == 1) "" else "s"} no one has checked"
+
+    fun waitingCouldNotRead(why: String) = "Couldn't read what waits on you: $why"
+
+    const val WAITING_HINT = "Double-click a question to answer it, a change to open it, knowledge to check it in the app."
+
+    const val ANSWER_TITLE = "Atticus: Answer a Question"
+    const val ANSWER_OWN_WORDS = "In my own words"
+    const val ANSWER_IT_READ = "What it read:"
+    const val ANSWER_PICK = "Pick an answer, or write your own."
+    const val ANSWER_NONE = "No question is waiting for an answer."
+
+    fun answered(first: String) = "Answered. $first"
+
+    const val WATCH_TITLE = "Atticus: Watch a Change"
+    const val WATCH_WHICH = "Watch which change? Your digest and the status bar say how it is doing."
+    const val NEW_CHANGE_TITLE = "Atticus: New Change"
+    const val NEW_CHANGE_ASK = "What the change is, in a few words (for example: Let members pin a message)."
+    const val START_FROM_TITLE = "Start from an earlier change?"
+    const val START_FROM_NOTHING = "Start from nothing"
+    const val START_FROM_HINT = "An earlier change you pick is attached to the new one as an example its steps read, as data."
+
+    const val ADOPT_CONFIRM_TITLE = "Use Atticus in this project?"
+
+    fun adoptConfirm(path: String) =
+        "Atticus keeps its files in .atticus/ in $path, and adds .atticus/ entries to .gitignore where they are only yours. Nothing else in the project changes. Go on?"
+
+    const val NAME_RULE = "Lower case letters, digits, dots and hyphens, starting with a letter or digit (for example payments-meta)."
+    const val PLATFORM_RULE = "One word in lower case, hyphens allowed (for example payments)."
+
+    fun noPromptFile(slash: String) =
+        "This metarepo has no Copilot prompt file for $slash yet. Run atticus assistant-files to write them, then type it in Copilot Chat."
+
+    const val WRITE_PROMPT_FILES = "Write the prompt files"
+
+    const val STATUS_TIP = "Click for the next step"
+    const val STATUS_NO_CLI = "Atticus: no command line"
+    const val CHANGES_YOU_WATCH = "Changes you watch:"
+    const val DONT_SHOW_AGAIN = "Don't show again"
+
+    const val GUTTER_OPEN_FLOW = "Open the flow"
+
+    fun gutterOpenChange(change: String) = "Open $change"
+
+    const val GUTTER_IMPACT = "What breaks if this changes"
+    const val SETTINGS_CHECK = "Check"
+
+    fun settingsChecked(version: String) = "Found atticus $version."
+
+    fun settingsCheckFailed(why: String) = "Couldn't run atticus: $why"
+
     // Settings
     const val SETTINGS_PATH = "Path to atticus:"
     const val SETTINGS_PATH_HINT =
         "Empty: atticus on PATH. Or its full path: atticus, atticus.cmd or its bin.js (run with node). " +
             "On Windows the plugin reads atticus.cmd and runs the bin.js it names, so no shell is used."
+    const val SETTINGS_CLI_NOTICE = "Say when a project opens and the atticus command line can't be found"
     const val SETTINGS_DEVELOPER = "Show the commands only Atticus's own developers use"
 }

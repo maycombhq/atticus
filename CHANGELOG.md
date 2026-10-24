@@ -39,6 +39,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### IntelliJ as a peer of VS Code
+
+- A **Waiting on you** tab: a tree of the questions to answer, each change with something open and the knowledge no one has checked, read in the background and again when the metarepo's files change. A question opens a native answer dialog with each choice, what it means and the lines it read, or your own words.
+- The **status bar** says the questions, the next step and how many changes you watch, as VS Code's does; a click shows the next step, which is now read in the background.
+- **In the gutter**, each line a flow or a record cites, with the changes in flight on it; a click opens the flow, a change, or what breaks. The new `atticus cites --repo <r> --path <p>` (or `--file <path on disk>`) gives the same as `GET /api/cites` to any editor.
+- New actions: Answer a Question, New Change (from an earlier change if you pick one), Watch a Change, Create a Metarepo, Use Atticus in This Project (it asks first), Try a Practice Metarepo. Change Diagram and Estimate pick the change from a list.
+- Lists are searchable dialogs; a metarepo's name and platform are checked before `init` runs; the path to atticus has Browse and Check; one notice when the command line can't be found, with Don't show again; an AI step's slash command is offered only where its prompt file is, with Write the prompt files otherwise.
+- `ParityTest` places every VS Code command in IntelliJ (an action, Run a Command, a screen of the app or a tab) and fails on a new one that isn't.
+- Not yet run inside the IDE: compiled, its logic tested and the plugin built.
+
 ### Start from an earlier change
 
 - Archived changes are read into the index by their brief, and found only when asked for: no step's context and no name's resolution includes them.
