@@ -53,6 +53,8 @@ assistants: { allowed: [copilot, claude-code, cursor], default: copilot }
 
 They can be `copilot`, `claude-code`, `cursor`, `gemini-cli`, `windsurf` or `agents-md`. Use `agents-md` for Codex and any other tool that reads `AGENTS.md`. `atticus assistant-files` writes the same slash commands, instructions and skills for each allowed assistant, in the files that tool reads (ADR 0121). `atticus next` tells people to type the command in the default assistant, and `atticus doctor` looks for each one's program.
 
+In the app, **Set up › AI** sets all of this with a form: the assistants, the modes, and the model provider with its settings. Saving writes `runtime.yaml`; commit it in a pull request. **Test the provider** checks that the provider answers.
+
 ### What AI may do here
 
 `runtime.yaml` holds one line for it:
@@ -82,7 +84,7 @@ adapters:
       keyEnv: ATTICUS_MODEL_KEY # the NAME of the variable holding the key
 ```
 
-**The key is never in runtime.yaml.** `keyEnv` names an environment variable; set that variable in the environment Atticus runs in (a user environment variable, or your secrets tooling). Atticus refuses a setting that looks like a key or token, and never prints a key: messages name the variable instead.
+**The key is never in runtime.yaml.** `keyEnv` names where the key is: an environment variable of that name in the environment Atticus runs in (a user environment variable, or your secrets tooling), or this machine's credential store under that name. Use `atticus secret set ATTICUS_MODEL_KEY` and pipe the key in, or the AI tab's "Set the key on this machine". The environment is read first. Atticus refuses a setting that looks like a key or token, and never prints a key: messages name the variable instead.
 
 Settings every provider reads:
 

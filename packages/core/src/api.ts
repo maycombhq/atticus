@@ -46,7 +46,7 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.15.0 (ADR 0116): how a run's context was retrieved, retrieval in the transcript (the model's
  *   expansion and rerank); run records are at version 3.
  */
-export const API_VERSION = "2.15.0";
+export const API_VERSION = "2.16.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -2537,6 +2537,35 @@ const OPS: Record<string, Record<string, Op>> = {
       summary: "Runtime settings, adapters, executors, org pack and gates (read-only)",
       tag: "run",
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+  },
+  // ADR 0121: the AI tab.
+  "/api/settings/ai": {
+    get: {
+      id: "getAiSettings",
+      summary:
+        "How AI runs here: on or off, the modes, the assistants by name, the providers and their settings, the configured model, and whether its key variable is set (by name)",
+      tag: "run",
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+    },
+    put: {
+      id: "putAiSettings",
+      summary:
+        "Write the AI settings to runtime.yaml: checked against the Runtime schema, keeping what it doesn't change; refuses anything that looks like a key",
+      tag: "run",
+      body: z.record(z.string(), z.unknown()),
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [422],
+    },
+  },
+  "/api/settings/ai/test": {
+    post: {
+      id: "testAiProvider",
+      summary:
+        "Ask the configured model provider one short question with nothing of the estate in it, and say whether it answered",
+      tag: "run",
+      ok: { status: 200, schema: { type: "object" }, description: "OK" },
+      errors: [409],
     },
   },
   "/api/settings/executors/check": {

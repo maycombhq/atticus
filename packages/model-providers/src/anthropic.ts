@@ -10,7 +10,13 @@ import {
 import type { Where } from "./messages.js";
 import { readKey, SettingsReader, type RawSettings } from "./settings.js";
 
-const SETTINGS = [...COMMON_SETTINGS, "baseUrl", "keyEnv", "auth", "anthropicVersion"] as const;
+export const ANTHROPIC_SETTINGS = [
+  ...COMMON_SETTINGS,
+  "baseUrl",
+  "keyEnv",
+  "auth",
+  "anthropicVersion",
+] as const;
 
 /**
  * Anthropic's Messages API (`POST {baseUrl}/v1/messages`), direct or through a gateway that
@@ -26,7 +32,7 @@ export class AnthropicProvider extends BaseProvider {
   private readonly version: string;
 
   constructor(settings: RawSettings, deps: ProviderDeps = {}) {
-    const s = new SettingsReader("anthropic", settings, SETTINGS);
+    const s = new SettingsReader("anthropic", settings, ANTHROPIC_SETTINGS);
     super(s, deps);
     this.model = s.str("model", { required: true, example: "claude-opus-5-5" });
     this.base = s.url("baseUrl", {

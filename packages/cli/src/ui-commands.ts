@@ -18,6 +18,7 @@ import { uiCiteRoutes } from "./ui-api-cites.js";
 import { uiKnowledgeRoutes } from "./ui-api-knowledge.js";
 import { uiModelRunRoutes } from "./ui-api-runs.js";
 import { uiHistoryRoutes } from "./ui-api-history.js";
+import { uiAiRoutes } from "./ui-api-ai.js";
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export async function startUi(
@@ -55,8 +56,12 @@ export async function startUi(
       // ADR 0102: knowledge, a change's needs and the org pack from the wikis.
       // ADR 0106: the model runs, what they were asked and answered.
       // ADR 0110: the prompts people sent their assistant and the responses they got.
-      return uiHistoryRoutes(
-        uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+      // ADR 0121: the AI tab, how AI runs here.
+      return uiAiRoutes(
+        uiHistoryRoutes(
+          uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+          ctx,
+        ),
         ctx,
       );
     },

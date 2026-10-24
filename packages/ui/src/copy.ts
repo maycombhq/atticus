@@ -542,6 +542,7 @@ export const COPY = {
       evals: "AI quality",
       learning: "Learning",
       settings: "Settings",
+      ai: "AI",
       runs: "Model runs",
       history: "Prompt history",
       changeDiagram: "Change diagram",
@@ -2129,6 +2130,47 @@ export const COPY = {
     pickARequestOn: "Pick a request on the left.",
     noRequestSelected: "No request selected",
     draftRequests: "Draft requests",
+  },
+  /** ADR 0121: the AI tab, how AI runs here. */
+  aiSettings: {
+    title: "How AI runs here",
+    intro:
+      "Choose whether AI runs, which assistants your people use, and whether Atticus may call a model itself. Saving writes the org pack's runtime.yaml.",
+    aiLabel: "AI here",
+    ai: {
+      on: "On: every AI step may run",
+      "text-only": "Text only: no step is given a picture",
+      off: "Off: no AI step runs; people write what agents would draft",
+    } as Record<string, string>,
+    assistantsLabel: "Assistants your people use",
+    assistantsHint:
+      "Atticus writes the slash commands, instructions and skills for each one ticked.",
+    defaultAssistant: "Default assistant",
+    modesLabel: "How a step runs",
+    modes: {
+      "hand-off": "Hand-off: the person's own assistant does the step",
+      model: "Model: Atticus calls the provider below",
+      "headless-claude-code": "Headless Claude Code: Claude Code runs the step on this machine",
+    } as Record<string, string>,
+    defaultMode: "Default",
+    providerLabel: "Model provider",
+    noProvider: "None: AI steps hand off to the person's assistant",
+    providerHint:
+      "Used when a step runs in model mode. A key never goes here: name the environment variable that holds it in keyEnv.",
+    keySet: (name: string) => `${name} is set on this machine.`,
+    keyNotSet: (name: string) =>
+      `${name} isn't set on this machine: set it to the key before testing.`,
+    keyLabel: (name: string) => `The key for ${name}`,
+    setKey: "Set the key on this machine",
+    keyKept: (name: string) =>
+      `Kept ${name} in this machine's credential store. It never goes in runtime.yaml.`,
+    save: "Save",
+    saved: (path: string) =>
+      `Saved ${path}. Commit it in a pull request: the org pack is reviewed like code.`,
+    saveNote: (path: string) => `Saving writes ${path}; commit it in a pull request.`,
+    test: "Test the provider",
+    answered: (model: string, ms: number) => `${model} answered in ${ms} ms.`,
+    notAnswered: (why: string) => `It didn't answer: ${why}`,
   },
   settings: {
     handOff: "Hand-off",

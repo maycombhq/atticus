@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { commandTitle, optionHint, startupNotice, statusText, stepTitle } from "../src/words";
+import {
+  commandTitle,
+  modelChoice,
+  modelPickItem,
+  modelPickRows,
+  modelSetting,
+  optionHint,
+  startupNotice,
+  statusText,
+  stepTitle,
+} from "../src/words";
 
 /** ADR 0098: the extension speaks in plain words first; the command is beside it, not instead. */
 
@@ -133,5 +143,55 @@ describe("the one notice a window shows when it opens (ADR 0119)", () => {
     const first = startupNotice([copilot, upgrade], undefined)!;
     expect(startupNotice([upgrade, copilot], first.signature)).toBeUndefined();
     expect(startupNotice([copilot], first.signature)?.message).toContain("Copilot");
+  });
+});
+
+describe("which model a step runs on (ADR 0121)", () => {
+  it("reads vendor/family for any vendor, and a bare family as Copilot's", () => {
+    expect(modelChoice("")).toBeUndefined();
+    expect(modelChoice("gpt-4o")).toEqual({ vendor: "copilot", family: "gpt-4o" });
+    expect(modelChoice("copilot/claude-sonnet-4")).toEqual({
+      vendor: "copilot",
+      family: "claude-sonnet-4",
+    });
+    expect(modelChoice("acme-llm/acme-large")).toEqual({
+      vendor: "acme-llm",
+      family: "acme-large",
+    });
+    expect(modelChoice("atticus")).toBe("configured");
+  });
+
+  it("offers Copilot's default, Atticus's configured model, then every model by vendor", () => {
+    const rows = modelPickRows(
+      [
+        { vendor: "acme-llm", family: "acme-large", name: "Acme Large" },
+        { vendor: "copilot", family: "gpt-4o", name: "GPT-4o" },
+        { vendor: "copilot", family: "gpt-4o", name: "GPT-4o" },
+        { vendor: "copilot", family: "claude-sonnet-4", name: "Claude Sonnet 4" },
+      ],
+      "gpt-4o",
+    );
+    const shape = rows.map((r) =>
+      "separator" in r ? `-- ${r.separator}` : `${r.picked ? "* " : ""}${r.setting || "(default)"}`,
+    );
+    expect(shape).toEqual([
+      "(default)",
+      "atticus",
+      "-- copilot",
+      "* copilot/gpt-4o",
+      "copilot/claude-sonnet-4",
+      "-- acme-llm",
+      "acme-llm/acme-large",
+    ]);
+    const picked = modelPickRows([], "atticus").filter((r) => "picked" in r && r.picked);
+    expect(picked).toHaveLength(1);
+  });
+
+  it("writes a picked model back the same way, and labels it by vendor", () => {
+    expect(modelSetting({ vendor: "copilot", family: "gpt-4o" })).toBe("copilot/gpt-4o");
+    expect(modelPickItem({ vendor: "copilot", family: "gpt-4o", name: "GPT-4o" })).toEqual({
+      label: "GPT-4o",
+      description: "copilot/gpt-4o",
+    });
   });
 });

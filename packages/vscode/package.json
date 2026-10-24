@@ -468,6 +468,11 @@
         "category": "Atticus"
       },
       {
+        "command": "atticus.pickModel",
+        "title": "Pick the model",
+        "category": "Atticus"
+      },
+      {
         "command": "atticus.absorb",
         "title": "Bring in from another repo…",
         "category": "Atticus",
@@ -782,6 +787,11 @@
         },
         {
           "command": "atticus.upgrade",
+          "when": "view == atticus.view",
+          "group": "more"
+        },
+        {
+          "command": "atticus.pickModel",
           "when": "view == atticus.view",
           "group": "more"
         },
@@ -1341,7 +1351,7 @@
         "atticus.model": {
           "type": "string",
           "default": "",
-          "markdownDescription": "The Copilot model family to use (for example `gpt-4o`). Empty: the model picked in Copilot Chat, or else the first Copilot model available."
+          "markdownDescription": "The model Atticus's AI steps run on in VS Code. Set it with **Atticus: Pick the model**. `vendor/family` is any model VS Code offers (for example `copilot/gpt-4o`); a bare family (`gpt-4o`) is Copilot's; `atticus` is the model provider in `runtime.yaml`, run by Atticus's command line in model mode. Empty: the model picked in the chat, or else the first Copilot model."
         },
         "atticus.codeLens": {
           "type": "boolean",

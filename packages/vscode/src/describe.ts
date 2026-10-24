@@ -60,7 +60,7 @@ export function describeEnd(end: StepEnd): string[] {
     }
     case "too-long":
       return [
-        `The prompt is ${end.tokens} tokens, and ${end.model} takes at most ${end.max}. Nothing was cut and nothing was sent. Pick a model that takes more (the setting atticus.model), or run the step in a tool with a larger limit.`,
+        `The prompt is ${end.tokens} tokens, and ${end.model} takes at most ${end.max}. Nothing was cut and nothing was sent. Pick a model that takes more (Atticus: Pick the model), or run the step in a tool with a larger limit.`,
         ...finish(end),
       ];
     case "cancelled":
@@ -72,7 +72,7 @@ export function describeEnd(end: StepEnd): string[] {
       ];
     case "no-model":
       return [
-        "No Copilot chat model is available. Sign in to GitHub Copilot, or check the setting atticus.model.",
+        "No chat model is available. Sign in to GitHub Copilot, or choose another with Atticus: Pick the model.",
         ...finish(end),
       ];
     case "model-error":
@@ -100,10 +100,10 @@ export function endActions(
       case "question":
         return ["Answer"];
       case "no-model":
-        return o.copilot ? ["Set up Copilot", "Pick a model"] : ["Set up Copilot"];
+        return o.copilot ? ["Set up Copilot", "Pick the model"] : ["Set up Copilot"];
       case "too-long":
       case "model-error":
-        return ["Pick a model"];
+        return ["Pick the model"];
       default:
         return [];
     }

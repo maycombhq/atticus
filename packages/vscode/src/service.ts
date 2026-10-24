@@ -7,7 +7,7 @@ import { cliRunner, resolveCommand, type CliOptions } from "./cli";
 import { codeRootFor, type Paths } from "./sidebar-data";
 import { runSpec, runStep, type RunnerDeps, type StepEnd } from "./runner";
 import type { Cancel, Cli } from "./types";
-import { pickModel } from "./vscode-model";
+import { pickModel, usesConfiguredModel } from "./vscode-model";
 
 /**
  * What every part of the extension shares (ADR 0090): the metarepo, the `atticus` command line
@@ -107,7 +107,10 @@ export class Service {
     };
   }
 
-  /** Run an AI step (or /spec's draft-and-check loop) with Copilot's model. */
+  /**
+   * Run an AI step (or /spec's draft-and-check loop) with the chat model atticus.model names, or
+   * runtime.yaml's model in model mode when it says `atticus` (ADR 0121 item 5).
+   */
   async run(
     root: string,
     o: { args: string[]; spec?: string },
@@ -119,6 +122,7 @@ export class Service {
       root,
       cli: this.cli(root),
       model: () => pickModel(chatModel),
+      ...(usesConfiguredModel() ? { mode: "model" as const } : {}),
       progress: (l) => {
         this.log.appendLine(l);
         progress(l);
