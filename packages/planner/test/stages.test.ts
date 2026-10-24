@@ -901,7 +901,7 @@ describe("a criterion that checks a field without naming it", () => {
     expect(no).toMatchObject([
       { rule: "stories.check-not-in-criterion", blocking: true, kind: "decision" },
     ]);
-    expect(no[0]!.message).toContain("a judge read its then clause");
+    expect(no[0]!.message).toContain("says its outcome doesn't depend on that field's value");
     const unsure = await coverageIssues([CLAIM], {
       store: memoryJudgments(),
       change: CHANGE,

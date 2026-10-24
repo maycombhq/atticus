@@ -57,6 +57,18 @@ cases:
         verdict: yes,
         quotes: [{ of: criterion, text: "unreadCount is 4, counting messages after joinedAt" }],
       }
+  # Found on a real metarepo (ADR 0117 addendum, V2): the lookup's key is fixed by the given
+  # clause and the then clause states the result that follows from it, so the criterion checks
+  # it. The old rule refused it for not asserting the shopper's id, and the drafts looped.
+  - id: given-fixes-lookup-id
+    field: id
+    criterion: "Given shopper 5 has display_name 'Ravi', when the order is opened, then placedBy is 'Ravi'"
+    truth: yes
+    recorded:
+      {
+        verdict: yes,
+        quotes: [{ of: criterion, text: "Given shopper 5 has display_name 'Ravi'" }],
+      }
   - id: count-ignores-last-read
     field: lastReadAt
     criterion: Given a room with four messages, when it is listed, then the room's name is shown

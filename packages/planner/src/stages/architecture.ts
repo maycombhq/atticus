@@ -23,6 +23,7 @@ import { instructionSource, wholeLists, type ContextReport } from "../engine.js"
 import { estateContext } from "./estate-context.js";
 import {
   runStageLoop,
+  SELF_CHECK_RULE,
   stageBudget,
   type StageIssue,
   type StageOptions,
@@ -76,7 +77,7 @@ flows:
         what: <one sentence: what the step does once the change is in>
         to: { component: <component or system id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
         store: { table: <table id>, columns: [<columns>], new: <true only on the step that creates the table>, types: { <each column it adds>: <database type> }, classification: { <each column it adds>: <classification> }, migration: <migration file, when it adds columns or a table>, retention: <new tables: how long rows are kept>, keys: { <a column it adds that references another table's row>: { references: <db>.<table>.<column>, onDelete: set-null | cascade | restrict | no-action } } }   # read, lookup and write: the table goes here, never under to
-        fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..], as: { <a field sent under another name>: <the column it is> } }   # field names as the code names them
+        fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..], as: { <a field sent under another name>: <the column it is> }, derived: { <a field worked out from columns>: "<how, e.g. edited_at is not null>" } }   # field names as the code names them
         why: <one sentence>
 reads:
   - flow: <the flow id (from the specs, never an endpoint id) of a flow the change reads or relies on but doesn't change>
@@ -241,7 +242,10 @@ function fieldsFromNowhere(
   const m = mergeDelta(d, today as never);
   const given = new Set<string>();
   for (const s of m.steps) {
-    if (s.mark === "removed" || s.kind === "respond") continue;
+    if (s.mark === "removed") continue;
+    // W3b: a field the step works out from columns is given there, a respond step's too.
+    for (const f of Object.keys(s.derived ?? {})) given.add(fold(f));
+    if (s.kind === "respond") continue;
     const data = (s.data ?? {}) as Record<string, string[] | undefined>;
     // Only a call, a lookup or a read gets data back; a write's "returns" isn't a source.
     const back = ["call-out", "lookup", "read"].includes(s.kind) ? ["returns"] : [];
@@ -258,6 +262,77 @@ function fieldsFromNowhere(
     for (const f of s.fields?.returns ?? [])
       if (!was.includes(fold(f)) && !given.has(fold(f))) out.push({ change: i + 1, field: f });
   });
+  return out;
+}
+
+/** Words of an expression that aren't column names: SQL's own, and literals. */
+const EXPRESSION_WORDS = new Set([
+  "is",
+  "not",
+  "null",
+  "and",
+  "or",
+  "true",
+  "false",
+  "in",
+  "like",
+  "between",
+  "case",
+  "when",
+  "then",
+  "else",
+  "end",
+  "coalesce",
+  "nullif",
+  "count",
+  "sum",
+  "min",
+  "max",
+  "avg",
+  "lower",
+  "upper",
+  "length",
+  "trim",
+  "now",
+  "current_date",
+  "current_timestamp",
+  "distinct",
+  "exists",
+]);
+
+/**
+ * W3b: each `fields.derived` expression names columns a step at or before it reads or writes, or
+ * of those steps' tables (the catalog's, or the table's one definition in this change). The names
+ * are read off the expression's identifiers, quoted literals and SQL's own words left out: a fact.
+ */
+function derivedProblems(
+  d: FlowDelta,
+  today: { steps: { kind: string; data?: Record<string, string[] | undefined> }[] } | undefined,
+  e: Estate,
+  defs: Map<string, TableDefinition[]>,
+): { change: number; field: string; expression: string; unknown: string[]; have: string[] }[] {
+  const m = mergeDelta(d, today as never);
+  const have = new Set<string>();
+  const out: ReturnType<typeof derivedProblems> = [];
+  for (const s of m.steps) {
+    if (s.mark === "removed") continue;
+    if (s.store) {
+      for (const c of s.store.columns) have.add(c);
+      for (const c of columnsOf(e, s.store.table)) have.add(c);
+      for (const c of defs.get(s.store.table)?.[0]?.store.columns ?? []) have.add(c);
+    }
+    for (const [field, expression] of Object.entries(s.derived ?? {})) {
+      if (!s.change) continue;
+      const names = expression
+        .replace(/'[^']*'|"[^"]*"/g, " ")
+        .match(/[A-Za-z_][A-Za-z0-9_.]*/g)
+        ?.map((n) => n.split(".").at(-1)!)
+        .filter((n) => !EXPRESSION_WORDS.has(n.toLowerCase()));
+      const unknown = [...new Set((names ?? []).filter((n) => !have.has(n)))];
+      if (unknown.length || !names?.length)
+        out.push({ change: s.change, field, expression, unknown, have: [...have].sort() });
+    }
+  }
   return out;
 }
 
@@ -285,7 +360,7 @@ function returnedBeforeGiven(
   const m = mergeDelta(d, today as never);
   const steps = m.steps.filter((s) => s.mark !== "removed");
   const gives = (s: (typeof steps)[number]): Set<string> => {
-    const out = new Set<string>();
+    const out = new Set<string>(Object.keys(s.derived ?? {}).map(fold));
     if (s.kind === "respond") return out;
     const data = (s.data ?? {}) as Record<string, string[] | undefined>;
     const back = ["call-out", "lookup", "read"].includes(s.kind) ? ["returns"] : [];
@@ -307,6 +382,8 @@ function returnedBeforeGiven(
         : s.kind === "call-out" || s.kind === "publish"
           ? "sends"
           : undefined;
+    // W3b: what the step itself works out from columns is given at it.
+    for (const f of Object.keys(s.derived ?? {})) given.add(fold(f));
     if (verb && (s.mark === "added" || s.mark === "changed") && s.change) {
       const was =
         s.mark === "changed" && s.today
@@ -678,6 +755,7 @@ export function storeRules(levels: string[]): string[] {
     "- Every field a write sends is a column it stores (store.columns) or a key it matches rows by (fields.checks); leave anything else out of sends.",
     "- A field a write sends under another name than its column (a path parameter id that is the order_id column) says which column it is under fields.as: { id: order_id }.",
     "- A column a step adds that references another table's row says so under store.keys on the table's one definition (or, for a table the catalog has, on the step that adds the column): { pinned_by: { references: <db>.<table>.<column>, onDelete: set-null, cascade, restrict or no-action } }. The table and column it references are in the index or added by this change.",
+    '- A field a step returns that is worked out from columns, not stored as one, says how under fields.derived: { edited: "edited_at is not null" }. The expression names columns a step reads or writes.',
   ];
 }
 
@@ -1130,6 +1208,16 @@ export function checkDeltas(
           `Change ${x.change} to ${t} returns ${x.field}, but no step of the flow receives, reads, writes or works it out, and no table the flow uses has it: add the step that gives it (a write with the new column, its type and its migration), or leave it out.`,
           d.repo,
         );
+    // W3b: a field worked out from columns names columns the flow has by then.
+    for (const x of derivedProblems(d, today?.flow, e, defs))
+      issue(
+        "delta.derived-unknown-column",
+        `${t}#${x.change}:${x.field}`,
+        x.unknown.length
+          ? `Change ${x.change} to ${t} works out ${x.field} from ${x.expression}, but ${words(x.unknown).replace(/ or ([^,]*)$/, " and $1")} ${x.unknown.length === 1 ? "is no column" : "are no columns"} a step before it reads or writes, nor one of their tables' (${x.have.join(", ")}). Name the columns it is worked out from.`
+          : `Change ${x.change} to ${t} works out ${x.field} from ${x.expression}, which names no column. Name the columns it is worked out from, as in edited_at is not null.`,
+        d.repo,
+      );
     // S3: what a respond returns or a call sends comes from a step before it, in merged order.
     for (const x of returnedBeforeGiven(d, today?.flow, e))
       issue(
@@ -1716,6 +1804,8 @@ export async function architectureStage(
     `Write the target flows for the change "${change.title}": for every flow the feature touches, the steps added, changed or removed, with their fields; and the new flows. The feature, today's flows and the estate are below, as data.`,
     "",
     formatFor(classificationLevels(ctx)),
+    "",
+    SELF_CHECK_RULE,
   ].join("\n");
   // The estate and the patterns the placement and today's flows lead to (ADR 0107), or all.
   const patternById = new Map(patterns.map((i) => [i.id, i]));

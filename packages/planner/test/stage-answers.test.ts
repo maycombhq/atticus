@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
-import { MockRuntime, type AiRequest } from "@maycombhq/ai";
+import { COVERS_FIELD_SPEC, MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { listQuestions, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import {
   architectureStage,
@@ -382,8 +382,7 @@ describe("U3: the covers-field judge asks one question per criterion, after one 
           if (req.agent.id.endsWith("-critic")) return "findings: []";
           if (req.agent.id === EXPAND_AGENT) return "terms: []\nnames: []\n";
           if (req.agent.id === "judge") {
-            if (!req.pack.prompt.includes("Does the criterion's then clause assert"))
-              return "judgments: []\n";
+            if (!req.pack.prompt.includes(COVERS_FIELD_SPEC.ask)) return "judgments: []\n";
             const n = (req.pack.prompt.match(/^item \d+:/gm) ?? []).length;
             return `judgments:\n${Array.from(
               { length: n },
@@ -412,11 +411,11 @@ describe("U3: the covers-field judge asks one question per criterion, after one 
     expect(qs).toHaveLength(1);
     const q = qs[0]!;
     expect(q.question).toBe(
-      `Does the criterion "Given a new order, when it is placed, then the screen passes" of task 1.1 check sku, quantity, cardToken and verdict, and show what happens when they don't match? A judge read it and says no, quoting "then the screen passes": ${WHY}`,
+      `Does the criterion "Given a new order, when it is placed, then the screen passes" of task 1.1 check sku, quantity, cardToken and verdict: does its outcome depend on their values? A judge read it and says no, quoting "then the screen passes": ${WHY}`,
     );
     expect(q.options.map((o) => o.label)).toEqual([
       "yes, it checks them",
-      "no: add a criterion for the refusal",
+      "no: change the criterion",
       "not needed",
     ]);
     const story = (await readFile(join(dir(root), "stories/s1-place-order.md"), "utf8")).split(

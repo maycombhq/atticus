@@ -4,6 +4,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The drafter checks its own draft, and a person's answer settles the judge (ADR 0087, 0111 and 0117 addenda)
+
+- A stage's drafter checks its draft with the stage's own checks before handing it in. In model mode it gets a `check_draft` tool. Headless Claude Code is told to run `atticus stage check <change> <stage> <file>`. With Copilot, `atticus handoff done` lists the problems with their lines and keeps the run open until the file is clean. After `draftSelfChecks` checks (change policy, default 3) the file is handed in as it is.
+- A returned field worked out from columns says how: `fields.derived: { edited: "edited_at is not null" }`. The expression's columns are checked against the flow's, and the field no longer counts as coming from nowhere.
+- `atticus critic` no longer reviews a draft its stage refused, and `change status` no longer sends a person to the critic while the phase's stage is stopped.
+- A person's answer to the covers-field judge is stored as their verdict, so the judge isn't asked again. An answer in their own words is read by a judge of the answer where a model is called directly, and otherwise stands as their words. Only an answer that asks for a change can stop a draft, and the stop quotes it.
+- Old one-per-field judge questions are retired, saying what replaced them, and asked again as one question per criterion.
+- A criterion checks a field when its outcome depends on the field's value: a given that fixes it, and a then that follows from it, counts. Refusal cases are their own criteria, asked for in the stories prompt from the first draft.
+- `edit-and-apply` with only a reason says "Recorded what you did: …". The context line leaves out names the change's own target flows declare.
+
 ### Known names and values aren't gaps (ADR 0116 and 0118 addenda)
 
 - **A name is in the code when a source file declares it.** The gap check used to match any word in any file, so it cited a markdown plan for a class and missed classes the code declares. It now reads only files a reader has a grammar for. It finds a class, interface, record, enum, function or type by its declaration, cited to that line. A comment, a use or a sentence in a repo's `docs/` doesn't count. A name only used and never declared, such as a parameter's type from a library, is a gap.

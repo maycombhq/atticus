@@ -245,16 +245,32 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     // in the run folder; the folder goes.
     const reviewer = request.agent.outputArtifact === "findings" && request.outputIn === "run";
     const work = reviewer ? await mkdtemp(join(tmpdir(), "atticus-review-")) : undefined;
-    const inv = work
+    const base = work
       ? { cwd: work, permissionMode: "acceptEdits" as const }
       : (this.h.invocation?.(request) ?? { cwd: this.h.root });
+    // W3a: a stage's drafter may run the stage's own check, and nothing else besides.
+    const inv =
+      !work && request.selfCheck
+        ? {
+            ...base,
+            allowedTools: [
+              ...((base as { allowedTools?: string[] }).allowedTools ?? []),
+              `Bash(${request.selfCheck.command}:*)`,
+            ],
+          }
+        : base;
     await mkdir(dir, { recursive: true });
     const promptFile = join(dir, "prompt.md");
-    const handoff = HandoffRuntime.promptFor(
-      run,
-      changesRelOf(this.h.root),
-      runsRelOf(this.h.root),
-    ).replace(/\nWhen the file is complete.*\n$/s, "\n");
+    const self = reviewer ? undefined : request.selfCheck;
+    const handoff =
+      HandoffRuntime.promptFor(run, changesRelOf(this.h.root), runsRelOf(this.h.root)).replace(
+        /\nWhen the file is complete.*\n$/s,
+        "\n",
+      ) +
+      // W3a: the drafter checks its own file with the stage's checks before it finishes.
+      (self
+        ? `\nBefore you finish, check the file: run ${self.command} ${HandoffRuntime.outputRel(run, changesRelOf(this.h.root), runsRelOf(this.h.root))}. Fix each problem it lists and run it again, until it says the file is clean (at most ${self.limit} times).\n`
+        : "");
     const prompt = reviewer
       ? handoff.replace(
           `Write the result to ${HandoffRuntime.outputRel(run, changesRelOf(this.h.root), runsRelOf(this.h.root))}.`,

@@ -641,6 +641,36 @@ export async function repoTypeSkillRel(root: string, type: string): Promise<stri
 }
 
 /** The answer in words: the option's label or the person's own text. */
+/**
+ * Retire an open question (ADR 0117 addendum, V0): it is no longer asked and nothing reads an
+ * answer to it. It says why, and which questions ask it now. An answered question keeps its
+ * answer and is never retired here.
+ */
+export async function retireQuestion(
+  root: string,
+  id: string,
+  o: { why: string; replacedBy?: string[]; at: string },
+): Promise<Question> {
+  const q = await readQuestion(root, id);
+  if (!q) throw new QuestionError("not-found", `There is no question ${id}.`);
+  if (q.state !== "open")
+    throw new QuestionError(
+      "retired",
+      `Question ${id} is ${q.state}; only an open one is retired.`,
+    );
+  const next = Question.parse({
+    ...q,
+    state: "retired",
+    retired: {
+      at: o.at,
+      why: o.why,
+      ...(o.replacedBy?.length ? { replacedBy: o.replacedBy } : {}),
+    },
+  });
+  await write(root, next);
+  return next;
+}
+
 export function answerWords(q: Question): string | undefined {
   const a = q.answer;
   if (!a) return undefined;

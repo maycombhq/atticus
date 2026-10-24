@@ -128,6 +128,7 @@ const AREA_BY_WORD: Record<string, string> = {
   change: "changes",
   finding: "changes",
   findings: "changes",
+  stage: "changes",
   critic: "changes",
   handoff: "changes",
   questions: "changes",

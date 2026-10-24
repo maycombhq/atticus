@@ -66,6 +66,7 @@ export const DRAFTING_STAGE_RULES: ReadonlySet<string> = new Set([
   "delta.no-migration",
   // S3, S4: the merged order and the keys are facts the draft got wrong.
   "delta.returned-before-given",
+  "delta.derived-unknown-column",
   "delta.key-not-on-definition",
   "delta.key-unknown-column",
   "delta.key-unknown-reference",

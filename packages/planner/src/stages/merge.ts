@@ -73,6 +73,8 @@ export interface MergedStep {
   was?: { kind: string; what: string; to?: { component: string; entry: string } };
   /** The delta's reason for this step. */
   why?: string;
+  /** Fields the step works out from columns, and how (W3b). */
+  derived?: Record<string, string>;
   /** The delta step that adds or changes it, by its place in the delta's steps, from 1. */
   change?: number;
 }
@@ -122,8 +124,13 @@ const fromDelta = (d: DeltaStep): Partial<MergedStep> => ({
   // A flow step's data holds the field lists; `as` (which column a sent field is) stays the delta's.
   ...(d.fields
     ? {
-        data: Object.fromEntries(Object.entries(d.fields).filter(([k]) => k !== "as")),
+        data: Object.fromEntries(
+          Object.entries(d.fields).filter(([k]) => k !== "as" && k !== "derived"),
+        ),
       }
+    : {}),
+  ...(d.fields?.derived && Object.keys(d.fields.derived).length
+    ? { derived: d.fields.derived }
     : {}),
   ...(d.repeats ? { repeats: d.repeats } : {}),
   ...(d.why ? { why: d.why } : {}),

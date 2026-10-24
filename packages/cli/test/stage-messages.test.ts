@@ -1,16 +1,18 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { MockRuntime } from "@maycombhq/ai";
+import { HandoffRuntime, MockRuntime } from "@maycombhq/ai";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import type { GateStatus } from "@maycombhq/naysayer";
-import { EXPAND_AGENT } from "@maycombhq/planner";
-import { stageCli, wroteLines } from "../src/stage-commands.js";
-import { statusLine } from "../src/critic-commands.js";
+import { EXPAND_AGENT, featureStage } from "@maycombhq/planner";
+import { stageCheck, stageCli, wroteLines } from "../src/stage-commands.js";
+import { handoffDone } from "../src/workspace-commands.js";
+import { critic, statusLine } from "../src/critic-commands.js";
+import { contextLines } from "../src/context-flags.js";
 
 /**
  * What a live run found in the words after a stage (ADR 0087 addendum): "Wrote … (all 7)" when
@@ -144,5 +146,121 @@ describe("change status and the stage say the same about a gate", () => {
     ).toBe(
       "The design gate may proceed: nothing blocking is open. Its 2 critic rounds and the checking round are used, but a person acted since round 3, so one more checking round is due (atticus critic <change> --gate design).",
     );
+  });
+});
+
+describe("a hand-off draft checks itself in handoff done, the way a linter does (W3a)", () => {
+  const BAD = PLACED.replace("forge-orders.place-order", "forge-orders.no-such-flow");
+
+  it("lists the stage's problems and keeps the run open; a fixed file is handed in; after the limit it is handed in as it is", async () => {
+    const root = await estate();
+    let t = NOW.getTime();
+    const tick = () => new Date((t += 5000));
+    const r = await featureStage(root, CHANGE, {
+      runtime: new HandoffRuntime({ root, validate: async () => [], now: tick }),
+      now: NOW,
+      context: { engine: false },
+    });
+    const run = r.waiting!.runId;
+    const file = join(root, ".runs", CHANGE, run, "feature-answer.yaml");
+    await writeFile(file, BAD);
+    const first = io();
+    expect(await handoffDone(root, run, first.io)).toBe(1);
+    expect(first.err.join("\n")).toContain("The stage's checks found 1 problem in your draft:");
+    expect(first.err.join("\n")).toContain("forge-orders.no-such-flow");
+    expect(first.err.join("\n")).toContain(`run atticus handoff done ${run} again`);
+    // Fixed: handed in.
+    await writeFile(file, PLACED);
+    const fixed = io();
+    expect(await handoffDone(root, run, fixed.io)).toBe(0);
+    const read = await featureStage(root, CHANGE, {
+      runtime: new HandoffRuntime({ root, validate: async () => [], now: tick }),
+      now: NOW,
+      context: { engine: false },
+      resume: run,
+    });
+    expect(read.state).toBe("done");
+
+    // Another draft that never gets clean is handed in as it is after the limit (3 checks).
+    const again = await featureStage(root, CHANGE, {
+      runtime: new HandoffRuntime({ root, validate: async () => [], now: tick }),
+      now: NOW,
+      context: { engine: false },
+      force: true,
+    });
+    const run2 = again.waiting!.runId;
+    const file2 = join(root, ".runs", CHANGE, run2, "feature-answer.yaml");
+    await writeFile(file2, BAD);
+    const codes: number[] = [];
+    const last = io();
+    for (let i = 0; i < 3; i++)
+      codes.push(await handoffDone(root, run2, i < 2 ? io().io : last.io));
+    expect(codes).toEqual([1, 1, 0]);
+    expect(last.out.join("\n")).toContain(
+      "handed in as it is after 3 checks: the stage hands its problems back with the next draft",
+    );
+  });
+
+  it("atticus stage check runs the same checks on a file, for headless Claude Code", async () => {
+    const root = await estate();
+    const f = join(root, "draft.yaml");
+    await writeFile(f, BAD);
+    const o = io();
+    expect(await stageCheck(root, CHANGE, "feature", f, o.io)).toBe(1);
+    expect(o.out.join("\n")).toContain("The stage's checks found 1 problem in your draft:");
+    await writeFile(f, PLACED);
+    const ok = io();
+    expect(await stageCheck(root, CHANGE, "feature", f, ok.io)).toBe(0);
+    expect(ok.out).toEqual(["The stage's checks find nothing to fix: hand the draft in."]);
+  });
+});
+
+describe("the critic never reviews a draft its stage refused (W4)", () => {
+  it("atticus critic refuses while the phase's stage stopped on its own draft, and says to run the stage", async () => {
+    const root = await estate();
+    await mkdir(join(root, "openspec/changes", CHANGE, "stage"), { recursive: true });
+    await writeFile(
+      join(root, "openspec/changes", CHANGE, "stage/feature.yaml"),
+      `schemaVersion: 1\nchange: ${CHANGE}\nstage: feature\niteration: 3\nstate: stopped\nupdatedAt: 2026-10-24T09:00:00Z\n`,
+    );
+    const o = io();
+    expect(await critic(root, CHANGE, {}, o.io, { now: "2026-10-24T09:00:00Z" })).toBe(1);
+    expect(o.err.join("\n")).toContain(
+      `The feature stage stopped on its own draft, which doesn't pass the stage's checks, so the critic doesn't review it: fix it and run atticus change feature ${CHANGE}; the stage runs the gate's critic round once its draft passes.`,
+    );
+    expect(existsSync(join(root, "openspec/changes", CHANGE, "review"))).toBe(false);
+  });
+});
+
+describe("the context line leaves out the change's own new names (ADR 0087 addendum, V)", () => {
+  const report = (unknown: string[], known: string[]) => ({
+    engine: true,
+    budget: 1000,
+    tokens: 100,
+    picked: [],
+    leftOut: [],
+    unknown,
+    known: known.map((name) => ({
+      name,
+      at: "openspec/changes/pin-order-note/target-flows/forge-orders.pin-note.yaml:6",
+      how: "target-flow" as const,
+    })),
+  });
+
+  it("lists only the names nothing knows; an endpoint the target flows declare new isn't one", () => {
+    const lines = contextLines(
+      report(["PUT /orders/{orderId}/pin", "Quillfeather Risk"], ["PUT /orders/{orderId}/pin"]),
+    );
+    expect(lines).toContain(
+      "Names the change uses that nothing in the index has: Quillfeather Risk.",
+    );
+    expect(lines.join("\n")).not.toContain("nothing in the index has: PUT");
+  });
+
+  it("prints no such line when every unknown name is known", () => {
+    const lines = contextLines(
+      report(["PUT /orders/{orderId}/pin"], ["PUT /orders/{orderId}/pin"]),
+    );
+    expect(lines.some((l) => l.startsWith("Names the change uses"))).toBe(false);
   });
 });

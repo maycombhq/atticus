@@ -30,6 +30,12 @@ export interface AiRequest {
   outputIn?: "change" | "run";
   /** How the pack's context was retrieved, when a model helped (ADR 0116): kept in the run record. */
   retrieval?: RunRetrieval;
+  /**
+   * A stage's draft checks itself before it is handed in (ADR 0087 addendum, W3a): the command
+   * that runs the stage's checks on a file (the file's path goes after it), and how many checks a
+   * draft may have before it is handed in as it is. The model runtime offers it as a tool.
+   */
+  selfCheck?: { command: string; limit: number };
 }
 
 export interface Usage {

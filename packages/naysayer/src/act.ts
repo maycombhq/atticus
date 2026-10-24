@@ -214,9 +214,15 @@ export async function act(
     message = `Applied the fix to ${f.artifact}.`;
   } else if (act === "apply") message = `${f.id} has no patch; marked applied.`;
   else if (act === "edit-and-apply") {
-    // The files the person changed, from the stages' write hashes; else the finding's artifact.
+    // The files the person changed, from the stages' write hashes; with none changed, what they
+    // did, in their words (W6): no file is named that nobody edited.
     const edited = await editedByPerson(changeFolder(root, change.id));
-    message = `Recorded your edit to ${edited.length ? edited.join(", ") : f.artifact}.`;
+    const said = o.reason?.trim().replace(/[.!?]+$/, "");
+    message = edited.length
+      ? `Recorded your edit to ${edited.join(", ")}.`
+      : said
+        ? `Recorded what you did: ${said}.`
+        : `Recorded your edit to ${f.artifact}.`;
   } else if (act === "ask")
     message = `Asked ${askedOf}. The gap stops blocking while the question is open.`;
   else if (act === "waive")

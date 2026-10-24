@@ -3,6 +3,7 @@ import { createLog, SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
 import { gitUser } from "@maycombhq/workspace";
 import { basename, join, resolve } from "node:path";
 import { metarepoToolBox } from "./code-tools.js";
+import { bothTools, draftCheckTool } from "./draft-check-tool.js";
 import { type Output } from "./commands.js";
 import {
   AiOffError,
@@ -609,7 +610,8 @@ Usage:
   atticus orgpack accept <platform>    Put the drafted systems into profile.yaml [--only <id,id>] [--verified-only] [--dry-run] [--json]
   atticus openspec setup               Set up OpenSpec with the org-flow schema in the metarepo
   atticus openspec check               Check the OpenSpec version and validate every change and spec
-  atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it
+  atticus handoff done <run-id>        Tell Atticus a hand-off artifact is written; it validates it (a stage's draft: with the stage's checks, its problems listed with their lines until it is clean)
+  atticus stage check <change> <stage> <file>  Run a stage's checks on a draft's file and list its problems with their lines; writes nothing (a drafter checks its draft before it hands it in)
   atticus next [--all] [--json]        The next step to take, its command and slash command, and why; from the files only
   atticus <step> --handoff [--json]    On scan survey, scan verify, spec draft, knowledge scan, change feature, change architecture, change small, change draft, plan stories, change needs, knowledge find, knowledge ask and critic (its lenses one at a time, as a stage offers its critic lenses after each draft): print only the prompt, the result file and the commands that finish it
   atticus <step> --max-tokens n        On the same steps: the model's limit. The whole prompt fits n tokens (counted as characters / 4, a quarter kept back for the count's error), or the step says before handing off that it can't, with the numbers. The VS Code extension passes its model's limit to every step
@@ -689,7 +691,8 @@ export async function main(
   // ADR 0121 item 4: and an org pack's own, from plugins/model-providers/<id>/ once pinned.
   registerModelProviderPlugins();
   // ADR 0107 addendum: the model runtime offers the context tools to a provider that calls tools.
-  registerToolSource((at) => () => metarepoToolBox(at));
+  // W3a: and a stage's draft its own check, check_draft (the stage's checks on its text).
+  registerToolSource((at) => (req) => bothTools(metarepoToolBox(at), draftCheckTool(at, req)));
   const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
   const flags = [
     ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),
@@ -2800,6 +2803,15 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     return (await import("./orgpack-owner.js")).orgPackOwnerCli(root, arg, io);
   if (group === "orgpack" && command === "validate")
     return orgPackValidate(arg ? resolve(arg) : join(orgPackDirOf(root)), io);
+  // W3a: a stage's checks on a draft's file, for a drafter checking its own draft.
+  if (group === "stage" && command === "check")
+    return (await import("./stage-commands.js")).stageCheck(
+      root,
+      arg,
+      positionals[3],
+      positionals[4],
+      io,
+    );
   if (group === "handoff" && command === "done") {
     if (!arg) {
       io.err(

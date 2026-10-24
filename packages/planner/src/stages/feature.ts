@@ -15,6 +15,7 @@ import { estateIndex, loadEstate, systemOf, type Estate } from "./estate.js";
 import { designText, readFigma, type DesignRead } from "./figma.js";
 import {
   runStageLoop,
+  SELF_CHECK_RULE,
   stageBudget,
   type StageIssue,
   type StageOptions,
@@ -396,6 +397,8 @@ export async function featureStage(
     "",
     FORMAT.replace("<changes>/<change>", rel),
     ...(design ? ["", "Add the design, mapped against the estate:", "", DESIGN_FORMAT] : []),
+    "",
+    SELF_CHECK_RULE,
   ].join("\n");
 
   // The estate: what the brief, stories or design name and lead to (ADR 0107), or all of it.

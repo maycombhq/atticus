@@ -85,3 +85,12 @@ A live run on a real metarepo (a chat app; the change pins a message) found two 
    data.md lists the keys under `## Keys`. The architecture and fast-path formats show `keys`, and a store rule says when to give them. The lenses get them in the merged block, so they stop asking.
 
 3. **No version bump.** `keys` is optional and additive, like `fields.as` before it, so `FLOW_DELTA_SCHEMA_VERSION` stays 2. A version-2 file without keys reads as before, and a reader that ignores keys loses nothing it had. The planner's merged step gains `store.keys` and `change`. The API's `MergedStep` (C4) is unchanged and drops them, so the Flows screen doesn't show keys yet.
+
+## Addendum (2026-10-24, two live changes): a field worked out from columns
+
+`open-chat returns edited` failed `delta.field-from-nowhere`: `edited` is worked out from `edited_at is not null`, and the format had no way to say so (W3b; retold on Forge as place-order's reply returning `inStock` from `quantity > 0`, `packages/planner/test/self-check.test.ts`).
+
+- A step's fields may carry `derived: { edited: "edited_at is not null" }`: the field, and how it is worked out from columns. It is optional and additive, so the flow delta stays at version 2, as with `fields.as` and `store.keys`.
+- It is checked as a fact (`delta.derived-unknown-column`, drafting). The expression's identifiers, with quoted literals and SQL's own words left out, are columns that a step at or before it reads or writes, or columns of those steps' tables (the catalog's, or the table's one definition in this change).
+- A derived field is given by the step that declares it, so `delta.field-from-nowhere` and `delta.returned-before-given` accept it.
+- The architecture and fast-path formats show `derived`, and a store rule says when to use it. The merged step carries it (`MergedStep.derived`), not in its data.
