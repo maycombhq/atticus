@@ -135,6 +135,7 @@ const AREA_BY_WORD: Record<string, string> = {
   todo: "plan",
   needs: "changes",
   waiting: "changes",
+  watch: "changes",
   runs: "changes",
   history: "changes",
   ado: "plan",

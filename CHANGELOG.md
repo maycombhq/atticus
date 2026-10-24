@@ -21,6 +21,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### Your first hour
+
+- A new lesson for everyone, whatever their role: `atticus learn start everyone` (and the Learning screen, where it comes first). In a scanned sandbox it walks `atticus next`, a change at a glance, asking the catalog, `atticus watch` and how approving works, and checks each step was done.
+- `atticus watch` is listed with the other "what waits on you" commands in `atticus help`.
+
 ### Act on several waiting items at once
 
 - Home's "needs a person" list has a checkbox on each need and manual step. With some selected, one action applies to all of them with one reason: mark the needs done (with the ticket or note), mark them not needed (with why), or skip the manual steps (with why). The button says how many it changes, and the result says how many couldn't be changed.

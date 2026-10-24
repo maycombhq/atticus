@@ -1,0 +1,74 @@
+schemaVersion: 1
+id: everyone-first-hour
+role: everyone
+title: Your first hour
+summary: See what comes next, read a change at a glance, ask the catalog, follow a change and learn how approving works.
+minutes: 15
+setup: [scan]
+intro: |
+  Atticus keeps one metarepo that describes your estate from its code, and every change that is
+  under way. This hour walks the things you will do every day, whatever your role. Each step
+  says what to run; in the app, the same is one click (Home, a change's At a glance, Estate ›
+  Systems). The sandbox was scanned for you, and nothing you do here leaves it.
+steps:
+  - id: next
+    title: See what comes next
+    body: |
+      Run `atticus next`. It says the one step to take now, the slash command to type in your
+      assistant, and why. In the app it is the top of Home.
+    do: [[next]]
+    solution: { answer: add-transfer-limit }
+    check:
+      type: answer
+      question: Which change is under way in the sandbox? Give its id.
+      truth: { from: fixed, values: [add-transfer-limit] }
+    hint: The change's id is in the next step, or under openspec/changes/.
+  - id: glance
+    title: Read a change at a glance
+    body: |
+      Run `atticus change status add-transfer-limit`. It says where the change is, what comes
+      next, what blocks it and its risk. In the app, open the change: its first page is At a glance.
+    do: [[change, status, add-transfer-limit]]
+    solution: { answer: plan }
+    check:
+      type: answer
+      question: Which phase is add-transfer-limit in?
+      truth: { from: change-state, change: add-transfer-limit }
+    hint: Look for "State:" in what change status prints.
+  - id: catalog
+    title: Ask the catalog about a system
+    body: |
+      Run `atticus guide ledger`. Every fact in it cites the code it was read from, and it says
+      what it doesn't know yet. In the app it is Estate › Systems.
+    do: [[guide, ledger]]
+    solution: { answer: team-ledger }
+    check:
+      type: answer
+      question: Which team owns the ledger system?
+      truth: { from: system-owner, id: ledger }
+    hint: The guide names the owner near the top.
+  - id: watch
+    title: Follow a change
+    body: |
+      Run `atticus watch add-transfer-limit`. You aren't on the change, but your digest will
+      now say how it is doing. It is kept in your own .atticus/me.yaml, never committed.
+    do: [[watch, add-transfer-limit]]
+    check: { type: file, path: .atticus/me.yaml, contains: [add-transfer-limit] }
+    hint: atticus watch add-transfer-limit
+  - id: approve
+    title: Learn how approving works
+    body: |
+      Run `atticus change handoff add-transfer-limit --by pat`. Without --approve it only says
+      what it would open: a pull request on your Git host. Nothing in Atticus approves a gate by
+      itself; merging that pull request does, under your Git host's own rules.
+    do: [[change, handoff, add-transfer-limit, --by, pat]]
+    solution: { answer: "yes" }
+    check:
+      type: answer
+      question: Does merging the hand-off pull request approve the gate? Answer yes or no.
+      truth: { from: fixed, values: ["yes"] }
+    hint: Read the last lines change handoff prints.
+outro: |
+  That is the daily loop: what comes next, a change at a glance, the catalog when you need a fact,
+  following the changes you care about, and approving by merging a pull request. Your role's own
+  lesson goes deeper: atticus learn lists them.

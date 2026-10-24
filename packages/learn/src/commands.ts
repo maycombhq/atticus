@@ -210,6 +210,27 @@ export const COMMANDS: readonly CommandHelp[] = [
     changes: "openspec/changes/<id>/",
   },
   {
+    name: "next",
+    usage: "atticus next [--all] [--json]",
+    what: "The next step to take in the metarepo, with the slash command to type in your assistant and why it is next.",
+    who: ["product-owner", "architect", "developer", "team-lead"],
+    changes: "nothing",
+  },
+  {
+    name: "guide",
+    usage: "atticus guide <system>",
+    what: "A system's guide, from the catalog: its parts, calls, data and owners, every fact citing code, and what it doesn't know yet.",
+    who: ["developer", "architect"],
+    changes: "nothing",
+  },
+  {
+    name: "watch",
+    usage: "atticus watch [<change>] [--off] [--json]",
+    what: "Follow a change without being on it; your digest says how it is doing. With no change, how each one you watch is doing.",
+    who: ["product-owner", "team-lead", "delivery-lead"],
+    changes: "your own .atticus/me.yaml (never committed)",
+  },
+  {
     name: "change status",
     usage: "atticus change status <id> [--json]",
     what: "Where a change is, what it needs next, what blocks it, its risk, the hand-off PR to merge and the tests it needs.",

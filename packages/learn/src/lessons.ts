@@ -215,6 +215,8 @@ export async function loadLessons(
   if (o.orgPackDir)
     await readDir(join(o.orgPackDir, "learn", "lessons"), "org-pack/learn/lessons", out);
   const order = (role: string) => {
+    // The first hour is for everyone, so it comes before any role's lessons (WP7.11).
+    if (role === "everyone") return -1;
     const i = (CORE_ROLES as readonly string[]).indexOf(role);
     return i === -1 ? CORE_ROLES.length : i;
   };

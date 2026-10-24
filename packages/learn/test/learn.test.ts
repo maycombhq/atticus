@@ -34,7 +34,8 @@ describe("lessons as data", () => {
         lessons.some((l) => l.role === role),
         `a lesson for ${role}`,
       ).toBe(true);
-    expect(lessons.map((l) => l.role)).toEqual([...CORE_ROLES]);
+    // The first hour is for everyone and comes first (WP7.11); then one lesson per role.
+    expect(lessons.map((l) => l.role)).toEqual(["everyone", ...CORE_ROLES]);
     for (const l of lessons) {
       expect(l.steps.length, l.id).toBeGreaterThanOrEqual(3);
       for (const s of l.steps) {
