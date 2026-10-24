@@ -29,8 +29,15 @@ describe("the judgments' eval (ADR 0117)", () => {
     );
     expect(by["same-question"]!.model.wrong).toEqual([]);
     expect(by["covers-field"]!.old.wrong).toEqual(
-      expect.arrayContaining(["id-inside-valid", "renamed-event-not-field"]),
+      expect.arrayContaining([
+        "id-inside-valid",
+        "renamed-event-not-field",
+        "given-fixes-lookup-id",
+      ]),
     );
+    // ADR 0117 addendum (V2): a given that fixes a lookup's key and a then that follows from it
+    // checks the key; the judge says yes.
+    expect(by["covers-field"]!.model.wrong).not.toContain("given-fixes-lookup-id");
     expect(by["states-value"]!.old.wrong).toEqual(
       expect.arrayContaining([
         "three-days-in-approvers",

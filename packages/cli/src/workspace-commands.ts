@@ -14,12 +14,17 @@ import {
   intellijProjectPath,
   type LoadedRepo,
 } from "@maycombhq/workspace";
-import { HandoffRuntime } from "@maycombhq/ai";
+import { HandoffRuntime, type AiRequest } from "@maycombhq/ai";
+import { runsDirOf } from "@maycombhq/core";
+import { join } from "node:path";
 import { NAMING_CHANGE, NAMING_OUTPUT } from "@maycombhq/features";
 import { GLOSSARY_CHANGE, GLOSSARY_OUTPUT } from "@maycombhq/glossary";
 import { lensAnswerProblem, lensRunOf } from "@maycombhq/naysayer";
 import {
   STORY_PROSE_OUTPUT,
+  checkStageDraft,
+  formatDraftProblems,
+  stageOfOutput,
   DRAFT_OUTPUT,
   parseDraft,
   TEMPLATE_PROSE_CHANGE,
@@ -201,6 +206,30 @@ export async function handoffDone(
   deps: { now?: () => Date } = {},
 ): Promise<number> {
   const os = createOpenSpec({ root });
+  // W3a: a stage's draft is checked here with the stage's own checks, the way a linter is run:
+  // its problems are listed with their lines and the run stays open to fix, until it is clean or
+  // the draft has had its self-checks (the change policy's draftSelfChecks); then it goes in as it is.
+  const before = await readRunJson(root, runId);
+  const checks = before ? (before.state === "failed" ? before.attempt + 1 : before.attempt) : 1;
+  let handedAsIs: number | undefined;
+  const selfChecked = async (file: string, request: AiRequest): Promise<string[]> => {
+    const stage = stageOfOutput(request.outputPath);
+    if (!request.selfCheck || !stage) return [];
+    const problems = await checkStageDraft(
+      root,
+      request.change,
+      stage,
+      await readFile(file, "utf8").catch(() => ""),
+    ).catch((e: Error) => [
+      { rule: "stage.check", target: stage, message: e.message, blocking: true },
+    ]);
+    if (!problems.length) return [];
+    if (checks >= request.selfCheck.limit) {
+      handedAsIs = checks;
+      return [];
+    }
+    return [formatDraftProblems(problems)];
+  };
   const rt = new HandoffRuntime({
     root,
     validate: async (_file, request) => {
@@ -214,12 +243,14 @@ export async function handoffDone(
           ? []
           : ['The draft has no "=== proposal.md" file; start each file with a line "=== <path>".'];
       }
-      if (completionOf(request) === "step-answer")
-        return /\.ya?ml$/.test(request.outputPath)
-          ? yamlAnswerProblems(_file, request)
-          : (await readFile(_file, "utf8").catch(() => "")).trim()
+      if (completionOf(request) === "step-answer") {
+        if (!/\.ya?ml$/.test(request.outputPath))
+          return (await readFile(_file, "utf8").catch(() => "")).trim()
             ? []
             : [`${request.outputPath} is empty`];
+        const yaml = await yamlAnswerProblems(_file, request);
+        return yaml.length ? yaml : selfChecked(_file, request);
+      }
       // The code-and-test lens's review must be one, as a critic lens's must (yamlAnswerProblems).
       if (completionOf(request) === "hand-up") {
         const why = lensAnswerProblem(await readFile(_file, "utf8").catch(() => ""));
@@ -274,6 +305,10 @@ export async function handoffDone(
       return 0;
     }
     if (kind === "step-answer") {
+      if (handedAsIs)
+        io.out(
+          `${run.request.outputPath} still has problems, and is handed in as it is after ${handedAsIs} checks: the stage hands its problems back with the next draft.`,
+        );
       io.out(
         `The answer for ${run.request.change} is in. Run the step again with --resume ${runId}: it checks the answer and writes the result.`,
       );
@@ -289,4 +324,29 @@ export async function handoffDone(
     `${run.request.outputPath} needs fixing; run atticus handoff done ${runId} again when it's fixed`,
   );
   return 1;
+}
+
+/** A run's state and attempt, read off its run.json in whichever change folder holds it. */
+async function readRunJson(
+  root: string,
+  runId: string,
+): Promise<{ state: string; attempt: number } | undefined> {
+  const { readdir } = await import("node:fs/promises");
+  const dir = runsDirOf(root);
+  for (const change of await readdir(dir).catch(() => [] as string[])) {
+    const text = await readFile(join(dir, change, runId, "run.json"), "utf8").catch(
+      () => undefined,
+    );
+    if (text === undefined) continue;
+    try {
+      const r = JSON.parse(text) as { state?: unknown; attempt?: unknown };
+      return {
+        state: typeof r.state === "string" ? r.state : "",
+        attempt: typeof r.attempt === "number" ? r.attempt : 1,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
 }

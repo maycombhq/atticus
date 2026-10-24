@@ -8,6 +8,8 @@ import { changeFolder, loadChangeContext } from "@maycombhq/changes";
 import { gateStatus, ownerWaitsLine } from "@maycombhq/naysayer";
 import {
   stageGate,
+  checkStageDraft,
+  formatDraftProblems,
   architectureStage,
   featureStage,
   smallStage,
@@ -60,6 +62,43 @@ const NAMES: Record<Stage, string> = {
   stories: "stories",
   small: "fast path",
 };
+
+/**
+ * atticus stage check <change> <stage> <file> (W3a): the stage's own checks on a draft's file,
+ * for a drafter checking its draft before it hands it in (headless Claude Code runs it). Prints
+ * the problems with their lines, or that the draft is clean; writes nothing. Exit 1 on problems.
+ */
+export async function stageCheck(
+  root: string,
+  change: string | undefined,
+  stage: string | undefined,
+  file: string | undefined,
+  io: Output,
+): Promise<number> {
+  const stages = ["feature", "architecture", "stories", "small"];
+  if (!change || !stage || !file || !stages.includes(stage)) {
+    io.err(
+      `Usage: atticus stage check <change> <${stages.join("|")}> <file>, for example: atticus stage check add-fraud-check architecture .runs/add-fraud-check/<run>/architecture-answer.yaml`,
+    );
+    return 2;
+  }
+  const text = await readFile(resolve(root, file), "utf8").catch(() => undefined);
+  if (text === undefined) {
+    io.err(`${file} doesn't exist: write the draft there first.`);
+    return 2;
+  }
+  try {
+    const problems = await checkStageDraft(root, change, stage as Stage, text);
+    io.out(formatDraftProblems(problems));
+    return problems.length ? 1 : 0;
+  } catch (e) {
+    if (e instanceof Error && ["PlannerError", "ChangeError"].includes(e.name)) {
+      io.err(e.message);
+      return 1;
+    }
+    throw e;
+  }
+}
 
 /** What a person calls each stage's files, for "kept your …". */
 const WORDS: Record<Stage, string> = {

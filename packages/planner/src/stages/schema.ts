@@ -146,6 +146,12 @@ export const DeltaFields = z.strictObject({
    * is the chat_id column. Optional and additive: the flow delta stays at version 2.
    */
   as: z.record(z.string(), text()).optional(),
+  /**
+   * A field the step works out from columns, and how (W3b): `{ edited: "edited_at is not null" }`.
+   * The expression names columns a step reads or writes, or of their tables; checked as a fact.
+   * Optional and additive: the flow delta stays at version 2.
+   */
+  derived: z.record(z.string(), text()).optional(),
 });
 export type DeltaFields = z.infer<typeof DeltaFields>;
 
@@ -265,6 +271,11 @@ export const LoopFinding = z.strictObject({
   kind: z.enum(["decision", "drafting"]).optional(),
   /** The iteration a drafting finding stopped the loop in; earlier sightings don't count again. */
   stoppedAt: z.number().int().positive().optional(),
+  /**
+   * What a judge refused, so a person's answer to the finding's question is stored as their
+   * verdict on exactly that (ADR 0117 addendum, V1): each field and the criterion it was claimed for.
+   */
+  judged: z.array(z.strictObject({ field: text(), criterion: text(), task: text() })).optional(),
 });
 export type LoopFinding = z.infer<typeof LoopFinding>;
 

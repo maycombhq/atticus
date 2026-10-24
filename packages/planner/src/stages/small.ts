@@ -34,6 +34,7 @@ import { estateIndex, loadEstate, type Estate } from "./estate.js";
 import { checkPlacement, writePlacement } from "./feature.js";
 import {
   runStageLoop,
+  SELF_CHECK_RULE,
   stageBudget,
   type StageIssue,
   type StageOptions,
@@ -159,7 +160,7 @@ targetFlows:         # one per flow it adds, changes or removes a step of, or ad
         what: <one sentence: what the step does once the change is in>
         to: { component: <id>, entry: <the HTTP method and the path, such as "GET /orders/{id}", or a topic>, new: <true when it doesn't exist yet> }   # call-out and publish only: a component, never a table
         store: { table: <table id>, columns: [..], new: <true for a new table>, types: {..}, classification: {..}, migration: <file>, retention: <new tables>, keys: { <a column it adds that references another table's row>: { references: <db>.<table>.<column>, onDelete: set-null | cascade | restrict | no-action } } }   # read, lookup and write: the table goes here, never under to
-        fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..] }
+        fields: { sends: [..], returns: [..], reads: [..], checks: [..], from: [..], to: [..], derived: { <a field worked out from columns>: "<how, e.g. edited_at is not null>" } }
         why: <one sentence>
 reads:               # flows it only reads or relies on
   - flow: <a flow id from the specs, never an endpoint id>
@@ -334,6 +335,8 @@ export async function smallStage(
       "\n- Plain, short English.",
       `\n${storeRules(classificationLevels(ctx)).join("\n")}\n- Plain, short English.`,
     ),
+    "",
+    SELF_CHECK_RULE,
   ].join("\n");
   // How the estate's stores name their migrations and types (at most five stores).
   const stores = (estate.records as { kind: string; id: string }[])

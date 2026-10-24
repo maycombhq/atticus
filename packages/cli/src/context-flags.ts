@@ -66,7 +66,11 @@ export function contextLines(c: ContextReport | undefined): string[] {
         .map((n) => `${n.name} (${n.at})`)
         .join(", ")}${c.inCode.length > 10 ? ` and ${c.inCode.length - 10} more` : ""}.`,
     );
-  if (!gaps.length && !c.inCode?.length && c.unknown.length)
-    lines.push(`Names the change uses that nothing in the index has: ${c.unknown.join(", ")}.`);
+  // A name known otherwise (the change's own target flows declare it new, a migration, an
+  // answer) isn't one nothing has: it is left out of this line.
+  const known = new Set((c.known ?? []).map((k) => k.name));
+  const unknown = c.unknown.filter((n) => !known.has(n));
+  if (!gaps.length && !c.inCode?.length && unknown.length)
+    lines.push(`Names the change uses that nothing in the index has: ${unknown.join(", ")}.`);
   return lines;
 }

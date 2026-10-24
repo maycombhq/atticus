@@ -111,6 +111,17 @@ export const Question = z
     rerun: z.string().min(1),
     answer: QuestionAnswer.optional(),
     /**
+     * Why an open question was retired, and the questions that ask it now (ADR 0117 addendum,
+     * V0). Optional and additive: nothing reads a retired question's answer.
+     */
+    retired: z
+      .strictObject({
+        at: IsoDateTime,
+        why: z.string().trim().min(1),
+        replacedBy: z.array(QuestionId).optional(),
+      })
+      .optional(),
+    /**
      * Earlier questions this one was matched against and not merged with (ADR 0117): narrower
      * (it asks part of what the earlier one asks, so the earlier answer is shown beside it) or
      * unsure (the judge couldn't tell, or no judge ran). The person sees both and decides.

@@ -160,6 +160,11 @@ export const ChangePolicy = z.strictObject({
    * rest wait and are asked once those are answered. Optional and additive (still version 1).
    */
   questionsPerStop: z.number().int().min(1).default(5),
+  /**
+   * How many times a stage's drafter may check its own draft with the stage's checks before it
+   * is handed in as it is (ADR 0087 addendum, W3a). Optional and additive (still version 1).
+   */
+  draftSelfChecks: z.number().int().min(1).default(3),
   /** By default the product owner may approve the Define hand-off of their own brief. */
   selfApproval: z
     .array(SelfApproval)

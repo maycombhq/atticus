@@ -80,15 +80,21 @@ export async function assess(ctx: ChangeContext, change: ChangeLifecycle): Promi
   const due = requiredArtifacts(ctx, type, phase, footprint).filter(
     (a) => !stage || stage.artifacts.includes(a),
   );
+  // W4: while the phase's stage isn't done, its draft hasn't passed its own checks; the stage runs
+  // the gate's critic round itself once it does, so a person is never sent to run the critic on
+  // a refused draft (its findings would only repeat the stage's).
+  const stageReasons = stage ? await checkStage(ctx.root, change, stage) : [];
   const blockers: Reason[] = [
-    ...(stage ? await checkStage(ctx.root, change, stage) : []),
+    ...stageReasons,
     ...(await checkArtifacts(ctx.root, change, due)),
     ...(await checkFindings(ctx.root, change, phaseFindingGates(ctx, phase))),
-    ...(await checkMandatoryRounds(
-      ctx.root,
-      change,
-      phaseGates(ctx, phase).filter((g) => mandatoryGates(ctx).includes(g)),
-    )),
+    ...(stageReasons.length
+      ? []
+      : await checkMandatoryRounds(
+          ctx.root,
+          change,
+          phaseGates(ctx, phase).filter((g) => mandatoryGates(ctx).includes(g)),
+        )),
   ];
   const next = change.state === "returned" ? phaseState(phase) : nextState(type, phase);
   const live = change.state === "returned" ? undefined : liveHandoff(change);

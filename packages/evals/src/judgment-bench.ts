@@ -33,7 +33,7 @@ import {
   type JudgeSpec,
 } from "@maycombhq/ai";
 import { groundValues, reachesItem, settleClaims } from "@maycombhq/knowledge";
-import { dorItems, reliedOn, writesField, type DorCheck } from "@maycombhq/planner";
+import { coversInputs, dorItems, reliedOn, writesField, type DorCheck } from "@maycombhq/planner";
 import { breakingItem, secretItem, undoesItem } from "@maycombhq/release";
 import {
   oldApplies,
@@ -272,7 +272,7 @@ async function coversFieldRow(repoRoot: string): Promise<JudgmentRow> {
     unwritten.map((c) => ({
       id: c.id,
       item: {
-        inputs: { v: 1, field: c.field, criterion: c.criterion },
+        inputs: coversInputs(c.field, c.criterion),
         texts: { criterion: c.criterion },
         facts: [`the field: ${c.field}`],
       },

@@ -85,16 +85,15 @@ describe("edit-and-apply names the files the person changed", () => {
     );
   });
 
-  it("without a stage's hashes, the finding's artifact", async () => {
-    const { root, gap, artifact } = await oneGapOpen();
+  it("with no stage file changed, says what the person did, in their words (W6)", async () => {
+    const { root, gap } = await oneGapOpen();
     const r = await act(root, CHANGE, gap, "edit-and-apply", {
       by: "ari",
       reason: "Wrote it in.",
       now: AFTER,
     });
-    expect(r.message).toMatch(
-      new RegExp(`^Recorded your edit to ${artifact.replace(/\./g, "\\.")}`),
-    );
+    expect(r.message).toMatch(/^Recorded what you did: Wrote it in\./);
+    expect(r.message).not.toContain("Recorded your edit to");
     // The checking round, in the one rule both a stop and the status state.
     expect(r.message).toContain(checkRoundRule(3));
     expect(checkRoundRule(3)).toBe(

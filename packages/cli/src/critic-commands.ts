@@ -8,7 +8,15 @@ import {
   type AiRuntime,
   type Run,
 } from "@maycombhq/ai";
-import { changeStore } from "@maycombhq/changes";
+import {
+  changeFolder,
+  changeStore,
+  loadChangeContext,
+  phaseStage,
+  stageCommand,
+  statePhase,
+} from "@maycombhq/changes";
+import { parse } from "yaml";
 import { Lens, runsDirOf, runsRelOf } from "@maycombhq/core";
 import {
   CriticError,
@@ -109,6 +117,31 @@ async function runtimeOf(
   }
 }
 
+/**
+ * Why the critic may not review a change now (W4): the stage of its current phase stopped on
+ * its own draft. Read off the stage's loop file, a fact. Undefined otherwise.
+ */
+async function stageRefused(root: string, changeId: string): Promise<string | undefined> {
+  const ctx = await loadChangeContext(root).catch(() => undefined);
+  const change = ctx
+    ? await changeStore(root)
+        .read(changeId)
+        .catch(() => undefined)
+    : undefined;
+  if (!ctx || !change) return undefined;
+  const phase = statePhase(change.state);
+  if (!phase) return undefined;
+  const step = await phaseStage(ctx, change, phase);
+  if (!step) return undefined;
+  const text = await readFile(
+    join(changeFolder(root, change.id), ...step.loop.split("/")),
+    "utf8",
+  ).catch(() => undefined);
+  const state = text === undefined ? undefined : (parse(text) as { state?: unknown } | null)?.state;
+  if (state !== "stopped") return undefined;
+  return `The ${step.stage} stage stopped on its own draft, which doesn't pass the stage's checks, so the critic doesn't review it: fix it and run ${stageCommand(step, change.id)}; the stage runs the gate's critic round once its draft passes.`;
+}
+
 /** atticus critic <change> [--gate g] [--lens l] [--mode m] [--resume] [--json] */
 export async function critic(
   root: string,
@@ -127,6 +160,13 @@ export async function critic(
   if (o.lens && !Lens.safeParse(o.lens).success) {
     io.err(`Unknown lens ${o.lens}. Use one of: ${Lens.options.join(", ")}.`);
     return 2;
+  }
+  // W4: a stage that stopped on its own draft hasn't a draft worth reviewing; the critic's
+  // findings would only repeat the stage's and then need a person. The stage runs the round.
+  const refused = await stageRefused(root, changeId);
+  if (refused) {
+    io.err(refused);
+    return 1;
   }
   let r;
   try {

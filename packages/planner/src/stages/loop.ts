@@ -112,6 +112,8 @@ export interface StageIssue {
   holdOnce?: boolean;
   /** Words to find in the stage's files, for the line a question about it cites (U3). */
   locateText?: string;
+  /** What a judge refused, kept on the finding so a person's answer settles exactly that (V1). */
+  judged?: { field: string; criterion: string; task: string }[];
 }
 
 export const issueFingerprint = (rule: string, target: string, evidence = "") =>
@@ -185,6 +187,11 @@ export interface StageOptions {
   force?: boolean;
   /** The context engine (ADR 0107): select what the stage sends, or send the whole lists (engine: false). */
   context?: ContextOptions;
+  /**
+   * Check this text as the stage's answer and stop (W3a): its reader's and checks' problems come
+   * back in `checked`; nothing is drafted, written or kept.
+   */
+  checkDraft?: string;
 }
 
 export interface StageResult<A> {
@@ -219,6 +226,8 @@ export interface StageResult<A> {
   };
   /** The result is a person's edit, checked as the stage's draft (P1). */
   byPerson?: boolean;
+  /** With `checkDraft`: what the stage's reader and checks found in the text (W3a). */
+  checked?: StageIssue[];
   /** Questions due that this stop didn't ask, over the change policy's questionsPerStop (U3). */
   moreQuestions?: number;
   /**
@@ -369,6 +378,29 @@ export async function runStageLoop<A>(
   const rel = `${changesRelOf(root)}/${change.id}`;
   const now = o.now ?? new Date();
   const at = now.toISOString().replace(/\.\d{3}Z$/, "Z");
+  // W3a: each draft checks itself with the stage's checks before it is handed in.
+  const selfCheck = {
+    command: `atticus stage check ${change.id} ${spec.stage}`,
+    limit: ctx.policy.draftSelfChecks,
+  };
+  // W3a: a draft's self-check runs the stage's reader and checks on its text, and nothing else.
+  if (o.checkDraft !== undefined) {
+    const p = spec.parse(o.checkDraft);
+    const checked = [...p.issues, ...(p.answer !== undefined ? await spec.check(p.answer) : [])];
+    return {
+      change: change.id,
+      stage: spec.stage,
+      state: "waiting",
+      iteration: 0,
+      drafts: 0,
+      findings: [],
+      questions: [],
+      files: [],
+      notes: [],
+      runs: [],
+      checked,
+    };
+  }
   const loop = await readLoop(dir, change.id, spec.stage);
   const agent = agentFor(ctx, spec as StageSpec<unknown>);
   const levels = ctx.orgPack.pack?.classification ?? [
@@ -537,7 +569,8 @@ export async function runStageLoop<A>(
         )?.lens ?? "AI")
       : undefined;
     // A lens whose answer failed its check is offered again, to be fixed (M6).
-    const out = ["waiting", "prepared", "produced", "unreadable", ...(lens ? ["failed"] : [])];
+    // A draft whose self-check failed (handoff done listed its problems) is still being fixed (W3a).
+    const out = ["waiting", "prepared", "produced", "unreadable", "failed"];
     if (run !== undefined && out.includes(run)) {
       notes.push(
         lens
@@ -873,6 +906,7 @@ export async function runStageLoop<A>(
           agent,
           pack,
           outputPath: spec.output,
+          selfCheck,
           outputIn: "run",
           ...(spec.retrieval ? { retrieval: spec.retrieval } : {}),
         });
@@ -936,6 +970,7 @@ export async function runStageLoop<A>(
             step: `${spec.stage === "stories" ? "plan" : "change"} ${spec.stage} ${change.id} (read again)`,
           }),
           outputPath: spec.output,
+          selfCheck,
           outputIn: "run",
         });
         const second = await o.runtime.run(again.runId);
@@ -1031,6 +1066,7 @@ export async function runStageLoop<A>(
       if (f.seenIn.at(-1) === n) continue; // the same problem twice in one draft
       f.message = i.message;
       f.blocking = i.blocking;
+      if (i.judged?.length) f.judged = i.judged;
       f.kind = i.kind ?? (f.source === "critic" ? "decision" : stageRuleKind(i.rule));
       f.seenIn = [...f.seenIn, n];
       byFp.set(fp, f);
@@ -1217,8 +1253,16 @@ export async function runStageLoop<A>(
         ...(await keepFailed().then((x) => (x ? { failed: x } : {}))),
         repeated: loop.findings,
       });
+      // V1: say what is wrong: the answer asked for a change, quoted, and the draft hasn't made it.
+      const said = await Promise.all(
+        [...new Set(ignored.map((f) => f.question!))].map(async (id) => {
+          const q = await readQuestion(root, id).catch(() => undefined);
+          const w = q ? answerWords(q) : undefined;
+          return w ? `${id} ("${w}")` : id;
+        }),
+      );
       await stopNow(
-        `The ${spec.stage} stage stopped after ${n} draft${n === 1 ? "" : "s"}: a person answered ${[...new Set(ignored.map((f) => f.question!))].join(", ")}, and your assistant's draft still doesn't follow the answer.`,
+        `The ${spec.stage} stage stopped after ${n} draft${n === 1 ? "" : "s"}: a person answered ${said.join(", ")}, and your assistant's draft still doesn't make the change it asks for.`,
         stop.lines,
       );
     }
@@ -1401,6 +1445,10 @@ export function rerunOf(stage: Stage, change: string): string {
  * the answer go with it as data.
  */
 export const READ_AGAIN_RULE = `Your last answer isn't YAML, so it doesn't count as a draft yet; the "last-answer" data block holds the problem, the line it is at, and the answer. Write the same answer again as the YAML asked for, with that line fixed: ${YAML_QUOTE_RULE}, and in a flow list such as [a, b] quote each item that holds one.`;
+
+/** What every stage's drafter is told about checking its own draft (W3a), in Atticus's words. */
+export const SELF_CHECK_RULE =
+  "Check your answer with the stage's own checks before you hand it in: call the check_draft tool with your whole answer if you have it, or follow the finishing step below. Fix every problem it lists, and check again, until it says the draft is clean.";
 
 /** Where an answer that didn't read is copied when the loop stops on it (S5). */
 export const failedAnswerRel = (spec: Pick<StageSpec<unknown>, "output">) => `stage/${spec.output}`;

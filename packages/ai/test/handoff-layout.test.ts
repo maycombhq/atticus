@@ -179,3 +179,51 @@ describe("hand-off runtime on an adopted repo", () => {
     );
   });
 });
+
+describe("a stage's draft checks itself before it is handed in (W3a)", () => {
+  const selfChecked = (): AiRequest => ({
+    ...request(),
+    outputPath: "stories-answer.yaml",
+    outputIn: "run",
+    selfCheck: { command: "atticus stage check add-note-tags stories", limit: 3 },
+  });
+
+  it("the hand-off prompt's finishing step says handoff done checks the file, and to fix and run it again", async () => {
+    const root = await adoptedRoot();
+    const rt = new HandoffRuntime({ root, validate: async () => [], now: () => now });
+    const p = await rt.prepare(selfChecked());
+    const prompt = await readFile(
+      join(root, ".atticus/.runs/add-note-tags", p.runId, "prompt.md"),
+      "utf8",
+    );
+    expect(prompt).toContain(
+      `When the file is complete, run: atticus handoff done ${p.runId}. It checks the file as the stage does: fix each problem it lists in the file and run it again, until it says the file is clean. After 3 checks the file is handed in as it is.`,
+    );
+  });
+
+  it("headless Claude Code may run the stage's check, and is told to, until the file is clean", async () => {
+    const root = await adoptedRoot();
+    const seen: { args: string[]; prompt: string }[] = [];
+    const rt = new HeadlessClaudeCodeRuntime({
+      root,
+      now: () => now,
+      runner: async (i) => {
+        seen.push({ args: i.args, prompt: i.prompt });
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ type: "result", result: "ok", is_error: false }),
+          stderr: "",
+        };
+      },
+    });
+    const p = await rt.prepare(selfChecked());
+    await rt.run(p.runId);
+    const args = seen[0]!.args;
+    expect(args[args.indexOf("--allowedTools") + 1]).toContain(
+      "Bash(atticus stage check add-note-tags stories:*)",
+    );
+    expect(seen[0]!.prompt).toContain(
+      `Before you finish, check the file: run atticus stage check add-note-tags stories .atticus/.runs/add-note-tags/${p.runId}/stories-answer.yaml. Fix each problem it lists and run it again, until it says the file is clean (at most 3 times).`,
+    );
+  });
+});

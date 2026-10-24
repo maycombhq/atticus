@@ -88,7 +88,9 @@ export class HandoffRuntime implements AiRuntime {
       "",
       pack.prompt.trimEnd(),
       "",
-      `When the file is complete, run: atticus handoff done ${run.runId}`,
+      run.request.selfCheck
+        ? `When the file is complete, run: atticus handoff done ${run.runId}. It checks the file as the stage does: fix each problem it lists in the file and run it again, until it says the file is clean. After ${run.request.selfCheck.limit} checks the file is handed in as it is.`
+        : `When the file is complete, run: atticus handoff done ${run.runId}`,
       "",
     ].join("\n");
   }

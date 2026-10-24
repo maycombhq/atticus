@@ -102,11 +102,14 @@ export function answerJudge(o: JudgeOptions): AnswerJudge {
 /** Does an acceptance criterion check a field's value? (planner stories, ADR 0117) */
 export const COVERS_FIELD_SPEC: JudgeSpec = {
   kind: "covers-field",
-  ask: "Does the criterion's then clause assert the value of the field named in the facts, so that a test written from it checks that field?",
+  // ADR 0117 addendum (V2): a criterion checks a field when its outcome depends on the field's
+  // value, so a given that fixes the value and a then that follows from it counts. A mismatch
+  // case (a refusal) is the stories format's own rule, never asked through this judge.
+  ask: "Does the criterion's outcome depend on the value of the field named in the facts, so that a test written from it checks that field: its then clause states what the field holds, or states a result that follows from a value its given clause fixes?",
   verdicts: ["yes", "no"],
   means: {
-    yes: "the then clause asserts what the field holds, in its own name or in words that mean it",
-    no: "the criterion doesn't check the field's value (naming the event or the record isn't enough)",
+    yes: "the then clause states the field's value, in its own name or in words that mean it, or a result that follows from a value its given clause fixes for the field",
+    no: "the outcome doesn't depend on the field's value (naming the event or the record isn't enough, and a given value the then clause doesn't follow from isn't either)",
   },
   quote: "one",
 };

@@ -1,13 +1,21 @@
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { stringify } from "yaml";
+import { parse, stringify } from "yaml";
 import { z } from "zod";
 import {
+  answerWords,
   changesRelOf,
   fileJudgments,
   judgmentKey,
+  makeJudgment,
+  overrideJudgment,
+  QuestionDraft,
   quotedIn,
+  raiseQuestions,
+  readQuestion,
+  retireQuestion,
   type JudgmentStore,
+  type Question,
   type RecordOf,
 } from "@maycombhq/core";
 import {
@@ -19,6 +27,7 @@ import {
   type AiRuntime,
   type JudgeItem,
   type JudgeOptions,
+  type JudgeSpec,
   type SourceInput,
 } from "@maycombhq/ai";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
@@ -33,7 +42,9 @@ import { parseYamlAs } from "./answer.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./architecture.js";
 import { allowedValuesSource, columnsOf, estateIndex, loadEstate, type Estate } from "./estate.js";
 import {
+  issueFingerprint,
   runStageLoop,
+  SELF_CHECK_RULE,
   stageBudget,
   type StageIssue,
   type StageOptions,
@@ -44,7 +55,13 @@ import {
   stageRetrievalAi,
   withoutResume,
 } from "./loop.js";
-import { fieldNames, type DeltaStep, type FlowDelta } from "./schema.js";
+import {
+  fieldNames,
+  StageLoop,
+  type DeltaStep,
+  type FlowDelta,
+  type LoopFinding,
+} from "./schema.js";
 
 /**
  * `atticus plan stories <change>` on a change with target flows (ADR 0087, plan 4.4): stories
@@ -492,8 +509,15 @@ export function unwrittenChecks(a: StoriesAnswer, stories: DeltaStory[]): Unwrit
 export const judgeRuntime = (runtime: AiRuntime): AiRuntime | undefined =>
   judgesDirectly(runtime) ? runtime : undefined;
 
+/**
+ * The covers-field judgment's inputs (ADR 0117). Version 2 since the question became "does the
+ * outcome depend on the field's value" (addendum V2), so a verdict to the old question is never
+ * read for the new one; a person's verdict is stored under the same key.
+ */
+export const coversInputs = (field: string, criterion: string) => ({ v: 2, field, criterion });
+
 const coversItem = (c: UnwrittenCheck): JudgeItem => ({
-  inputs: { v: 1, field: c.field, criterion: c.criterion },
+  inputs: coversInputs(c.field, c.criterion),
   texts: { criterion: c.criterion },
   facts: [`the field: ${c.field}`],
 });
@@ -545,10 +569,23 @@ const andList = (xs: string[]) =>
  * says so, for the critic's story lens and the PR's reviewer (writeStories' `unjudged`).
  */
 export async function coverageIssues(
-  claims: UnwrittenCheck[],
-  j: { runtime?: AiRuntime; store: JudgmentStore; change: string; now: Date },
+  all: UnwrittenCheck[],
+  j: {
+    runtime?: AiRuntime;
+    store: JudgmentStore;
+    change: string;
+    now: Date;
+    /** Claims a person answered in words no judge read (V1): they stand as the person left them. */
+    decided?: Map<string, DecidedClaim>;
+  },
 ): Promise<StageIssue[]> {
   const out: StageIssue[] = [];
+  const decided = new Map(
+    [...(j.decided ?? [])].filter(([k]) =>
+      all.some((c) => `${c.task}:${c.field}` === k && c.criterion === j.decided!.get(k)!.criterion),
+    ),
+  );
+  const claims = all.filter((c) => !decided.has(`${c.task}:${c.field}`));
   // U3: one finding, and so one question, per criterion the judge refused, naming every field it
   // refused there, with the judge's reason; never one per field.
   const refused = new Map<
@@ -573,41 +610,328 @@ export async function coverageIssues(
         repo: c.repo,
       });
   }
-  for (const { c, fields, quote, why } of refused.values()) {
-    const them = andList(fields);
-    const one = fields.length === 1;
-    const reason = `${quote ? `, quoting "${quote}"` : ""}${why ? `: ${why}` : "."}`;
+  for (const { c, fields, quote, why } of refused.values())
+    out.push(coversRefusal(c.task, c.repo, c.criterion, fields, quote, why));
+  for (const [key, d] of decided)
     out.push({
-      rule: "stories.check-not-in-criterion",
-      target: `${c.task}:${[...fields].sort().join(",")}`,
-      message: `Task ${c.task}: the criterion "${c.criterion}" says it checks ${them}, but a judge read its then clause and says it doesn't assert ${one ? "that field's value" : "their values"}${reason} Make the then clause assert ${one ? "it" : "them"}, and what happens when ${one ? "it doesn't" : "they don't"} match, or check ${one ? "it" : "them"} in another criterion.`,
-      blocking: true,
-      kind: "decision",
-      repo: c.repo,
-      // A doubt goes back to the drafter once more, with the judge's reason, before a person.
-      holdOnce: true,
-      locateText: c.criterion,
-      ask: `Does the criterion "${c.criterion}" of task ${c.task} check ${them}, and show what happens when ${one ? "it doesn't" : "they don't"} match? A judge read it and says no${reason}`,
-      options: [
-        {
-          label: "yes, it checks them",
-          means: `The criterion checks ${them} as written`,
-          changes: `The criterion stands; the judge's no is overruled by a person`,
-        },
-        {
-          label: "no: add a criterion for the refusal",
-          means: `Task ${c.task} needs a criterion that shows what happens when ${them} ${one ? "doesn't" : "don't"} match`,
-          changes: `The next draft adds that criterion`,
-        },
-        {
-          label: "not needed",
-          means: `${them} ${one ? "needs" : "need"} no criterion of ${one ? "its" : "their"} own; say why with --text`,
-          changes: `The criterion stands, with the reason given`,
-        },
-      ],
+      rule: "stories.check-answered",
+      target: key,
+      message: `Task ${d.task}: a person answered ${d.question} about the criterion "${d.criterion}" in their own words ("${d.words}"); no judge read the answer here, so the criterion stands as the person left it, for the story lens and the reviewer.`,
+      blocking: false,
+    });
+  return out;
+}
+
+/** The option labels of the covers-field question, and what each means as a verdict (V1). */
+export const COVERS_OPTIONS = {
+  yes: "yes, it checks them",
+  change: "no: change the criterion",
+  notNeeded: "not needed",
+} as const;
+
+/**
+ * The finding, and the person's question, for a criterion the judge refused (U3, V2): one per
+ * criterion, naming every field refused there, with the judge's quote and why. The question asks
+ * what the judge asked, whether the outcome depends on the fields' values; a refusal case (a key
+ * that doesn't match) is the stories format's own rule, never asked here.
+ */
+export function coversRefusal(
+  task: string,
+  repo: string,
+  criterion: string,
+  fields: string[],
+  quote?: string,
+  why?: string,
+): StageIssue {
+  const them = andList(fields);
+  const one = fields.length === 1;
+  const reason = `${quote ? `, quoting "${quote}"` : ""}${why ? `: ${why}` : "."}`;
+  return {
+    rule: "stories.check-not-in-criterion",
+    target: `${task}:${[...fields].sort().join(",")}`,
+    message: `Task ${task}: the criterion "${criterion}" says it checks ${them}, but a judge read it and says its outcome doesn't depend on ${one ? "that field's value" : "their values"}${reason} Make its then clause state ${one ? "the value" : "their values"}, or a result that follows from ${one ? "a value" : "values"} its given clause fixes, or check ${one ? "it" : "them"} in another criterion.`,
+    blocking: true,
+    kind: "decision",
+    repo,
+    // A doubt goes back to the drafter once more, with the judge's reason, before a person.
+    holdOnce: true,
+    locateText: criterion,
+    judged: fields.map((field) => ({ field, criterion, task })),
+    ask: `Does the criterion "${criterion}" of task ${task} check ${them}: does its outcome depend on ${one ? "its value" : "their values"}? A judge read it and says no${reason}`,
+    options: [
+      {
+        label: COVERS_OPTIONS.yes,
+        means: `The criterion checks ${them} as written`,
+        changes: `The criterion stands; a person's verdict overrules the judge's no`,
+      },
+      {
+        label: COVERS_OPTIONS.change,
+        means: `The criterion doesn't check ${them}; the next draft changes it so it does`,
+        changes: `The next draft changes the criterion`,
+      },
+      {
+        label: COVERS_OPTIONS.notNeeded,
+        means: `${them} ${one ? "needs" : "need"} no check in this criterion; say why with --text`,
+        changes: `The criterion stands, with the reason given`,
+      },
+    ],
+  };
+}
+
+/**
+ * Does a person's answer, in their own words, to the judge's covers-field question say the
+ * criterion checks the fields (or needs no check), or ask for a change? (ADR 0117 addendum, V1.)
+ * Asked only of an answer in words; an option the person picked is a fact.
+ */
+export const COVERS_ANSWER_SPEC: JudgeSpec = {
+  kind: "covers-answer",
+  ask: "A judge refused an acceptance criterion and a person answered the question about it, in their own words. Does the person's answer say the criterion checks the fields as written, say no check is needed, or ask for the criterion to change?",
+  verdicts: ["checks", "not-needed", "change"],
+  means: {
+    checks: "the person says the criterion checks the fields as it is written",
+    "not-needed": "the person says the fields need no check in this criterion",
+    change: "the person says the criterion is wrong and should change",
+  },
+  quote: "one",
+  quoteFrom: "answer",
+};
+
+/** A criterion's refused fields, from a finding the loop keeps: its record, or its own words (V0). */
+function judgedOf(
+  f: LoopFinding,
+): { task: string; criterion: string; fields: string[] } | undefined {
+  if (f.judged?.length)
+    return {
+      task: f.judged[0]!.task,
+      criterion: f.judged[0]!.criterion,
+      fields: f.judged.map((x) => x.field),
+    };
+  // A finding from before the record was kept: Atticus's own message, as it wrote it.
+  const m = /^Task (\S+): the criterion "(.*)" says it checks (.+?), but a judge/.exec(f.message);
+  if (!m) return undefined;
+  return {
+    task: m[1]!,
+    criterion: m[2]!,
+    fields: m[3]!.split(/, | and /).filter(Boolean),
+  };
+}
+
+/** Whether a covers-field question is in the old form: one field, asked as "check <field>?". */
+const oldForm = (question: string) =>
+  /^Does the criterion ".*" of task \S+ check \S+\? A judge read it and says no\.$/.test(question);
+
+/**
+ * A person's answers to the judge's covers-field questions, read in before the stage drafts
+ * (ADR 0117 addendum, V1 and V0). The person decides, not the judge: an answer that the criterion
+ * checks the fields, or needs no check, is stored as the person's verdict (with who and when) for
+ * each field, so the judge is never asked about it again; an answer that asks for a change is
+ * stored as their no. An option is a fact; an answer in words is read by a judge where a model is
+ * called directly, and else stands as the person's words (a note, never a guess). Open questions
+ * of the old form (one per field) are retired and asked again as one per criterion, within the
+ * cap; the loop file is updated to link the findings to them.
+ */
+export async function settleCoversAnswers(
+  root: string,
+  change: string,
+  dir: string,
+  j: {
+    runtime?: AiRuntime;
+    store: JudgmentStore;
+    now: Date;
+    cap: number;
+    locate: (criterion: string) => Promise<string | undefined>;
+    rerun: string;
+  },
+): Promise<{ notes: string[]; decided: Map<string, DecidedClaim> }> {
+  const notes: string[] = [];
+  const decided = new Map<string, DecidedClaim>();
+  const file = join(dir, "stage", "stories.yaml");
+  const text = await readFile(file, "utf8").catch(() => undefined);
+  if (text === undefined) return { notes, decided };
+  const parsed = StageLoop.safeParse(parse(text));
+  if (!parsed.success) return { notes, decided };
+  const loop = parsed.data;
+  const at = j.now.toISOString().replace(/\.\d{3}Z$/, "Z");
+  const words: { key: string; q: Question; c: NonNullable<ReturnType<typeof judgedOf>> }[] = [];
+  const stale: { f: LoopFinding; q: Question; c: NonNullable<ReturnType<typeof judgedOf>> }[] = [];
+  const verdicts: { c: NonNullable<ReturnType<typeof judgedOf>>; q: Question; v: "yes" | "no" }[] =
+    [];
+  for (const f of loop.findings) {
+    if (f.rule !== "stories.check-not-in-criterion" || !f.question) continue;
+    const c = judgedOf(f);
+    const q = await readQuestion(root, f.question).catch(() => undefined);
+    if (!c || !q) continue;
+    if (q.state === "open" && oldForm(q.question)) {
+      stale.push({ f, q, c });
+      continue;
+    }
+    if (q.state !== "answered" || !q.answer) continue;
+    if (q.answer.option !== undefined) {
+      const label = q.options[q.answer.option - 1]?.label;
+      // The option is the person's choice: a fact. The old label for a change still reads as one.
+      const v =
+        label === COVERS_OPTIONS.yes || label === COVERS_OPTIONS.notNeeded
+          ? "yes"
+          : label === COVERS_OPTIONS.change || label === "no: add a criterion for the refusal"
+            ? "no"
+            : undefined;
+      if (v) verdicts.push({ c, q, v });
+    } else words.push({ key: f.fingerprint, q, c });
+  }
+  // An answer in the person's words: read by a judge of the answer where one can be asked.
+  if (words.length) {
+    const items = words.map((w) => ({
+      inputs: { v: 1, question: w.q.question, answer: answerWords(w.q) ?? "" },
+      texts: { question: w.q.question, answer: answerWords(w.q) ?? "" },
+    }));
+    const r = await settle(COVERS_ANSWER_SPEC, items, {
+      ...(j.runtime ? { runtime: j.runtime } : {}),
+      store: j.store,
+      change,
+      now: j.now,
+    });
+    words.forEach((w, i) => {
+      const v = r.get(judgmentKey(COVERS_ANSWER_SPEC.kind, items[i]!.inputs))?.verdict;
+      if (v === "checks" || v === "not-needed") verdicts.push({ c: w.c, q: w.q, v: "yes" });
+      else if (v === "change") verdicts.push({ c: w.c, q: w.q, v: "no" });
+      else
+        for (const field of w.c.fields)
+          decided.set(`${w.c.task}:${field}`, {
+            task: w.c.task,
+            criterion: w.c.criterion,
+            question: w.q.id,
+            words: answerWords(w.q) ?? "",
+          });
     });
   }
-  return out;
+  for (const { c, q, v } of verdicts)
+    for (const field of c.fields)
+      await personVerdict(j.store, coversInputs(field, c.criterion), {
+        verdict: v,
+        name: q.answer!.by,
+        at: q.answer!.at,
+        why: `${q.id}: ${answerWords(q) ?? ""}`,
+      });
+
+  // V0: the old form's open questions, regrouped one per criterion, within the cap.
+  if (stale.length) {
+    const groups = new Map<
+      string,
+      { c: (typeof stale)[number]["c"]; qs: Question[]; fields: string[] }
+    >();
+    for (const s of stale) {
+      const key = `${s.c.task}\n${s.c.criterion}`;
+      const g = groups.get(key) ?? { c: s.c, qs: [], fields: [] };
+      g.qs.push(s.q);
+      for (const f of s.c.fields) if (!g.fields.includes(f)) g.fields.push(f);
+      groups.set(key, g);
+    }
+    let asked = 0;
+    const retiredIds = new Set<string>();
+    for (const g of groups.values()) {
+      // A field a person already decided isn't asked again.
+      const open: string[] = [];
+      for (const f of g.fields) {
+        const s = await j.store.get(
+          COVERS_FIELD_SPEC.kind,
+          judgmentKey(COVERS_FIELD_SPEC.kind, coversInputs(f, g.c.criterion)),
+        );
+        if (s?.confirmedBy.by !== "person") open.push(f);
+      }
+      if (!open.length || asked >= j.cap) continue;
+      const issue = coversRefusal(g.c.task, g.qs[0]!.repo, g.c.criterion, open);
+      const evidence = (await j.locate(g.c.criterion)) ?? g.qs[0]!.evidence[0]!;
+      const raised = await raiseQuestions(
+        root,
+        [
+          QuestionDraft.parse({
+            question: issue.ask,
+            options: issue.options,
+            evidence: [evidence],
+            scope: "repo",
+          }),
+        ],
+        {
+          step: "change-stories",
+          repo: g.qs[0]!.repo,
+          command: j.rerun,
+          rerun: j.rerun,
+          at,
+        },
+      );
+      const now = raised.of[0] ?? raised.raised[0] ?? raised.known[0];
+      if (!now) continue;
+      asked++;
+      for (const q of g.qs) {
+        await retireQuestion(root, q.id, {
+          why: "asked again as one question per criterion (ADR 0117 addendum), with the fields still open",
+          replacedBy: [now.id],
+          at,
+        });
+        retiredIds.add(q.id);
+      }
+      // The loop links the regrouped finding to its question, by its fingerprint as the check
+      // writes it, and drops the old per-field findings.
+      loop.findings = loop.findings.filter((f) => !g.qs.some((q) => q.id === f.question));
+      loop.findings.push({
+        fingerprint: issueFingerprint(issue.rule, issue.target, ""),
+        rule: issue.rule,
+        target: issue.target,
+        message: issue.message,
+        blocking: true,
+        source: "stage",
+        seenIn: [Math.max(1, loop.iteration)],
+        question: now.id,
+        kind: "decision",
+        judged: issue.judged!,
+      });
+      loop.questions = [...new Set([...loop.questions, now.id])].sort();
+      notes.push(
+        `Retired ${g.qs.length} question${g.qs.length === 1 ? "" : "s"} in the old form (one per field) for task ${g.c.task}'s criterion; ${now.id} asks them as one.`,
+      );
+    }
+    if (retiredIds.size) {
+      loop.questions = loop.questions.filter((id) => !retiredIds.has(id));
+      loop.findings.sort((a, b) => a.fingerprint.localeCompare(b.fingerprint));
+      await writeFileAtomic(
+        file,
+        `# The stories stage's loop (ADR 0087): drafts, the findings each one had, and the questions it raised. Atticus writes this file.\n${stringify(StageLoop.parse(loop), { lineWidth: 0 })}`,
+      );
+    }
+  }
+  return { notes, decided };
+}
+
+/** A claim a person answered in words that no judge read (V1): it stands as they left it. */
+export interface DecidedClaim {
+  task: string;
+  criterion: string;
+  question: string;
+  words: string;
+}
+
+/** Store a person's verdict, never replacing another person's (ADR 0117 §2). */
+async function personVerdict(
+  store: JudgmentStore,
+  inputs: Record<string, unknown>,
+  o: { verdict: "yes" | "no"; name: string; at: string; why: string },
+): Promise<void> {
+  const kind = COVERS_FIELD_SPEC.kind;
+  const key = judgmentKey(kind, inputs);
+  const was = await store.get(kind, key);
+  if (was?.confirmedBy.by === "person") return;
+  if (was) await overrideJudgment(store, kind, key, o);
+  else
+    await store.put(
+      makeJudgment({
+        kind,
+        inputs,
+        verdict: o.verdict,
+        confirmedBy: { by: "person", name: o.name },
+        at: o.at,
+        why: o.why,
+      }),
+    );
 }
 
 /** The claims no judgment settled (unjudged or unsure), for the story file's note. */
@@ -987,7 +1311,7 @@ stories:
       - id: <task id, exactly as listed>
         criteria:
           - text: "Given <situation>, when <action>, then <what can be checked>"
-            checks: [<each of the task's fields whose value this then clause asserts>]
+            checks: [<each of the task's fields whose value this criterion's outcome depends on>]
 requests:      # every request or process from the list below that a step meets
   - item: <process or request id>
     flow: <flow id>
@@ -997,7 +1321,9 @@ requests:      # every request or process from the list below that a step meets
 
 Rules:
 - One entry per story and per task listed; don't add or drop any.
-- Every task has acceptance criteria a test can check. Each of the task's fields is under the checks of a criterion whose then clause asserts its value; checks name only the task's fields.
+- Every task has acceptance criteria a test can check. Each of the task's fields is under the checks of a criterion that checks it; checks name only the task's fields.
+- A criterion checks a field when its outcome depends on the field's value: its then clause states the value, or a result that follows from a value its given clause fixes.
+- For each key a step matches rows by or checks (its fields.checks), add one criterion of its own for the refusal: what happens when that key doesn't match.
 - Name a request only when the knowledge item's "applies when" fits the step, quoting those words. Never raise it yourself.
 - Plain, short English.`;
   const instructions = [
@@ -1006,6 +1332,8 @@ Rules:
     `Word the stories of the change "${change.title}" and write each task's acceptance criteria. The stories, tasks, target flows and the organisation's processes are below, as data.`,
     "",
     FORMAT,
+    "",
+    SELF_CHECK_RULE,
   ].join("\n");
 
   // The processes the target flows call for (ADR 0107), or every one.
@@ -1080,6 +1408,19 @@ Rules:
     if (selected) context = { ...context, note: selected.note };
   }
 
+  // V1, V0: the person's answers to the judge's questions settle its judgments, before any draft.
+  // A draft's self-check (W3a) writes nothing, so it settles nothing either.
+  const settled =
+    o.checkDraft !== undefined
+      ? { notes: [], decided: new Map<string, DecidedClaim>() }
+      : await settleCoversAnswers(root, change.id, dir, {
+          ...(judging ? { runtime: judging } : {}),
+          store,
+          now,
+          cap: ctx.policy.questionsPerStop,
+          locate: (words) => locateInStories(dir, rel, words),
+          rerun: `atticus plan stories ${change.id}`,
+        });
   const spec: StageSpec<StoriesAnswer> = {
     stage: "stories",
     agent: STORY_AGENT,
@@ -1101,6 +1442,7 @@ Rules:
         store,
         change: change.id,
         now,
+        decided: settled.decided,
       })),
     ],
     write: async (a) => {
@@ -1128,6 +1470,7 @@ Rules:
       : o,
   );
   res.context = context;
+  res.notes.unshift(...settled.notes);
   if (empty.length)
     res.notes.unshift(
       `No story for ${empty.map((d) => `${TARGET_DIR}/${d.flow}.yaml`).join(", ")}: ${empty.length === 1 ? "it is marked modify but changes" : "they are marked modify but change"} no step, so ${empty.length === 1 ? "it is" : "they are"} context, not a change.`,

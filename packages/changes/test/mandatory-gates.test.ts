@@ -1,4 +1,4 @@
-import { cp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { canAdvance, changeStore, newChange } from "../src/index.js";
@@ -57,6 +57,20 @@ describe("mandatory gates", () => {
     const passing = await canAdvance(ID, root);
     expect(passing.reasons.map((r) => r.code)).not.toContain("critic-round-missing");
     expect(passing.reasons.map((r) => r.code)).not.toContain("blocking-finding");
+  });
+
+  it("on the stage path, never send a person to the critic while the stage's own draft isn't done (W4)", async () => {
+    const root = await inDesign();
+    // The architecture stage stopped: its draft failed its own checks.
+    await mkdir(join(root, "openspec/changes", ID, "stage"), { recursive: true });
+    await writeFile(
+      join(root, "openspec/changes", ID, "stage/architecture.yaml"),
+      "schemaVersion: 1\nchange: add-transfer-limit\nstage: architecture\niteration: 3\nstate: stopped\nupdatedAt: 2026-10-19T12:00:00Z\n",
+    );
+    const r = await canAdvance(ID, root);
+    expect(missing(r)).toEqual([]);
+    expect(r.reasons.map((x) => x.code)).toContain("stage-not-done");
+    expect(r.reasons.map((x) => x.message).join("\n")).not.toContain("run atticus critic");
   });
 
   it("aren't required where the profile names none", async () => {

@@ -17,6 +17,7 @@ import {
   raiseQuestions,
   readQuestion,
   repoTypeSkillRel,
+  retireQuestion,
 } from "../src/index.js";
 
 const AT = "2026-10-21T12:00:00.000Z";
@@ -254,5 +255,37 @@ describe("questions as files (ADR 0078)", () => {
 
   it("publishes the question file's JSON Schema with the org pack's", () => {
     expect(Object.keys(orgPackJsonSchemas())).toContain("Question");
+  });
+});
+
+describe("a question retired, with why and what replaced it (ADR 0117 addendum, V0)", () => {
+  it("is no longer open, says why and names the questions that ask it now, and takes no answer", async () => {
+    const root = await metarepo();
+    const q = (await raiseQuestions(root, [QuestionDraft.parse(draft)], asked)).raised[0]!;
+    const r = await retireQuestion(root, q.id, {
+      why: "asked again as one question per criterion",
+      replacedBy: ["q-0123456789ab"],
+      at: AT,
+    });
+    expect(r).toMatchObject({
+      state: "retired",
+      retired: {
+        why: "asked again as one question per criterion",
+        replacedBy: ["q-0123456789ab"],
+        at: AT,
+      },
+    });
+    expect((await readQuestion(root, q.id))!.state).toBe("retired");
+    await expect(
+      answerQuestion(root, q.id, { option: 1, by: "pat", at: AT }),
+    ).rejects.toBeInstanceOf(QuestionError);
+    // An answered question keeps its answer: it isn't retired.
+    const a = (
+      await raiseQuestions(root, [QuestionDraft.parse({ ...draft, question: "Another?" })], asked)
+    ).raised[0]!;
+    await answerQuestion(root, a.id, { option: 1, by: "pat", at: AT });
+    await expect(retireQuestion(root, a.id, { why: "x", at: AT })).rejects.toBeInstanceOf(
+      QuestionError,
+    );
   });
 });
