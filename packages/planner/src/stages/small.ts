@@ -530,6 +530,8 @@ export async function smallStage(
           d.requests,
           o.now ?? new Date(),
           await unjudgedChecks(unwrittenChecks(d.wording, d.stories), judging),
+          // ADR 0125: a field's required the story leaves out is the catalog's.
+          { estate },
         )),
       ];
       const own = await readFile(join(dir, "proposal.md"), "utf8").catch(() => undefined);

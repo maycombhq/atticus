@@ -1,4 +1,4 @@
-schemaVersion: 2
+schemaVersion: 3
 kind: OwnerQuestion
 id: oq.northwind-pay.rate-limit
 status: current

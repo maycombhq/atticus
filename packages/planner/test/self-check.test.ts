@@ -235,6 +235,10 @@ describe("W3b: a returned field worked out from columns says so (fields.derived)
     expect(seen[0]).toContain(
       'derived: { <a field worked out from columns>: "<how, e.g. edited_at is not null>" }',
     );
+    // ADR 0125: an entry step lists the request fields it requires, so the check can say who breaks
+    expect(seen[0]).toContain(
+      "required: [<an entry step: the request fields it requires once the change is in>]",
+    );
     void placement;
   });
 });

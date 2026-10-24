@@ -39,7 +39,7 @@ describe("speckit extractor (golden)", () => {
     expect(s.rejected).toEqual([]);
     expect(s.runs.map((r) => r.status)).toEqual(["ran"]);
     const want = (parse(readFileSync(join(FIX, "ledger-plan.expected.yaml"), "utf8")) as Rec[]).map(
-      (r) => ({ schemaVersion: 2, ...r }),
+      (r) => ({ schemaVersion: 3, ...r }),
     );
     const got = s.records.map(bare);
     expect(got.map(sortKey).sort()).toEqual(want.map(sortKey).sort());

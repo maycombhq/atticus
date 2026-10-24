@@ -9,7 +9,17 @@ export function helpText() {
   const src = readFileSync(join(REPO, "packages/cli/src/main.ts"), "utf8");
   const m = /const HELP = `([\s\S]*?)`;/.exec(src);
   if (!m) throw new Error("HELP not found in packages/cli/src/main.ts");
-  return m[1].replace(/\$\{VERSION\}/g, "<version>").replace(/\$\{SCHEMA_VERSION\}/g, "2");
+  return m[1]
+    .replace(/\$\{VERSION\}/g, "<version>")
+    .replace(/\$\{SCHEMA_VERSION\}/g, String(schemaVersion()));
+}
+
+/** The catalog schema version, read from C1's source like the help itself. */
+function schemaVersion() {
+  const src = readFileSync(join(REPO, "packages/core/src/schema/common.ts"), "utf8");
+  const m = /export const SCHEMA_VERSION = (\d+) as const;/.exec(src);
+  if (!m) throw new Error("SCHEMA_VERSION not found in packages/core/src/schema/common.ts");
+  return Number(m[1]);
 }
 
 /** Every command the help lists: group → the sub-commands it names (empty when it takes none). */

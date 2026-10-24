@@ -3,7 +3,7 @@
 Generated from `atticus --help` by `pnpm docs:commands`; don't edit it by hand. Every command takes `--root <dir>` (the metarepo; default the current folder). `atticus explain <command>` says what one does in plain words.
 
 ```text
-atticus <version> (catalog schema v2)
+atticus <version> (catalog schema v3)
 
 Usage:
   atticus schema export [dir]          Write JSON Schema for every contract and the API's OpenAPI document (default: ./schema)

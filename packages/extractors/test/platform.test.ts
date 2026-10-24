@@ -63,7 +63,7 @@ async function golden(
     );
     delete r.id;
   }
-  const expected = want.records.map((r) => ({ schemaVersion: 2, status: "current", ...r }));
+  const expected = want.records.map((r) => ({ schemaVersion: 3, status: "current", ...r }));
   expect(got.map(sortKey).sort()).toEqual(expected.map(sortKey).sort());
   for (const e of expected) {
     const g = got.find((x) => sortKey(x) === sortKey(e));

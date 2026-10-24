@@ -149,6 +149,10 @@ export const FieldFact = z.strictObject({
   side: z.enum(["request", "response", "column", "screen", "message"]).optional(),
   name: str(),
   type: z.string().optional(),
+  /**
+   * A column's: not null. A request, response or message field's: it must be present, kept on
+   * the Schema field (ADR 0125). Left out when the code doesn't say.
+   */
   required: z.boolean().optional(),
   default: z.string().optional(),
   classification: z.string().optional(),

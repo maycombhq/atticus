@@ -43,12 +43,15 @@ async function yamlFiles(dir: string): Promise<string[]> {
  * current schema version, in canonical form. Readers accept old files anyway; migrating once
  * keeps diffs clean afterwards. A file that isn't a catalog record (no known `kind`) is not
  * touched, nor is an old one that fails C1: it is reported, so nothing is half-migrated.
- * Version 1 → 2 (ADR 0031) changes only `schemaVersion`; the canonical form also writes list
- * defaults the hand-written file left out, exactly as a scan would write the record.
+ * Version 1 → 2 (ADR 0031) and 2 → 3 (ADR 0125) change only `schemaVersion`: version 3 adds
+ * `required` on a Schema field, and a migrated record gains none, since nothing knew it. The
+ * canonical form also writes list defaults a hand-written file left out, exactly as a scan
+ * would write the record. `versions` limits it to files at those versions (each `atticus
+ * upgrade` step lists its own); what it writes is always the current version.
  */
 export async function migrateCatalog(
   dir: string,
-  o: { dryRun?: boolean } = {},
+  o: { dryRun?: boolean; versions?: readonly number[] } = {},
 ): Promise<MigrationResult> {
   const res: MigrationResult = { migrated: [], current: [], problems: [] };
   for (const full of await yamlFiles(dir)) {
@@ -73,6 +76,7 @@ export async function migrateCatalog(
       res.current.push(file);
       continue;
     }
+    if (o.versions && !(typeof version === "number" && o.versions.includes(version))) continue;
     const p = parseRecord(data);
     if (!p.ok) {
       res.problems.push({

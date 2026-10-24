@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { CatalogRecord } from "./catalog.js";
 import { interfaceId, normalizePath, slugify } from "./identity.js";
 import { canonicalize } from "./serialize.js";
-import type { EvidenceT } from "./schema/common.js";
+import { SCHEMA_VERSION, type EvidenceT } from "./schema/common.js";
 import { Fact, FactsFile, type FactOf } from "./schema/facts.js";
 import { NEVER_CHECKED_STEPS } from "./schema/kinds.js";
 
@@ -220,7 +220,7 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
 
   const out: CatalogRecord[] = [];
   const common = (f: Fact) => ({
-    schemaVersion: 2 as const,
+    schemaVersion: SCHEMA_VERSION,
     status: "current" as const,
     confidence: confidenceOf(f),
   });
@@ -430,6 +430,8 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
         name: f.name,
         ...(f.type ? { type: f.type } : {}),
         ...(f.classification ? { classification: f.classification } : {}),
+        // ADR 0125: true and false are both facts; left out, the field's required is unknown.
+        ...(f.required !== undefined ? { required: f.required } : {}),
       })),
       evidence: s.fields.map((f) => evidenceOf(f, "code")),
     } as CatalogRecord);

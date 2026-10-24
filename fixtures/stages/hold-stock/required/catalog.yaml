@@ -1,0 +1,19 @@
+# Added to ../catalog.yaml for "a new required field breaks callers" (ADR 0125): the request
+# Schema of forge-orders' POST /orders, as projectFacts names it (<endpoint>.request), with what
+# the code says of each field. sku must be sent, quantity may be left out, and nothing says
+# whether giftNote must be (an unknown, never taken for optional). Today's flow
+# (../../specs/forge-orders/forge-orders.place-order.yaml, step 1) reads sku and quantity.
+# Invented, written by hand.
+- kind: Schema
+  schemaVersion: 3
+  id: forge-orders.post-orders.request
+  status: current
+  confidence: verified
+  evidence:
+    - { source: code, repo: forge-orders, path: src/main/java/forge/orders/OrderRequest.java, line: 5 }
+  format: other
+  ref: forge-orders.post-orders
+  fields:
+    - { name: sku, type: string, required: true }
+    - { name: quantity, type: int, required: false }
+    - { name: giftNote, type: string }

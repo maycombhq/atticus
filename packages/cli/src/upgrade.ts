@@ -44,26 +44,8 @@ const rel = (prefix: string, files: string[]) => files.map((f) => `${prefix}/${f
 
 /** The migrations this Atticus knows, oldest first. Add new ones at the end. */
 export const MIGRATIONS: Migration[] = [
-  {
-    id: "catalog-schema-v2",
-    summary: "Catalog records at schema version 2 (ADR 0031)",
-    async pending(root) {
-      const out: string[] = [];
-      for (const sub of ["generated", "curated"]) {
-        const r = await migrateCatalog(join(catalogDirOf(root), sub), { dryRun: true });
-        out.push(...rel(`catalog/${sub}`, r.migrated));
-      }
-      return out;
-    },
-    async apply(root) {
-      const out: string[] = [];
-      for (const sub of ["generated", "curated"]) {
-        const r = await migrateCatalog(join(catalogDirOf(root), sub));
-        out.push(...rel(`catalog/${sub}`, r.migrated));
-      }
-      return out;
-    },
-  },
+  // The version-1 files; each is written at the current version (ADR 0031, 0125).
+  catalogStep("catalog-schema-v2", "Catalog records at schema version 2 (ADR 0031)", [1]),
   {
     id: "local-files-ignored",
     summary: "This machine's files kept out of Git (.atticus/.gitignore, ADR 0050)",
@@ -166,7 +148,30 @@ export const MIGRATIONS: Migration[] = [
       return out;
     },
   },
+  // The version-2 files: only the number changes, no field gains a required (ADR 0125).
+  catalogStep(
+    "catalog-schema-v3",
+    "Catalog records at schema version 3: a Schema field can say whether it is required (ADR 0125)",
+    [2],
+  ),
 ];
+
+/**
+ * A step that rewrites the catalog's record files (generated and curated) at some older schema
+ * versions, in canonical form at the current version. Each version has its own step, so a file
+ * is listed under one step only.
+ */
+function catalogStep(id: string, summary: string, versions: readonly number[]): Migration {
+  const run = async (root: string, dryRun: boolean) => {
+    const out: string[] = [];
+    for (const sub of ["generated", "curated"]) {
+      const r = await migrateCatalog(join(catalogDirOf(root), sub), { dryRun, versions });
+      out.push(...rel(`catalog/${sub}`, r.migrated));
+    }
+    return out;
+  };
+  return { id, summary, pending: (root) => run(root, true), apply: (root) => run(root, false) };
+}
 
 /**
  * What adding the starter review (ADR 0120) would write: review.yaml, and the checklists README

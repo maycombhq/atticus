@@ -42,7 +42,8 @@ describe("people name, tag, merge, split and link features", () => {
       ...by,
     });
     expect(d).toEqual({
-      schemaVersion: 2,
+      // parsed, so at the current catalog schema version (ADR 0125)
+      schemaVersion: 3,
       kind: "CuratedDecision",
       id: "feature-name.transfers",
       status: "current",

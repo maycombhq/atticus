@@ -428,7 +428,7 @@ describe("golden: the runner over the Forge fixture", () => {
       parse(await readFile(join(FORGE, "expected/scan.yaml"), "utf8")) as Record<string, unknown>[]
     )
       .filter((r) => r.kind === "Migration")
-      .map((r) => ({ schemaVersion: 2, status: "current", ...r }));
+      .map((r) => ({ schemaVersion: 3, status: "current", ...r }));
     const strip = (r: CatalogRecord) => ({
       ...r,
       evidence: r.evidence.map(({ commit: _c, scannedAt: _s, extractor: _x, ...rest }) => rest),

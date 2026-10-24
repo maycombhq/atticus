@@ -89,8 +89,9 @@ describe("atticus upgrade", () => {
     );
     expect(code).toBe(0);
     expect(r.out.join("\n")).toMatch(/Commit the changes in a pull request/);
+    // A version-1 record is written at the current version (3, ADR 0125) by the version-2 step.
     expect(await readFile(join(root, "catalog/generated/system/ledger.yaml"), "utf8")).toMatch(
-      /^schemaVersion: 2/m,
+      /^schemaVersion: 3/m,
     );
     const backup = join(root, ".atticus/backups/20261019-100000");
     expect(await readFile(join(backup, "catalog/generated/system/ledger.yaml"), "utf8")).toMatch(
@@ -113,6 +114,7 @@ describe("atticus upgrade", () => {
       "change-types-v2",
       "questions-v2",
       "starter-review",
+      "catalog-schema-v3",
     ]);
     expect(await readFile(join(root, "questions/q-0f1e2d3c4b5a.yaml"), "utf8")).toMatch(
       /^schemaVersion: 2$/m,
@@ -155,6 +157,44 @@ describe("atticus upgrade", () => {
     expect(text).toMatch(/^# The Forge pack's change types/);
     expect(parse(text)).toMatchObject({ schemaVersion: 2, types: [{ id: "config-change" }] });
     expect(parse(text).types[0].size).toBeUndefined();
+    expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
+  });
+
+  it("moves version-2 catalog records to version 3 in their own step, changing only the number (ADR 0125)", async () => {
+    const root = await oldMetarepo();
+    const v2 = [
+      "schemaVersion: 2",
+      "kind: Schema",
+      "id: ledger-api.post-entries.request",
+      "status: current",
+      "confidence: verified",
+      "evidence:",
+      "  - path: src/main/java/forge/ledger/EntryRequest.java",
+      "    repo: forge-ledger",
+      "    source: code",
+      "fields:",
+      "  - name: amount",
+      "    type: decimal",
+      "format: other",
+      "ref: ledger-api.post-entries",
+      "",
+    ].join("\n");
+    const f = join(root, "catalog/generated/schema/ledger-api.post-entries.request.yaml");
+    await mkdir(dirname(f), { recursive: true });
+    await writeFile(f, v2);
+    const c = await upgradeCheck(root, "1.0.0");
+    // each step lists its own files: version 1 under v2, version 2 under v3
+    expect(c.pending.find((p) => p.id === "catalog-schema-v2")?.files).toEqual([
+      "catalog/generated/system/ledger.yaml",
+    ]);
+    expect(c.pending.find((p) => p.id === "catalog-schema-v3")).toEqual({
+      id: "catalog-schema-v3",
+      summary:
+        "Catalog records at schema version 3: a Schema field can say whether it is required (ADR 0125)",
+      files: ["catalog/generated/schema/ledger-api.post-entries.request.yaml"],
+    });
+    expect(await upgradeCommand(root, { by: "pat" }, io().io, "1.0.0")).toBe(0);
+    expect(await readFile(f, "utf8")).toBe(v2.replace(/^schemaVersion: 2\n/, "schemaVersion: 3\n"));
     expect((await upgradeCheck(root, "1.0.0")).pending).toEqual([]);
   });
 

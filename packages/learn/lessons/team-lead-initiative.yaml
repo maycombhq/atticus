@@ -20,7 +20,7 @@ steps:
       files:
         - path: catalog/curated/party/party.northwind-pay.yaml
           content: |
-            schemaVersion: 2
+            schemaVersion: 3
             kind: Party
             id: party.northwind-pay
             status: current
@@ -43,7 +43,7 @@ steps:
               system-card: 5d
         - path: catalog/curated/party/party.network-team.yaml
           content: |
-            schemaVersion: 2
+            schemaVersion: 3
             kind: Party
             id: party.network-team
             status: current
@@ -59,7 +59,7 @@ steps:
             typicalLeadTimes: {}
         - path: catalog/curated/party/party.gateway-team.yaml
           content: |
-            schemaVersion: 2
+            schemaVersion: 3
             kind: Party
             id: party.gateway-team
             status: current

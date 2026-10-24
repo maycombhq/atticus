@@ -59,7 +59,7 @@ async function golden(name: string, extractor: Extractor, repoName: string, expe
     warnings: { path: string; message: string }[];
   };
   const got = s.records.map(strip);
-  const expected = want.records.map((r) => ({ schemaVersion: 2, status: "current", ...r }));
+  const expected = want.records.map((r) => ({ schemaVersion: 3, status: "current", ...r }));
   expect(got.map(sortKey).sort()).toEqual(expected.map(sortKey).sort());
   for (const e of expected)
     expect(

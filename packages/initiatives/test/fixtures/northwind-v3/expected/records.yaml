@@ -1,6 +1,6 @@
 # The curated records the golden journey must leave (hand-written).
 initiative:
-  schemaVersion: 2
+  schemaVersion: 3
   kind: Initiative
   id: northwind-pay-v3-migration
   status: current
@@ -19,7 +19,7 @@ initiative:
     - northwind-pay-v3-migration.vendor-certification
   targetRelease: 2027-03-01
 commitments:
-  - schemaVersion: 2
+  - schemaVersion: 3
     kind: Commitment
     id: northwind-pay-v3-migration.vendor-spec
     status: current
@@ -33,7 +33,7 @@ commitments:
     neededBy: 2027-01-11
     blocks: [impact]
     commitmentStatus: open
-  - schemaVersion: 2
+  - schemaVersion: 3
     kind: Commitment
     id: northwind-pay-v3-migration.vendor-sandbox
     status: current
@@ -47,7 +47,7 @@ commitments:
     neededBy: 2027-02-04
     blocks: [vendor-certification]
     commitmentStatus: open
-  - schemaVersion: 2
+  - schemaVersion: 3
     kind: Commitment
     id: northwind-pay-v3-migration.gateway-route
     status: current
@@ -61,7 +61,7 @@ commitments:
     neededBy: 2027-02-04
     blocks: [vendor-certification]
     commitmentStatus: open
-  - schemaVersion: 2
+  - schemaVersion: 3
     kind: Commitment
     id: northwind-pay-v3-migration.firewall-rule
     status: current
@@ -75,7 +75,7 @@ commitments:
     neededBy: 2027-02-04
     blocks: [vendor-certification]
     commitmentStatus: open
-  - schemaVersion: 2
+  - schemaVersion: 3
     kind: Commitment
     id: northwind-pay-v3-migration.vendor-certification
     status: current
