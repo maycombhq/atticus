@@ -31,7 +31,7 @@ import {
   roundsOf,
   type RuledHit,
 } from "./findings.js";
-import { gateStatusOf, maxRoundsOf, type GateStatus } from "./gates.js";
+import { checkRoundRule, gateStatusOf, maxRoundsOf, type GateStatus } from "./gates.js";
 import type { DeterministicCheckDef } from "./hits.js";
 import { criticModel, type ModelChoice } from "./model.js";
 import { evaluateNeeds } from "./needs.js";
@@ -145,8 +145,8 @@ export async function runCritic(
     throw new CriticError(
       "round-limit",
       limit.openBlocking
-        ? `${had} A person decides now: act on each blocking finding of round ${counted.at(-1)} (fix it by hand and apply, waive it with a reason, or dismiss it as not relevant), and one checking round past the limit reviews the fixes; or return the change.`
-        : `${had} Nothing blocking is open in round ${counted.at(-1)}, but nobody has acted since it ran, so no checking round is due. A person decides now: answer the change's open questions (atticus questions), or act on one of round ${counted.at(-1)}'s findings (atticus findings ${change.id}), and one checking round past the limit reviews what was done; or return the change.`,
+        ? `${had} A person decides now: act on each blocking finding of round ${counted.at(-1)} (fix it by hand and apply, waive it with a reason, or dismiss it as not relevant); once every one is acted on, ${checkRoundRule(counted.at(-1))}; or return the change.`
+        : `${had} Nothing blocking is open in round ${counted.at(-1)}, but nobody has acted since it ran, so no checking round is due. A person decides now: answer the change's open questions (atticus questions), or act on one of round ${counted.at(-1)}'s findings (atticus findings ${change.id}); once you have, ${checkRoundRule(counted.at(-1))}; or return the change.`,
     );
   }
   const checkRound = actedOn.length ? { after: counted.at(-1)!, actedOn } : undefined;

@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readdir, readFile } from "node:fs/promises";
 import { join, normalize, sep } from "node:path";
 import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
 import { Finding, FindingAction, gateRoundLimit } from "@maycombhq/core";
@@ -14,6 +15,8 @@ import {
   type StoredFinding,
 } from "./findings.js";
 import { applyPatch, PatchError, patchTarget } from "./patch.js";
+import { checkRoundRule } from "./gates.js";
+import { parse } from "yaml";
 
 export type Action = z.infer<typeof FindingAction>;
 
@@ -210,8 +213,11 @@ export async function act(
     patched = f.artifact;
     message = `Applied the fix to ${f.artifact}.`;
   } else if (act === "apply") message = `${f.id} has no patch; marked applied.`;
-  else if (act === "edit-and-apply") message = `Recorded your edit to ${f.artifact}.`;
-  else if (act === "ask")
+  else if (act === "edit-and-apply") {
+    // The files the person changed, from the stages' write hashes; else the finding's artifact.
+    const edited = await editedByPerson(changeFolder(root, change.id));
+    message = `Recorded your edit to ${edited.length ? edited.join(", ") : f.artifact}.`;
+  } else if (act === "ask")
     message = `Asked ${askedOf}. The gap stops blocking while the question is open.`;
   else if (act === "waive")
     message = `Waived ${f.id}. The waiver, its reason and your name are recorded on the finding; it reaches main with the ${f.gate} hand-off PR, where reviewers see it.`;
@@ -243,7 +249,33 @@ async function afterLimit(root: string, change: string, f: Finding): Promise<str
     (x) => x.finding.severity === "blocking" && x.finding.state === "open",
   ).length;
   if (left)
-    return `But no critic round is left at the ${f.gate} gate: act on the ${f.severity === "blocking" ? "other " : ""}${left} blocking finding${left === 1 ? "" : "s"} of round ${f.round}, and one checking round past the limit reviews what was done.`;
+    return `But no critic round is left at the ${f.gate} gate: act on the ${f.severity === "blocking" ? "other " : ""}${left} blocking finding${left === 1 ? "" : "s"} of round ${f.round}; once every one is acted on, ${checkRoundRule(f.round)}.`;
   if ((await checkRoundDue(root, change, f.gate)).length === 0) return undefined;
-  return `The ${f.gate} gate has no critic round left, so it allows one checking round past the limit: run atticus critic ${change} --gate ${f.gate}, or run the change's stage again, to review what was done. If that round finds something blocking, a person decides again.`;
+  return `The ${f.gate} gate has no critic round left, but ${checkRoundRule(f.round)}: run atticus critic ${change} --gate ${f.gate}, or run the change's stage again, to review what was done. If that round finds something blocking, a person decides again.`;
+}
+
+/**
+ * The change-folder files a person changed since a stage wrote them: each stage's loop file
+ * (`stage/<stage>.yaml`) keeps the sha-256 of what it wrote (`written`, ADR 0087 addendum), and a
+ * file whose hash differs, or is gone, was changed. Facts, read off the files.
+ */
+async function editedByPerson(folder: string): Promise<string[]> {
+  const out = new Set<string>();
+  const stages = await readdir(join(folder, "stage")).catch(() => [] as string[]);
+  for (const s of stages.filter((x) => x.endsWith(".yaml")).sort()) {
+    let written: unknown;
+    try {
+      written = (parse(await readFile(join(folder, "stage", s), "utf8")) as { written?: unknown })
+        ?.written;
+    } catch {
+      continue;
+    }
+    if (!written || typeof written !== "object") continue;
+    for (const [file, hash] of Object.entries(written as Record<string, unknown>)) {
+      const now = await readFile(join(folder, ...file.split("/"))).catch(() => undefined);
+      const h = now ? createHash("sha256").update(now).digest("hex") : undefined;
+      if (h !== hash) out.add(file);
+    }
+  }
+  return [...out].sort();
 }

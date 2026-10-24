@@ -206,7 +206,7 @@ describe("rounds, gates and actions", () => {
     for (const f of blocking.slice(1))
       last = await act(root, CHANGE, f.finding.id, "apply", { by: "ari", now: LATER });
     expect(last.message).toContain(
-      `one checking round past the limit: run atticus critic ${CHANGE} --gate plan`,
+      `a person acted since round 2, so one more checking round is due: run atticus critic ${CHANGE} --gate plan`,
     );
     // The knowledge gaps still open are asked of their owners.
     for (const g of r2.findings.filter(

@@ -155,6 +155,11 @@ export const ChangePolicy = z.strictObject({
     .array(StageStep)
     .default(() => DEFAULT_STAGES.map((x) => ({ ...x })))
     .refine((xs) => new Set(xs.map((x) => x.phase)).size === xs.length, "one stage per phase"),
+  /**
+   * At most this many questions go to a person when a stage stops (ADR 0117 addendum, U3); the
+   * rest wait and are asked once those are answered. Optional and additive (still version 1).
+   */
+  questionsPerStop: z.number().int().min(1).default(5),
   /** By default the product owner may approve the Define hand-off of their own brief. */
   selfApproval: z
     .array(SelfApproval)

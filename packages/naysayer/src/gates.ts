@@ -105,7 +105,11 @@ export async function gateStatusOf(
     open: count(open),
     total: count(findings),
     mayProceed: reasons.length === 0,
-    humanDecides: blocking.length > 0 && usedUp,
+    // An open gap with nothing blocking waits on its owner, not on a person's decision.
+    humanDecides:
+      blocking.length > 0 &&
+      usedUp &&
+      !(count(open).blocking === 0 && count(open).gaps > 0 && waiting.length === 0),
     checkRound: usedUp && (await checkRoundDue(root, change.id, gate)).length > 0,
     checkRoundsRun,
     waiting,
@@ -142,6 +146,30 @@ export async function gateStatus(
  * checking round past the limit has run, "its 2 critic rounds and the checking round are used",
  * so the words match the rounds on file.
  */
+/**
+ * The checking round's rule in the one sentence every message states it with (ADR 0087 addendum,
+ * 2026-10-24): a stop, `atticus finding`, `atticus critic` and `atticus change status`.
+ */
+export const checkRoundRule = (round: number | undefined) =>
+  `a person acted since round ${round ?? "the newest"}, so one more checking round is due`;
+
+/** The open gaps of a gate whose blocking findings are all dealt with, by id. */
+const openGaps = (s: Pick<GateStatus, "findings">) =>
+  s.findings.filter((f) => f.finding.severity === "gap" && f.finding.state === "open");
+
+/**
+ * An open gap with nothing blocking (ADR 0087 addendum): the gap is an owner question, so it waits
+ * on its owner, not on a person's decision about the draft. The stage is done; the gate's hand-off
+ * waits until the gap is routed to its owner (ask) or a person writes the fact in. One line for
+ * `atticus change status`, `atticus critic` and the stage's done. Undefined otherwise.
+ */
+export function ownerWaitsLine(s: GateStatus, change: string): string | undefined {
+  if (s.open.blocking > 0 || s.open.gaps === 0 || s.waiting.length) return undefined;
+  const gaps = openGaps(s);
+  const one = gaps.length === 1 ? gaps[0]!.finding.id : "<id>";
+  return `Nothing blocking is open at the ${s.gate} gate; ${s.open.gaps} open gap${s.open.gaps === 1 ? " waits on its owner" : "s wait on their owners"}, so the ${s.gate} hand-off waits until ${s.open.gaps === 1 ? "it is" : "they are"} answered: route ${s.open.gaps === 1 ? "it" : "each"} to its owner (atticus finding ${change} ${one} ask --asked-of <owner>), or write the fact in and record it (atticus finding ${change} ${one} edit-and-apply --reason "<what you wrote>").`;
+}
+
 export function roundsUsed(s: Pick<GateStatus, "maxRounds" | "checkRoundsRun">): string {
   const max = s.maxRounds ?? 0;
   const n = s.checkRoundsRun ?? 0;

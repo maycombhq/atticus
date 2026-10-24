@@ -4,8 +4,10 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { changesRelOf, orgPackDirOf } from "@maycombhq/core";
 import { RuntimeConfigError, runtimeForCli, type AiRuntime } from "@maycombhq/ai";
-import { changeFolder } from "@maycombhq/changes";
+import { changeFolder, loadChangeContext } from "@maycombhq/changes";
+import { gateStatus, ownerWaitsLine } from "@maycombhq/naysayer";
 import {
+  stageGate,
   architectureStage,
   featureStage,
   smallStage,
@@ -59,11 +61,49 @@ const NAMES: Record<Stage, string> = {
   small: "fast path",
 };
 
+/** What a person calls each stage's files, for "kept your …". */
+const WORDS: Record<Stage, string> = {
+  feature: "feature placement",
+  architecture: "target flows",
+  stories: "stories",
+  small: "plan",
+};
+
+/**
+ * What the stage wrote, by the hashes (ADR 0087 addendum): the files a write changed on disk, and
+ * "nothing changed" when every hash matched what was there, "kept your …" for a person's files.
+ */
+export function wroteLines(
+  r: Pick<StageResult<unknown>, "stage" | "files" | "changed" | "byPerson">,
+): string[] {
+  if (!r.files.length) return [];
+  if (!r.changed) return [`Wrote ${r.files.join(", ")}.`];
+  if (!r.changed.length)
+    return [`Kept ${r.byPerson ? "your" : "the"} ${WORDS[r.stage]}: nothing changed.`];
+  const kept = r.files.filter((f) => !r.changed!.includes(f));
+  return [
+    `Wrote ${r.changed.join(", ")}${kept.length ? ` (${kept.join(", ")} ${kept.length === 1 ? "is" : "are"} as it was)` : ""}.`.replace(
+      /are as it was\)/,
+      "are as they were)",
+    ),
+  ];
+}
+
+/** The open gap of the stage's gate that waits on its owner, when the stage is done (ADR 0087 addendum). */
+async function ownerLine(root: string, r: StageResult<unknown>): Promise<string | undefined> {
+  if (r.state !== "done") return undefined;
+  const gate = stageGate(await loadChangeContext(root), r.stage);
+  if (!gate) return undefined;
+  const s = await gateStatus(root, r.change, gate).catch(() => undefined);
+  return s ? ownerWaitsLine(s, r.change) : undefined;
+}
+
 function printStage(
   r: StageResult<unknown>,
   rerun: string,
   io: Output,
   extra: string[] = [],
+  owner?: string,
 ): number {
   for (const n of r.notes) io.out(n);
   for (const l of contextLines(r.context)) io.out(l);
@@ -93,7 +133,9 @@ function printStage(
   io.out(
     `The ${NAMES[r.stage]} stage is done after ${plural(r.iteration, "draft")} (${plural(r.drafts, "draft")} this run): nothing blocking is open and no question is waiting.`,
   );
-  if (r.files.length) io.out(`Wrote ${r.files.join(", ")}.`);
+  // The gate's open gap, in the words change status uses (ADR 0087 addendum).
+  if (owner) io.out(owner);
+  for (const l of wroteLines(r)) io.out(l);
   for (const l of extra) io.out(l);
   io.out(`Open the stage's pull request for a person to approve: ${r.pr}`);
   return 0;
@@ -154,7 +196,7 @@ export async function stageCli(
             `Next: atticus change architecture ${arg} (or /atticus-architecture ${arg}) once the feature PR is merged.`,
           ]
         : [];
-      return printStage(r, `atticus change feature ${arg}`, io, extra);
+      return printStage(r, `atticus change feature ${arg}`, io, extra, await ownerLine(root, r));
     }
     if (command === "architecture") {
       const r = await architectureStage(root, arg, o);
@@ -165,7 +207,13 @@ export async function stageCli(
             `Next: atticus plan stories ${arg} (or /atticus-stories ${arg}) once the architecture PR is merged.`,
           ]
         : [];
-      return printStage(r, `atticus change architecture ${arg}`, io, extra);
+      return printStage(
+        r,
+        `atticus change architecture ${arg}`,
+        io,
+        extra,
+        await ownerLine(root, r),
+      );
     }
     // ADR 0113: the fast path, brief to tasks in one AI step.
     if (command === "small") {
@@ -178,14 +226,20 @@ export async function stageCli(
             `Next: once the pull request is merged, the tasks (atticus task context ${arg} <task>, or /atticus-task ${arg} <task>).`,
           ]
         : [];
-      return printStage(r, `atticus change small ${arg}`, io, extra);
+      return printStage(r, `atticus change small ${arg}`, io, extra, await ownerLine(root, r));
     }
     const r = await storiesStage(root, arg, o);
     if (json) return out(io, r);
     const tasks = r.stories.reduce((n, s) => n + s.tasks.length, 0);
-    return printStage(r, `atticus plan stories ${arg}`, io, [
-      `${r.stories.length} ${r.stories.length === 1 ? "story" : "stories"} and ${plural(tasks, "task")} in ${plural(new Set(r.stories.map((s) => s.repo)).size, "repo")}, from the target flows; ${r.requests.length} ${r.requests.length === 1 ? "request or process" : "requests and processes"} suggested from the knowledge items, in requests.md. A person raises each one.`,
-    ]);
+    return printStage(
+      r,
+      `atticus plan stories ${arg}`,
+      io,
+      [
+        `${r.stories.length} ${r.stories.length === 1 ? "story" : "stories"} and ${plural(tasks, "task")} in ${plural(new Set(r.stories.map((s) => s.repo)).size, "repo")}, from the target flows; ${r.requests.length} ${r.requests.length === 1 ? "request or process" : "requests and processes"} suggested from the knowledge items, in requests.md. A person raises each one.`,
+      ],
+      await ownerLine(root, r),
+    );
   } catch (e) {
     if (
       e instanceof Error &&

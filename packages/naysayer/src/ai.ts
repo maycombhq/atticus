@@ -135,6 +135,12 @@ function instructions(ctx: CriticContext, lens: LensName, review?: StageReview):
       ? [
           `This review is of the ${review.stage} draft an assistant just wrote: ${review.docs.map((d) => d.path).join(", ")}. Review the draft against the estate and the brief, including what the draft left out: something the brief asks for, or the estate shows the change needs, that the draft doesn't say or says wrongly. What the drafter read of the estate is in the data blocks; cite the draft's lines like any artifact's.`,
           "",
+          ...(review.sources.some((s) => s.id === MERGED_FLOWS)
+            ? [
+                `The "${MERGED_FLOWS}" data block gives each target flow as it will be, its steps numbered in their final order, and the keys the change declares. Atticus works it out from the target flows; read the order of a flow's steps from it, never from a step's after, and take a key it lists as declared.`,
+                "",
+              ]
+            : []),
         ]
       : []),
     ...(ctx.answers?.length ? [ANSWERS_RULE, ""] : []),
@@ -400,6 +406,12 @@ export function parseLensOutput(
  * A stage's draft for the lenses to review (ADR 0115): the files the stage wrote, which the
  * lenses read and may cite as they do the artifacts, and the estate the drafter read, as data.
  */
+/**
+ * The data block a stage gives its lenses with its target flows merged with today's, numbered in
+ * their final order (ADR 0111 addendum, S3): the order is read from it as a fact.
+ */
+export const MERGED_FLOWS = "target-flows-merged";
+
 export interface StageReview {
   /** The stage, in words: feature, architecture, stories, small. */
   stage: string;
@@ -596,7 +608,11 @@ export async function runLenses(
     // What the drafter read of the estate, as data, below the artifacts (ADR 0115).
     for (const x of review?.sources ?? [])
       if (x.kind !== "instruction" && !docs.has(x.id) && !sources.some((y) => y.id === x.id))
-        sources.push({ ...x, priority: Math.min(x.priority ?? 4, 4) });
+        sources.push({
+          ...x,
+          // The merged target flows are the draft itself, read in order: kept above the estate.
+          priority: x.id === MERGED_FLOWS ? 8 : Math.min(x.priority ?? 4, 4),
+        });
     const levels = ctx.classifications;
     const budget = ctx.lifecycle.orgPack.runtime.budgets.perAgent[agent.id] ?? agent.tokenBudget;
     let pack;

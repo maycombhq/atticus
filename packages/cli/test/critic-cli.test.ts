@@ -292,10 +292,10 @@ describe("atticus critic", () => {
       ...o,
     });
     expect(statusLine(status({}))).toBe(
-      "The define gate is closed (1 blocking, 0 open gaps) and its 2 critic rounds and the checking round are used: a person decides now.",
+      "The define gate is closed (1 blocking, 0 open gaps) and its 2 critic rounds and the checking round are used: a person decides now. Once a person acts on round 3's findings, a person acted since round 3, so one more checking round is due.",
     );
     expect(statusLine(status({ round: 2, checkRoundsRun: 0 }))).toBe(
-      "The define gate is closed (1 blocking, 0 open gaps) and its 2 critic rounds are used: a person decides now.",
+      "The define gate is closed (1 blocking, 0 open gaps) and its 2 critic rounds are used: a person decides now. Once a person acts on round 2's findings, a person acted since round 2, so one more checking round is due.",
     );
     // change status says it too, for a gate whose rounds are used up.
     const r = await root();
@@ -304,7 +304,7 @@ describe("atticus critic", () => {
     const c = capture();
     expect(await changeStatus(r, CHANGE, {}, c.io)).toBe(0);
     expect(c.out.find((l) => l.startsWith("Critic: "))).toMatch(
-      /^Critic: The plan gate is closed \(\d+ blocking, \d+ open gaps?\) and its 2 critic rounds are used: a person decides now\.$/,
+      /^Critic: The plan gate is closed \(\d+ blocking, \d+ open gaps?\) and its 2 critic rounds are used: a person decides now\. Once a person acts on round 2's findings, a person acted since round 2, so one more checking round is due\.$/,
     );
   });
 });

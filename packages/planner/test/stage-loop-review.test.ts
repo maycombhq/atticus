@@ -358,7 +358,9 @@ gates:
       placed.flows.find((f) => f.id === "forge-stock.reserve-stock")!.how = "changed";
       await writeFile(placement(root), stringify(placed));
       const applied = await act(root, CHANGE, id, "apply", { by: "pat" });
-      expect(applied.message).toContain("one checking round past the limit");
+      expect(applied.message).toContain(
+        "a person acted since round 2, so one more checking round is due",
+      );
       expect(applied.message).not.toContain("The next critic round checks the fix");
       expect((await gateStatus(root, CHANGE, "define")).checkRound).toBe(true);
       // The stage runs the checking round on the draft on file, drafts nothing, and is done.
@@ -379,6 +381,10 @@ gates:
       await act(root, CHANGE, id, "apply", { by: "pat" });
       const e = await stopped(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
       expect(e.message).toContain("the checking round past its limit, found a blocking finding");
+      // The stop states the checking round's rule as the status does (ADR 0087 addendum).
+      expect(e.message).toContain(
+        "once every one is acted on, a person acted since round 3, so one more checking round is due",
+      );
       expect((await loopOf(root)).state).toBe("stopped");
       const s = await gateStatus(root, CHANGE, "define");
       expect(s.round).toBe(3);

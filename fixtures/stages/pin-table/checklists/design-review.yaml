@@ -1,0 +1,19 @@
+# One AI rule at the design gate (ADR 0111 addendum, S3 and S4): the architecture lens reviews
+# the architecture stage's draft. Copied into org-pack/checklists/ by the pinned-message tests
+# only. Contract C3. Everything here is invented.
+schemaVersion: 1
+name: design-review
+version: 0.1.0
+description: The design gate's architecture lens, for the pinned-message scenario.
+rules:
+  - id: steps-in-order
+    title: Each step has what it needs before it runs
+    layer: org
+    lens: architecture
+    appliesTo: { artifacts: [design] }
+    severity: blocking
+    check:
+      type: ai
+      prompt: For each target flow, check that every step has what it needs from a step before it, and that each table the change adds says how its rows relate to other tables.
+    waivable: true
+    source: Forge architecture review
