@@ -640,21 +640,67 @@ export async function runLenses(
         });
         continue;
       }
-      const parsed = parseLensOutput(
-        ctx,
-        lens,
-        run.output,
-        sent,
-        [...docs.values()].filter((d) => !out.left.has(d.path)),
-      );
+      const seen = [...docs.values()].filter((d) => !out.left.has(d.path));
+      let parsed = parseLensOutput(ctx, lens, run.output, sent, seen);
+      let final = meta;
+      // An answer that doesn't read (a value with ": " left unquoted, say) goes back to the lens
+      // once in the same round, with why, so a format slip doesn't throw a good review away.
+      // The earlier answer rides as data; nothing is repaired by Atticus.
+      if (parsed.malformed) {
+        const again = await o.runtime.prepare({
+          change: ctx.change.id,
+          agent,
+          pack: buildContextPack({
+            change: ctx.change.id,
+            agent: agent.id,
+            budget,
+            sources: [
+              ...sources,
+              {
+                id: "0-read-again",
+                kind: "instruction",
+                origin: "atticus/critic",
+                text: `Your last answer to this review could not be read: ${parsed.malformed}. Write the same review again as the YAML asked for. Put any value that contains ": " or starts with a quote in double quotes.`,
+                classification: "public",
+                trusted: true,
+              },
+              {
+                id: "last-answer",
+                kind: "artifact",
+                origin: `the ${lens} lens's last answer`,
+                text: run.output,
+                classification: "internal",
+                priority: 9,
+              },
+            ],
+            levels,
+            maxClassification:
+              o.maxClassification ??
+              (levels.includes("confidential") ? "confidential" : levels.at(-1)!),
+            now: new Date(ctx.now),
+            step: `critic ${ctx.change.id} (the ${agent.id} lens, read again)`,
+          }),
+          outputPath: `findings-${lens}.yaml`,
+          outputIn: "run",
+        });
+        const second = await o.runtime.run(again.runId);
+        if (second.state === "validated" && second.output !== undefined) {
+          parsed = parseLensOutput(ctx, lens, second.output, sent, seen);
+          final = {
+            runtime: second.runtime,
+            summary: toRunSummary(second),
+            promptSha256: again.request.pack.manifest.promptSha256,
+          };
+        }
+      }
       hits.push(...parsed.hits);
       discarded.push(...parsed.discarded);
       // An answer that isn't a review (empty, a refusal, prose) is a lens that failed, never a
       // clean review: the gate stays closed until a lens really reviews.
       runs.push(
         parsed.malformed
-          ? { ...base, ...meta, state: "failed", reason: parsed.malformed }
-          : { ...base, ...meta, state: "ran", ...(out.reason ? { reason: out.reason } : {}) },
+          ? { ...base, ...final, state: "failed", reason: parsed.malformed }
+          : { ...base, ...final, state: "ran", ...(out.reason ? { reason: out.reason } : {}) },
       );
     } catch (e) {
       runs.push({ ...base, state: "failed", reason: (e as Error).message });
