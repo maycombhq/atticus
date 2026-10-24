@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import {
+  embedderFor,
   embeddingState,
   encode,
   OnnxEmbedder,
@@ -86,15 +87,27 @@ describe("the model folder", () => {
     await expect(bad.embed(["x"], "query")).rejects.toThrow(/its manifest names/);
   });
 
-  it("is off unless runtime.yaml turns it on; a folder that isn't there, or no bundled model, says why", async () => {
+  it("is the bundled model by default (ADR 0116 addendum), off where runtime.yaml says so; a folder that isn't there, or no bundled model, says why", async () => {
     const root = await mkdtemp(join(tmpdir(), "atticus-embed-root-"));
     await mkdir(join(root, "org-pack"), { recursive: true });
-    expect(await embeddingState(root)).toMatchObject({ setting: "off" });
+    // No runtime.yaml, or one without the section: the default, bundled. This checkout doesn't
+    // carry the model, so there is no embedder and the state says why; nothing is downloaded.
+    const none = await embedderFor(root);
+    expect(none.embedder).toBeUndefined();
+    expect(none.state).toMatchObject({ setting: "bundled", configured: false });
+    expect(none.state.problem).toMatch(/@maycombhq\/embed-model\) isn't installed/);
+    await writeFile(
+      join(root, "org-pack/runtime.yaml"),
+      `schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\nretrieval: {}\n`,
+    );
+    expect(await embeddingState(root)).toMatchObject({ setting: "bundled", configured: false });
     const runtime = (model: string) =>
       writeFile(
         join(root, "org-pack/runtime.yaml"),
         `schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\nretrieval:\n  embeddings: { model: ${JSON.stringify(model)} }\n`,
       );
+    await runtime("off");
+    expect(await embeddingState(root)).toMatchObject({ setting: "off", configured: true });
     await runtime("models/none");
     expect((await embeddingState(root)).problem).toMatch(/atticus-model.yaml/);
     await runtime("bundled");

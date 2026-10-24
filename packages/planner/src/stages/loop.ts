@@ -8,6 +8,7 @@ import {
   changesRelOf,
   raiseQuestions,
   readQuestion,
+  retrievalOf,
   runsDirOf,
   toCanonicalYaml,
   type Question,
@@ -1083,7 +1084,7 @@ function lensStop(
  * it was resumed with, the org pack's switches and classification levels.
  */
 export function stageRetrievalAi(ctx: ChangeContext, o: StageOptions, step: string): RetrievalAi {
-  const r = ctx.orgPack.runtime.retrieval;
+  const r = retrievalOf(ctx.orgPack.runtime);
   return {
     runtime: o.runtime,
     ...(o.resume ? { resume: o.resume } : {}),
@@ -1094,7 +1095,7 @@ export function stageRetrievalAi(ctx: ChangeContext, o: StageOptions, step: stri
       "confidential",
       "restricted",
     ],
-    settings: { expansion: r?.expansion ?? false, rerank: r?.rerank ?? false },
+    settings: { expansion: r.expansion, rerank: r.rerank },
     step,
   };
 }

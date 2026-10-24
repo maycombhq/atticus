@@ -7,7 +7,7 @@ import {
   type ContextInput,
   type ContextSelection,
 } from "@maycombhq/index";
-import { judged, yamlOf, type Judged, type Judgments } from "./judged.js";
+import { filePending, judged, yamlOf, type Judged, type Judgments } from "./judged.js";
 
 /**
  * The model's rerank of a step's candidates (ADR 0116): when what the engine found doesn't fit
@@ -124,6 +124,7 @@ export async function rerankFor(
     ...(o.resume ? { resume: o.resume } : {}),
     now: o.now,
     store: o.store,
+    pending: filePending(root),
     step: `${o.step} (rerank)`,
     read: (text) => checkRerank(text, shown),
   });
