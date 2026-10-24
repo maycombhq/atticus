@@ -227,9 +227,13 @@ export function chatHandler(
   commands?: () => CommandUi,
   sessions = new ChatSessions(),
 ): vscode.ChatRequestHandler {
-  const handle = participant(svc, commands);
   return async (request, context, stream, token) => {
     const root = svc.root;
+    // The change this request ran on, once the participant has resolved it (ADR 0110: a record's
+    // change is the one passed, never one read from the words).
+    let ranOn: (change: string | undefined) => void = () => undefined;
+    const change = new Promise<string | undefined>((r) => (ranOn = r));
+    const handle = participant(svc, commands, (id) => ranOn(id));
     if (!root) return handle(request, context, stream, token);
     const rec = recordingStream(stream);
     let ended: (text: string) => void = () => undefined;
@@ -239,16 +243,22 @@ export function chatHandler(
       ...(request.command ? { command: `/${request.command}` } : {}),
       prompt: promptText(request),
       response,
+      change,
     });
     try {
       return await handle(request, context, rec.stream, token);
     } finally {
+      ranOn(undefined);
       ended(rec.text());
     }
   };
 }
 
-function participant(svc: Service, commands?: () => CommandUi): vscode.ChatRequestHandler {
+function participant(
+  svc: Service,
+  commands?: () => CommandUi,
+  ranOn: (change: string) => void = () => undefined,
+): vscode.ChatRequestHandler {
   return async (request, _context, stream, token) => {
     const root = svc.root;
     if (!root) {
@@ -293,6 +303,7 @@ function participant(svc: Service, commands?: () => CommandUi): vscode.ChatReque
         stream.markdown("Say the change: /changemap add-transfer-limit");
         return;
       }
+      ranOn(change);
       stream.progress(`Drawing ${change}...`);
       const r = await svc.cli(root)(["change", "map", change, "--json", "--root", root], token);
       const m = parseJson<ChangeMapJson>(r.stdout);
@@ -315,6 +326,7 @@ function participant(svc: Service, commands?: () => CommandUi): vscode.ChatReque
         stream.markdown("Say the change: /estimate add-transfer-limit");
         return;
       }
+      ranOn(change);
       stream.progress(`Sizing ${change}...`);
       const r = await svc.cli(root)(["change", "estimate", change, "--root", root], token);
       stream.markdown(
@@ -365,6 +377,7 @@ function participant(svc: Service, commands?: () => CommandUi): vscode.ChatReque
         return;
       }
     }
+    if (step.target === "change") ranOn(target);
     const args = step.args(target);
     stream.markdown(
       `Running ${inline(`atticus ${args.join(" ")} --handoff`)} with Copilot's model.\n`,

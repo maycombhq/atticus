@@ -75,13 +75,23 @@ export function recordingStream<S extends object>(stream: S): { stream: S; text:
 }
 
 /**
- * Record a request, then its reply once it has ended: one `atticus history add` each. The command
- * line says when recording is off; a failure is never the chat's.
+ * Record a request, then its reply once it has ended: one `atticus history add` each. The request
+ * is written once the participant knows the change it runs on (or, with none, when the reply
+ * ends), so both carry that change (`--change`); the change is the one the participant resolved,
+ * never one read from the words. The command line says when recording is off; a failure is never
+ * the chat's.
  */
 export async function recordChat(
   cli: Cli,
   root: string,
-  c: { session: string; command?: string; prompt: string; response: Promise<string> },
+  c: {
+    session: string;
+    command?: string;
+    prompt: string;
+    response: Promise<string>;
+    /** The change the request runs on; settles when known, or undefined at the reply's end. */
+    change?: Promise<string | undefined>;
+  },
 ): Promise<void> {
   const add = async (kind: "prompt" | "response", text: string) => {
     if (!text.trim()) return;
@@ -97,6 +107,7 @@ export async function recordChat(
           "--session",
           c.session,
           ...(c.command ? ["--command", c.command] : []),
+          ...(change ? ["--change", change] : []),
           "--root",
           root,
         ],
@@ -107,7 +118,11 @@ export async function recordChat(
       // The history is a record, not the work: the chat goes on without it.
     }
   };
+  const reply = c.response.catch(() => "");
+  const change = await Promise.race([
+    c.change ?? Promise.resolve(undefined),
+    reply.then(() => undefined),
+  ]);
   await add("prompt", c.prompt);
-  const reply = await c.response.catch(() => "");
-  await add("response", reply);
+  await add("response", await reply);
 }

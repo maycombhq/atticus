@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The critic's lenses run on headless Claude Code (ADR 0115 addendum)
+
+- A feature stage run with `--mode headless-claude-code` no longer stops because its lenses may not run there. The built-in lens agents allow headless Claude Code, and each lens runs in its own run folder, so the only file it can write is its findings, never the draft it reviews. Found by a run on a real metarepo.
+- An org pack's own lens agents keep the runtimes they list; a stage that can't run them stops and names the agent and its allowed runtimes.
+- A done architecture stage of a change in build or later stays done when a rescan moves today's flow: the change's own code moved it. It says so in a note; before build, it drafts again as before.
+- The VS Code chat records the change a request ran on in the prompt history (`history add --change`), once the participant has resolved it. A prompt is written as soon as its change is known, not when the step ends.
+
 ### Retrieval by meaning in the context engine (ADR 0116)
 
 - A harder eval: 61 retrieval cases in `fixtures/retrieval` (identifier words, paraphrases, glossary synonyms, two links away, 208 look-alike records, facts only in a Word document, a sentence deep in a long wiki section, exact names, inputs nothing answers), scored by recall, precision, MRR and tokens at a normal and a tight budget in each mode. `pnpm --filter @maycombhq/evals eval:context` writes `docs/evidence/context-eval.md`. All answered cases: 0.72 recall before, 0.81 now without a model, 0.96 with the local model's recorded vectors.
