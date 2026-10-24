@@ -11,7 +11,7 @@ Specification version 0.1.0.
 | Workspace files   | 1      |
 | Change state file | 1      |
 | Executor protocol | 1      |
-| Local API         | 2.17.0 |
+| Local API         | 2.19.0 |
 
 ## Plugins
 
@@ -55,7 +55,7 @@ Adapters connect Atticus to external systems by type: work tracker, service desk
 
 ## Local API
 
-The local API (version 2.17.0) is an OpenAPI 3.1 document, generated from the same schemas and committed at [docs/api/openapi.json](../../api/openapi.json). It listens on 127.0.0.1 only and every request carries the per-session token printed at start-up.
+The local API (version 2.19.0) is an OpenAPI 3.1 document, generated from the same schemas and committed at [docs/api/openapi.json](../../api/openapi.json). It listens on 127.0.0.1 only and every request carries the per-session token printed at start-up.
 
 ## RepoManifest
 
@@ -68,7 +68,8 @@ Where: `org-pack/profiles/<profile>/repos.manifest.yaml`.
 | `repos`                       | object[]            | yes      |                 |                                                                                                                                                                                                                                  |
 | `repos[].id`                  | string (RecordId)   | yes      |                 | Repo id; also the base clone's folder name under workspace/.                                                                                                                                                                     |
 | `repos[].url`                 | string              | yes      |                 | Clone URL. Credentials never go here; Git's credential manager supplies them.                                                                                                                                                    |
-| `repos[].defaultBranch`       | string              | no       | default `main`  |                                                                                                                                                                                                                                  |
+| `repos[].defaultBranch`       | string (GitRef)     | no       | default `main`  |                                                                                                                                                                                                                                  |
+| `repos[].branches`            | string (GitRef)[]   | no       |                 | Other branches people work on (develop, release/2026.11...), scanned on request beside the catalog of defaultBranch, never into it (ADR 0123): `atticus scan --ref <branch>`.                                                    |
 | `repos[].type`                | string (RecordId)   | yes      |                 | Repo type from the platform profile, e.g. spring-boot, gateway, infra. Maps to build commands.                                                                                                                                   |
 | `repos[].owner`               | string (RecordId)   | yes      |                 | Owning team id (roles.yaml).                                                                                                                                                                                                     |
 | `repos[].component`           | string (RecordId)   | no       |                 | The component this repo builds, when its id differs from the repo id (ADR 0016).                                                                                                                                                 |
@@ -94,8 +95,8 @@ Where: `openspec/changes/<change>/repos.yaml`.
 | `change`                | string (RecordId)       | yes      |                                          | Stable record id. Lowercase slug, safe as a file name on Linux, macOS and Windows (no ":" or "/"), so every record can live in its own file named by its id. |
 | `repos`                 | object[]                | yes      |                                          |                                                                                                                                                              |
 | `repos[].id`            | string (RecordId)       | yes      |                                          | Stable record id. Lowercase slug, safe as a file name on Linux, macOS and Windows (no ":" or "/"), so every record can live in its own file named by its id. |
-| `repos[].branch`        | string                  | yes      |                                          | Always change/<change-id>; recorded so a renamed convention stays readable.                                                                                  |
-| `repos[].base`          | string                  | yes      |                                          | Branch the change branch was cut from.                                                                                                                       |
+| `repos[].branch`        | string (GitRef)         | yes      |                                          | Always change/<change-id>; recorded so a renamed convention stays readable.                                                                                  |
+| `repos[].base`          | string (GitRef)         | yes      |                                          | Branch the change branch was cut from.                                                                                                                       |
 | `repos[].baseSha`       | string                  | no       |                                          | Commit of base when the worktree was created.                                                                                                                |
 | `repos[].worktree`      | string                  | yes      |                                          | Worktree folder relative to the metarepo, e.g. workspace/.worktrees/<change-id>/<repo>.                                                                      |
 | `repos[].pr`            | object                  | no       |                                          |                                                                                                                                                              |
