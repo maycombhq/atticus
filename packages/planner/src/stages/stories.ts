@@ -16,6 +16,8 @@ import {
   retireQuestion,
   type JudgmentStore,
   type Question,
+  type CatalogRecord,
+  type ChangeLifecycle,
   type RecordOf,
 } from "@maycombhq/core";
 import {
@@ -30,7 +32,16 @@ import {
   type JudgeSpec,
   type SourceInput,
 } from "@maycombhq/ai";
-import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@maycombhq/changes";
+import {
+  changeFolder,
+  changeFootprint,
+  changeStore,
+  loadChangeContext,
+  scoreRisk,
+  testsFor,
+  writeFileAtomic,
+  type ChangeContext,
+} from "@maycombhq/changes";
 import { readKnowledge } from "@maycombhq/knowledge";
 import { mergeStoryRequests } from "../needs.js";
 import { PlannerError } from "../errors.js";
@@ -41,7 +52,18 @@ import { GENERATED_MARK } from "../render.js";
 import { slug } from "../words.js";
 import { parseYamlAs } from "./answer.js";
 import { isEmptyDelta, readDeltas, TARGET_DIR } from "./architecture.js";
-import { allowedValuesSource, columnsOf, estateIndex, loadEstate, type Estate } from "./estate.js";
+import {
+  allowedValuesSource,
+  columnsOf,
+  endpointKey,
+  estateIndex,
+  loadEstate,
+  triggerEntry,
+  type Estate,
+} from "./estate.js";
+import { mergeDelta } from "./merge.js";
+// A cycle (task-context reads the stories), safe: only functions are used, and only when called.
+import { migrationPath } from "../task-context.js";
 import {
   issueFingerprint,
   runStageLoop,
@@ -97,6 +119,25 @@ export interface DeltaTask {
   evidence: string[];
   target?: string;
   store?: string;
+  /** call-out and publish: the entry it goes to, as the target flow writes it. */
+  to?: { component: string; entry: string; new: boolean };
+  /** A store step that adds columns or a table: what the target flow says of them (B-stories). */
+  data?: TaskData;
+}
+
+/** The columns a store step adds, with what the target flow says of each. */
+export interface TaskData {
+  table: string;
+  /** A table the change adds. */
+  new: boolean;
+  /** The columns the step adds (all of a new table's). */
+  added: string[];
+  types: Record<string, string>;
+  classification: Record<string, string>;
+  migration?: string;
+  /** The migration's file in the repo, in the folder its store's migrations are in. */
+  migrationFile?: string;
+  retention?: string;
 }
 
 export interface DeltaStory {
@@ -106,6 +147,18 @@ export interface DeltaStory {
   name: string;
   change: FlowDelta["change"];
   tasks: DeltaTask[];
+  /** The entry that starts the flow: today's trigger endpoint, or a new flow's trigger entry. */
+  entry?: string;
+  /** Today's flow, a numbered line per step with its citations (Context). */
+  before?: string[];
+  /** The flow once the change is in, each changed step saying which task changes it. */
+  after?: string[];
+  /** Today's error paths, which the change passes through (Context). */
+  errors?: string[];
+  /** The steps of today's flow that stay as they are, by their target numbers (Scope: out). */
+  kept?: number[];
+  /** Stories of this change that land first: one adds an entry or table this one uses. */
+  dependsOn?: string[];
 }
 
 export interface RequestTask {
@@ -157,6 +210,7 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
         const n = (counter.get(repo) ?? 0) + 1;
         counter.set(repo, n);
         const verb = s.op === "add" ? "Add" : s.op === "change" ? "Change" : "Remove";
+        const data = taskData(s, e);
         tasks.push({
           id: `${repos.indexOf(repo) + 1}.${n}`,
           story: id,
@@ -182,11 +236,110 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
                 store: `${s.store.table}${s.store.new ? " (new)" : ""}: ${s.store.columns.join(", ")}`,
               }
             : {}),
+          ...(s.to ? { to: { component: s.to.component, entry: s.to.entry, new: s.to.new } } : {}),
+          ...(data ? { data } : {}),
         });
       });
-      stories.push({ id, repo, flow: d.flow, name, change: d.change, tasks });
+      stories.push({
+        id,
+        repo,
+        flow: d.flow,
+        name,
+        change: d.change,
+        tasks,
+        ...storyContext(d, tasks, e),
+      });
     }
+  // A story that calls an entry, or uses a table, another story of the change adds lands after it.
+  const tableOf = (t: DeltaTask) => t.store?.split(/[\s:]/)[0];
+  const adds = (o: DeltaStory, t: DeltaTask) =>
+    (t.to?.new &&
+      o.change === "new" &&
+      o.entry !== undefined &&
+      o.flow.split(".")[0] === t.to.component &&
+      endpointKey(o.entry) === endpointKey(t.to.entry)) ||
+    (!t.data?.new && o.tasks.some((x) => x.data?.new && x.data.table === tableOf(t)));
+  for (const s of stories)
+    s.dependsOn = stories
+      .filter((o) => o !== s && s.tasks.some((t) => adds(o, t)))
+      .map((o) => o.id);
   return stories;
+}
+
+/** The columns a store step adds, or undefined when it adds none (B-stories). */
+function taskData(s: DeltaStep, e: Estate): TaskData | undefined {
+  if (!s.store || s.op === "remove") return undefined;
+  const have = columnsOf(e, s.store.table);
+  const added = s.store.new ? s.store.columns : s.store.columns.filter((c) => !have.has(c));
+  if (!added.length && !s.store.new) return undefined;
+  return {
+    table: s.store.table,
+    new: s.store.new,
+    added,
+    types: s.store.types ?? {},
+    classification: s.store.classification ?? {},
+    ...(s.store.migration
+      ? {
+          migration: s.store.migration,
+          migrationFile: migrationPath(s.store.migration, s.store.table, e),
+        }
+      : {}),
+    ...(s.store.retention ? { retention: s.store.retention } : {}),
+  };
+}
+
+const cites = (repo: string, at: { path?: string; line?: number }[]) => {
+  const c = ev(repo, at);
+  return c.length ? ` (${c.join(", ")})` : "";
+};
+
+/**
+ * The story's context from the map and the target flow (B-stories): its entry, today's flow and
+ * error paths with their citations, the flow once the change is in, and the steps it keeps.
+ */
+function storyContext(
+  d: FlowDelta,
+  tasks: DeltaTask[],
+  e: Estate,
+): Pick<DeltaStory, "entry" | "before" | "after" | "errors" | "kept"> {
+  const today = e.flowById.get(d.flow);
+  const entry = today ? triggerEntry(today, e) : d.trigger?.entry;
+  const merged = mergeDelta(d, today?.flow);
+  const taskOf = (n?: number) => tasks.find((t) => t.position === n)?.id;
+  const after = merged.steps
+    .filter((s) => s.target !== undefined)
+    .map((s) => {
+      const t = taskOf(s.change);
+      const mark =
+        s.mark === "added"
+          ? `, added by task ${t}`
+          : s.mark === "changed"
+            ? `, changed by task ${t}`
+            : "";
+      return `${s.target}. ${s.kind}${mark}: ${s.what}`.replace(/[.\s]+$/, "");
+    });
+  for (const s of merged.steps.filter((x) => x.mark === "removed" && x.change))
+    after.push(
+      `Removed by task ${taskOf(s.change)}: ${s.what.replace(/[.\s]+$/, "")} (today's step ${s.today})`,
+    );
+  const kept = merged.steps.filter((s) => s.mark === "same" && s.target).map((s) => s.target!);
+  return {
+    ...(entry ? { entry } : {}),
+    ...(today
+      ? {
+          before: today.flow.steps.map(
+            (s, i) =>
+              `${i + 1}. ${s.kind}: ${s.what.replace(/[.\s]+$/, "")}${cites(today.repo, s.evidence)}`,
+          ),
+          errors: today.flow.errors.map(
+            (x) =>
+              `${x.when.replace(/[.\s]+$/, "")}: ${x.then.replace(/[.\s]+$/, "")}${cites(today.repo, x.evidence)}`,
+          ),
+        }
+      : {}),
+    after,
+    kept,
+  };
 }
 
 /**
@@ -320,21 +473,44 @@ function requestTask(
  * story writer says which fields each criterion checks, and Atticus checks the set. A bare
  * string (an answer written before checks) checks nothing.
  */
+/** What an error criterion's failure is (the stories bench's rules, bench/stories/rubric.md). */
+export const STORY_ERROR_RULES = [
+  "required",
+  "format",
+  "length",
+  "range",
+  "limit",
+  "unique",
+  "not-found",
+  "forbidden",
+  "conflict",
+  "unavailable",
+  "other",
+] as const;
+
+const Words = z.string().trim().min(1);
+
+const CriterionObject = z.strictObject({
+  text: Words,
+  checks: z.array(Words).default([]),
+  /**
+   * Whether the criterion is about the step succeeding or failing (ADR 0124, Part 3): a task
+   * that validates, writes, calls out or publishes has at least one `error` criterion.
+   */
+  outcome: z.enum(["success", "error"]).default("success"),
+  /** The entry it exercises, as `METHOD /path` or a topic (B-stories). */
+  entry: Words.optional(),
+  /** The validation it relies on, in words: "cardToken is required". */
+  validation: Words.optional(),
+  /** An error criterion: what kind of failure it is. */
+  rule: z.enum(STORY_ERROR_RULES).optional(),
+  /** An error criterion: the status the caller sees, an HTTP status or a code. */
+  status: z.union([z.number().int(), Words]).optional(),
+});
+
 export const StoryCriterion = z.union([
-  z
-    .string()
-    .trim()
-    .min(1)
-    .transform((text) => ({ text, checks: [] as string[], outcome: "success" as const })),
-  z.strictObject({
-    text: z.string().trim().min(1),
-    checks: z.array(z.string().trim().min(1)).default([]),
-    /**
-     * Whether the criterion is about the step succeeding or failing (ADR 0124, Part 3): a task
-     * that validates, writes, calls out or publishes has at least one `error` criterion.
-     */
-    outcome: z.enum(["success", "error"]).default("success"),
-  }),
+  Words.transform((text) => CriterionObject.parse({ text })),
+  CriterionObject,
 ]);
 
 /** Step kinds whose task needs an error criterion: what happens when it fails (ADR 0124, Part 3). */
@@ -351,6 +527,84 @@ export const RequestIn = z.strictObject({
   quote: z.string().trim().min(1).optional(),
 });
 
+const Change = z.enum(["added", "changed", "removed"]);
+
+/** A field of an entry whose contract changes (B-stories): side, type, required and default. */
+export const StoryInterfaceField = z.strictObject({
+  name: Words,
+  side: z.enum(["request", "response", "message"]),
+  type: Words,
+  required: z.boolean(),
+  default: Words.optional(),
+  change: Change,
+  /** A request or message field an entry of this repo gains or changes: what it accepts. */
+  validation: Words.optional(),
+});
+
+/** An entry whose contract changes, and whether that breaks its consumers (B-stories). */
+export const StoryInterfaceChange = z.strictObject({
+  /** `METHOD /path`, or a topic. */
+  entry: Words,
+  change: Change,
+  breaking: z.boolean(),
+  why: Words.optional(),
+  /** Who calls it: component or system ids. */
+  consumers: z.array(Words).default([]),
+  fields: z.array(StoryInterfaceField).default([]),
+});
+export type StoryInterfaceChange = z.infer<typeof StoryInterfaceChange>;
+
+/** A column the story adds or changes, as the story says it (B-stories). */
+export const StoryDataChange = z.strictObject({
+  table: Words,
+  column: Words,
+  type: Words.optional(),
+  nullable: z.boolean().optional(),
+  default: Words.optional(),
+  change: Change.default("added"),
+  migration: Words.optional(),
+  classification: Words.optional(),
+  retention: Words.optional(),
+});
+export type StoryDataChange = z.infer<typeof StoryDataChange>;
+
+/** A section that has nothing in it on purpose, and says why. */
+const NoneWhy = z.strictObject({ none: Words });
+
+/**
+ * The sections of a professional story beyond its statement (ADR 0124 addendum B-stories, Part
+ * 3): each optional, so an answer written before them still reads; the completeness check asks
+ * for the missing ones.
+ */
+const StorySections = {
+  /** What a reader needs that the code doesn't say. The flow before and after is Atticus's. */
+  context: Words.optional(),
+  scope: z
+    .strictObject({ in: z.array(Words).default([]), out: z.array(Words).default([]) })
+    .optional(),
+  interfaces: z.union([z.array(StoryInterfaceChange), NoneWhy]).optional(),
+  data: z.union([z.array(StoryDataChange), NoneWhy]).optional(),
+  nonFunctional: z
+    .strictObject({
+      auth: Words.optional(),
+      audit: Words.optional(),
+      /** Timeouts and retries on every call the story adds or relies on. */
+      timeouts: Words.optional(),
+      performance: Words.optional(),
+    })
+    .optional(),
+  /** Test notes: which test files gain which cases. */
+  tests: z.array(Words).optional(),
+  /** What lands first: stories of this change, repos, and anything else. */
+  dependencies: z
+    .strictObject({
+      stories: z.array(Words).default([]),
+      repos: z.array(Words).default([]),
+      notes: z.array(Words).default([]),
+    })
+    .optional(),
+};
+
 const Answer = z.strictObject({
   stories: z
     .array(
@@ -360,11 +614,14 @@ const Answer = z.strictObject({
         asA: z.string().trim().min(1),
         iWant: z.string().trim().min(1),
         soThat: z.string().trim().min(1),
+        ...StorySections,
         tasks: z
           .array(
             z.strictObject({
               id: z.string(),
               criteria: z.array(StoryCriterion).default([]),
+              /** The tests this task adds: the test file and its cases. */
+              tests: z.array(Words).optional(),
             }),
           )
           .default([]),
@@ -406,11 +663,22 @@ export interface UnwrittenCheck {
   criterion: string;
 }
 
+/** What the sections check reads beside the answer (B-stories). */
+export interface SectionCheckOptions {
+  /** Check the story's sections (the stories stage; the fast path's answer has none yet). */
+  sections?: boolean;
+  /** Every field name something knows, folded (knownFieldNames). */
+  known?: Set<string>;
+  /** The estate, for the entries, components and repos it has. */
+  estate?: Estate;
+}
+
 export function checkStories(
   a: StoriesAnswer,
   stories: DeltaStory[],
   deltas: FlowDelta[],
   items: Process[],
+  o: SectionCheckOptions = {},
 ): StageIssue[] {
   const out: StageIssue[] = [];
   const issue = (rule: string, target: string, message: string, repo?: string) =>
@@ -508,6 +776,367 @@ export function checkStories(
         `${r.flow}#${r.step}`,
         `Request ${r.item} cites step ${r.step} of ${r.flow}, which the target flows don't have.`,
       );
+  }
+  if (o.sections) out.push(...checkSections(a, stories, deltas, o));
+  return out;
+}
+
+/**
+ * Every field name something knows (B-stories), folded as writesField folds them: the target
+ * flows' fields, the columns their stores name, `as` and `derived`, and the estate's columns,
+ * schema fields and the fields its flows carry. A field a story names that none of them has is
+ * invented.
+ */
+export function knownFieldNames(e: Estate, deltas: FlowDelta[]): Set<string> {
+  const names: string[] = [];
+  const add = (xs: Iterable<string> | undefined) => {
+    for (const x of xs ?? []) names.push(x, ...x.split("."));
+  };
+  for (const d of deltas)
+    for (const s of d.steps) {
+      add(fieldNames(s.fields));
+      add(Object.keys(s.fields?.as ?? {}));
+      add(Object.values(s.fields?.as ?? {}));
+      add(Object.keys(s.fields?.derived ?? {}));
+      add(s.store?.columns);
+    }
+  for (const r of e.records as (CatalogRecord & Record<string, unknown>)[]) {
+    if (r.kind === "Column") add([typeof r.name === "string" ? r.name : r.id.split(".").pop()!]);
+    if (r.kind === "Schema" && Array.isArray(r.fields))
+      add(
+        (r.fields as { name?: unknown }[]).flatMap((f) =>
+          typeof f.name === "string" ? [f.name] : [],
+        ),
+      );
+  }
+  for (const f of e.flows)
+    for (const s of f.flow.steps) {
+      for (const k of ["sends", "returns", "reads", "checks", "from", "to"] as const)
+        add(s.data?.[k]);
+      add(s.store?.columns);
+    }
+  return new Set(names.map(foldName).filter(Boolean));
+}
+
+/** Words in a criterion that are written like a field: snake_case or lowerCamelCase. */
+export function fieldLikeNames(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(/(?<![\w.$/{-])[a-z][a-z0-9]*(?:_[a-z0-9]+)+(?![\w(-])/g))
+    out.add(m[0]);
+  for (const m of text.matchAll(/(?<![\w.$/{-])[a-z]+[A-Z][A-Za-z0-9]*(?![\w(-])/g)) out.add(m[0]);
+  return [...out];
+}
+
+const SECTION_NAMES = {
+  scopeOut: "scope (out)",
+  interfaces: "interface changes",
+  data: "data changes",
+  auth: "auth",
+  audit: "audit",
+  timeouts: "timeouts and retries",
+  performance: "performance",
+  tests: "test notes",
+  dependencies: "dependencies",
+} as const;
+
+/**
+ * The completeness check of a story's sections (ADR 0124 addendum B-stories, Part 3), run on
+ * every draft before the critic: an entry the target flows add is in the interface changes; a
+ * request field an entry of this repo gains has a validation and an error criterion; every
+ * field and column a section names is one the target flows or the estate know; a column a step
+ * adds has its type, nullable, classification and retention, and its write a migration; a
+ * dependency is a story or repo of the change. A check on what the story wrote is blocking, so
+ * the draft goes back with the list; a section the story leaves out is a risk (not blocking)
+ * until the recorded replays are re-recorded with the sections, so old recordings still pass.
+ */
+export function checkSections(
+  a: StoriesAnswer,
+  stories: DeltaStory[],
+  deltas: FlowDelta[],
+  o: SectionCheckOptions = {},
+): StageIssue[] {
+  const out: StageIssue[] = [];
+  const push = (
+    rule: string,
+    target: string,
+    message: string,
+    blocking: boolean,
+    repo: string,
+    locateText?: string,
+  ) => out.push({ rule, target, message, blocking, repo, ...(locateText ? { locateText } : {}) });
+  const known = o.known ?? new Set<string>();
+  const e = o.estate;
+  // Entries something knows: the stories' own, the target flows', and the estate's.
+  const entries = new Set([
+    ...stories.flatMap((s) => (s.entry ? [endpointKey(s.entry)] : [])),
+    ...deltas.flatMap((d) => [
+      ...(d.trigger?.entry ? [endpointKey(d.trigger.entry)] : []),
+      ...d.steps.flatMap((s) => (s.to ? [endpointKey(s.to.entry)] : [])),
+    ]),
+    ...(e?.endpoints ?? []),
+  ]);
+  const repos = new Set([
+    ...stories.map((s) => s.repo),
+    ...(e?.flows.map((f) => f.repo) ?? []),
+    ...((e?.records ?? []) as (CatalogRecord & Record<string, unknown>)[]).flatMap((r) =>
+      r.kind === "Component" && typeof r.repo === "string" ? [r.repo] : [],
+    ),
+  ]);
+  /** Whether an entry is served by the story's repo: its flow's own, or an endpoint of its components. */
+  const served = (s: DeltaStory, entry: string) => {
+    const k = endpointKey(entry);
+    if (s.entry && endpointKey(s.entry) === k) return true;
+    return ((e?.records ?? []) as (CatalogRecord & Record<string, unknown>)[]).some(
+      (r) =>
+        r.kind === "Endpoint" &&
+        typeof r.method === "string" &&
+        typeof r.pathOrTopic === "string" &&
+        endpointKey(`${r.method} ${r.pathOrTopic}`) === k &&
+        (e!.byId.get(String(r.component)) as { repo?: string } | undefined)?.repo === s.repo,
+    );
+  };
+
+  for (const s of stories) {
+    const w = a.stories.find((x) => x.id === s.id);
+    if (!w) continue; // stories.missing-story says so
+    // The story's fields, folded as writesField folds names (card_token is cardToken).
+    const fields = new Set(s.tasks.flatMap((t) => t.fields.map(foldName)));
+    const named = [...new Set(s.tasks.flatMap((t) => t.fields))];
+    const criteria = s.tasks.flatMap((t) =>
+      (w.tasks.find((x) => x.id === t.id)?.criteria ?? []).map((c) => ({ t, c })),
+    );
+
+    // ---- sections left out: a risk for now
+    const missing: string[] = [];
+    if (!w.scope?.out.length) missing.push(SECTION_NAMES.scopeOut);
+    if (w.interfaces === undefined) missing.push(SECTION_NAMES.interfaces);
+    if (w.data === undefined) missing.push(SECTION_NAMES.data);
+    for (const k of ["auth", "audit", "timeouts", "performance"] as const)
+      if (!w.nonFunctional?.[k]) missing.push(SECTION_NAMES[k]);
+    if (!w.tests?.length) missing.push(SECTION_NAMES.tests);
+    if (w.dependencies === undefined) missing.push(SECTION_NAMES.dependencies);
+    if (missing.length)
+      push(
+        "stories.section-missing",
+        s.id,
+        `Story ${s.id} has no ${andList(missing)}: write ${missing.length === 1 ? "it" : "each"} (interfaces and data may be { none: <why> }, dependencies may be empty lists), so a developer can build it without asking.`,
+        false,
+        s.repo,
+      );
+
+    // ---- interface changes
+    const added = [
+      ...(s.change === "new" && s.entry ? [s.entry] : []),
+      ...s.tasks.flatMap((t) => (t.to?.new && t.op !== "remove" ? [t.to.entry] : [])),
+    ];
+    if (w.interfaces !== undefined) {
+      const listed = Array.isArray(w.interfaces) ? w.interfaces : [];
+      for (const x of [...new Set(added)])
+        if (!listed.some((i) => endpointKey(i.entry) === endpointKey(x)))
+          push(
+            "stories.interface-missing",
+            `${s.id}:${x}`,
+            `Story ${s.id}: the target flow adds ${x}, but ${Array.isArray(w.interfaces) ? "the interface changes don't list it" : `the interface changes say none ("${w.interfaces.none}")`}: list it with its fields (side, type, required, default), whether it is breaking, and its consumers.`,
+            true,
+            s.repo,
+          );
+      for (const i of listed) {
+        if (!entries.has(endpointKey(i.entry)))
+          push(
+            "stories.unknown-entry",
+            `${s.id}:${i.entry}`,
+            `Story ${s.id}: the interface change names ${i.entry}, which neither the target flows nor the catalog have. Name an entry of the flow, or add it in the target flows (atticus change architecture).`,
+            true,
+            s.repo,
+          );
+        if (e)
+          for (const c of i.consumers.filter((c) => !e.ids.has(c)))
+            push(
+              "stories.unknown-consumer",
+              `${s.id}:${i.entry}:${c}`,
+              `Story ${s.id}: ${i.entry}'s consumer ${c} isn't a component or system in the catalog. Name consumers by their catalog ids, or leave them out and say who calls it in why.`,
+              true,
+              s.repo,
+            );
+        const inbound = served(s, i.entry);
+        for (const f of i.fields) {
+          const target = `${s.id}:${i.entry}:${f.name}`;
+          const isNew = f.change !== "removed";
+          if (!(isNew ? fields : known).has(foldName(f.name)))
+            push(
+              "stories.invented-field",
+              target,
+              isNew
+                ? `Story ${s.id}: ${i.entry} lists ${f.name} as ${f.change}, but no step of the target flow carries it (the story's fields: ${named.join(", ") || "none"}). Name the field as the target flow does, or add it to the step in the target flows (atticus change architecture).`
+                : `Story ${s.id}: ${i.entry} lists ${f.name} as removed, but neither the target flows nor the catalog know a field of that name.`,
+              true,
+              s.repo,
+            );
+          if (!inbound || !isNew || f.side === "response" || !fields.has(foldName(f.name)))
+            continue;
+          if (!f.validation)
+            push(
+              "stories.field-no-validation",
+              target,
+              `Story ${s.id}: ${i.entry} gains or changes the ${f.side} field ${f.name} but says nothing it accepts: add its validation (required, format, length or range, and what is refused).`,
+              true,
+              s.repo,
+            );
+          const same = (x: string) => foldName(x) === foldName(f.name);
+          const own = criteria.filter(({ t }) => t.fields.some(same));
+          if (!own.some(({ c }) => c.outcome === "error" && c.checks.some(same)))
+            push(
+              "stories.field-no-error-case",
+              target,
+              `Story ${s.id}: no criterion says what happens when ${f.name}, a ${f.side} field ${i.entry} gains or changes, is wrong: add one with outcome: error that checks ${f.name}, saying the status and message the caller sees${own[0] ? ` (on task ${own[0].t.id})` : ""}.`,
+              true,
+              s.repo,
+            );
+        }
+      }
+    }
+    for (const { t, c } of criteria)
+      if (c.entry && !entries.has(endpointKey(c.entry)))
+        push(
+          "stories.unknown-entry",
+          `${t.id}:${c.entry}`,
+          `Task ${t.id}: the criterion "${c.text}" names the entry ${c.entry}, which neither the target flows nor the catalog have.`,
+          true,
+          t.repo,
+          c.text,
+        );
+
+    // ---- data changes: each column a step adds, with what the target flow and the story say
+    const rows = Array.isArray(w.data) ? w.data : [];
+    const written = w.data !== undefined && Array.isArray(w.data);
+    const stored = (table: string, column: string) =>
+      s.tasks.some(
+        (t) =>
+          (t.data?.table === table && t.data.added.includes(column)) ||
+          (t.store?.split(/[\s:]/)[0] === table && t.fields.includes(column)),
+      );
+    for (const r of rows)
+      if (!stored(r.table, r.column))
+        push(
+          "stories.unknown-column",
+          `${s.id}:${r.table}.${r.column}`,
+          `Story ${s.id}: the data changes name ${r.table}.${r.column}, which no step of the target flow stores. Name the columns the steps add, as the target flow names them.`,
+          true,
+          s.repo,
+        );
+    for (const t of s.tasks) {
+      if (!t.data) continue;
+      for (const col of t.data.added) {
+        const target = `${t.id}:${col}`;
+        const r = rows.find((x) => x.table === t.data!.table && x.column === col);
+        if (w.data !== undefined && !written) {
+          push(
+            "stories.data-missing",
+            target,
+            `Task ${t.id} adds ${t.data.table}.${col}, but the data changes say none ("${(w.data as { none: string }).none}"): list the column with its type, nullable, default, migration, classification and retention.`,
+            true,
+            t.repo,
+          );
+          continue;
+        }
+        const flow = {
+          type: t.data.types[col],
+          classification: t.data.classification[col],
+          retention: t.data.retention,
+        };
+        const differs = (["type", "classification", "retention"] as const).filter(
+          (k) => flow[k] && r?.[k] && flow[k]!.trim() !== r[k]!.trim(),
+        );
+        if (differs.length)
+          push(
+            "stories.data-differs",
+            target,
+            `Task ${t.id}: the data changes say ${t.data.table}.${col} has ${differs.map((k) => `${k} ${r![k]}`).join(" and ")}, but the target flow says ${differs.map((k) => `${k} ${flow[k]}`).join(" and ")}. Write what the target flow says, or change the target flow in the architecture stage.`,
+            true,
+            t.repo,
+          );
+        if (r?.migration && t.data.migration && r.migration !== t.data.migration)
+          push(
+            "stories.data-differs",
+            `${target}:migration`,
+            `Task ${t.id}: the data changes name the migration ${r.migration} for ${col}, but the target flow names ${t.data.migration}.`,
+            true,
+            t.repo,
+          );
+        const lacks = [
+          ...(flow.type || r?.type ? [] : ["type"]),
+          ...(r?.nullable !== undefined ? [] : ["nullable"]),
+          ...(flow.classification || r?.classification ? [] : ["classification"]),
+          ...(flow.retention || r?.retention ? [] : ["retention"]),
+        ];
+        if (lacks.length)
+          push(
+            "stories.data-incomplete",
+            target,
+            `Task ${t.id} adds ${t.data.table}.${col}, and nothing says its ${andList(lacks)}: add ${lacks.length === 1 ? "it" : "them"} to the column's data change${written ? "" : " (the story has no data changes yet)"}.`,
+            written,
+            t.repo,
+          );
+      }
+      if (
+        t.kind === "write" &&
+        !t.data.migration &&
+        !rows.some(
+          (r) => r.table === t.data!.table && t.data!.added.includes(r.column) && r.migration,
+        )
+      )
+        push(
+          "stories.write-no-migration",
+          t.id,
+          `Task ${t.id} writes ${t.data.new ? `the new table ${t.data.table}` : `${t.data.added.join(", ")} to ${t.data.table}`}, but neither the target flow nor the data changes name the migration that makes ${t.data.new ? "it" : t.data.added.length === 1 ? "the column" : "the columns"}: name it on the column's data change (the file the repo's migrations would call it).`,
+          written,
+          t.repo,
+        );
+    }
+
+    // ---- dependencies: stories and repos of the change
+    for (const d of w.dependencies?.stories ?? [])
+      if (d === s.id || !stories.some((x) => x.id === d))
+        push(
+          "stories.unknown-dependency",
+          `${s.id}:${d}`,
+          `Story ${s.id} depends on ${d}, which ${d === s.id ? "is the story itself" : `isn't a story of this change (${stories.map((x) => x.id).join(", ")})`}.`,
+          true,
+          s.repo,
+        );
+    for (const d of w.dependencies?.repos ?? [])
+      if (!repos.has(d))
+        push(
+          "stories.unknown-dependency",
+          `${s.id}:${d}`,
+          `Story ${s.id} depends on the repo ${d}, which isn't a repo of the change or the estate.`,
+          true,
+          s.repo,
+        );
+
+    // ---- a criterion that names a field nothing knows: a risk, read by the story lens
+    const own = new Set([
+      ...fields,
+      ...(Array.isArray(w.interfaces) ? w.interfaces : []).flatMap((i) =>
+        i.fields.map((f) => foldName(f.name)),
+      ),
+      ...rows.map((r) => foldName(r.column)),
+    ]);
+    const seen = new Set<string>();
+    for (const { t, c } of criteria)
+      for (const n of fieldLikeNames(c.text)) {
+        const k = `${t.id}:${n}`;
+        if (seen.has(k) || own.has(foldName(n)) || known.has(foldName(n))) continue;
+        seen.add(k);
+        push(
+          "stories.unknown-name",
+          k,
+          `Task ${t.id}: the criterion "${c.text}" names ${n}, which reads like a field but neither the target flows nor the catalog know it. Name the field as the code does, or say it in plain words.`,
+          false,
+          t.repo,
+          c.text,
+        );
+      }
   }
   return out;
 }
@@ -968,11 +1597,20 @@ export async function unjudgedChecks(
 
 const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
 
+/** What a task's prompt adds beside the step and criteria (B-stories): the story's own words for it. */
+export interface TaskPromptExtras {
+  /** The interface fields and columns of the task's fields, each in one line. */
+  contract?: string[];
+  tests?: string[];
+  command?: string;
+}
+
 export function taskPrompt(
   change: string,
   s: DeltaStory,
   t: DeltaTask,
   criteria: StoryCriterion[],
+  x: TaskPromptExtras = {},
 ): string {
   return [
     `Implement task ${t.id} of the change ${change} in the repo ${t.repo}.`,
@@ -980,6 +1618,7 @@ export function taskPrompt(
     ...(t.target ? [`It goes to ${t.target}.`] : []),
     ...(t.store ? [`It uses ${t.store}.`] : []),
     ...(t.fields.length ? [`Fields: ${t.fields.join(", ")}.`] : []),
+    ...(x.contract ?? []).map(sentence),
     ...(t.evidence.length
       ? [`Today's code is at ${t.evidence.join(", ")}; read it first.`]
       : ["This is new code; follow the repo's patterns for its neighbours."]),
@@ -987,15 +1626,125 @@ export function taskPrompt(
     ...criteria.map(
       (c) => `- ${c.text}${c.checks.length ? ` (checks ${c.checks.join(", ")})` : ""}`,
     ),
+    ...(x.tests?.length ? ["Tests to add:", ...x.tests.map((y) => `- ${y}`)] : []),
+    ...(x.command ? [`Run ${x.command} until it passes.`] : []),
     "Change only this repo. Write a test for each criterion. Never push to a protected branch.",
   ].join("\n");
+}
+
+/** What the story file needs beside the story writer's words (B-stories). */
+export interface StoryFileExtras {
+  /** The definition of done: the org pack's checks and Atticus's own items. */
+  done?: string[];
+  /** Each repo's build and test command, from repos.manifest.yaml. */
+  commands?: Record<string, string>;
+  /** The test kinds the test strategy asks of this change. */
+  testKinds?: string[];
+  requests?: RequestTask[];
+}
+
+type StoryWords = StoriesAnswer["stories"][number];
+const NOT_WRITTEN = "Not written yet.";
+const cell = (v: string | undefined) => (v ?? "not said").replace(/\|/g, "\\|");
+
+/** A column a step adds, with the target flow's facts and the story's words over them. */
+function columnRows(s: DeltaStory, w: StoryWords): (StoryDataChange & { task?: string })[] {
+  const rows = Array.isArray(w.data) ? w.data : [];
+  const out: (StoryDataChange & { task?: string })[] = [];
+  for (const t of s.tasks)
+    for (const col of t.data?.added ?? []) {
+      const d = t.data!;
+      const r = rows.find((x) => x.table === d.table && x.column === col);
+      const type = d.types[col] ?? r?.type;
+      const migration = d.migration ?? r?.migration;
+      const classification = d.classification[col] ?? r?.classification;
+      const retention = d.retention ?? r?.retention;
+      out.push({
+        task: t.id,
+        table: d.table,
+        column: col,
+        change: "added",
+        ...(type ? { type } : {}),
+        ...(r?.nullable !== undefined ? { nullable: r.nullable } : {}),
+        ...(r?.default ? { default: r.default } : {}),
+        ...(migration ? { migration } : {}),
+        ...(classification ? { classification } : {}),
+        ...(retention ? { retention } : {}),
+      });
+    }
+  for (const r of rows)
+    if (!out.some((x) => x.table === r.table && x.column === r.column)) out.push(r);
+  return out;
+}
+
+/** The interface fields and columns a task's fields are, one line each, for its prompt. */
+function contractOf(s: DeltaStory, w: StoryWords, t: DeltaTask): string[] {
+  const out: string[] = [];
+  // A call's entry is the task's that makes the call; any other entry is the flow's own.
+  const calls = new Set(s.tasks.flatMap((x) => (x.to ? [endpointKey(x.to.entry)] : [])));
+  const mine = (entry: string) =>
+    t.to
+      ? endpointKey(t.to.entry) === endpointKey(entry) || !calls.has(endpointKey(entry))
+      : !calls.has(endpointKey(entry));
+  for (const i of (Array.isArray(w.interfaces) ? w.interfaces : []).filter((i) => mine(i.entry)))
+    for (const f of i.fields.filter((f) => t.fields.includes(f.name)))
+      out.push(
+        `${i.entry} ${f.change === "removed" ? "loses" : f.change === "added" ? "gains" : "changes"} the ${f.side} field ${f.name} (${f.type}, ${f.required ? "required" : "optional"}${f.default ? `, default ${f.default}` : ""})${f.validation ? `. Validation: ${f.validation.replace(/[.\s]+$/, "")}` : ""}`,
+      );
+  for (const r of columnRows(s, w).filter((r) => r.task === t.id))
+    out.push(
+      `Column ${r.table}.${r.column}: ${r.type ?? "type not said"}, ${r.nullable === undefined ? "nullable not said" : r.nullable ? "nullable" : "not null"}${r.default ? `, default ${r.default}` : ""}${r.migration ? `, migration ${r.migration}` : ""}`,
+    );
+  return out;
+}
+
+/** A criterion's entry, validation and error, after its words in the task's list. */
+function criterionDetails(c: StoryCriterion): string {
+  const parts = [
+    ...(c.entry ? [`Entry: ${c.entry}`] : []),
+    ...(c.validation ? [`Validation: ${c.validation.replace(/[.\s]+$/, "")}`] : []),
+    ...(c.outcome === "error"
+      ? [`Error${c.rule ? `: ${c.rule}` : ""}${c.status !== undefined ? `, ${c.status}` : ""}`]
+      : []),
+  ];
+  return parts.length ? ` (${parts.join("; ")})` : "";
+}
+
+/** Atticus's own definition of done, for every story (the org pack's checks come after). */
+export const DEFAULT_DONE = [
+  "Every acceptance criterion has a test, and the repo's build and tests pass",
+  "The interface and data changes are in the code as written here, and no other entry, field or column changed",
+  "A person reviewed and merged each task's pull request; nothing was pushed to a protected branch",
+];
+
+/**
+ * The definition of done (B-stories): Atticus's own items, the test kinds the org pack's test
+ * strategy asks of the change, and the checks of its build and qa gates (gates.yaml).
+ */
+export function definitionOfDone(
+  ctx: Pick<ChangeContext, "orgPack">,
+  change: Pick<ChangeLifecycle, "type">,
+  kinds: { required: string[]; row?: { changeType: string; risk: string } },
+): string[] {
+  const out = [...DEFAULT_DONE];
+  if (kinds.required.length)
+    out.push(
+      `Tests of each kind test-strategy.yaml asks of a ${kinds.row?.changeType ?? change.type} change${kinds.row ? ` at ${kinds.row.risk} risk` : ""}: ${kinds.required.join(", ")}`,
+    );
+  for (const g of ctx.orgPack.gates.gates.filter((x) => x.phase === "build" || x.phase === "qa"))
+    if (g.checks.length || g.checklists.length)
+      out.push(
+        `The ${g.id} gate (gates.yaml) passes: ${[...g.checks.map((c) => c.check), ...g.checklists.map((c) => `checklist ${c}`)].join(", ")}`,
+      );
+  return out;
 }
 
 function renderStoryFile(
   change: string,
   s: DeltaStory,
-  w: StoriesAnswer["stories"][number],
+  w: StoryWords,
   unjudged: UnwrittenCheck[] = [],
+  x: StoryFileExtras = {},
 ): string {
   const lines = [
     `${GENERATED_MARK} stories from the target flows (target-flows/). Edit the wording freely; tasks, fields and evidence come from the flows. -->`,
@@ -1003,11 +1752,146 @@ function renderStoryFile(
     "",
     `As ${/^[aeiou]/i.test(w.asA) ? "an" : "a"} ${w.asA} I want ${w.iWant} so that ${sentence(w.soThat)}`,
     "",
-    "## Acceptance criteria",
-    "",
   ];
-  const crit = s.tasks.flatMap((t) => w.tasks.find((x) => x.id === t.id)?.criteria ?? []);
+
+  // ---- Context: the story's words, then the flow before and after, from the map and the delta.
+  lines.push("## Context", "");
+  if (w.context) lines.push(sentence(w.context), "");
+  const started = s.entry ? `, started by ${s.entry}` : "";
+  if (s.before?.length)
+    lines.push(`Today, flow ${s.flow} (${s.name})${started}:`, "", ...s.before, "");
+  if (s.errors?.length)
+    lines.push("Its error paths today:", "", ...s.errors.map((e) => `- ${e}`), "");
+  if (s.after?.length)
+    lines.push(
+      s.change === "new"
+        ? `The new flow ${s.flow} (${s.name})${started}:`
+        : s.change === "remove"
+          ? `Once the change is in, flow ${s.flow} is removed:`
+          : "Once the change is in:",
+      "",
+      ...s.after,
+      "",
+    );
+
+  // ---- Scope
+  const kept = s.change === "modify" && s.kept?.length ? s.kept : [];
+  const out = [
+    ...(kept.length
+      ? [
+          `Step${kept.length === 1 ? "" : "s"} ${andList(kept.map(String))} of the flow ${kept.length === 1 ? "stays as it is" : "stay as they are"}.`,
+        ]
+      : []),
+    ...(w.scope?.out ?? []).map(sentence),
+  ];
+  lines.push(
+    "## Scope",
+    "",
+    "In:",
+    "",
+    ...s.tasks.map((t) => `- Task ${t.id}: ${sentence(t.title)}`),
+    ...(w.scope?.in ?? []).map((i) => `- ${sentence(i)}`),
+    "",
+    "Out:",
+    "",
+    ...(out.length ? out.map((o) => `- ${o}`) : [`- ${NOT_WRITTEN}`]),
+    "",
+  );
+
+  // ---- Acceptance criteria (the critic and test generation read this list)
+  lines.push("## Acceptance criteria", "");
+  const crit = s.tasks.flatMap((t) => w.tasks.find((y) => y.id === t.id)?.criteria ?? []);
   lines.push(...(crit.length ? crit.map((c) => `- ${sentence(c.text)}`) : ["- None yet."]), "");
+
+  // ---- Interface changes
+  lines.push("## Interface changes", "");
+  if (w.interfaces === undefined) lines.push(NOT_WRITTEN, "");
+  else if (!Array.isArray(w.interfaces)) lines.push(`None: ${sentence(w.interfaces.none)}`, "");
+  else if (!w.interfaces.length) lines.push("None.", "");
+  else
+    for (const i of w.interfaces) {
+      lines.push(
+        `### ${i.entry}`,
+        "",
+        `${i.change[0]!.toUpperCase()}${i.change.slice(1)}, ${i.breaking ? "breaking" : "additive"}${i.why ? `: ${sentence(i.why)}` : "."} Consumers: ${i.consumers.length ? i.consumers.join(", ") : "none named"}.`,
+        "",
+      );
+      if (i.fields.length)
+        lines.push(
+          "| Field | Side | Type | Required | Default | Change | Validation |",
+          "| --- | --- | --- | --- | --- | --- | --- |",
+          ...i.fields.map(
+            (f) =>
+              `| ${cell(f.name)} | ${f.side} | ${cell(f.type)} | ${f.required ? "yes" : "no"} | ${cell(f.default ?? "none")} | ${f.change} | ${cell(f.validation ?? (f.side === "response" ? "none" : "none given"))} |`,
+          ),
+          "",
+        );
+    }
+
+  // ---- Data changes: the target flow's columns, with the story's words over them
+  lines.push("## Data changes", "");
+  const cols = columnRows(s, w);
+  if (cols.length)
+    lines.push(
+      "| Table | Column | Type | Nullable | Default | Change | Migration | Classification | Retention |",
+      "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+      ...cols.map(
+        (r) =>
+          `| ${cell(r.table)} | ${cell(r.column)} | ${cell(r.type)} | ${r.nullable === undefined ? "not said" : r.nullable ? "yes" : "no"} | ${cell(r.default ?? "none")} | ${r.change} | ${cell(r.migration)} | ${cell(r.classification)} | ${cell(r.retention)} |`,
+      ),
+      "",
+    );
+  else if (w.data && !Array.isArray(w.data)) lines.push(`None: ${sentence(w.data.none)}`, "");
+  else lines.push(w.data === undefined ? NOT_WRITTEN : "None.", "");
+
+  // ---- Non-functional
+  const nf = w.nonFunctional ?? {};
+  lines.push(
+    "## Non-functional",
+    "",
+    `- Auth: ${sentence(nf.auth ?? NOT_WRITTEN)}`,
+    `- Audit: ${sentence(nf.audit ?? NOT_WRITTEN)}`,
+    `- Timeouts and retries: ${sentence(nf.timeouts ?? NOT_WRITTEN)}`,
+    `- Performance: ${sentence(nf.performance ?? NOT_WRITTEN)}`,
+    "",
+  );
+
+  // ---- Tests: the kinds alone (the story bar reads them as a list), then the notes
+  if (x.testKinds?.length) lines.push("## Tests", "", x.testKinds.join(", "), "");
+  lines.push(
+    "## Test notes",
+    "",
+    ...(w.tests?.length ? w.tests.map((n) => `- ${sentence(n)}`) : [`- ${NOT_WRITTEN}`]),
+    "",
+  );
+
+  // ---- Depends on, in one line (the story bar reads it as a list)
+  const deps = [
+    ...new Set([...(s.dependsOn ?? []), ...(w.dependencies?.stories ?? [])]),
+    ...(w.dependencies?.repos ?? []).map((r) => `the ${r} repo`),
+    ...(w.dependencies?.notes ?? []).map((n) => n.replace(/[.\s]+$/, "")),
+  ];
+  lines.push(
+    "## Depends on",
+    "",
+    deps.length ? sentence(deps.join("; ")) : w.dependencies ? "None." : NOT_WRITTEN,
+    "",
+  );
+
+  // ---- Definition of done
+  const waits = (x.requests ?? []).filter((r) => r.flow === s.flow);
+  lines.push(
+    "## Definition of done",
+    "",
+    ...[
+      ...(x.done ?? DEFAULT_DONE),
+      ...(waits.length
+        ? [`A person has raised ${andList(waits.map((r) => `${r.id} ${r.title}`))} (requests.md)`]
+        : []),
+    ].map((d) => `- ${sentence(d)}`),
+    "",
+  );
+
   lines.push(
     "## Traces to",
     "",
@@ -1015,8 +1899,25 @@ function renderStoryFile(
     "",
   );
   lines.push("## Systems and repos", "", s.repo, "", "## Tasks", "");
+  const command = x.commands?.[s.repo];
   for (const t of s.tasks) {
-    const c = w.tasks.find((x) => x.id === t.id)?.criteria ?? [];
+    const tw = w.tasks.find((y) => y.id === t.id);
+    const c = tw?.criteria ?? [];
+    // The files the step's citations are in, with their lines, and a migration it names (new).
+    const byFile = new Map<string, string[]>();
+    for (const c of t.evidence) {
+      const m = /^(.+?)(?::(\d+))?$/.exec(c)!;
+      const ls = byFile.get(m[1]!) ?? [];
+      if (m[2] && !ls.includes(m[2])) ls.push(m[2]);
+      byFile.set(m[1]!, ls);
+    }
+    const files = [
+      ...[...byFile].map(
+        ([f, ls]) =>
+          `${f}${ls.length ? ` (line${ls.length === 1 ? "" : "s"} ${andList(ls)})` : ""}`,
+      ),
+      ...(t.data?.migrationFile ? [`${t.repo}:${t.data.migrationFile} (new migration)`] : []),
+    ];
     lines.push(
       `### Task ${t.id}: ${t.title}`,
       "",
@@ -1025,23 +1926,35 @@ function renderStoryFile(
       `- Evidence: ${t.evidence.join(", ") || "new code"}`,
       ...(t.target ? [`- Goes to: ${t.target}`] : []),
       ...(t.store ? [`- Store: ${t.store}`] : []),
+      `- Files to touch: ${files.join(", ") || "new code; follow the repo's patterns for its neighbours"}`,
       "- Acceptance criteria:",
       ...(c.length
-        ? c.flatMap((x) => [
-            `  - ${sentence(x.text)}`,
+        ? c.flatMap((y) => [
+            `  - ${sentence(y.text)}${criterionDetails(y)}`,
             ...unjudged
-              .filter((u) => u.task === t.id && u.criterion === x.text)
+              .filter((u) => u.task === t.id && u.criterion === y.text)
               .map(
                 (u) =>
                   `  - Not judged yet: this criterion says it checks ${u.field} without naming it. The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).`,
               ),
           ])
         : ["  - None yet."]),
+      "- Tests to add:",
+      ...(tw?.tests?.length
+        ? tw.tests.map((y) => `  - ${sentence(y)}`)
+        : [
+            `  - A test for each criterion above${t.evidence[0] ? `, beside the tests of ${t.evidence[0].split(":")[1]}` : ""}.`,
+          ]),
+      `- Run: ${command ? `\`${command}\`` : `the repo's build and tests (repos.manifest.yaml names no build command for ${t.repo})`}`,
       "",
       "Prompt for Copilot or Claude Code:",
       "",
       "```text",
-      taskPrompt(change, s, t, c),
+      taskPrompt(change, s, t, c, {
+        contract: contractOf(s, w, t),
+        ...(tw?.tests?.length ? { tests: tw.tests } : {}),
+        ...(command ? { command } : {}),
+      }),
       "```",
       "",
     );
@@ -1056,10 +1969,17 @@ function renderIndex(stories: DeltaStory[], a: StoriesAnswer): string {
     "",
     "| Story | Title | Repos | Depends on |",
     "| --- | --- | --- | --- |",
-    ...stories.map(
-      (s) =>
-        `| ${s.id} | ${(a.stories.find((x) => x.id === s.id)?.title ?? s.name).replace(/\|/g, "\\|")} | ${s.repo} |  |`,
-    ),
+    ...stories.map((s) => {
+      const w = a.stories.find((x) => x.id === s.id);
+      // Story ids only: the critic reads the cell as a list of stories.
+      const deps = [
+        ...new Set([
+          ...(s.dependsOn ?? []),
+          ...(w?.dependencies?.stories ?? []).filter((d) => stories.some((x) => x.id === d)),
+        ]),
+      ];
+      return `| ${s.id} | ${(w?.title ?? s.name).replace(/\|/g, "\\|")} | ${s.repo} | ${deps.join(", ")} |`;
+    }),
     "",
   ].join("\n");
 }
@@ -1151,6 +2071,8 @@ export async function writeStories(
   now: Date,
   /** Criteria's claims no judgment settled: noted under them for the story lens and the reviewer. */
   unjudged: UnwrittenCheck[] = [],
+  /** The definition of done, the repos' commands and the test kinds (B-stories). */
+  extras: Omit<StoryFileExtras, "requests"> = {},
 ): Promise<string[]> {
   const dir = changeFolder(root, change);
   const keep = new Set(stories.map((s) => `${s.id}.md`));
@@ -1171,7 +2093,7 @@ export async function writeStories(
     };
     await writeFileAtomic(
       join(dir, "stories", `${s.id}.md`),
-      renderStoryFile(change, s, w, unjudged),
+      renderStoryFile(change, s, w, unjudged, { ...extras, requests }),
     );
     files.push(`stories/${s.id}.md`);
   }
@@ -1208,6 +2130,34 @@ async function locateInStories(
     if (n >= 0) return `${rel}/stories/${f}:${n + 1}`;
   }
   return undefined;
+}
+
+/**
+ * The definition of done, each repo's build command and the test kinds for a change's stories
+ * (B-stories), from the org pack. A footprint that can't be worked out leaves the test kinds out.
+ */
+export async function storyExtras(
+  ctx: ChangeContext,
+  change: ChangeLifecycle,
+): Promise<Omit<StoryFileExtras, "requests">> {
+  let kinds: { required: string[]; row?: { changeType: string; risk: string } } = {
+    required: [],
+  };
+  try {
+    const footprint = await changeFootprint(ctx, change);
+    const risk = scoreRisk({ type: change.type, footprint }, ctx.policy);
+    kinds = testsFor(ctx.orgPack.testStrategy, change.type, risk.level);
+  } catch {
+    // The test kinds are a convenience: the definition of done says what it can without them.
+  }
+  const commands: Record<string, string> = {};
+  for (const p of ctx.orgPack.profiles)
+    for (const r of p.repos?.repos ?? []) if (r.build) commands[r.id] = r.build;
+  return {
+    done: definitionOfDone(ctx, change, kinds),
+    commands,
+    testKinds: [...kinds.required],
+  };
 }
 
 export interface StoriesStageResult extends StageResult<StoriesAnswer> {
@@ -1262,6 +2212,13 @@ export async function storiesStage(
     (i): i is Process => i.kind === "ProcessDefinition",
   );
   const stories = storiesFromDeltas(deltas, estate);
+  // B-stories: what the completeness check knows, and what each story file says beside the words.
+  const sectionCheck: SectionCheckOptions = {
+    sections: true,
+    known: knownFieldNames(estate, deltas),
+    estate,
+  };
+  const extras = await storyExtras(ctx, change);
   let requests: RequestTask[] = [];
   const now = o.now ?? new Date();
   const store = fileJudgments(root);
@@ -1329,12 +2286,41 @@ stories:
     asA: <who>
     iWant: <what>
     soThat: <why>
+    context: <what a developer needs that the code doesn't say: a standard, a vendor's rule, a constraint>
+    scope:
+      in: [<what else this story changes, beyond its tasks>]
+      out: [<what a reader might expect that this story does not do>]
+    interfaces:    # each entry whose contract changes; or { none: <why> }
+      - entry: <METHOD /path, or a topic>
+        change: added | changed | removed
+        breaking: <true or false>
+        why: <why it is breaking or additive>
+        consumers: [<component or system ids that call it>]
+        fields:
+          - { name: <field>, side: request | response | message, type: <type>, required: <true or false>, default: <value>, change: added | changed | removed, validation: <what it accepts and what is refused> }
+    data:          # each column a step adds or changes; or { none: <why> }
+      - { table: <table id>, column: <column>, type: <database type>, nullable: <true or false>, default: <value>, change: added | changed | removed, migration: <file>, classification: <level>, retention: <how long it is kept> }
+    nonFunctional:
+      auth: <who may do it, and whether that changes>
+      audit: <what is recorded, or why nothing is>
+      timeouts: <the timeout and retries of every call the story adds or relies on>
+      performance: <the extra work per request, and any limit>
+    tests: [<a test file and the cases it gains>]
+    dependencies:
+      stories: [<story ids of this change that land first>]
+      repos: [<repos whose change lands first>]
+      notes: [<anything else that happens first: a migration run, a vendor's release>]
     tasks:
       - id: <task id, exactly as listed>
         criteria:
           - text: "Given <situation>, when <action>, then <what can be checked>"
             checks: [<each of the task's fields whose value this criterion's outcome depends on>]
             outcome: success   # or error, for what happens when the step fails
+            entry: <the entry it exercises, METHOD /path>
+            validation: <error criteria: the rule it relies on>
+            rule: <error criteria: required, format, length, range, limit, unique, not-found, forbidden, conflict, unavailable or other>
+            status: <error criteria: the status the caller sees>
+        tests: [<the test file and cases this task adds>]
 requests:      # every request or process from the list below that a step meets
   - item: <process or request id>
     flow: <flow id>
@@ -1348,6 +2334,11 @@ Rules:
 - A criterion checks a field when its outcome depends on the field's value: its then clause states the value, or a result that follows from a value its given clause fixes.
 - For each key a step matches rows by or checks (its fields.checks), add one criterion of its own for the refusal: what happens when that key doesn't match.
 - A task whose step validates, writes, calls out or publishes has at least one criterion with outcome: error: the input rejected and with what message or status, the write failing, the call failing or timing out, and what the caller sees each time.
+- Write every section of each story, so a developer builds it without asking. Every line comes from the target flows, the estate or the brief: name only the fields, columns, entries, stories and repos they have.
+- Interfaces: list every entry the target flows add (a new flow's trigger, a call to a new entry) and every entry whose request or response fields change, with each field's side, type, required and default; say whether the change breaks its consumers and why.
+- Every request field an entry of this repo gains or changes has a validation, and a criterion with outcome: error that checks it, saying the status and message the caller sees.
+- Data: every column a step adds, with its type, nullable, default, migration, classification and retention, as the target flow says them; a write that adds a column names its migration.
+- Non-functional: auth, audit, the timeout and retries of every call, and the cost per request. Dependencies: the stories and repos that land first, or empty lists.
 - Name a request only when the knowledge item's "applies when" fits the step, quoting those words. Never raise it yourself.
 - Plain, short English.`;
   const instructions = [
@@ -1460,7 +2451,7 @@ Rules:
       return { ...(r.value ? { answer: r.value } : {}), issues: r.issues };
     },
     check: async (a) => [
-      ...checkStories(a, stories, deltas, items),
+      ...checkStories(a, stories, deltas, items, sectionCheck),
       ...(await coverageIssues(unwrittenChecks(a, stories), {
         ...(judging ? { runtime: judging } : {}),
         store,
@@ -1477,7 +2468,7 @@ Rules:
         change: change.id,
         now,
       });
-      return writeStories(root, change.id, stories, a, requests, now, open);
+      return writeStories(root, change.id, stories, a, requests, now, open, extras);
     },
     current: () => readStoriesAnswer(dir),
     locate: async (i) => (i.locateText ? locateInStories(dir, rel, i.locateText) : undefined),

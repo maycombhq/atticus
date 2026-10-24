@@ -37,4 +37,10 @@ two classifications left to a person; `sends-extra.yaml` and `sends-extra-no-ret
 a field sent and never stored; and `answered.yaml`, which is right. `expected/live-findings.yaml`
 holds the findings the checks give `live.yaml`. The tests copy it in themselves.
 
+`stories/` is the fraud check's story with every section of a professional story (ADR 0124
+addendum B-stories): `placed.yaml` and `deltas.yaml`, the feature and architecture answers;
+`answer.yaml`, the story writer's answer with context, scope, interface and data changes,
+non-functional notes, test notes and dependencies; and `expected/s1-place-order.md`, the story
+file the stage writes from it, with a build command from a repos manifest the test writes.
+
 Everything here is invented.

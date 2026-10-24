@@ -4,12 +4,18 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
-<<<<<<< HEAD
+### A story a developer can build without asking (ADR 0124 addendum B-stories)
+
+- **Every story file has the sections of a professional story**: Context (what the code doesn't say, then today's flow with its citations and error paths, and the flow once the change is in, each changed step naming its task), Scope in and out (the tasks, and the steps the flow keeps), Acceptance criteria, Interface changes (each entry with its fields' side, type, required, default and validation, breaking or additive, and its consumers), Data changes (each column the steps add, with its type, nullable, default, migration, classification and retention), Non-functional (auth, audit, timeouts and retries, performance), Tests and Test notes, Depends on, and a Definition of done from your org pack's test strategy and build and qa gates.
+- **Each task names** the files to touch (from its citations, and the migration it adds), the tests to add, and the command to run (the repo's `build` in `repos.manifest.yaml`). A criterion can name the entry it exercises, the validation it relies on, and for an error its rule and status.
+- **`stories.md` fills Depends on** when a story calls an entry or uses a table another story of the change adds.
+- **The stories stage checks a story is complete** before the critic sees it, and sends it back with the list: every entry the target flows add is in the interface changes; every request field an entry of the repo gains has a validation and an error criterion; no section names a field, column, entry, consumer, story or repo the target flows and the catalog don't know; a column's facts match the target flow's; every write that adds a column names its migration. A section a story leaves out is reported but doesn't stop the stage yet, so answers written before this still pass.
+
 ### A path written across lines can be cited (ADR 0124, A4)
 
 - **`cite.with`** in a fact: the other lines its path is built from (a class prefix, a base URL, a context path, a route template, a proto package). `atticus verify` checks every part is written on one of the lines.
 - A route template without a leading slash (`[HttpPost("upload")]`) now verifies; config keys with `:` or `__` (`ConnectionStrings:Default`) are read by their last part; `TokenUrl` is no longer taken for a secret.
-=======
+
 ### The app has six entries; everything else is behind `atticus ui --full` (ADR 0124 addendum D-app)
 
 - The menu is **Home**, **Map** (Estate canvas, Flows, Contracts, Impact and Trust), **Change** (a tab per stage: Feature design, Architecture, Stories, Tasks), **Questions**, **Knowledge** (items, sources, documents, search) and **Set up** (Repos, AI, Org pack). A change's At a glance and its list are linked from every stage tab.
@@ -17,7 +23,6 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - **Map › Trust** says, per repo, how far to trust its map: the facts the verifier kept and rejected, how much of the code they cover and which files no fact cites, whether the facts are of the commit the checkout is at, whether the catalog is built from the facts or the built-in readers, and the command to run next (`GET /api/trust`, API 2.22.0).
 - **Change › Feature design** lists the org knowledge that applies to the change (`knowledge.yaml`), with Confirm and Exclude. The app writes the file and shows the `git commit` command to run (`GET /api/changes/{id}/knowledge`, `POST /api/changes/{id}/knowledge/{item}`).
 - The app now also updates when `facts/` changes, and the tour names the six entries.
->>>>>>> worktree-agent-aac973042dce34c0a
 
 ### Your assistant reads a repo into facts, at any tier (ADR 0124, A3a)
 
