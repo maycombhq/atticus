@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client.js";
-import { groupLabel, SCREENS } from "./screens.js";
+import { groupLabel, sectionLabel, SCREENS } from "./screens.js";
 import { COPY } from "../copy.js";
 
 const T = COPY.palette;
@@ -24,7 +24,9 @@ export function paletteItems(
     ...SCREENS.filter((s) => hit(s.label) || hit(s.id)).map((s) => ({
       kind: "screen" as const,
       label: s.label,
-      detail: groupLabel(s.group),
+      detail: s.group
+        ? `${sectionLabel(s.section)} · ${groupLabel(s.group)}`
+        : sectionLabel(s.section),
       href: `#/${s.id}`,
     })),
     ...changes

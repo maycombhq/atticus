@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Question } from "@maycombhq/core";
-import { api, useApi, type Loaded } from "../api/client.js";
+import { api, useApi, useReloadOnFiles, type Loaded } from "../api/client.js";
 import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
 import { Choice, CopyButton, message } from "./run/shared.js";
@@ -335,6 +335,7 @@ export function QuestionDetail(p: {
 
 function Detail({ id, onAnswered }: { id: string; onAnswered: () => void }) {
   const q = useApi<QuestionView>(`/api/questions/${id}`);
+  useReloadOnFiles(q);
   const heading = useRef<HTMLDivElement>(null);
   // Move focus to the question when it opens from the list, for keyboard and screen reader users.
   useEffect(() => {
@@ -354,6 +355,7 @@ export function Questions({ hash }: { hash: string }) {
   const list = useApi<QuestionListView>(
     filter === "open" ? "/api/questions?state=open" : "/api/questions",
   );
+  useReloadOnFiles(list);
   const current = questionRoute(hash);
   const [text, setText] = useState("");
   const [repo, setRepo] = useState("");

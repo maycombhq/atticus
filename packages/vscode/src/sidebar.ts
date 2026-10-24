@@ -48,6 +48,7 @@ import {
   taskItems,
   type Item,
 } from "./sidebar-data";
+import { WORDS } from "./words";
 
 /**
  * The sidebar's sections beyond Next (ADR 0093): Repos, Changes, Knowledge and Catalog. Each
@@ -200,7 +201,7 @@ export class SectionTree implements vscode.TreeDataProvider<Node> {
       const r = await this.svc.cli(root)(["runs", "--json", "--root", root]);
       if (r.code !== 0)
         throw new Error(
-          (r.stderr.trim() || r.stdout.trim() || `atticus runs exited ${r.code}`).split("\n")[0],
+          (r.stderr.trim() || r.stdout.trim() || WORDS.endedWith(r.code)).split("\n")[0],
         );
       return runItems(parseRuns(r.stdout));
     }

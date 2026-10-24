@@ -479,35 +479,41 @@ export const COPY = {
       openCount: (n: number) => `${n} open`,
     },
   },
-  /** The menu, in the order of a working day (plan 4.5, B1; ADR 0105). */
+  /** The menu: six sections, the same on every surface (ADR 0119). */
   nav: {
     main: "Main",
-    dashboard: "Dashboard",
+    dashboard: "Overview",
     onboarding: "Onboarding",
     feature: "Feature design",
     architecture: "Architecture",
     stories: "Stories",
     tasks: "Tasks",
     knowledge: "Knowledge",
-    more: "More",
-    moreHint: "Every other page, grouped by what it is about",
-    /** The groups under More, by their id in screens.ts. */
-    groups: {
-      Main: "Main",
-      Code: "Code",
+    /** The six sections, by their id in screens.ts. */
+    sections: {
+      Home: "Home",
+      Changes: "Changes",
       Knowledge: "Knowledge",
-      OrgPack: "Org pack",
+      Estate: "Estate",
+      SetUp: "Set up",
+      Atticus: "Atticus",
+    },
+    /** The phases a change's pages are grouped by. */
+    groups: {
       Define: "Define",
       Design: "Design",
       Plan: "Plan",
       Build: "Build",
       Release: "Release",
-      Run: "Run",
     },
-    /** The pages under More, by screen id. */
+    /** The tabs of a section, and where you are. */
+    tabs: (section: string) => `${section} pages`,
+    youAreHere: "You are here",
+    ofChange: (id: string) => `change ${id}`,
+    /** The pages, by screen id. */
     screens: {
       home: "Waiting on you",
-      explore: "Knowledge explorer",
+      explore: "Search the catalog",
       map: "Ecosystem map",
       impact: "Impact explorer",
       features: "Features",
@@ -526,7 +532,7 @@ export const COPY = {
       changes: "Changes",
       tasks: "Task board",
       trace: "Test trace",
-      todo: "To-do and manual steps",
+      todo: "Manual steps",
       release: "Release plan",
       serviceDesk: "Service desk queue",
       governance: "Governance",
@@ -758,6 +764,30 @@ export const COPY = {
         what: "Writes a change's stories and tasks from its approved design.",
       },
       {
+        name: "/atticus-small",
+        args: "<change>",
+        where: "metarepo",
+        what: "Plans a small change in one step: its place on the flows, its target flows and its stories.",
+      },
+      {
+        name: "/atticus-draft",
+        args: "<change>",
+        where: "metarepo",
+        what: "Drafts a change's proposal, spec and interfaces from its brief and the catalog.",
+      },
+      {
+        name: "/atticus-attach",
+        args: "<change> <files…>",
+        where: "metarepo",
+        what: "Attaches a spec, screenshot, PDF or document to a change, for its steps to read and cite.",
+      },
+      {
+        name: "/atticus-knowledge-ask",
+        args: "<question>",
+        where: "metarepo",
+        what: "Answers a question from the knowledge items only, citing each one.",
+      },
+      {
         name: "/atticus-ask",
         args: "<question>",
         where: "metarepo",
@@ -773,13 +803,13 @@ export const COPY = {
         name: "/atticus-critic",
         args: "<change>",
         where: "metarepo",
-        what: "Reviews a change's files against the checklists, without changing them.",
+        what: "Reviews a change with the critic's AI lenses, one at a time; every finding is recorded.",
       },
       {
         name: "/atticus-plan",
         args: "<change>",
         where: "metarepo",
-        what: "Drafts a change's tasks.md from its approved design.",
+        what: "The old name of /atticus-stories, kept for one version.",
       },
       {
         name: "/atticus-snow",
@@ -795,9 +825,9 @@ export const COPY = {
       },
       {
         name: "/atticus-task",
-        args: "<task>",
-        where: "repo",
-        what: "Implements one task in the code repo it belongs to.",
+        args: "<change> <task>",
+        where: "metarepo",
+        what: "Starts a task with its context loaded: its story, criteria, today's code and the files to change. In a code repo, /atticus-task <task>.",
       },
     ],
   },
@@ -1562,6 +1592,18 @@ export const COPY = {
     syncRepos: "Sync repos",
     scanNow: "Scan now",
     jobProgress: "Job progress",
+    /** A job's state in words (ADR 0119). */
+    jobState: {
+      queued: "Waiting to start",
+      running: "Running",
+      done: "Done",
+      failed: "It stopped with problems",
+      cancelled: "Cancelled: it stopped before writing anything more",
+    } as Record<string, string>,
+    cancelJob: "Cancel",
+    cancelling: "Stopping…",
+    cancelJobHint: "Stops at the next repo; what was already written stays.",
+    jobProblems: "What went wrong",
     scansReadFilesOnly: "Scans read files only: no network, no AI.",
     scan: "Scan",
     repos: "Repos",
@@ -2464,6 +2506,9 @@ export const COPY = {
     ended: (state: string) => `It ended: ${state}.`,
     openRun: "Read the run in Model runs",
     openRuns: "Open Model runs",
+    cancel: "Cancel",
+    cancelling: "Stopping…",
+    cancelHint: "Stops the model call; nothing from this run is kept.",
     cantStart: (why: string) => `Couldn't start it: ${why}`,
   },
   nextStep: {

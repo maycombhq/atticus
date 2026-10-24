@@ -11,6 +11,7 @@ import {
   type OpenQuestion,
   type StepModel,
 } from "./types";
+import { WORDS } from "./words";
 
 /**
  * The step runner (ADR 0090): one AI step's whole loop with Copilot's model. It runs
@@ -346,7 +347,7 @@ async function toolConversation(
       const text =
         typeof out?.output === "string"
           ? out.output
-          : `The tool didn't run: ${(r.stderr.trim() || r.stdout.trim() || `exit ${r.code}`).split("\n")[0]}`;
+          : `The tool didn't run: ${(r.stderr.trim() || r.stdout.trim() || WORDS.endedWith(r.code)).split("\n")[0]}`;
       used += await model.countTokens(text, token);
       results.push({ id: c.id, name: c.name, text });
     }

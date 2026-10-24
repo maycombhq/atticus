@@ -2,6 +2,7 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { Nav } from "../src/app/nav.js";
+import { SectionTabs } from "../src/app/tabs.js";
 import { screenOf } from "../src/app/screens.js";
 import { COPY } from "../src/copy.js";
 import type { QuestionListView } from "../src/screens/Questions.js";
@@ -187,44 +188,54 @@ describe("Run next", () => {
   });
 });
 
-describe("the menu", () => {
-  it("lists the main screens in the order of a working day, then More, closed while a main screen is shown", () => {
+describe("the menu: six sections (ADR 0119)", () => {
+  it("lists the six in order, each opening on its first tab, the section shown marked", () => {
     const out = html(<Nav current={screenOf("#/dashboard")} />);
-    const order = [
-      "Dashboard",
-      "Waiting on you",
-      "Changes",
-      "Onboarding",
-      "Feature design",
-      "Architecture",
-      "Stories",
-      "Tasks",
-      "Knowledge",
-    ].map((l) => out.indexOf(`>${l}</a>`));
+    const order = ["Home", "Changes", "Knowledge", "Estate", "Set up", "Atticus"].map((l) =>
+      out.indexOf(`>${l}</a>`),
+    );
     expect(order.every((i) => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    expect(out).toContain('aria-expanded="false"');
-    expect(out).toContain('aria-controls="nav-more"');
-    expect(out).toMatch(/id="nav-more" hidden=""/);
-    expect(out).toContain('href="#/dashboard" aria-current="page"');
+    expect(out).toContain('href="#/home" aria-current="page"');
+    expect(out).toContain('href="#/onboarding"');
+    expect(out).not.toContain("nav-more");
+    expect(out).not.toContain('aria-expanded="');
   });
 
-  it("opens More when the page shown is one of its pages", () => {
-    const out = html(<Nav current={screenOf("#/scans")} />);
-    expect(out).toContain('aria-expanded="true"');
-    expect(out).not.toMatch(/id="nav-more" hidden/);
+  it("marks the section of the page shown, and Home while Questions is shown", () => {
+    expect(html(<Nav current={screenOf("#/scans")} />)).toContain(
+      'href="#/onboarding" aria-current="page"',
+    );
+    expect(html(<Nav current={screenOf("#/questions")} />)).toContain(
+      'href="#/home" aria-current="page"',
+    );
+  });
+});
+
+describe("a section's tabs (ADR 0119)", () => {
+  it("shows where you are and every tab of the section, the page shown marked", () => {
+    const out = html(<SectionTabs current={screenOf("#/scans")} hash="#/scans" />);
+    expect(out).toContain('aria-label="You are here"');
+    expect(out).toContain('aria-label="Set up pages"');
     expect(out).toContain('href="#/scans" aria-current="page"');
-    expect(out).toContain('href="#/tasks"');
+    expect(out).toContain('href="#/settings"');
+    expect(out).not.toContain('href="#/runs"');
   });
 
-  it("names its groups under More, and marks Waiting on you while Questions is shown", () => {
-    const more = html(<Nav current={screenOf("#/scans")} />);
-    for (const g of ["Code", "Knowledge", "Org pack", "Run"])
-      expect(more).toContain(`<div class="group">${g}</div>`);
-    const out = html(<Nav current={screenOf("#/questions")} />);
-    expect(out).toContain('aria-expanded="false"');
-    expect(out).toContain('href="#/home" aria-current="true"');
-    expect(out).not.toContain('href="#/questions"');
+  it("groups a change's tabs by phase and keeps the change on every one", () => {
+    const hash = "#/estimate?change=add-fraud-check";
+    const out = html(<SectionTabs current={screenOf(hash)} hash={hash} />);
+    for (const g of ["Define", "Design", "Plan", "Build", "Release"])
+      expect(out).toContain(`aria-label="${g}"`);
+    expect(out).toContain("change add-fraud-check");
+    expect(out).toContain('href="#/estimate?change=add-fraud-check" aria-current="page"');
+    expect(out).toContain('href="#/brief?change=add-fraud-check"');
+    expect(out).toContain('href="#/changes/add-fraud-check"');
+  });
+
+  it("marks Waiting on you while Questions, a part of it, is shown", () => {
+    const out = html(<SectionTabs current={screenOf("#/questions")} hash="#/questions" />);
+    expect(out).toContain('href="#/home" aria-current="page"');
   });
 });
 

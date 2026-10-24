@@ -235,6 +235,19 @@ Facts stay deterministic: from code, or from a decision a person recorded. The m
   5. **Gaps in red:** nodes and edges a feature needs but that are missing or unproven (no field mapping, no logic, no endpoint) show in red; zoomed inside a repo, the view lists exactly what is missing for the feature (the field mapping or the logic needed).
   6. **Correct in place:** fix a wrong node, edge or mapping on the diagram; the correction is recorded (I6, H1) and shown with the command to commit it, since the app runs nothing itself (B1).
 
+### J. One experience on every surface (ADR 0119; the review of 2026-10-23)
+
+- [x] **J1. State that tells the truth:** the server follows the metarepo's files; every screen reads again on a change; Cancel stops scans and server-run steps; job states in words; no silent failures in VS Code; the token only for editors or `--show-token`.
+- [ ] **J2. A command line that catches mistakes:** ~~unknown flags refused with did-you-mean; `atticus help <command>`; did-you-mean for commands; grouped help; `doctor` checks the model setup and the slash-command files~~ (done); one word for one thing (aliases); "not a metarepo" everywhere; `next` names the person's assistant; `doctor` checks the model, the slash-command files, MCP and the editor.
+- [ ] **J3. One assistant command set, checked:** ~~one list tested against the app, the plugin README, IntelliJ and the guides; `/atticus-draft`, `/atticus-knowledge-ask`, `/atticus-critic` (lenses); plan/snow/release rewritten; `readOnlyHint` on MCP tools~~ (done). Left: the check at the start of every prompt; commands for scan review, onboard, orgpack draft, tests generate and feature suggest-names once they take `--handoff`; MCP `ask` and `knowledge_ask`.
+- [ ] **J4. No ids by hand, no CLI words, no terminals:** ~~VS Code pickers for canvas, change diagram, estimate; one startup notice with Don't show again; exit codes in words; run the next step after an answer; numbered practice folder~~ (done). Left: one runner (no terminal); every VS Code string in `words.ts` with a test; forms instead of YAML (repos, owner, wikis incl. Confluence and SharePoint, model); IntelliJ pickers.
+- [ ] **J5. Words and the map:** ~~the app's six sections with every page a tab, a change's grouped by phase, breadcrumbs, no More~~ (done); Set up first until baselined; Home as one page; the editors' sidebars in the same order; product glossary; six-step tour with focus; breadcrumbs; no raw keys; focus on route change; axe at moderate.
+- [ ] **J6. IntelliJ as a peer:** steps in the IDE, native trees, answering, status bar, watcher, background progress, confirmations, a parity test.
+- [ ] **J7. Value:** the change cockpit; evidence beside a question; flows and changes on a code line; a hand-off PR that reviews itself; watch and nudge; start from a similar change; a system page; review mode for knowledge; undo; bulk actions; a guided first hour.
+- [ ] **J8. Any assistant, any model, set up from the app** (own ADR): an assistant registry (Copilot, Claude Code, Cursor, Codex, Gemini CLI, Windsurf, generic); the AI tab writing `runtime.yaml`; keys in the OS credential manager; provider plugins from configuration (Vertex first); every model VS Code sees.
+- [ ] **J9. Branches you can see and choose** (own ADR): the remote's default branch detected; named branches per repo scanned beside the baseline; a Repos screen.
+- [ ] **J10. Knowledge kept inside the repos** (own ADR): the knowledge folders read by the scan as source documents, organised by system, kind and freshness; drop targets in the app and both editors.
+
 ### G. For a person, and later phases
 
 - [ ] **G1. Review ADRs 0053–0073.**

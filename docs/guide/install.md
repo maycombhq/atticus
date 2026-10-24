@@ -89,6 +89,8 @@ atticus scan
 atticus ui --open
 ```
 
+The app updates by itself when files change, whoever wrote them: your assistant, the command line or a teammate's pull. The page carries its own session token; `atticus ui --show-token` prints it for an assistant or a script that calls the local API.
+
 **An existing repo** (an OpenSpec or Spec Kit repo, or a repo with its own assistant prompts) can use Atticus in place: `atticus adopt <path>` writes only `.atticus/`, and `atticus unadopt <path>` leaves the repo byte for byte as it was.
 
 **Practice first:** `atticus sandbox create <dir>` makes a throwaway metarepo from the invented Forge ecosystem, with every outside system a mock except the Git host, which is manual: you record its pull request steps with `atticus todo done`, as you would without Git host access.

@@ -1,4 +1,4 @@
-import type { CommandDef } from "./commands.js";
+import { zeroInstallCommands, type CommandDef, type Layout } from "./commands.js";
 
 /**
  * The slash commands for the steps of the revamp (plan principle 8 and 4.8, ADR 0086), the way
@@ -166,6 +166,43 @@ export function stepCommands(): CommandDef[] {
       ),
     ),
     step(
+      "atticus-draft",
+      "Draft a change's proposal, spec and interfaces from its brief and the catalog; Atticus checks every one.",
+      "[change]",
+      body(
+        "Draft the proposal, spec and interfaces of the change {{ARGS}} from its brief and the catalog. Atticus checks every system, interface and table you name against the catalog before it writes the files.",
+        [
+          ...handoff("atticus change draft {{ARGS}}"),
+          "If the first command says the change already has these files, ask the person whether to draft them again. Only if they say yes, run it again with `--force`.",
+        ],
+      ),
+    ),
+    step(
+      "atticus-critic",
+      "Review a change with the critic's AI lenses, one at a time; Atticus records every finding.",
+      "[change]",
+      body(
+        "Review the change {{ARGS}} with the critic: Atticus runs the rule checks itself, then offers its AI lenses (architecture, security, data, the business view and those the org pack adds) one at a time. You answer each lens; Atticus checks every finding's quote and records it on the gate.",
+        [
+          ...handoff("atticus critic {{ARGS}}"),
+          "Each resume offers the next lens until none is left. Constitution findings can't be waived; tell the person which findings block and what fixes each.",
+        ],
+      ),
+    ),
+    step(
+      "atticus-knowledge-ask",
+      "Answer a question from the knowledge items only, citing each one.",
+      "[question]",
+      body(
+        "Answer {{ARGS}} from the organisation's knowledge items only (the patterns, standards, processes, requests, decisions and constraints read from the wikis), citing each item you rely on. Atticus checks every citation.",
+        [
+          ...handoff('atticus knowledge ask "{{ARGS}}"'),
+          "If the knowledge doesn't answer it, say so and name who would know: never answer from your own knowledge.",
+        ],
+        { stop: false },
+      ),
+    ),
+    step(
       "atticus-small",
       "Plan a small change in one step: its place on the flows, its target flows and its stories, checked as the full path is.",
       "[change]",
@@ -250,4 +287,16 @@ export function stepCommands(): CommandDef[] {
       ),
     ),
   ];
+}
+
+/**
+ * Every slash command a metarepo gets, by name (ADR 0119): the one list the app, the Claude Code
+ * plugin's README, the editors and the guides are generated from or tested against.
+ */
+export function metarepoCommands(
+  l: Layout = { catalog: "catalog", openspec: "openspec" },
+): CommandDef[] {
+  return [...zeroInstallCommands(l), ...stepCommands()].sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
 }

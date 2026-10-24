@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, useApi, type Loaded } from "../../api/client.js";
+import { api, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { useMe } from "../../app/me.js";
 import { CheckAgain, Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
@@ -243,6 +243,7 @@ function NotifyPanel() {
 
 export function Settings() {
   const s = useApi<Settings>("/api/settings");
+  useReloadOnFiles(s);
   const ai = useMe().me?.ai ?? "on";
   const check = useAction();
   return (

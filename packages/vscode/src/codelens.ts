@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import type * as Api from "./api-types";
 import type { Service } from "./service";
 import { citeLenses, type Lens } from "./sidebar-data";
+import { WORDS } from "./words";
 
 /**
  * Flow steps and records in the code (ADR 0093, 0094): above each line a spec flow or a catalog
@@ -17,6 +18,8 @@ export class FlowLenses implements vscode.CodeLensProvider {
   readonly onDidChangeCodeLenses = this.changed.event;
   private repos: Promise<string[]> | undefined;
   private readonly files = new Map<string, Promise<Lens[]>>();
+  /** The last reason lenses couldn't be read, said once in the output. */
+  private lastProblem: string | undefined;
 
   constructor(private readonly svc: Service) {}
 
@@ -69,11 +72,16 @@ export class FlowLenses implements vscode.CodeLensProvider {
         lenses = await p;
         break;
       }
-    } catch {
+    } catch (e) {
       this.repos = undefined;
       this.files.clear();
+      // Lenses are drawn all the time: the output says why they're missing, once per reason.
+      const why = e instanceof Error ? e.message : String(e);
+      if (why !== this.lastProblem) this.svc.log.appendLine(WORDS.lensesFailed(why));
+      this.lastProblem = why;
       return [];
     }
+    this.lastProblem = undefined;
     return lenses
       .filter((l) => l.line >= 1 && l.line <= doc.lineCount)
       .map(

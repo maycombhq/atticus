@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
-import { MORE, SCREENS } from "../src/app/screens.js";
+import { SCREENS } from "../src/app/screens.js";
 
 // The words a person reads come from src/copy.ts (CLAUDE.md, definition of done). This check
 // reads every screen's JSX and fails on English typed straight into it: text between tags, the
@@ -127,11 +127,11 @@ describe("the copy file", () => {
     expect(ALLOWED.filter((a) => a.why.trim().length < 10)).toEqual([]);
   });
 
-  it("names every screen and menu group from the copy file", () => {
+  it("names every screen, section and phase from the copy file", () => {
     const source = readFileSync(join(SRC, "app", "screens.ts"), "utf8");
     expect(source.match(/label: "[^"]*"/g) ?? []).toEqual([]);
     const words = new Set(Object.values(COPY.nav.screens) as string[]);
-    expect(MORE.filter((s) => s.id in COPY.nav.screens && !words.has(s.label))).toEqual([]);
+    expect(SCREENS.filter((s) => s.id in COPY.nav.screens && !words.has(s.label))).toEqual([]);
     expect(SCREENS.every((s) => s.label.length > 0)).toBe(true);
   });
 });

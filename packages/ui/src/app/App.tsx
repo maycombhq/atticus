@@ -10,6 +10,7 @@ import { CommandPalette } from "./palette.js";
 import { replayTour, Tour } from "./tour.js";
 import { Nav } from "./nav.js";
 import { screenOf } from "./screens.js";
+import { SectionTabs } from "./tabs.js";
 import { inEditor, THEME_CHOICES, useTheme, type ThemeChoice } from "./theme.js";
 
 const T = COPY.shell;
@@ -203,6 +204,7 @@ export function App() {
         <main id="main" className="main" tabIndex={-1}>
           <TopBar health={health.state === "ready" ? health.data : undefined} />
           <h1 className="sr">{current.label}</h1>
+          <SectionTabs current={current} hash={hash} />
           {server.down && <ServerDown inPanel={!!hostBridge()} />}
           {(() => {
             const S = SCREEN_COMPONENTS[current.id];

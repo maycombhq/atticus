@@ -113,7 +113,8 @@ async function call(
 
 beforeAll(async () => {
   root = await forgeMetarepo();
-  srv = await startServer({ root, port: 0, user: "priya", version: "9.9.9" });
+  // The shared server doesn't follow files, so its live-event test reads only what it publishes.
+  srv = await startServer({ root, port: 0, user: "priya", version: "9.9.9", watch: false });
 });
 afterAll(async () => {
   await srv?.close();
@@ -447,6 +448,35 @@ describe("live events on /api/events", () => {
     const r = await wsFirstMessage(`/api/events?token=${srv.token}`);
     expect(r.status).toBe(101);
     expect(JSON.parse(r.message!)).toEqual({ type: "index.rebuilt", records: 42 });
+  });
+
+  it("sends file.changed for a file written outside the API (ADR 0119)", async () => {
+    const own = await forgeMetarepo();
+    const s = await startServer({ root: own, port: 0 });
+    try {
+      expect(s.following).toEqual(expect.arrayContaining(["catalog", "openspec", "org-pack"]));
+      const url = `${s.url.replace("http", "ws")}/api/events?token=${s.token}`;
+      const ws = new WebSocket(url);
+      await new Promise<void>((resolve, reject) => {
+        ws.onopen = () => resolve();
+        ws.onerror = () => reject(new Error("couldn't open the live events"));
+      });
+      const heard = new Promise<unknown>((resolve) => {
+        ws.onmessage = (m) => {
+          const e = JSON.parse(String(m.data)) as { type: string; path?: string };
+          if (e.type === "file.changed" && e.path?.endsWith("brief.md")) resolve(e);
+        };
+      });
+      // What an assistant writes: the change's brief, straight to the file.
+      await writeFile(join(own, "openspec/changes/add-transfer-limit/brief.md"), "# Changed\n");
+      expect(await heard).toEqual({
+        type: "file.changed",
+        path: "openspec/changes/add-transfer-limit/brief.md",
+      });
+      ws.close();
+    } finally {
+      await s.close();
+    }
   });
 });
 

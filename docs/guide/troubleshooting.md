@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Start with `atticus doctor` in the metarepo: most problems are on the machine, and each line it prints says what to do.
+Start with `atticus doctor` in the metarepo: most problems are on the machine, and each line it prints says what to do. It also says how AI steps run here (handed off to your assistant, or model mode with which provider and whether its key variable is set, by name only) and whether the `/atticus-*` slash-command files are there and current. It makes no network call, so it doesn't call the model.
 
 | What you see                                                                            | What it means                                                                                      | What to do                                                                                                                                         |
 | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -37,7 +37,7 @@ Start with `atticus doctor` in the metarepo: most problems are on the machine, a
 | "doesn't trust the certificate ... presented"                                           | TLS inspection with your organisation's CA                                                         | Set `NODE_EXTRA_CA_CERTS` (or `caFile` in the model settings) to the CA's PEM file                                                                 |
 | "stopped the answer at the output limit"                                                | The answer was longer than `maxOutput`                                                             | Raise `maxOutput` (up to what the model allows), or make the step smaller                                                                          |
 | "didn't answer within N seconds"                                                        | A slow model or a long answer                                                                      | Run it again, or raise `timeoutMs`                                                                                                                 |
-| A write to a shared system became a step                                                | The adapter is manual or couldn't be reached                                                       | Do the step from To-do (every field is ready to copy), then record it: `atticus todo done <step>`                                                  |
+| A write to a shared system became a step                                                | The adapter is manual or couldn't be reached                                                       | Do the step from Manual steps, under Changes (every field is ready to copy), then record it: `atticus todo done <step>`                            |
 
 ## The log
 

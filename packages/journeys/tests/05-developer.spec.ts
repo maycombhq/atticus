@@ -7,9 +7,9 @@ test("runs a task with AI, and is told to open the change's workspace first", as
   await open(page, app(), "home");
   await open(page, app(), "tasks?change=add-transfer-limit");
   await expect(
-    // ADR 0105: the Task board is under More, in Build; More is open on one of its pages.
+    // ADR 0119: the Task board is a tab of the change, in Build.
     page
-      .getByRole("navigation", { name: "Main" })
+      .getByRole("navigation", { name: "Changes pages" })
       .getByRole("group", { name: "Build" })
       .getByRole("link", { name: "Task board" }),
   ).toHaveAttribute("aria-current", "page");

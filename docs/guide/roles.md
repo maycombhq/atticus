@@ -1,26 +1,26 @@
 # Atticus by kind of work
 
-Open the app with `atticus ui --open`. Everyone sees the same app: one sidebar with every screen, one Home and one short tour (_Help_ in the top bar plays it again). Ctrl+K jumps anywhere. There are no roles or views to choose (ADR 0073); the sections below say which screens and commands each kind of work uses most.
+Open the app with `atticus ui --open`. Everyone sees the same app: six sections in the menu, the same wherever the app opens: a browser, the VS Code tab and IntelliJ's tool window (ADR 0119): **Home** (what waits on you, and an overview), **Changes** (the list, and each change's pages as tabs grouped by phase: Define, Design, Plan, Build, Release), **Knowledge**, **Estate** (search the catalog, the map, flows, impact, contracts and more), **Set up** (onboarding, scans, intake, the org pack, settings) and **Atticus** (model runs, prompt history, AI quality, learning). Each section shows its pages as tabs above the page, with where you are; moving between a change's tabs keeps the change. One short tour (_Help_ in the top bar plays it again); Ctrl+K jumps anywhere. There are no roles or views to choose (ADR 0073); the sections below say which screens and commands each kind of work uses most.
 
 Four things are the same for everyone:
 
 - **You are your Git user.** Atticus records you as the metarepo's Git user (`git config user.name` and `user.email`), shown in the top bar. Commands that record a person use it; `--by <handle>` names someone else. If Git has no user on your machine, Atticus uses your OS user name and shows _Set your Git user_ until you run `git config --global user.name "Your Name"` and `git config --global user.email you@example.com`.
 - **Approving is the pull request.** Each phase ends with a hand-off PR in the metarepo; merging it approves the gate. Your Git host's rules (branch protection, CODEOWNERS) decide who may approve, and the person who raised a PR can't be its only approver. Home lists what needs a person (changes in each phase, blocking findings, questions, manual steps) and links to the change and its PR; there are no approve buttons in the app. Waivers, the catalog baseline and release go / no-go are files in the metarepo, recorded with your name, that reach main through a PR.
-- **Run the steps in your assistant.** `atticus assistant-files` writes a slash command for each step into the metarepo (ADR 0086): `/atticus-survey <repo>`, `/atticus-verify <repo>`, `/atticus-spec <repo>`, `/atticus-answer`, `/atticus-knowledge <source>`, `/atticus-feature <change>`, `/atticus-stories <change>` and `/atticus-next`. Type one in Copilot Chat in VS Code or IntelliJ IDEA, or in Claude Code, where the Atticus plugin (ADR 0104) brings the same commands. The assistant does the AI work, and runs the `atticus` commands that check it. `atticus next` (or `/atticus-next`) says which step comes next and why. Where a slash command can't run, `atticus <step> --handoff` prints the prompt file, the result file and the commands that finish the step.
+- **Run the steps in your assistant.** `atticus assistant-files` writes a slash command for each step into the metarepo (ADR 0086): `/atticus-next`, `/atticus-survey <repo>`, `/atticus-verify <repo>`, `/atticus-spec <repo>`, `/atticus-answer`, `/atticus-knowledge <source>`, `/atticus-find <phrase>`, `/atticus-knowledge-ask <question>`, `/atticus-feature <change>`, `/atticus-architecture <change>`, `/atticus-stories <change>`, `/atticus-small <change>` (a small change in one step), `/atticus-draft <change>`, `/atticus-needs <change>`, `/atticus-critic <change>`, `/atticus-attach <change> <files>` and `/atticus-task <change> <task>`, and for the catalog `/atticus-ask`, `/atticus-impact`, `/atticus-snow` and `/atticus-release`. The app's Help lists them all with what each does. Type one in Copilot Chat in VS Code or IntelliJ IDEA, or in Claude Code, where the Atticus plugin (ADR 0104) brings the same commands. The assistant does the AI work, and runs the `atticus` commands that check it. `atticus next` (or `/atticus-next`) says which step comes next and why. Where a slash command can't run, `atticus <step> --handoff` prints the prompt file, the result file and the commands that finish the step.
 - **Ask in plain words.** The box at the top answers from the catalog, for example "who calls ledger-api?", and always shows the query it ran.
 
 _Send it to me_ on Home sends you a digest (your hand-offs that came back with changes requested, and blocking findings on changes you are on) through your organisation's notifications, when they are connected; Settings sets how often you want it.
 
 ## Product owner
 
-**Screens you use most:** Home, Feature brief, Prototypes and UX, Changes, Breakdown, Initiatives, Ecosystem map, Knowledge explorer.
+**Screens you use most:** Home, Feature brief, Prototypes and UX, Changes, Breakdown, Initiatives, Ecosystem map, Search the catalog.
 **Watch for:** changes in Define, and blocking findings on the brief and proposal.
 
 Start a change (`atticus change new "<title>" --type feature`, or from Changes), write the brief: the problem, who it is for, how you'll know it worked. The business critic sits beside it with plain reasons and fixes. When nothing blocking is open, _Raise hand-off_ sends it to architecture; merging its PR on the Git host approves it. After release, record what the measures showed: `atticus outcome record <change> <measure> --value <v>`.
 
 ## Business analyst
 
-**Screens you use most:** Home, Breakdown, Feature brief, Changes, Test trace, Features, Knowledge explorer, Ecosystem map.
+**Screens you use most:** Home, Breakdown, Feature brief, Changes, Test trace, Features, Search the catalog, Ecosystem map.
 **Watch for:** changes in Plan, and findings on stories and specs.
 
 Breakdown shows the stories, the story bar they must meet and what no story covers yet. _Write stories with AI_ drafts them from the approved design (`atticus plan stories <change>`); with AI off you write them and the rule checks review them. Test trace follows every requirement to a story, a test and code.
@@ -41,21 +41,21 @@ Breakdown and the Task board show tasks by repo in cross-repo order. _Changes > 
 
 ## Developer
 
-**Screens you use most:** Home, Task board, Changes, Contracts, API mappings, Impact explorer, Knowledge explorer, To-do.
+**Screens you use most:** Home, Task board, Changes, Contracts, API mappings, Impact explorer, Search the catalog, Manual steps.
 **Watch for:** changes in Build.
 
 `atticus workspace open <change> --repos <repos>` makes the change's worktrees and editor workspaces. _Run with AI_ on the Task board hands a task to your own assistant with the context it needs (`atticus task run <change> <task>`); you review the diff, and Atticus never pushes to a protected branch. API mappings shows each hop's fields beside what the catalog maps today.
 
 ## QA / test
 
-**Screens you use most:** Home, Test trace, Task board, Changes, Breakdown, Release plan, Features, Knowledge explorer.
+**Screens you use most:** Home, Test trace, Task board, Changes, Breakdown, Release plan, Features, Search the catalog.
 **Watch for:** changes in QA.
 
 Test trace shows coverage, the gaps before sign-off and the test kinds this change needs (`atticus trace <change>`). `atticus tests generate <change> <story>` writes tests from a story. _Across all changes > Tests_ shows coverage for every open change.
 
 ## Delivery lead
 
-**Screens you use most:** Home, Release plan, Service desk queue, Initiatives, To-do, Changes, Governance.
+**Screens you use most:** Home, Release plan, Service desk queue, Initiatives, Manual steps, Changes, Governance.
 **Watch for:** changes ready for release, and manual steps.
 
 The Service desk queue holds the drafted requests with every field ready to copy; Atticus never files on its own, so filing makes a step a person does. The Release plan computes the deploy order, the forecast, the evidence pack, release notes and the security review draft, and asks for go / no-go by raising the release hand-off PR; merging it is the go (`atticus release plan <change>`).
@@ -76,7 +76,7 @@ Prototypes and UX holds what Atticus reads from your designs and the requirement
 
 ## Process owner
 
-**Screens you use most:** Home, Org pack, Service desk queue, To-do, Intake, Knowledge explorer, Learning.
+**Screens you use most:** Home, Org pack, Service desk queue, Manual steps, Intake, Search the catalog, Learning.
 
 The org pack holds your procedures and request templates; changes go in by pull request. `atticus templates draft` drafts templates from your wiki pages and past tickets, each value citing its source; you read `proposals/templates/SUMMARY.md` and accept what's right by pull request.
 
@@ -88,7 +88,7 @@ Contracts lists the data stores from DDL and migrations; pick a table to see its
 
 ## SRE or operations
 
-**Screens you use most:** Home, Release plan, Impact explorer, Governance, Ecosystem map, To-do, Knowledge explorer.
+**Screens you use most:** Home, Release plan, Impact explorer, Governance, Ecosystem map, Manual steps, Search the catalog.
 
 Incident mode in the Impact explorer shows a failing system's blast radius, the owners to call and recent nearby changes, from the last scan. Atticus never connects to live systems. Governance compares callers' timeouts with what they call and shows what has no alert.
 
