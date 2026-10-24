@@ -293,9 +293,62 @@ const groupId = (change?: string) =>
   `waiting-${(change ?? "no-change").replace(/[^a-z0-9-]/gi, "-")}`;
 const FILTER_ID = "waiting-filter";
 
-function WaitingRow({ x }: { x: InboxItem }) {
+/** WP7.10: what a person can do to several waiting items at once, with one reason for all. */
+export type BulkAction = "need-done" | "need-not-needed" | "step-skip";
+
+/** Needs and manual steps can be acted on together; the rest are looked at one by one. */
+export const bulkable = (x: InboxItem) =>
+  (x.kind === "need" && !!x.change && !!x.id) || (x.kind === "step" && !!x.id);
+
+export const bulkKey = (x: InboxItem) => `${x.kind}|${x.change ?? ""}|${x.id ?? ""}`;
+
+/** The calls one bulk action makes: one per item it applies to, each with the same reason. */
+export function bulkCalls(
+  items: InboxItem[],
+  action: BulkAction,
+  note: string,
+): { path: string; body: Record<string, unknown> }[] {
+  const reason = note.trim();
+  if (!reason) return [];
+  return items.flatMap((x): { path: string; body: Record<string, unknown> }[] => {
+    if (action === "step-skip" && x.kind === "step" && x.id)
+      return [
+        {
+          path: `/api/todo/${encodeURIComponent(x.id)}/done`,
+          body: { skip: true, note: reason, ...(x.change ? { change: x.change } : {}) },
+        },
+      ];
+    if (action !== "step-skip" && x.kind === "need" && x.change && x.id)
+      return [
+        {
+          path: `/api/changes/${encodeURIComponent(x.change)}/needs/${encodeURIComponent(x.id)}`,
+          body: { status: action === "need-done" ? "done" : "not-needed", note: reason },
+        },
+      ];
+    return [];
+  });
+}
+
+function WaitingRow({
+  x,
+  selected,
+  onSelect,
+}: {
+  x: InboxItem;
+  selected?: boolean;
+  onSelect?: (on: boolean) => void;
+}) {
   return (
-    <li>
+    <li className="row" style={{ gap: 6, alignItems: "flex-start" }}>
+      {onSelect && bulkable(x) && (
+        <input
+          type="checkbox"
+          aria-label={T.select(x.title)}
+          checked={!!selected}
+          onChange={(e) => onSelect(e.target.checked)}
+          style={{ marginTop: 10 }}
+        />
+      )}
       <a
         href={x.href}
         className="list-row"
@@ -317,6 +370,62 @@ function WaitingRow({ x }: { x: InboxItem }) {
   );
 }
 
+/** The bar over the list when items are selected: one action and one reason for all of them. */
+export function BulkBar(p: {
+  selected: InboxItem[];
+  onDo: (action: BulkAction, note: string) => void;
+  onClear: () => void;
+  busy?: boolean;
+}) {
+  const needs = p.selected.filter((x) => x.kind === "need").length;
+  const steps = p.selected.filter((x) => x.kind === "step").length;
+  const [action, setAction] = useState<BulkAction>(needs ? "need-done" : "step-skip");
+  const [note, setNote] = useState("");
+  const applies = bulkCalls(p.selected, action, note || "-").length;
+  return (
+    <form
+      className="row"
+      style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}
+      aria-label={T.bulkTitle}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (note.trim()) p.onDo(action, note);
+      }}
+    >
+      <span>{T.selected(p.selected.length)}</span>
+      <label className="stack" style={{ gap: 2 }}>
+        <span className="hud">{T.bulkAction}</span>
+        <select
+          id="bulk-action"
+          className="field"
+          value={action}
+          onChange={(e) => setAction(e.target.value as BulkAction)}
+        >
+          {needs > 0 && <option value="need-done">{T.bulkNeedDone(needs)}</option>}
+          {needs > 0 && <option value="need-not-needed">{T.bulkNeedNot(needs)}</option>}
+          {steps > 0 && <option value="step-skip">{T.bulkStepSkip(steps)}</option>}
+        </select>
+      </label>
+      <label className="stack" style={{ gap: 2 }}>
+        <span className="hud">{action === "need-done" ? T.bulkTicket : T.bulkWhy}</span>
+        <input
+          id="bulk-note"
+          className="field"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          required
+        />
+      </label>
+      <button type="submit" className="btn primary" disabled={p.busy || !note.trim()}>
+        {T.bulkDo(applies)}
+      </button>
+      <button type="button" className="btn" onClick={p.onClear}>
+        {T.bulkClear}
+      </button>
+    </form>
+  );
+}
+
 /**
  * What needs a person, grouped by change (ADR 0105 addendum), with the filter every list that
  * grows has. Pure, so tests render it in each state.
@@ -327,7 +436,11 @@ export function WaitingList(p: {
   text: string;
   onText: (v: string) => void;
   state: "loading" | "error" | "ready";
+  /** WP7.10: act on several needs or manual steps at once; without it, no checkboxes. */
+  onBulk?: (items: InboxItem[], action: BulkAction, note: string) => Promise<void>;
 }) {
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
   if (p.state === "loading")
     return (
       <div className="state" role="status">
@@ -348,6 +461,24 @@ export function WaitingList(p: {
         {T.byChangeIntro}
       </p>
       <FilterBox id={FILTER_ID} value={p.text} onChange={p.onText} />
+      {p.onBulk && picked.size > 0 && (
+        <BulkBar
+          selected={p.items.filter((x) => picked.has(bulkKey(x)))}
+          busy={busy}
+          onClear={() => setPicked(new Set())}
+          onDo={(action, note) => {
+            setBusy(true);
+            void p.onBulk!(
+              p.items.filter((x) => picked.has(bulkKey(x))),
+              action,
+              note,
+            ).finally(() => {
+              setBusy(false);
+              setPicked(new Set());
+            });
+          }}
+        />
+      )}
       <FilterCount shown={w.shown} total={w.total} active={!!p.text.trim()} />
       {w.groups.length === 0 && (
         <FilterEmpty
@@ -388,7 +519,22 @@ export function WaitingList(p: {
               </h4>
               <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
                 {s.items.map((x, k) => (
-                  <WaitingRow key={`${x.id ?? ""}|${k}`} x={x} />
+                  <WaitingRow
+                    key={`${x.id ?? ""}|${k}`}
+                    x={x}
+                    selected={picked.has(bulkKey(x))}
+                    {...(p.onBulk
+                      ? {
+                          onSelect: (on: boolean) =>
+                            setPicked((prev) => {
+                              const next = new Set(prev);
+                              if (on) next.add(bulkKey(x));
+                              else next.delete(bulkKey(x));
+                              return next;
+                            }),
+                        }
+                      : {})}
+                  />
                 ))}
               </ul>
             </div>
@@ -411,6 +557,7 @@ export function CommandCenter() {
   );
   const knowledge = useApi<Api.KnowledgeItemListT>("/api/knowledge/items");
   const [text, setText] = useState("");
+  const [bulkNote, setBulkNote] = useState<string | undefined>();
   const { me } = useMe();
   const needs = useNeedsAcross(changes);
   const allNeeds =
@@ -525,6 +672,17 @@ export function CommandCenter() {
           meta={inbox.filter((x) => x.kind !== "phase").length || undefined}
         >
           <WaitingList
+            onBulk={async (items, action, note) => {
+              let failed = 0;
+              const calls = bulkCalls(items, action, note);
+              for (const c of calls)
+                await api(c.path, { method: "POST", body: c.body }).catch(() => {
+                  failed++;
+                });
+              setBulkNote(T.bulkDone(calls.length - failed, failed));
+              needs.reload();
+              todo.reload();
+            }}
             items={inbox}
             changes={changes.state === "ready" ? changes.data : []}
             text={text}
@@ -537,6 +695,11 @@ export function CommandCenter() {
                   : "ready"
             }
           />
+          {bulkNote && (
+            <p role="status" className="muted" style={{ margin: "6px 0 0" }}>
+              {bulkNote}
+            </p>
+          )}
           {me && <DigestButtons />}
         </Panel>
       </div>

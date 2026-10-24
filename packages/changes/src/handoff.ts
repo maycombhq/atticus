@@ -131,6 +131,7 @@ function prBody(
   /** The hand-off's files, relative to the metarepo root. */
   paths: string[],
   reviewers: string[],
+  review?: string,
 ): string {
   const c = a.change;
   const lines = [
@@ -159,6 +160,7 @@ function prBody(
     a.privacy.touched
       ? `Touches personal data (${a.privacy.records.map((r) => r.id).join(", ")}); review it with the ${a.privacy.phase} hand-off.`
       : "No personal data touched.",
+    ...(review?.trim() ? ["", review.trim()] : []),
   ];
   return lines.join("\n") + "\n";
 }
@@ -173,6 +175,11 @@ export interface HandoffOptions extends HostOptions {
   authors?: Partial<Record<Artifact, string[]>>;
   /** Pushes the hand-off branch with the phase's files. Without one, the branch must already be there. */
   publisher?: HandoffPublisher;
+  /**
+   * Markdown the PR body ends with (WP7.4): what the change does, its estimate and its open
+   * findings, so an approver reads one page. The caller composes it.
+   */
+  review?: string;
 }
 
 /**
@@ -291,6 +298,7 @@ export async function handoff(
         change.state === "returned" ? nextAfterResubmit(a, phase) : next,
         files.map((f) => `${rel}/${id}/${f}`),
         reviewers,
+        opts.review,
       ),
     },
     opts.approval,

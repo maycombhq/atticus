@@ -31,6 +31,42 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### Act on several waiting items at once
+
+- Home's "needs a person" list has a checkbox on each need and manual step. With some selected, one action applies to all of them with one reason: mark the needs done (with the ticket or note), mark them not needed (with why), or skip the manual steps (with why). The button says how many it changes, and the result says how many couldn't be changed.
+- A manual step's result and a knowledge item's verdict stay one by one: each needs its own values or a look at its quote (Knowledge's review mode is for that).
+
+### Watch a change
+
+- Follow a change without being on it: `atticus watch <change>` (`--off` to stop), **Watch this change** on its cockpit, or on a change in VS Code's sidebar. It is kept in your own `.atticus/me.yaml`, never committed.
+- Your digest gains "Changes you watch", one line each: where it is, how many things block it, the questions that wait, and the next step. `atticus watch` with no change prints the same. Watched changes don't count as waiting on you.
+- The local API gains `PUT /api/me/watch`, and `GET /api/me` lists what you watch (API 2.21.0).
+- Not built yet: a status-bar count in the editors.
+
+### A page for each system
+
+- Estate gains **Systems**: pick a system and read its guide (generated from the catalog, every fact citing code, with what it doesn't know yet), the open questions about it and the changes in flight in its repos, each opening the change at a glance. The ecosystem map's guide links to it.
+
+### Review mode for knowledge
+
+- Knowledge items has **Review what no one has checked**: it walks the items nobody has reviewed, or whose page changed since, one after another, with the quote and its page beside the item. Keys: j or ↓ next, k or ↑ back, v verify and go on, c correct, r reject. The keys act while the item's panel has the focus, never while typing in a form.
+
+### What passes through a line of code
+
+- VS Code's lenses over a cited line now also say which changes are in flight on a flow through it ("change add-tags is in flight here"), opening the change at a glance, and offer "what breaks if this changes" for the records read from the line, opening the Impact screen. `GET /api/cites` gives each flow's changes in flight (those whose target flows touch it).
+- Not built yet: the same in IntelliJ (a gutter icon).
+
+### A hand-off PR that reviews itself
+
+- The PR `atticus change handoff` opens now ends with what an approver would otherwise open the app for: what the change does as a picture (Mermaid, which GitHub and Azure DevOps draw), its estimate as a range with what drives it, and the findings still open at its gates, blocking first.
+- Not built yet: "what changed since the last round" for a PR updated after changes were requested.
+
+### The code beside a question
+
+- Answering a question now shows the lines it cites, the cited line marked. The app's Questions page shows a few lines around each, read from the repo's base clone (or the metarepo, for a change's question; `GET /api/questions/{id}/evidence`, API 2.20.0). VS Code's answer picker lists each cited line's text under "What it read"; picking one opens the code there and comes back to the answers.
+- A line that can't be shown says so: the file isn't here, or the line is past its end. Nothing outside the repo or the metarepo is read.
+- IntelliJ shows the same in the app panel; a native IntelliJ answer dialog isn't built yet.
+
 ### One change at a glance (the change cockpit)
 
 - A change's first page is now **At a glance**, its cockpit. It shows where the change is on its stage path, with each stage's drafts, critic rounds and open questions; the next step with its slash command and command; what blocks it; and each repo's change branch, base and pull request (`GET /api/changes/{id}/cockpit`, API 2.19.0).

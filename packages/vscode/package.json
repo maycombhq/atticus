@@ -368,6 +368,12 @@
         "icon": "$(file-add)"
       },
       {
+        "command": "atticus.watchChange",
+        "title": "Watch this change",
+        "category": "Atticus",
+        "icon": "$(eye)"
+      },
+      {
         "command": "atticus.addToKnowledge",
         "title": "Add to Atticus knowledge",
         "category": "Atticus",
@@ -955,6 +961,11 @@
         },
         {
           "command": "atticus.attachToChange",
+          "when": "view == atticus.changes && viewItem == atticus.change",
+          "group": "atticus"
+        },
+        {
+          "command": "atticus.watchChange",
           "when": "view == atticus.changes && viewItem == atticus.change",
           "group": "atticus"
         },

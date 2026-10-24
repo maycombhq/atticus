@@ -53,6 +53,7 @@ describe("who is using the app (ADR 0073)", () => {
       source: "git",
       ai: "on",
       notify: { digest: "weekly" },
+      watching: [],
     });
   });
 
@@ -82,5 +83,18 @@ describe("who is using the app (ADR 0073)", () => {
     } finally {
       await other.close();
     }
+  });
+});
+
+describe("watching a change from the app (WP7.5)", () => {
+  it("adds and removes a watched change, kept in the person's own file", async () => {
+    const on = await call("PUT", "/api/me/watch", { change: "add-transfer-limit", watch: true });
+    expect(on.status).toBe(200);
+    expect((on.body as { watching: string[] }).watching).toEqual(["add-transfer-limit"]);
+    const off = await call("PUT", "/api/me/watch", { change: "add-transfer-limit", watch: false });
+    expect((off.body as { watching: string[] }).watching).toEqual([]);
+    expect((await call("PUT", "/api/me/watch", { change: "Not An Id", watch: true })).status).toBe(
+      400,
+    );
   });
 });

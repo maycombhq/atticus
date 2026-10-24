@@ -1,9 +1,9 @@
 import type { Api } from "@maycombhq/core";
-import { useApi, useReloadOnFiles } from "../../api/client.js";
+import { api, useApi, useReloadOnFiles } from "../../api/client.js";
 import { screenOf, tabHref } from "../../app/screens.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
-import { queryParam } from "../know/common.js";
+import { Note, queryParam, useAction } from "../know/common.js";
 import type { ChangeRow } from "./next.js";
 import { Command } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
@@ -128,6 +128,36 @@ export function CockpitView({ c }: { c: Cockpit }) {
   );
 }
 
+/** Follow this change without being on it (WP7.5): kept in the person's own file. */
+export function WatchButton(p: { change: string; watching: boolean; onChanged?: () => void }) {
+  const act = useAction();
+  return (
+    <span className="row" style={{ gap: 6 }}>
+      <button
+        type="button"
+        className="btn"
+        aria-pressed={p.watching}
+        disabled={act.busy}
+        onClick={() =>
+          void act.run(
+            async () => {
+              await api("/api/me/watch", {
+                method: "PUT",
+                body: { change: p.change, watch: !p.watching },
+              });
+              p.onChanged?.();
+            },
+            p.watching ? C.unwatched : C.watched,
+          )
+        }
+      >
+        {p.watching ? C.unwatch : C.watch}
+      </button>
+      <Note note={act.note} />
+    </span>
+  );
+}
+
 export function ChangeCockpit({ hash }: { hash: string }) {
   const list = useApi<ChangeRow[]>("/api/changes");
   const asked = queryParam(hash, "change");
@@ -135,9 +165,21 @@ export function ChangeCockpit({ hash }: { hash: string }) {
   const c = useApi<Cockpit>(
     current ? `/api/changes/${encodeURIComponent(current)}/cockpit` : undefined,
   );
+  const me = useApi<{ watching?: string[] }>("/api/me");
   useReloadOnFiles(c);
   return (
-    <Panel title={C.title}>
+    <Panel
+      title={C.title}
+      meta={
+        current && me.state === "ready" ? (
+          <WatchButton
+            change={current}
+            watching={(me.data.watching ?? []).includes(current)}
+            onChanged={me.reload}
+          />
+        ) : undefined
+      }
+    >
       <View of={list} empty={(l) => l.length === 0} emptyText={C.none}>
         {(l) => (
           <>

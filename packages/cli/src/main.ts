@@ -424,6 +424,7 @@ Usage:
   atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first)
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
+  atticus watch [<change>] [--off]     Follow a change without being on it (or stop); with no change, how each one you watch is doing [--json]
   atticus guide <system> [--json]      A system's guide, generated from the catalog: parts, calls, data, runtime, decisions
   atticus site build <dir> [--title t]  The read-only catalog site as static files (only systems open to everyone)
           [--depth n] [--json]
@@ -880,6 +881,7 @@ const OPTIONS = {
   "from-figma": { type: "string" },
   replaces: { type: "string" },
   promote: { type: "string" },
+  off: { type: "boolean" },
   surface: { type: "string" },
   session: { type: "string" },
   command: { type: "string" },
@@ -1298,6 +1300,14 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
         warnings: values.warnings === true,
         ...(typeof values.ref === "string" && values.ref.trim() ? { ref: values.ref.trim() } : {}),
       },
+      io,
+    );
+  // WP7.5: follow a change without being on it.
+  if (group === "watch")
+    return (await import("./watch-commands.js")).watchCommand(
+      root,
+      command,
+      { off: values.off === true, json: values.json === true },
       io,
     );
   if (group === "setup" && !command) return setupCommand(root, { json: values.json === true }, io);

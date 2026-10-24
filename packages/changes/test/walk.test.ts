@@ -360,3 +360,34 @@ describe("an emergency fix: build, release, then post-release review", () => {
     );
   });
 });
+
+describe("a hand-off PR that reviews itself (WP7.4)", () => {
+  it("ends the PR body with the review the caller composed", async () => {
+    const root = await forgeMetarepo();
+    const gh = host();
+    await newChange(root, {
+      title: "Add transfer limit",
+      type: "feature",
+      by: "pat",
+      owners: FEATURE_OWNERS,
+      systems: ["portal", "ledger"],
+      now: "2026-10-19T09:00:00Z",
+    });
+    await copyPhase(root, ID, `${ID}/define`);
+    const review =
+      "### What it changes\n\n```mermaid\nflowchart LR\n```\n\n### Findings still open\n\nNone open.";
+    await handoff(root, ID, {
+      gitHost: gh,
+      repo: REPO,
+      by: "pat",
+      approval: approval("pat", "2026-10-19T10:00:00Z"),
+      now: "2026-10-19T10:00:00Z",
+      review,
+    });
+    const body = (
+      gh.journal.find((j) => j.method === "createPullRequest")!.args[0] as { body: string }
+    ).body;
+    expect(body.trimEnd().endsWith(review)).toBe(true);
+    expect(body).toContain("### Privacy");
+  });
+});

@@ -161,6 +161,7 @@ export const COPY = {
     pickFromList: "Pick a question from the list to answer it.",
     askedBy: (command: string, day: string) => `Asked by ${command} on ${day}`,
     evidence: "What it read",
+    notShown: "Not shown: the file isn't here, or the line is past its end.",
     options: "Your answer",
     optionChanges: "It would change",
     ownWords: "In my own words",
@@ -383,6 +384,11 @@ export const COPY = {
         "There are no knowledge items yet. Sync a source on the Knowledge sources page, then read it with your assistant.",
       noMatch: "No item matches.",
       pick: "Pick an item to see it and review it.",
+      reviewStart: (n: number) =>
+        n ? `Review what no one has checked (${n})` : "Nothing waits for a review",
+      reviewStop: "Stop reviewing",
+      reviewKeys: (n: number) =>
+        `Review mode, ${n} waiting: j or ↓ next, k or ↑ back, v verify and go on, c correct, r reject.`,
       missing: (id: string) =>
         `There is no knowledge item ${id}: a rescan may have removed it, or the link is wrong. Pick one from the list.`,
       count: (n: number) => `${n} item${n === 1 ? "" : "s"}`,
@@ -599,6 +605,7 @@ export const COPY = {
       ai: "AI",
       repos: "Repos",
       cockpit: "At a glance",
+      systems: "Systems",
       runs: "Model runs",
       history: "Prompt history",
       changeDiagram: "Change diagram",
@@ -1274,6 +1281,22 @@ export const COPY = {
   },
   commandCenter: {
     /** ADR 0121 item 6: what runs a step here, in one line, beside a link to change it. */
+    /** WP7.10: acting on several needs or manual steps at once. */
+    select: (title: string) => `Select ${title}`,
+    bulkTitle: "Act on the selected items",
+    selected: (n: number) => `${n} selected`,
+    bulkAction: "What to do",
+    bulkNeedDone: (n: number) => `Mark ${n} need${n === 1 ? "" : "s"} done`,
+    bulkNeedNot: (n: number) => `Mark ${n} need${n === 1 ? "" : "s"} not needed`,
+    bulkStepSkip: (n: number) => `Skip ${n} manual step${n === 1 ? "" : "s"}`,
+    bulkTicket: "The ticket or note, for all of them",
+    bulkWhy: "Why, for all of them",
+    bulkDo: (n: number) => `Do it for ${n}`,
+    bulkClear: "Clear the selection",
+    bulkDone: (ok: number, failed: number) =>
+      failed
+        ? `Done for ${ok}; ${failed} couldn't be changed: open each to see why.`
+        : `Done for ${ok}.`,
     howStepsRun: "How AI steps run:",
     howStepsRunChange: "Change in Set up › AI",
     howStepsRunCantRead: "Atticus couldn't read how AI steps run here (org-pack/runtime.yaml).",
@@ -2196,6 +2219,17 @@ export const COPY = {
     draftRequests: "Draft requests",
   },
   /** ADR 0121: the AI tab, how AI runs here. */
+  /** WP7.7: a system's page. */
+  systems: {
+    title: "Systems",
+    pick: "Which system",
+    empty: "No system in the catalog yet: scan the repos first.",
+    openPage: "Open its page",
+    inFlight: "Changes in flight in its repos",
+    noChanges: "No change in flight touches its repos.",
+    questions: "Open questions about it",
+    noQuestions: "No open question about it.",
+  },
   /** WP7.1: the change cockpit, one change at a glance. */
   cockpit: {
     title: "This change at a glance",
@@ -2228,6 +2262,10 @@ export const COPY = {
     noRepos: "No repo has a branch for this change yet: atticus workspace open makes them.",
     branchOn: (branch: string, base: string) => `${branch}, from ${base}`,
     pr: "the pull request",
+    watch: "Watch this change",
+    unwatch: "Stop watching",
+    watched: "You watch it: your digest says how it is doing.",
+    unwatched: "You no longer watch it.",
   },
   /** ADR 0123: Set up › Repos, each repo's branches. */
   repos: {

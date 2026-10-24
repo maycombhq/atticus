@@ -26,8 +26,9 @@ export const SCREENS = [
   "ai",
   // ADR 0123: each repo's branches.
   "repos",
-  // WP7.1: one change at a glance.
+  // WP7.1: one change at a glance. WP7.7: a system's page.
   "cockpit",
+  "systems",
   "intake",
   "scans",
   "brief?change=add-transfer-limit",
