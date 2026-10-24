@@ -277,6 +277,8 @@ export async function changeHandoff(
       ...(o.repo ? { repo: o.repo } : {}),
       ...(o.base ? { base: o.base } : {}),
       ...(deps.publisher ? { publisher: deps.publisher } : {}),
+      // WP7.4: the PR reviews itself: the change as a picture, its estimate, its open findings.
+      review: await (await import("./handoff-review.js")).handoffReview(root, id),
     });
     io.out(`Hand-off PR #${h.pr.number} (${h.branch}) is open: ${h.pr.url}`);
     io.out(

@@ -21,6 +21,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### A hand-off PR that reviews itself
+
+- The PR `atticus change handoff` opens now ends with what an approver would otherwise open the app for: what the change does as a picture (Mermaid, which GitHub and Azure DevOps draw), its estimate as a range with what drives it, and the findings still open at its gates, blocking first.
+- Not built yet: "what changed since the last round" for a PR updated after changes were requested.
+
 ### The code beside a question
 
 - Answering a question now shows the lines it cites, the cited line marked. The app's Questions page shows a few lines around each, read from the repo's base clone (or the metarepo, for a change's question; `GET /api/questions/{id}/evidence`, API 2.20.0). VS Code's answer picker lists each cited line's text under "What it read"; picking one opens the code there and comes back to the answers.
