@@ -5,7 +5,7 @@ import {
   applyPatch,
   criticModel,
   linePatch,
-  looksPersonal,
+  personalItems,
   modelFamily,
   nearestCode,
   parseDoc,
@@ -38,11 +38,36 @@ describe("small readers", () => {
     expect(nearestCode("S.GW.VDN", codes)).toBe("S.GW.VND");
     expect(nearestCode("X.Y.Z", codes)).toBeUndefined();
   });
-  it("spots column names that look like personal data", () => {
-    expect(looksPersonal("changed_by_email")).toBe(true);
-    expect(looksPersonal("holder_name")).toBe(true);
-    expect(looksPersonal("account_id")).toBe(false);
-    expect(looksPersonal("daily_limit")).toBe(false);
+  it("reads the new columns as personal-data items, settled by a personal class written by name", () => {
+    const files = new Map([
+      [
+        "data.md",
+        parseDoc(
+          "data.md",
+          [
+            "# Data",
+            "",
+            "## Changes",
+            "",
+            "| Data store | Table | Change | Migration |",
+            "| --- | --- | --- | --- |",
+            "| ledger-db | payee | new table payee (id bigint, holder_name varchar(120)) | V4__payee.sql |",
+            "",
+            "## Classification",
+            "",
+            "holder_name is personal.",
+          ].join("\n"),
+        ),
+      ],
+    ]);
+    const items = personalItems({
+      files: { docs: files },
+      personalClasses: ["personal"],
+    } as unknown as Parameters<typeof personalItems>[0]);
+    expect(items.map((i) => [i.inputs.column, i.facts])).toEqual([
+      ["id", ["table: payee", "type: bigint"]],
+      ["holder_name", ["table: payee", "type: varchar(120)", "classified as personal data"]],
+    ]);
   });
   it("reads tables with line numbers and keeps line numbers when comments are blanked", () => {
     const d = parseDoc(

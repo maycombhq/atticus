@@ -25,6 +25,8 @@ export async function forgeChangeRoot(
   const root = await mkdtemp(join(tmpdir(), "atticus-planner-"));
   await cp(join(FORGE, "metarepo/org-pack"), join(root, "org-pack"), { recursive: true });
   await cp(join(FORGE_CHANGE, "org-pack"), join(root, "org-pack"), { recursive: true });
+  // A person's judgments of the seeded change: which new columns hold personal data (ADR 0117).
+  await cp(join(FORGE_CHANGE, "judgments"), join(root, "judgments"), { recursive: true });
   const rows = parse(readFileSync(join(FORGE, "expected/scan.yaml"), "utf8")) as Record<
     string,
     unknown
