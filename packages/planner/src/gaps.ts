@@ -10,13 +10,16 @@ import {
   type Question,
   type QuestionDraft,
 } from "@maycombhq/core";
+import { parse } from "yaml";
 import { GAP_STEP, gapNameOf, gapQuestion } from "@maycombhq/index";
+import { unfence } from "./stages/answer.js";
 
 /**
  * What neither the wikis nor the repos say (ADR 0107 point 5), in the steps that use the
  * context engine (needs, feature, architecture, stories): the names the change uses that the
  * index has nothing for are listed as gaps in the step's result, sent to the model with the
- * rule not to guess, and each gap the model's answer relies on (it names it) becomes a question
+ * rule not to guess, and each gap the model's answer says it relies on (under relies_on_gaps,
+ * ADR 0117; a name it merely mentions isn't one) becomes a question
  * to a person (questions/, ADR 0078), never a guess. Asked under one step id with the change as
  * its repo and the line the change names it on as evidence, so every step of the change that
  * meets the same gap waits on the same question. A person's answer is indexed as asserted
@@ -99,7 +102,7 @@ export async function gapContext(
 
 /** Said to the model when the step has gaps: list them, never guess. Atticus's own words. */
 export const GAP_RULE =
-  "The names in context-gaps are gaps: nothing Atticus has read says what they are. Never guess a fact about one; name it where your answer needs the fact, and Atticus asks a person.";
+  "The names in context-gaps are gaps: nothing Atticus has read says what they are. Never guess a fact about one. When your answer needs a fact about one, list it, as it is listed, under relies_on_gaps: [<name>, ...] at the top level of your answer, and Atticus asks a person. A gap you leave out or only mention is not asked.";
 
 /** The gaps as the model reads them (data: the names come from the change) and the rule. */
 export function gapSources(gaps: ContextGap[]): SourceInput[] {
@@ -157,10 +160,33 @@ export async function gapAnswers(
   };
 }
 
-/** The gaps an answer relies on: it names them. */
-export function reliedOn(gaps: ContextGap[], answer: string): ContextGap[] {
-  const a = fold(answer);
-  return gaps.filter((g) => a.includes(fold(g.name)));
+/**
+ * The gaps an answer relies on (ADR 0117): the names it lists under relies_on_gaps, each one a
+ * gap the step listed (set membership, spacing and case aside). A name that isn't a listed gap
+ * comes back in `unknown`; an answer that doesn't parse relies on none.
+ */
+export function reliedOn(
+  gaps: ContextGap[],
+  answer: string,
+): { relied: ContextGap[]; unknown: string[] } {
+  let data: unknown;
+  try {
+    data = parse(unfence(answer));
+  } catch {
+    return { relied: [], unknown: [] };
+  }
+  const listed = (data as { relies_on_gaps?: unknown } | null)?.relies_on_gaps;
+  const names = Array.isArray(listed)
+    ? listed.filter((x): x is string => typeof x === "string" && x.trim() !== "")
+    : [];
+  const relied: ContextGap[] = [];
+  const unknown: string[] = [];
+  for (const n of names) {
+    const g = gaps.find((x) => fold(x.name).trim() === fold(n).trim());
+    if (!g) unknown.push(n);
+    else if (!relied.includes(g)) relied.push(g);
+  }
+  return { relied, unknown };
 }
 
 /** The question a gap becomes, or undefined when the change doesn't say where it names it. */
@@ -180,7 +206,7 @@ export async function askGaps(
   answer: string,
   by: { command: string; rerun: string; run?: string; at: string },
 ): Promise<Question[]> {
-  const relied = reliedOn(gaps, answer);
+  const { relied } = reliedOn(gaps, answer);
   const drafts = relied.map((g) => [g, gapDraft(g)] as const).filter((x) => x[1]);
   if (!drafts.length) return [];
   const r = await raiseQuestions(

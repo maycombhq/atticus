@@ -26,4 +26,5 @@ stories:
     tasks:
       - step: 1
         criteria:
-          - "Given a new order, when it is placed, then the 201 response holds id, sku, quantity and createdAt"
+          - text: "Given a new order, when it is placed, then the 201 response holds id, sku, quantity and createdAt"
+            checks: [id, sku, quantity, createdAt]

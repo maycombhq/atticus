@@ -178,7 +178,7 @@ describe("the context engine in the steps", () => {
     it("feature: lists a gap, tells the model not to guess, and asks a person when the answer relies on it", async () => {
       const { root, evidence } = await withGap();
       const seen: string[] = [];
-      const answer = `${PLACED}gaps:\n  - { what: Quillfeather Risk scores the order, why: no flow calls it }\n`;
+      const answer = `${PLACED}gaps:\n  - { what: Quillfeather Risk scores the order, why: no flow calls it }\nrelies_on_gaps: [Quillfeather Risk]\n`;
       const r = await featureStage(root, CHANGE, { runtime: assistant(answer, seen), now: NOW });
       expect(seen[0]).toContain(GAP_RULE);
       expect(seen[0]).toMatch(
@@ -212,9 +212,16 @@ describe("the context engine in the steps", () => {
       expect(r2.state).toBe("done");
     });
 
-    it("feature: a gap the answer doesn't rely on is listed, not asked", async () => {
+    it("feature: a gap the answer doesn't rely on is listed, not asked, even when it names it", async () => {
       const { root } = await withGap();
-      const r = await featureStage(root, CHANGE, { runtime: assistant(PLACED, []), now: NOW });
+      // Named, but not relied on: the old substring rule asked a person about it.
+      const r = await featureStage(root, CHANGE, {
+        runtime: assistant(
+          `${PLACED}gaps:\n  - { what: "Quillfeather Risk is not in the catalog, so the plan leaves it out", why: out of scope }\n`,
+          [],
+        ),
+        now: NOW,
+      });
       expect(r.context?.gaps).toEqual([
         expect.objectContaining({ name: "Quillfeather Risk", state: "listed" }),
       ]);
@@ -225,17 +232,14 @@ describe("the context engine in the steps", () => {
     it("needs: the same gap is one question, whichever step meets it first", async () => {
       const { root } = await withGap();
       const r = await findNeeds(root, CHANGE, {
-        runtime: assistant(
-          "needs: []\nnot_needed: []\n# Nothing says what Quillfeather Risk is.\n",
-          [],
-        ),
+        runtime: assistant("needs: []\nnot_needed: []\nrelies_on_gaps: [quillfeather risk]\n", []),
         now: NOW,
         maxAttempts: 1,
       });
       expect(r.status).toBe("done");
       expect(r.questions?.map((q) => q.question)).toEqual([gapQuestion("Quillfeather Risk")]);
       const f = await featureStage(root, CHANGE, {
-        runtime: assistant(`${PLACED}# Quillfeather Risk: unknown\n`, []),
+        runtime: assistant(`${PLACED}relies_on_gaps: [Quillfeather Risk]\n`, []),
         now: NOW,
       });
       expect(f.questions.map((q) => q.id)).toEqual(r.questions!.map((q) => q.id));

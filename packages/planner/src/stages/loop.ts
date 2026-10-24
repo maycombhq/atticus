@@ -43,6 +43,7 @@ import {
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
 import { citeFiles } from "./cite.js";
+import { questionsOnFile, stepQuestionJudge } from "./questions-on-file.js";
 import type { ContextOptions, ContextReport } from "../engine.js";
 import { askGaps, type ContextGap } from "../gaps.js";
 import {
@@ -434,6 +435,8 @@ export async function runStageLoop<A>(
           trusted: true,
         },
         ...spec.sources,
+        // ADR 0117: the questions on file, so the model says which one a question is the same as.
+        ...(await questionsOnFile(root, change.id)),
       ];
       const pack = buildContextPack({
         change: change.id,
@@ -556,11 +559,12 @@ export async function runStageLoop<A>(
     // The loop's own questions are about the repo a finding names; the assistant's are the
     // change's. Each is raised for its own repo, so an answered one is found again (a question
     // filed under another repo was asked a third time on NadiEngine).
-    const drafted: { repo: string; q: QuestionDraft }[] = [];
+    const drafted: { repo: string; q: QuestionDraft; f?: LoopFinding }[] = [];
     const evidenceFor = async (e: string | undefined) =>
       e && (await lineExists(root, e)) ? e : `${rel}/${loopRel(spec.stage)}:1`;
     for (const { f, issue } of toAsk)
       drafted.push({
+        f,
         repo: issue.repo ?? change.id,
         q: {
           // A check that knows the question to ask asks it plainly, so its answer reads as one
@@ -585,10 +589,12 @@ export async function runStageLoop<A>(
     }
     if (drafted.length) {
       const qs: Question[] = [];
+      const judge = stepQuestionJudge(root, o.runtime, change.id, now);
       for (const repo of [...new Set(drafted.map((x) => x.repo))]) {
+        const mine = drafted.filter((x) => x.repo === repo);
         const raised = await raiseQuestions(
           root,
-          drafted.filter((x) => x.repo === repo).map((x) => x.q),
+          mine.map((x) => x.q),
           {
             step: `change-${spec.stage}`,
             repo,
@@ -597,12 +603,13 @@ export async function runStageLoop<A>(
             ...(run?.runId ? { run: run.runId } : {}),
             at,
           },
+          judge ? { judge } : {},
         );
         qs.push(...raised.raised, ...raised.known);
-      }
-      for (const { f } of toAsk) {
-        const q = qs.find((x) => x.question.includes(f.message.slice(0, 40)));
-        if (q) f.question = q.id;
+        // The question each finding became, by its place in the list raised.
+        mine.forEach((x, i) => {
+          if (x.f && raised.of[i]) x.f.question = raised.of[i]!.id;
+        });
       }
       loop.questions = [...new Set([...loop.questions, ...qs.map((q) => q.id)])].sort();
     }

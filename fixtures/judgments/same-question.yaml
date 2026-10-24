@@ -1,0 +1,141 @@
+# Same-question cases (ADR 0117). Each pair is a new question and one already on file for the
+# same repo. `truth` is what a person reading both says: same (one answer serves both),
+# narrower or different. `recorded` is the judge's recorded answer for the pairs that reach it
+# (the veto settles the others before any model is asked); the eval replays it, and the old
+# word-overlap rule is scored on the same pairs. The audit's failing examples are here:
+# renamedAt vs renamedBy, retry on timeout vs on 5xx, two questions about one line.
+repo: forge-chat
+cases:
+  - id: renamed-at-vs-renamed-by
+    new:
+      question: How is the new column renamedBy of forge-chat-db.chat classified?
+      evidence: [openspec/changes/rename-chat/stage/small.yaml:1]
+    existing:
+      question: How is the new column renamedAt of forge-chat-db.chat classified?
+      evidence: [openspec/changes/rename-chat/stage/small.yaml:1]
+      state: answered
+    truth: different
+  - id: retry-timeout-vs-5xx
+    new:
+      question: Should the Northwind Pay refund call retry on 5xx, or fail fast?
+      evidence: [openspec/changes/refunds/brief.md:9]
+    existing:
+      question: Should the Northwind Pay refund call retry on timeout, or fail fast?
+      evidence: [openspec/changes/refunds/brief.md:9]
+      state: open
+    truth: different
+    recorded:
+      verdict: different
+      quotes:
+        - { of: new, text: retry on 5xx }
+        - { of: existing, text: retry on timeout }
+      why: One asks about server errors, the other about timeouts; each needs its own answer.
+  - id: nullable-vs-shown
+    new:
+      question: Is chat.title shown to the user?
+      evidence: [openspec/changes/rename-chat/brief.md:4]
+    existing:
+      question: Is chat.title nullable?
+      evidence: [openspec/changes/rename-chat/brief.md:4]
+      state: open
+    truth: different
+    recorded:
+      verdict: different
+      quotes:
+        - { of: new, text: shown to the user }
+        - { of: existing, text: nullable }
+      why: Whether a column may be empty and whether it is displayed are separate decisions.
+  - id: export-1000-vs-5000
+    new:
+      question: Is the export limited to 5000 messages?
+      evidence: [openspec/changes/export/brief.md:7]
+    existing:
+      question: Is the export limited to 1000 messages?
+      evidence: [openspec/changes/export/brief.md:7]
+      state: open
+    truth: different
+  - id: rename-history-paraphrase
+    new:
+      question: Does renaming a chat need an audit trail of earlier titles?
+      evidence: [openspec/changes/rename-chat/brief.md:12]
+    existing:
+      question: Should renames be kept as a history?
+      evidence: [openspec/changes/rename-chat/brief.md:14]
+      state: open
+    truth: same
+    recorded:
+      verdict: same
+      quotes:
+        - { of: new, text: an audit trail of earlier titles }
+        - { of: existing, text: kept as a history }
+      why: Both ask whether earlier titles are kept after a rename.
+  - id: legacy-module-survey-vs-verify
+    repo: forge-suite
+    new:
+      question: Is forge-legacy (the old chart service) still part of the forge-suite product, or a retired predecessor kept for reference?
+      evidence: [forge-legacy/pom.xml:19, pom.xml:22]
+    existing:
+      question: Is forge-legacy, the old single-module project kept outside the Maven reactor, still part of the product, or should its /api/charts endpoints be left out?
+      evidence: [pom.xml:16, pom.xml:18]
+      state: open
+    truth: same
+    recorded:
+      verdict: same
+      quotes:
+        - { of: new, text: still part of the forge-suite product }
+        - { of: existing, text: still part of the product }
+      why: Both ask whether forge-legacy is still part of the product.
+  - id: payments-gateway
+    new:
+      question: Which gateway does POST /payments come through?
+      evidence: [a.yaml:1, b.yaml:2]
+    existing:
+      question: Who calls POST /payments, and through which gateway?
+      evidence: [a.yaml:1]
+      state: open
+    truth: narrower
+    recorded:
+      verdict: narrower
+      quotes:
+        - { of: new, text: Which gateway }
+        - { of: existing, text: Who calls POST /payments, and through which gateway }
+      why: The existing question asks who calls it as well as the gateway; the new one asks only the gateway.
+  - id: redacted-vs-format
+    new:
+      question: Which file format should the export use?
+      evidence: [openspec/changes/export/brief.md:25]
+    existing:
+      question: Should messages that held a redacted chart be left out of the export?
+      evidence: [openspec/changes/export/brief.md:25]
+      state: open
+    truth: different
+    recorded:
+      verdict: different
+      quotes:
+        - { of: new, text: Which file format }
+        - { of: existing, text: be left out of the export }
+      why: One asks the format, the other what is left out.
+  - id: legacy-vs-admin
+    new:
+      question: Is forge-admin still part of the product?
+      evidence: [pom.xml:2]
+    existing:
+      question: Is forge-legacy still part of the product?
+      evidence: [pom.xml:1]
+      state: open
+    truth: different
+  - id: classification-reworded
+    new:
+      question: Which classification level applies to the new column renamedAt of forge-chat-db.chat?
+      evidence: [openspec/changes/rename-chat/stage/small.yaml:1]
+    existing:
+      question: How is the new column renamedAt of forge-chat-db.chat classified?
+      evidence: [openspec/changes/rename-chat/stage/small.yaml:1]
+      state: answered
+    truth: same
+    recorded:
+      verdict: same
+      quotes:
+        - { of: new, text: Which classification level applies }
+        - { of: existing, text: classified }
+      why: Both ask the classification of the same column.

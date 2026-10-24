@@ -299,6 +299,13 @@ function affectedOf(records: CatalogRecord[]): Affected {
   return { entryPoints, calls, files: [...files].sort() };
 }
 
+/**
+ * ADR 0117: the step's own reading of a question it would ask that is already on file, batched
+ * into the prompt it sends anyway; Atticus checks the id, the quote and the veto.
+ */
+export const SAME_AS_LINE =
+  'If a question you would ask is one of these, in any words, leave it out; if you still need it, give it with sameAs: { id: <its id>, verdict: same | narrower, quote: "<words of that question, copied exactly, that ask what yours asks>" }. Questions about different ids, fields or numbers are never the same.';
+
 /** The questions a step asked before, for the prompt: follow the answers, ask none again. */
 export function askedBefore(questions: Question[]): SourceInput[] {
   const answered = questions.filter((q) => q.state === "answered");
@@ -311,14 +318,15 @@ export function askedBefore(questions: Question[]): SourceInput[] {
     );
     for (const q of answered)
       lines.push(
-        `- ${q.question} (${q.evidence.join(", ")})`,
+        `- ${q.id}: ${q.question} (${q.evidence.join(", ")})`,
         `  Answer (${q.answer!.by}): ${answerWords(q)}`,
       );
   }
   if (open.length) {
     lines.push("Questions already asked and waiting for a person. Don't ask them again:");
-    for (const q of open) lines.push(`- ${q.question} (${q.evidence.join(", ")})`);
+    for (const q of open) lines.push(`- ${q.id}: ${q.question} (${q.evidence.join(", ")})`);
   }
+  lines.push(SAME_AS_LINE);
   return [
     {
       id: "2-questions",

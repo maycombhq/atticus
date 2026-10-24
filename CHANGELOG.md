@@ -12,6 +12,17 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - `atticus scan survey` tells the model to search for the code that sets a prefix, a base or a folder the material doesn't show (an in-house annotation, a wrapper) and to cite the line it found; the survey, dialect draft and scan review offer their repo to the tools by its id even when it was given as a folder. Spec draft and scan verify say the tools may be used where they are offered.
 - Not built: `show_code` through the MCP server still takes an id only; a language without a shipped grammar outlines to nothing.
 
+### Judgments by the model, checked by facts (ADR 0117)
+
+- A closed question about meaning (is this question one on file, does this criterion check this field, does this span state this value, does this process apply to this step) goes to the model through the AI runtime: one word of a closed set or "unsure", every quote checked word for word, catalog facts vetoing first. Unsure becomes a question to a person or a hand-back, never a guess.
+- Judgments are kept in `judgments/<kind>/<key>.yaml`, the key a hash of the inputs: the same inputs read the stored verdict, a changed one asks again for itself only, and a person's verdict is never replaced. Commit them for review as `questions/` are.
+- Questions: matched by id, then candidates, then a veto (two questions naming different ids, fields or numbers are never the same: `renamedAt`'s classification is never read for `renamedBy`), then the step's own reading (`sameAs`, from the questions on file now listed in its prompt) or the judge. A question that may be the same as one on file is raised with it under `related`. An answered question is read for another only when the new one names nothing it doesn't. Questions are at schema version 2; `atticus upgrade` rewrites older files.
+- Stories: each criterion says which fields it checks (`checks`); every field of a task must be checked, and a field the then clause doesn't name is judged, or handed back with a hand-off. The story writer names each request a step meets, quoting its applies-when; where a model can be called a judge looks for any it missed. The old word matches (`namesField`, `suggestRequests`) are gone.
+- Knowledge: an item cites the words for its lead time, status and dates (`lead_time_quote`, `status_quote`, `date_quotes`) and gives its lead time's reading (`lead_time_days`). "3 days" is no longer found in "3 approvers and take 15 days", nor 1 March 2027 in "March 2027 ... 1 pilot"; a status is never read from a word list. `atticus change needs` and the next-step list plan by the reading, not by parsing the words.
+- A step's answer lists the gaps it relies on (`relies_on_gaps`); a gap it only mentions is not asked.
+- `atticus knowledge ask` meets "process" with "processes"; testgen no longer reads a `javascript-spa` repo as Java.
+- The evals score each replaced judgment against the rule it replaced, on `fixtures/judgments/` (the audit's failing examples among them).
+
 ### What a live run with Copilot found (ADR 0111 addendum)
 
 - The fast path and the architecture stage check that every field a plan returns comes from somewhere, that a write stores what it sends, and that a read or write names its table under `store`; a column in other casing, a classification outside the org pack's levels and a misnamed Flyway migration are handed back.

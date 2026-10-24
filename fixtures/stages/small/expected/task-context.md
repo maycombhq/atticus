@@ -60,6 +60,6 @@ Flow forge-orders.place-order (A client places an order): change the respond ste
 Fields: id, sku, quantity, createdAt.
 Today's code is at forge-orders:src/main/java/forge/orders/OrderController.java:14; read it first.
 Acceptance criteria:
-- Given a new order, when it is placed, then the 201 response holds id, sku, quantity and createdAt
+- Given a new order, when it is placed, then the 201 response holds id, sku, quantity and createdAt (checks id, sku, quantity, createdAt)
 Change only this repo. Write a test for each criterion. Never push to a protected branch.
 ```

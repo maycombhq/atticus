@@ -20,6 +20,7 @@ import {
   type VerifyFix,
   type VerifySettings,
 } from "@maycombhq/core";
+import { stepQuestionJudge } from "@maycombhq/planner";
 import { checkScanSettings } from "@maycombhq/scanner";
 import { fsRepo, type RepoHandle } from "@maycombhq/sdk";
 import type { Output } from "./commands.js";
@@ -192,7 +193,12 @@ export async function scanVerify(
   }
   const op = await loadOrgPack(orgPackDirOf(root));
   const settings = op.scanSettings.find((s) => s.repo === repo.id);
-  const before = await listQuestions(root, { repo: repo.id, step: "scan-verify" });
+  // Every question on file for the repo, whichever step asked it (ADR 0117): the step follows
+  // the answers and says which one a question it would ask is (sameAs).
+  const before = await listQuestions(root, { repo: repo.id }).then((l) => ({
+    ...l,
+    questions: l.questions.filter((q) => q.state !== "retired"),
+  }));
   const handle = fsRepo(repo.id, repo.dir, "0".repeat(40));
   const now = deps.now ?? new Date();
   const r = await verifyScan(handle, {
@@ -240,14 +246,22 @@ export async function scanVerify(
   const drafts = [...a.missed, ...a.wrong].flatMap((x) =>
     "question" in x.fix ? [x.fix.question] : [],
   );
-  const { raised, known, reused } = await raiseQuestions(root, drafts, {
-    step: "scan-verify",
-    repo: repo.id,
-    command: `atticus scan verify ${repo.id}`,
-    rerun: `atticus scan verify ${repo.id}`,
-    ...(r.runId ? { run: r.runId } : {}),
-    at: now.toISOString(),
-  });
+  // ADR 0117: a question on file is matched by the step's own reading (sameAs) and, where a
+  // model can be called directly, a judge.
+  const judge = stepQuestionJudge(root, deps.runtime, repo.id, now);
+  const { raised, known, reused } = await raiseQuestions(
+    root,
+    drafts,
+    {
+      step: "scan-verify",
+      repo: repo.id,
+      command: `atticus scan verify ${repo.id}`,
+      rerun: `atticus scan verify ${repo.id}`,
+      ...(r.runId ? { run: r.runId } : {}),
+      at: now.toISOString(),
+    },
+    judge ? { judge } : {},
+  );
   const byId = new Map(records.map((x) => [x.id, x]));
   // Only confirmations that cite the line showing them passed the checks (ADR 0112); only
   // those are pinned as verified.

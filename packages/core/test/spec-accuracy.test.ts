@@ -10,7 +10,8 @@ import {
   questionsDirOf,
   raiseQuestions,
   reusedLine,
-  sameQuestion,
+  differentThings,
+  type QuestionJudge,
   SpecTemplate,
 } from "../src/index.js";
 import { EXAMPLES } from "./examples.js";
@@ -132,42 +133,19 @@ const verify = {
   scope: "repo" as const,
 };
 
-describe("the same question from two steps (ADR 0089)", () => {
-  it("tells the same question by a shared line or near-identical words, and a different one apart", () => {
-    const q = (question: string, evidence: string[]) => ({
-      repo: "forge-suite",
-      question,
-      evidence,
-    });
+/** The judge's recorded verdict for the pair (fixtures/judgments/same-question.yaml). */
+const recordedSame: QuestionJudge = async (pairs) =>
+  new Map(pairs.map((p) => [p.key, "same" as const]));
+
+describe("the same question from two steps (ADR 0089, 0117)", () => {
+  it("tells questions about different modules apart before any judge, and leaves the rest to it", () => {
     expect(
-      sameQuestion(q(survey.question, survey.evidence), q(verify.question, verify.evidence)),
-    ).toBe(true);
-    // A shared line and some words in common is the same question.
-    expect(
-      sameQuestion(
-        q("Who calls POST /payments, and through which gateway?", ["a.yaml:1"]),
-        q("Which gateway does POST /payments come through?", ["a.yaml:1", "b.yaml:2"]),
+      differentThings(
+        { question: "Is forge-legacy still part of the product?" },
+        { question: "Is forge-admin still part of the product?" },
       ),
-    ).toBe(true);
-    // A shared line alone isn't: two questions can read the same line and ask different things.
-    expect(
-      sameQuestion(
-        q("Should messages that held a redacted chart be left out of the export?", ["brief.md:25"]),
-        q("Which file format should the export use?", ["brief.md:25"]),
-      ),
-    ).toBe(false);
-    expect(
-      sameQuestion(
-        q("Is forge-legacy still part of the product?", ["pom.xml:1"]),
-        q("Is forge-admin still part of the product?", ["pom.xml:2"]),
-      ),
-    ).toBe(false);
-    expect(
-      sameQuestion(
-        { repo: "forge-a", question: survey.question, evidence: survey.evidence },
-        { repo: "forge-b", question: survey.question, evidence: survey.evidence },
-      ),
-    ).toBe(false);
+    ).toBeDefined();
+    expect(differentThings(survey, verify, "forge-suite")).toBeUndefined();
   });
 
   it("reuses the open question another step asked, records the step on it, and says so", async () => {
@@ -175,7 +153,12 @@ describe("the same question from two steps (ADR 0089)", () => {
     await mkdir(join(root, "org-pack"), { recursive: true });
     const first = await raiseQuestions(root, [survey], by("scan-survey"));
     expect(first.raised).toHaveLength(1);
-    const second = await raiseQuestions(root, [verify], { ...by("scan-verify"), run: "run-2" });
+    const second = await raiseQuestions(
+      root,
+      [verify],
+      { ...by("scan-verify"), run: "run-2" },
+      { judge: recordedSame },
+    );
     expect(second.raised).toEqual([]);
     expect(second.reused.map((q) => q.id)).toEqual([first.raised[0]!.id]);
     expect(second.known.map((q) => q.id)).toEqual([first.raised[0]!.id]);
@@ -198,7 +181,9 @@ describe("the same question from two steps (ADR 0089)", () => {
       /^q-[0-9a-f]{12} was already asked by atticus scan survey forge-suite: .* This step waits on the same answer instead of asking again\.$/,
     );
     // Asked again by the same step, it isn't added twice; one file in all.
-    const third = await raiseQuestions(root, [verify], by("scan-verify"));
+    const third = await raiseQuestions(root, [verify], by("scan-verify"), {
+      judge: recordedSame,
+    });
     expect(third.reused[0]!.alsoAskedBy).toHaveLength(1);
     expect((await listQuestions(root)).questions).toHaveLength(1);
   });

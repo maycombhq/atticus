@@ -69,7 +69,7 @@ async function ids(root: string) {
   };
 }
 
-const answer = (i: Awaited<ReturnType<typeof ids>>) => `missed:
+const answer = (i: Awaited<ReturnType<typeof ids>>, sameAs?: string) => `missed:
   - kind: entry-point
     method: GET
     name: /tasks-api/tasks/archive
@@ -100,7 +100,7 @@ wrong:
         options:
           - { label: Leave it out, means: nobody ships it, changes: the scan leaves samples/ out }
           - { label: Product, means: it ships, changes: the scan keeps reading samples/ }
-        evidence: ["samples/demo.js:1"]
+        evidence: ["samples/demo.js:1"]${sameAs ? `\n        sameAs: { id: ${sameAs}, verdict: same, quote: "still part of the product" }` : ""}
 confirmed:
   - record: ${i.add}
     at: "src/main/java/forge/tasks/TaskController.java:19"
@@ -294,9 +294,20 @@ describe("atticus scan verify (ADR 0082)", () => {
         },
       );
       const id = survey.raised[0]!.id;
-      const runtime = new MockRuntime(() => answer(i), { now: () => NOW });
+      // ADR 0117: the verify step reads the survey's question in its prompt and says its own is
+      // the same one, quoting it; Atticus checks the id, the words and the veto.
+      const prompts: string[] = [];
+      const runtime = new MockRuntime(
+        (r) => {
+          prompts.push(r.pack.prompt);
+          return answer(i, id);
+        },
+        { now: () => NOW },
+      );
       const t = io();
       expect(await scanVerify(root, "forge-tasks", {}, { runtime, now: NOW }, t.io)).toBe(0);
+      expect(prompts[0]).toContain(`- ${id}: Is samples/, the folder of demos`);
+      expect(prompts[0]).toContain("give it with sameAs:");
       expect(t.out).toContain(
         `${id} was already asked by atticus scan survey forge-tasks: "Is samples/, the folder of demos, still part of the product, or should it be left out?" This step waits on the same answer instead of asking again.`,
       );
