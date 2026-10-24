@@ -1,11 +1,15 @@
 import { tableWith, docOf } from "@maycombhq/naysayer";
 import type { ReleaseContext } from "./context.js";
+import { BREAKING_SPEC, type Judged } from "@maycombhq/ai";
+import { breakingItem, judgedFor } from "./judged.js";
 import { buildModel, opOf, sectionOf, sentences } from "./model.js";
 
 /**
- * Release notes, generated deterministically (no AI) from the brief and proposal (what
- * changes, for whom), interfaces.md (API changes, breaking or not), data.md (data changes)
- * and waived findings (known limitations). Two audiences: business (why, what, who, what is
+ * Release notes, from the brief and proposal (what changes, for whom), interfaces.md (API
+ * changes, breaking or not), data.md (data changes) and waived findings (known limitations).
+ * Every line is the change folder's words; whether an API change breaks callers is a judgment
+ * (ADR 0117 addendum), settled by the catalog's change kind, a judgment on file or the judge,
+ * else shown as "check" for a person. Two audiences: business (why, what, who, what is
  * left out) and technical (adds API and data changes).
  */
 
@@ -19,6 +23,11 @@ export interface ApiChange {
   change: string;
   breaking: "yes" | "no" | "check";
   why: string;
+  /**
+   * Who settled it: the catalog's change kind (new, retired), a model's or a person's judgment
+   * on file, or no one yet ("check" for a person).
+   */
+  judgedBy: "catalog" | "model" | "person" | "not judged";
   source: string;
 }
 
@@ -66,28 +75,39 @@ const lines = (text: string | undefined) =>
 const bullets = (text: string | undefined) =>
   lines(text).map((l) => l.replace(/^([-*+]|\d+\.)\s+/, ""));
 
-const BREAKING =
-  /\b(remov(e|es|ed|ing)|renam(e|es|ed|ing)|no longer|now required|becomes required|drop(s|ped)?|retir(e|es|ed))\b/i;
-const NEW_ERROR = /\b(error|status|http \d{3}|\d{3}\))/i;
-const ADDITIVE = /\b(gains?|adds?|new optional|optional)\b/i;
-
+/** Why an API change breaks callers or not, from its judgment (ADR 0117 addendum). */
 function breakingOf(
   change: string,
-  notes: string[],
-): { breaking: ApiChange["breaking"]; why: string } {
-  if (change === "planned-retire") return { breaking: "yes", why: "The operation is retired." };
-  if (change === "planned-new")
-    return { breaking: "no", why: "A new operation in this change, so no existing caller breaks." };
-  const said = notes.join(" ");
-  if (BREAKING.test(said)) return { breaking: "yes", why: said };
-  if (NEW_ERROR.test(said))
-    return { breaking: "check", why: `Callers must handle a new response: ${said}` };
-  if (ADDITIVE.test(said)) return { breaking: "no", why: said };
+  said: string,
+  j: Judged | undefined,
+): { breaking: ApiChange["breaking"]; why: string; judgedBy: ApiChange["judgedBy"] } {
+  if (j?.by === "veto")
+    return change === "planned-retire"
+      ? { breaking: "yes", why: "The operation is retired.", judgedBy: "catalog" }
+      : {
+          breaking: "no",
+          why: "A new operation in this change, so no existing caller breaks.",
+          judgedBy: "catalog",
+        };
+  if (!said)
+    return {
+      breaking: "check",
+      why: "interfaces.md doesn't say what changes for callers.",
+      judgedBy: "not judged",
+    };
+  const by: ApiChange["judgedBy"] = !j
+    ? "not judged"
+    : j.judgment?.confirmedBy.by === "person"
+      ? "person"
+      : "model";
+  if (j?.verdict === "yes") return { breaking: "yes", why: said, judgedBy: by };
+  if (j?.verdict === "no") return { breaking: "no", why: said, judgedBy: by };
   return {
     breaking: "check",
-    why: said
-      ? `interfaces.md doesn't say whether callers must change: ${said}`
-      : "interfaces.md doesn't say what changes for callers.",
+    why: j
+      ? `A judge couldn't tell whether callers must change, so a person checks: ${said}`
+      : `Not judged: no model was asked whether callers must change, so a person checks: ${said}`,
+    judgedBy: by,
   };
 }
 
@@ -130,25 +150,36 @@ export async function releaseNotes(
         .map((x) => x[0]!.toUpperCase() + x.slice(1).replace(/\.$/, ""))
     : [];
 
-  const api: ApiChange[] = m.hops
-    .filter((h) => /^planned-/.test(h.change))
-    .map((h) => {
-      const b = breakingOf(
-        h.change,
-        h.notes.map((n) => n.text.replace(/^\s*[-*]\s+/, "").trim()),
-      );
-      return {
-        operation: opOf(h),
-        caller: h.caller,
-        callee:
-          h.calleeBoundary === "vendor" && h.calleeSystem
-            ? `${h.callee} (${m.systemName(h.calleeSystem)}, a vendor)`
-            : h.callee,
-        change: h.change.replace(/^planned-/, ""),
-        ...b,
-        source: `interfaces.md:${h.line}`,
-      };
-    });
+  const planned = m.hops.filter((h) => /^planned-/.test(h.change));
+  const saidOf = (h: (typeof planned)[number]) =>
+    h.notes.map((n) => n.text.replace(/^\s*[-*]\s+/, "").trim()).join(" ");
+  const itemOf = (h: (typeof planned)[number]) =>
+    breakingItem(
+      { change: h.change, operation: opOf(h), caller: h.caller, callee: h.callee },
+      saidOf(h),
+    );
+  // Only what has words to read, or a change kind that settles it, goes to the judge.
+  const judged = await judgedFor(
+    ctx,
+    BREAKING_SPEC,
+    planned
+      .filter((h) => saidOf(h) || h.change === "planned-new" || h.change === "planned-retire")
+      .map(itemOf),
+  );
+  const api: ApiChange[] = planned.map((h) => {
+    const b = breakingOf(h.change, saidOf(h), judged(itemOf(h)));
+    return {
+      operation: opOf(h),
+      caller: h.caller,
+      callee:
+        h.calleeBoundary === "vendor" && h.calleeSystem
+          ? `${h.callee} (${m.systemName(h.calleeSystem)}, a vendor)`
+          : h.callee,
+      change: h.change.replace(/^planned-/, ""),
+      ...b,
+      source: `interfaces.md:${h.line}`,
+    };
+  });
   const data: DataChangeNote[] = m.data.map((d) => ({
     table: `${d.store}.${d.table}`,
     change: d.change.trim(),
@@ -187,7 +218,7 @@ export async function releaseNotes(
       "API changes",
       api.map(
         (a) =>
-          `${a.operation} (${a.caller} → ${a.callee}): ${a.change}; breaking: ${a.breaking}. ${a.why}`,
+          `${a.operation} (${a.caller} → ${a.callee}): ${a.change}; breaking: ${a.breaking}${a.judgedBy === "not judged" ? " (not judged)" : ""}. ${a.why}`,
       ),
       api.length ? "interfaces.md" : undefined,
       "interfaces.md lists no new or changed interfaces.",
@@ -240,7 +271,7 @@ export async function releaseNotes(
       md.push("| --- | --- | --- | --- | --- | --- |");
       for (const a of api)
         md.push(
-          `| ${a.operation} | ${a.caller} → ${a.callee} | ${a.change} | ${a.breaking} | ${a.why.replace(/\|/g, "\\|")} | ${a.source} |`,
+          `| ${a.operation} | ${a.caller} → ${a.callee} | ${a.change} | ${a.breaking} (${a.judgedBy === "catalog" ? "by its change kind" : a.judgedBy === "not judged" ? "not judged" : a.breaking === "check" ? "a judge couldn't tell" : `judged by a ${a.judgedBy}`}) | ${a.why.replace(/\|/g, "\\|")} | ${a.source} |`,
         );
       continue;
     }

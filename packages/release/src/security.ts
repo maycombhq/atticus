@@ -1,12 +1,13 @@
+import { NAMES_SECRET_SPEC, PERSONAL_DATA_SPEC, personalItem, tokenFormatIn } from "@maycombhq/ai";
 import {
   contentLines,
   docOf,
-  looksPersonal,
   normalizePath,
   sectionMatching,
   sectionLines,
 } from "@maycombhq/naysayer";
 import type { ReleaseContext } from "./context.js";
+import { judgedFor, secretItem } from "./judged.js";
 import { buildModel, hasWord, opOf, sortStrings, type Model, type ResolvedHop } from "./model.js";
 
 /**
@@ -15,6 +16,11 @@ import { buildModel, hasWord, opOf, sortStrings, type Model, type ResolvedHop } 
  * levels; "not classified yet" when untagged), data crossing a system boundary, vendors,
  * secrets and settings touched, open security-relevant findings, and who signs off. It adds
  * no approval path: the sign-off is the existing hand-off PR of the gate that role approves.
+ *
+ * Whether a column holds personal data and whether a line names a secret are judgments (ADR
+ * 0117 addendum): a fact settles what it can (a column classified personal, a token in a known
+ * format), a judgment on file or the judge the rest, and what neither settles is listed for a
+ * person as not judged.
  */
 
 export type AuthKind = "oauth2" | "mtls" | "api-key" | "basic" | "none" | "other" | "not stated";
@@ -36,6 +42,9 @@ export interface FieldClass {
   /** The org pack level, a personal-data class, or "not classified yet". */
   classification: string;
   classificationSource?: string;
+  /** Whether it holds personal data, as judged: yes, no, unsure, or not judged yet. */
+  personal: "yes" | "no" | "unsure" | "not judged";
+  /** personal is yes. */
   personalLooking: boolean;
   source: string;
 }
@@ -67,6 +76,8 @@ export interface SecurityReview {
     existing: number;
   }[];
   secrets: { what: string; source: string }[];
+  /** Lines of the change no one has judged for secrets yet (no model was asked): for a person. */
+  secretsNotJudged: string[];
   settings: { id: string; key: string; value: string; component: string; target?: string }[];
   findings: {
     gate: string;
@@ -98,8 +109,6 @@ const SECURITY_RULES = new Set([
 ]);
 const SECURITY_WORDS =
   /\b(auth\w*|secur\w*|secret|personal|privacy|classif\w*|encrypt\w*|tls|mtls|credential|token|vendor|retention|pii)\b/i;
-const SECRET_WORDS =
-  /\b(secret|shared key|api key|private key|certificate|credential|password|token|vault|keystore|signing key)s?\b/i;
 
 function authFromText(text: string): AuthKind | undefined {
   if (/\bm-?tls\b|mutual tls|client cert/i.test(text)) return "mtls";
@@ -207,29 +216,65 @@ export async function securityReview(ctx: ReleaseContext): Promise<SecurityRevie
     };
   });
 
+  // Personal data (ADR 0117 addendum): every new column and every mapped source field is a
+  // judgment; one classified personal is settled by that fact.
+  const columnItem = (table: string, column: string, type?: string) =>
+    personalItem({
+      column,
+      table,
+      ...(type ? { type } : {}),
+      classifiedPersonal: c.personal.includes(c.of(table, column).classification),
+    });
+  const mappedItem = (src: string) => {
+    const dot = /^([a-z0-9_]+)\.([a-z0-9_]+)$/i.exec(src.trim());
+    return dot ? columnItem(dot[1]!, dot[2]!) : personalItem({ column: src, table: "(mapping)" });
+  };
+  const mdoc = docOf(ctx.files, "mappings.md");
+  const mappedSources = (mdoc?.tables ?? [])
+    .filter((t) => t.headers.includes("source field"))
+    .flatMap((t) => t.rows.map((r) => r.cells["source field"] ?? ""))
+    .filter(Boolean);
+  const personalOf = await judgedFor(ctx, PERSONAL_DATA_SPEC, [
+    ...m.data.flatMap((d) => d.newColumns.map((col) => columnItem(d.table, col.name, col.type))),
+    ...mappedSources.map(mappedItem),
+  ]);
+  const personalWord = (item: ReturnType<typeof personalItem>): FieldClass["personal"] => {
+    const v = personalOf(item)?.verdict;
+    return v === "yes" || v === "no" || v === "unsure" ? v : "not judged";
+  };
   const fields: FieldClass[] = [];
   for (const d of m.data)
     for (const col of d.newColumns) {
       const k = c.of(d.table, col.name);
+      const personal = personalWord(columnItem(d.table, col.name, col.type));
       fields.push({
         field: `${d.store}.${d.table}.${col.name}`,
         classification: k.classification,
         ...(k.source ? { classificationSource: k.source } : {}),
-        personalLooking: looksPersonal(col.name),
+        personal,
+        personalLooking: personal === "yes",
         source: `data.md:${d.line}`,
       });
     }
   for (const f of fields) {
     if (f.classification === "not classified yet")
       gaps.push(`${f.field} (${f.source}) is not classified yet.`);
-    else if (f.personalLooking && !c.personal.includes(f.classification))
+    else if (f.personal === "yes" && !c.personal.includes(f.classification))
       gaps.push(
-        `${f.field} looks like personal data but is classified ${f.classification} (${f.classificationSource}).`,
+        `${f.field} is judged personal data but is classified ${f.classification} (${f.classificationSource}).`,
       );
   }
+  const unjudged = fields.filter(
+    (f) =>
+      (f.personal === "not judged" || f.personal === "unsure") &&
+      !c.personal.includes(f.classification),
+  );
+  if (unjudged.length)
+    gaps.push(
+      `Not judged whether ${unjudged.map((f) => f.field).join(", ")} ${unjudged.length === 1 ? "holds" : "hold"} personal data (${unjudged.some((f) => f.personal === "unsure") ? "a judge couldn't tell" : "no model was asked"}), so a person checks ${unjudged.length === 1 ? "it" : "them"} against the personal classes (${c.personal.join(", ")}).`,
+    );
 
   // data that crosses a system boundary: the mappings of hops between two systems
-  const mdoc = docOf(ctx.files, "mappings.md");
   const crossings: Crossing[] = [];
   const level = (cl: string) => c.levels.indexOf(cl);
   const sensitiveFrom = Math.max(1, level("confidential"));
@@ -246,20 +291,21 @@ export async function securityReview(ctx: ReleaseContext): Promise<SecurityRevie
       const src = r.cells["source field"] ?? "";
       const dot = /^([a-z0-9_]+)\.([a-z0-9_]+)$/i.exec(src.trim());
       const k = dot ? c.of(dot[1]!, dot[2]!) : { classification: "not a catalog field" };
-      const personalLooking = dot ? looksPersonal(dot[2]!) : looksPersonal(src);
+      const personal = src ? personalWord(mappedItem(src)) : "not judged";
       const sensitive: "yes" | "no" | "unknown" =
         c.personal.includes(k.classification) ||
-        personalLooking ||
+        personal === "yes" ||
         level(k.classification) >= sensitiveFrom
           ? "yes"
-          : level(k.classification) >= 0
+          : level(k.classification) >= 0 && personal === "no"
             ? "no"
             : "unknown";
       return {
         field: src,
         classification: k.classification,
         ...(k.source ? { classificationSource: k.source } : {}),
-        personalLooking,
+        personal,
+        personalLooking: personal === "yes",
         ...(r.cells["rule or transformation"]
           ? { transform: r.cells["rule or transformation"] }
           : {}),
@@ -345,22 +391,45 @@ export async function securityReview(ctx: ReleaseContext): Promise<SecurityRevie
       );
     }
   }
-  for (const [path, doc] of ctx.files.docs)
-    for (const l of contentLines(doc)) {
-      if (!SECRET_WORDS.test(l.text)) continue;
-      const row = doc.tables.flatMap((t) => t.rows).find((r) => r.line === l.n);
-      const what = !row
-        ? l.text.trim().replace(/^[-*]\s+/, "")
-        : row.cells["source field"] && row.cells["target field"]
-          ? `${row.cells["source field"]} → ${row.cells["target field"]}: ${Object.entries(
-              row.cells,
-            )
-              .filter(([k, v]) => v && k !== "source field" && k !== "target field")
-              .map(([, v]) => v)
-              .join("; ")}`
-          : Object.values(row.cells).filter(Boolean).join("; ");
-      secrets.push({ what, source: `${path}:${l.n}` });
+  // Lines that name a secret (ADR 0117 addendum): a token in a known format is a fact; whether
+  // the words speak of a credential is a judgment. Headings and table rules aren't read.
+  const candidates = [...ctx.files.docs].flatMap(([path, doc]) =>
+    contentLines(doc)
+      .filter((l) => !/^\s*#/.test(l.text) && !/^\s*\|[\s|:-]*\|?\s*$/.test(l.text))
+      .map((l) => ({ path, doc, l, item: secretItem(l.text.trim()) })),
+  );
+  const secretOf = await judgedFor(
+    ctx,
+    NAMES_SECRET_SPEC,
+    candidates.map((x) => x.item),
+  );
+  const secretsNotJudged: string[] = [];
+  for (const { path, doc, l, item } of candidates) {
+    const v = secretOf(item);
+    if (!v || v.verdict === "unsure") secretsNotJudged.push(`${path}:${l.n}`);
+    if (v?.verdict !== "yes") continue;
+    const format = tokenFormatIn(l.text);
+    if (format) {
+      gaps.push(
+        `${path}:${l.n} holds what looks like ${format}: take it out of the change folder and rotate it.`,
+      );
+      secrets.push({
+        what: `${format}, written in the change (not shown here)`,
+        source: `${path}:${l.n}`,
+      });
+      continue;
     }
+    const row = doc.tables.flatMap((t) => t.rows).find((r) => r.line === l.n);
+    const what = !row
+      ? l.text.trim().replace(/^[-*]\s+/, "")
+      : row.cells["source field"] && row.cells["target field"]
+        ? `${row.cells["source field"]} → ${row.cells["target field"]}: ${Object.entries(row.cells)
+            .filter(([k, v]) => v && k !== "source field" && k !== "target field")
+            .map(([, v]) => v)
+            .join("; ")}`
+        : Object.values(row.cells).filter(Boolean).join("; ");
+    secrets.push({ what, source: `${path}:${l.n}` });
+  }
 
   const uniqueSecrets = secrets.filter(
     (x, i, a) => a.findIndex((y) => y.what === x.what && y.source === x.source) === i,
@@ -431,6 +500,7 @@ export async function securityReview(ctx: ReleaseContext): Promise<SecurityRevie
     crossings,
     vendors,
     secrets: uniqueSecrets,
+    secretsNotJudged,
     settings,
     findings,
     signOff,
@@ -469,12 +539,12 @@ function securityMarkdown(r: Omit<SecurityReview, "markdown">, reviewed: boolean
   );
   if (r.fields.length) {
     md.push(
-      "| Field | Classification | From | Looks personal | Source |",
+      "| Field | Classification | From | Personal data | Source |",
       "| --- | --- | --- | --- | --- |",
     );
     for (const f of r.fields)
       md.push(
-        `| ${f.field} | ${f.classification} | ${f.classificationSource ?? "nowhere"} | ${f.personalLooking ? "yes" : "no"} | ${f.source} |`,
+        `| ${f.field} | ${f.classification} | ${f.classificationSource ?? "nowhere"} | ${f.personal} | ${f.source} |`,
       );
   } else md.push("_data.md adds no fields._");
   md.push("", "## Data crossing a boundary", "");
@@ -504,7 +574,12 @@ function securityMarkdown(r: Omit<SecurityReview, "markdown">, reviewed: boolean
   else md.push("_The change calls no vendor._");
   md.push("", "## Secrets and settings touched", "");
   if (r.secrets.length) for (const s of r.secrets) md.push(`- ${s.what} (${s.source})`);
-  else md.push("_No credential or secret is named or implied._");
+  else if (!r.secretsNotJudged.length) md.push("_No credential or secret is named or implied._");
+  if (r.secretsNotJudged.length)
+    md.push(
+      ...(r.secrets.length ? [""] : []),
+      `_Not judged: ${r.secretsNotJudged.length} ${r.secretsNotJudged.length === 1 ? "line" : "lines"} of the change ${r.secretsNotJudged.length === 1 ? "wasn't" : "weren't"} read for secrets (no model was asked, or a judge couldn't tell), so a person reads ${r.secretsNotJudged.length === 1 ? "it" : "them"} for keys, certificates and passwords: ${r.secretsNotJudged.slice(0, 10).join(", ")}${r.secretsNotJudged.length > 10 ? ` and ${r.secretsNotJudged.length - 10} more` : ""}._`,
+    );
   if (r.settings.length) {
     md.push("", "Settings in force on the touched calls:", "");
     for (const s of r.settings)

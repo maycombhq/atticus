@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@maycombhq/adapters": "workspace:*",
+    "@maycombhq/ai": "workspace:*",
     "@maycombhq/changes": "workspace:*",
     "@maycombhq/core": "workspace:*",
     "@maycombhq/initiatives": "workspace:*",

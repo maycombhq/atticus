@@ -232,7 +232,7 @@ describe("atticus release and outcome in the terminal", () => {
       expect(await main(["release", "plan", ID, "--root", r], c.io)).toBe(0);
       const text = c.out.join("\n");
       expect(text).toContain("1. forge-ledger (migration)");
-      expect(text).toContain("rollback: GAP: No rollback step written");
+      expect(text).toContain("rollback: GAP: No rollback step judged for");
       expect(text).toMatch(/audit-svc \(callee of POST \/audit\/events\) has no repo/);
     },
     T,

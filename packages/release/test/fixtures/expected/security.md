@@ -16,7 +16,7 @@ Change `add-transfer-limit`, generated 2026-10-21 from the catalog and the chang
 
 Classification levels (org pack): public, internal, confidential, restricted.
 
-| Field | Classification | From | Looks personal | Source |
+| Field | Classification | From | Personal data | Source |
 | --- | --- | --- | --- | --- |
 | ledger-db.account.daily_limit | internal | data.md:12 | no | data.md:7 |
 | ledger-db.limit_change.id | internal | data.md:13 | no | data.md:8 |
@@ -43,7 +43,7 @@ No mapping change. The response gains error LIMIT_EXCEEDED (HTTP 422) with the r
 
 | Field | Classification | Transformation | Sensitive | Source |
 | --- | --- | --- | --- | --- |
-| account.account_number | not classified yet | hashed with the shared key | unknown | mappings.md:18 |
+| account.account_number | not classified yet | hashed with the shared key | yes | mappings.md:18 |
 | transfer amount | not a catalog field | as is, two decimals | unknown | mappings.md:19 |
 
 ### POST /audit/events: Portal → Audit (internal)
@@ -62,6 +62,8 @@ No mapping change. The response gains error LIMIT_EXCEEDED (HTTP 422) with the r
 - OAuth client portal-bff with scopes ledger.read, ledger.write (existing grant) (catalog AccessGrant gw-ledger-v1.oauth-scopes)
 - A client certificate for ledger-api to call POST /v2/velocity-checks (mTLS) (interfaces.md:15)
 - account.account_number → accountRef: hashed with the shared key; refuse the transfer (mappings.md:18)
+
+_Not judged: 1 line of the change wasn't read for secrets (no model was asked, or a judge couldn't tell), so a person reads it for keys, certificates and passwords: stories/s3-audit-refusals.md:10._
 
 Settings in force on the touched calls:
 
@@ -82,4 +84,4 @@ _No critic round has run yet, so there are no findings to show._
 
 - interfaces.md:8: POST /audit/events (portal-bff → audit-svc) says nothing about auth, and the catalog has none.
 - interfaces.md:9: POST /risk/assess (ledger-api → risk-engine) says nothing about auth, and the catalog has none.
-- ledger-db.limit_change.changed_by_email looks like personal data but is classified internal (data.md:13).
+- ledger-db.limit_change.changed_by_email is judged personal data but is classified internal (data.md:13).

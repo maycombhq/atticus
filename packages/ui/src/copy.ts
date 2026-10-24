@@ -2021,7 +2021,7 @@ export const COPY = {
     no: "no",
     dataFieldsTouched: "Data fields touched",
     dataMdAddsNo: "data.md adds no fields.",
-    looksLikePersonalData: " (looks like personal data)",
+    looksLikePersonalData: " (judged personal data)",
     dataCrossingABoundary: "Data crossing a boundary",
     noNewOrChanged: "No new or changed call crosses a system boundary.",
     mappingsMdDoesntSay: "mappings.md doesn't say which fields it sends.",
@@ -2035,7 +2035,7 @@ export const COPY = {
     audience: "Audience",
     copyTheReleaseNotes: "Copy the release notes",
     releaseNotes: "Release notes",
-    generatedNoAi: "generated, no AI",
+    generatedNoAi: "from the change folder; what breaks callers is judged",
     measuredByOn: (
       value: string | number,
       by: string | number,
