@@ -39,6 +39,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### The tour and focus
+
+- The first-run tour has five steps: home, asking, one change at a glance, running a step in your assistant (`/atticus-next`), and approving by pull request. It takes focus when it opens, keeps Tab inside it, and gives focus back when it closes.
+- Moving to another screen puts focus on its content, so a keyboard or screen reader user starts there rather than in the menu.
+
 ### IntelliJ as a peer of VS Code
 
 - A **Waiting on you** tab: a tree of the questions to answer, each change with something open and the knowledge no one has checked, read in the background and again when the metarepo's files change. A question opens a native answer dialog with each choice, what it means and the lines it read, or your own words.

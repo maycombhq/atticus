@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, SERVER_EVENT, useApi } from "../api/client.js";
 import { hostBridge } from "../api/bridge.js";
 import { COPY } from "../copy.js";
@@ -192,6 +192,14 @@ export function App() {
   useEffect(() => {
     document.title = `${current.label} · Atticus`;
   }, [current]);
+  // WP5.6: on moving to another screen, focus goes to its content (not on the first load), so a
+  // keyboard or screen reader user starts there rather than back in the menu.
+  const shown = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (shown.current !== undefined && shown.current !== current.id)
+      document.getElementById("main")?.focus({ preventScroll: true });
+    shown.current = current.id;
+  }, [current.id]);
   return (
     <MeProvider>
       <div className="shell">

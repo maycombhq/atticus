@@ -19,3 +19,16 @@ describe("first-run tour", () => {
     expect(text).not.toMatch(/\bview\b|\brole\b/i);
   });
 });
+
+describe("the tour's path (WP5.3)", () => {
+  it("walks home, asking, a change at a glance, a step in your assistant and the pull request", () => {
+    expect(TOUR.map((s) => s.title)).toEqual([
+      "Your home",
+      "Ask in plain words",
+      "One change at a glance",
+      "Run a step in your assistant",
+      "Approving is the pull request",
+    ]);
+    expect(TOUR[3]!.body).toContain("/atticus-next");
+  });
+});

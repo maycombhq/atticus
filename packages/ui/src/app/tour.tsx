@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
 import { COPY } from "../copy.js";
 
 const T = COPY.tour;
@@ -26,6 +26,13 @@ export const TOUR: Step[] = [
   {
     ...T.steps.ask,
     target: ".ask-form",
+  },
+  {
+    ...T.steps.change,
+    target: link("changes"),
+  },
+  {
+    ...T.steps.assistant,
   },
   {
     ...T.steps.approve,
@@ -92,13 +99,47 @@ export function Tour() {
     return () => removeEventListener("keydown", on);
   }, [open]);
 
+  // WP5.3: the tour takes focus when it opens, keeps Tab inside it, and gives focus back on close.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const back = document.activeElement as HTMLElement | null;
+    return () => back?.focus?.();
+  }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    box.current?.querySelector<HTMLElement>(".btn.primary")?.focus();
+  }, [open, i]);
+  const trap = (e: KeyEvent<HTMLDivElement>) => {
+    if (e.key !== "Tab") return;
+    const all = [...(box.current?.querySelectorAll<HTMLElement>("button") ?? [])];
+    if (!all.length) return;
+    const at = all.indexOf(document.activeElement as HTMLElement);
+    const to = e.shiftKey
+      ? at <= 0
+        ? all.length - 1
+        : at - 1
+      : at === all.length - 1
+        ? 0
+        : at + 1;
+    all[to]!.focus();
+    e.preventDefault();
+  };
+
   if (!open || !step) return null;
   const close = () => {
     remember();
     setOpen(false);
   };
   return (
-    <div role="dialog" aria-modal="false" aria-labelledby="tour-title" className="tour panel hero">
+    <div
+      ref={box}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tour-title"
+      className="tour panel hero"
+      onKeyDown={trap}
+    >
       <div className="hud" style={{ fontSize: 10 }}>
         {T.tourOf(i + 1, TOUR.length, COPY.app.tourEscape)}
       </div>

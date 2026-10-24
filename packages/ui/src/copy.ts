@@ -1095,6 +1095,14 @@ export const COPY = {
         title: "Ask in plain words",
         body: "Type a question such as “who calls ledger-api?” in the box at the top. Atticus answers from the catalog and always shows the query it ran.",
       },
+      change: {
+        title: "One change at a glance",
+        body: "Open a change and its first page says where it is, the next step with its slash command, what blocks it and each stage's progress. Watch a change you aren't on, and your digest says how it is doing.",
+      },
+      assistant: {
+        title: "Run a step in your assistant",
+        body: "The AI steps run in your assistant, not here: type /atticus-next in Copilot Chat or Claude Code and it says what comes next and runs it when you ask. Its questions come back here to answer, and this page follows along.",
+      },
       approve: {
         title: "Approving is the pull request",
         body: "Each phase ends with a hand-off PR in the metarepo. Merging it approves the gate; your Git host's rules decide who may approve. Atticus records you by your Git user.",
