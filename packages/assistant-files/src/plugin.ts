@@ -1,4 +1,4 @@
-import { claudeCommandContent } from "./render.js";
+import { claudeCommandContent } from "./assistants.js";
 import { metarepoCommands } from "./steps.js";
 
 /**

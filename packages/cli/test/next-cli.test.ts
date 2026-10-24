@@ -70,6 +70,27 @@ describe("atticus next", () => {
     ]);
   });
 
+  it("outside a metarepo, says so and how to make or open one (ADR 0119)", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-next-none-"));
+    const r = await run(["next", "--root", root]);
+    expect(r.code).toBe(2);
+    const said = r.err.join("\n");
+    expect(said).toContain("isn't an Atticus metarepo");
+    expect(said).toContain("atticus init");
+    expect(said).toContain("atticus adopt");
+  });
+
+  it("names where to type the slash command: the default assistant (ADR 0121)", async () => {
+    const root = await metarepo({ clone: true });
+    await rm(join(root, "org-pack", "scan", "forge-notes-ui.yaml"));
+    await writeFile(
+      join(root, "org-pack", "runtime.yaml"),
+      "schemaVersion: 1\nassistants: { allowed: [cursor, copilot], default: cursor }\n",
+    );
+    const r = await run(["next", "--root", root]);
+    expect(r.out[1]).toBe("In Cursor's chat: /atticus-survey forge-notes-ui");
+  });
+
   it("with repos not cloned, says to sync, and lists the rest with --all", async () => {
     const root = await metarepo();
     const r = await run(["next", "--root", root]);

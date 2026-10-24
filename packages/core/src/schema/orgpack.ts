@@ -584,12 +584,28 @@ export function retrievalOf(
   return r.success ? r.data : RetrievalSettings.parse({});
 }
 
+/**
+ * The assistants Atticus writes slash commands, instructions and skills for (ADR 0121), each in
+ * the files that tool reads (@maycombhq/assistant-files). `agents-md` is any tool that reads
+ * AGENTS.md: Codex and others.
+ */
+export const ASSISTANTS = [
+  "copilot",
+  "claude-code",
+  "cursor",
+  "gemini-cli",
+  "windsurf",
+  "agents-md",
+] as const;
+export const AssistantId = z.enum(ASSISTANTS);
+export type AssistantId = z.infer<typeof AssistantId>;
+
 export const Runtime = z.strictObject({
   schemaVersion: V,
   assistants: z
     .strictObject({
-      allowed: z.array(z.enum(["copilot", "claude-code"])).min(1),
-      default: z.enum(["copilot", "claude-code"]),
+      allowed: z.array(AssistantId).min(1),
+      default: AssistantId,
     })
     .refine((a) => a.allowed.includes(a.default), "the default assistant must be allowed"),
   editors: z

@@ -43,6 +43,16 @@ Everything a team might want to change is in `org-pack/`: configuration and rule
 
 A secret never goes in the org pack: Atticus refuses keys that look like one. Credentials come from the OS credential manager, Git's own helper or the plugins.
 
+### Which assistants
+
+`runtime.yaml` lists the assistants your people use:
+
+```yaml
+assistants: { allowed: [copilot, claude-code, cursor], default: copilot }
+```
+
+They can be `copilot`, `claude-code`, `cursor`, `gemini-cli`, `windsurf` or `agents-md`. Use `agents-md` for Codex and any other tool that reads `AGENTS.md`. `atticus assistant-files` writes the same slash commands, instructions and skills for each allowed assistant, in the files that tool reads (ADR 0121). `atticus next` tells people to type the command in the default assistant, and `atticus doctor` looks for each one's program.
+
 ### What AI may do here
 
 `runtime.yaml` holds one line for it:

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import {
   changesDirOf,
   changesRelOf,
@@ -100,35 +101,85 @@ export type HeadlessRunner = (i: HeadlessInvocation) => Promise<HeadlessResult>;
  */
 export function claudeCodeCliRunner(o: { command?: string } = {}): HeadlessRunner {
   return (i) =>
-    new Promise((resolve, reject) => {
-      const child = spawn(o.command ?? "claude", i.args, {
-        cwd: i.cwd,
-        env: { ...process.env, ...i.env },
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true,
-        ...(i.signal ? { signal: i.signal } : {}),
-      });
-      let stdout = "";
-      let stderr = "";
-      const timer = setTimeout(() => child.kill("SIGINT"), i.timeoutMs);
-      child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
-      child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
-      child.on("error", (e) => {
-        clearTimeout(timer);
-        reject(
-          new RuntimeError(
-            (e as NodeJS.ErrnoException).code === "ENOENT"
+    collectChild(
+      () =>
+        spawn(o.command ?? "claude", i.args, {
+          cwd: i.cwd,
+          env: { ...process.env, ...i.env },
+          stdio: ["pipe", "pipe", "pipe"],
+          windowsHide: true,
+          ...(i.signal ? { signal: i.signal } : {}),
+        }),
+      i.prompt,
+      i.timeoutMs,
+      i.cwd,
+    );
+}
+
+/** What collectChild needs of a child process: its three streams, kill, and its events. */
+export interface ChildLike {
+  stdin: NodeJS.EventEmitter & { end(text: string, encoding: BufferEncoding): unknown };
+  stdout: NodeJS.EventEmitter & { setEncoding(e: BufferEncoding): NodeJS.EventEmitter };
+  stderr: NodeJS.EventEmitter & { setEncoding(e: BufferEncoding): NodeJS.EventEmitter };
+  kill(signal?: NodeJS.Signals): unknown;
+  on(event: string, fn: (...a: never[]) => void): unknown;
+}
+
+/**
+ * Run a child to its end: the prompt on stdin, what it prints collected, settled once. An error
+ * on the process or on any of its streams (a pipe Windows closes, ENOTCONN) fails the run with
+ * the reason, instead of an unhandled error that stops the command line.
+ */
+export function collectChild(
+  start: () => ChildLike,
+  prompt: string,
+  timeoutMs: number,
+  cwd?: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    // Set once the child runs; a failure before that has no timer to clear.
+    const timer: { id?: ReturnType<typeof setTimeout> } = {};
+    const fail = (e: unknown) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer.id);
+      const code = (e as NodeJS.ErrnoException).code;
+      // Windows says ENOENT too when the folder to start in has a path over 260 characters.
+      const tooLong = platform === "win32" && cwd !== undefined && cwd.length >= 248;
+      reject(
+        new RuntimeError(
+          code === "ENOENT" && tooLong
+            ? `Claude Code couldn't start in ${cwd}: its path is ${cwd.length} characters, more than Windows lets a program start in. Move the metarepo to a shorter path, or turn on long paths.`
+            : code === "ENOENT"
               ? "Claude Code (claude) is not on PATH; install it or use hand-off mode"
-              : e.message,
-          ),
-        );
-      });
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        resolve({ exitCode: code, stdout, stderr });
-      });
-      child.stdin.end(i.prompt, "utf8");
+              : `Claude Code couldn't be run: ${(e as Error).message}`,
+        ),
+      );
+    };
+    let child: ChildLike;
+    try {
+      child = start();
+    } catch (e) {
+      fail(e);
+      return;
+    }
+    let stdout = "";
+    let stderr = "";
+    timer.id = setTimeout(() => child.kill("SIGINT"), timeoutMs);
+    for (const s of [child.stdin, child.stdout, child.stderr]) s.on("error", fail);
+    child.stdout.setEncoding("utf8").on("data", (d: string) => (stdout += d));
+    child.stderr.setEncoding("utf8").on("data", (d: string) => (stderr += d));
+    child.on("error", fail);
+    child.on("close", (code: number | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer.id);
+      resolve({ exitCode: code, stdout, stderr });
     });
+    child.stdin.end(prompt, "utf8");
+  });
 }
 
 export type PermissionMode = "acceptEdits" | "plan" | "dontAsk";
@@ -185,11 +236,16 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     const { request } = run;
     const dir = join(runsDirOf(this.h.root), request.change, run.runId);
     // A reviewer (its output is findings, kept in its run) reads the draft and writes only its
-    // findings: it runs in its run folder, so an edit anywhere else needs a permission that
-    // `--permission-prompts none` never gives. Whatever the step's own invocation says.
+    // findings: it runs in an empty folder of its own, so an edit anywhere else needs a
+    // permission that `--permission-prompts none` never gives. Whatever the step's own
+    // invocation says. The folder is under the system's temp folder: outside the metarepo, and
+    // a short path, since Windows can't start a program in one over 260 characters and a run
+    // folder under a deep metarepo can pass that (found on a real run). Its findings are kept
+    // in the run folder; the folder goes.
     const reviewer = request.agent.outputArtifact === "findings" && request.outputIn === "run";
-    const inv = reviewer
-      ? { cwd: dir, permissionMode: "acceptEdits" as const }
+    const work = reviewer ? await mkdtemp(join(tmpdir(), "atticus-review-")) : undefined;
+    const inv = work
+      ? { cwd: work, permissionMode: "acceptEdits" as const }
       : (this.h.invocation?.(request) ?? { cwd: this.h.root });
     await mkdir(dir, { recursive: true });
     const promptFile = join(dir, "prompt.md");
@@ -214,10 +270,40 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
       throw new RuntimeError(`the worktree ${inv.cwd} doesn't exist`);
     // The prompt asks for the result in a file; Claude Code writes it there and answers with a
     // summary. The file is the output when this run wrote it (created or changed it).
-    const outputFile =
-      request.outputIn === "run"
+    const outputFile = work
+      ? join(work, request.outputPath)
+      : request.outputIn === "run"
         ? join(dir, request.outputPath)
         : join(changesDirOf(this.h.root), request.change, request.outputPath);
+    try {
+      return await this.runIn(run, dir, inv, prompt, promptFile, outputFile, signal);
+    } finally {
+      if (work) {
+        const kept = await readFile(outputFile, "utf8").catch(() => undefined);
+        if (kept !== undefined) {
+          await mkdir(dirname(join(dir, request.outputPath)), { recursive: true });
+          await writeFile(join(dir, request.outputPath), kept, "utf8");
+        }
+        await rm(work, { recursive: true, force: true, maxRetries: 5 }).catch(() => undefined);
+      }
+    }
+  }
+
+  private async runIn(
+    run: Run,
+    dir: string,
+    inv: {
+      cwd: string;
+      permissionMode?: PermissionMode;
+      env?: Record<string, string>;
+      allowedTools?: string[];
+    },
+    prompt: string,
+    promptFile: string,
+    outputFile: string,
+    signal?: AbortSignal,
+  ) {
+    const { request } = run;
     const before = (await stat(outputFile).catch(() => undefined))?.mtimeMs;
     const res = await this.runner({
       cwd: inv.cwd,
