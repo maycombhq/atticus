@@ -20,6 +20,7 @@ import {
   namesInCode,
   type ContextToolOptions,
 } from "@maycombhq/index";
+import { sourceTokens } from "./engine.js";
 import { unfence } from "./stages/answer.js";
 import { FlowDelta } from "./stages/schema.js";
 
@@ -287,6 +288,23 @@ export async function gapContext(
       ...(answers.source ? [answers.source] : []),
     ],
   };
+}
+
+/**
+ * The gap context's share of the room it takes from the catalog selection: at most half, so a
+ * tight budget still leaves records. The gaps stay whatever they cost (they are what the model
+ * asks about); the lists of names already known or found in the code are data for the model only,
+ * no longer gaps, so they give way first: the known names, then the names in code.
+ */
+export function fitGapSources(sources: SourceInput[], room: number): SourceInput[] {
+  const share = room / 2;
+  const out = [...sources];
+  for (const id of ["known-names", "names-in-code"]) {
+    if (sourceTokens(out) <= share) break;
+    const i = out.findIndex((s) => s.id === id);
+    if (i >= 0) out.splice(i, 1);
+  }
+  return out;
 }
 
 /** The names known without the index, as data for the model: why each is known, and where. */

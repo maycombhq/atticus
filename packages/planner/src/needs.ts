@@ -14,7 +14,7 @@ import {
   type RunRetrieval,
 } from "@maycombhq/core";
 import type { ContextInput, ContextSelection, SelectOptions } from "@maycombhq/index";
-import { askGaps, gapContext } from "./gaps.js";
+import { askGaps, fitGapSources, gapContext } from "./gaps.js";
 import {
   buildContextPack,
   resumedAttempt,
@@ -578,7 +578,8 @@ export async function findNeeds(
     if (got.selection) {
       // What neither the wikis nor the repos say (ADR 0107 point 5): listed, never guessed. The
       // gaps and the answers people gave take their room from the selection, not from the input.
-      const g = await gapContext(root, change, got.selection.unknown);
+      const found = await gapContext(root, change, got.selection.unknown);
+      const g = { ...found, sources: fitGapSources(found.sources, room) };
       const less = sourceTokens(g.sources);
       const final = await retrieve(
         root,

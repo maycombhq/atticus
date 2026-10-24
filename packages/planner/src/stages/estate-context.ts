@@ -14,7 +14,7 @@ import {
   type ContextStep,
   type RetrievalAi,
 } from "../engine.js";
-import { gapContext } from "../gaps.js";
+import { fitGapSources, gapContext } from "../gaps.js";
 import { ESTATE_HEADING, ESTATE_KINDS, estateLine, type Estate } from "./estate.js";
 
 /**
@@ -110,9 +110,10 @@ export async function estateContext(
     return first.note ? { note: first.note, consumed: first.consumed } : undefined;
   // What neither the wikis nor the repos say (ADR 0107 point 5): listed, never guessed. The gaps
   // and the answers people gave take their room from the selection, not from the step's input.
-  const g = o.change
+  const found = o.change
     ? await gapContext(root, o.change, first.selection.unknown, e ? { records: e.records } : {})
     : undefined;
+  const g = found && { ...found, sources: fitGapSources(found.sources, room) };
   const less = g ? sourceTokens(g.sources) : 0;
   const final = await retrieve(
     root,

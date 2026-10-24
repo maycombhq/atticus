@@ -11,8 +11,8 @@ With tools (ADR 0107 addendum) the model is a scripted mock, the same on every r
 | needs | shop: add-fraud-check | org pack | engine | 1.00 | 0.67 | 3 / 2 | 1496 | 464 | - | none |
 | needs | shop: add-fraud-check | org pack | engine + tools | 1.00 | 0.18 | 11 / 2 | 2462 | 1430 | 6 | none |
 | needs | shop: add-fraud-check | tight | whole lists | 0.00 | 0.00 | 1 / 2 | 1067 | 131 | - | firewall-rule-request, vendor-onboarding |
-| needs | shop: add-fraud-check | tight | engine | 0.00 | 0.00 | 0 / 2 | 1093 | 0 | - | firewall-rule-request, vendor-onboarding |
-| needs | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.18 | 11 / 2 | 2814 | 1721 | 9 | none |
+| needs | shop: add-fraud-check | tight | engine | 0.50 | 1.00 | 1 / 2 | 1092 | 100 | - | firewall-rule-request |
+| needs | shop: add-fraud-check | tight | engine + tools | 1.00 | 0.18 | 11 / 2 | 2560 | 1568 | 8 | none |
 | feature | shop: add-fraud-check | org pack | whole lists | 1.00 | 0.33 | 12 / 4 | 1040 | 369 | - | none |
 | feature | shop: add-fraud-check | org pack | engine | 1.00 | 0.33 | 12 / 4 | 1040 | 369 | - | none |
 | feature | shop: add-fraud-check | org pack | engine + tools | 1.00 | 0.29 | 14 / 4 | 1567 | 896 | 3 | none |
@@ -47,7 +47,7 @@ A step uses the engine by default only where its recall is at least the whole li
 
 With tools, a step's pack may start smaller only where the engine with tools at the tight budget recalls at least what the engine alone does at the org pack's, on every case:
 
-- needs: recall holds with the tight pack and tools; 2814 tokens in all with tools against 1496 for the engine's full pack, so the pack stays as it is
+- needs: recall holds with the tight pack and tools; 2560 tokens in all with tools against 1496 for the engine's full pack, so the pack stays as it is
 - feature: recall holds with the tight pack and tools; 6397 tokens in all with tools against 2843 for the engine's full pack, so the pack stays as it is
 - architecture: recall holds with the tight pack and tools; 4773 tokens in all with tools against 2986 for the engine's full pack, so the pack stays as it is
 - stories: recall holds with the tight pack and tools; 3124 tokens in all with tools against 1646 for the engine's full pack, so the pack stays as it is
