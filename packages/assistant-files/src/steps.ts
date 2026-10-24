@@ -1,5 +1,6 @@
 import { zeroInstallCommands, type CommandDef, type Layout } from "./commands.js";
 import { FACT_RULES, factsReference } from "./map.js";
+import { probeCommand } from "./probe.js";
 
 /**
  * The slash commands for the steps of the revamp (plan principle 8 and 4.8, ADR 0086), the way
@@ -92,6 +93,7 @@ export function mapCommand(): CommandDef {
 export function stepCommands(): CommandDef[] {
   return [
     mapCommand(),
+    probeCommand(),
     step(
       "atticus-survey",
       "Draft a repo's scan settings with your assistant; Atticus checks them against the code.",

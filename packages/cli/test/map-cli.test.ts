@@ -136,8 +136,10 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
     expect(text).toMatch(/12 source files, 190 lines, about \d+ tokens/);
     // runtime.yaml's defaults: Copilot and Claude Code allowed, Copilot the default, in VS Code.
     expect(text).toMatch(
-      /The org's assistant \(runtime\.yaml\): agentic \(tier 1\)\. Copilot in VS Code agent mode/,
+      /Your assistant: agentic \(tier 1\), from runtime\.yaml\. Copilot in VS Code agent mode/,
     );
+    // No probe on file (ADR 0124 addendum A-probe): it says what measures it.
+    expect(text).toContain("atticus probe measures your assistant's tier and limit instead.");
     // another assistant isn't left guessing (feedback from the A4 run)
     expect(text).toContain(
       "Another agentic assistant (Claude Code, Cursor, Gemini CLI) reads it the same way: /atticus-map",

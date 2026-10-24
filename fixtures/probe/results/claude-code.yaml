@@ -1,0 +1,8 @@
+schemaVersion: 1
+assistant: claude-code
+measured: 2026-10-24T09:30:00.000Z
+tier: 1
+read: true
+write: true
+run: true
+answered: command

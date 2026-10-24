@@ -47,6 +47,23 @@ export const COMMANDS: readonly CommandHelp[] = [
     related: ["map", "verify"],
   },
   {
+    name: "probe",
+    usage: "atticus probe [--assistant id] [--max-tokens n] [--json]",
+    what: "Measures what your assistant can do here, so the tier it reads a repo at is measured, not read off runtime.yaml: it writes a file holding a code and says to run /atticus-probe, which asks the assistant to open the file, write the code back and run atticus probe answer itself.",
+    who: ["developer", "architect", "platform-lead"],
+    changes: "the probe's files in the run folder (.runs/probe/), on this machine",
+    related: ["probe answer", "map"],
+  },
+  {
+    name: "probe answer",
+    usage: "atticus probe answer <code|none> [--pasted] [--max-tokens n] [--json]",
+    what: "Checks the assistant's answer to the probe: the right code means it opened the file, the code in answer.txt that it wrote one, and an answer not --pasted that it ran a command. A wrong code records nothing. The model's limit is what --max-tokens states; nothing guesses it.",
+    who: ["developer", "architect", "platform-lead"],
+    changes:
+      ".atticus/probe/<assistant>.yaml, on this machine only (never committed); doctor, init, adopt and map --estimate use it",
+    related: ["probe", "map"],
+  },
+  {
     name: "verify",
     usage: "atticus verify <repo> [--write] [--dir path] [--commit sha] [--routed a,b] [--json]",
     what: "Checks every fact in a repo's facts file against the line it cites, keeps the ones that hold, writes the rest with why to <repo>.rejected.jsonl, and says which source files no fact has read yet. With --write the kept facts become catalog records.",

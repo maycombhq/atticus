@@ -4,6 +4,8 @@ import { dirname, join } from "node:path";
 import {
   assistantTier,
   mapBatchInstructions,
+  readProbes,
+  tierSource,
   tierWords,
   type TierReport,
 } from "@maycombhq/assistant-files";
@@ -406,11 +408,27 @@ const COPY_START = "----- copy from here -----";
 const COPY_END = "----- to here -----";
 
 /** Atticus's model limit: the one given, else the step's, else runtime.yaml's maxInput. */
-function limitOf(o: MapOptions, op: OrgPack): number | undefined {
+/**
+ * The model's limit: --max-tokens, else the limit stated when atticus probe measured the person's
+ * assistant (ADR 0124 addendum A-probe; for a read that assistant answers, not model mode), else
+ * runtime.yaml's maxInput.
+ */
+function limitOf(
+  o: MapOptions,
+  op: OrgPack,
+  tier?: TierReport,
+): { limit?: number; from?: "flag" | "probe" | "runtime.yaml" } {
+  const given = o.maxTokens ?? currentPromptLimit();
+  if (given !== undefined) return { limit: given, from: "flag" };
+  if (tier?.maxTokensFrom === "probe" && tier.maxTokens !== undefined)
+    return { limit: tier.maxTokens, from: "probe" };
   const maxInput = op.runtime.adapters.model?.settings.maxInput;
-  return (
-    o.maxTokens ?? currentPromptLimit() ?? (typeof maxInput === "number" ? maxInput : undefined)
-  );
+  return typeof maxInput === "number" ? { limit: maxInput, from: "runtime.yaml" } : {};
+}
+
+/** The tier said for this metarepo: measured on this machine, else from runtime.yaml. */
+async function tierHere(root: string, op: OrgPack): Promise<TierReport> {
+  return assistantTier(op.runtime, { probes: (await readProbes(root)).results });
 }
 
 function roomFor(limit: number | undefined, op: OrgPack, repo: string, commit: string): number {
@@ -518,7 +536,12 @@ export async function mapCommand(
       io.err(existing);
       return 2;
     }
-    const limit = limitOf(o, op);
+    // A read the person's assistant answers (hand-off, copy) takes the limit its probe stated.
+    const { limit } = limitOf(
+      o,
+      op,
+      runtime.kind === "hand-off" ? await tierHere(root, op) : undefined,
+    );
     const room = roomFor(limit, op, repo, commit);
     if (room < MIN_ROOM) {
       const fitted = limit === undefined ? room : promptBudget(limit);
@@ -716,10 +739,10 @@ async function estimate(
   },
   io: Output,
 ): Promise<number> {
-  const given = limitOf(c.o, c.op);
+  const tier: TierReport = await tierHere(root, c.op);
+  const { limit: given, from } = limitOf(c.o, c.op, tier);
   const limit = given ?? EXAMPLE_LIMIT;
   const room = roomFor(limit, c.op, repo, c.commit);
-  const tier: TierReport = assistantTier(c.op.runtime);
   const whole = planBatches(c.source, { room: Number.MAX_SAFE_INTEGER, exclude: c.exclude });
   const plan = room >= MIN_ROOM ? planBatches(c.source, { room, exclude: c.exclude }) : undefined;
   const questions = (await listQuestions(root, { repo })).questions.filter(
@@ -739,6 +762,7 @@ async function estimate(
           excluded: whole.excluded,
           maxTokens: limit,
           maxTokensGiven: given !== undefined,
+          maxTokensFrom: from ?? "example",
           batches: plan?.batches.length ?? null,
           order: whole.batches.flat().map((x) => x.path),
           tier,
@@ -760,15 +784,20 @@ async function estimate(
   io.out(
     `${plural(whole.files, "source file")}, ${plural(whole.lines, "line")}, about ${whole.tokens} tokens${whole.excluded.length ? `; ${whole.excluded.length} excluded` : ""}.`,
   );
-  io.out(`The org's assistant (runtime.yaml): ${tierWords(tier)}. ${tier.how}`);
+  io.out(`Your assistant: ${tierWords(tier)}, ${tierSource(tier)}. ${tier.how}`);
   io.out(
     `Another agentic assistant (Claude Code, Cursor, Gemini CLI) reads it the same way: /atticus-map ${repo}; one without file tools gets batches with atticus map ${repo} --handoff --max-tokens <its limit>.`,
   );
   if (tier.fallback) io.out(tier.fallback);
+  if (tier.note) io.out(tier.note);
   if (tier.model) io.out(tier.model);
+  if (tier.measured?.stale)
+    io.out(`That was ${tier.measured.days} days ago: atticus probe measures it again.`);
+  else if (tier.source === "runtime.yaml" && tier.tier !== "off")
+    io.out("atticus probe measures your assistant's tier and limit instead.");
   io.out(
     plan
-      ? `In batches at ${limit} tokens a prompt${given === undefined ? " (GPT-4o mini through Copilot; --max-tokens n for your model's limit)" : ""}: ${plural(plan.batches.length, "prompt")}, one more if facts are rejected in the last.`
+      ? `In batches at ${limit} tokens a prompt${given === undefined ? " (GPT-4o mini through Copilot; --max-tokens n for your model's limit)" : from === "probe" ? ` (the limit stated when your assistant was measured on ${tier.measured?.at})` : ""}: ${plural(plan.batches.length, "prompt")}, one more if facts are rejected in the last.`
       : `A model of ${limit} tokens leaves too little room for the files beside the instructions: use a model with a bigger limit.`,
   );
   for (const q of questions)

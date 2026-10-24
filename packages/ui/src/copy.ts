@@ -868,6 +868,12 @@ export const COPY = {
         what: "Reads a repo into facts, each citing its line; Atticus checks every one and the assistant loops until all pass.",
       },
       {
+        name: "/atticus-probe",
+        args: "",
+        where: "metarepo",
+        what: "Shows Atticus what the assistant can do here (open a file, write one, run a command) after atticus probe, so the first read of a repo is handed to it the way it can take it.",
+      },
+      {
         name: "/atticus-survey",
         args: "<repo>",
         where: "metarepo",

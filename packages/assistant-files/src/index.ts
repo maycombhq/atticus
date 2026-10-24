@@ -11,3 +11,4 @@ export * from "./generate.js";
 export * from "./plugin.js";
 export * from "./map.js";
 export * from "./tier.js";
+export * from "./probe.js";

@@ -430,6 +430,8 @@ Usage:
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant, and the tier your assistant reads a repo at
+  atticus probe                        Measure what your assistant can do here (open a file, write one, run a command), so the tier it reads a repo at is measured, not read off runtime.yaml; then /atticus-probe in the assistant (ADR 0124) [--assistant id] [--max-tokens n] [--json]
+  atticus probe answer <code>          Check the assistant's answer (none when it couldn't open the file) and keep what it measured in .atticus/probe/<assistant>.yaml, on this machine only [--pasted] [--max-tokens n] [--json]
   atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
   atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first)
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
@@ -781,6 +783,9 @@ const OPTIONS = {
   filter: { type: "string" },
   "batch-tokens": { type: "string" },
   "max-tokens": { type: "string" },
+  // atticus probe (ADR 0124 addendum A-probe).
+  assistant: { type: "string" },
+  pasted: { type: "boolean" },
   "context-tokens": { type: "string" },
   "whole-context": { type: "boolean" },
   search: { type: "boolean" },
@@ -1444,6 +1449,34 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
     );
   if (group === "setup" && !command) return setupCommand(root, { json: values.json === true }, io);
   if (group === "doctor") return doctorCommand(root, { json: values.json === true }, io);
+  if (group === "probe") {
+    // ADR 0124 addendum A-probe: the tier measured with the person's assistant.
+    const { probeCommand, probeAnswerCommand } = await import("./probe-commands.js");
+    const max = typeof values["max-tokens"] === "string" ? Number(values["max-tokens"]) : undefined;
+    const json = values.json === true;
+    if (command === "answer")
+      return probeAnswerCommand(
+        root,
+        positionals[2],
+        { pasted: values.pasted === true, ...(max !== undefined ? { maxTokens: max } : {}), json },
+        io,
+      );
+    if (command) {
+      io.err(
+        "Usage: atticus probe [--assistant id] [--max-tokens n] [--json] | atticus probe answer <code|none> [--pasted] [--max-tokens n] [--json]",
+      );
+      return 2;
+    }
+    return probeCommand(
+      root,
+      {
+        ...(typeof values.assistant === "string" ? { assistant: values.assistant } : {}),
+        ...(max !== undefined ? { maxTokens: max } : {}),
+        json,
+      },
+      io,
+    );
+  }
   if (group === "upgrade")
     return upgradeCommand(
       root,
