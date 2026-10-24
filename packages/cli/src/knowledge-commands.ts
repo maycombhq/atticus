@@ -1,6 +1,7 @@
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
+  fileJudgments,
   loadOrgPack,
   Sources,
   type CatalogRecord,
@@ -10,8 +11,8 @@ import {
 import {
   coverage,
   diffPatterns,
+  judgeFacts,
   knowledgeGaps,
-  mapFacts,
   scanPatterns,
   syncSources,
   checkoutGitWiki,
@@ -25,6 +26,7 @@ import { readCatalog } from "@maycombhq/scanner";
 import { createGit } from "@maycombhq/workspace";
 import { isSeq, parseDocument } from "yaml";
 import type { Output } from "./commands.js";
+import { judgingRuntime } from "./judging.js";
 import { table } from "./index-commands.js";
 
 const WIKI_TYPES = ["confluence", "ado-wiki", "sharepoint", "markdown-folder", "git"] as const;
@@ -270,7 +272,11 @@ async function syncAll(root: string, io: Output, only?: string) {
     adapters: { git: gitWikiAdapter(checkouts) },
   });
   sync.problems.push(...gitProblems);
-  const facts = mapFacts({ pages: sync.pages, records, systems: systemsOf(op) });
+  const runtime = await judgingRuntime(root);
+  const facts = await judgeFacts(
+    { pages: sync.pages, records, systems: systemsOf(op) },
+    { ...(runtime ? { runtime } : {}), store: fileJudgments(root), now: new Date() },
+  );
   return { op, records, sync, facts, checkouts };
 }
 
@@ -355,7 +361,17 @@ export async function sourcesSync(
       for (const d of facts.documentOnlyFacts)
         io.out(`  ${d.system}: ${d.fact} (${d.doc}:${d.line})`);
     }
-    if (!n && !f && !sync.problems.length) io.out("The wiki agrees with the catalog.");
+    // ADR 0117 addendum: how two systems reach each other is a judgment; without a model to ask
+    // it, the sentences are for a person, not read by a word rule.
+    const unjudged = facts.claims.filter((c) => c.status === "unjudged");
+    if (unjudged.length) {
+      io.out(
+        `${unjudged.length} sentence${unjudged.length === 1 ? "" : "s"} may say how two systems reach each other, but no model was asked to judge ${unjudged.length === 1 ? "it" : "them"}; a person reads ${unjudged.length === 1 ? "it" : "them"}:`,
+      );
+      for (const c of unjudged) io.out(`  ${c.doc}:${c.line} ${c.from} → ${c.to}: "${c.claim}"`);
+    }
+    if (!n && !f && !unjudged.length && !sync.problems.length)
+      io.out("The wiki agrees with the catalog.");
   }
   return sync.problems.length || facts.documentConflicts.length ? 1 : 0;
 }
@@ -421,11 +437,13 @@ export async function coverageCommand(
   let documents: CatalogRecord[] = [];
   if (op.sources.wikis.length) {
     const sync = await syncSources({ root, orgPack: op, orgPackDir, records, now: now() });
-    documents = mapFacts({
-      pages: sync.pages,
-      records,
-      systems: systemsOf(op),
-    }).documentOnlyFacts.map((f) => f.record);
+    const runtime = await judgingRuntime(root);
+    documents = (
+      await judgeFacts(
+        { pages: sync.pages, records, systems: systemsOf(op) },
+        { ...(runtime ? { runtime } : {}), store: fileJudgments(root), now: new Date() },
+      )
+    ).documentOnlyFacts.map((f) => f.record);
   }
   const res = coverage({ records, documents, orgPack: op, now: now() });
   if (o.json) {
