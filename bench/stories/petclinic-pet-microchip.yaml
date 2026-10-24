@@ -1,0 +1,248 @@
+# A reference story, written by reading the code at the pinned commits in ../repos.yaml, not
+# from an Atticus draft. Every step, criterion and error case cites the line of today's code it
+# changes or rests on. Scored by atticus bench stories --draft <file>.
+schemaVersion: 1
+story: petclinic-pet-microchip
+title: Record a pet's microchip number when a pet is added
+repos: [spring-petclinic-angular, spring-petclinic-rest]
+statement:
+  asA: receptionist registering a new pet for an owner
+  iWant: to enter the pet's microchip number on the Add Pet form
+  soThat: a lost pet that is scanned can be matched to its owner's record
+context: >-
+  Today a pet is added from the owner's page (route owners/:id/pets/add,
+  owners-routing.module.ts:35) with name, birth date and type only (pet-add.component.html:36-79).
+  The form posts the Pet object to POST /petclinic/api/owners/{ownerId}/pets (pet.service.ts:64),
+  whose body is PetFields in openapi.yml (line 2154); the OpenAPI generator builds PetFieldsDto and
+  PetDto from it, and PetMapper copies fields by name. The pets table has no column for a chip
+  (h2 schema.sql:42-50). Microchips follow ISO 11784/11785: 15 decimal digits. The REST API is the
+  only writer of pets; the Angular app is its only UI.
+scope:
+  in:
+    - A Microchip input on the Add Pet form, optional, 15 digits when given
+    - microchip in the PetFields request body of POST /owners/{ownerId}/pets and in the Pet response
+    - A nullable, unique microchip column on pets in all four database schemas
+    - A duplicate microchip refused with 409 Conflict
+  out:
+    - Editing or removing a microchip (edit pet form, PUT /pets/{petId}, PUT /owners/{ownerId}/pets/{petId})
+    - Searching pets or owners by microchip
+    - Showing the microchip on the owner's page or the pet list
+    - Back-filling chips for existing pets
+steps:
+  - id: ui-form
+    repo: spring-petclinic-angular
+    what: The Add Pet form gets a Microchip input after Type, with a 15-digit pattern and its own validation messages
+    entry: "screen /owners/{id}/pets/add"
+    at: "src/app/pets/pet-add/pet-add.component.html:67"
+  - id: ui-model
+    repo: spring-petclinic-angular
+    what: The Pet interface gets an optional microchip
+    at: "src/app/pets/pet.ts:31"
+  - id: ui-submit
+    repo: spring-petclinic-angular
+    what: onSubmit sends microchip with the pet, or leaves it out when the input is blank
+    at: "src/app/pets/pet-add/pet-add.component.ts:72"
+  - id: api-contract
+    repo: spring-petclinic-rest
+    what: PetFields gets microchip (string, pattern ^[0-9]{15}$, not required); Pet inherits it through allOf
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    at: "src/main/resources/openapi.yml:2172"
+  - id: api-entity
+    repo: spring-petclinic-rest
+    what: The Pet entity maps a microchip column
+    at: "src/main/java/org/springframework/samples/petclinic/model/Pet.java:34"
+  - id: api-duplicate
+    repo: spring-petclinic-rest
+    what: addPetToOwner refuses a microchip another pet already has, with 409, before saving
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:141"
+  - id: api-lookup
+    repo: spring-petclinic-rest
+    what: ClinicService and PetRepository get findPetByMicrochip (Spring Data derives the query)
+    at: "src/main/java/org/springframework/samples/petclinic/service/ClinicService.java:40"
+  - id: db-column
+    repo: spring-petclinic-rest
+    what: pets gets microchip VARCHAR(15) NULL with a unique constraint, in the h2, hsqldb, mysql and postgres schemas
+    at: "src/main/resources/db/h2/schema.sql:42"
+criteria:
+  - id: add-with-chip
+    step: ui-form
+    given: an owner's Add Pet page with pet types loaded
+    when: the receptionist enters name Leo, birth date 2024-03-01, type cat and microchip 985112003456789 and saves
+    then: >-
+      POST /petclinic/api/owners/{ownerId}/pets is sent with name, birthDate, type and microchip
+      985112003456789, the API answers 201 with the Pet including microchip, and the page returns to
+      the owner's detail
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    fields: [microchip, name, birthDate, type]
+    at: "src/app/pets/pet-add/pet-add.component.ts:77"
+  - id: add-without-chip
+    step: ui-submit
+    given: an owner's Add Pet page
+    when: the receptionist leaves Microchip empty and saves a valid pet
+    then: the request has no microchip, the API answers 201, and the stored pet's microchip is null
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    fields: [microchip]
+    at: "src/app/pets/pet-add/pet-add.component.ts:72"
+  - id: ui-format
+    step: ui-form
+    given: the Add Pet form
+    when: the receptionist types a microchip that is not exactly 15 digits
+    then: the Microchip input shows "Microchip must be 15 digits" and Save Pet stays disabled
+    fields: [microchip]
+    validation: pattern ^[0-9]{15}$ on the input, like the name pattern at line 39
+    errors:
+      - field: microchip
+        rule: format
+        when: the microchip has letters or is not 15 digits long
+        then: the input is invalid and Save Pet is disabled; nothing is sent
+        at: "src/app/pets/pet-add/pet-add.component.html:84"
+    at: "src/app/pets/pet-add/pet-add.component.html:39"
+  - id: api-contract-format
+    step: api-contract
+    given: the REST API
+    when: POST /petclinic/api/owners/{ownerId}/pets has a microchip that does not match ^[0-9]{15}$
+    then: the API answers 400 with a ProblemDetail ("The request contains invalid or missing parameters") and stores nothing
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    fields: [microchip]
+    validation: Bean Validation @Pattern on the generated PetFieldsDto
+    errors:
+      - field: microchip
+        rule: format
+        status: 400
+        when: microchip is not 15 digits
+        then: 400 ProblemDetail from handleMethodArgumentNotValidException
+        at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:119"
+    at: "src/main/resources/openapi.yml:2172"
+  - id: api-returns-chip
+    step: api-entity
+    given: a pet saved with microchip 985112003456789
+    when: GET /petclinic/api/owners/{ownerId}/pets/{petId} or GET /petclinic/api/pets/{petId} is called
+    then: the Pet response has microchip 985112003456789
+    entry: "GET /petclinic/api/pets/{petId}"
+    fields: [microchip]
+    at: "src/main/java/org/springframework/samples/petclinic/model/Pet.java:34"
+  - id: api-duplicate-chip
+    step: api-duplicate
+    given: a pet with microchip 985112003456789 exists
+    when: another pet is added with microchip 985112003456789
+    then: the API answers 409 with a ProblemDetail naming the duplicate microchip and stores nothing; the UI shows the error above the form
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    fields: [microchip]
+    errors:
+      - field: microchip
+        rule: unique
+        status: 409
+        when: another pet already has the microchip
+        then: 409 Conflict ProblemDetail; today a unique violation would surface as 404 from handleDataIntegrityViolationException
+        at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:105"
+      - field: microchip
+        rule: unique
+        status: 409
+        when: the UI receives the 409
+        then: the alert above the form shows the error message (errorMessage, set from the rethrown error)
+        at: "src/app/pets/pet-add/pet-add.component.html:22"
+    at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:141"
+  - id: api-lookup-by-chip
+    step: api-lookup
+    given: the pets table
+    when: findPetByMicrochip is called with a chip no pet has
+    then: it returns no pet, and with a chip a pet has it returns that pet
+    fields: [microchip]
+    at: "src/main/java/org/springframework/samples/petclinic/service/ClinicService.java:40"
+  - id: unknown-owner
+    step: api-duplicate
+    given: no owner with id 999
+    when: POST /petclinic/api/owners/999/pets is sent with a valid microchip
+    then: the API answers 404 as today and stores nothing
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    fields: [microchip]
+    errors:
+      - rule: not-found
+        status: 404
+        when: the owner does not exist
+        then: 404 with no body, unchanged
+        at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:144"
+    at: "src/main/java/org/springframework/samples/petclinic/rest/controller/v1/OwnerRestControllerV1.java:143"
+  - id: db-unique
+    step: db-column
+    given: the pets table in any of the four schemas
+    when: two rows are written with the same non-null microchip
+    then: the database refuses the second; any number of rows may have a null microchip
+    fields: [microchip]
+    errors:
+      - field: microchip
+        rule: unique
+        when: a second row has the same microchip (a race past the 409 check)
+        then: DataIntegrityViolationException, answered by the advice
+        at: "src/main/java/org/springframework/samples/petclinic/rest/advice/ExceptionControllerAdvice.java:97"
+    at: "src/main/resources/db/h2/schema.sql:42"
+  - id: ui-model-field
+    step: ui-model
+    given: the Pet interface
+    when: the app is built
+    then: Pet has an optional microchip of type string and the build passes
+    fields: [microchip]
+    at: "src/app/pets/pet.ts:31"
+interfaces:
+  - repo: spring-petclinic-rest
+    entry: "POST /petclinic/api/owners/{ownerId}/pets"
+    change: changed
+    breaking: false
+    why: an optional request field and a new response field; existing clients that leave it out keep working
+    fields:
+      - {
+          name: microchip,
+          side: request,
+          type: "string, pattern ^[0-9]{15}$",
+          required: false,
+          change: added,
+        }
+      - { name: microchip, side: response, type: string, required: false, change: added }
+    at: "src/main/resources/openapi.yml:2154"
+  - repo: spring-petclinic-rest
+    entry: "GET /petclinic/api/pets/{petId}"
+    change: changed
+    breaking: false
+    why: every Pet response (pets, owners' pets) gains microchip through the Pet schema
+    fields:
+      - { name: microchip, side: response, type: string, required: false, change: added }
+    at: "src/main/resources/openapi.yml:2178"
+data:
+  - repo: spring-petclinic-rest
+    store: petclinic
+    table: pets
+    column: microchip
+    type: VARCHAR(15)
+    nullable: true
+    change: added
+    migration: >-
+      Add the column with UNIQUE to the four schema.sql files (h2, hsqldb, mysql, postgres). They use
+      CREATE TABLE IF NOT EXISTS and spring.sql.init.mode=always, so an existing MySQL or Postgres
+      database also needs ALTER TABLE pets ADD COLUMN microchip VARCHAR(15) NULL UNIQUE, run once.
+    classification: internal (identifies an animal, not a person; linked to the owner's personal data through owner_id)
+    retention: kept for the life of the pet record and deleted with it (ON DELETE CASCADE from owners)
+    at: "src/main/resources/db/h2/schema.sql:42"
+nonFunctional:
+  auth: unchanged; POST /owners/{ownerId}/pets needs OWNER_ADMIN when petclinic.security.enable=true (OwnerRestControllerV1.java:139)
+  audit: no audit trail exists; the duplicate refusal is logged at warn like other data errors
+  timeouts: none added; one extra indexed lookup by microchip per add
+  performance: the unique constraint indexes microchip, so the duplicate check is one index lookup
+tests:
+  - OwnerRestControllerV1Tests next to testCreatePetSuccess (line 347) - with a chip, without, bad format (400), duplicate (409)
+  - A Spring Data repository test for findPetByMicrochip
+  - pet-add.component.spec.ts - the pattern error and that a blank chip is not sent
+dependencies:
+  - The OpenAPI generator rebuilds PetFieldsDto and PetDto at build time; no other repo reads the pets table
+  - Existing MySQL and Postgres databases need the ALTER TABLE before the release
+definitionOfDone:
+  - Every criterion above passes in the REST and Angular test suites
+  - openapi.yml, the four schema.sql files and the Pet entity agree on microchip
+  - The ALTER TABLE note is in the release notes
+accepts:
+  microchip: [microchipNumber, microchip_number, chipNumber]
+notes: >-
+  The duplicate check is in the controller, not only the constraint, because the advice turns every
+  DataIntegrityViolationException into 404 today (ExceptionControllerAdvice.java:105); changing
+  that for every constraint would be a wider change than this story. Edit pet keeps the chip
+  because updateOwnersPet sets name, birth date and type one by one (OwnerRestControllerV1.java:165-167).

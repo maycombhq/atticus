@@ -1,0 +1,173 @@
+# A reference story, written by reading the code at the pinned commit in ../repos.yaml, not
+# from an Atticus draft. Every step, criterion and error case cites the line of today's code it
+# changes or rests on. One change across two services of one repo: cartservice (C#) and
+# frontend (Go). Scored by atticus bench stories --draft <file>.
+schemaVersion: 1
+story: microservices-demo-cart-limit
+title: A cart holds at most 10 of any one product
+repos: [microservices-demo]
+statement:
+  asA: shopper
+  iWant: to be told when adding a product would put more than 10 of it in my cart
+  soThat: I can't place an order for quantities the shop can't ship, and I know why the add failed
+context: >-
+  The product page offers quantities 1 to 10 (src/frontend/templates/product.html:59-65) and the
+  frontend checks each add with gte=1,lte=10 (src/frontend/validator/validator.go:38), but each add
+  is summed into the cart: RedisCartStore adds the quantity to an existing line
+  (src/cartservice/src/cartstore/RedisCartStore.cs:57), and the Spanner and AlloyDB stores do the
+  same. Ten adds of 10 give a line of 100. The frontend posts the add to cartservice's AddItem over
+  gRPC (src/frontend/rpc.go:68) and turns any error into a 500 page (src/frontend/handlers.go:232).
+  cartservice already answers FAILED_PRECONDITION when its storage fails
+  (RedisCartStore.cs:64), so the limit needs a status of its own.
+scope:
+  in:
+    - cartservice AddItem refuses an add that would take a product's line above 10, for every cart store
+    - The frontend shows a 422 page with a plain message for that refusal instead of a 500
+  out:
+    - A configurable limit per product (the limit is the constant 10)
+    - Changing the quantities the product page offers
+    - Checkout (PlaceOrder reads the cart as it is) and EmptyCart
+    - Carts that already hold more than 10 of a product
+steps:
+  - id: cart-limit
+    repo: microservices-demo
+    what: CartService.AddItem reads the cart, sums the existing quantity of the product with the request's, and refuses above 10 with INVALID_ARGUMENT before calling the store
+    entry: "grpc hipstershop.CartService/AddItem"
+    at: "src/cartservice/src/services/CartService.cs:34"
+  - id: frontend-map
+    repo: microservices-demo
+    what: addToCartHandler maps INVALID_ARGUMENT from insertCart to a 422 error page with the limit message; other errors stay 500
+    entry: "POST /cart"
+    at: "src/frontend/handlers.go:231"
+criteria:
+  - id: add-within-limit
+    step: cart-limit
+    given: a cart with 4 of product OLJCESPC7Z
+    when: the shopper adds 6 more
+    then: AddItem succeeds, the cart line has quantity 10, and the frontend redirects to /cart with 302
+    entry: "grpc hipstershop.CartService/AddItem"
+    fields: [user_id, product_id, quantity]
+    at: "src/cartservice/src/services/CartService.cs:36"
+  - id: add-over-limit
+    step: cart-limit
+    given: a cart with 8 of product OLJCESPC7Z
+    when: the shopper adds 3 more
+    then: AddItem fails with INVALID_ARGUMENT "at most 10 of a product per cart", the cart line stays at 8, and nothing is written to the store
+    entry: "grpc hipstershop.CartService/AddItem"
+    fields: [product_id, quantity]
+    validation: existing line quantity + request quantity <= 10
+    errors:
+      - field: quantity
+        rule: limit
+        status: INVALID_ARGUMENT
+        when: the line would exceed 10
+        then: RpcException(StatusCode.InvalidArgument) from CartService.AddItem; the store is not called
+        at: "src/cartservice/src/services/CartService.cs:36"
+    at: "src/cartservice/src/cartstore/RedisCartStore.cs:57"
+  - id: new-line-over-limit
+    step: cart-limit
+    given: a cart without product 66VCHSJNUP
+    when: AddItem is called directly (not through the frontend) with quantity 11
+    then: AddItem fails with INVALID_ARGUMENT and the cart has no line for the product
+    entry: "grpc hipstershop.CartService/AddItem"
+    fields: [quantity]
+    errors:
+      - field: quantity
+        rule: limit
+        status: INVALID_ARGUMENT
+        when: a first add asks for more than 10
+        then: refused the same way as an add to an existing line
+        at: "src/cartservice/src/services/CartService.cs:36"
+    at: "src/cartservice/src/services/CartService.cs:34"
+  - id: storage-down
+    step: cart-limit
+    given: the cart store cannot be reached
+    when: AddItem is called
+    then: it still fails with FAILED_PRECONDITION "Can't access cart storage", as today
+    entry: "grpc hipstershop.CartService/AddItem"
+    fields: [user_id]
+    errors:
+      - rule: unavailable
+        status: FAILED_PRECONDITION
+        when: reading the cart for the check fails
+        then: FAILED_PRECONDITION, unchanged, so the frontend still shows a 500
+        at: "src/cartservice/src/cartstore/RedisCartStore.cs:64"
+    at: "src/cartservice/src/cartstore/ICartStore.cs:23"
+  - id: frontend-422
+    step: frontend-map
+    given: a cart with 8 of a product
+    when: the shopper picks 3 on the product page and clicks Add To Cart
+    then: POST /cart answers 422 with the error page saying "You can have at most 10 of a product in your cart", and the cart is unchanged
+    entry: "POST /cart"
+    fields: [product_id, quantity]
+    errors:
+      - field: quantity
+        rule: limit
+        status: 422
+        when: insertCart returns INVALID_ARGUMENT
+        then: renderHTTPError with http.StatusUnprocessableEntity and the limit message instead of 500
+        at: "src/frontend/handlers.go:232"
+    at: "src/frontend/handlers.go:231"
+  - id: frontend-form-check
+    step: frontend-map
+    given: the product page
+    when: a request posts quantity 0 or 11 to /cart
+    then: the frontend answers 422 from its own validation, as today, without calling cartservice
+    entry: "POST /cart"
+    fields: [quantity]
+    errors:
+      - field: quantity
+        rule: range
+        status: 422
+        when: quantity is below 1 or above 10 in one request
+        then: ValidationErrorResponse, unchanged
+        at: "src/frontend/validator/validator.go:38"
+    at: "src/frontend/handlers.go:219"
+interfaces:
+  - repo: microservices-demo
+    entry: "grpc hipstershop.CartService/AddItem"
+    change: changed
+    breaking: false
+    why: no message changes; AddItem can now answer INVALID_ARGUMENT, which only the frontend calls it with (checkoutservice reads carts with GetCart and EmptyCart)
+    fields:
+      - { name: quantity, side: request, type: int32, required: true, change: changed }
+    at: "protos/demo.proto:24"
+  - repo: microservices-demo
+    entry: "POST /cart"
+    change: changed
+    breaking: false
+    why: a new 422 answer where a 500 was given for this case
+    fields:
+      - {
+          name: quantity,
+          side: request,
+          type: "form uint, 1 to 10",
+          required: true,
+          change: changed,
+        }
+    at: "src/frontend/main.go:153"
+data:
+  none: >-
+    The cart line's quantity is stored as before (Redis value, Spanner CartItems, AlloyDB
+    cart_items); no column or key changes.
+nonFunctional:
+  auth: unchanged; carts are keyed by the session's user id and the services trust each other on the cluster network
+  audit: the refusal is logged by the frontend at error level through renderHTTPError, as other add failures are
+  timeouts: unchanged; the frontend's gRPC call has no deadline today and the check adds one cart read in cartservice
+  performance: one extra GetCart read per add (one Redis GET); the Spanner store already reads the line before writing
+tests:
+  - CartServiceTests next to AddItem_ItemExists_Updated (line 71) - an add to 10 passes, an add past 10 fails with InvalidArgument, a first add of 11 fails
+  - A frontend handler test that an InvalidArgument from a fake cart client gives 422 and the message
+dependencies:
+  - cartservice and frontend ship together; a frontend without the mapping shows a 500 for the refusal, which is no worse than today
+definitionOfDone:
+  - Both services' tests pass and the Kubernetes manifests need no change
+  - The loadgenerator's adds (quantities up to 10) still succeed against a fresh cart
+accepts:
+  quantity: [qty]
+  product_id: [productId]
+  user_id: [userId]
+notes: >-
+  The check sits in CartService.AddItem rather than in each of the three stores so one rule covers
+  Redis, Spanner and AlloyDB. INVALID_ARGUMENT is chosen because FAILED_PRECONDITION already means
+  the store failed (RedisCartStore.cs:64), and the frontend must tell the two apart.

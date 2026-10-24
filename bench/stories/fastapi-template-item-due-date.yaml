@@ -1,0 +1,251 @@
+# A reference story, written by reading the code at the pinned commit in ../repos.yaml, not
+# from an Atticus draft. Every step, criterion and error case cites the line of today's code it
+# changes or rests on. One repo, back end (FastAPI, SQLModel, Alembic) and front end (React).
+# Scored by atticus bench stories --draft <file>.
+schemaVersion: 1
+story: fastapi-template-item-due-date
+title: An item can have a due date
+repos: [fastapi-template]
+statement:
+  asA: signed-in user
+  iWant: to give an item an optional due date when I create or edit it, and see it in my items list
+  soThat: I can tell which items need doing first
+context: >-
+  Items have title and description only (ItemBase, backend/app/models.py:70-72), shared by the item
+  table (models.py:87), the create body (ItemCreate, :76), the update body (ItemUpdate, :81) and the
+  response (ItemPublic, :97). POST /api/v1/items/ builds the row with Item.model_validate
+  (backend/app/api/routes/items.py:68) and PUT /api/v1/items/{id} applies the fields that were set
+  (items.py:91). The schema is migrated with Alembic; the head is fe56fa70289e. The front end
+  calls the API through a client generated from the OpenAPI document (frontend/package.json:11,
+  generate-client) and has Add and Edit dialogs with zod form schemas
+  (frontend/src/components/Items/AddItem.tsx:33, EditItem.tsx:34) and a table of items
+  (frontend/src/components/Items/columns.tsx).
+scope:
+  in:
+    - due_date (a date, optional) on the item table, the create and update bodies and the item response
+    - A due date in the past refused on create with 422
+    - A date input on the Add and Edit dialogs, and a Due column in the items table
+  out:
+    - Reminders or emails for due items
+    - Sorting or filtering items by due date (the list stays ordered by created_at)
+    - Time of day and time zones (a calendar date only)
+steps:
+  - id: be-model
+    repo: fastapi-template
+    what: ItemBase gets due_date (date | None, default None), so the item table, ItemCreate and ItemPublic have it
+    at: "backend/app/models.py:72"
+  - id: be-update-body
+    repo: fastapi-template
+    what: ItemUpdate gets due_date (date | None, default None); sending null clears it
+    entry: "PUT /api/v1/items/{id}"
+    at: "backend/app/models.py:83"
+  - id: be-create-check
+    repo: fastapi-template
+    what: ItemCreate gets a field_validator that refuses a due_date before today
+    entry: "POST /api/v1/items/"
+    at: "backend/app/models.py:76"
+  - id: be-migration
+    repo: fastapi-template
+    what: A new Alembic revision after fe56fa70289e adds item.due_date (DATE, nullable) and drops it on downgrade
+    at: "backend/app/alembic/versions/fe56fa70289e_add_created_at_to_user_and_item.py:22"
+  - id: fe-client
+    repo: fastapi-template
+    what: The generated client is regenerated so ItemCreate, ItemUpdate and ItemPublic carry due_date
+    at: "frontend/package.json:11"
+  - id: fe-add
+    repo: fastapi-template
+    what: The Add Item dialog's schema and form get an optional date input, sent as YYYY-MM-DD or left out when empty
+    entry: "screen /items"
+    at: "frontend/src/components/Items/AddItem.tsx:35"
+  - id: fe-edit
+    repo: fastapi-template
+    what: The Edit Item dialog shows and sends the item's due date
+    entry: "screen /items"
+    at: "frontend/src/components/Items/EditItem.tsx:56"
+  - id: fe-list
+    repo: fastapi-template
+    what: The items table gets a Due column after Description ("No due date" when empty)
+    entry: "screen /items"
+    at: "frontend/src/components/Items/columns.tsx:49"
+criteria:
+  - id: create-with-date
+    step: be-model
+    given: a signed-in user
+    when: POST /api/v1/items/ is sent with title "Pay rent" and due_date 2030-01-31
+    then: the API answers 200 with ItemPublic including id, title, owner_id, created_at and due_date 2030-01-31, and the row has due_date set
+    entry: "POST /api/v1/items/"
+    fields: [title, due_date, id, owner_id, created_at]
+    at: "backend/app/api/routes/items.py:68"
+  - id: create-without-date
+    step: be-model
+    given: a signed-in user
+    when: an item is created with no due_date
+    then: the answer has due_date null and existing clients that never send it work as before
+    entry: "POST /api/v1/items/"
+    fields: [due_date]
+    at: "backend/app/models.py:72"
+  - id: create-past-date
+    step: be-create-check
+    given: today is 2030-01-10
+    when: POST /api/v1/items/ is sent with due_date 2030-01-09
+    then: the API answers 422 with a detail entry for body.due_date ("due_date can't be in the past") and stores nothing
+    entry: "POST /api/v1/items/"
+    fields: [due_date]
+    validation: due_date >= today (server date) on create only
+    errors:
+      - field: due_date
+        rule: range
+        status: 422
+        when: the date is before today
+        then: FastAPI's 422 validation error from the ItemCreate validator
+        at: "backend/app/models.py:76"
+      - field: due_date
+        rule: format
+        status: 422
+        when: due_date is not a YYYY-MM-DD date
+        then: FastAPI's 422 validation error, as for any wrongly typed field
+        at: "backend/app/models.py:72"
+    at: "backend/app/models.py:76"
+  - id: update-date
+    step: be-update-body
+    given: an item the user owns with due_date 2030-01-31
+    when: PUT /api/v1/items/{id} is sent with due_date 2030-02-28, or with due_date null
+    then: the answer has the new due_date, or null; a past date is accepted on update so overdue items can still be edited
+    entry: "PUT /api/v1/items/{id}"
+    fields: [due_date]
+    at: "backend/app/api/routes/items.py:91"
+  - id: update-not-allowed
+    step: be-update-body
+    given: an item another user owns, or no item with that id
+    when: PUT /api/v1/items/{id} is sent with a due_date
+    then: the API answers 403 "Not enough permissions" or 404 "Item not found", unchanged
+    entry: "PUT /api/v1/items/{id}"
+    fields: [due_date]
+    errors:
+      - rule: not-found
+        status: 404
+        when: no item has the id
+        then: 404 Item not found, unchanged
+        at: "backend/app/api/routes/items.py:88"
+      - rule: forbidden
+        status: 403
+        when: the user is not the owner and not a superuser
+        then: 403 Not enough permissions, unchanged
+        at: "backend/app/api/routes/items.py:90"
+    at: "backend/app/api/routes/items.py:86"
+  - id: migration-up-down
+    step: be-migration
+    given: a database at revision fe56fa70289e with items
+    when: alembic upgrade head runs, then alembic downgrade -1
+    then: item.due_date exists as a nullable DATE with every existing row null, and after the downgrade it is gone
+    fields: [due_date]
+    at: "backend/app/alembic/versions/fe56fa70289e_add_created_at_to_user_and_item.py:22"
+  - id: client-types
+    step: fe-client
+    given: the back end with due_date
+    when: npm run generate-client runs
+    then: ItemCreate, ItemUpdate and ItemPublic in frontend/src/client have an optional due_date (string or null) and the front end builds
+    fields: [due_date]
+    at: "frontend/package.json:11"
+  - id: add-dialog
+    step: fe-add
+    given: the Add Item dialog
+    when: the user enters a title and picks a due date, then clicks Save
+    then: createItem is called with title and due_date as YYYY-MM-DD, the toast says "Item created successfully", and the list shows the date in the Due column
+    fields: [title, due_date]
+    errors:
+      - field: due_date
+        rule: range
+        status: 422
+        when: the API refuses a past date
+        then: the error toast shows the API's message through handleError and the dialog stays open
+        at: "frontend/src/components/Items/AddItem.tsx:62"
+    at: "frontend/src/components/Items/AddItem.tsx:35"
+  - id: edit-dialog
+    step: fe-edit
+    given: an item with due date 2030-01-31
+    when: the user opens Edit Item
+    then: the date input shows 2030-01-31, and saving sends due_date with the other fields
+    fields: [due_date]
+    at: "frontend/src/components/Items/EditItem.tsx:56"
+  - id: list-column
+    step: fe-list
+    given: items with and without a due date
+    when: the items page loads
+    then: the Due column shows the date for items that have one and "No due date" in italics for the rest
+    fields: [due_date]
+    at: "frontend/src/components/Items/columns.tsx:49"
+interfaces:
+  - repo: fastapi-template
+    entry: "POST /api/v1/items/"
+    change: changed
+    breaking: false
+    why: an optional request field and a new response field
+    fields:
+      - {
+          name: due_date,
+          side: request,
+          type: "date (YYYY-MM-DD)",
+          required: false,
+          default: "null",
+          change: added,
+        }
+      - { name: due_date, side: response, type: "date | null", required: false, change: added }
+    at: "backend/app/api/routes/items.py:61"
+  - repo: fastapi-template
+    entry: "PUT /api/v1/items/{id}"
+    change: changed
+    breaking: false
+    why: an optional request field; null clears the date
+    fields:
+      - {
+          name: due_date,
+          side: request,
+          type: "date | null",
+          required: false,
+          default: "unset (unchanged)",
+          change: added,
+        }
+      - { name: due_date, side: response, type: "date | null", required: false, change: added }
+    at: "backend/app/api/routes/items.py:75"
+  - repo: fastapi-template
+    entry: "GET /api/v1/items/"
+    change: changed
+    breaking: false
+    why: each item in data gains due_date
+    fields:
+      - { name: due_date, side: response, type: "date | null", required: false, change: added }
+    at: "backend/app/api/routes/items.py:13"
+data:
+  - repo: fastapi-template
+    store: app
+    table: item
+    column: due_date
+    type: DATE
+    nullable: true
+    change: added
+    migration: a new Alembic revision with down_revision fe56fa70289e; add_column on upgrade, drop_column on downgrade; no back-fill
+    classification: internal (user-entered planning data, no personal data)
+    retention: deleted with the item, and with its owner (owner_id ON DELETE CASCADE)
+    at: "backend/app/models.py:87"
+nonFunctional:
+  auth: unchanged; items are read and written by their owner or a superuser (items.py:89)
+  audit: none; the item table keeps created_at only
+  timeouts: none added
+  performance: no index; due_date is not filtered or sorted on in this story
+tests:
+  - backend/tests/api/routes/test_items.py next to test_create_item (line 10) - with a date, without, past date 422, bad format 422, update and clear
+  - An Alembic upgrade and downgrade check on an empty database
+  - A Playwright test that adds an item with a due date and sees it in the Due column
+dependencies:
+  - The generated client must be regenerated after the back end changes (generate-client)
+definitionOfDone:
+  - Back-end tests and the front-end build and Playwright tests pass
+  - alembic upgrade head runs on a copy of the deployed database
+accepts:
+  due_date: [dueDate, due]
+notes: >-
+  The past-date check is on create only: EditItem sends every form field, so checking on update
+  would block editing the title of an overdue item. ItemBase is also the table model's base, and
+  validators on a table=True model don't run on assignment, which is another reason the check is on
+  ItemCreate.

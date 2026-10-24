@@ -231,6 +231,8 @@ Usage:
   atticus bench survey [--repo id] [--batch n] [--mode m]  Your assistant drafts each bench repo's scan settings; kept for later runs
   atticus bench verify [--repo id] [--batch n] [--mode m]  Your assistant verifies each bench repo's scan; kept for bench run to score
   atticus bench run [--repo id] [--batch n] [--estate e] [--json] [--specs]  Scan each bench repo and score it against its reference; --specs also scores drafted specs against bench/flows and scans each estate's repos together
+  atticus bench facts [<repo>] [--facts file] [--batch n] [--json]  Score the facts your assistant wrote for each bench repo against its reference, per kind, with bench run's matcher
+  atticus bench stories --draft <file> [--facts file] [--json]  Score a drafted user story against its reference story in bench/stories: steps, fields, error cases, invented fields, rubric sections
   atticus defences scan [path] [--all]  Look for instructions hidden in documents and prompts
   atticus conformance <path> --kind <catalog|org-pack|dialect|plugin|executor>
                                        Check a catalog, org pack, dialect, plugin or executor against the spec

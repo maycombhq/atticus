@@ -1,7 +1,7 @@
 # Written by reading the code at the pinned commit, not from an Atticus scan.
 repo: todo-csharp-sql
 commit: e75277cfae02bcae40b6d92d7c3e409163aeef4e
-covers: [serves, calls, stores, deploys]
+covers: [serves, calls, stores, deploys, fields, config]
 notes: >-
   An azd template: an ASP.NET Core minimal API (src/api) and a React/Vite UI (src/web). The API maps
   every route on MapGroup("/lists") in src/api/Program.cs:49, so each path is /lists plus the route in
@@ -19,6 +19,16 @@ notes: >-
   hosts both services on appservice and infra/main.bicep creates two App Service sites (avm web/site) on a
   Linux plan; the GitHub and Azure DevOps pipelines just run azd provision/deploy, so one
   azure-app-service entry.
+  Fields and config (ADR 0124 section 6, added 2026-10-24): request fields are the
+  CreateUpdateTodoList and CreateUpdateTodoItem records (TodoEndpointsExtensions.cs:160 and :161)
+  and the skip and batchSize query parameters; response fields are the TodoList and TodoItem
+  properties each success response serialises (camelCase); columns are the EF columns of Items and
+  Lists, which follow the entity properties (EnsureCreated, no mapping). TodoItem.List, a
+  navigation property always serialised as null, is ignored. The web UI's calls carry the same
+  bodies; fields of calls are not judged here. Config is the keys naming another system: the Key
+  Vault endpoint, the key naming the Key Vault secret that holds the SQL connection string and that
+  secret, and the UI's API base URL and Application Insights connection string. Logging,
+  AllowedHosts, App Service build settings and azd outputs are ignored.
 serves:
   - { type: rest, method: GET, path: /lists, at: "src/api/TodoEndpointsExtensions.cs:9" }
   - { type: rest, method: POST, path: /lists, at: "src/api/TodoEndpointsExtensions.cs:10" }
@@ -140,3 +150,651 @@ stores:
   - { table: Lists, at: "src/api/TodoDb.cs:8" }
 deploys:
   - { platform: azure-app-service, at: "infra/app/api-appservice-avm.bicep:23" }
+fields:
+  - {
+      entry: "GET /lists",
+      side: "request",
+      name: "skip",
+      type: "int?",
+      at: "src/api/TodoEndpointsExtensions.cs:23",
+    }
+  - {
+      entry: "GET /lists",
+      side: "request",
+      name: "batchSize",
+      type: "int?",
+      at: "src/api/TodoEndpointsExtensions.cs:23",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "id",
+      type: "Guid?",
+      at: "src/api/TodoList.cs:13",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoList.cs:14",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoList.cs:15",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "createdDate",
+      type: "DateTimeOffset",
+      at: "src/api/TodoList.cs:16",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "updatedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoList.cs:17",
+    }
+  - {
+      entry: "POST /lists",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoEndpointsExtensions.cs:160",
+    }
+  - {
+      entry: "POST /lists",
+      side: "request",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoEndpointsExtensions.cs:160",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "id",
+      type: "Guid?",
+      at: "src/api/TodoList.cs:13",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoList.cs:14",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoList.cs:15",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "createdDate",
+      type: "DateTimeOffset",
+      at: "src/api/TodoList.cs:16",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "updatedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoList.cs:17",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "id",
+      type: "Guid?",
+      at: "src/api/TodoList.cs:13",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoList.cs:14",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoList.cs:15",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "createdDate",
+      type: "DateTimeOffset",
+      at: "src/api/TodoList.cs:16",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "updatedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoList.cs:17",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoEndpointsExtensions.cs:160",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "request",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoEndpointsExtensions.cs:160",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "id",
+      type: "Guid?",
+      at: "src/api/TodoList.cs:13",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoList.cs:14",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoList.cs:15",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "createdDate",
+      type: "DateTimeOffset",
+      at: "src/api/TodoList.cs:16",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "updatedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoList.cs:17",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "request",
+      name: "skip",
+      type: "int?",
+      at: "src/api/TodoEndpointsExtensions.cs:76",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "request",
+      name: "batchSize",
+      type: "int?",
+      at: "src/api/TodoEndpointsExtensions.cs:76",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "id",
+      type: "Guid?",
+      at: "src/api/TodoItem.cs:14",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "listId",
+      type: "Guid",
+      at: "src/api/TodoItem.cs:17",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoItem.cs:18",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoItem.cs:19",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "state",
+      type: "string",
+      at: "src/api/TodoItem.cs:20",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "dueDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:21",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "completedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:22",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "createdDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:23",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "updatedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:24",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "state",
+      type: "string",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "dueDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "completedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "id",
+      type: "Guid?",
+      at: "src/api/TodoItem.cs:14",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "listId",
+      type: "Guid",
+      at: "src/api/TodoItem.cs:17",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoItem.cs:18",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoItem.cs:19",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "state",
+      type: "string",
+      at: "src/api/TodoItem.cs:20",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "dueDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:21",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "completedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:22",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "createdDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:23",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "updatedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:24",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "id",
+      type: "Guid?",
+      at: "src/api/TodoItem.cs:14",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "listId",
+      type: "Guid",
+      at: "src/api/TodoItem.cs:17",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoItem.cs:18",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoItem.cs:19",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "state",
+      type: "string",
+      at: "src/api/TodoItem.cs:20",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "dueDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:21",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "completedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:22",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "createdDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:23",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "updatedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:24",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "state",
+      type: "string",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "dueDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "completedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoEndpointsExtensions.cs:161",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "id",
+      type: "Guid?",
+      at: "src/api/TodoItem.cs:14",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "listId",
+      type: "Guid",
+      at: "src/api/TodoItem.cs:17",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoItem.cs:18",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoItem.cs:19",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "state",
+      type: "string",
+      at: "src/api/TodoItem.cs:20",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "dueDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:21",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "completedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:22",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "createdDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:23",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "updatedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:24",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "request",
+      name: "skip",
+      type: "int?",
+      at: "src/api/TodoEndpointsExtensions.cs:149",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "request",
+      name: "batchSize",
+      type: "int?",
+      at: "src/api/TodoEndpointsExtensions.cs:149",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "response",
+      name: "id",
+      type: "Guid?",
+      at: "src/api/TodoItem.cs:14",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "response",
+      name: "listId",
+      type: "Guid",
+      at: "src/api/TodoItem.cs:17",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/TodoItem.cs:18",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "response",
+      name: "description",
+      type: "string?",
+      at: "src/api/TodoItem.cs:19",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "response",
+      name: "state",
+      type: "string",
+      at: "src/api/TodoItem.cs:20",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "response",
+      name: "dueDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:21",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "response",
+      name: "completedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:22",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "response",
+      name: "createdDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:23",
+    }
+  - {
+      entry: "GET /lists/{listId}/state/{state}",
+      side: "response",
+      name: "updatedDate",
+      type: "DateTimeOffset?",
+      at: "src/api/TodoItem.cs:24",
+    }
+  - { table: "Items", name: "id", type: "Guid?", at: "src/api/TodoItem.cs:14" }
+  - { table: "Items", name: "listId", type: "Guid", at: "src/api/TodoItem.cs:17" }
+  - { table: "Items", name: "name", type: "string", at: "src/api/TodoItem.cs:18" }
+  - { table: "Items", name: "description", type: "string?", at: "src/api/TodoItem.cs:19" }
+  - { table: "Items", name: "state", type: "string", at: "src/api/TodoItem.cs:20" }
+  - { table: "Items", name: "dueDate", type: "DateTimeOffset?", at: "src/api/TodoItem.cs:21" }
+  - { table: "Items", name: "completedDate", type: "DateTimeOffset?", at: "src/api/TodoItem.cs:22" }
+  - { table: "Items", name: "createdDate", type: "DateTimeOffset?", at: "src/api/TodoItem.cs:23" }
+  - { table: "Items", name: "updatedDate", type: "DateTimeOffset?", at: "src/api/TodoItem.cs:24" }
+  - { table: "Lists", name: "id", type: "Guid?", at: "src/api/TodoList.cs:13" }
+  - { table: "Lists", name: "name", type: "string", at: "src/api/TodoList.cs:14" }
+  - { table: "Lists", name: "description", type: "string?", at: "src/api/TodoList.cs:15" }
+  - { table: "Lists", name: "createdDate", type: "DateTimeOffset", at: "src/api/TodoList.cs:16" }
+  - { table: "Lists", name: "updatedDate", type: "DateTimeOffset?", at: "src/api/TodoList.cs:17" }
+config:
+  - {
+      key: "AZURE_KEY_VAULT_ENDPOINT",
+      source: "App Service setting from the Key Vault's URI (infra/main.bicep:85)",
+      at: "src/api/Program.cs:7",
+    }
+  - {
+      key: "AZURE_SQL_CONNECTION_STRING_KEY",
+      value: "AZURE-SQL-CONNECTION-STRING",
+      at: "src/api/Program.cs:12",
+    }
+  - { key: "AZURE-SQL-CONNECTION-STRING", source: "Key Vault secret", at: "infra/main.bicep:26" }
+  - {
+      key: "VITE_API_BASE_URL",
+      value: "http://localhost:3100",
+      at: "src/web/src/config/index.ts:18",
+    }
+  - {
+      key: "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING",
+      source: "azd environment",
+      at: "src/web/src/config/index.ts:21",
+    }
+ignore:
+  fields:
+    - "* | response list"
+    - "call *"
+  config:
+    - "logging.*"
+    - "allowedhosts"
+    - "enable_oryx_build"
+    - "scm_do_build_during_deployment"
+    - "applicationinsightsagent_extension_version"
+    - "applicationinsights_connection_string"
+    - "api_base_url"
+    - "react_app_*"
+    - "azure_*_name"
+    - "azure_location"
+    - "azure_env_name"

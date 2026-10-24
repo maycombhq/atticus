@@ -1,7 +1,7 @@
 # Written by reading the code at the pinned commit, not from an Atticus scan.
 repo: podinfo
 commit: 3e0ff8ae123b710bc91de1315cba0f996a8896c2
-covers: [serves, calls, stores, deploys]
+covers: [serves, calls, stores, deploys, fields, config]
 notes: >-
   podinfo is a small Go demo microservice with an HTTP API (gorilla/mux) and a gRPC API. The
   --prefix flag defaults to "/" (cmd/podinfo/main.go:33), so routes are listed without a prefix,
@@ -21,6 +21,15 @@ notes: >-
   are not counted. The Helm chart, the Kustomize bases and overlays, the plain manifests under
   deploy/ and the Timoni module all target Kubernetes; otel/docker-compose.yaml is a local
   tracing stack, not a deployment.
+  Fields and config (ADR 0124 section 6, added 2026-10-24): HTTP fields are the named keys of each
+  JSON success body (structs and map literals in pkg/api/http); bodies of dynamic shape (env,
+  headers, configs, echo, store and cache contents) have no named fields, and /ws/echo messages are
+  ignored. gRPC fields are the request and response message fields of each RPC's proto. There are
+  no tables. Config is the flags in cmd/podinfo/main.go (also read as PODINFO_ environment
+  variables, ignored as aliases) that name another system (backend-url, cache-server,
+  otel-service-name), a timeout (the three timeouts) or a behaviour flag (h2c, random-delay,
+  random-error, unhealthy, unready); ports, paths, UI, logging, stress and random-delay tuning
+  flags and the JWT secret are ignored, as are the manifests' container image and env entries.
 serves:
   - { type: rest, method: GET, path: "/", at: "pkg/api/http/server.go:140" }
   - { type: rest, path: "/metrics", at: "pkg/api/http/server.go:138" }
@@ -73,3 +82,528 @@ calls:
 stores: []
 deploys:
   - { platform: kubernetes, at: "charts/podinfo/templates/deployment.yaml:2" }
+fields:
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "hostname",
+      type: "string",
+      at: "pkg/api/http/info.go:42",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "version",
+      type: "string",
+      at: "pkg/api/http/info.go:43",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "revision",
+      type: "string",
+      at: "pkg/api/http/info.go:44",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "color",
+      type: "string",
+      at: "pkg/api/http/info.go:45",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "logo",
+      type: "string",
+      at: "pkg/api/http/info.go:46",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "message",
+      type: "string",
+      at: "pkg/api/http/info.go:47",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "goos",
+      type: "string",
+      at: "pkg/api/http/info.go:48",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "goarch",
+      type: "string",
+      at: "pkg/api/http/info.go:49",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "runtime",
+      type: "string",
+      at: "pkg/api/http/info.go:50",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "num_goroutine",
+      type: "string",
+      at: "pkg/api/http/info.go:51",
+    }
+  - {
+      entry: "GET /",
+      side: "response",
+      name: "num_cpu",
+      type: "string",
+      at: "pkg/api/http/info.go:52",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "hostname",
+      type: "string",
+      at: "pkg/api/http/info.go:42",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "version",
+      type: "string",
+      at: "pkg/api/http/info.go:43",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "revision",
+      type: "string",
+      at: "pkg/api/http/info.go:44",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "color",
+      type: "string",
+      at: "pkg/api/http/info.go:45",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "logo",
+      type: "string",
+      at: "pkg/api/http/info.go:46",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "message",
+      type: "string",
+      at: "pkg/api/http/info.go:47",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "goos",
+      type: "string",
+      at: "pkg/api/http/info.go:48",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "goarch",
+      type: "string",
+      at: "pkg/api/http/info.go:49",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "runtime",
+      type: "string",
+      at: "pkg/api/http/info.go:50",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "num_goroutine",
+      type: "string",
+      at: "pkg/api/http/info.go:51",
+    }
+  - {
+      entry: "GET /api/info",
+      side: "response",
+      name: "num_cpu",
+      type: "string",
+      at: "pkg/api/http/info.go:52",
+    }
+  - {
+      entry: "GET /version",
+      side: "response",
+      name: "version",
+      type: "string",
+      at: "pkg/api/http/version.go:18",
+    }
+  - {
+      entry: "GET /version",
+      side: "response",
+      name: "commit",
+      type: "string",
+      at: "pkg/api/http/version.go:19",
+    }
+  - {
+      entry: "GET /delay/{wait}",
+      side: "response",
+      name: "delay",
+      type: "int",
+      at: "pkg/api/http/delay.go:69",
+    }
+  - {
+      entry: "GET /healthz",
+      side: "response",
+      name: "status",
+      type: "string",
+      at: "pkg/api/http/health.go:18",
+    }
+  - {
+      entry: "GET /readyz",
+      side: "response",
+      name: "status",
+      type: "string",
+      at: "pkg/api/http/health.go:34",
+    }
+  - {
+      entry: "POST /fault_injection/enable",
+      side: "response",
+      name: "fault_injection",
+      type: "string",
+      at: "pkg/api/http/fault_injection.go:75",
+    }
+  - {
+      entry: "POST /fault_injection/disable",
+      side: "response",
+      name: "fault_injection",
+      type: "string",
+      at: "pkg/api/http/fault_injection.go:88",
+    }
+  - {
+      entry: "GET /fault_injection/status",
+      side: "response",
+      name: "fault_injection",
+      type: "string",
+      at: "pkg/api/http/fault_injection.go:103",
+    }
+  - {
+      entry: "GET /status/{code}",
+      side: "response",
+      name: "status",
+      type: "int",
+      at: "pkg/api/http/status.go:32",
+    }
+  - {
+      entry: "POST /status/{code}",
+      side: "response",
+      name: "status",
+      type: "int",
+      at: "pkg/api/http/status.go:32",
+    }
+  - {
+      entry: "PUT /status/{code}",
+      side: "response",
+      name: "status",
+      type: "int",
+      at: "pkg/api/http/status.go:32",
+    }
+  - {
+      entry: "POST /store",
+      side: "response",
+      name: "hash",
+      type: "string",
+      at: "pkg/api/http/store.go:41",
+    }
+  - {
+      entry: "PUT /store",
+      side: "response",
+      name: "hash",
+      type: "string",
+      at: "pkg/api/http/store.go:41",
+    }
+  - {
+      entry: "POST /token",
+      side: "response",
+      name: "token",
+      type: "string",
+      at: "pkg/api/http/token.go:118",
+    }
+  - {
+      entry: "POST /token",
+      side: "response",
+      name: "expires_at",
+      type: "time",
+      at: "pkg/api/http/token.go:119",
+    }
+  - {
+      entry: "GET /token/validate",
+      side: "response",
+      name: "token_name",
+      type: "string",
+      at: "pkg/api/http/token.go:123",
+    }
+  - {
+      entry: "GET /token/validate",
+      side: "response",
+      name: "expires_at",
+      type: "time",
+      at: "pkg/api/http/token.go:124",
+    }
+  - {
+      entry: "/chunked",
+      side: "response",
+      name: "delay",
+      type: "int",
+      at: "pkg/api/http/chunked.go:45",
+    }
+  - {
+      entry: "/chunked/{wait}",
+      side: "response",
+      name: "delay",
+      type: "int",
+      at: "pkg/api/http/chunked.go:45",
+    }
+  - {
+      entry: "grpc delay.DelayService/Delay",
+      side: "request",
+      name: "seconds",
+      type: "int64",
+      at: "pkg/api/grpc/delay/delay.proto:8",
+    }
+  - {
+      entry: "grpc delay.DelayService/Delay",
+      side: "response",
+      name: "message",
+      type: "int64",
+      at: "pkg/api/grpc/delay/delay.proto:12",
+    }
+  - {
+      entry: "grpc echo.EchoService/Echo",
+      side: "request",
+      name: "body",
+      type: "string",
+      at: "pkg/api/grpc/echo/echo.proto:8",
+    }
+  - {
+      entry: "grpc echo.EchoService/Echo",
+      side: "response",
+      name: "body",
+      type: "string",
+      at: "pkg/api/grpc/echo/echo.proto:8",
+    }
+  - {
+      entry: "grpc env.EnvService/Env",
+      side: "response",
+      name: "envVars",
+      type: "repeated string",
+      at: "pkg/api/grpc/env/env.proto:10",
+    }
+  - {
+      entry: "grpc header.HeaderService/Header",
+      side: "response",
+      name: "headers",
+      type: "repeated string",
+      at: "pkg/api/grpc/headers/headers.proto:10",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "hostname",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:10",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "version",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:11",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "revision",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:12",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "color",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:13",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "logo",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:14",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "message",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:15",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "goos",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:16",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "goarch",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:17",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "runtime",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:18",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "numgoroutine",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:19",
+    }
+  - {
+      entry: "grpc info.InfoService/Info",
+      side: "response",
+      name: "numcpu",
+      type: "string",
+      at: "pkg/api/grpc/info/info.proto:20",
+    }
+  - {
+      entry: "grpc status.StatusService/Status",
+      side: "request",
+      name: "code",
+      type: "string",
+      at: "pkg/api/grpc/status/status.proto:13",
+    }
+  - {
+      entry: "grpc status.StatusService/Status",
+      side: "response",
+      name: "status",
+      type: "string",
+      at: "pkg/api/grpc/status/status.proto:17",
+    }
+  - {
+      entry: "grpc token.TokenService/TokenGenerate",
+      side: "response",
+      name: "token",
+      type: "string",
+      at: "pkg/api/grpc/token/token.proto:17",
+    }
+  - {
+      entry: "grpc token.TokenService/TokenGenerate",
+      side: "response",
+      name: "expiresAt",
+      type: "string",
+      at: "pkg/api/grpc/token/token.proto:18",
+    }
+  - {
+      entry: "grpc token.TokenService/TokenGenerate",
+      side: "response",
+      name: "message",
+      type: "string",
+      at: "pkg/api/grpc/token/token.proto:19",
+    }
+  - {
+      entry: "grpc token.TokenService/TokenValidate",
+      side: "response",
+      name: "token",
+      type: "string",
+      at: "pkg/api/grpc/token/token.proto:17",
+    }
+  - {
+      entry: "grpc token.TokenService/TokenValidate",
+      side: "response",
+      name: "expiresAt",
+      type: "string",
+      at: "pkg/api/grpc/token/token.proto:18",
+    }
+  - {
+      entry: "grpc token.TokenService/TokenValidate",
+      side: "response",
+      name: "message",
+      type: "string",
+      at: "pkg/api/grpc/token/token.proto:19",
+    }
+  - {
+      entry: "grpc version.VersionService/Version",
+      side: "response",
+      name: "version",
+      type: "string",
+      at: "pkg/api/grpc/version/version.proto:16",
+    }
+  - {
+      entry: "grpc version.VersionService/Version",
+      side: "response",
+      name: "commit",
+      type: "string",
+      at: "pkg/api/grpc/version/version.proto:17",
+    }
+config:
+  - {
+      key: "backend-url",
+      source: "flag or PODINFO_BACKEND_URL; http://backend:9898/echo in the Kustomize frontend",
+      at: "cmd/podinfo/main.go:40",
+    }
+  - { key: "http-client-timeout", value: "2m", at: "cmd/podinfo/main.go:41" }
+  - { key: "http-server-timeout", value: "30s", at: "cmd/podinfo/main.go:42" }
+  - { key: "server-shutdown-timeout", value: "5s", at: "cmd/podinfo/main.go:43" }
+  - { key: "h2c", value: "false", at: "cmd/podinfo/main.go:52" }
+  - { key: "random-delay", value: "false", at: "cmd/podinfo/main.go:53" }
+  - { key: "random-error", value: "false", at: "cmd/podinfo/main.go:57" }
+  - { key: "unhealthy", value: "false", at: "cmd/podinfo/main.go:58" }
+  - { key: "unready", value: "false", at: "cmd/podinfo/main.go:59" }
+  - { key: "cache-server", source: "flag, tcp://<host>:<port>", at: "cmd/podinfo/main.go:62" }
+  - {
+      key: "otel-service-name",
+      source: "flag; tracing and log export are off when empty",
+      at: "cmd/podinfo/main.go:63",
+    }
+ignore:
+  fields:
+    - "entry rest /ws/echo | *"
+    - "call *"
+  config:
+    - "host"
+    - "prefix"
+    - "port"
+    - "secure-port"
+    - "port-metrics"
+    - "grpc-port"
+    - "grpc-service-name"
+    - "level"
+    - "data-path"
+    - "config-path"
+    - "cert-path"
+    - "config"
+    - "ui-*"
+    - "random-delay-*"
+    - "stress-*"
+    - "jwt-secret"
+    - "version"
+    - "hostname"
+    - "revision"
+    - "podinfo_*"
+    - "env.podinfo_*"
+    - "backendurl"
+    - "image"

@@ -9,7 +9,9 @@ import type { AiRuntime } from "@maycombhq/ai";
 import {
   parseReference,
   parseReferenceFlows,
+  scoreFacts,
   scoreRepo,
+  type FactsScore,
   scoreSpecs,
   scoreVerifier,
   type EstatePassInput,
@@ -18,6 +20,7 @@ import {
   type VerifierScore,
 } from "@maycombhq/evals";
 import {
+  parseFacts,
   readEstateJoins,
   readRepoSpec,
   ScanVerifyProposal,
@@ -290,6 +293,21 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
     io.out(
       `${"all".padEnd(26)} ${String(total.found).padStart(5)}  ${String(total.missed).padStart(6)}  ${String(total.wrong).padStart(5)}  ${pct(p).padStart(9)}  ${pct(rc).padStart(6)}`,
     );
+    // Fields and config (ADR 0124 §6) are scored where a reference covers them; the baseline in
+    // bench/README.md is the four kinds before them.
+    if (scores.some((s) => s.kinds.fields || s.kinds.config)) {
+      const b = scores.reduce(
+        (t, s) => ({
+          found: t.found + s.base.found,
+          missed: t.missed + s.base.missed,
+          wrong: t.wrong + s.base.wrong,
+        }),
+        { found: 0, missed: 0, wrong: 0 },
+      );
+      io.out(
+        `${"all: serves to deploys".padEnd(26)} ${String(b.found).padStart(5)}  ${String(b.missed).padStart(6)}  ${String(b.wrong).padStart(5)}  ${pct(b.found / Math.max(1, b.found + b.wrong)).padStart(9)}  ${pct(b.found / Math.max(1, b.found + b.missed)).padStart(6)}`,
+      );
+    }
     if (scores.some((s) => s.settings))
       io.out("* scanned with the scan settings atticus bench survey drafted");
     const judged = scores.filter((s) => s.verifier);
@@ -312,6 +330,121 @@ export async function benchRun(o: BenchOptions, io: Output): Promise<number> {
     for (const s of skipped) io.out(`Skipped ${s}`);
     if (o.specs) printSpecScores(specScores, noSpecs, passes, cache, io);
     io.out(`Details (what was missed and wrong, per kind): ${file}`);
+    return 0;
+  } catch (e) {
+    return fail(io, e);
+  }
+}
+
+/**
+ * atticus bench facts [<repo>] [--facts file] [--batch n] [--json] (ADR 0124 §6): score the
+ * facts an assistant wrote for each bench repo against its reference, with the same matcher and
+ * found, missed and wrong as bench run, so the numbers compare with the readers' baseline. A
+ * repo's facts are read from --facts (one repo only), else from the clone's own
+ * .atticus/facts/<repo>.jsonl (the assistant ran /atticus map in the clone), else from
+ * <cache>/facts/<repo>.jsonl. No clone is needed. Writes the scores to <cache>/results/.
+ */
+export async function benchFactsCommand(
+  o: BenchOptions & { facts?: string },
+  io: Output,
+): Promise<number> {
+  try {
+    const { dir, cache, repos } = await load(o);
+    if (o.facts && repos.length !== 1)
+      throw new BenchError(
+        "--facts names one repo's file: give the repo too (atticus bench facts <repo> --facts <file>).",
+      );
+    const scores: FactsScore[] = [];
+    const skipped: string[] = [];
+    for (const r of repos) {
+      const refText = await readFile(join(dir, "references", `${r.id}.yaml`), "utf8").catch(
+        () => undefined,
+      );
+      if (refText === undefined) {
+        skipped.push(`${r.id}: no reference yet`);
+        continue;
+      }
+      const ref = parseReference(refText);
+      const candidates = o.facts
+        ? [resolve(o.facts)]
+        : [
+            join(cache, r.id, ".atticus", "facts", `${r.id}.jsonl`),
+            join(cache, "facts", `${r.id}.jsonl`),
+          ];
+      const file = candidates.find((f) => existsSync(f));
+      if (!file) {
+        if (o.facts) throw new BenchError(`There is no facts file at ${candidates[0]}.`);
+        skipped.push(`${r.id}: no facts at ${candidates.join(" or ")}`);
+        continue;
+      }
+      const parsed = parseFacts(await readFile(file, "utf8"));
+      if (!parsed.ok)
+        throw new BenchError(
+          `${file} does not read as facts: ${parsed.issues
+            .slice(0, 5)
+            .map((i) => `${i.line !== undefined ? `line ${i.line}: ` : ""}${i.message}`)
+            .join(
+              "; ",
+            )}${parsed.issues.length > 5 ? ` (and ${parsed.issues.length - 5} more)` : ""}`,
+        );
+      try {
+        scores.push(scoreFacts(ref, parsed.facts));
+      } catch (e) {
+        throw new BenchError(`${r.id}: ${(e as Error).message}`);
+      }
+    }
+    const sum = (pick: (s: FactsScore) => { found: number; missed: number; wrong: number }) => {
+      const t = scores.reduce(
+        (a, s) => ({
+          found: a.found + pick(s).found,
+          missed: a.missed + pick(s).missed,
+          wrong: a.wrong + pick(s).wrong,
+        }),
+        { found: 0, missed: 0, wrong: 0 },
+      );
+      return {
+        ...t,
+        precision: t.found / Math.max(1, t.found + t.wrong),
+        recall: t.found / Math.max(1, t.found + t.missed),
+      };
+    };
+    const result = {
+      at: new Date().toISOString(),
+      repos: scores,
+      total: sum((s) => s.total),
+      base: sum((s) => s.base),
+      skipped,
+    };
+    const out = join(cache, "results");
+    await mkdir(out, { recursive: true });
+    const saved = join(out, `${result.at.replace(/[:.]/g, "-")}.facts.json`);
+    await writeFile(saved, JSON.stringify(result, null, 2) + "\n", "utf8");
+    if (o.json) {
+      io.out(JSON.stringify(result, null, 2));
+      return 0;
+    }
+    const row = (
+      name: string,
+      t: { found: number; missed: number; wrong: number },
+      facts?: number,
+    ) => {
+      const p = t.found / Math.max(1, t.found + t.wrong);
+      const rc = t.found / Math.max(1, t.found + t.missed);
+      return `${name.padEnd(26)} ${(facts === undefined ? "" : String(facts)).padStart(5)}  ${String(t.found).padStart(5)}  ${String(t.missed).padStart(6)}  ${String(t.wrong).padStart(5)}  ${pct(t.wrong + t.found === 0 ? 1 : p).padStart(9)}  ${pct(t.found + t.missed === 0 ? 1 : rc).padStart(6)}`;
+    };
+    io.out("REPO                       FACTS  FOUND  MISSED  WRONG  PRECISION  RECALL");
+    for (const s of scores) {
+      io.out(row(s.repo, s.total, s.facts.total));
+      for (const [k, v] of Object.entries(s.kinds))
+        io.out(row(`  ${k}`, { found: v.found, missed: v.missed.length, wrong: v.wrong.length }));
+    }
+    io.out(row("all", result.total));
+    io.out(row("all: serves to deploys", result.base));
+    io.out(
+      "The last line counts only serves, calls, stores and deploys, the kinds the readers' baseline in bench/README.md is measured on.",
+    );
+    for (const s of skipped) io.out(`Skipped ${s}`);
+    io.out(`Details (what was missed and wrong, per kind): ${saved}`);
     return 0;
   } catch (e) {
     return fail(io, e);

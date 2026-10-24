@@ -1,0 +1,210 @@
+{
+  "repo": "todo-csharp-sql",
+  "commit": "e75277cfae02bcae40b6d92d7c3e409163aeef4e",
+  "kinds": {
+    "serves": {
+      "found": 3,
+      "missed": [
+        "rest DELETE /lists/{}",
+        "rest DELETE /lists/{}/items/{}",
+        "rest GET /lists/{}/items",
+        "rest GET /lists/{}/items/{}",
+        "rest GET /lists/{}/state/{}",
+        "rest POST /lists/{}/items",
+        "rest PUT /lists/{}",
+        "rest PUT /lists/{}/items/{}"
+      ],
+      "wrong": [
+        "rest POST /{}/items"
+      ],
+      "precision": 0.75,
+      "recall": 0.2727272727272727
+    },
+    "calls": {
+      "found": 2,
+      "missed": [
+        "DELETE /lists/{}",
+        "DELETE /lists/{}/items/{}",
+        "GET /lists/{}",
+        "GET /lists/{}/items",
+        "GET /lists/{}/items/{}",
+        "POST /lists",
+        "PUT /lists/{}",
+        "PUT /lists/{}/items/{}"
+      ],
+      "wrong": [],
+      "precision": 1,
+      "recall": 0.2
+    },
+    "stores": {
+      "found": 1,
+      "missed": [
+        "lists"
+      ],
+      "wrong": [
+        "todolists"
+      ],
+      "precision": 0.5,
+      "recall": 0.5
+    },
+    "deploys": {
+      "found": 1,
+      "missed": [],
+      "wrong": [],
+      "precision": 1,
+      "recall": 1
+    },
+    "fields": {
+      "found": 5,
+      "missed": [
+        "column items | completeddate",
+        "column items | createddate",
+        "column items | description",
+        "column items | id",
+        "column items | listid",
+        "column items | name",
+        "column items | state",
+        "column items | updateddate",
+        "column lists | createddate",
+        "column lists | description",
+        "column lists | id",
+        "column lists | name",
+        "column lists | updateddate",
+        "entry rest GET /lists | request batchsize",
+        "entry rest GET /lists | request skip",
+        "entry rest GET /lists | response createddate",
+        "entry rest GET /lists | response description",
+        "entry rest GET /lists | response id",
+        "entry rest GET /lists | response name",
+        "entry rest GET /lists | response updateddate",
+        "entry rest GET /lists/{} | response createddate",
+        "entry rest GET /lists/{} | response description",
+        "entry rest GET /lists/{} | response updateddate",
+        "entry rest GET /lists/{}/items | request batchsize",
+        "entry rest GET /lists/{}/items | request skip",
+        "entry rest GET /lists/{}/items | response completeddate",
+        "entry rest GET /lists/{}/items | response createddate",
+        "entry rest GET /lists/{}/items | response description",
+        "entry rest GET /lists/{}/items | response duedate",
+        "entry rest GET /lists/{}/items | response id",
+        "entry rest GET /lists/{}/items | response listid",
+        "entry rest GET /lists/{}/items | response name",
+        "entry rest GET /lists/{}/items | response state",
+        "entry rest GET /lists/{}/items | response updateddate",
+        "entry rest GET /lists/{}/items/{} | response completeddate",
+        "entry rest GET /lists/{}/items/{} | response createddate",
+        "entry rest GET /lists/{}/items/{} | response description",
+        "entry rest GET /lists/{}/items/{} | response duedate",
+        "entry rest GET /lists/{}/items/{} | response id",
+        "entry rest GET /lists/{}/items/{} | response listid",
+        "entry rest GET /lists/{}/items/{} | response name",
+        "entry rest GET /lists/{}/items/{} | response state",
+        "entry rest GET /lists/{}/items/{} | response updateddate",
+        "entry rest GET /lists/{}/state/{} | request batchsize",
+        "entry rest GET /lists/{}/state/{} | request skip",
+        "entry rest GET /lists/{}/state/{} | response completeddate",
+        "entry rest GET /lists/{}/state/{} | response createddate",
+        "entry rest GET /lists/{}/state/{} | response description",
+        "entry rest GET /lists/{}/state/{} | response duedate",
+        "entry rest GET /lists/{}/state/{} | response id",
+        "entry rest GET /lists/{}/state/{} | response listid",
+        "entry rest GET /lists/{}/state/{} | response name",
+        "entry rest GET /lists/{}/state/{} | response state",
+        "entry rest GET /lists/{}/state/{} | response updateddate",
+        "entry rest POST /lists | response createddate",
+        "entry rest POST /lists | response description",
+        "entry rest POST /lists | response id",
+        "entry rest POST /lists | response name",
+        "entry rest POST /lists | response updateddate",
+        "entry rest POST /lists/{}/items | request completeddate",
+        "entry rest POST /lists/{}/items | request description",
+        "entry rest POST /lists/{}/items | request duedate",
+        "entry rest POST /lists/{}/items | request name",
+        "entry rest POST /lists/{}/items | request state",
+        "entry rest POST /lists/{}/items | response completeddate",
+        "entry rest POST /lists/{}/items | response createddate",
+        "entry rest POST /lists/{}/items | response description",
+        "entry rest POST /lists/{}/items | response duedate",
+        "entry rest POST /lists/{}/items | response id",
+        "entry rest POST /lists/{}/items | response listid",
+        "entry rest POST /lists/{}/items | response name",
+        "entry rest POST /lists/{}/items | response state",
+        "entry rest POST /lists/{}/items | response updateddate",
+        "entry rest PUT /lists/{} | request description",
+        "entry rest PUT /lists/{} | request name",
+        "entry rest PUT /lists/{} | response createddate",
+        "entry rest PUT /lists/{} | response description",
+        "entry rest PUT /lists/{} | response id",
+        "entry rest PUT /lists/{} | response name",
+        "entry rest PUT /lists/{} | response updateddate",
+        "entry rest PUT /lists/{}/items/{} | request completeddate",
+        "entry rest PUT /lists/{}/items/{} | request description",
+        "entry rest PUT /lists/{}/items/{} | request duedate",
+        "entry rest PUT /lists/{}/items/{} | request name",
+        "entry rest PUT /lists/{}/items/{} | request state",
+        "entry rest PUT /lists/{}/items/{} | response completeddate",
+        "entry rest PUT /lists/{}/items/{} | response createddate",
+        "entry rest PUT /lists/{}/items/{} | response description",
+        "entry rest PUT /lists/{}/items/{} | response duedate",
+        "entry rest PUT /lists/{}/items/{} | response id",
+        "entry rest PUT /lists/{}/items/{} | response listid",
+        "entry rest PUT /lists/{}/items/{} | response name",
+        "entry rest PUT /lists/{}/items/{} | response state",
+        "entry rest PUT /lists/{}/items/{} | response updateddate"
+      ],
+      "wrong": [
+        "column items | priority",
+        "entry rest POST /lists | request owner",
+        "entry rest POST /{}/items | request state"
+      ],
+      "precision": 0.625,
+      "recall": 0.050505050505050504
+    },
+    "config": {
+      "found": 2,
+      "missed": [
+        "azure-sql-connection-string",
+        "azure_sql_connection_string_key",
+        "vite_applicationinsights_connection_string"
+      ],
+      "wrong": [
+        "sqlretrycount"
+      ],
+      "precision": 0.6666666666666666,
+      "recall": 0.4
+    }
+  },
+  "total": {
+    "found": 14,
+    "missed": 114,
+    "wrong": 6,
+    "precision": 0.7,
+    "recall": 0.109375
+  },
+  "base": {
+    "found": 7,
+    "missed": 17,
+    "wrong": 2,
+    "precision": 0.7777777777777778,
+    "recall": 0.2916666666666667
+  },
+  "facts": {
+    "total": 25,
+    "verified": 21,
+    "byKind": {
+      "entry": 5,
+      "call": 2,
+      "store": 2,
+      "field": 10,
+      "deploy": 1,
+      "config": 4,
+      "flow": 1
+    },
+    "left": {
+      "screens": 1,
+      "screenFields": 1,
+      "flows": 1
+    }
+  },
+  "issues": []
+}

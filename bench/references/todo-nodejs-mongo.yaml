@@ -1,7 +1,7 @@
 # Written by reading the code at the pinned commit, not from an Atticus scan.
 repo: todo-nodejs-mongo
 commit: 16695b06631a166eb5dc90ea2f0d52b917578013
-covers: [serves, calls, stores, deploys]
+covers: [serves, calls, stores, deploys, fields, config]
 notes: >-
   An Azure Developer CLI template: an Express API (src/api) and a React/Vite UI (src/web) for todo
   lists, with Bicep in infra/. Serves: routers are mounted in src/api/src/app.ts at /lists (line 59)
@@ -22,6 +22,16 @@ notes: >-
   (one shared Linux plan), so there is one azure-app-service entry cited at the API site module;
   the web site module is infra/app/web-appservice-avm.bicep:11. The Dockerfiles are not used by
   azure.yaml (host: appservice) and are not a deployment. Pipelines only run azd. Tests ignored.
+  Fields and config (ADR 0124 section 6, added 2026-10-24): request fields are the declared body
+  type of each route (TodoList or TodoItem; the repositories set id and the dates themselves) and
+  the top and skip query parameters (routes/common.ts); response fields are the same types as
+  returned; columns are the fields of the TodoList and TodoItem documents the repositories write.
+  Cosmos system properties (_rid, _ts, _etag) the SDK adds to documents it reads are ignored. PUT
+  .../items/state/{state} takes a bare array of ids, so it has no named field. Fields of calls are
+  not judged. Config is the node-config keys and the environment variables they map to
+  (custom-environment-variables.json; both are names a reader can give), the Key Vault endpoint,
+  the CORS origin of the web UI and the UI's VITE_ keys. The role name, NODE_ENV, the port and App
+  Service build settings are ignored.
 serves:
   - { type: rest, method: GET, path: "/", at: "src/api/src/app.ts:63" }
   - { type: rest, method: GET, path: "/lists", at: "src/api/src/routes/lists.ts:16" }
@@ -142,3 +152,806 @@ stores:
   - { table: TodoItem, at: "src/api/src/models/cosmosClient.ts:31" }
 deploys:
   - { platform: azure-app-service, at: "infra/app/api-appservice-avm.bicep:23" }
+fields:
+  - {
+      entry: "GET /lists",
+      side: "request",
+      name: "top",
+      type: "string",
+      at: "src/api/src/routes/common.ts:2",
+    }
+  - {
+      entry: "GET /lists",
+      side: "request",
+      name: "skip",
+      type: "string",
+      at: "src/api/src/routes/common.ts:3",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:2",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:3",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:4",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:5",
+    }
+  - {
+      entry: "GET /lists",
+      side: "response",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:6",
+    }
+  - {
+      entry: "POST /lists",
+      side: "request",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:2",
+    }
+  - {
+      entry: "POST /lists",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:3",
+    }
+  - {
+      entry: "POST /lists",
+      side: "request",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:4",
+    }
+  - {
+      entry: "POST /lists",
+      side: "request",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:5",
+    }
+  - {
+      entry: "POST /lists",
+      side: "request",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:6",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:2",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:3",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:4",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:5",
+    }
+  - {
+      entry: "POST /lists",
+      side: "response",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:6",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:2",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:3",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:4",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:5",
+    }
+  - {
+      entry: "GET /lists/{listId}",
+      side: "response",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:6",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "request",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:2",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:3",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "request",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:4",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "request",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:5",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "request",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:6",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:2",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:3",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:4",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:5",
+    }
+  - {
+      entry: "PUT /lists/{listId}",
+      side: "response",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoList.ts:6",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "request",
+      name: "top",
+      type: "string",
+      at: "src/api/src/routes/common.ts:2",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "request",
+      name: "skip",
+      type: "string",
+      at: "src/api/src/routes/common.ts:3",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:8",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "listId",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:9",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:10",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "state",
+      type: "TodoItemState",
+      at: "src/api/src/models/todoItem.ts:11",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:12",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "dueDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:13",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "completedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:14",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:15",
+    }
+  - {
+      entry: "GET /lists/{listId}/items",
+      side: "response",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:16",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:8",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "listId",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:9",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:10",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "state",
+      type: "TodoItemState",
+      at: "src/api/src/models/todoItem.ts:11",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:12",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "dueDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:13",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "completedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:14",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:15",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "request",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:16",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:8",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "listId",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:9",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:10",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "state",
+      type: "TodoItemState",
+      at: "src/api/src/models/todoItem.ts:11",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:12",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "dueDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:13",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "completedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:14",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:15",
+    }
+  - {
+      entry: "POST /lists/{listId}/items",
+      side: "response",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:16",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:8",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "listId",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:9",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:10",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "state",
+      type: "TodoItemState",
+      at: "src/api/src/models/todoItem.ts:11",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:12",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "dueDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:13",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "completedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:14",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:15",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:16",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:8",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "listId",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:9",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:10",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "state",
+      type: "TodoItemState",
+      at: "src/api/src/models/todoItem.ts:11",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:12",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "dueDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:13",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "completedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:14",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:15",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "request",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:16",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:8",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "listId",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:9",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:10",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "state",
+      type: "TodoItemState",
+      at: "src/api/src/models/todoItem.ts:11",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:12",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "dueDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:13",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "completedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:14",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:15",
+    }
+  - {
+      entry: "PUT /lists/{listId}/items/{itemId}",
+      side: "response",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:16",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "request",
+      name: "top",
+      type: "string",
+      at: "src/api/src/routes/common.ts:2",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "request",
+      name: "skip",
+      type: "string",
+      at: "src/api/src/routes/common.ts:3",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "response",
+      name: "id",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:8",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "response",
+      name: "listId",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:9",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "response",
+      name: "name",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:10",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "response",
+      name: "state",
+      type: "TodoItemState",
+      at: "src/api/src/models/todoItem.ts:11",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "response",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:12",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "response",
+      name: "dueDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:13",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "response",
+      name: "completedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:14",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "response",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:15",
+    }
+  - {
+      entry: "GET /lists/{listId}/items/state/{state}",
+      side: "response",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:16",
+    }
+  - { table: "TodoList", name: "id", type: "string", at: "src/api/src/models/todoList.ts:2" }
+  - { table: "TodoList", name: "name", type: "string", at: "src/api/src/models/todoList.ts:3" }
+  - {
+      table: "TodoList",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoList.ts:4",
+    }
+  - { table: "TodoList", name: "createdDate", type: "Date", at: "src/api/src/models/todoList.ts:5" }
+  - { table: "TodoList", name: "updatedDate", type: "Date", at: "src/api/src/models/todoList.ts:6" }
+  - { table: "TodoItem", name: "id", type: "string", at: "src/api/src/models/todoItem.ts:8" }
+  - { table: "TodoItem", name: "listId", type: "string", at: "src/api/src/models/todoItem.ts:9" }
+  - { table: "TodoItem", name: "name", type: "string", at: "src/api/src/models/todoItem.ts:10" }
+  - {
+      table: "TodoItem",
+      name: "state",
+      type: "TodoItemState",
+      at: "src/api/src/models/todoItem.ts:11",
+    }
+  - {
+      table: "TodoItem",
+      name: "description",
+      type: "string",
+      at: "src/api/src/models/todoItem.ts:12",
+    }
+  - { table: "TodoItem", name: "dueDate", type: "Date", at: "src/api/src/models/todoItem.ts:13" }
+  - {
+      table: "TodoItem",
+      name: "completedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:14",
+    }
+  - {
+      table: "TodoItem",
+      name: "createdDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:15",
+    }
+  - {
+      table: "TodoItem",
+      name: "updatedDate",
+      type: "Date",
+      at: "src/api/src/models/todoItem.ts:16",
+    }
+config:
+  - {
+      key: "database.endpoint",
+      source: "AZURE_COSMOS_ENDPOINT",
+      at: "src/api/config/default.json:3",
+    }
+  - { key: "database.databaseName", value: "Todo", at: "src/api/config/default.json:4" }
+  - {
+      key: "observability.connectionString",
+      source: "APPLICATIONINSIGHTS_CONNECTION_STRING",
+      at: "src/api/config/default.json:7",
+    }
+  - {
+      key: "AZURE_COSMOS_ENDPOINT",
+      source: "App Service setting (infra/main.bicep:78)",
+      at: "src/api/config/custom-environment-variables.json:3",
+    }
+  - {
+      key: "AZURE_COSMOS_DATABASE_NAME",
+      source: "App Service setting (infra/main.bicep:77)",
+      at: "src/api/config/custom-environment-variables.json:4",
+    }
+  - {
+      key: "APPLICATIONINSIGHTS_CONNECTION_STRING",
+      source: "environment",
+      at: "src/api/config/custom-environment-variables.json:7",
+    }
+  - {
+      key: "AZURE_KEY_VAULT_ENDPOINT",
+      source: "App Service setting (infra/main.bicep:76)",
+      at: "src/api/src/config/index.ts:46",
+    }
+  - {
+      key: "API_ALLOW_ORIGINS",
+      source: "App Service setting (infra/main.bicep:79)",
+      at: "src/api/src/app.ts:15",
+    }
+  - {
+      key: "VITE_API_BASE_URL",
+      value: "http://localhost:3100",
+      at: "src/web/src/config/index.ts:18",
+    }
+  - {
+      key: "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING",
+      source: "azd environment",
+      at: "src/web/src/config/index.ts:21",
+    }
+ignore:
+  fields:
+    - "* | response _*"
+    - "call *"
+  config:
+    - "observability.rolename"
+    - "applicationinsights_role_name"
+    - "node_env"
+    - "port"
+    - "functions_customhandler_port"
+    - "scm_do_build_during_deployment"
+    - "enable_oryx_build"
+    - "applicationinsightsagent_extension_version"
+    - "api_base_url"
+    - "react_app_*"
+    - "azure_*_name"
+    - "azure_location"
+    - "azure_env_name"
