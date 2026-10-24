@@ -4,6 +4,7 @@ import { parse } from "yaml";
 import { Finding, findingPath, toCanonicalYaml } from "@maycombhq/core";
 import { changeFolder, writeFileAtomic } from "@maycombhq/changes";
 import { changeAnswers } from "./answers.js";
+import { decidedAt, decidedReason } from "./recorded.js";
 import type { Hit } from "./hits.js";
 import { layerRank, severityRank, type EffectiveRule } from "./rules.js";
 
@@ -163,6 +164,10 @@ export function toFinding(
     h.rule.severity === "blocking" &&
     h.rule.waivable &&
     layer !== "constitution";
+  // A finding that says something is missing, when Atticus found it (W1): a note citing where,
+  // never dropped. A person reads the lens's point beside the place the code or catalog has it.
+  const found = h.hit.found?.length ? h.hit.found : undefined;
+  if (found) return foundNote(h, found, o, layer);
   const severity = gap ? "gap" : decided ? "risk" : h.rule.severity;
   const why = h.also.length ? `${h.hit.why} Also caught by ${h.also.join(", ")}.` : h.hit.why;
   return Finding.parse({
@@ -185,6 +190,51 @@ export function toFinding(
     ...(h.hit.question ? { question: h.hit.question } : {}),
     ...(!gap && h.hit.answered ? { answered: h.hit.answered } : {}),
     waivable: !gap && severity === "blocking" && h.rule.waivable && layer !== "constitution",
+    state: "open",
+    createdAt: o.now,
+  });
+}
+
+/** A finding whose missing names Atticus found: an idea (a note), citing each place found. */
+function foundNote(
+  h: RuledHit,
+  found: NonNullable<Hit["found"]>,
+  o: { id: string; change: string; gate: string; round: number; now: string },
+  layer: RuledHit["rule"]["effectiveLayer"],
+): Finding {
+  const where = found.map((f) => `${f.name} ${f.record ? `as ${f.at}` : `in the code (${f.at})`}`);
+  const evidence = [
+    ...h.hit.evidence,
+    ...found.map((f) =>
+      f.record
+        ? { source: "catalog" as const, record: f.record }
+        : {
+            source: "code" as const,
+            ...(f.repo ? { repo: f.repo } : {}),
+            ...(f.path ? { path: f.path } : {}),
+            ...(f.line ? { line: f.line } : {}),
+            quote: f.name.slice(0, 200),
+          },
+    ),
+  ].filter((e) => "record" in e || "path" in e);
+  return Finding.parse({
+    schemaVersion: 1,
+    id: o.id,
+    kind: "issue",
+    change: o.change,
+    gate: o.gate,
+    round: o.round,
+    rule: h.rule.id,
+    layer,
+    lens: h.rule.lens,
+    severity: "idea",
+    artifact: h.hit.artifact,
+    locator: h.hit.locator,
+    summary: h.hit.summary,
+    why: `${h.hit.why} The lens said ${found.length === 1 ? "this is" : "these are"} missing, but Atticus found ${where.join("; ")}, so this is a note, not a ${h.hit.kind === "knowledge-gap" ? "gap" : h.rule.severity} finding: check whether what is there does what the change needs.`,
+    fix: h.hit.fix,
+    evidence,
+    waivable: false,
     state: "open",
     createdAt: o.now,
   });
@@ -287,6 +337,48 @@ export async function checkRoundState(
     .filter((a) => a.at >= since)
     .map((a) => a.id);
   return { round: n, openBlocking: 0, actedOn: [...acted.sort(), ...answered.sort()] };
+}
+
+/**
+ * A knowledge gap a person answered by writing the fact in (edit-and-apply with a reason): their
+ * fact holds when the same gap comes back, in a later round or at a later gate (W2).
+ */
+export const wroteIn = (f: Finding) =>
+  f.kind === "knowledge-gap" &&
+  f.state === "applied" &&
+  f.resolution?.action === "edit-and-apply" &&
+  !!f.resolution.reason;
+
+/**
+ * Decisions people made at the other gates, by fingerprint (W2): the newest round of each other
+ * gate, a finding dismissed or waived with its reason, or a gap a person wrote the fact in for.
+ * Carried as C3 carries them within a gate; the reason says where it was decided (once, never
+ * stacked). The earliest decision wins.
+ */
+export async function decidedElsewhere(
+  root: string,
+  change: string,
+  gate: string,
+): Promise<Map<string, Finding>> {
+  const out = new Map<string, Finding>();
+  for (const g of await reviewedGates(root, change)) {
+    if (g === gate) continue;
+    const round = (await roundsOf(root, change, g)).at(-1);
+    if (round === undefined) continue;
+    for (const s of (await readRound(root, change, g, round)).findings) {
+      const f = s.finding;
+      if (!f.resolution || !(["dismissed", "waived"].includes(f.state) || wroteIn(f))) continue;
+      const reason = f.resolution.reason;
+      const linked = !reason || decidedReason(reason).gate !== undefined;
+      const resolution = linked
+        ? f.resolution
+        : { ...f.resolution, reason: `${reason}${decidedAt(g, s.path)}` };
+      const key = fingerprint(f);
+      const had = out.get(key);
+      if (!had || resolution.at < had.resolution!.at) out.set(key, { ...f, resolution });
+    }
+  }
+  return out;
 }
 
 /** Gates that have a review folder. */

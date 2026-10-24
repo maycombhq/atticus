@@ -57,14 +57,26 @@ const SOURCES = [
 
 export const componentExtractor = defineExtractor({
   id: "component",
-  version: "1.2.0",
-  claims: [...BUILD_FILES, ...SOURCES],
+  version: "1.3.0",
+  // A module's own build file counts too (W1): a repo whose parts are all in folders (api/,
+  // web/) has no build file at its root, and its modules' components were never written.
+  claims: [...BUILD_FILES, ...SOURCES, ...BUILD_FILES.map((b) => `**/${b}`)],
   async *scan(repo, ctx) {
     if (ctx.repoType && NOT_COMPONENTS.has(ctx.repoType)) return;
     let marker: string | undefined;
     for await (const p of repo.listFiles(BUILD_FILES)) {
       marker = p;
       break;
+    }
+    // No build file at the root: a module's shows the repo builds something.
+    if (!marker && ctx.modules?.length) {
+      const own = ctx.modules.flatMap((m) =>
+        BUILD_FILES.map((g) => `${m.path}/${g.replace(/^\*\*\//, "")}`),
+      );
+      for await (const p of repo.listFiles(own)) {
+        marker = p;
+        break;
+      }
     }
     // No build file: the first source file shows there's code here.
     if (!marker) {

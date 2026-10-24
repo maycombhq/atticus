@@ -1,5 +1,6 @@
 export * from "./schema.js";
 export * from "./estate.js";
+export * from "./brief-endpoints.js";
 export * from "./figma.js";
 export * from "./design-check.js";
 export * from "./loop.js";

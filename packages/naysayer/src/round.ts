@@ -17,11 +17,14 @@ import {
   type ChecklistPack,
 } from "@maycombhq/core";
 import { changeAnswers } from "./answers.js";
+import { recordedFacts } from "./recorded.js";
 import { readChangeFiles } from "./artifacts.js";
 import { buildContext, type CriticContext, type GateDef } from "./context.js";
 import { CriticError } from "./errors.js";
 import {
   askedElsewhere,
+  decidedElsewhere,
+  wroteIn,
   findingIdFor,
   fingerprint,
   readRound,
@@ -168,6 +171,8 @@ export async function prepareLayers(
   const ctx = buildContext({ root, change, type, lifecycle, footprint, files, gate, now });
   // What people answered for the change: part of the brief the lenses review against.
   ctx.answers = await changeAnswers(root, change.id);
+  // What people recorded on the change's findings, at any gate (W2): the lenses read it as data.
+  ctx.recorded = await recordedFacts(root, change.id);
 
   const { sources, problems } = await ruleSources(ctx, teamPacks);
   const layered = layerRules(sources);
@@ -214,16 +219,18 @@ export async function writeHits(
   if (o.priorRound !== undefined) {
     const last = await readRound(root, o.change, o.gate, o.priorRound);
     for (const s of last.findings)
-      if (["dismissed", "waived", "asked"].includes(s.finding.state))
+      if (["dismissed", "waived", "asked"].includes(s.finding.state) || wroteIn(s.finding))
         prior.set(fingerprint(s.finding), s.finding);
   }
   const elsewhere = await askedElsewhere(root, o.change, o.gate);
+  // A person's decision at another gate holds here too (W2), as it does within a gate.
+  const decided = await decidedElsewhere(root, o.change, o.gate);
   const taken = o.taken ?? new Set<string>();
   const findings: CriticFinding[] = [];
   for (const h of hits) {
     const id = findingIdFor(h, taken);
     let f = toFinding(h, { id, change: o.change, gate: o.gate, round: o.round, now: o.now });
-    const before = prior.get(fingerprint(f));
+    const before = prior.get(fingerprint(f)) ?? decided.get(fingerprint(f));
     let carried = false;
     if (before?.resolution) {
       const next = Finding.safeParse({ ...f, state: before.state, resolution: before.resolution });

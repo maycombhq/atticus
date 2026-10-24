@@ -1,4 +1,7 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { SourceInput } from "@maycombhq/ai";
+import { changeFolder } from "@maycombhq/changes";
 import type { RunRetrieval, RunSummary } from "@maycombhq/core";
 import type { ContextInput, GraphNodeRow, SelectOptions } from "@maycombhq/index";
 import {
@@ -15,7 +18,8 @@ import {
   type RetrievalAi,
 } from "../engine.js";
 import { gapContext } from "../gaps.js";
-import { ESTATE_HEADING, ESTATE_KINDS, estateLine, type Estate } from "./estate.js";
+import { briefEndpointsSource } from "./brief-endpoints.js";
+import { ESTATE_HEADING, ESTATE_KINDS, estateLine, flowSummary, type Estate } from "./estate.js";
 
 /**
  * The estate a stage sends, selected by the context engine (ADR 0107): the records and flows
@@ -78,10 +82,9 @@ export async function estateContext(
     if (o.knowledge?.kinds.includes(n.kind)) return o.knowledge.line(n.id);
     if (!e) return undefined;
     if (n.kind === "Flow" && level === "line") {
+      // A flow in one line still names its trigger entry (W5): the endpoint that starts it.
       const f = e.flowById.get(n.id);
-      return f
-        ? `flow ${f.flow.id} (repo ${f.repo}, component ${f.flow.component}) "${f.flow.name}"`
-        : undefined;
+      return f ? flowSummary(f, e) : undefined;
     }
     return estateLine(e, n.kind, n.id);
   };
@@ -153,6 +156,14 @@ export async function estateContext(
         ...(o.knowledge.empty ? { empty: o.knowledge.empty } : {}),
       }),
     );
+  // The endpoints the change's brief names, each with the flow it starts (W5): a fact the
+  // drafter maps the brief's endpoint to its flow by.
+  if (e && o.change) {
+    const brief = await readFile(join(changeFolder(root, o.change), "brief.md"), "utf8").catch(
+      () => "",
+    );
+    sources.push(...briefEndpointsSource(brief, e));
+  }
   const report = reportOf(s, room);
   if (g) {
     report.gaps = g.gaps;

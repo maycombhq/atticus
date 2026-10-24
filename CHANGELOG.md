@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The critic looks in the code, a person's fact holds at every gate, and each flow shows its trigger (ADR 0115, 0116 and 0118 addenda)
+
+- **A lens looks before it calls something missing.** When repos are cloned, every lens's prompt names them and says to search them before reporting that a check, class, screen, endpoint or flow doesn't exist. Headless Claude Code reviewers can now read the clones (added read-only; any edit there is refused). In model mode and in VS Code the lenses already had the code tools.
+- **A "missing" name is checked.** A lens lists the names its finding says are missing (`absent`). Atticus looks each one up in the catalog (an endpoint by method and path) and in the code (by declaration, or as a file). If it finds one, the finding becomes a note (`idea`) that cites where it was found. It is never dropped.
+- **What a person recorded reaches every later gate.** Facts and decisions people recorded with a reason (`edit-and-apply`, `waive`, `not-relevant`) go to every lens as data, with who and when. The lenses are told not to raise them again without new cited evidence. A dismissal, a waiver, or a gap whose fact a person wrote in now carries to later gates by fingerprint, with a link to where it was decided. An applied fix that comes back is still raised again.
+- **A web app in a folder is its own component.** A repo with a Spring API in `api/`, a React app in `web/` and an Android app in `android/app/` now has one component per part. Before, it was a single component typed as an Android app, and nothing recorded the web app. The component reader also runs when the repo's root has no build file (component 1.3.0), and the apps reader types only the module its marker is in (apps 0.2.0).
+- **Each flow shows its trigger entry.** In the estate the drafter and the lenses read, a flow's line now names its trigger as method and path. An endpoint's line names the flow it starts. The endpoints the brief names come with the flow each one starts (`brief-endpoints`). `briefEndpointNotes` gives a note when a design leaves that flow alone; the architecture stage doesn't call it yet.
+
 ### Known names and values aren't gaps (ADR 0116 and 0118 addenda)
 
 - **A name is in the code when a source file declares it.** The gap check used to match any word in any file, so it cited a markdown plan for a class and missed classes the code declares. It now reads only files a reader has a grammar for. It finds a class, interface, record, enum, function or type by its declaration, cited to that line. A comment, a use or a sentence in a repo's `docs/` doesn't count. A name only used and never declared, such as a parameter's type from a library, is a gap.

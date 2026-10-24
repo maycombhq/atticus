@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "agent": "architecture-critic",
+  "promptSha256": "ac22ecbb4736020e2bb10cdf6fd8f669ce4e32c9bc1ca3cb9c18c3f2980ca4e7",
+  "output": "findings:\n  - rule: design-concurrency-handled\n    kind: issue\n    artifact: design.md\n    locator: { line: 29, heading: Risks }\n    summary: Two concurrent transfers from the same account can both pass the daily limit check.\n    why: The design sums today's entries inside the transfer transaction but names no row lock, unique constraint or queue, so two transfers read the same total and both commit, going over the limit.\n    fix: Lock the account row (SELECT ... FOR UPDATE) in the transfer transaction before summing, and say so under Non-functional design.\n    evidence:\n      - { path: design.md, line: 29, quote: \"Concurrent transfers from the same account could both pass the check.\" }\n      - { path: design.md, line: 5, quote: \"ledger-api sums today's outgoing entries for the account inside the transfer transaction\" }\n",
+  "usage": {
+    "inputTokens": 2428,
+    "outputTokens": 208
+  },
+  "model": "hand-written",
+  "recordedAt": "2026-10-20T09:00:00Z"
+}

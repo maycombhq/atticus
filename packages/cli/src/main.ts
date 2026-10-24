@@ -2,7 +2,8 @@ import { parseArgs, type ParseArgsOptionsConfig } from "node:util";
 import { createLog, SCHEMA_VERSION, orgPackDirOf } from "@maycombhq/core";
 import { gitUser } from "@maycombhq/workspace";
 import { basename, join, resolve } from "node:path";
-import { metarepoToolBox } from "./code-tools.js";
+import { registerCodeSearch } from "@maycombhq/naysayer";
+import { criticCodeSearch, metarepoToolBox } from "./code-tools.js";
 import { type Output } from "./commands.js";
 import {
   AiOffError,
@@ -690,6 +691,8 @@ export async function main(
   registerModelProviderPlugins();
   // ADR 0107 addendum: the model runtime offers the context tools to a provider that calls tools.
   registerToolSource((at) => () => metarepoToolBox(at));
+  // W1: the critic checks a name a lens's finding says is missing against the repos' code.
+  registerCodeSearch(criticCodeSearch);
   const words = argv.filter((a) => !a.startsWith("-")).slice(0, 2);
   const flags = [
     ...new Set(argv.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")[0]!)),

@@ -371,6 +371,52 @@ describe("headless Claude Code", () => {
     expect(seen[0]!.prompt).not.toContain(".runs/add-transfer-limit");
   });
 
+  it("lets a reviewer read the repos' clones, never edit them, and says where the metarepo is (W1)", async () => {
+    const root = await tmp();
+    await mkdir(join(root, "workspace/forge-ledger/src"), { recursive: true });
+    const seen: HeadlessInvocation[] = [];
+    const lens = AgentDefinition.parse({
+      ...agent,
+      id: "business-critic",
+      outputArtifact: "findings",
+      checklist: "constitution",
+    });
+    const r = await createRuntime(cfg, {
+      root,
+      now,
+      headless: {
+        runner: async (i) => {
+          seen.push(i);
+          await writeFile(join(i.cwd, "findings.yaml"), "findings: []\n", "utf8");
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({ result: "Wrote findings.yaml", is_error: false }),
+            stderr: "",
+          };
+        },
+      },
+    });
+    const prepared = await r.prepare({
+      ...request(),
+      agent: lens,
+      outputPath: "findings.yaml",
+      outputIn: "run",
+    });
+    expect((await r.run(prepared.runId)).state).toBe("validated");
+    const { args, prompt } = seen[0]!;
+    const ws = join(root, "workspace");
+    expect(args[args.indexOf("--add-dir") + 1]).toBe(ws);
+    const posix = ws
+      .replace(/\\/g, "/")
+      .replace(/^([A-Za-z]):/, (_, d: string) => `/${d.toLowerCase()}`);
+    expect(args[args.indexOf("--disallowedTools") + 1]).toBe(`Edit(/${posix}/**)`);
+    expect(prompt).toContain(`The metarepo is at ${root}`);
+    // A step that isn't a reviewer is as it was.
+    expect(HeadlessClaudeCodeRuntime.args({ permissionMode: "acceptEdits" })).not.toContain(
+      "--add-dir",
+    );
+  });
+
   it("fails the run on a non-zero exit, an error result or output that isn't JSON", async () => {
     const root = await tmp();
     const answers = [

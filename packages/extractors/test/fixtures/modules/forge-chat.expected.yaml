@@ -1,0 +1,24 @@
+# Hand-written: what the scan must find in fixtures/modules/forge-chat, an invented Forge Chat
+# repo with a Spring API in api/, a React web app in web/ and an Android app in android/app/
+# (W1, a live run on a real metarepo recorded the whole repo as an Android app and never saw
+# its web app). Each deployable part is its own module and component: the Spring app by its
+# spring.application.name, the web app by its package.json name without the scope, the Android
+# app by its folder's path. The repo's own component keeps the repo's type, and each fact goes
+# to the module its file is in.
+modules:
+  - { path: android/app, component: android-app }
+  - { path: api, component: forge-chat-api }
+  - { path: web, component: chat-web }
+# The types each extractor gives a component, by id (the catalog merge keeps the documented one).
+components:
+  android-app: [java, mobile-app]
+  chat-web: [frontend]
+  forge-chat: [spring-boot]
+  forge-chat-api: [spring-boot]
+endpoints:
+  - forge-chat-api DELETE /api/chats/{id}/messages/{messageId}
+  - forge-chat-api GET /api/chats/{id}/messages
+# The fetch, and the click that calls the helper holding it (the repo's own helper, ADR 0069).
+calls:
+  - chat-web http-call DELETE /api/chats/{chatId}/messages/{id} at web/src/surfaces/chats/Thread.jsx:2
+  - chat-web http-call DELETE /api/chats/{chatId}/messages/{id} at web/src/surfaces/chats/Thread.jsx:8

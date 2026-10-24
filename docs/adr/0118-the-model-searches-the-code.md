@@ -59,3 +59,26 @@ A live run on a metarepo (a Java/Spring chat app with Flyway migrations) showed 
 - **The repo's own docs aren't code.** A repo's `docs/*.md` is never read as code. It is a document, and the metarepo's knowledge sources are `inputs/` (ADR 0122) and the wikis. A repo's docs should be offered as a knowledge source, read like a file in `inputs/`, cited to its line, and kept below what the code says (constitution: a document never overrides a fact verified from code). That isn't built: today a repo's docs reach the model only through `grep`.
 
 Tests: `packages/planner/test/known-names.test.ts` on the invented `forge-boards` repo (`packages/planner/test/fixtures/names-in-code/forge-boards`). It has classes, a record and an enum declared in source, the same names and others only in `docs/REVIEW-PLAN.md`, a name used but not declared, and a migration file. The A4 fixture's `NewOrder`, used only as a parameter's type, is now a gap (`fixtures/names-in-code/expected.yaml`).
+
+## Addendum (2026-10-24): the critic searches the code too, and a web app in a folder is its own component (W1)
+
+A live run on a chat app's metarepo (a Spring API in `api/`, a React web app in `web/`) found a lens saying "the estate has no web flow or component for chat messages", and the design lens saying "the estate only records it as an Android mobile app".
+
+**The critic's search.** The lenses get the tools as every step does (point 3), and ADR 0115's addendum tells them to look before they call something missing. When a lens lists the names it says are missing (`absent`), the critic checks them with the same search the gap check uses: `namesInCode` over the clones, a name found by its declaration in a source file or as a file of a repo's tree, cited `repo:path[:line]`. The CLI registers it for every command that runs the critic (`criticCodeSearch`, `registerCodeSearch` in `@maycombhq/naysayer`), so a stage's critic round gets it without the stage passing it. A headless reviewer reads the clones with Claude Code's own tools, the `workspace/` folders added read-only (ADR 0115 addendum).
+
+**Why the web app wasn't in the estate.** Three causes, each confirmed on an invented Forge Chat repo (`packages/extractors/test/fixtures/modules/forge-chat`: a Spring app in `api/`, a React app in `web/`, an Android app in `android/app/`):
+
+1. `detectModules` (ADR 0057) counted only Spring Boot apps. A repo with one Spring app and a web app was one component, so the web app's calls belonged to the repo and no component said it was a web app.
+2. The component reader looked for a build file at the repo's root only. A repo whose parts are all in folders has none, so the reader never ran and no Component record was written, not even the modules'.
+3. The apps reader found `AndroidManifest.xml` anywhere and typed the whole repo's component `mobile-app`. The catalog merge keeps a documented type over a repo type, so the repo's only component was an Android app.
+
+**Decision.**
+
+- A deployable part is a Spring Boot app (as before), a browser app (a folder whose `package.json` depends on a UI framework from the readers' list, and not on react-native or electron, which are the apps reader's), or an Android app (the folder of the build file nearest an `AndroidManifest.xml` with an `<application>`). With two or more parts, counting one at the repo's root, each part in a folder is its own module. A Spring app is named by its `spring.application.name`, a browser app by its package name without the scope (`@forge/chat-web` → `chat-web`), an Android app by its folder's path (`android-app`), else by its folder. A part at the root stays the repo's own component. A lone web app, or one Spring app beside a library, is still one component.
+- The component reader (1.3.0) also runs on a module's build file, and evidences the repo's component by a module's build file when the root has none.
+- The apps reader (0.2.0) gives the app and its calls to the module its marker and files are in (`componentOf`), so only the Android module is a `mobile-app`.
+- A team can still list `modules` in the manifest by hand; then nothing is detected.
+
+What a lens or the drafter knows of the web app is still its component, its calls and its files: no screen or UI flow is a catalog record. A screen is found by searching the code.
+
+Golden test: `packages/extractors/test/modules.test.ts` with `fixtures/modules/forge-chat.expected.yaml`.

@@ -2,7 +2,7 @@ import type { RepoHandle } from "@maycombhq/sdk";
 import { at } from "./lang/parsed.js";
 import { parseXml, select, selectText } from "./lang/xml.js";
 
-const UI_PACKAGES = [
+export const UI_PACKAGES = [
   "react",
   "react-dom",
   "vue",

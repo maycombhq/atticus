@@ -97,7 +97,7 @@ describe("vocabulary extractors (ADR 0040): identity", () => {
       "webhooks@0.1.0",
       "serverless@0.1.1",
       "mesh@0.1.1",
-      "apps@0.1.0",
+      "apps@0.2.0",
       "data-pipelines@0.1.3",
       "ml@0.1.1",
       "ingress@0.2.0",
