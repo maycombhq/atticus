@@ -9,6 +9,7 @@ import { openIndex } from "@maycombhq/index";
 import {
   engineSwitches,
   readRetrievalCases,
+  retrievalSwitches,
   renderContextEval,
   retrievalForgeRoot,
   retrievalShopRoot,
@@ -73,6 +74,20 @@ describe("the retrieval cases (ADR 0116)", () => {
     expect(renamed("lexical").rank).toBeGreaterThan(0);
     expect(renamed("lexical").rank).toBeLessThanOrEqual(3);
     expect(renamed("words").rank === 0 || renamed("words").rank > 3).toBe(true);
+    // ADR 0116 phase 2: the local model's recorded vectors. Recall holds on every case, and
+    // the paraphrases the words miss are found at the normal budget.
+    const sw = retrievalSwitches(e.retrieval);
+    expect(sw["+embeddings"]).toBe(true);
+    const para = (mode: string) =>
+      e.retrieval.filter(
+        (r) => r.group === "paraphrase" && r.mode === mode && r.budget === "normal",
+      );
+    const mean = (rs: { recall: number }[]) => rs.reduce((n, r) => n + r.recall, 0) / rs.length;
+    expect(mean(para("+embeddings"))).toBeGreaterThan(mean(para("lexical")) + 0.2);
+    // ADR 0116 phase 3: the expansion (stand-in answers, replayed through the real step) finds
+    // every paraphrase at the normal budget, and recall holds on every case.
+    expect(sw["+expansion"]).toBe(true);
+    expect(mean(para("+expansion"))).toBe(1);
   }, 300_000);
 });
 

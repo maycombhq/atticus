@@ -23,6 +23,9 @@ import {
   type StageOptions,
   type StageResult,
   type StageSpec,
+  retrievalWaiting,
+  stageRetrievalAi,
+  withoutResume,
 } from "./loop.js";
 import type { DeltaStep, FlowDelta } from "./schema.js";
 
@@ -731,6 +734,7 @@ Rules:
       ...(o.context ? { context: o.context } : {}),
       exclude: [change.id],
       change: change.id,
+      ai: stageRetrievalAi(ctx, o, `plan stories ${change.id}`),
       origin: "knowledge/items (ADR 0083)",
       priority: 80,
       knowledge: {
@@ -746,6 +750,12 @@ Rules:
       },
     },
   );
+  if (selected && "waiting" in selected)
+    return {
+      ...retrievalWaiting<StoriesAnswer>(change.id, "stories", selected),
+      stories: [],
+      requests: [],
+    };
   let context: ContextReport = wholeLists();
   if (selected && "sources" in selected) {
     sources.push(...selected.sources);
@@ -776,7 +786,17 @@ Rules:
     },
     current: () => readStoriesAnswer(dir),
   };
-  const res = await runStageLoop(root, change.id, spec, o);
+  const retrieved = selected && "sources" in selected ? selected : undefined;
+  if (retrieved?.retrieval && (retrieved.retrieval.expansion || retrieved.retrieval.rerank))
+    spec.retrieval = retrieved.retrieval;
+  const res = await runStageLoop(
+    root,
+    change.id,
+    spec,
+    retrieved?.consumed || (selected && "consumed" in selected && selected.consumed)
+      ? withoutResume(o)
+      : o,
+  );
   res.context = context;
   if (empty.length)
     res.notes.unshift(

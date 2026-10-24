@@ -20,7 +20,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "eval:context": "node scripts/write-context-eval.mjs",
-    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=120000 --hookTimeout=60000"
+    "test": "vitest run --config ../../vitest.shared.mjs --fsModuleCachePath=node_modules/.vitest-cache --testTimeout=120000 --hookTimeout=60000",
+    "eval:embed": "node scripts/write-vectors.mjs"
   },
   "dependencies": {
     "@maycombhq/ai": "workspace:*",
@@ -36,5 +37,8 @@
     "@maycombhq/workspace": "workspace:*",
     "yaml": "^2.9.1",
     "zod": "^4.6.0"
+  },
+  "devDependencies": {
+    "@maycombhq/embed": "workspace:*"
   }
 }

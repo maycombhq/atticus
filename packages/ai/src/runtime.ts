@@ -2,6 +2,7 @@ import {
   RUN_SCHEMA_VERSION,
   type AgentDefinition,
   type RunState,
+  type RunRetrieval,
   type RunSummary,
   type RunTools,
   type RuntimeKind,
@@ -26,6 +27,8 @@ export interface AiRequest {
    * the `stories.md` the plan writes).
    */
   outputIn?: "change" | "run";
+  /** How the pack's context was retrieved, when a model helped (ADR 0116): kept in the run record. */
+  retrieval?: RunRetrieval;
 }
 
 export interface Usage {
@@ -118,6 +121,7 @@ export function toRunSummary(run: Run): RunSummary {
     errors: run.errors,
     attempt: run.attempt,
     ...(run.tools ? { tools: run.tools } : {}),
+    ...(run.request.retrieval ? { retrieval: run.request.retrieval } : {}),
   };
 }
 

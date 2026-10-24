@@ -376,7 +376,7 @@ export async function smallStage(
         classification: "internal",
         priority: 70,
       });
-    if (selected) context = { ...context, note: selected.note };
+    if (selected && "note" in selected) context = { ...context, note: selected.note };
   }
 
   /** Everything the three stages' files come from, derived from the one answer. */

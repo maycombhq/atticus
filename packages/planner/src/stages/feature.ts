@@ -20,6 +20,9 @@ import {
   type StageOptions,
   type StageResult,
   type StageSpec,
+  retrievalWaiting,
+  stageRetrievalAi,
+  withoutResume,
 } from "./loop.js";
 import { FeaturePlacement, STAGE_SCHEMA_VERSION } from "./schema.js";
 import { dropUncitedQuestions } from "./uncited.js";
@@ -423,10 +426,12 @@ export async function featureStage(
       ...(o.context ? { context: o.context } : {}),
       exclude: [change.id],
       change: change.id,
+      ai: stageRetrievalAi(ctx, o, `change feature ${change.id}`),
       origin: "atticus change feature (context engine)",
       priority: 90,
     },
   );
+  if (selected && "waiting" in selected) return retrievalWaiting(change.id, "feature", selected);
   let context: ContextReport = wholeLists();
   if (selected && "sources" in selected) {
     sources.push(...selected.sources);
@@ -476,7 +481,17 @@ export async function featureStage(
     current: () => readPlacement(dir),
     questions: (p) => p.questions,
   };
-  const res = await runStageLoop(root, change.id, spec, o);
+  const retrieved = selected && "sources" in selected ? selected : undefined;
+  if (retrieved?.retrieval && (retrieved.retrieval.expansion || retrieved.retrieval.rerank))
+    spec.retrieval = retrieved.retrieval;
+  const res = await runStageLoop(
+    root,
+    change.id,
+    spec,
+    retrieved?.consumed || (selected && "consumed" in selected && selected.consumed)
+      ? withoutResume(o)
+      : o,
+  );
   res.context = context;
   // The result carries what was written: the conflicts and design gaps Atticus added.
   if (res.answer) res.answer = (await readPlacement(dir)) ?? res.answer;

@@ -1,4 +1,11 @@
-import { estimateTokens, fitBudget, wrapData, type SourceInput } from "@maycombhq/ai";
+import {
+  estimateTokens,
+  fitBudget,
+  wrapData,
+  type AiRuntime,
+  type SourceInput,
+} from "@maycombhq/ai";
+import type { RunRetrieval, RunSummary } from "@maycombhq/core";
 import {
   contextToolBox,
   openIndex,
@@ -8,6 +15,9 @@ import {
   type SelectOptions,
 } from "@maycombhq/index";
 import type { ContextGap } from "./gaps.js";
+import { expandFor, expansionInput } from "./stages/expand.js";
+import { fileJudgments, type Judgments } from "./stages/judged.js";
+import { rerankFor } from "./stages/rerank.js";
 
 /**
  * The context engine in the steps (ADR 0107 point 3): a step that used to send a whole list
@@ -34,6 +44,115 @@ export interface ContextOptions {
   engine?: boolean;
   /** Tokens for the selected context (atticus ... --context-tokens n). Default: the room the step's budget leaves. */
   tokens?: number;
+  /**
+   * The model's expansion of the input before the selection (ADR 0116). Default: the org pack's
+   * runtime.yaml retrieval.expansion (off unless on).
+   */
+  expand?: boolean;
+  /** The model's rerank of the candidates when they don't fit. Default: retrieval.rerank (off). */
+  rerank?: boolean;
+}
+
+/**
+ * What a step's model call needs to also expand and rerank its retrieval (ADR 0116): its
+ * runtime (a hand-off waits on each, one prompt per round), the run it was resumed with, its
+ * clock, the classification levels, and the org pack's switches.
+ */
+export interface RetrievalAi {
+  runtime: AiRuntime;
+  resume?: string;
+  now: Date;
+  levels: readonly string[];
+  /** runtime.yaml's retrieval section. */
+  settings?: { expansion?: boolean; rerank?: boolean };
+  store?: Judgments;
+  /** The step's name for the packs, e.g. "change feature add-x". */
+  step: string;
+}
+
+/**
+ * The engine's selection with the model's help where it is on (ADR 0116): the expansion first
+ * (its terms, ids and names join the input), then the selection, then, when what was found
+ * doesn't fit, the rerank, and the selection again in the model's order. Either call may be a
+ * hand-off the step waits on. Without AI, or with both off, it is the engine's selection.
+ */
+export async function retrieve(
+  root: string,
+  change: string,
+  input: ContextInput,
+  select: (
+    input: ContextInput,
+    order?: SelectOptions["order"],
+  ) => Promise<{ selection?: ContextSelection; note?: string }>,
+  context: ContextOptions | undefined,
+  ai: RetrievalAi | undefined,
+): Promise<
+  | {
+      selection?: ContextSelection;
+      note?: string;
+      retrieval: RunRetrieval;
+      consumed: boolean;
+      input: ContextInput;
+    }
+  | { waiting: { runId: string }; summary: RunSummary }
+> {
+  const retrieval: RunRetrieval = {};
+  let consumed = false;
+  let resume = ai?.resume;
+  const store = ai?.store ?? fileJudgments(root);
+  const notes: string[] = [];
+  let used = input;
+  if (ai && (context?.expand ?? ai.settings?.expansion ?? false)) {
+    const e = await expandFor(root, change, input, {
+      runtime: ai.runtime,
+      ...(resume ? { resume } : {}),
+      now: ai.now,
+      store,
+      levels: ai.levels,
+      step: ai.step,
+    });
+    if ("waiting" in e) return { waiting: { runId: e.waiting.runId }, summary: e.summary };
+    if (e.consumed) {
+      consumed = true;
+      resume = undefined;
+    }
+    if ("note" in e) notes.push(e.note);
+    else {
+      retrieval.expansion = e.record;
+      used = { ...input, expansion: expansionInput(e.expansion) };
+    }
+  }
+  let got = await select(used);
+  if (
+    ai &&
+    got.selection &&
+    got.selection.leftOut.length > 0 &&
+    (context?.rerank ?? ai.settings?.rerank ?? false)
+  ) {
+    const r = await rerankFor(root, change, used, got.selection, {
+      runtime: ai.runtime,
+      ...(resume ? { resume } : {}),
+      now: ai.now,
+      store,
+      levels: ai.levels,
+      step: ai.step,
+    });
+    if ("waiting" in r) return { waiting: { runId: r.waiting.runId }, summary: r.summary };
+    if (r.consumed) consumed = true;
+    if ("note" in r) notes.push(r.note);
+    else {
+      retrieval.rerank = r.record;
+      if (r.order.used) got = await select(used, { shown: r.order.shown, refs: r.order.refs });
+    }
+  }
+  if (got.selection) retrieval.meaning = got.selection.meaning;
+  return {
+    ...got,
+    ...(notes.length || got.note ? { note: [got.note, ...notes].filter(Boolean).join("; ") } : {}),
+    retrieval,
+    consumed,
+    input: used,
+  };
 }
 
 /** What a step's context was: for the step's result, so a person sees what was left out. */
@@ -50,6 +169,10 @@ export interface ContextReport {
   /** The unknown names as the step's gaps: where the change names them, and the question each became (ADR 0107 point 5). */
   gaps?: ContextGap[];
   version?: string;
+  /** Whether similarity in meaning ranked too, or why not (ADR 0116). */
+  meaning?: string;
+  /** The model's expansion and rerank, when they helped (ADR 0116). */
+  retrieval?: RunRetrieval;
   /** Why the engine wasn't used, when it was asked for and couldn't be. */
   note?: string;
 }
@@ -112,7 +235,7 @@ export async function selectFor(
     };
   }
   try {
-    return { selection: ix.selectContext(input, o) };
+    return { selection: await ix.select(input, o) };
   } finally {
     ix.close();
   }
@@ -127,6 +250,7 @@ export function reportOf(s: ContextSelection, budget: number): ContextReport {
     leftOut: s.leftOut,
     unknown: s.unknown,
     version: s.version,
+    meaning: s.meaning,
   };
 }
 

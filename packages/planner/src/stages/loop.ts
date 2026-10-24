@@ -36,10 +36,10 @@ import {
   runCritic,
   writeQuarantineItems,
 } from "@maycombhq/naysayer";
-import type { ChangeLifecycle } from "@maycombhq/core";
+import type { ChangeLifecycle, RunRetrieval } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
 import { citeFiles } from "./cite.js";
-import type { ContextOptions, ContextReport } from "../engine.js";
+import type { ContextOptions, ContextReport, RetrievalAi } from "../engine.js";
 import { askGaps, type ContextGap } from "../gaps.js";
 import {
   criticFindingKind,
@@ -126,6 +126,8 @@ export interface StageSpec<A> {
    * path's gate from its change type (ADR 0113). Null: no gate in gates.yaml is for it.
    */
   gate?: string | null;
+  /** How the stage's context was retrieved, when a model helped (ADR 0116): in its run record. */
+  retrieval?: RunRetrieval;
 }
 
 export interface StageOptions {
@@ -405,6 +407,7 @@ export async function runStageLoop<A>(
         pack,
         outputPath: spec.output,
         outputIn: "run",
+        ...(spec.retrieval ? { retrieval: spec.retrieval } : {}),
       });
       await writeQuarantineItems(
         root,
@@ -716,3 +719,53 @@ async function criticRound(
     return [];
   }
 }
+
+/**
+ * The stage's model, for its retrieval's expansion and rerank (ADR 0116): its runtime and the run
+ * it was resumed with, the org pack's switches and classification levels.
+ */
+export function stageRetrievalAi(ctx: ChangeContext, o: StageOptions, step: string): RetrievalAi {
+  const r = ctx.orgPack.runtime.retrieval;
+  return {
+    runtime: o.runtime,
+    ...(o.resume ? { resume: o.resume } : {}),
+    now: o.now ?? new Date(),
+    levels: ctx.orgPack.pack?.classification ?? [
+      "public",
+      "internal",
+      "confidential",
+      "restricted",
+    ],
+    settings: { expansion: r?.expansion ?? false, rerank: r?.rerank ?? false },
+    step,
+  };
+}
+
+/** A stage waiting on its retrieval's hand-off (the expansion or the rerank, ADR 0116). */
+export function retrievalWaiting<A>(
+  change: string,
+  stage: Stage,
+  w: { waiting: { runId: string }; summary: RunSummary },
+): StageResult<A> {
+  return {
+    change,
+    stage,
+    state: "waiting",
+    iteration: 0,
+    drafts: 0,
+    findings: [],
+    questions: [],
+    files: [],
+    notes: [
+      `Your assistant first reads what the change is about, for its context (run ${w.waiting.runId}).`,
+    ],
+    runs: [w.summary],
+    waiting: w.waiting,
+  };
+}
+
+/** The stage's options without the resumed run, once its retrieval read that run in. */
+export const withoutResume = (o: StageOptions): StageOptions => {
+  const { resume: _r, ...rest } = o;
+  return rest;
+};

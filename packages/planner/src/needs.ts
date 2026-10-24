@@ -9,7 +9,9 @@ import {
   RecordId,
   type OrgPack,
   type Question,
+  type RunRetrieval,
 } from "@maycombhq/core";
+import type { ContextInput, ContextSelection, SelectOptions } from "@maycombhq/index";
 import { askGaps, gapContext } from "./gaps.js";
 import {
   buildContextPack,
@@ -31,6 +33,7 @@ import type { RequestTask } from "./stages/stories.js";
 import {
   asSources,
   reportOf,
+  retrieve,
   roomFor,
   selectFor,
   sourceTokens,
@@ -524,34 +527,76 @@ export async function findNeeds(
     priority: 10,
   }));
   let context: ContextReport = wholeLists();
+  let retrieval: RunRetrieval | undefined;
+  let resumeConsumed = false;
   if (useEngine("needs", o.context)) {
     // The items the change's words call for, by name, by search and by the links between them.
     const room = roomFor(budget, sources, o.context);
     const brief = files.get("brief.md") ?? "";
     const title = /^#\s+(.+)$/m.exec(brief)?.[1]?.trim();
-    const select = (budget: number) =>
-      selectFor(
-        root,
-        { text: [...files.values()].join("\n\n"), ...(title ? { title } : {}) },
-        {
-          budget,
-          kinds: ["Pattern", "ProcessDefinition", "Decision", "Party", "Product"],
-          groups: ["knowledge"],
-          exclude: [change],
-          priority: 10,
-          render: (n, level) => {
-            const r = byId.get(n.id);
-            return level === "full" && r ? itemForAi(r, k.report?.conflicts ?? []) : undefined;
-          },
+    const input: ContextInput = {
+      text: [...files.values()].join("\n\n"),
+      ...(title ? { title } : {}),
+    };
+    const selectAt = (budget: number) => (inp: ContextInput, order?: SelectOptions["order"]) =>
+      selectFor(root, inp, {
+        budget,
+        ...(order ? { order } : {}),
+        kinds: ["Pattern", "ProcessDefinition", "Decision", "Party", "Product"],
+        groups: ["knowledge"],
+        exclude: [change],
+        priority: 10,
+        render: (n, level) => {
+          const r = byId.get(n.id);
+          return level === "full" && r ? itemForAi(r, k.report?.conflicts ?? []) : undefined;
         },
-      );
-    let got = await select(room);
+      });
+    // ADR 0116: the model's expansion (and, at the final room, its rerank) where they are on;
+    // either may be a hand-off this step waits on.
+    const ai = {
+      runtime: o.runtime,
+      ...(o.resume ? { resume: o.resume } : {}),
+      now,
+      levels,
+      settings: {
+        expansion: o.orgPack?.runtime.retrieval?.expansion ?? false,
+        rerank: o.orgPack?.runtime.retrieval?.rerank ?? false,
+      },
+      step: `change needs ${change}`,
+    };
+    const first = await retrieve(
+      root,
+      change,
+      input,
+      selectAt(room),
+      { ...o.context, rerank: false },
+      ai,
+    );
+    if ("waiting" in first) {
+      return { status: "waiting", runId: first.waiting.runId, attempts: [], context };
+    }
+    let got: { selection?: ContextSelection; note?: string } = first;
     if (got.selection) {
       // What neither the wikis nor the repos say (ADR 0107 point 5): listed, never guessed. The
       // gaps and the answers people gave take their room from the selection, not from the input.
       const g = await gapContext(root, change, got.selection.unknown);
       const less = sourceTokens(g.sources);
-      if (less) got = await select(Math.max(0, room - less));
+      const final = await retrieve(
+        root,
+        change,
+        first.input,
+        selectAt(Math.max(0, room - less)),
+        { ...o.context, expand: false },
+        first.consumed ? { ...ai, resume: undefined } : ai,
+      );
+      if (!("waiting" in final) && first.retrieval.expansion)
+        final.retrieval.expansion = first.retrieval.expansion;
+      if ("waiting" in final) {
+        return { status: "waiting", runId: final.waiting.runId, attempts: [], context };
+      }
+      got = final;
+      if (first.consumed || final.consumed) resumeConsumed = true;
+      if (final.retrieval.expansion || final.retrieval.rerank) retrieval = final.retrieval;
       sources.push(...asSources(got.selection!, "catalog"), ...g.sources);
       // What was left out for room, by id, so the model can ask for one (ADR 0107 point 3);
       // the lowest priority, so it is the first to go when even that doesn't fit.
@@ -565,7 +610,11 @@ export async function findNeeds(
           classification: "internal",
           priority: 1,
         });
-      context = { ...reportOf(got.selection!, room), gaps: g.gaps };
+      context = {
+        ...reportOf(got.selection!, room),
+        gaps: g.gaps,
+        ...(retrieval ? { retrieval } : {}),
+      };
     } else {
       sources.push(...whole);
       context = { ...wholeLists(), ...(got.note ? { note: got.note } : {}) };
@@ -575,7 +624,7 @@ export async function findNeeds(
   let feedback: SourceInput[] = [];
   // A resumed hand-off carries on the attempts it was handed back from; an answer word for
   // word the one that failed is checked once more and not asked for again.
-  const resumed = o.resume ? await o.runtime.result(o.resume) : undefined;
+  const resumed = o.resume && !resumeConsumed ? await o.runtime.result(o.resume) : undefined;
   const carried = resumed ? resumedAttempt(resumed) : { attempt: 1, repeats: false };
   const lastAttempt = carried.repeats
     ? carried.attempt
@@ -602,6 +651,7 @@ export async function findNeeds(
         pack,
         outputPath: NEEDS_OUTPUT,
         outputIn: "run",
+        ...(retrieval ? { retrieval } : {}),
       });
       run = await o.runtime.run(prepared.runId);
     }

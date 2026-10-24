@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RunState, RunSummary, RunTools, RuntimeKind } from "./schema/ai.js";
+import { RunRetrieval, RunState, RunSummary, RunTools, RuntimeKind } from "./schema/ai.js";
 import { Evidence, RecordId } from "./schema/common.js";
 import {
   Flow,
@@ -43,8 +43,10 @@ import { ChangeRepos, ManifestRepo } from "./schema/workspace.js";
  * 2.13.0 (ADR 0113): files attached to a change, GET and POST /api/changes/{id}/inputs, and
  *   whether a change takes the fast path (fastPath on a change).
  * 2.14.0 (ADR 0114): does the code do what the design says, GET /api/changes/{id}/conformance.
+ * 2.15.0 (ADR 0116): how a run's context was retrieved, retrieval in the transcript (the model's
+ *   expansion and rerank); run records are at version 3.
  */
-export const API_VERSION = "2.14.0";
+export const API_VERSION = "2.15.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -391,6 +393,8 @@ export const RunTranscript = z.object({
   answer: z.string().optional(),
   /** The tools the model was offered, each call it made and what it was given back; text, never markup. */
   tools: RunTools.optional(),
+  /** How its context was retrieved, when a model helped (ADR 0116): the expansion and the rerank; text, never markup. */
+  retrieval: RunRetrieval.optional(),
   handedBack: z.array(
     z.object({
       attempt: z.number().int().min(1),

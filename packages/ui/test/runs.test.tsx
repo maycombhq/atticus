@@ -30,7 +30,7 @@ const esc = (s: string) =>
 
 type Item = Api.RunListItem;
 const run = (n: number, over: Partial<Item> = {}): Item => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   runId: `run-2026102303400${n}-0001`,
   change: "knowledge-scan",
   agent: "knowledge-reader",
@@ -190,6 +190,46 @@ describe("one model run", () => {
     // A run with no tools shows no tools section.
     expect(html(<RunDetail of={{ state: "ready", data: transcript }} />)).not.toContain(
       R.tools.title,
+    );
+  });
+
+  it("shows how the context was found: the model's reading of the input and its order of the candidates (ADR 0116)", () => {
+    const out = html(
+      <RunDetail
+        of={{
+          state: "ready",
+          data: {
+            ...transcript,
+            retrieval: {
+              expansion: {
+                run: "run-20261021-0001",
+                cached: false,
+                terms: ["daily limit"],
+                names: [{ name: "Quillfeather Risk", quote: "scored by Quillfeather Risk" }],
+                dropped: [{ name: "Ledger", why: "no id ledgr in the index" }],
+              },
+              rerank: {
+                cached: true,
+                shown: 40,
+                order: ["Column a"],
+                dropped: ["System b"],
+                used: true,
+              },
+              meaning: "similar in meaning is off: retrieval.embeddings.model is off",
+            },
+          },
+        }}
+      />,
+    );
+    expect(out).toContain(R.retrieval.title);
+    expect(out).toContain(esc(R.retrieval.expansion("run-20261021-0001", false)));
+    expect(out).toContain(
+      esc(R.retrieval.name("Quillfeather Risk", undefined, false, "scored by Quillfeather Risk")),
+    );
+    expect(out).toContain(esc(R.retrieval.dropped("Ledger", "no id ledgr in the index")));
+    expect(out).toContain(esc(R.retrieval.rerank(40, "Column a", "System b")));
+    expect(html(<RunDetail of={{ state: "ready", data: transcript }} />)).not.toContain(
+      R.retrieval.title,
     );
   });
 

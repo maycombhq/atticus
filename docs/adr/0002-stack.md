@@ -17,3 +17,7 @@
 ## Consequences
 
 No native build tools are needed for the default install, which matters on locked-down laptops.
+
+## Amended by ADR 0116 (2026-10-23)
+
+A local embedding model runs with onnxruntime-node (prebuilt N-API, no build tools; the CPU build only, without DirectML) and falls back to onnxruntime-web's WASM build; neither is in the lockfile: the offline bundle carries them with the model. sqlite-vec and transformers.js are not used (ADR 0116 says why).

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -23,6 +23,9 @@ import {
 import {
   MockModelProvider,
   MockRuntime,
+  RecordedEmbedder,
+  type Embedder,
+  type RecordedVectors,
   ModelRuntime,
   type AiRequest,
   type AiRuntime,
@@ -32,6 +35,8 @@ import {
   architectureStage,
   contextToolsFor,
   endpointKey,
+  expandFor,
+  expansionInput,
   featureStage,
   findNeeds,
   loadEstate,
@@ -764,20 +769,126 @@ export async function retrievalShopRoot(fx: string, root: string): Promise<strin
 /** How a mode selects: the index it opens, and the input and options it selects with. */
 export interface RetrievalModeRun {
   open(root: string): Promise<CatalogIndex>;
-  input?(c: RetrievalCase, ix: CatalogIndex): Promise<ContextInput> | ContextInput;
+  input?(c: RetrievalCase, ix: CatalogIndex, root: string): Promise<ContextInput> | ContextInput;
   options?(c: RetrievalCase): Partial<SelectOptions>;
 }
 
 /** The modes built so far; a mode without a run is listed as not built. */
 export type RetrievalModes = Partial<Record<RetrievalMode, RetrievalModeRun>>;
 
-export function defaultRetrievalModes(): RetrievalModes {
-  const open = (root: string) => openIndex(root);
+/** The local embedding model the eval replays (fixtures/retrieval/vectors/<name>.json). */
+export const RETRIEVAL_MODEL = "all-minilm-l6-v2";
+
+/** Another model measured on the same cases, said in a note (the bank may prefer its provenance). */
+export const RETRIEVAL_ALTERNATIVES = ["snowflake-arctic-embed-xs"];
+
+/** The vectors a model gave the retrieval cases' texts, when they were recorded. */
+export function recordedVectors(fx: string, model = RETRIEVAL_MODEL): RecordedVectors | undefined {
+  const f = join(fx, "retrieval/vectors", `${model}.json`);
+  return existsSync(f) ? (JSON.parse(readFileSync(f, "utf8")) as RecordedVectors) : undefined;
+}
+
+export function defaultRetrievalModes(fx?: string): RetrievalModes {
+  const open = (root: string) => openIndex(root, { embeddings: "off" });
+  const vectors = fx ? recordedVectors(fx) : undefined;
   return {
     words: { open, options: () => ({ lexical: { split: false, synonyms: false } }) },
     "+split": { open, options: () => ({ lexical: { split: true, synonyms: false } }) },
     lexical: { open },
+    ...(fx && existsSync(join(fx, "retrieval/recorded/expansions.yaml"))
+      ? { "+expansion": { open, input: expansionInputFor(fx) } }
+      : {}),
+    ...(vectors
+      ? {
+          "+embeddings": {
+            open: (root: string) =>
+              openIndex(root, {
+                embeddings: new RecordedEmbedder(vectors),
+                embedOnOpen: Number.MAX_SAFE_INTEGER,
+              }),
+          },
+        }
+      : {}),
   };
+}
+
+/**
+ * The +expansion mode's input (ADR 0116): each case's recorded expansion answer, replayed through
+ * the planner's real expansion step (its prompt, its checks against the input and the index), by a
+ * mock runtime that answers with the recording. A judgment store in memory, so nothing is kept.
+ */
+export function expansionInputFor(fx: string): NonNullable<RetrievalModeRun["input"]> {
+  const recorded = parse(
+    readFileSync(join(fx, "retrieval/recorded/expansions.yaml"), "utf8"),
+  ) as Record<string, unknown>;
+  return async (c, _ix, root) => {
+    const base: ContextInput = { text: c.text, ...(c.title ? { title: c.title } : {}) };
+    const answer = recorded[c.id];
+    if (!answer) return base;
+    const mem = new Map<string, unknown>();
+    const r = await expandFor(root, c.root, base, {
+      runtime: new MockRuntime(() => stringify(answer), { now: () => NOW }),
+      now: NOW,
+      store: {
+        get: async (k, key) => mem.get(`${k}/${key}`),
+        put: async (k, key, v) => void mem.set(`${k}/${key}`, v),
+      },
+      levels: ["public", "internal", "confidential", "restricted"],
+      step: `retrieval case ${c.id}`,
+    });
+    return "expansion" in r ? { ...base, expansion: expansionInput(r.expansion) } : base;
+  };
+}
+
+/**
+ * Record the vectors a real model gives every node of the retrieval roots and every input's
+ * pieces (`pnpm --filter @maycombhq/evals eval:embed`, with the model on disk; never in CI).
+ */
+export async function recordRetrievalVectors(
+  fx: string,
+  embedder: Embedder,
+): Promise<RecordedVectors> {
+  const parent = await mkdtemp(join(tmpdir(), "atticus-retrieval-vectors-"));
+  const roots = {
+    forge: await retrievalForgeRoot(fx, join(parent, "forge")),
+    shop: await retrievalShopRoot(fx, join(parent, "shop")),
+  };
+  const out: RecordedVectors = {
+    model: embedder.id,
+    dim: embedder.dim,
+    maxTokens: embedder.maxTokens,
+    ...(embedder.floor !== undefined ? { floor: embedder.floor } : {}),
+    document: {},
+    query: {},
+  };
+  for (const [name, root] of Object.entries(roots)) {
+    const ix = await openIndex(root, {
+      embeddings: embedder,
+      embedOnOpen: Number.MAX_SAFE_INTEGER,
+    });
+    try {
+      for (const c of readRetrievalCases(fx).filter((x) => x.root === name))
+        await ix.prepare({ text: c.text, ...(c.title ? { title: c.title } : {}) });
+      const rows = ix.db
+        .prepare("SELECT kind, text_sha AS sha, scale, q FROM vec.vectors WHERE model = ?")
+        .all(embedder.id) as {
+        kind: "document" | "query";
+        sha: string;
+        scale: number;
+        q: Uint8Array;
+      }[];
+      for (const r of rows)
+        out[r.kind][r.sha] = {
+          q: Buffer.from(r.q.buffer, r.q.byteOffset, r.q.byteLength).toString("base64"),
+          scale: r.scale,
+        };
+    } finally {
+      ix.close();
+    }
+  }
+  const sorted = (o: Record<string, { q: string; scale: number }>) =>
+    Object.fromEntries(Object.entries(o).sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+  return { ...out, document: sorted(out.document), query: sorted(out.query) };
 }
 
 /** What each pick put in the context, in pick order: full detail, or its one line. */
@@ -832,7 +943,7 @@ export async function runRetrievalBench(o: RetrievalBenchOptions): Promise<Retri
     shop: await retrievalShopRoot(fx, join(parent, "shop")),
   };
   const cases = readRetrievalCases(fx).filter((c) => !o.cases || o.cases.includes(c.id));
-  const modes = o.modes ?? defaultRetrievalModes();
+  const modes = o.modes ?? defaultRetrievalModes(fx);
   const rows: RetrievalRow[] = [];
   for (const mode of RETRIEVAL_MODES) {
     const m = modes[mode];
@@ -843,8 +954,9 @@ export async function runRetrievalBench(o: RetrievalBenchOptions): Promise<Retri
         let ix = open.get(c.root);
         if (!ix) open.set(c.root, (ix = await m.open(roots[c.root])));
         const input: ContextInput = m.input
-          ? await m.input(c, ix)
+          ? await m.input(c, ix, roots[c.root])
           : { text: c.text, ...(c.title ? { title: c.title } : {}) };
+        await ix.prepare(input);
         for (const budget of ["normal", "tight"] as const) {
           const s = ix.selectContext(input, {
             budget: RETRIEVAL_BUDGETS[budget],
@@ -906,7 +1018,7 @@ export function renderRetrievalTable(rows: RetrievalRow[], notes: string[] = [])
         .join(" | ")} |`;
     }),
     "",
-    ...(notBuilt.length ? [`Not built yet: ${notBuilt.join(", ")}.`, ""] : []),
+    ...(notBuilt.length ? [`Not measured here: ${notBuilt.join(", ")}.`, ""] : []),
     "A mode becomes a step's default only where its recall is at least the lexical engine's on every case and budget:",
     "",
     ...built
@@ -949,13 +1061,46 @@ export interface ContextEval {
 export async function runContextEval(fixtures: string): Promise<ContextEval> {
   const steps = await runContextBench({ fixtures });
   const retrieval = await runRetrievalBench({ fixtures });
-  return {
-    steps,
-    retrieval,
-    notes: [
-      "Before ADR 0116 (the engine of ADR 0107 point 3: BM25 sums, whole wiki sections, no documents; measured at commit 464b758), all answered cases scored 0.72 / 0.03 / 0.28 at the normal budget and 0.49 / 0.06 / 0.27 at the tight one.",
-    ],
+  const summary = (rows: RetrievalRow[], budget: string) => {
+    const rs = rows.filter((r) => r.budget === budget && r.needed > 0);
+    return `${avg(rs.map((r) => r.recall)).toFixed(2)} / ${avg(rs.map((r) => r.precision)).toFixed(2)} / ${avg(rs.map((r) => r.mrr)).toFixed(2)}`;
   };
+  const notes = [
+    "Before ADR 0116 (the engine of ADR 0107 point 3: BM25 sums, whole wiki sections, no documents; measured at commit 464b758), all answered cases scored 0.72 / 0.03 / 0.28 at the normal budget and 0.49 / 0.06 / 0.27 at the tight one.",
+  ];
+  if (retrieval.some((r) => r.mode === "+expansion"))
+    notes.push(
+      "+expansion replays stand-in answers of the expander written by hand from each input and the estate's names (fixtures/retrieval/recorded/expansions.yaml), through the planner's real expansion step and its checks. They are not Copilot's: an optimistic upper bound until answers are recorded at the GPT-4o mini floor, so the expansion stays off by default (runtime.yaml retrieval.expansion) whatever this table says.",
+    );
+  notes.push(
+    "+rerank is built and tested (the planner's rerank step, its checks, the fit in the model's order) but not measured here: a rerank's answer depends on the candidates each case shows, and no model's answers are recorded for them. It stays off by default (retrieval.rerank).",
+  );
+  const v = recordedVectors(fixtures);
+  if (v)
+    notes.push(
+      `+embeddings replays the vectors ${v.model} gave every node and input (fixtures/retrieval/vectors, recorded on the CPU with onnxruntime-node; similarity floor ${v.floor ?? "default"}).`,
+    );
+  for (const alt of RETRIEVAL_ALTERNATIVES) {
+    const av = recordedVectors(fixtures, alt);
+    if (!av) continue;
+    const rows = await runRetrievalBench({
+      fixtures,
+      modes: {
+        "+embeddings": {
+          open: (root) =>
+            openIndex(root, {
+              embeddings: new RecordedEmbedder(av),
+              embedOnOpen: Number.MAX_SAFE_INTEGER,
+            }),
+        },
+      },
+    });
+    const none = rows.filter((r) => r.needed === 0 && r.budget === "normal");
+    notes.push(
+      `The other model measured, ${av.model} (floor ${av.floor ?? "default"}), in place of ${v?.model ?? "it"}: all answered cases ${summary(rows, "normal")} normal, ${summary(rows, "tight")} tight; ${none.reduce((n, r) => n + r.picked, 0)} records picked for the inputs nothing answers.`,
+    );
+  }
+  return { steps, retrieval, notes };
 }
 
 export function renderContextEval(e: ContextEval): string {
