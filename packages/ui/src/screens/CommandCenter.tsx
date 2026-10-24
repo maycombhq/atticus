@@ -77,6 +77,38 @@ interface Setup {
   }[];
 }
 
+/**
+ * What runs a step here (ADR 0121 item 6), in one line from GET /api/settings/ai, with a link to
+ * the AI tab. Nothing while it loads; a sentence when it can't be read.
+ */
+export function HowStepsRunLine({ runs, failed }: { runs?: string; failed?: boolean }) {
+  if (failed)
+    return (
+      <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+        {T.howStepsRunCantRead}
+      </p>
+    );
+  if (!runs) return null;
+  return (
+    <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
+      {T.howStepsRun} <strong>{runs}</strong> · <a href="#/ai">{T.howStepsRunChange}</a>
+    </p>
+  );
+}
+
+function HowStepsRun() {
+  const ai = useApi<{ runs?: string }>("/api/settings/ai");
+  useLiveEvents((e) => {
+    if (e.type === "file.changed") ai.reload();
+  });
+  return (
+    <HowStepsRunLine
+      {...(ai.state === "ready" && ai.data.runs ? { runs: ai.data.runs } : {})}
+      failed={ai.state === "error"}
+    />
+  );
+}
+
 /** Guided setup: the checklist until the catalog is accepted (ADR 0047). */
 function SetupChecklist() {
   const setup = useApi<Setup>("/api/setup");
@@ -469,6 +501,7 @@ export function CommandCenter() {
           {me ? T.liveFromYourMetarepo(me.user) : T.liveFromYourMetarepo2}
         </span>
       </div>
+      <HowStepsRun />
       <SetupChecklist />
       <div className="bento">
         <Panel title={T.waitingOnYou} span="1 / -1">

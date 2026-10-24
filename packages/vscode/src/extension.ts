@@ -567,6 +567,8 @@ ${view.next.why}`
     // A new atticus.path: look for the command line again, so the welcome goes or comes at once.
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("atticus.path")) void updateContext().then(refreshAll);
+      // A model picked: the Next view's "in VS Code" says the new one.
+      else if (e.affectsConfiguration("atticus.model")) refreshAll();
     }),
   );
   reg("atticus.checkHealth", async () => {

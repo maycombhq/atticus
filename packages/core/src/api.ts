@@ -2544,7 +2544,7 @@ const OPS: Record<string, Record<string, Op>> = {
     get: {
       id: "getAiSettings",
       summary:
-        "How AI runs here: on or off, the modes, the assistants by name, the providers and their settings, the configured model, and whether its key variable is set (by name)",
+        "How AI runs here: one line for what runs a step, on or off, the modes, the assistants by name, the providers and their settings, the configured model, and whether its key variable is set (by name)",
       tag: "run",
       ok: { status: 200, schema: { type: "object" }, description: "OK" },
     },

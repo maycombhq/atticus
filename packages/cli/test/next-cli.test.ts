@@ -89,6 +89,9 @@ describe("atticus next", () => {
     );
     const r = await run(["next", "--root", root]);
     expect(r.out[1]).toBe("In Cursor's chat: /atticus-survey forge-notes-ui");
+    // The editors' Next view shows what runs the step, in one line (ADR 0121 item 6).
+    const j = (await json(root)) as { runs?: string };
+    expect(j.runs).toBe("Hand-off to Cursor");
   });
 
   it("with repos not cloned, says to sync, and lists the rest with --all", async () => {

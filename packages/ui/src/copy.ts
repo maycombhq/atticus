@@ -1213,6 +1213,10 @@ export const COPY = {
     noChangeSelected: "No change selected",
   },
   commandCenter: {
+    /** ADR 0121 item 6: what runs a step here, in one line, beside a link to change it. */
+    howStepsRun: "How AI steps run:",
+    howStepsRunChange: "Change in Set up › AI",
+    howStepsRunCantRead: "Atticus couldn't read how AI steps run here (org-pack/runtime.yaml).",
     define: "Define",
     design: "Design",
     plan: "Plan",
