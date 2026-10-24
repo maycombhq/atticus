@@ -41,7 +41,8 @@ export interface Cockpit {
 
 async function stageProgress(dir: string, stage: StageName, open: Set<string>) {
   const text = await readFile(join(dir, "stage", `${stage}.yaml`), "utf8").catch(() => undefined);
-  if (!text) return { stage, state: "not-started", drafts: 0, rounds: 0, openQuestions: 0 };
+  if (!text)
+    return { stage, state: "not-started", drafts: 0, rounds: 0, openQuestions: 0, asked: [] };
   const y = (parse(text) ?? {}) as {
     state?: unknown;
     iteration?: unknown;
@@ -55,6 +56,8 @@ async function stageProgress(dir: string, stage: StageName, open: Set<string>) {
     drafts: typeof y.iteration === "number" ? y.iteration : 0,
     rounds: Array.isArray(y.critic) ? y.critic.length : 0,
     openQuestions: asked.filter((q) => open.has(q)).length,
+    /** The open questions it raised. */
+    asked: asked.filter((q) => open.has(q)),
   };
 }
 
@@ -64,9 +67,15 @@ export async function cockpit(root: string, id: string): Promise<Cockpit> {
   const { questions } = await listQuestions(root, { state: "open" }).catch(() => ({
     questions: [],
   }));
-  const open = new Set<string>(questions.filter((q) => q.repo === id).map((q) => q.id));
+  // Every open question: a stage files the questions it raises under the repo they are about,
+  // so the change's own are those filed under it plus those its stages raised.
+  const open = new Set<string>(questions.map((q) => q.id));
   const stages = [];
   for (const s of STAGES) stages.push(await stageProgress(dir, s, open));
+  const ofChange = new Set<string>([
+    ...questions.filter((q) => q.repo === id).map((q) => q.id),
+    ...stages.flatMap((s) => s.asked),
+  ]);
   // This change's own next step, whatever else waits elsewhere in the metarepo.
   const state = (await readNextState(root)).changes.find((c) => c.id === id);
   const next = state ? changeSteps(state)[0] : undefined;
@@ -78,8 +87,8 @@ export async function cockpit(root: string, id: string): Promise<Cockpit> {
     nextStep: report.nextStep,
     reasons: report.reasons,
     risk: { level: report.risk.level, score: report.risk.score },
-    stages,
-    openQuestions: open.size,
+    stages: stages.map(({ asked: _asked, ...rest }) => rest),
+    openQuestions: ofChange.size,
     repos: (repos?.repos ?? []).map((r) => ({
       id: r.id,
       branch: r.branch,

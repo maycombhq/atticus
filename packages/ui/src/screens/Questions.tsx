@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import type { Question } from "@maycombhq/core";
+import type { Api, Question } from "@maycombhq/core";
 import { api, useApi, useReloadOnFiles, type Loaded } from "../api/client.js";
 import { Panel, View } from "../app/ui.js";
 import { COPY } from "../copy.js";
@@ -27,6 +27,62 @@ export interface AnsweredResult {
 }
 
 const ID = /^q-[0-9a-f]{12}$/;
+
+type Excerpt = Api.QuestionEvidenceListT["excerpts"][number];
+
+/**
+ * The lines around one cited line (WP7.2), the cited one marked, so the answer is given looking
+ * at the code; just its reference when it can't be shown.
+ */
+export function ExcerptView({ e }: { e: Excerpt }) {
+  return (
+    <figure style={{ margin: 0 }}>
+      <figcaption>
+        <code className="mono">{e.ref}</code>
+        {!e.found && (
+          <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>
+            {C.notShown}
+          </span>
+        )}
+      </figcaption>
+      {e.found && (
+        <pre className="mono" style={{ margin: "4px 0 0", fontSize: 12, overflowX: "auto" }}>
+          {e.lines.map((l, i) => {
+            const n = e.start + i;
+            const cited = n === e.line;
+            return (
+              <span key={n} style={{ display: "block" }} aria-current={cited ? "true" : undefined}>
+                <span className="muted">{`${String(n).padStart(4)}  `}</span>
+                {cited ? <mark>{l}</mark> : l}
+              </span>
+            );
+          })}
+        </pre>
+      )}
+    </figure>
+  );
+}
+
+function Evidence({ id, refs }: { id: string; refs: string[] }) {
+  const ex = useApi<Api.QuestionEvidenceListT>(`/api/questions/${id}/evidence`);
+  if (ex.state !== "ready")
+    return (
+      <ul style={{ margin: 0, paddingLeft: 18 }}>
+        {refs.map((e) => (
+          <li key={e}>
+            <code className="mono">{e}</code>
+          </li>
+        ))}
+      </ul>
+    );
+  return (
+    <div className="stack" style={{ gap: 8 }}>
+      {ex.data.excerpts.map((e) => (
+        <ExcerptView key={e.ref} e={e} />
+      ))}
+    </div>
+  );
+}
 
 /** The question id in #/questions/<id>, if any. */
 export function questionRoute(hash: string): string | undefined {
@@ -201,13 +257,7 @@ export function QuestionDetail(p: {
         <h3 className="hud" style={{ margin: "0 0 4px", fontSize: 10 }}>
           {C.evidence}
         </h3>
-        <ul style={{ margin: 0, paddingLeft: 18 }}>
-          {q.evidence.map((e) => (
-            <li key={e}>
-              <code className="mono">{e}</code>
-            </li>
-          ))}
-        </ul>
+        <Evidence id={q.id} refs={q.evidence} />
       </div>
       {q.answer && (
         <p style={{ margin: 0 }}>

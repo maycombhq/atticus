@@ -13,6 +13,7 @@ import {
   type StepCommand,
 } from "./atticus";
 import { answerApp, bundledHtml } from "./app-bundle";
+import { evidenceRows } from "./question-evidence";
 import { diagramHash, panelHtml, type RunningApp } from "./app-panel";
 import { changeDiagramHash, estimateHash } from "./change-map";
 import { HISTORY_HASH } from "./history";
@@ -1074,18 +1075,47 @@ ${view.next.why}`
       option !== undefined ? { option } : undefined;
     if (!answer) {
       const own = { label: "In my own words...", n: 0 };
-      const pick = await vscode.window.showQuickPick(
-        [
-          ...q.options.map((o, i) => ({
-            label: `${i + 1}. ${o.label}`,
-            detail: o.means,
-            n: i + 1,
-          })),
-          own,
-        ],
-        { title: q.question, placeHolder: "Pick the answer", ignoreFocusOut: true },
-      );
-      if (!pick) return;
+      // WP7.2: what the question read, each line's text; picking one opens the code there.
+      const read = (f: string) => {
+        try {
+          return readFileSync(f, "utf8");
+        } catch {
+          return undefined;
+        }
+      };
+      const seen = evidenceRows(q, svc.paths(root), read).map((r) => ({
+        label: `$(code) ${r.label}`,
+        description: r.description,
+        n: -1,
+        ...(r.open ? { open: r.open } : {}),
+      }));
+      type Row = vscode.QuickPickItem & { n: number; open?: { path: string; line: number } };
+      const rows: Row[] = [
+        { label: WORDS.whatItRead, kind: vscode.QuickPickItemKind.Separator, n: -1 },
+        ...seen,
+        { label: WORDS.answers, kind: vscode.QuickPickItemKind.Separator, n: -1 },
+        ...q.options.map((o, i) => ({
+          label: `${i + 1}. ${o.label}`,
+          detail: o.means,
+          n: i + 1,
+        })),
+        own,
+      ];
+      let pick: Row | undefined;
+      for (;;) {
+        pick = await vscode.window.showQuickPick(rows, {
+          title: q.question,
+          placeHolder: WORDS.pickAnswer,
+          ignoreFocusOut: true,
+        });
+        if (!pick?.open) break;
+        const at = new vscode.Position(pick.open.line - 1, 0);
+        await vscode.window.showTextDocument(vscode.Uri.file(pick.open.path), {
+          selection: new vscode.Range(at, at),
+          preview: true,
+        });
+      }
+      if (!pick || pick.n < 0) return;
       if (pick.n) answer = { option: pick.n };
       else {
         const text = await vscode.window.showInputBox({

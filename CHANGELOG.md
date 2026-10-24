@@ -21,6 +21,12 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### The code beside a question
+
+- Answering a question now shows the lines it cites, the cited line marked. The app's Questions page shows a few lines around each, read from the repo's base clone (or the metarepo, for a change's question; `GET /api/questions/{id}/evidence`, API 2.20.0). VS Code's answer picker lists each cited line's text under "What it read"; picking one opens the code there and comes back to the answers.
+- A line that can't be shown says so: the file isn't here, or the line is past its end. Nothing outside the repo or the metarepo is read.
+- IntelliJ shows the same in the app panel; a native IntelliJ answer dialog isn't built yet.
+
 ### One change at a glance (the change cockpit)
 
 - A change's first page is now **At a glance**, its cockpit. It shows where the change is on its stage path, with each stage's drafts, critic rounds and open questions; the next step with its slash command and command; what blocks it; and each repo's change branch, base and pull request (`GET /api/changes/{id}/cockpit`, API 2.19.0).

@@ -37,6 +37,9 @@ export const WORDS = {
   setUpCopilot: "Set up Copilot",
   copilotMissing:
     "Atticus's AI steps run with GitHub Copilot, which isn't set up in this VS Code yet.",
+  whatItRead: "What it read (pick a line to open the code there)",
+  answers: "Answers",
+  pickAnswer: "Pick the answer, or a line it read to see the code",
   pickModel: "Pick the model",
   pickModelPlaceholder: "Which model runs Atticus's AI steps in VS Code?",
   modelDefault: "The model picked in Copilot Chat",

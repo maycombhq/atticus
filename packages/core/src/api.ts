@@ -46,7 +46,7 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.15.0 (ADR 0116): how a run's context was retrieved, retrieval in the transcript (the model's
  *   expansion and rerank); run records are at version 3.
  */
-export const API_VERSION = "2.19.0";
+export const API_VERSION = "2.20.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -943,6 +943,20 @@ export const EditRepoBranchesRequest = z.strictObject({
   defaultBranch: GitRef.optional(),
   branches: z.array(GitRef).optional(),
 });
+/** WP7.2: the lines around each line a question cites. */
+export const QuestionEvidenceList = z.object({
+  excerpts: z.array(
+    z.object({
+      ref: z.string(),
+      line: z.number().int(),
+      start: z.number().int(),
+      lines: z.array(z.string()),
+      found: z.boolean(),
+    }),
+  ),
+});
+export type QuestionEvidenceListT = z.infer<typeof QuestionEvidenceList>;
+
 /** WP7.1: the change cockpit, what a person needs to follow one change. */
 export const ChangeCockpit = z.object({
   id: z.string(),
@@ -2085,6 +2099,17 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 413, 422],
     },
   },
+  "/api/questions/{id}/evidence": {
+    get: {
+      id: "getQuestionEvidence",
+      summary:
+        "The lines around each line a question cites, from the repo's base clone or the metarepo, so a person answers looking at the code",
+      tag: "questions",
+      params: [p("id")],
+      ok: { status: 200, schema: "QuestionEvidenceList", description: "OK" },
+      errors: [404],
+    },
+  },
   "/api/changes/{changeId}/cockpit": {
     get: {
       id: "getChangeCockpit",
@@ -3106,6 +3131,7 @@ export function openApiDocument(): Record<string, unknown> {
     RepoBranchesList,
     BranchCompare,
     ChangeCockpit,
+    QuestionEvidenceList,
     PromoteResult,
     ChangeConformance,
     OrgPackView,

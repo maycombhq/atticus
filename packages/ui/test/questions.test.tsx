@@ -5,6 +5,7 @@ import { COPY } from "../src/copy.js";
 import {
   answerBody,
   AnsweredView,
+  ExcerptView,
   QuestionDetail,
   QuestionList,
   questionRoute,
@@ -133,5 +134,33 @@ describe("the Questions page (ADR 0078)", () => {
     expect(out).toContain(C.next);
     expect(out).toContain("atticus scan survey forge-notes --force");
     expect(out).toContain("Copy");
+  });
+});
+
+describe("evidence beside a question (WP7.2)", () => {
+  it("shows the lines around the cited line, the cited one marked", () => {
+    const out = renderToStaticMarkup(
+      <ExcerptView
+        e={{
+          ref: "src/NoteController.java:6",
+          line: 6,
+          start: 5,
+          lines: ["public class NoteController {", "  @GetMapping", "  public List<Note> list() {"],
+          found: true,
+        }}
+      />,
+    );
+    expect(out).toContain("src/NoteController.java:6");
+    expect(out).toContain("<mark>  @GetMapping</mark>");
+    expect(out).toContain('aria-current="true"');
+    expect(out).toContain("   5  ");
+  });
+
+  it("says when a cited line can't be shown", () => {
+    const out = renderToStaticMarkup(
+      <ExcerptView e={{ ref: "src/Gone.java:3", line: 3, start: 3, lines: [], found: false }} />,
+    );
+    expect(out).toContain(COPY.questions.notShown.replace(/'/g, "&#x27;"));
+    expect(out).not.toContain("<pre");
   });
 });

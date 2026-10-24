@@ -80,3 +80,42 @@ describe("the change cockpit (WP7.1)", () => {
     expect((await call("/api/changes/no-such-change/cockpit")).status).toBe(404);
   });
 });
+
+describe("a stage's questions on the cockpit (WP7.1)", () => {
+  it("counts the questions a stage raised, though they are filed under the repo", async () => {
+    const at = await estate();
+    const { raiseQuestions } = await import("@maycombhq/core");
+    const r = await raiseQuestions(
+      at,
+      [
+        {
+          question: "How long are a pin's rows kept?",
+          options: [],
+          evidence: ["src/main/java/forge/Pins.java:3"],
+          scope: "repo",
+        },
+      ],
+      {
+        step: "change-architecture",
+        repo: "forge-notes",
+        command: `atticus change architecture ${CHANGE}`,
+        rerun: `atticus change architecture ${CHANGE}`,
+        at: "2026-10-24T08:00:00Z",
+      },
+    );
+    const id = r.raised[0]!.id;
+    await mkdir(join(at, "openspec/changes", CHANGE, "stage"), { recursive: true });
+    await writeFile(
+      join(at, "openspec/changes", CHANGE, "stage", "architecture.yaml"),
+      `schemaVersion: 1\nchange: ${CHANGE}\nstage: architecture\niteration: 3\nstate: waiting\nupdatedAt: 2026-10-24T08:00:00Z\ncritic: []\nquestions:\n  - ${id}\n`,
+    );
+    const c = await cockpit(at, CHANGE);
+    expect(c.stages.find((s) => s.stage === "architecture")).toMatchObject({
+      state: "waiting",
+      drafts: 3,
+      openQuestions: 1,
+    });
+    expect(c.openQuestions).toBe(1);
+    expect(c.stages[0]).not.toHaveProperty("asked");
+  });
+});

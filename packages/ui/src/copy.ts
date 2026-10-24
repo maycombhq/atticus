@@ -161,6 +161,7 @@ export const COPY = {
     pickFromList: "Pick a question from the list to answer it.",
     askedBy: (command: string, day: string) => `Asked by ${command} on ${day}`,
     evidence: "What it read",
+    notShown: "Not shown: the file isn't here, or the line is past its end.",
     options: "Your answer",
     optionChanges: "It would change",
     ownWords: "In my own words",
