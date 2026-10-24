@@ -145,6 +145,63 @@ describe("verifyFacts: the claim on the cited line (ADR 0124)", () => {
   });
 });
 
+describe("a claim put together from several lines (ADR 0124 addendum A4)", () => {
+  const src = memorySource({
+    "src/environments/environment.ts":
+      "export const environment = {\n  REST_API_URL: 'http://localhost:9966/petclinic/api/'\n};\n",
+    "src/app/owners/owner.service.ts":
+      "export class OwnerService {\n  entityUrl = environment.REST_API_URL + 'owners';\n  getOwnerById(ownerId: string) {\n    return this.http.get<Owner>((this.entityUrl + '/' + ownerId));\n  }\n}\n",
+  });
+  const call = (path: string, withParts: { file: string; line: number; value: string }[]) => ({
+    kind: "call" as const,
+    id: "c",
+    repo: "web",
+    commit: "0123abc",
+    callType: "rest" as const,
+    method: "GET",
+    path,
+    to: "api",
+    cite: { file: "src/app/owners/owner.service.ts", line: 4, value: "entityUrl", with: withParts },
+    verified: "none" as const,
+    by: "assistant" as const,
+    conf: "declared" as const,
+  });
+  it("accepts a path whose parts are each written on a cited line", async () => {
+    const r = await verifyFacts({
+      source: src,
+      facts: [
+        call("/petclinic/api/owners/{ownerId}", [
+          { file: "src/environments/environment.ts", line: 2, value: "/petclinic/api/" },
+          { file: "src/app/owners/owner.service.ts", line: 2, value: "owners" },
+        ]),
+      ],
+    });
+    expect(r.rejected).toEqual([]);
+    expect(r.coverage.read).toContain("src/environments/environment.ts");
+  });
+  it("rejects a part that isn't on its line, and a path with a part written nowhere", async () => {
+    const bad = await verifyFacts({
+      source: src,
+      facts: [
+        call("/petclinic/api/owners/{id}", [
+          { file: "src/environments/environment.ts", line: 2, value: "/vets/" },
+        ]),
+      ],
+    });
+    expect(bad.rejected[0]?.code).toBe("claim-not-on-line");
+    const nowhere = await verifyFacts({
+      source: src,
+      facts: [
+        call("/petclinic/api/visits/{id}", [
+          { file: "src/environments/environment.ts", line: 2, value: "/petclinic/api/" },
+          { file: "src/app/owners/owner.service.ts", line: 2, value: "owners" },
+        ]),
+      ],
+    });
+    expect(nowhere.rejected[0]?.code).toBe("claim-not-on-line");
+  });
+});
+
 describe("coverage: reported, never trusted (ADR 0124)", () => {
   it("doesn't count tests, build wrappers, package docs or message bundles as source", async () => {
     const { isSourceFile } = await import("../src/index.js");

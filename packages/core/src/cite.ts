@@ -34,8 +34,9 @@ export function lineNamesRoute(line: string, path: string): boolean {
   for (let k = 0; k < segs.length; k++) {
     const tail = segs.slice(k);
     if (!tail.some((s) => !PARAM.test(s))) break;
+    // after a slash, or at the start of a literal written without one (`[HttpPost("upload")]`)
     const re = new RegExp(
-      `/${tail.map((s) => (PARAM.test(s) ? PARAM_RE : escape(s))).join("/")}(?![A-Za-z0-9_-])`,
+      `(?:/|["'\`])${tail.map((s) => (PARAM.test(s) ? PARAM_RE : escape(s))).join("/")}(?![A-Za-z0-9_-])`,
       "i",
     );
     if (re.test(line)) return true;
@@ -152,8 +153,10 @@ export function isSecretPath(path: string): boolean {
 const SECRET_KEY =
   /(password|passwd|pwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|credential)/i;
 const PLACEHOLDER = /^(\$\{|\{\{|env:|vault:|secret:|ref:|<)/;
+// The key's last part ends in a secret word (ClientSecret, db.password, "api_key"), so TokenUrl
+// and AccessTokenLifetime aren't secrets.
 const KEY_VALUE =
-  /^(\s*[-"']?\s*)([A-Za-z0-9_.-]*?(?:password|passwd|pwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key|client[-_]?secret|credential)[A-Za-z0-9_.-]*)(\s*[:=]\s*)(.+)$/i;
+  /^(\s*[-"']?\s*)([A-Za-z0-9_.:-]*?(?:password|passwd|pwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key|credentials?))(["']?\s*[:=]\s*)(.+)$/i;
 
 /**
  * Redact a line that carries a secret-looking key with a literal value; a placeholder or a
@@ -168,4 +171,25 @@ export function redactSecrets(line: string): string {
   const value = m[4]!.trim();
   if (PLACEHOLDER.test(value)) return line;
   return `${m[1]}${m[2]}${m[3]}<redacted>`;
+}
+
+/**
+ * Whether a path put together in code is named by its lines (ADR 0124 addendum A4): every plain
+ * part of the path (its segments, a dotted segment's pieces: `BasketApi.Basket/GetBasket`) is
+ * written on one of the lines, case aside, at the start of a word or of an identifier
+ * (`account` in `AccountController`). Parameters need not be written.
+ */
+export function partsNamePath(lines: readonly string[], path: string): boolean {
+  const parts = path
+    .split(/[?#]/, 1)[0]!
+    .split("/")
+    .filter((s) => s && !PARAM.test(s))
+    .flatMap((s) => s.split("."))
+    .filter(Boolean);
+  if (!parts.length) return lines.some((l) => lineNamesRoute(l, path));
+  return parts.every((p) =>
+    lines.some((l) =>
+      new RegExp(`(^|[^A-Za-z0-9]|(?<=[a-z0-9])(?=[A-Z]))${escape(p)}`, "i").test(l),
+    ),
+  );
 }

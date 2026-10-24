@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 import { main } from "./main.js";
 
+// Output piped into a reader that stops early (`| head`) closes the pipe: stop quietly, not
+// with a crash.
+for (const stream of [process.stdout, process.stderr])
+  stream.on("error", (e: NodeJS.ErrnoException) => {
+    if (e.code === "EPIPE") process.exit(process.exitCode ?? 0);
+    throw e;
+  });
+
 main(process.argv.slice(2), {
   out: (line) => process.stdout.write(line + "\n"),
   err: (line) => process.stderr.write(line + "\n"),

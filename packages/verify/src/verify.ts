@@ -1,5 +1,7 @@
 import {
   claimOnLines,
+  lineNamesClaim,
+  partsNamePath,
   isSecretPath,
   NEVER_CHECKED_STEPS,
   quoteMatches,
@@ -121,11 +123,12 @@ function claimsOf(f: Fact): Claim[] {
       // A key as written on the line, or the last part of a dotted path or a flag (a YAML path
       // `livenessProbe.httpGet.path` names `path:` on its line; `kubectl wait --timeout`, `timeout`).
       const tail = f.key.trim().split(/\s+/).pop()!.replace(/^-+/, "");
+      const lastOf = (k: string) => k.split(/[.:]|__/).pop() ?? k;
       return [
         { kind: "word", value: f.key },
         { kind: "word", value: lastPart(f.key) },
         { kind: "word", value: tail },
-        { kind: "word", value: lastPart(tail) },
+        { kind: "word", value: lastOf(tail) },
       ];
     }
     case "flow":
@@ -195,10 +198,54 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         code: "no-line",
         message: `${label} cites line ${cite.line} of ${cite.file}, which has ${lines.length} lines`,
       };
-    if (claims && !claims.some((c) => claimOnLines(lines, cite.line, c)))
+    // A claim put together from several lines (ADR 0124 addendum A4): each part line must exist
+    // and name its own part; then the claim is checked over all the lines together.
+    const parts = cite.with ?? [];
+    const near = (ls: string[], n: number) => ls.slice(Math.max(0, n - 2), n + 1);
+    const partLines: string[] = [];
+    for (const [i, p] of parts.entries()) {
+      const pl = `${label} part ${i + 1}`;
+      if (!insideRepo(p.file))
+        return {
+          code: "outside-repo",
+          message: `${pl} cites ${p.file}, which is outside the repo`,
+        };
+      if (isSecretPath(p.file))
+        return {
+          code: "secret-path",
+          message: `${pl} cites ${p.file}, a file never quoted into a map`,
+        };
+      const ls = linesOf(p.file);
+      if (ls === undefined)
+        return {
+          code: "no-file",
+          message: `${pl} cites ${p.file}, which is not in the repo at this commit`,
+        };
+      if (p.line > ls.length)
+        return {
+          code: "no-line",
+          message: `${pl} cites line ${p.line} of ${p.file}, which has ${ls.length} lines`,
+        };
+      if (
+        !claimOnLines(ls, p.line, routeOrWord(p.value)) &&
+        !claimOnLines(ls, p.line, { kind: "word", value: p.value.replace(/^\/+|\/+$/g, "") })
+      )
+        return {
+          code: "claim-not-on-line",
+          message: `${pl} says "${p.value}" is written at ${p.file}:${p.line} (or the line either side), and it isn't`,
+        };
+      partLines.push(...near(ls, p.line));
+    }
+    const holds = (c: Claim) =>
+      claimOnLines(lines, cite.line, c) ||
+      (parts.length > 0 &&
+        (c.kind === "route"
+          ? partsNamePath([...near(lines, cite.line), ...partLines], c.value)
+          : partLines.some((l) => lineNamesClaim(l, c))));
+    if (claims && !claims.some(holds))
       return {
         code: "claim-not-on-line",
-        message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side) does not name`,
+        message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side)${parts.length ? " and its parts" : ""} does not name${parts.length ? "" : "; if it is put together from other lines (a base URL, a prefix, a context path), cite them in cite.with"}`,
       };
     const line = lines[cite.line - 1] ?? "";
     if (cite.quote && !quoteNotRequired(cite.file, line)) {
@@ -335,7 +382,11 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
   // A file is read when a kept fact cites it, or the reader opened it through Atticus's tools. A
   // flow step's cite doesn't count: a step names its own value, so it is weaker evidence.
   const touched = new Set<string>(o.routed ?? []);
-  for (const f of accepted) if (f.kind !== "flow") touched.add(f.cite.file);
+  for (const f of accepted)
+    if (f.kind !== "flow") {
+      touched.add(f.cite.file);
+      for (const p of f.cite.with ?? []) touched.add(p.file);
+    }
   const read = sources.filter((p) => touched.has(p)).sort();
   const unknown = sources.filter((p) => !touched.has(p)).sort();
   const total = read.length + unknown.length;

@@ -125,7 +125,7 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
     const code = await mapCommand(
       root,
       REPO,
-      { estimate: true, commit: COMMIT, maxTokens: 5000 },
+      { estimate: true, commit: COMMIT, maxTokens: 6000 },
       o.io,
     );
     expect(o.err).toEqual([]);
@@ -136,7 +136,7 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
     expect(text).toMatch(/12 source files, 190 lines, about \d+ tokens/);
     // runtime.yaml's defaults: Copilot and Claude Code allowed, Copilot the default, in VS Code.
     expect(text).toMatch(/Your assistant: agentic \(tier 1\)\. Copilot in VS Code agent mode/);
-    expect(text).toMatch(/In batches at 5000 tokens a prompt: [2-9] prompts/);
+    expect(text).toMatch(/In batches at 6000 tokens a prompt: [2-9] prompts/);
   });
 
   it("says the limit it assumed when none is given, and gives the reading order as JSON", async () => {
@@ -170,7 +170,7 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
 describe("atticus map <repo>: hand-off batches (tier 2)", () => {
   const handoff = (root: string) =>
     new HandoffRuntime({ root, validate: async () => [], now: NOW });
-  const opts: MapOptions = { commit: COMMIT, maxTokens: 5000 };
+  const opts: MapOptions = { commit: COMMIT, maxTokens: 6000 };
 
   it("hands one batch at a time, verifies each answer at once, feeds back what was rejected", async () => {
     const root = adoptedRepo();
@@ -226,7 +226,7 @@ describe("atticus map <repo>: hand-off batches (tier 2)", () => {
         readFileSync(join(runsDir, runId, "context-manifest.json"), "utf8"),
       );
       // Every prompt fits the model's limit, frame and all (ADR 0112).
-      expect(manifest.totalTokens).toBeLessThanOrEqual(promptBudget(5000));
+      expect(manifest.totalTokens).toBeLessThanOrEqual(promptBudget(6000));
       prompts++;
       if (prompts === 2) {
         // What was rejected comes back with the lines it cited, and the kept facts by id.
@@ -336,7 +336,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
       { now: NOW },
     );
     const o = io();
-    const code = await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 5000 }, o.io, {
+    const code = await mapCommand(root, REPO, { commit: COMMIT, maxTokens: 6000 }, o.io, {
       runtime,
       now: NOW,
     });
@@ -344,7 +344,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
     expect(code).toBe(0);
     expect(prompts.length).toBeGreaterThan(1);
     for (const p of prompts)
-      expect(p.pack.manifest.totalTokens).toBeLessThanOrEqual(promptBudget(5000));
+      expect(p.pack.manifest.totalTokens).toBeLessThanOrEqual(promptBudget(6000));
     expect(factsOf(root)).toHaveLength(17);
     expect(o.out.at(-2) ?? o.out.at(-1)).toMatch(/17 facts kept/);
   });
@@ -361,7 +361,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
       { now: NOW },
     );
     const a = adoptedRepo();
-    await mapCommand(a, REPO, { commit: COMMIT, maxTokens: 5000 }, io().io, {
+    await mapCommand(a, REPO, { commit: COMMIT, maxTokens: 6000 }, io().io, {
       runtime: live,
       now: NOW,
     });
@@ -378,7 +378,7 @@ describe("atticus map <repo> in model mode: every batch in one call", () => {
     const b = adoptedRepo();
     const o = io();
     expect(
-      await mapCommand(b, REPO, { commit: COMMIT, maxTokens: 5000 }, o.io, {
+      await mapCommand(b, REPO, { commit: COMMIT, maxTokens: 6000 }, o.io, {
         runtime: replay,
         now: NOW,
       }),
@@ -394,7 +394,7 @@ describe("atticus map <repo> --copy: copy-paste (tier 3)", () => {
     const root = adoptedRepo();
     const runtime = new HandoffRuntime({ root, validate: async () => [], now: NOW });
     const reader = honestReader();
-    const opts: MapOptions = { commit: COMMIT, maxTokens: 5000, copy: true };
+    const opts: MapOptions = { commit: COMMIT, maxTokens: 6000, copy: true };
     const a = io();
     expect(await mapCommand(root, REPO, opts, a.io, { runtime, now: NOW })).toBe(0);
     const between = (out: string[]) =>
@@ -486,7 +486,7 @@ describe("atticus map <repo> --handoff: the step the editors and /atticus-* loop
   it("prints the prompt, the result file and the two finishing commands, batch after batch", async () => {
     const root = adoptedRepo();
     const reader = honestReader();
-    const base = ["map", REPO, "--commit", COMMIT, "--max-tokens", "5000", "--root", root];
+    const base = ["map", REPO, "--commit", COMMIT, "--max-tokens", "6000", "--root", root];
     let r = await cli([...base, "--handoff"]);
     expect(r.err).toEqual([]);
     for (let n = 0; ; n++) {

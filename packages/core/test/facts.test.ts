@@ -267,3 +267,22 @@ describe("where the map lives (ADR 0124, A3b)", () => {
     expect(mapDirOf(adopted)).toBe(join(adopted, ".atticus", "map"));
   });
 });
+
+describe("config facts: secrets by the key's last part", () => {
+  const base = (key: string, value: string) =>
+    JSON.stringify({
+      kind: "config",
+      id: "k",
+      repo: "r",
+      commit: "0123abc",
+      key,
+      value,
+      cite: { file: "a.json", line: 1, value: key },
+    });
+  it("refuses a value for Identity:ClientSecret, accepts TokenUrl and AccessTokenLifetime", () => {
+    expect(parseFacts(base("Identity:ClientSecret", "s3cr3t")).ok).toBe(false);
+    expect(parseFacts(base("Identity:TokenUrl", "https://id.example/connect/token")).ok).toBe(true);
+    expect(parseFacts(base("AccessTokenLifetime", "7200")).ok).toBe(true);
+    expect(parseFacts(base("TokenLifetimeMinutes", "60")).ok).toBe(true);
+  });
+});

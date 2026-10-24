@@ -22,6 +22,17 @@ export const FactId = z
   .regex(/^[a-z0-9][a-z0-9._-]*$/, "fact ids are lowercase slugs: a-z, 0-9, '.', '_' and '-'");
 
 /**
+ * Another line that holds part of a claim built in code: a base URL, a class-level or group
+ * prefix, a context path, a gateway's route, a proto's package and service, an MVC route
+ * template. `value` is the part as written there.
+ */
+export const CitePart = z.strictObject({
+  file: str(),
+  line: z.number().int().positive(),
+  value: str(),
+});
+
+/**
  * Where a fact rests. `value` is what the verifier looks for on the line (the route, the topic,
  * the table, the field, the host or the key); `quote` is the line's text, or enough of it, as a
  * second anchor. The verifier normalises the quote and never requires it from a binary,
@@ -32,6 +43,11 @@ export const Cite = z.strictObject({
   line: z.number().int().positive(),
   value: str(),
   quote: z.string().max(200).optional(),
+  /**
+   * The other lines a path is put together from (ADR 0124 addendum A4): every plain part of the
+   * path must be written on the cited line or one of these, each part on its own line.
+   */
+  with: z.array(CitePart).max(6).optional(),
 });
 export type Cite = z.infer<typeof Cite>;
 
@@ -168,7 +184,9 @@ export const SETTING_KINDS = [
 ] as const;
 
 /** Values that are secrets, or look like them, are never facts. */
-const SECRET_KEY = /(password|passwd|secret|token|api[-_]?key|private[-_]?key|credential)/i;
+/** A key whose last part ends in a secret word (`ClientSecret`, `db.password`), not one that only mentions it (`TokenUrl`, `AccessTokenLifetime`). */
+const SECRET_KEY =
+  /(password|passwd|pwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key|credentials?)$/i;
 const SECRET_SOURCE = /^(env:|vault:|secret:|ref:|\$\{|\{\{)/;
 
 export const ConfigFact = z
@@ -185,7 +203,12 @@ export const ConfigFact = z
     target: z.string().optional(),
   })
   .superRefine((c, ctx) => {
-    if (c.value !== undefined && SECRET_KEY.test(c.key) && !SECRET_SOURCE.test(c.value)) {
+    const last =
+      c.key
+        .trim()
+        .split(/[.:]|__|\s+/)
+        .pop() ?? c.key;
+    if (c.value !== undefined && SECRET_KEY.test(last) && !SECRET_SOURCE.test(c.value)) {
       ctx.addIssue({
         code: "custom",
         path: ["value"],

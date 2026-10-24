@@ -27,6 +27,11 @@ describe("claim on the line (ADR 0089, moved to core for the verifier of ADR 012
     expect(lineNamesRoute('  @GetMapping("/{id}")', "/{id}")).toBe(true);
     expect(lineNamesRoute("router.get('/:id', h)", "/{id}")).toBe(true);
     expect(lineNamesRoute("  return x / y;", "/")).toBe(false);
+    // a template written without its leading slash (ASP.NET, Flask blueprints)
+    expect(lineNamesRoute('[HttpPost("uploadimage")]', "/uploadimage")).toBe(true);
+    expect(lineNamesRoute('[Route("api/v1/[controller]")]', "/api/v1/catalog")).toBe(false);
+    expect(lineNamesRoute('[Route("api/v1/orders")]', "/api/v1/orders")).toBe(true);
+    expect(lineNamesRoute('var x = "myuploadimage";', "/uploadimage")).toBe(false);
   });
   it("names a word not inside a longer word, and a field letter case and separators aside", () => {
     expect(lineNamesWord('@Table(name = "entry")', "entry")).toBe(true);
@@ -90,5 +95,69 @@ describe("secrets never land in a map", () => {
     expect(redactSecrets("token: ${VAULT_TOKEN}")).toBe("token: ${VAULT_TOKEN}");
     expect(redactSecrets("read-timeout: 1500ms")).toBe("read-timeout: 1500ms");
     expect(redactSecrets("-----BEGIN RSA PRIVATE KEY----- MIIE")).toBe("<redacted>");
+  });
+});
+
+describe("a path put together from several lines (ADR 0124 addendum A4)", () => {
+  it("is named when every plain part is written on one of its lines", async () => {
+    const { partsNamePath } = await import("../src/index.js");
+    // Angular: base URL in the environment file, the entity in the service
+    expect(
+      partsNamePath(
+        [
+          "  REST_API_URL: 'http://localhost:9966/petclinic/api/'",
+          "    this.entityUrl = environment.REST_API_URL + 'owners';",
+        ],
+        "/petclinic/api/owners/{id}",
+      ),
+    ).toBe(true);
+    // minimal API: group prefix on one line, the route on another
+    expect(
+      partsNamePath(
+        ['var api = app.MapGroup("api/orders");', '  api.MapGet("{orderId:int}", GetOrder);'],
+        "/api/orders/{orderId}",
+      ),
+    ).toBe(true);
+    // gRPC: package, service and method from the proto
+    expect(
+      partsNamePath(
+        [
+          "package BasketApi;",
+          "service Basket {",
+          "  rpc GetBasket(GetBasketRequest) returns (CustomerBasketResponse);",
+        ],
+        "BasketApi.Basket/GetBasket",
+      ),
+    ).toBe(true);
+    // MVC conventional route: controller and action names
+    expect(
+      partsNamePath(
+        [
+          "public class AccountController : Controller",
+          "  public IActionResult Login(string returnUrl)",
+        ],
+        "/account/login",
+      ),
+    ).toBe(true);
+    // a part written nowhere fails
+    expect(
+      partsNamePath(
+        ["this.entityUrl = environment.REST_API_URL + 'owners';"],
+        "/petclinic/api/owners",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("secret-looking keys: the key's last part ends in a secret word", () => {
+  it("redacts ClientSecret and db.password, not TokenUrl or AccessTokenLifetime", () => {
+    expect(redactSecrets('    "ClientSecret": "s3cr3t",')).toBe('    "ClientSecret": <redacted>');
+    expect(redactSecrets("  password: hunter2")).toBe("  password: <redacted>");
+    expect(redactSecrets('    "TokenUrl": "https://id.example/connect/token",')).toBe(
+      '    "TokenUrl": "https://id.example/connect/token",',
+    );
+    expect(redactSecrets("    AccessTokenLifetime = 7200,")).toBe(
+      "    AccessTokenLifetime = 7200,",
+    );
   });
 });

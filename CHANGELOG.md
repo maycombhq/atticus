@@ -4,6 +4,11 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### A path written across lines can be cited (ADR 0124, A4)
+
+- **`cite.with`** in a fact: the other lines its path is built from (a class prefix, a base URL, a context path, a route template, a proto package). `atticus verify` checks every part is written on one of the lines.
+- A route template without a leading slash (`[HttpPost("upload")]`) now verifies; config keys with `:` or `__` (`ConnectionStrings:Default`) are read by their last part; `TokenUrl` is no longer taken for a secret.
+
 ### Your assistant reads a repo into facts, at any tier (ADR 0124, A3a)
 
 - **`/atticus-map <repo>`** is the reading protocol for an assistant that opens files and runs commands itself (Claude Code, Cursor, Copilot agent mode, Gemini CLI, Windsurf, AGENTS.md tools), generated for each one and for the Claude Code plugin. Outline the repo, read whole only the files that hold facts, write one cited fact per line to the facts file (the field list is generated from the facts schema), keep secrets out (`source: env:NAME`), ask what the code can't settle, then loop on `atticus verify` until it passes.
