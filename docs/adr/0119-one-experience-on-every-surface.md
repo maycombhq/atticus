@@ -92,7 +92,7 @@ These rules hold for every surface, today's and future ones. Each item is built 
 
 The change cockpit, evidence beside a question, the code's flows and changes in the editor, a hand-off PR that reviews itself, watch and nudge, start from a similar change, a system page, a review mode for knowledge, undo for recorded decisions, bulk actions on Waiting, and a guided first hour. Each is its own ticket, with an ADR where it touches a contract.
 
-Choosing the assistant and the model from the app, branches, and knowledge kept inside the repos each have an ADR of their own.
+Choosing the assistant and the model from the app, branches, and the knowledge files people drop into the metarepo's `inputs/` (never folders inside the code repos) each have an ADR of their own.
 
 ## Consequences
 
