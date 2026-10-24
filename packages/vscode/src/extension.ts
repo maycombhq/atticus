@@ -31,7 +31,7 @@ import { commandText } from "./cli";
 import { copilotSetup, describeEnd, endActions, endFiles } from "./describe";
 import { aiProgressTitle, runProgressTitle } from "./feedback";
 import { pickLoading } from "./pick";
-import { statusText, stepTitle, WORDS } from "./words";
+import { statusText, stepTitle, watchTooltip, WORDS } from "./words";
 import { chooseModel } from "./vscode-model";
 import type { StepEnd } from "./runner";
 import { checkRunStep, runEndMessage, runProgressMessage, runRefusedMessage } from "./run-step";
@@ -134,6 +134,7 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
     // A metarepo made or adopted in this window shows its sections at once, not after a reload.
     void vscode.commands.executeCommand("setContext", "atticus.hasMetarepo", !!svc.root);
     void view.refresh().then(updateStatus);
+    void readWatched();
     waiting.refresh();
     for (const t of sections) t.refresh();
     lenses.refresh();
@@ -143,16 +144,30 @@ export function activate(context: vscode.ExtensionContext): AtticusHandles {
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   status.command = "workbench.view.extension.atticus";
   context.subscriptions.push(status);
+  // WP7.5: the changes the person watches, as atticus watch --json says how each is doing.
+  let watched: string[] = [];
+  const readWatched = async () => {
+    const root = svc.root;
+    if (!root || !svc.cliOk) return;
+    try {
+      const r = await svc.cli(root)(["watch", "--json", "--root", root]);
+      watched = r.code === 0 ? ((JSON.parse(r.stdout) as { lines?: string[] }).lines ?? []) : [];
+    } catch {
+      watched = [];
+    }
+    updateStatus();
+  };
   const updateStatus = () => {
     if (!svc.root) return status.hide();
     // Without the command line nothing was read: say so, not "0 questions".
     status.text = svc.cliOk
-      ? statusText(view.openQuestions, view.next, view.changeTitle)
+      ? statusText(view.openQuestions, view.next, view.changeTitle, watched.length)
       : "$(warning) Atticus: no command line";
-    status.tooltip = view.next
+    const tip = view.next
       ? `Next: ${view.next.command}
 ${view.next.why}`
       : "Open the Atticus sidebar";
+    status.tooltip = [tip, watchTooltip(watched)].filter(Boolean).join("\n\n");
     status.show();
   };
 
@@ -171,6 +186,11 @@ ${view.next.why}`
   for (const ev of [files.onDidCreate, files.onDidChange, files.onDidDelete])
     context.subscriptions.push(ev(soon));
   context.subscriptions.push(files, { dispose: () => clearTimeout(pending) });
+  // The person's own file (never committed) says what they watch.
+  const me = vscode.workspace.createFileSystemWatcher("**/.atticus/me.yaml");
+  for (const ev of [me.onDidCreate, me.onDidChange, me.onDidDelete])
+    context.subscriptions.push(ev(() => void readWatched()));
+  context.subscriptions.push(me);
 
   const participant = vscode.chat.createChatParticipant(
     "atticus.chat",

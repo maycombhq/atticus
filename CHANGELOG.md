@@ -54,7 +54,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - Follow a change without being on it: `atticus watch <change>` (`--off` to stop), **Watch this change** on its cockpit, or on a change in VS Code's sidebar. It is kept in your own `.atticus/me.yaml`, never committed.
 - Your digest gains "Changes you watch", one line each: where it is, how many things block it, the questions that wait, and the next step. `atticus watch` with no change prints the same. Watched changes don't count as waiting on you.
 - The local API gains `PUT /api/me/watch`, and `GET /api/me` lists what you watch (API 2.21.0).
-- Not built yet: a status-bar count in the editors.
+- VS Code's status bar says how many changes you watch, and its tooltip says how each is doing. IntelliJ has no status-bar count yet.
 
 ### A page for each system
 

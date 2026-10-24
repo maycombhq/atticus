@@ -10,6 +10,7 @@ import {
   startupNotice,
   statusText,
   stepTitle,
+  watchTooltip,
 } from "../src/words";
 
 /** ADR 0098: the extension speaks in plain words first; the command is beside it, not instead. */
@@ -115,6 +116,17 @@ describe("the status bar", () => {
       "$(shield) Atticus: 1 question · next: a person's step",
     );
     expect(statusText(undefined, undefined)).toBe("$(shield) Atticus");
+  });
+
+  it("counts the changes the person watches, and the tooltip says how each is doing (WP7.5)", () => {
+    expect(statusText(2, undefined, undefined, 1)).toBe(
+      "$(shield) Atticus: 2 questions · watching 1",
+    );
+    expect(statusText(2, undefined, undefined, 0)).toBe("$(shield) Atticus: 2 questions");
+    expect(watchTooltip([])).toBe("");
+    expect(watchTooltip(["add-transfer-limit: in define. Next: raise the hand-off."])).toBe(
+      "Changes you watch:\nadd-transfer-limit: in define. Next: raise the hand-off.",
+    );
   });
 });
 

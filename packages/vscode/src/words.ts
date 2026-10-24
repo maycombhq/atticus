@@ -54,6 +54,7 @@ export const WORDS = {
   startFromNothing: "Start from nothing",
   startFromNothingDetail: "Write the brief from scratch.",
   findingSimilar: "Looking for earlier changes like it…",
+  changesYouWatch: "Changes you watch:",
 };
 
 /** WP7.6: an archived change near a new one, as `atticus change similar --json` gives it. */
@@ -260,6 +261,8 @@ export function statusText(
   questions: number | undefined,
   next: NextStep | undefined,
   titles?: ChangeTitles,
+  /** WP7.5: how many changes the person watches. */
+  watching?: number,
 ): string {
   const parts: string[] = [];
   if (questions !== undefined) parts.push(`${questions} question${questions === 1 ? "" : "s"}`);
@@ -267,7 +270,13 @@ export function statusText(
     const t = next.person ? "a person's step" : stepTitle(next, titles);
     parts.push(`next: ${t.length > 70 ? `${t.slice(0, 67).trimEnd()}…` : t}`);
   }
+  if (watching) parts.push(`watching ${watching}`);
   return `$(shield) Atticus${parts.length ? `: ${parts.join(" · ")}` : ""}`;
+}
+
+/** The status bar's tooltip lines for watched changes, as `atticus watch --json` says them. */
+export function watchTooltip(lines: string[]): string {
+  return lines.length ? [WORDS.changesYouWatch, ...lines].join("\n") : "";
 }
 
 /**
