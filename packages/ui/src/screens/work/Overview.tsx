@@ -1,7 +1,9 @@
-import { useApi, useLiveEvents, type Loaded } from "../../api/client.js";
+import type { Api } from "@maycombhq/core";
+import type { Loaded } from "../../api/client.js";
 import { Panel, Ring, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Table } from "../know/common.js";
+import { trustChip } from "../map/Trust.js";
 import type { QuestionListView } from "../Questions.js";
 import {
   changeStep,
@@ -18,9 +20,11 @@ import { Command, Problems, RunNextPanel } from "./RunNext.js";
 const T = COPY.dashboardExtra;
 
 /**
- * The Dashboard (plan 4.5): what is onboarded and scanned, the changes in flight and their
- * stage, the open questions, and the one command to run next. Read from the onboarding view
- * (ADR 0084), /api/changes and /api/questions; it runs nothing.
+ * Home's overview: what was the Overview (plan 4.5), merged into Home by the product owner on
+ * 2026-10-24. The one step to run next; what is onboarded, scanned and trusted; the changes in
+ * flight, each with the stage it is at and its command; the slash commands. Read from the
+ * onboarding view (ADR 0084), /api/trust, /api/changes and /api/questions, which Home loads once
+ * for all its panels; it runs nothing.
  */
 
 const W = COPY.work;
@@ -81,7 +85,17 @@ export function InFlight({ changes }: { changes: ChangeRow[] }) {
             </>
           ),
         },
-        { label: W.stateCol, cell: (c) => c.state },
+        {
+          label: W.stateCol,
+          cell: (c) =>
+            c.openFindings?.blocking ? (
+              <>
+                {c.state} <span className="chip blocking">{COPY.commandCenter.blocked}</span>
+              </>
+            ) : (
+              c.state
+            ),
+        },
         {
           label: W.stageCol,
           cell: (c) => {
@@ -100,26 +114,6 @@ export function InFlight({ changes }: { changes: ChangeRow[] }) {
         },
       ]}
     />
-  );
-}
-
-export function OpenQuestions({ list }: { list: QuestionListView }) {
-  const qs = list.questions;
-  if (qs.length === 0) return <div className="state">{W.noQuestions}</div>;
-  return (
-    <div className="stack">
-      <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
-        {qs.slice(0, 5).map((q) => (
-          <li key={q.id}>
-            <a href={`#/questions/${q.id}`}>{q.question}</a>{" "}
-            <span className="muted mono" style={{ fontSize: 11 }}>
-              {q.repo}
-            </span>
-          </li>
-        ))}
-      </ul>
-      <a href="#/questions">{W.allQuestions(qs.length)}</a>
-    </div>
   );
 }
 
@@ -165,52 +159,77 @@ export function together(
   };
 }
 
-export function DashboardPage(p: {
+/** Run next on Home: the one step, onboarding first, then a change, then starting one. */
+export function HomeNext(p: {
   onboarding: Loaded<OnboardingData>;
   changes: Loaded<ChangeRow[]>;
   questions: Loaded<QuestionListView>;
 }) {
-  const all = together(p.onboarding, p.changes, p.questions);
   return (
-    <>
-      <p className="muted" style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.55 }}>
-        {W.dashIntro}
-      </p>
-      <View of={all}>
-        {(d) => (
-          <RunNextPanel
-            step={dashboardStep(d.onboarding, d.questions.questions.length, d.changes)}
-          />
-        )}
-      </View>
-      <div className="bento">
-        <Panel title={W.coverage} span="span 5">
-          <View of={p.onboarding}>{(v) => <CoverageView v={v} />}</View>
-        </Panel>
-        <Panel title={W.openQuestions} span="span 7">
-          <View of={p.questions}>{(l) => <OpenQuestions list={l} />}</View>
-        </Panel>
-        <Panel title={W.inFlight} span="1 / -1">
-          <View of={p.changes}>{(c) => <InFlight changes={c} />}</View>
-        </Panel>
-        <Panel title={W.slashTitle} span="1 / -1">
-          <SlashCommands />
-        </Panel>
-      </div>
-    </>
+    <View of={together(p.onboarding, p.changes, p.questions)}>
+      {(d) => (
+        <RunNextPanel step={dashboardStep(d.onboarding, d.questions.questions.length, d.changes)} />
+      )}
+    </View>
   );
 }
 
-export function Dashboard() {
-  const onboarding = useApi<OnboardingData>("/api/onboarding");
-  const changes = useApi<ChangeRow[]>("/api/changes");
-  const questions = useApi<QuestionListView>("/api/questions?state=open");
-  useLiveEvents((e) => {
-    if (e.type === "file.changed") {
-      onboarding.reload();
-      changes.reload();
-      questions.reload();
-    }
-  });
-  return <DashboardPage onboarding={onboarding} changes={changes} questions={questions} />;
+/** How far to trust each repo's map, in a line: the count, the repos not trusted, Map › Trust. */
+export function TrustSummary({ v }: { v: Api.TrustViewT }) {
+  const TR = COPY.trust;
+  const not = v.repos.filter((r) => r.state !== "trusted");
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <Problems list={v.problems} />
+      <p style={{ margin: 0 }}>{TR.summary(v.repos.length - not.length, v.repos.length)}</p>
+      {not.length === 0 ? (
+        <p className="work-say" style={{ margin: 0 }}>
+          {W.allTrusted}
+        </p>
+      ) : (
+        <ul aria-label={W.notTrusted} style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+          {not.slice(0, 5).map((r) => (
+            <li key={r.repo}>
+              <span className="mono">{r.repo}</span>{" "}
+              <span className={`chip ${trustChip(r.state)}`}>{TR.states[r.state]}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <a href="#/trust">{W.openTrust}</a>
+    </div>
+  );
+}
+
+/** The estate (scanned and trusted) beside the changes in flight, each at its stage. */
+export function HomeEstate(p: {
+  onboarding: Loaded<OnboardingData>;
+  trust: Loaded<Api.TrustViewT>;
+  changes: Loaded<ChangeRow[]>;
+}) {
+  return (
+    <div className="bento">
+      <Panel title={W.estate} span="span 5">
+        <div className="stack" style={{ gap: 14 }}>
+          <View of={p.onboarding}>{(v) => <CoverageView v={v} />}</View>
+          <View
+            of={p.trust}
+            empty={(v) => v.repos.length === 0 && v.problems.length === 0}
+            emptyText={W.trustNone}
+          >
+            {(v) => <TrustSummary v={v} />}
+          </View>
+        </div>
+      </Panel>
+      <Panel
+        title={W.inFlight}
+        span="span 7"
+        meta={
+          p.changes.state === "ready" ? String(p.changes.data.filter(inFlight).length) : undefined
+        }
+      >
+        <View of={p.changes}>{(c) => <InFlight changes={c} />}</View>
+      </Panel>
+    </div>
+  );
 }

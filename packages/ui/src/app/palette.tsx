@@ -23,7 +23,9 @@ export function paletteItems(
   const t = text.trim().toLowerCase();
   const hit = (s: string) => !t || s.toLowerCase().includes(t);
   const out: Item[] = [
-    ...SCREENS.filter((s) => offered(s, full) && (hit(s.label) || hit(s.id))).map((s) => ({
+    ...SCREENS.filter(
+      (s) => offered(s, full) && (hit(s.label) || hit(s.id) || (s.also ?? []).some(hit)),
+    ).map((s) => ({
       kind: "screen" as const,
       label: s.label,
       detail: s.group

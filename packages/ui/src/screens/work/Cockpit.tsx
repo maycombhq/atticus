@@ -1,11 +1,11 @@
 import type { Api } from "@maycombhq/core";
-import { api, useApi, useReloadOnFiles } from "../../api/client.js";
+import { api, useApi, useReloadOnFiles, type Loaded } from "../../api/client.js";
 import { screenOf, tabHref } from "../../app/screens.js";
 import { Panel, View } from "../../app/ui.js";
 import { COPY } from "../../copy.js";
 import { Note, queryParam, useAction } from "../know/common.js";
 import type { ChangeRow } from "./next.js";
-import { Command } from "./RunNext.js";
+import { Command, PickAChange } from "./RunNext.js";
 import { ChangePicker } from "./Stage.js";
 
 /**
@@ -227,10 +227,28 @@ export function WatchButton(p: { change: string; watching: boolean; onChanged?: 
   );
 }
 
+/**
+ * The page once the list is loaded: the change its address names, picked in All changes; without
+ * one (or with one not in the list), say to pick it there.
+ */
+export function CockpitPicked(p: {
+  list: ChangeRow[];
+  current: string | undefined;
+  c: Loaded<Cockpit>;
+}) {
+  if (!p.current || !p.list.some((x) => x.id === p.current)) return <PickAChange bare />;
+  return (
+    <>
+      <ChangePicker list={p.list} current={p.current} screen="cockpit" />
+      <View of={p.c}>{(d) => <CockpitView c={d} />}</View>
+      <PastChanges change={p.current} />
+    </>
+  );
+}
+
 export function ChangeCockpit({ hash }: { hash: string }) {
   const list = useApi<ChangeRow[]>("/api/changes");
-  const asked = queryParam(hash, "change");
-  const current = asked ?? (list.state === "ready" ? list.data[0]?.id : undefined);
+  const current = queryParam(hash, "change");
   const c = useApi<Cockpit>(
     current ? `/api/changes/${encodeURIComponent(current)}/cockpit` : undefined,
   );
@@ -250,13 +268,7 @@ export function ChangeCockpit({ hash }: { hash: string }) {
       }
     >
       <View of={list} empty={(l) => l.length === 0} emptyText={C.none}>
-        {(l) => (
-          <>
-            <ChangePicker list={l} current={current} screen="cockpit" />
-            {current && <View of={c}>{(d) => <CockpitView c={d} />}</View>}
-            {current && <PastChanges change={current} />}
-          </>
-        )}
+        {(l) => <CockpitPicked list={l} current={current} c={c} />}
       </View>
     </Panel>
   );

@@ -47,7 +47,8 @@ export function commitWords(r: Repo): string {
   return r.sameCommit ? T.sameCommit(facts) : T.otherCommit(facts, r.checkout.commit);
 }
 
-const chip = (s: Repo["state"]) =>
+/** The chip a trust state wears (also on Home). */
+export const trustChip = (s: Repo["state"]) =>
   s === "trusted" ? "done" : s === "rejected" || s === "stale" ? "blocking" : "warn";
 
 export function TrustRow({ r }: { r: Repo }) {
@@ -59,7 +60,7 @@ export function TrustRow({ r }: { r: Repo }) {
         <h3 id={head} className="h" style={{ fontSize: 14, margin: 0 }}>
           {r.repo}
         </h3>
-        <span className={`chip ${chip(r.state)}`}>{T.states[r.state]}</span>
+        <span className={`chip ${trustChip(r.state)}`}>{T.states[r.state]}</span>
       </div>
       <p className="work-why" style={{ margin: "6px 0" }}>
         {trustWhy(r)}

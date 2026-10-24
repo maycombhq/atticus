@@ -14,10 +14,9 @@ import {
   stageStep,
   taskStep,
   type ChangeRow,
-  type Stage,
   type TaskRow,
 } from "./next.js";
-import { Command, NoChangeYet, RunNextPanel } from "./RunNext.js";
+import { Command, NoChangeYet, PickAChange, RunNextPanel } from "./RunNext.js";
 import { RunsLink } from "../runs/Runs.js";
 
 /**
@@ -160,8 +159,8 @@ export function StagePage(p: {
   return (
     <View of={p.list} empty={(l) => l.length === 0} emptyContent={<NoChangeYet />}>
       {(list) => {
-        const c = pickChange(list, p.wanted, p.stage as Stage);
-        if (!c) return <NoChangeYet />;
+        const c = pickChange(list, p.wanted);
+        if (!c) return <PickAChange />;
         const ready = p.tasks?.state === "ready" ? p.tasks.data : undefined;
         return (
           <>
@@ -172,11 +171,6 @@ export function StagePage(p: {
                 </span>
               </p>
               <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
-                {/* The change's pages that aren't stage tabs: its list and At a glance. */}
-                <a href={`#/cockpit?change=${encodeURIComponent(c.id)}`}>
-                  {COPY.nav.screens.cockpit}
-                </a>
-                <a href="#/changes">{COPY.nav.allChanges}</a>
                 <RunsLink change={c.id} />
                 {p.stage === "tasks" && (
                   <a href={`#/conformance?change=${encodeURIComponent(c.id)}`}>
@@ -225,7 +219,7 @@ export function StagePage(p: {
 function useStage(hash: string, stage: "feature" | "stories" | "tasks") {
   const list = useApi<ChangeRow[]>("/api/changes");
   const wanted = queryParam(hash, "change");
-  const c = list.state === "ready" ? pickChange(list.data, wanted, stage) : undefined;
+  const c = list.state === "ready" ? pickChange(list.data, wanted) : undefined;
   const detail = useApi<ChangeDetailView>(c ? `/api/changes/${c.id}` : undefined);
   const tasks = useApi<TaskRow[]>(
     c && stage === "tasks" ? `/api/changes/${c.id}/tasks` : undefined,

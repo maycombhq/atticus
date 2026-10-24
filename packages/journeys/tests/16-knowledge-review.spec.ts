@@ -288,9 +288,10 @@ test("needs across changes: every open need, marked as on a change's page (ADR 0
   await expect(change).not.toContainText("Network firewall rule");
   await accessible(page, "needs across changes, every one");
 
-  // Waiting on you counts them and links here; Questions is one of its sections.
+  // Home's Waiting on you counts them and links here; Questions is one of its sections.
   await open(page, a(), "home");
-  await expect(page.getByRole("heading", { name: "Waiting on you", level: 1 })).toBeAttached();
+  await expect(page.getByRole("heading", { name: "Home", level: 1 })).toBeAttached();
+  await expect(page.getByRole("heading", { name: "Waiting on you", level: 2 })).toBeVisible();
   const needs = page.getByRole("link", { name: /^Needs still open 1$/ });
   await expect(needs).toHaveAttribute("href", "#/changes?across=needs");
   await expect(page.getByRole("link", { name: /^Questions to answer/ })).toHaveAttribute(

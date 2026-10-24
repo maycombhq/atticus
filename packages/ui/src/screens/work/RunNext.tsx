@@ -84,6 +84,31 @@ export function RunNext<T>({ of, step }: { of: Loaded<T>; step: (d: T) => Step }
  * A page that works on one change, when there is none: what to run to start one, with Copy,
  * and where the changes are listed. Always in a panel, never a bare line.
  */
+/**
+ * A change's tab (At a glance, a stage) opened with no change in its address: pick one in All
+ * changes, and every tab of Change follows it. Bare inside a panel, else a panel of its own.
+ */
+export function PickAChange({ bare = false }: { bare?: boolean }) {
+  const W = COPY.work;
+  const body = (
+    <>
+      <p className="work-why">{W.pickAChange}</p>
+      <p className="work-say">
+        <a href="#/changes">{W.openAllChanges}</a>
+      </p>
+    </>
+  );
+  if (bare) return <div className="state">{body}</div>;
+  return (
+    <section className="panel" aria-labelledby="pick-a-change" style={{ gridColumn: "1 / -1" }}>
+      <h2 id="pick-a-change" className="h">
+        {W.pickAChangeTitle}
+      </h2>
+      {body}
+    </section>
+  );
+}
+
 export function NoChangeYet({ title }: { title?: string }) {
   const W = COPY.work;
   return (

@@ -12,10 +12,15 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
   const tour = page.getByRole("dialog", { name: "Your home" });
   await expect(tour).toBeVisible();
   await accessible(page, "first-run tour");
-  await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByRole("dialog", { name: "Ask in plain words" })).toBeVisible();
-  await page.getByRole("button", { name: "Next" }).click();
-  await expect(page.getByRole("dialog", { name: "Approving is the pull request" })).toBeVisible();
+  for (const step of [
+    "Ask in plain words",
+    "One change, a tab per stage",
+    "Run a step in your assistant",
+    "Approving is the pull request",
+  ]) {
+    await page.getByRole("button", { name: "Next" }).click();
+    await expect(page.getByRole("dialog", { name: step })).toBeVisible();
+  }
   await page.getByRole("button", { name: "Done" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // No view to pick: one navigation, every screen in its group.
@@ -34,20 +39,49 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
   await expect(main.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   await expect(nav.getByRole("button", { name: "More" })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Home pages" })).toHaveCount(0);
-  // Change has a tab per stage; the separate brief is behind --full, its address still opens.
+  // Change opens on All changes; At a glance, then a tab per stage. The separate brief is behind
+  // --full, its address still opens.
   await main.getByRole("link", { name: "Change" }).click();
+  await expect(page).toHaveURL(/#\/changes$/);
   const tabs = page.getByRole("navigation", { name: "Change pages" });
   await expect(tabs.getByRole("link")).toHaveText([
+    "All changes",
+    "At a glance",
     "Feature design",
     "Architecture",
     "Stories",
     "Tasks",
   ]);
+  await expect(tabs.getByRole("link", { name: "All changes" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
   await expect(tabs.getByRole("link", { name: "Feature brief" })).toHaveCount(0);
+  // A change's tab with no change picked says to pick one in All changes.
+  await tabs.getByRole("link", { name: "At a glance" }).click();
+  await expect(page.getByText(/Pick it in All changes/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open All changes" })).toHaveAttribute(
+    "href",
+    "#/changes",
+  );
+  // Home is one page: what needs you, then what is scanned and trusted and the changes in flight.
   await open(page, app(), "home");
+  await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeAttached();
   await expect(page.getByRole("heading", { level: 2, name: "Needs a person" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "What is scanned and trusted" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Changes in flight" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Open Map › Trust" })).toHaveAttribute(
+    "href",
+    "#/trust",
+  );
   await expect(page.getByText(/Approving is the pull request/).first()).toBeVisible();
   await accessible(page, "home");
+  // The Overview's old address opens Home.
+  await open(page, app(), "dashboard");
+  await expect(page.getByRole("heading", { level: 1, name: "Home" })).toBeAttached();
+  await expect(main.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
 });
 
 test("reads and edits the brief, then saves it", async ({ page }) => {

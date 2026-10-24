@@ -15,6 +15,9 @@ import {
 } from "../app/inbox.js";
 import { Bar, Donut, Panel, Ring, View } from "../app/ui.js";
 import { useNeedsAcross } from "./knowledge/NeedsAcross.js";
+import type { QuestionListView } from "./Questions.js";
+import type { OnboardingData } from "./work/next.js";
+import { HomeEstate, HomeNext, SlashCommands } from "./work/Overview.js";
 
 const T = COPY.commandCenter;
 
@@ -56,14 +59,6 @@ const PHASE_LABEL: Record<string, string> = {
   "release-ready": T.release,
 };
 const ACTIVE = new Set<string>([...PHASES, "returned", "post-release-review"]);
-
-function stateChip(c: ChangeSummary) {
-  if (c.openFindings.blocking > 0) return { cls: "blocking", text: T.blocked };
-  return {
-    cls: c.state === "release-ready" ? "warn" : "",
-    text: (PHASE_LABEL[c.state] ?? c.state).toUpperCase(),
-  };
-}
 
 interface Setup {
   baselined: boolean;
@@ -545,6 +540,13 @@ export function WaitingList(p: {
   );
 }
 
+/**
+ * Home: one page (the product owner, 2026-10-24). What needs you first (setup, the step to run
+ * next, Waiting on you, Needs a person), then the estate (what is scanned and trusted) and the
+ * changes in flight with the stage each is at, then the numbers, the gates, the map and the
+ * findings. The Overview is merged in: its panels share Home's loads of /api/changes and
+ * /api/questions, and add /api/onboarding and /api/trust.
+ */
 export function CommandCenter() {
   const changes = useApi<ChangeSummary[]>("/api/changes");
   const findings = useApi<Finding[]>("/api/findings?state=open");
@@ -552,9 +554,9 @@ export function CommandCenter() {
   const qs = useApi<{ data: { questions?: InboxData["questions"] } | null }>("/api/view/questions");
   const triage = useApi<{ data: { items?: InboxData["triage"] } | null }>("/api/view/triage");
   const todo = useApi<{ steps: InboxData["steps"] }>("/api/todo");
-  const asked = useApi<{ questions: NonNullable<InboxData["questionFiles"]> }>(
-    "/api/questions?state=open",
-  );
+  const asked = useApi<QuestionListView>("/api/questions?state=open");
+  const onboarding = useApi<OnboardingData>("/api/onboarding");
+  const trust = useApi<Api.TrustViewT>("/api/trust");
   const knowledge = useApi<Api.KnowledgeItemListT>("/api/knowledge/items");
   const [text, setText] = useState("");
   const [bulkNote, setBulkNote] = useState<string | undefined>();
@@ -610,6 +612,8 @@ export function CommandCenter() {
       findings.reload();
     }
     if (e.type === "file.changed") {
+      onboarding.reload();
+      trust.reload();
       needs.reload();
       todo.reload();
       qs.reload();
@@ -650,6 +654,7 @@ export function CommandCenter() {
       </div>
       <HowStepsRun />
       <SetupChecklist />
+      <HomeNext onboarding={onboarding} changes={changes} questions={asked} />
       <div className="bento">
         <Panel title={T.waitingOnYou} span="1 / -1">
           <p className="muted" style={{ margin: "0 0 8px", fontSize: 12.5 }}>
@@ -706,6 +711,8 @@ export function CommandCenter() {
       <p className="muted" style={{ margin: 0, fontSize: 12.5 }}>
         {T.approvingIsThePull}
       </p>
+
+      <HomeEstate onboarding={onboarding} trust={trust} changes={changes} />
 
       <div className="bento" role="list" aria-label={T.keyNumbers}>
         {[
@@ -797,25 +804,29 @@ export function CommandCenter() {
           </View>
         </Panel>
 
-        <Panel title={T.changesInFlight} meta={`${inFlight.length}`} span="span 4">
-          <View of={changes} empty={() => inFlight.length === 0} emptyText={T.noChangesInFlight}>
-            {() =>
-              inFlight.map((c) => {
-                const s = stateChip(c);
-                return (
-                  <div key={c.id} className="list-row">
-                    <a
-                      href={`#/changes/${c.id}`}
-                      className="mono"
-                      style={{ fontSize: 12, textDecoration: "none" }}
-                    >
-                      {c.id}
-                    </a>
-                    <span className={`chip ${s.cls}`}>{s.text}</span>
-                  </div>
-                );
-              })
-            }
+        <Panel title={T.catalog} span="span 4">
+          <View of={kinds} empty={(k) => k.length === 0} emptyText={T.noFactsYet}>
+            {(k) => {
+              const top = [...k].sort((a, b) => b.count - a.count).slice(0, 5);
+              const max = Math.max(1, ...top.map((x) => x.count));
+              return (
+                <div className="stack">
+                  {top.map((x) => (
+                    <div key={x.kind} className="row" style={{ gap: 8 }}>
+                      <span className="hud" style={{ width: 110, fontSize: 10 }}>
+                        {x.kind}
+                      </span>
+                      <div style={{ flex: 1 }}>
+                        <Bar value={x.count} max={max} label={T.records(x.kind)} />
+                      </div>
+                      <span className="n" style={{ fontSize: 14 }}>
+                        {x.count}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            }}
           </View>
         </Panel>
 
@@ -897,31 +908,10 @@ export function CommandCenter() {
             )}
           </View>
         </Panel>
-
-        <Panel title={T.catalog} span="span 4">
-          <View of={kinds} empty={(k) => k.length === 0} emptyText={T.noFactsYet}>
-            {(k) => {
-              const top = [...k].sort((a, b) => b.count - a.count).slice(0, 5);
-              const max = Math.max(1, ...top.map((x) => x.count));
-              return (
-                <div className="stack">
-                  {top.map((x) => (
-                    <div key={x.kind} className="row" style={{ gap: 8 }}>
-                      <span className="hud" style={{ width: 110, fontSize: 10 }}>
-                        {x.kind}
-                      </span>
-                      <div style={{ flex: 1 }}>
-                        <Bar value={x.count} max={max} label={T.records(x.kind)} />
-                      </div>
-                      <span className="n" style={{ fontSize: 14 }}>
-                        {x.count}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              );
-            }}
-          </View>
+      </div>
+      <div className="bento">
+        <Panel title={COPY.work.slashTitle} span="1 / -1">
+          <SlashCommands />
         </Panel>
       </div>
       <p className="hud" style={{ textAlign: "center", fontSize: 10, color: "var(--faint)" }}>

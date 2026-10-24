@@ -13,9 +13,10 @@ const T = COPY.nav;
 
 /**
  * The tabs of the entry shown, above its page: where you are (the entry, the change, the page),
- * then every tab of the entry. Change's four stage tabs keep the change; with --full a change's
- * many pages are grouped by phase. A page that is part of another, or reached by a link (a
- * change's At a glance, say), marks no tab it isn't; one behind --full shows the six's tabs.
+ * then every tab of the entry. Change's tabs (All changes, At a glance, then a tab per stage)
+ * keep the change; with --full a change's many pages are grouped by phase. A page that is part
+ * of another, or reached by a link (a change's picture, say), marks no tab it isn't; one behind
+ * --full shows the six's tabs.
  */
 export function SectionTabs({
   current,
@@ -33,12 +34,9 @@ export function SectionTabs({
   // where it is.
   if (tabs.length < 2 && (tabs[0]?.id === current.id || !tabs.length)) return null;
   const shown = current.under ?? current.id;
-  // The list's tab never repeats the entry's name: every change, or the one open.
-  const label = (s: ScreenDef) =>
-    s.id === "changes" ? (change ? T.thisChange : T.allChanges) : s.label;
   const tab = (s: ScreenDef) => (
     <a key={s.id} href={tabHref(s, change)} aria-current={s.id === shown ? "page" : undefined}>
-      {label(s)}
+      {s.label}
     </a>
   );
   const grouped = full && current.section === "Change";
@@ -54,7 +52,7 @@ export function SectionTabs({
           </>
         )}
         <span aria-hidden="true"> › </span>
-        <span aria-current="location">{label(current)}</span>
+        <span aria-current="location">{current.label}</span>
       </nav>
       {tabs.length > 1 && (
         <nav aria-label={T.tabs(section)} className="tabs">

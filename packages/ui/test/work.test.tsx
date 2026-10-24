@@ -1,12 +1,13 @@
 import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import type { Api } from "@maycombhq/core";
 import { Nav } from "../src/app/nav.js";
 import { SectionTabs } from "../src/app/tabs.js";
 import { screenOf } from "../src/app/screens.js";
 import { COPY } from "../src/copy.js";
 import type { QuestionListView } from "../src/screens/Questions.js";
-import { DashboardPage } from "../src/screens/work/Dashboard.js";
+import { HomeEstate, HomeNext, SlashCommands } from "../src/screens/work/Overview.js";
 import {
   architectureStep,
   dashboardStep,
@@ -142,12 +143,12 @@ describe("what to run next (plan 4.5)", () => {
     expect(s.link?.href).toBe("#/stories?change=add-limit");
   });
 
-  it("opens a stage page on the change in the route, else the first at that stage", () => {
+  it("opens a change's tab on the change in its address only (picked in All changes)", () => {
     const list = [change("a", "define"), change("b", "plan"), change("c", "released")];
-    expect(pickChange(list, "c", "stories")?.id).toBe("c");
-    expect(pickChange(list, undefined, "stories")?.id).toBe("b");
-    expect(pickChange(list, undefined, "tasks")?.id).toBe("a");
-    expect(pickChange([], undefined, "tasks")).toBeUndefined();
+    expect(pickChange(list, "c")?.id).toBe("c");
+    expect(pickChange(list, undefined)).toBeUndefined();
+    expect(pickChange(list, "nope")).toBeUndefined();
+    expect(pickChange([], undefined)).toBeUndefined();
   });
 
   it("has the dashboard finish onboarding first, then follow a change, then start one", () => {
@@ -197,7 +198,7 @@ describe("the menu: six entries (the Surfaces design)", () => {
     expect(order.every((i) => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(out).toContain('href="#/canvas" aria-current="page"');
-    expect(out).toContain('href="#/feature-design"');
+    expect(out).toContain('href="#/changes"');
     expect(out).toContain('href="#/repos"');
     expect(out).not.toContain(">Atticus</a>");
     expect(out).not.toContain("nav-more");
@@ -218,7 +219,11 @@ describe("the menu: six entries (the Surfaces design)", () => {
       'href="#/questions" aria-current="page"',
     );
     expect(html(<Nav current={screenOf("#/cockpit?change=x")} />)).toContain(
-      'href="#/feature-design" aria-current="page"',
+      'href="#/changes" aria-current="page"',
+    );
+    // The Overview's old address opens Home.
+    expect(html(<Nav current={screenOf("#/dashboard")} />)).toContain(
+      'href="#/home" aria-current="page"',
     );
   });
 });
@@ -234,29 +239,42 @@ describe("an entry's tabs", () => {
       expect(out).not.toContain(`href="#/${id}"`);
   });
 
-  it("gives Change its four stage tabs, keeping the change, with no phase groups", () => {
+  it("gives Change All changes, At a glance and the four stages, keeping the change", () => {
     const hash = "#/stories?change=add-fraud-check";
     const out = html(<SectionTabs current={screenOf(hash)} hash={hash} />);
     expect(out).toContain("change add-fraud-check");
     expect(out).toContain('href="#/stories?change=add-fraud-check" aria-current="page"');
-    for (const id of ["feature-design", "architecture", "task-list"])
-      expect(out).toContain(`href="#/${id}?change=add-fraud-check"`);
+    const order = [
+      'href="#/changes/add-fraud-check">All changes</a>',
+      'href="#/cockpit?change=add-fraud-check">At a glance</a>',
+      'href="#/feature-design?change=add-fraud-check">Feature design</a>',
+      'href="#/architecture?change=add-fraud-check">Architecture</a>',
+      'aria-current="page">Stories</a>',
+      'href="#/task-list?change=add-fraud-check">Tasks</a>',
+    ].map((t) => out.indexOf(t));
+    expect(order.every((i) => i > 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(out).not.toContain('href="#/brief');
     expect(out).not.toContain('aria-label="Define"');
+    // At a glance and the list are tabs now: marked when shown.
+    const glance = html(
+      <SectionTabs current={screenOf("#/cockpit?change=x")} hash="#/cockpit?change=x" />,
+    );
+    expect(glance).toContain('href="#/cockpit?change=x" aria-current="page">At a glance</a>');
+    const list = html(<SectionTabs current={screenOf("#/changes")} hash="#/changes" />);
+    expect(list).toContain('href="#/changes" aria-current="page">All changes</a>');
+    expect(list).toContain('href="#/feature-design">Feature design</a>');
   });
 
-  it("with --full groups a change's pages by phase, the list's tab named for the change", () => {
+  it("with --full groups a change's pages by phase, the list's tab first", () => {
     const hash = "#/estimate?change=add-fraud-check";
     const out = html(<SectionTabs current={screenOf(hash)} hash={hash} full />);
     for (const g of ["Define", "Design", "Plan", "Build", "Release"])
       expect(out).toContain(`aria-label="${g}"`);
     expect(out).toContain('href="#/estimate?change=add-fraud-check" aria-current="page"');
     expect(out).toContain('href="#/brief?change=add-fraud-check"');
-    expect(out).toContain('href="#/changes/add-fraud-check"');
-    // The list's tab doesn't repeat the entry's name.
-    expect(out).toContain(">This change</a>");
-    const list = html(<SectionTabs current={screenOf("#/changes")} hash="#/changes" full />);
-    expect(list).toContain(">All changes</a>");
+    expect(out).toContain('href="#/changes/add-fraud-check">All changes</a>');
+    expect(out).not.toContain("This change");
   });
 
   it("shows no tabs for a one-page entry, but says where a page reached by a link is", () => {
@@ -265,19 +283,50 @@ describe("an entry's tabs", () => {
     const words = html(<SectionTabs current={screenOf("#/words")} hash="#/words" />);
     expect(words).toContain('aria-label="You are here"');
     expect(words).not.toContain('aria-label="Home pages"');
-    const glance = html(
-      <SectionTabs current={screenOf("#/cockpit?change=x")} hash="#/cockpit?change=x" />,
-    );
-    expect(glance).toContain('aria-current="location">At a glance</span>');
-    expect(glance).not.toContain('aria-current="page"');
+    expect(words).not.toContain('aria-current="page"');
+    // The Overview is Home now: no tabs for its old address either.
+    expect(html(<SectionTabs current={screenOf("#/dashboard")} hash="#/dashboard" />)).toBe("");
   });
 });
 
-describe("the Dashboard", () => {
+const question: QuestionListView["questions"][number] = {
+  schemaVersion: 1,
+  id: "q-a4a06bcb15a5",
+  askedBy: {
+    step: "scan-survey",
+    command: "atticus scan survey forge-ledger",
+    at: "2026-10-21T12:00:00.000Z",
+  },
+  repo: "forge-ledger",
+  question: "Is docs/ part of the product?",
+  options: [],
+  evidence: ["docs/x.js:1"],
+  scope: { level: "repo", id: "forge-ledger" },
+  state: "open",
+  rerun: "atticus scan survey forge-ledger --force",
+};
+
+const trustRepo = (repo: string, state: Api.TrustRepoT["state"]): Api.TrustRepoT => ({
+  repo,
+  state,
+  facts: { path: `facts/${repo}.jsonl`, present: true, count: 3, unverified: 0 },
+  verify: { path: `facts/${repo}.verify.yaml`, report: null },
+  checkout: { path: `repos/${repo}`, present: true },
+  sameCommit: state === "trusted",
+  catalog: { from: "facts", fromFacts: 3, fromReaders: 0 },
+});
+const trust = (repos: Api.TrustRepoT[]): Api.TrustViewT => ({
+  factsDir: "facts",
+  repos,
+  problems: [],
+});
+
+/** The product owner, 2026-10-24: Home is one page, Waiting on you with the Overview merged in. */
+describe("Home's overview: the next step, the estate and the changes in flight", () => {
   it("has loading and error states", () => {
     expect(
       html(
-        <DashboardPage
+        <HomeNext
           onboarding={{ state: "loading" }}
           changes={{ state: "loading" }}
           questions={{ state: "loading" }}
@@ -286,74 +335,119 @@ describe("the Dashboard", () => {
     ).toContain('aria-busy="true"');
     expect(
       html(
-        <DashboardPage
+        <HomeNext
           onboarding={{ state: "error", error: "boom" }}
           changes={{ state: "ready", data: [] }}
           questions={{ state: "ready", data: noQuestions }}
         />,
       ),
     ).toContain('role="alert"');
+    const loading = html(
+      <HomeEstate
+        onboarding={{ state: "loading" }}
+        trust={{ state: "loading" }}
+        changes={{ state: "loading" }}
+      />,
+    );
+    expect(loading).toContain('aria-busy="true"');
+    const failed = html(
+      <HomeEstate
+        onboarding={{ state: "error", error: "boom" }}
+        trust={{ state: "error", error: "boom" }}
+        changes={{ state: "error", error: "boom" }}
+      />,
+    );
+    expect(failed.match(/role="alert"/g)?.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("shows coverage, changes in flight with their stage, open questions and the slash commands", () => {
+  it("says what to run next: a waiting question before a new change", () => {
     const out = html(
-      <DashboardPage
+      <HomeNext
         onboarding={{ state: "ready", data: done }}
+        changes={{ state: "ready", data: [change("add-limit", "plan")] }}
+        questions={{ state: "ready", data: { questions: [question], problems: [] } }}
+      />,
+    );
+    expect(out).toContain(R.title);
+    // Onboarding isn't done while a question waits: Run next sends the person to answer it.
+    expect(out).toContain("atticus questions list --state open");
+  });
+
+  it("shows what is scanned and trusted, and each change in flight with its stage", () => {
+    const out = html(
+      <HomeEstate
+        onboarding={{ state: "ready", data: done }}
+        trust={{
+          state: "ready",
+          data: trust([
+            trustRepo("forge-ledger", "trusted"),
+            trustRepo("forge-portal-bff", "stale"),
+          ]),
+        }}
         changes={{
           state: "ready",
-          data: [change("add-limit", "plan"), change("gone", "archived")],
-        }}
-        questions={{
-          state: "ready",
-          data: {
-            questions: [
-              {
-                schemaVersion: 1,
-                id: "q-a4a06bcb15a5",
-                askedBy: {
-                  step: "scan-survey",
-                  command: "atticus scan survey forge-ledger",
-                  at: "2026-10-21T12:00:00.000Z",
-                },
-                repo: "forge-ledger",
-                question: "Is docs/ part of the product?",
-                options: [],
-                evidence: ["docs/x.js:1"],
-                scope: { level: "repo", id: "forge-ledger" },
-                state: "open",
-                rerun: "atticus scan survey forge-ledger --force",
-              },
-            ],
-            problems: [],
-          },
+          data: [
+            change("add-limit", "plan"),
+            { ...change("add-fraud-check", "design"), openFindings: { blocking: 1 } },
+            change("gone", "archived"),
+          ],
         }}
       />,
     );
-    expect(out).toContain(W.coverage);
+    expect(out).toContain(esc(W.estate));
     expect(out).toContain("2 of 2 scanned");
+    expect(out).toContain(COPY.trust.summary(1, 2));
+    // The repos not trusted yet, each with its state in words, and the way to Map › Trust.
+    expect(out).toContain("forge-portal-bff");
+    expect(out).toContain(COPY.trust.states.stale);
+    expect(out).not.toContain(COPY.trust.states.trusted);
+    expect(out).toContain('href="#/trust"');
+    expect(out).toContain(esc(W.openTrust));
+    // Changes in flight, each linked to the tab of its stage, with its command.
+    expect(out).toContain(W.inFlight);
     expect(out).toContain('href="#/stories?change=add-limit"');
+    expect(out).toContain("atticus plan stories add-limit");
     expect(out).not.toContain(">gone<");
-    expect(out).toContain('href="#/questions/q-a4a06bcb15a5"');
-    // Onboarding isn't done while a question waits: Run next sends the person to answer it.
-    expect(out).toContain("atticus questions list --state open");
+    // A change with a blocking finding says so (what the chip list on Home said before).
+    const blocked = `<span class="chip blocking">${COPY.commandCenter.blocked}</span>`;
+    expect(out.split(blocked).length - 1).toBe(1);
+    expect(out.indexOf(blocked)).toBeGreaterThan(out.indexOf("add-fraud-check"));
+  });
+
+  it("says when no repo is listed, every repo is trusted, or nothing is in flight", () => {
+    const out = html(
+      <HomeEstate
+        onboarding={{ state: "ready", data: view([]) }}
+        trust={{ state: "ready", data: trust([]) }}
+        changes={{ state: "ready", data: [] }}
+      />,
+    );
+    expect(out).toContain(esc(W.trustNone));
+    expect(out).toContain(esc(W.noChanges));
+    const all = html(
+      <HomeEstate
+        onboarding={{ state: "ready", data: done }}
+        trust={{
+          state: "ready",
+          data: trust([
+            trustRepo("forge-ledger", "trusted"),
+            trustRepo("forge-portal-bff", "trusted"),
+          ]),
+        }}
+        changes={{ state: "ready", data: [] }}
+      />,
+    );
+    expect(all).toContain(COPY.trust.summary(2, 2));
+    expect(all).toContain(esc(W.allTrusted));
+  });
+
+  it("keeps the slash commands, in Copilot Chat and Claude Code (ADR 0105)", () => {
+    const out = html(<SlashCommands />);
     for (const c of R.commands) expect(out).toContain(c.name);
-    // ADR 0105: the commands are in Copilot Chat and, through the plugin, in Claude Code.
     expect(W.slashTitle).toMatch(/Copilot Chat.*Claude Code/);
     expect(out).toContain("atticus assistant-files");
     expect(out).toContain("/plugin marketplace add maycombhq/atticus");
     expect(out).toContain("/plugin install atticus@maycombhq");
-  });
-
-  it("says when nothing is in flight or waiting", () => {
-    const out = html(
-      <DashboardPage
-        onboarding={{ state: "ready", data: done }}
-        changes={{ state: "ready", data: [] }}
-        questions={{ state: "ready", data: noQuestions }}
-      />,
-    );
-    expect(out).toContain(esc(W.noQuestions));
-    expect(out).toContain("atticus change new");
   });
 });
 
@@ -491,16 +585,38 @@ describe("Feature design, Stories and Tasks", () => {
     ).toContain(esc(W.noChangeYet));
   });
 
+  it("says to pick a change in All changes when the address names none", () => {
+    for (const wanted of [undefined, "nope"]) {
+      const out = html(
+        <StagePage
+          stage="stories"
+          list={{ state: "ready", data: [change("add-limit", "plan")] }}
+          {...(wanted ? { wanted } : {})}
+          detail={undefined}
+          tasks={undefined}
+        />,
+      );
+      expect(out).toContain(esc(W.pickAChangeTitle));
+      expect(out).toContain(esc(W.pickAChange));
+      expect(out).toContain(`href="#/changes">${esc(W.openAllChanges)}</a>`);
+      expect(out).not.toContain("atticus plan stories add-limit");
+    }
+  });
+
   it("shows the feature stage's files and its command", () => {
     const out = html(
       <StagePage
         stage="feature"
         list={{ state: "ready", data: [change("add-limit", "define")] }}
+        wanted="add-limit"
         detail={{ state: "ready", data: { ...detail, state: "define" } }}
         tasks={undefined}
       />,
     );
     expect(out).toContain("openspec/changes/add-limit/brief.md");
+    // At a glance and All changes are tabs now, not links in the page's header.
+    expect(out).not.toContain('href="#/cockpit?change=add-limit"');
+    expect(out).not.toContain('href="#/changes"');
     expect(out).not.toContain("openspec/changes/add-limit/tasks.md");
     expect(out).toContain("atticus change feature add-limit");
     expect(out).toContain('<label for="pick-feature-design"');
@@ -511,6 +627,7 @@ describe("Feature design, Stories and Tasks", () => {
       <StagePage
         stage="tasks"
         list={{ state: "ready", data: [change("add-limit", "build")] }}
+        wanted="add-limit"
         detail={{ state: "ready", data: detail }}
         tasks={{ state: "ready", data: tasks }}
       />,
@@ -526,6 +643,7 @@ describe("Feature design, Stories and Tasks", () => {
       <StagePage
         stage="tasks"
         list={{ state: "ready", data: [change("add-limit", "build")] }}
+        wanted="add-limit"
         detail={{ state: "ready", data: detail }}
         tasks={{ state: "ready", data: [] }}
       />,

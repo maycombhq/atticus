@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { Api } from "@maycombhq/core";
 import { COPY } from "../src/copy.js";
 import { screenOf, tabsOf } from "../src/app/screens.js";
-import { CockpitView, PastChangesView, stageMark } from "../src/screens/work/Cockpit.js";
+import {
+  CockpitPicked,
+  CockpitView,
+  PastChangesView,
+  stageMark,
+} from "../src/screens/work/Cockpit.js";
 
 /** The change cockpit (WP7.1): one change at a glance, the first of its pages. */
 
@@ -50,12 +55,35 @@ const DATA: Api.ChangeCockpitT = {
 };
 
 describe("the change cockpit (WP7.1)", () => {
-  it("is a page of Change, linked from each stage tab, and its first tab with --full", () => {
+  it("is Change's tab after All changes, and the first of a change's pages with --full", () => {
     expect(screenOf("cockpit")?.section).toBe("Change");
-    expect(screenOf("cockpit")?.aside).toBe(true);
-    expect(tabsOf("Change").map((t) => t.id)).not.toContain("cockpit");
+    expect(screenOf("cockpit")?.aside).toBeUndefined();
+    expect(
+      tabsOf("Change")
+        .map((t) => t.id)
+        .slice(0, 2),
+    ).toEqual(["changes", "cockpit"]);
     const changeTabs = tabsOf("Change", true).filter((t) => t.group);
     expect(changeTabs[0]?.id).toBe("cockpit");
+  });
+
+  it("says to pick a change in All changes when the address names none", () => {
+    const list = [
+      { id: "add-transfer-limit", title: "Add a daily transfer limit", state: "define" },
+    ];
+    for (const current of [undefined, "nope"]) {
+      const out = renderToStaticMarkup(
+        <CockpitPicked list={list} current={current} c={{ state: "loading" }} />,
+      );
+      expect(out).toContain(esc(COPY.work.pickAChange));
+      expect(out).toContain(`href="#/changes">${esc(COPY.work.openAllChanges)}</a>`);
+      expect(out).not.toContain("pick-cockpit");
+    }
+    const picked = renderToStaticMarkup(
+      <CockpitPicked list={list} current="add-transfer-limit" c={{ state: "ready", data: DATA }} />,
+    );
+    expect(picked).toContain('<label for="pick-cockpit"');
+    expect(picked).toContain("atticus change feature add-transfer-limit");
   });
 
   it("shows the stages, the next step with both commands, what blocks it, the questions and the branches", () => {
