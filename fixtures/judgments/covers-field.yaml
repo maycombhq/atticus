@@ -1,0 +1,48 @@
+# Covers-field cases (ADR 0117): does an acceptance criterion check a field's value? `truth` is
+# what a tester reading the criterion says. The new rule settles a field written in the criterion
+# as a fact and asks the judge only of the others; `recorded` is the judge's recorded answer for
+# those. The old rule (namesField) is scored on the same pairs. The audit's failing examples are
+# here: "id" inside "valid", and the event word "renamed" standing in for renamedAt.
+cases:
+  - id: id-inside-valid
+    field: id
+    criterion: Given a valid request, when the order is placed, then the order is saved
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: criterion, text: then the order is saved }] }
+  - id: renamed-event-not-field
+    field: renamedAt
+    criterion: Given a chat, when it is renamed, then the title changes
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: criterion, text: then the title changes }] }
+  - id: renamed-timestamp-in-words
+    field: renamedAt
+    criterion: Given a chat, when it is renamed, then the reply shows the time it was renamed
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: criterion, text: the time it was renamed }] }
+  - id: field-written
+    field: renamedAt
+    criterion: Given a chat, when it is renamed, then renamedAt is the time of the rename
+    truth: yes
+  - id: snake-case-written
+    field: renamedAt
+    criterion: Given a chat, when it is renamed, then the row's renamed_at is set
+    truth: yes
+  - id: fraud-verdict-in-words
+    field: fraud_verdict
+    criterion: Given an accepted order, when it is saved, then the fraud verdict is stored with it
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: criterion, text: the fraud verdict is stored }] }
+  - id: verdict-of-something-else
+    field: fraud_verdict
+    criterion: Given a rejected order, when it is placed, then the verdict page explains why
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: criterion, text: the verdict page explains why }] }
+  - id: id-in-the-reply
+    field: id
+    criterion: Given a new order, when it is placed, then the reply carries the order's id
+    truth: yes
+  - id: quantity-named-in-given-only
+    field: quantity
+    criterion: Given an order of quantity 3, when it is placed, then it is accepted
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: criterion, text: then it is accepted }] }

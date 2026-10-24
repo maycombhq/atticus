@@ -70,15 +70,27 @@ describe("a question that cites no file and line", () => {
   });
 });
 
-describe("a criterion that names a field in words", () => {
-  it("names it when it holds the field, or every word of it", async () => {
-    const { namesField } = await import("../src/stages/stories.js");
-    expect(namesField("then I can see the renamed timestamp", "renamedAt")).toBe(true);
-    expect(namesField("then renamedAt is set", "renamedAt")).toBe(true);
-    expect(namesField("then the fraud verdict is shown", "fraud_verdict")).toBe(true);
-    expect(namesField("then the verdict is shown", "fraud_verdict")).toBe(false);
-    expect(namesField("then the order is saved", "id")).toBe(false);
-    expect(namesField("then the order's id comes back", "id")).toBe(true);
+describe("a criterion that writes a field's name (ADR 0117)", () => {
+  it("writes it as a word of its own, case and underscores aside; anything else is judged", async () => {
+    const { writesField } = await import("../src/stages/stories.js");
+    expect(writesField("then renamedAt is set", "renamedAt")).toBe(true);
+    expect(writesField("then renamed_at is set", "chat.renamedAt")).toBe(true);
+    expect(writesField("then the reply's chat.renamedAt is the time", "renamedAt")).toBe(true);
+    // "renamed" is the event, not the field; the old word match passed it.
+    expect(
+      writesField("Given a chat, when it is renamed, then the title changes", "renamedAt"),
+    ).toBe(false);
+    // "valid" holds "id"; the old substring match passed it.
+    expect(writesField("Given a valid request, then the order is saved", "id")).toBe(false);
+    expect(writesField("then the order's id comes back", "id")).toBe(true);
+    expect(writesField("then I can see the renamed timestamp", "renamedAt")).toBe(false);
+    // Named in the given only: the then clause doesn't assert it.
+    expect(
+      writesField(
+        "Given an order of quantity 3, when it is placed, then it is accepted",
+        "quantity",
+      ),
+    ).toBe(false);
   });
 });
 

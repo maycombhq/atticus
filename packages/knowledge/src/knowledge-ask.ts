@@ -32,7 +32,14 @@ const STOP = new Set(
 );
 
 const stem = (w: string) =>
-  w.length > 4 ? w.replace(/(ings?|ed|es|s)$/, "") : w.length > 3 ? w.replace(/s$/, "") : w;
+  // A word ending in "ss" (process, access, address) is not a plural: only "es" comes off it.
+  /ss$/.test(w)
+    ? w
+    : w.length > 4
+      ? w.replace(/(ings?|ed|es|s)$/, "")
+      : w.length > 3
+        ? w.replace(/s$/, "")
+        : w;
 
 export const termsOf = (s: string) =>
   s

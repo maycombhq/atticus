@@ -42,7 +42,10 @@ export function parseYamlAs<S extends z.ZodType>(
         },
       ],
     };
-  const r = schema.safeParse(fill(data as Record<string, unknown>));
+  // The gaps the answer relies on (ADR 0117) are read by the loop, not the stage's schema.
+  const { relies_on_gaps: _gaps, ...rest } = data as Record<string, unknown>;
+  void _gaps;
+  const r = schema.safeParse(fill(rest));
   if (!r.success)
     return {
       issues: r.error.issues.slice(0, 12).map((i) => ({

@@ -46,6 +46,7 @@ import {
 import type { ChangeLifecycle } from "@maycombhq/core";
 import { PlannerError } from "../errors.js";
 import { citeFiles } from "./cite.js";
+import { questionsOnFile, stepQuestionJudge } from "./questions-on-file.js";
 import type { ContextOptions, ContextReport } from "../engine.js";
 import { askGaps, type ContextGap } from "../gaps.js";
 import {
@@ -506,6 +507,8 @@ export async function runStageLoop<A>(
             ]
           : []),
         ...spec.sources,
+        // ADR 0117: the questions on file, so the model says which one a question is the same as.
+        ...(await questionsOnFile(root, change.id)),
       ];
       const pack = buildContextPack({
         change: change.id,
@@ -673,6 +676,7 @@ export async function runStageLoop<A>(
     }
     if (drafted.length) {
       const qs: Question[] = [];
+      const judge = stepQuestionJudge(root, o.runtime, change.id, now);
       for (const repo of [...new Set(drafted.map((x) => x.repo))]) {
         const mine = drafted.filter((x) => x.repo === repo);
         const raised = await raiseQuestions(
@@ -686,12 +690,13 @@ export async function runStageLoop<A>(
             ...(run?.runId ? { run: run.runId } : {}),
             at,
           },
+          judge ? { judge } : {},
         );
         qs.push(...raised.raised, ...raised.known);
-        // Each finding asked is linked to its question by the id it was raised as, never by
-        // its words (a check's own question doesn't hold the finding's message).
+        // Each finding asked is linked to the question it became, by id, never by its words (a
+        // check's own question doesn't hold the finding's message).
         mine.forEach((x, i) => {
-          if (x.f && raised.ids[i]) x.f.question = raised.ids[i];
+          if (x.f && raised.of[i]) x.f.question = raised.of[i]!.id;
         });
       }
       loop.questions = [...new Set([...loop.questions, ...qs.map((q) => q.id)])].sort();

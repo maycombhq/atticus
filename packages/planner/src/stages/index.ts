@@ -11,3 +11,4 @@ export * from "./answer.js";
 export * from "./finding-kind.js";
 export * from "./estate-context.js";
 export * from "./small.js";
+export * from "./questions-on-file.js";

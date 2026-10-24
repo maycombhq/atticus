@@ -1,0 +1,35 @@
+# Applies cases (ADR 0083, 0117): does a process or request apply to a step of a change? `truth`
+# is what the service desk says. A step is given as its catalog facts (what the new rule's judge
+# reads) and as the words and extras the old two-shared-words rule (suggestRequests) read.
+# `recorded` is the judge's recorded answer.
+cases:
+  - id: vendor-call-onboarding
+    process: { id: vendor-onboarding, title: Vendor onboarding, appliesWhen: Before a service sends any data to a vendor for the first time. }
+    step: { kind: call-out, what: Northwind Pay screens the order for fraud, vendor: true, newTarget: true }
+    facts: "add a call-out step: Northwind Pay screens the order for fraud; it goes to northwind-pay POST /v1/screenings (new), whose system's boundary is vendor"
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: appliesWhen, text: sends any data to a vendor for the first time }, { of: step, text: whose system's boundary is vendor }] }
+  - id: firewall-paraphrase
+    process: { id: network-access, title: Network access request, appliesWhen: A workload must open a port to a host it cannot reach today. }
+    step: { kind: call-out, what: The order is screened by Quillfeather, vendor: true, newTarget: true }
+    facts: "add a call-out step: The order is screened by Quillfeather; it goes to quillfeather POST /score (new), whose system's boundary is vendor"
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: appliesWhen, text: a host it cannot reach today }, { of: step, text: (new), whose system's boundary is vendor }] }
+  - id: generic-column-and-table
+    process: { id: retention-review, title: Retention review, appliesWhen: A new table keeps records about people for longer than a year. }
+    step: { kind: write, what: The column total is recalculated in the table, newColumn: true }
+    facts: "change a write step: The column total is recalculated in the table; it uses table forge-orders-db.orders, adding columns order_total"
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: appliesWhen, text: keeps records about people }, { of: step, text: adding columns order_total }] }
+  - id: topic-request
+    process: { id: broker-topic-request, title: Broker topic, appliesWhen: A service will publish to or consume from a topic that does not exist yet. }
+    step: { kind: publish, what: An OrderScreened event is sent, newTarget: true }
+    facts: "add a publish step: An OrderScreened event is sent; it goes to broker order-screened (new)"
+    truth: yes
+    recorded: { verdict: yes, quotes: [{ of: appliesWhen, text: a topic that does not exist yet }, { of: step, text: order-screened (new) }] }
+  - id: read-only-no-request
+    process: { id: database-access-request, title: Database access, appliesWhen: A service account or a person needs access to a database it does not own. }
+    step: { kind: read, what: The order's status is read from the orders table }
+    facts: "change a read step: The order's status is read from the orders table; it uses table forge-orders-db.orders"
+    truth: no
+    recorded: { verdict: no, quotes: [{ of: appliesWhen, text: a database it does not own }, { of: step, text: forge-orders-db.orders }] }

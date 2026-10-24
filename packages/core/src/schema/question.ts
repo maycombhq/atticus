@@ -9,7 +9,16 @@ import { IsoDateTime, RecordId } from "./common.js";
  * not asked again.
  */
 
-export const QUESTION_SCHEMA_VERSION = 1 as const;
+/**
+ * Version 2 (ADR 0117) adds `related` (an earlier question this one may be the same as, or is
+ * narrower than) and a draft's `sameAs`. Both are optional, so version-1 files are read as they
+ * are and come back as version 2 in memory; writers write version 2.
+ */
+export const QUESTION_SCHEMA_VERSION = 2 as const;
+
+const QuestionSchemaVersion = z
+  .union([z.literal(1), z.literal(QUESTION_SCHEMA_VERSION)])
+  .overwrite((): 1 | 2 => QUESTION_SCHEMA_VERSION);
 
 /** A question's id: q- and 12 hex characters of the fingerprint of what it asks about. */
 export const QuestionId = z.string().regex(/^q-[0-9a-f]{12}$/, "a question id is q- and 12 hex");
@@ -61,7 +70,7 @@ export type QuestionAnswer = z.infer<typeof QuestionAnswer>;
 
 export const Question = z
   .strictObject({
-    schemaVersion: z.literal(QUESTION_SCHEMA_VERSION),
+    schemaVersion: QuestionSchemaVersion,
     id: QuestionId,
     askedBy: z.strictObject({
       /** The step that asked, e.g. scan-survey. */
@@ -101,6 +110,24 @@ export const Question = z
     /** The command to run once it is answered; it reads the answer. */
     rerun: z.string().min(1),
     answer: QuestionAnswer.optional(),
+    /**
+     * Earlier questions this one was matched against and not merged with (ADR 0117): narrower
+     * (it asks part of what the earlier one asks, so the earlier answer is shown beside it) or
+     * unsure (the judge couldn't tell, or no judge ran). The person sees both and decides.
+     */
+    related: z
+      .array(
+        z.strictObject({
+          id: QuestionId,
+          verdict: z.enum(["narrower", "unsure"]),
+          /** The judgment's key under judgments/same-question/, when one was made. */
+          judgment: z
+            .string()
+            .regex(/^[0-9a-f]{24}$/)
+            .optional(),
+        }),
+      )
+      .optional(),
   })
   .superRefine((q, ctx) => {
     if (q.state === "answered" && !q.answer)
@@ -136,6 +163,19 @@ export const QuestionDraft = z
     scope: QuestionScopeLevel.default("repo"),
     /** The repo type the answer would apply to, for scope repo-type. */
     repoType: RecordId.optional(),
+    /**
+     * The step's own reading (ADR 0117): this question is one already on file (same), or asks
+     * part of one (narrower), with the words of the earlier question that say so. Atticus checks
+     * the id is a question it listed, the words are in it, and that the two name no different
+     * ids or fields, before it follows the reading.
+     */
+    sameAs: z
+      .strictObject({
+        id: QuestionId,
+        verdict: z.enum(["same", "narrower"]),
+        quote: z.string().trim().min(1),
+      })
+      .optional(),
   })
   .refine((d) => d.scope !== "repo-type" || d.repoType !== undefined, {
     path: ["repoType"],

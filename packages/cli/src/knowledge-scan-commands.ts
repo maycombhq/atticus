@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  fileJudgments,
   KNOWLEDGE_KINDS,
   knowledgeKindOf,
   knowledgeRelOf,
@@ -192,6 +193,7 @@ export async function knowledgeScan(
         maxAttempts: o.attempts ?? 3,
         ...(o.resume ? { resume: o.resume } : {}),
         ...(plan.previous.length ? { previous: plan.previous } : {}),
+        judgments: fileJudgments(root),
       })
     : {
         status: "scanned",
@@ -472,6 +474,7 @@ export async function knowledgeFind(
     runtime: deps.runtime,
     items: [...k.items, ...k.rejected],
     orgPack: op,
+    judgments: fileJudgments(root),
     now,
     maxAttempts: o.attempts ?? 3,
     ...(o.resume ? { resume: o.resume } : {}),
