@@ -13,6 +13,16 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ### Any assistant (ADR 0121, first part)
 
+### Any assistant, set up from the app (ADR 0121)
+
+- The app has an **AI** tab under Set up. It sets whether AI runs here, which assistants your people use and the default one, the modes a step may run in and the default, and the model provider, with one field for each setting the provider accepts. It shows whether the provider's key variable is set on this machine, by name.
+- **Save** writes the org pack's `runtime.yaml`. It keeps everything the tab doesn't change, is checked against the schema, refuses anything that looks like a key, and says to commit the file in a pull request.
+- A provider's key can be kept in this machine's credential store instead of an environment variable, under the name `runtime.yaml` gives as `keyEnv`. The runtime reads the environment first, then the store. `atticus secret set|check|forget <name>` manages it: the key is read from stdin and never printed. The AI tab has a password field, "Set the key on this machine" (`POST /api/settings/ai/key`). It uses the system's own command, so no dependency is added: on Windows the key is encrypted with DPAPI for the current user; on macOS it goes in the Keychain; on Linux in the Secret Service.
+- **Test the provider** asks the configured provider one short question, with nothing of the estate in it, and says whether it answered.
+- The local API gains `GET` and `PUT /api/settings/ai` and `POST /api/settings/ai/test` (API 2.16.0). `@maycombhq/model-providers` exports each provider's accepted settings (`PROVIDER_SETTINGS`).
+- VS Code: **Atticus: Pick the model** (also in the Next view's menu, and the button when no model is found) lists every chat model VS Code offers, under its vendor, not only Copilot's. It also offers Copilot's default and **Atticus's configured model**. The choice is kept in `atticus.model` as `vendor/family`; a bare family still means Copilot's. A step started from the chat runs on the model picked there, whatever its vendor.
+- Atticus's configured model runs the step on `runtime.yaml`'s model provider, through the command line in model mode, so it needs `model` among the modes allowed. `atticus <step> --handoff --json --mode model` runs the step that way and prints its end as JSON.
+
 - `runtime.yaml` may now allow `cursor`, `gemini-cli`, `windsurf` and `agents-md` (Codex and any tool that reads `AGENTS.md`) beside `copilot` and `claude-code`. `atticus assistant-files` writes the same slash commands, instructions and skills for each one, in its own files:
   - Cursor: `.cursor/commands/` and an always-applied rule.
   - Gemini CLI: `.gemini/commands/*.toml` and `GEMINI.md`.
@@ -33,6 +43,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A critic round in which every lens failed to start (Claude Code missing, a timeout, an outage) no longer counts toward the gate's round limit: it reviewed nothing.
 - A done architecture stage of a change in build or later stays done when a rescan moves today's flow: the change's own code moved it. It says so in a note; before build, it drafts again as before.
 - The VS Code chat records the change a request ran on in the prompt history (`history add --change`), once the participant has resolved it. A prompt is written as soon as its change is known, not when the step ends.
+
+### Retrieval's defaults: the best-scoring model, and the expansion on (ADR 0116 addendum)
+
+- The product owner's decision ("use the best model", "turn rewording on"): `runtime.yaml` `retrieval` now defaults to `embeddings.model: bundled` (all-MiniLM-L6-v2: 0.96 recall on the retrieval cases, against 0.81 by words alone and 0.84 for arctic-embed-xs) and `expansion: true`. `rerank` stays off: it isn't measured. A pack without the section and one with `retrieval: {}` get the same defaults, from one helper (`retrievalOf` in `@maycombhq/core`) every reader uses. An organisation can still set `model: off` or `expansion: false`.
+- Where the bundled model or onnxruntime isn't installed, the context engine searches by words and names, never fails a step and downloads nothing. `atticus doctor` says so under "Embedding model": a note when it is the default, a warning when `runtime.yaml` names a model that can't be used.
+- With the expansion on, a vendor or system the brief names only in prose is a gap again (a fixture: the invented Northwind Pay in a sentence, unknown to the estate).
+- In hand-off mode the expansion is one extra round per step, first. Its answer is now kept by what the model was shown (the input and the estate's names) rather than the index's generation, so a stage's own drafts don't make it ask again: a feature stage is the expansion, then its drafts, as before. Run again without `--resume`, a step waits on the same expansion prompt, or reads in its answer, rather than handing a new one off. An answer that fails its check is left out with a note in the step's context, and the step goes on by words and names.
+- The context eval's step rows run with the model and the expansion off in their roots, so they measure the engine itself, the same on every machine.
 
 ### Retrieval by meaning in the context engine (ADR 0116)
 

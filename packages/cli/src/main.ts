@@ -416,6 +416,7 @@ Usage:
   atticus setup [--json]               The setup checklist until the catalog is accepted, with a fix for each step
   atticus baseline                     Accept the as-is catalog as the baseline [--note text] [--site dir]
   atticus doctor [--json]              Check this machine: Node, Git, OpenSpec, proxy, TLS, disk, port, assistant
+  atticus secret set|check|forget <name>  Keep a model provider's key in this machine's credential store under the name runtime.yaml gives as keyEnv; read from stdin, never printed
   atticus upgrade [--check|--dry-run]  Bring the metarepo's files up to this version (backs them up first)
   atticus support bundle               Collect versions, checks, counts and the redacted log in a zip [--out f]
   atticus digest                       What waits on you: hand-offs to revise, blocking findings [--channel c] [--send] [--json]
@@ -1686,6 +1687,11 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       },
       io,
     );
+  }
+  // ADR 0121: a provider's key kept in this machine's credential store.
+  if (group === "secret") {
+    const { secretCommand } = await import("./secret-commands.js");
+    return secretCommand(positionals.slice(1), io);
   }
   if (group === "conformance") {
     if (!command) {

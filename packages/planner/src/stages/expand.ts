@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { AiRuntime, SourceInput } from "@maycombhq/ai";
 import type { RunRetrieval } from "@maycombhq/core";
 import { openIndex, type CatalogIndex, type ContextInput } from "@maycombhq/index";
-import { judged, yamlOf, type Judged, type Judgments } from "./judged.js";
+import { filePending, judged, yamlOf, type Judged, type Judgments } from "./judged.js";
 
 /**
  * The model's expansion of a step's input (ADR 0116): one small call before the step's
@@ -174,9 +175,16 @@ export async function expandFor(
     };
   }
   try {
+    const digest = digestSources(ix);
+    // Keyed by what the model is shown (the input and the estate's names), not by the index's
+    // generation (ADR 0116 addendum): a stage's own draft, or any file whose names the digest
+    // doesn't carry, leaves the kept answer standing, so a hand-off stage asks it once.
+    const names = createHash("sha256")
+      .update(digest.map((d) => d.text).join("\n\n"))
+      .digest("hex");
     const r = await judged<CheckedExpansion>({
       kind: "expansion",
-      inputs: { input, index: ix.version, runtime: o.runtime.kind, v: 1 },
+      inputs: { input, names, runtime: o.runtime.kind, v: 2 },
       quotes: (v) => v.names.map((n) => ({ of: "input", text: n.quote })),
       agent: EXPAND_AGENT,
       description:
@@ -200,13 +208,14 @@ export async function expandFor(
           classification: "internal",
           priority: 50,
         },
-        ...digestSources(ix),
+        ...digest,
       ],
       levels: o.levels,
       runtime: o.runtime,
       ...(o.resume ? { resume: o.resume } : {}),
       now: o.now,
       store: o.store,
+      pending: filePending(root),
       step: `${o.step} (expansion)`,
       read: (text) => checkExpansion(text, input, ix),
     });

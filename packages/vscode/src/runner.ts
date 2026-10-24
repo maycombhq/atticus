@@ -103,6 +103,11 @@ export interface RunnerDeps {
    * isn't one: a step has a lens or two per draft, and the drafts are what this bounds.
    */
   maxRounds?: number;
+  /**
+   * "model": run the step on runtime.yaml's model, by the command line in model mode (ADR 0121
+   * item 5, Atticus's configured model). Nothing is handed off and vscode.lm isn't asked.
+   */
+  mode?: "model";
 }
 
 /**
@@ -140,6 +145,8 @@ const withLimit = (args: string[], model: StepModel | undefined) =>
 
 /** Run one AI step, `args` as `atticus` takes them (e.g. ["scan", "survey", "forge-notes"]). */
 export async function runStep(args: string[], given: RunnerDeps, token: Cancel): Promise<StepEnd> {
+  if (given.mode === "model")
+    return runOnce([...args, "--mode", "model"], { ...given, model: async () => undefined }, token);
   const model = await given.model();
   const d: RunnerDeps = { ...given, model: async () => model };
   const argv = withLimit(args, model);

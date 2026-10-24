@@ -1,9 +1,12 @@
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { parse, stringify } from "yaml";
 import {
   AgentDefinition,
   judgmentKey,
   makeJudgment,
   RuntimeKind,
+  stateDirOf,
   type JudgmentStore,
 } from "@maycombhq/core";
 import {
@@ -28,6 +31,32 @@ import type { RunSummary } from "@maycombhq/core";
 /** Where the judgments are kept: the judgments store (ADR 0117). */
 export type Judgments = JudgmentStore;
 
+/**
+ * The hand-off a judgment is waiting on, by its key (ADR 0116 addendum): so a step run again
+ * without --resume, as a runner that lost its place would, waits on the same prompt, or reads in
+ * its answer, rather than handing a new one off. Local state, kept beside the index (disposable:
+ * lost, the judgment is simply asked again).
+ */
+export interface PendingJudgments {
+  get(kind: string, key: string): Promise<string | undefined>;
+  set(kind: string, key: string, runId: string | undefined): Promise<void>;
+}
+
+export function filePending(root: string): PendingJudgments {
+  const file = (kind: string, key: string) =>
+    join(stateDirOf(root), ".index", "pending-judgments", kind, `${key}.txt`);
+  return {
+    get: async (kind, key) =>
+      (await readFile(file(kind, key), "utf8").catch(() => undefined))?.trim() || undefined,
+    set: async (kind, key, runId) => {
+      const f = file(kind, key);
+      if (runId === undefined) return void (await rm(f, { force: true }).catch(() => undefined));
+      await mkdir(dirname(f), { recursive: true });
+      await writeFile(f, `${runId}\n`);
+    },
+  };
+}
+
 export type Judged<T> =
   | { value: T; cached: boolean; run?: string; consumed: boolean; summary?: RunSummary }
   | { waiting: Run; summary: RunSummary }
@@ -48,6 +77,8 @@ export async function judged<T>(o: {
   resume?: string;
   now: Date;
   store: Judgments;
+  /** The hand-off each key waits on, so a rerun without --resume picks it up. */
+  pending?: PendingJudgments;
   step: string;
   /** Words the answer rests on, for the stored judgment's quotes. */
   quotes?: (v: T) => { of: string; text: string }[];
@@ -58,9 +89,14 @@ export async function judged<T>(o: {
   const kept = await o.store.get(o.kind, key).catch(() => undefined);
   if (kept && kept.value !== undefined)
     return { value: kept.value as T, cached: true, consumed: false };
+  const done = () => o.pending?.set(o.kind, key, undefined).catch(() => undefined);
   const finish = async (run: Run, consumed: boolean): Promise<Judged<T>> => {
     const summary = toRunSummary(run);
-    if (run.state === "waiting" || run.state === "prepared") return { waiting: run, summary };
+    if (run.state === "waiting" || run.state === "prepared") {
+      await o.pending?.set(o.kind, key, run.runId).catch(() => undefined);
+      return { waiting: run, summary };
+    }
+    await done();
     if (!run.output || (run.state !== "validated" && run.state !== "produced"))
       return {
         failed: run.errors.join("; ") || `the ${o.kind} run ended ${run.state}`,
@@ -86,6 +122,15 @@ export async function judged<T>(o: {
   if (o.resume) {
     const run = await o.runtime.result(o.resume).catch(() => undefined);
     if (run && run.request.agent.id === o.agent) return finish(run, true);
+  }
+  // Run again without --resume: the hand-off this key waits on, if it is still there.
+  const waitingOn = await o.pending?.get(o.kind, key).catch(() => undefined);
+  if (waitingOn && waitingOn !== o.resume) {
+    const run = await o.runtime.result(waitingOn).catch(() => undefined);
+    if (run && run.request.agent.id === o.agent && run.state !== "cancelled") {
+      if (run.state !== "failed" || run.output) return finish(run, false);
+    }
+    await done();
   }
   const agent = AgentDefinition.parse({
     schemaVersion: 1,

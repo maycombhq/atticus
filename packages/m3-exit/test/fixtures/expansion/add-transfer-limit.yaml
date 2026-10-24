@@ -1,0 +1,12 @@
+# The context expander's answer for add-transfer-limit's brief (ADR 0116), as an assistant in
+# hand-off mode writes it: search terms in the estate's words, and the one proper name the brief
+# uses in prose, mapped to the estate's id, with the brief's own words. Written by hand from the
+# brief and the names the expander's prompt lists; invented, as the whole Forge estate is.
+terms:
+  - daily transfer limit
+  - transfer refused over limit
+  - account limit change audit
+names:
+  - name: Northwind Pay
+    id: northwind-pay
+    quote: Northwind Pay's velocity check

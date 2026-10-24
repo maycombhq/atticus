@@ -30,9 +30,17 @@ const FIX = join(HERE, "../../../fixtures/stages");
 const NOW = new Date("2026-10-21T09:00:00Z");
 const CHANGE = "add-fraud-check";
 
+/** These scenarios are about the loop's review, so the expansion's extra hand-off round is noise. */
+const NO_EXPANSION = `schemaVersion: 1
+assistants: { allowed: [copilot], default: copilot }
+# The expansion (on by default, ADR 0116 addendum) is tested in stages.test.ts and retrieval.test.ts.
+retrieval: { expansion: false }
+`;
+
 async function estateRoot(o: { lenses?: boolean } = {}): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "atticus-stage-review-"));
   await mkdir(join(root, "org-pack"), { recursive: true });
+  await writeFile(join(root, "org-pack/runtime.yaml"), NO_EXPANSION);
   const rows = [
     ...(parse(readFileSync(join(FIX, "../specs/catalog.yaml"), "utf8")) as unknown[]),
     ...(parse(readFileSync(join(FIX, "catalog-extra.yaml"), "utf8")) as unknown[]),

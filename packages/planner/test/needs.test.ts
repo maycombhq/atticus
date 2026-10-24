@@ -20,6 +20,7 @@ import {
   readKnowledge,
 } from "@maycombhq/knowledge";
 import {
+  EXPAND_AGENT,
   findNeeds,
   markNeed,
   mergeStoryRequests,
@@ -144,8 +145,15 @@ not_needed:
   - { item: sso-intake, why: The change adds no new web application. }
 `;
 
+/** The mock assistant; its context expander (on by default, ADR 0116 addendum) adds nothing. */
 const run = (answer: string | ((r: AiRequest) => string)) =>
-  new MockRuntime(typeof answer === "string" ? () => answer : answer);
+  new MockRuntime((r: AiRequest) =>
+    r.agent.id === EXPAND_AGENT
+      ? "terms: []\nnames: []\n"
+      : typeof answer === "string"
+        ? answer
+        : answer(r),
+  );
 const NOW = new Date("2026-10-22T09:00:00Z");
 
 describe("what a change needs", () => {

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { cp, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,14 +116,63 @@ describe("the model's expansion, checked", () => {
 });
 
 describe("expansion and rerank in a step", () => {
-  it("off by default: no model call before the step's own", async () => {
+  it("the expansion is on by default (ADR 0116 addendum), the rerank off; runtime.yaml can turn the expansion off", async () => {
     const root = await shop();
     const calls: string[] = [];
     const r = await featureStage(root, CHANGE, { runtime: mock(calls), now: NOW });
-    expect(calls.filter((c) => c === EXPAND_AGENT || c === RERANK_AGENT)).toEqual([]);
-    expect(r.runs.every((x) => x.retrieval === undefined)).toBe(true);
+    expect(calls.filter((c) => c === EXPAND_AGENT || c === RERANK_AGENT)).toEqual([EXPAND_AGENT]);
+    expect(r.runs.find((x) => x.agent === "feature-placer")?.retrieval?.expansion).toBeDefined();
+    expect(r.context?.gaps?.map((g) => g.name)).toEqual(["Quillfeather Risk"]);
+
+    const off = await shop();
+    await writeFile(
+      join(off, "org-pack/runtime.yaml"),
+      "schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\nretrieval: { expansion: false }\n",
+    );
+    const none: string[] = [];
+    const o = await featureStage(off, CHANGE, { runtime: mock(none), now: NOW });
+    expect(none.filter((c) => c === EXPAND_AGENT || c === RERANK_AGENT)).toEqual([]);
+    expect(o.runs.every((x) => x.retrieval === undefined)).toBe(true);
     // With no model to read the brief, its prose names aren't asked about.
-    expect(r.context?.gaps ?? []).toEqual([]);
+    expect(o.context?.gaps ?? []).toEqual([]);
+  });
+
+  it("a vendor named only in prose, that the estate doesn't know, is a gap with the expansion on (fixtures/prose-vendor)", async () => {
+    // ADR 0116 took the gap word lists out; the expansion brings prose names back as gaps.
+    const PROSE = join(dirname(fileURLToPath(import.meta.url)), "fixtures/prose-vendor");
+    const answer = readFileSync(join(PROSE, "expansion.yaml"), "utf8");
+    const expected = parse(readFileSync(join(PROSE, "expected-gaps.yaml"), "utf8")) as unknown;
+    const root = await shop();
+    // The brief as the fixtures have it (no Quillfeather line), and no northwind-pay System.
+    await cp(
+      join(FIX, "stages/changes", CHANGE, "brief.md"),
+      join(root, "openspec/changes", CHANGE, "brief.md"),
+    );
+    await rm(join(root, "catalog/generated/system/northwind-pay.yaml"));
+    const brief = await readFile(join(root, "openspec/changes", CHANGE, "brief.md"), "utf8");
+    expect(brief).not.toContain("`Northwind Pay`");
+    const calls: string[] = [];
+    const r = await featureStage(root, CHANGE, {
+      runtime: mock(calls, { [EXPAND_AGENT]: answer }),
+      now: NOW,
+    });
+    expect(calls).toContain(EXPAND_AGENT);
+    expect(r.context?.gaps).toEqual(expected);
+    expect(r.context?.unknown).toContain("Northwind Pay");
+
+    // With the expansion off, nothing marks the name by its form: no gap.
+    const off = await shop();
+    await cp(
+      join(FIX, "stages/changes", CHANGE, "brief.md"),
+      join(off, "openspec/changes", CHANGE, "brief.md"),
+    );
+    await rm(join(off, "catalog/generated/system/northwind-pay.yaml"));
+    const o = await featureStage(off, CHANGE, {
+      runtime: mock([], { [EXPAND_AGENT]: answer }),
+      now: NOW,
+      context: { expand: false },
+    });
+    expect(o.context?.gaps ?? []).toEqual([]);
   });
 
   it("on: one call before the selection, recorded in the step's run record and kept for the next run", async () => {
@@ -216,7 +265,8 @@ describe("expansion and rerank in a step", () => {
       }),
       now: NOW,
       maxAttempts: 1,
-      context: { rerank: true, tokens: 120 },
+      // About the rerank alone: the expansion (on by default) would change what is shown.
+      context: { rerank: true, tokens: 120, expand: false },
     });
     expect(calls).toContain(RERANK_AGENT);
     expect(r.context?.retrieval?.rerank).toMatchObject({
@@ -234,7 +284,7 @@ describe("expansion and rerank in a step", () => {
       }),
       now: NOW,
       maxAttempts: 1,
-      context: { rerank: true, tokens: 120 },
+      context: { rerank: true, tokens: 120, expand: false },
     });
     expect(r2.context?.retrieval?.rerank).toMatchObject({ used: false, order: [] });
 
@@ -243,7 +293,7 @@ describe("expansion and rerank in a step", () => {
       runtime: mock(roomy, { "needs-finder": "needs: []\nnot_needed: []\n" }),
       now: NOW,
       maxAttempts: 1,
-      context: { rerank: true },
+      context: { rerank: true, expand: false },
     });
     expect(roomy).not.toContain(RERANK_AGENT);
   });

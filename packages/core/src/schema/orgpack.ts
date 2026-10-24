@@ -550,6 +550,41 @@ export type BuildEngine = z.infer<typeof BuildEngine>;
 export const Autonomy = z.enum(["plan-only", "draft", "draft-and-pr"]);
 
 /**
+ * runtime.yaml's `retrieval` section (ADR 0116, defaults changed in its addendum):
+ * - embeddings.model: `bundled` (the default: the model the offline bundle carries,
+ *   @maycombhq/embed-model, all-MiniLM-L6-v2), `off`, or a folder with `atticus-model.yaml`
+ *   (relative to the org pack); embeddings.runtime: a folder whose node_modules holds
+ *   onnxruntime-node, when it isn't beside Atticus. Where the model or onnxruntime isn't
+ *   installed, the engine searches by words and names and says so. Nothing is ever downloaded.
+ * - expansion (on by default): one model call before a step's selection that names what the
+ *   input is about and the names it uses (the step's gaps come from it).
+ * - rerank (off by default, not measured yet): one call that orders the candidates when they
+ *   don't fit.
+ */
+export const RetrievalSettings = z.strictObject({
+  embeddings: z
+    .strictObject({
+      model: z.string().min(1).default("bundled"),
+      runtime: z.string().min(1).optional(),
+    })
+    .default({ model: "bundled" }),
+  expansion: z.boolean().default(true),
+  rerank: z.boolean().default(false),
+});
+export type RetrievalSettings = z.infer<typeof RetrievalSettings>;
+
+/**
+ * The effective retrieval settings of a runtime.yaml (ADR 0116): its section with the defaults
+ * filled in, or the defaults when there is none. Every reader goes through this.
+ */
+export function retrievalOf(
+  runtime?: { retrieval?: z.input<typeof RetrievalSettings> } | null,
+): RetrievalSettings {
+  const r = RetrievalSettings.safeParse(runtime?.retrieval ?? {});
+  return r.success ? r.data : RetrievalSettings.parse({});
+}
+
+/**
  * The assistants Atticus writes slash commands, instructions and skills for (ADR 0121), each in
  * the files that tool reads (@maycombhq/assistant-files). `agents-md` is any tool that reads
  * AGENTS.md: Codex and others.
@@ -623,26 +658,10 @@ export const Runtime = z.strictObject({
   history: z.strictObject({ record: z.boolean().default(true) }).optional(),
   /**
    * Retrieval by meaning in the context engine (ADR 0116). Additive and optional, so no schema
-   * version bump (as history and buildEngine): a pack without it reads as everything off.
-   * - embeddings.model: off (the default), `bundled` (the model the offline bundle carries,
-   *   @maycombhq/embed-model) or a folder with `atticus-model.yaml` (relative to the org pack);
-   *   embeddings.runtime: a folder whose node_modules holds onnxruntime-node, when it isn't
-   *   beside Atticus. Nothing is ever downloaded.
-   * - expansion and rerank: one model call before a step's selection that names what the
-   *   input is about, and one that orders the candidates when they don't fit. Off unless on.
+   * version bump (as history and buildEngine). Read it through `retrievalOf`, so a pack without
+   * the section and one with an empty section get the same defaults.
    */
-  retrieval: z
-    .strictObject({
-      embeddings: z
-        .strictObject({
-          model: z.string().min(1).default("off"),
-          runtime: z.string().min(1).optional(),
-        })
-        .default({ model: "off" }),
-      expansion: z.boolean().default(false),
-      rerank: z.boolean().default(false),
-    })
-    .optional(),
+  retrieval: RetrievalSettings.optional(),
   /** Atticus sends no telemetry unless an organisation turns it on here. */
   telemetry: z.strictObject({ enabled: z.boolean().default(false) }).default({ enabled: false }),
   adapters: z

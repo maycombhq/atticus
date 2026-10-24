@@ -11,7 +11,7 @@ import { copy, type Where } from "./messages.js";
 import { ModelProviderConfigError, SettingsReader, type RawSettings } from "./settings.js";
 import { signV4, type AwsCredentials } from "./sigv4.js";
 
-const SETTINGS = [...COMMON_SETTINGS, "region", "baseUrl"] as const;
+export const BEDROCK_SETTINGS = [...COMMON_SETTINGS, "region", "baseUrl"] as const;
 
 /**
  * AWS Bedrock's Converse API (`POST /model/{modelId}/converse`), signed with SigV4. The
@@ -26,7 +26,7 @@ export class BedrockProvider extends BaseProvider {
   private readonly now: () => Date;
 
   constructor(settings: RawSettings, deps: ProviderDeps = {}) {
-    const s = new SettingsReader("bedrock", settings, SETTINGS);
+    const s = new SettingsReader("bedrock", settings, BEDROCK_SETTINGS);
     super(s, deps);
     this.model = s.str("model", { required: true, example: "anthropic.claude-opus-5-5" });
     const region =

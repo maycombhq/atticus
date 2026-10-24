@@ -157,6 +157,22 @@ async function setBudget(root: string, tokens: number): Promise<void> {
   await writeFile(f, stringify(data));
 }
 
+/**
+ * The step bench measures the engine itself, the same on every machine: the embedding model and
+ * the model's expansion (both on by default, ADR 0116 addendum) are off in its roots, so a
+ * machine that carries the bundled model, or a mock that can't read an input, doesn't change the
+ * table. The retrieval cases below measure each mode on its own.
+ */
+async function pinRetrieval(root: string): Promise<void> {
+  const f = join(orgPackDirOf(root), "runtime.yaml");
+  const text = await readFile(f, "utf8").catch(
+    () => "schemaVersion: 1\nassistants: { allowed: [copilot], default: copilot }\n",
+  );
+  const data = (parse(text) ?? {}) as Record<string, unknown>;
+  data.retrieval = { embeddings: { model: "off" }, expansion: false };
+  await writeFile(f, stringify(data));
+}
+
 interface Capture {
   prompt: string;
   totalTokens: number;
@@ -486,6 +502,7 @@ async function once(
     readFileSync(join(fx, "context/expected/target-flows/forge-orders.place-order.yaml"), "utf8"),
   );
   if (budget !== undefined) await setBudget(root, budget);
+  await pinRetrieval(root);
   const seen: Capture[] = [];
   // Only the first prompt is scored: how the step goes on from the mock's answer doesn't matter.
   const make = mode === "engine + tools" ? toolAssistant(root) : assistant;
@@ -1063,11 +1080,12 @@ export async function runContextEval(fixtures: string): Promise<ContextEval> {
     return `${avg(rs.map((r) => r.recall)).toFixed(2)} / ${avg(rs.map((r) => r.precision)).toFixed(2)} / ${avg(rs.map((r) => r.mrr)).toFixed(2)}`;
   };
   const notes = [
+    "The step rows above run with the embedding model and the expansion off in their roots (both on by default since ADR 0116's addendum), so they measure the engine itself, the same on every machine.",
     "Before ADR 0116 (the engine of ADR 0107 point 3: BM25 sums, whole wiki sections, no documents; measured at commit 464b758), all answered cases scored 0.72 / 0.03 / 0.28 at the normal budget and 0.49 / 0.06 / 0.27 at the tight one.",
   ];
   if (retrieval.some((r) => r.mode === "+expansion"))
     notes.push(
-      "+expansion replays stand-in answers of the expander written by hand from each input and the estate's names (fixtures/retrieval/recorded/expansions.yaml), through the planner's real expansion step and its checks. They are not Copilot's: an optimistic upper bound until answers are recorded at the GPT-4o mini floor, so the expansion stays off by default (runtime.yaml retrieval.expansion) whatever this table says.",
+      "+expansion replays stand-in answers of the expander written by hand from each input and the estate's names (fixtures/retrieval/recorded/expansions.yaml), through the planner's real expansion step and its checks. They are not Copilot's: an optimistic upper bound until answers are recorded at the GPT-4o mini floor. The expansion is on by default all the same (runtime.yaml retrieval.expansion, ADR 0116 addendum: the product owner's decision), so recorded answers are the measurement still owed.",
     );
   notes.push(
     "+rerank is built and tested (the planner's rerank step, its checks, the fit in the model's order) but not measured here: a rerank's answer depends on the candidates each case shows, and no model's answers are recorded for them. It stays off by default (retrieval.rerank).",

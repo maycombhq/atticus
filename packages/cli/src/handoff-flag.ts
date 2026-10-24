@@ -78,6 +78,16 @@ async function runStates(root: string): Promise<Map<string, { key: string; run: 
   return out;
 }
 
+/** The modes --handoff runs a step in when --mode names one: the rest hand off. */
+const OWN_MODES = new Set(["model", "headless-claude-code"]);
+
+function modeOf(argv: string[]): string {
+  const at = argv.findIndex((a) => a === "--mode" || a.startsWith("--mode="));
+  if (at < 0) return "hand-off";
+  const m = argv[at]!.includes("=") ? argv[at]!.split("=")[1]! : (argv[at + 1] ?? "");
+  return OWN_MODES.has(m) ? m : "hand-off";
+}
+
 /** argv without --handoff, --json, --mode and --resume (with their values). */
 function stepArgs(argv: string[]): string[] {
   const out: string[] = [];
@@ -121,7 +131,7 @@ export async function handoffStep(
   const facts: StepFact[] = [];
   let code: number;
   try {
-    code = await dispatch([...args, ...resume, "--mode", "hand-off"], {
+    code = await dispatch([...args, ...resume, "--mode", modeOf(argv)], {
       out: (l) => out.push(l),
       err: (l) => err.push(l),
       report: (f) => facts.push(f),
