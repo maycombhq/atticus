@@ -1,6 +1,6 @@
 import type { ChangeHandoff, ChangeType } from "@maycombhq/core";
 import type { ChangeContext } from "./context.js";
-import type { Footprint } from "./footprint.js";
+import { personalLevels, type Footprint } from "./footprint.js";
 import type { PhaseId } from "./types.js";
 
 /**
@@ -14,6 +14,8 @@ export interface PrivacyImpact {
   records: Footprint["personal"];
   /** The phase whose hand-off PR carries the personal-data review. */
   phase: PhaseId;
+  /** Which classifications counted as personal, and where that came from (R5). */
+  counted: { levels: string[]; from: "change-policy" | "pack-levels" };
 }
 
 const strip = (h: string) => (h.startsWith("@") ? h.slice(1) : h);
@@ -28,6 +30,7 @@ export function privacyImpact(
     touched: footprint.personal.length > 0,
     records: footprint.personal,
     phase: phases.find((p) => type.phases.includes(p)) ?? type.phases.at(-1)!,
+    counted: personalLevels(ctx),
   };
 }
 

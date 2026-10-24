@@ -44,7 +44,7 @@ import {
   stageRetrievalAi,
   withoutResume,
 } from "./loop.js";
-import type { DeltaStep, FlowDelta } from "./schema.js";
+import { fieldNames, type DeltaStep, type FlowDelta } from "./schema.js";
 
 /**
  * `atticus plan stories <change>` on a change with target flows (ADR 0087, plan 4.4): stories
@@ -135,9 +135,7 @@ export function storiesFromDeltas(all: FlowDelta[], e: Estate): DeltaStory[] {
             ? ev(d.repo, today.trigger.evidence)
             : [];
         const what = s.what ?? old?.what ?? "";
-        const fields = [
-          ...new Set([...Object.values(s.fields ?? {}).flat(), ...(s.store?.columns ?? [])]),
-        ];
+        const fields = [...new Set([...fieldNames(s.fields), ...(s.store?.columns ?? [])])];
         const n = (counter.get(repo) ?? 0) + 1;
         counter.set(repo, n);
         const verb = s.op === "add" ? "Add" : s.op === "change" ? "Change" : "Remove";

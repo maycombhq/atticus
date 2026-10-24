@@ -1,6 +1,7 @@
 import { parse } from "yaml";
 import type { z } from "zod";
 import type { StageIssue } from "./loop.js";
+import { schemaProblems } from "./schema-words.js";
 
 /** Strip a Markdown code fence an assistant may put around its YAML. */
 export const unfence = (text: string) =>
@@ -46,14 +47,18 @@ export function parseYamlAs<S extends z.ZodType>(
   const { relies_on_gaps: _gaps, ...rest } = data as Record<string, unknown>;
   void _gaps;
   const r = schema.safeParse(fill(rest));
-  if (!r.success)
+  if (!r.success) {
+    // R2: in plain words, at the answer's line.
+    const issues = r.error.issues.slice(0, 12);
+    const words = schemaProblems("answer", unfence(text), issues);
     return {
-      issues: r.error.issues.slice(0, 12).map((i) => ({
+      issues: issues.map((i, n) => ({
         rule: "stage.format",
         target: `${target}:${i.path.join(".")}`,
-        message: `${i.path.join(".") || "(top)"}: ${i.message}`,
+        message: words[n]!.replace(/^answer:(\d+): /, "In your answer at line $1: "),
         blocking: true,
       })),
     };
+  }
   return { value: r.data as z.infer<S>, issues: [] };
 }

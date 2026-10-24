@@ -246,10 +246,12 @@ export async function changeStatus(
     );
   io.out(`Tests: ${r.tests.required.length ? r.tests.required.join(", ") : "none listed"}`);
   if (r.tests.note) io.out(`  (${r.tests.note})`);
+  // R5: which classifications counted as personal, and from where, said on the line.
+  const counted = `counted as personal: ${r.privacy.counted.levels.join(", ")}; from ${r.privacy.counted.from === "change-policy" ? "the change policy's privacy.classifications" : "the change policy's privacy.classifications and the org pack's levels above internal"}`;
   io.out(
     r.privacy.touched
-      ? `Privacy: touches personal data (${r.privacy.records.map((x) => x.id).join(", ")}); review it with the ${r.privacy.phase} hand-off.`
-      : "Privacy: no personal data touched.",
+      ? `Privacy: touches personal data (${r.privacy.records.map((x) => (x.field ? `${x.id}.${x.field} ${x.classification}` : `${x.id} ${x.classification}`)).join(", ")}); review it with the ${r.privacy.phase} hand-off (${counted}).`
+      : `Privacy: no personal data touched (${counted}).`,
   );
   if (r.reasons.length > 0) {
     io.out("Blocked by:");

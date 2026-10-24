@@ -7,13 +7,18 @@ import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { answerQuestion, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
-import { loadChangeContext } from "@maycombhq/changes";
+import { assess, changeStore, loadChangeContext } from "@maycombhq/changes";
 import {
   architectureStage,
   checkDeltas,
+  dataChanges,
   EXPAND_AGENT,
   FlowDelta,
   loadEstate,
+  readDeltas,
+  renderArchitecture,
+  renderData,
+  sqlNameOf,
   stageEnd,
   storeFacts,
   type StageResult,
@@ -411,5 +416,129 @@ describe("one stop, one message (A2)", () => {
     });
     expect(done.state).toBe("done");
     expect(prompts[0]).toContain("sends pinnedAt to forge-orders-db.order_pin");
+  });
+});
+
+describe("the live rerun's findings (R1 to R5)", () => {
+  it("R1: a table created by a flow that sorts after the flows using it is one new table in data.md and design.md", async () => {
+    const root = await pinRoot();
+    const e = await estateOf(root);
+    // unpin-note uses the table first; pin-note, later, creates it.
+    const later = deltasOf("answered").reverse();
+    expect(dataChanges(later, e)).toEqual([
+      expect.objectContaining({
+        flow: "forge-orders.pin-note",
+        table: TABLE,
+        change: "new table",
+        migration: "V4__create_order_pin.sql",
+      }),
+    ]);
+    const data = renderData(later, e)!;
+    expect(data).not.toContain("add column");
+    expect(data).toContain("V4__create_order_pin.sql");
+    expect(renderArchitecture(later, e)).not.toContain("new columns");
+  });
+
+  it("R1: where several steps still mark it new, the one carrying the migration and columns is the definition, not the first", async () => {
+    const root = await pinRoot();
+    const e = await estateOf(root);
+    const later = deltasOf("answered").reverse();
+    later[0]!.steps[1]!.store!.new = true;
+    const rows = dataChanges(later, e);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      flow: "forge-orders.pin-note",
+      columns: ["order_id", "note_id", "pinned_by"],
+      migration: "V4__create_order_pin.sql",
+    });
+    const twice = checkDeltas(later, e, await placement(root), [], { levels: LEVELS }).find(
+      (i) => i.rule === "delta.table-new-twice",
+    );
+    expect(twice?.message).toContain(
+      "Mark it new only on the step that creates it (change 2 to forge-orders.pin-note)",
+    );
+  });
+
+  it("R2: a stage file's schema problem is in plain words, with its file and line", async () => {
+    const root = await pinRoot();
+    const dir = join(root, "openspec/changes", CHANGE);
+    await mkdir(join(dir, "target-flows"), { recursive: true });
+    const flow = (parse(draft("answered")) as { flows: object[] }).flows[0]!;
+    const { stringify } = await import("yaml");
+    const file = join(dir, "target-flows/forge-orders.pin-note.yaml");
+    await writeFile(
+      file,
+      stringify({ schemaVersion: 2, ...flow }, { lineWidth: 0 }).replace(
+        /sends:\n(\s+- \w+\n)+/,
+        "sends:\n",
+      ),
+    );
+    const { problems } = await readDeltas(dir);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(
+      /^target-flows\/forge-orders\.pin-note\.yaml:\d+: step 2's fields\.sends is empty: write a list, such as \[orderId\], or leave sends out\.$/,
+    );
+    const line = Number(/:(\d+):/.exec(problems[0]!)![1]);
+    expect((await readFile(file, "utf8")).split("\n")[line - 1]).toMatch(/sends:/);
+  });
+
+  it("R3: a field sent under another name says which column it is (fields.as); the advice says exactly that", async () => {
+    const root = await pinRoot();
+    const e = await estateOf(root);
+    const d = deltasOf("answered");
+    const unpin = d[1]!.steps[1]!;
+    unpin.fields = { sends: ["id"], checks: ["order_id"] };
+    const got = () =>
+      checkDeltas(d, e, { flows: [], newFlows: [] } as never, [], { levels: LEVELS }).filter(
+        (i) => i.rule === "delta.sent-not-stored",
+      );
+    expect(got().map((i) => i.message)).toEqual([
+      "Change 2 to forge-orders.unpin-note sends id to forge-orders-db.order_pin but stores it in no column: if it is stored as, or matches rows by, a column of another name (a path parameter id that is the order_id column), say which under fields.as: { id: <the column> }, with that column under store.columns or fields.checks; if it is a new column, add it to store.columns with its type, classification and migration; or leave it out of sends.",
+    ]);
+    unpin.fields = { sends: ["id"], checks: ["order_id"], as: { id: "order_id" } };
+    expect(got()).toEqual([]);
+    unpin.fields = { sends: ["id"], checks: ["order_id"], as: { id: "chat_id" } };
+    expect(got().map((i) => i.target)).toEqual(["forge-orders.unpin-note#2:id"]);
+  });
+
+  it("R4: a migration name's example uses the table's SQL name, not its catalog id", async () => {
+    const root = await pinRoot();
+    const e = await estateOf(root);
+    expect(sqlNameOf(e, "forge-orders-db.orders")).toBe("orders");
+    expect(sqlNameOf(e, "forge-orders-db.order-pin")).toBe("order_pin");
+    const d = deltasOf("answered");
+    for (const x of d)
+      for (const s of x.steps) if (s.store) s.store.table = "forge-orders-db.order-pin";
+    d[0]!.steps[1]!.store!.migration = "a new migration creating the pin table";
+    const msg = checkDeltas(d, e, await placement(root), [], { levels: LEVELS }).find(
+      (i) => i.rule === "delta.bad-migration",
+    )!.message;
+    expect(msg).toContain("such as V4__create_order_pin.sql");
+  });
+
+  it("R5: the privacy line reads the classifications the target flows give, by the levels the org counts as personal", async () => {
+    const root = await pinRoot();
+    const r = await architectureStage(root, CHANGE, {
+      runtime: assistant([draft("answered")]),
+      now: NOW,
+    });
+    expect(r.state).toBe("done");
+    const ctx = await loadChangeContext(root);
+    const a = await assess(ctx, await changeStore(root).read(CHANGE));
+    expect(a.privacy.counted).toEqual({
+      levels: [
+        "personal",
+        "pii",
+        "sensitive-personal",
+        "special-category",
+        "confidential",
+        "restricted",
+      ],
+      from: "pack-levels",
+    });
+    expect(a.privacy.touched).toBe(true);
+    expect(a.privacy.records).toEqual([
+      { id: TABLE, classification: "confidential", field: "pinned_by" },
+    ]);
   });
 });

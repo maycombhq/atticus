@@ -10,6 +10,7 @@ import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { EXPAND_AGENT } from "@maycombhq/planner";
 import { main } from "../src/main.js";
 import { stageCli } from "../src/stage-commands.js";
+import { changeStatus } from "../src/change-commands.js";
 
 /**
  * The change stages as commands (ADR 0087): `atticus change feature`, with --handoff for
@@ -407,6 +408,45 @@ describe("a stage's --handoff --json offers its own run, named as data (M5, M6)"
       lens: "business",
       stillWaiting: true,
     });
+  });
+});
+
+describe("change status reads the classifications the target flows give (R5)", () => {
+  it("says the change touches personal data, and which levels count as personal", async () => {
+    const PIN = join(FIXTURES, "stages/pin-table");
+    const root = await estate();
+    for (const r of parse(readFileSync(join(PIN, "catalog.yaml"), "utf8")) as unknown[]) {
+      const p = parseRecord(r);
+      if (!p.ok) throw new Error("bad fixture record");
+      const f = join(root, "catalog/generated", recordPath(p.record));
+      await mkdir(dirname(f), { recursive: true });
+      await writeFile(f, serializeRecord(p.record));
+    }
+    await cp(join(PIN, "pin-order-note"), join(root, "openspec/changes/pin-order-note"), {
+      recursive: true,
+    });
+    const answer = readFileSync(join(PIN, "drafts/answered.yaml"), "utf8");
+    const mock = new MockRuntime(
+      (req) =>
+        req.agent.id.endsWith("-critic")
+          ? "findings: []"
+          : req.agent.id === EXPAND_AGENT
+            ? "terms: []\nnames: []\n"
+            : answer,
+      { now: () => NOW },
+    );
+    const o = io();
+    expect(
+      await stageCli(root, ["change", "architecture", "pin-order-note"], {}, o.io, {
+        runtime: mock,
+        now: NOW,
+      }),
+    ).toBe(0);
+    const s = io();
+    expect(await changeStatus(root, "pin-order-note", {}, s.io)).toBe(0);
+    expect(s.out).toContain(
+      "Privacy: touches personal data (forge-orders-db.order_pin.pinned_by confidential); review it with the design hand-off (counted as personal: personal, pii, sensitive-personal, special-category, confidential, restricted; from the change policy's privacy.classifications and the org pack's levels above internal).",
+    );
   });
 });
 

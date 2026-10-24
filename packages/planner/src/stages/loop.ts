@@ -450,7 +450,7 @@ export async function runStageLoop<A>(
     by: "check" | "critic",
   ): Promise<never> => {
     const lines: string[] = [];
-    for (const p of problems) lines.push(`  - ${p}`);
+    for (const p of problems) lines.push(`  - ${rel}/${p}`);
     for (const i of failing) {
       const where = (await spec.locate?.(i)) ?? i.evidence ?? `${rel}/${spec.source}`;
       lines.push(`  - ${i.message} (rule ${i.rule.replace(/^critic:/, "")}; at ${where})`);
