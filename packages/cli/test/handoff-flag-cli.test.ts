@@ -299,3 +299,30 @@ describe("what a step reports as data (A4)", () => {
     expect(JSON.parse(out.join("\n"))).toMatchObject({ state: "done", pagesLeft: 3 });
   });
 });
+
+describe("--handoff --json --mode model (ADR 0121 item 5)", () => {
+  const modes = async (argv: string[]) => {
+    const { handoffStep } = await import("../src/handoff-flag.js");
+    const root = await mkdtemp(join(tmpdir(), "atticus-own-mode-"));
+    const seen: string[][] = [];
+    await handoffStep(root, argv, { out: () => {}, err: () => {} }, async (a) => {
+      seen.push(a);
+      return 0;
+    });
+    const a = seen[0]!;
+    return a[a.indexOf("--mode") + 1];
+  };
+
+  it("runs the step on the configured model when --mode model is asked, and hands off otherwise", async () => {
+    expect(await modes(["knowledge", "ask", "q", "--handoff", "--json", "--mode", "model"])).toBe(
+      "model",
+    );
+    expect(await modes(["knowledge", "ask", "q", "--handoff", "--json", "--mode=model"])).toBe(
+      "model",
+    );
+    expect(await modes(["knowledge", "ask", "q", "--handoff", "--json"])).toBe("hand-off");
+    expect(await modes(["knowledge", "ask", "q", "--handoff", "--json", "--mode", "replay"])).toBe(
+      "hand-off",
+    );
+  });
+});

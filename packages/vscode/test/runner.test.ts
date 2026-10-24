@@ -580,3 +580,49 @@ describe("a stage whose critic lenses are handed off too", () => {
     expect(end.state).toBe("too-many-rounds");
   });
 });
+
+describe("Atticus's configured model (ADR 0121 item 5)", () => {
+  it("runs the step in model mode by the command line, and never asks vscode.lm", async () => {
+    const calls: string[][] = [];
+    const cli = async (argv: string[]) => {
+      calls.push(argv);
+      return {
+        code: 0,
+        cancelled: false,
+        stdout: JSON.stringify({
+          state: "done",
+          exitCode: 0,
+          messages: ["Answered."],
+          errors: [],
+          questions: [],
+        }),
+        stderr: "",
+      };
+    };
+    let asked = 0;
+    const end = await runStep(
+      ["knowledge", "ask", "Who owns the ledger?"],
+      {
+        root: tmpdir(),
+        cli,
+        mode: "model",
+        model: async () => {
+          asked++;
+          return undefined;
+        },
+      },
+      cancelSource(),
+    );
+    expect(asked).toBe(0);
+    expect(calls[0]!.slice(0, 7)).toEqual([
+      "knowledge",
+      "ask",
+      "Who owns the ledger?",
+      "--mode",
+      "model",
+      "--handoff",
+      "--json",
+    ]);
+    expect(end).toMatchObject({ state: "done", messages: ["Answered."] });
+  });
+});
