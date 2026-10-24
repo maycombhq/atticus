@@ -242,7 +242,7 @@ describe("atticus change feature --handoff --json with the critic's AI lenses (A
   });
 });
 
-describe("the starter review on a metarepo atticus init made (ADR 0119)", () => {
+describe("the starter review on a metarepo atticus init made (ADR 0120)", () => {
   it("hands off the starter review's lenses after a draft that passes the rules", async () => {
     const base = await mkdtemp(join(tmpdir(), "atticus-starter-review-"));
     const root = join(base, "forge-meta");

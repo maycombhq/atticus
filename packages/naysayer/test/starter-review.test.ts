@@ -8,7 +8,7 @@ import { STARTER_REVIEW_FILE, STARTER_REVIEW_PATH, starterReviewText } from "../
 import { prepareLayers, resolveGate } from "../src/round.js";
 
 /**
- * The starter review (ADR 0119): AI rules every new metarepo gets in
+ * The starter review (ADR 0120): AI rules every new metarepo gets in
  * org-pack/checklists/review.yaml, so the critic's lenses (ADR 0115) have something to judge.
  */
 

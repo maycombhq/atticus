@@ -61,7 +61,7 @@ describe("init", () => {
     });
     const gi = await readFile(join(root, ".gitignore"), "utf8");
     for (const l of ["/workspace/", "/.index/", "/.runs/", "/.atticus/"]) expect(gi).toContain(l);
-    // ADR 0119: the starter review, the org's own checklist to change or delete.
+    // ADR 0120: the starter review, the org's own checklist to change or delete.
     const review = await readFile(join(root, "org-pack/checklists/review.yaml"), "utf8");
     expect(review).toBe(await starterReviewText());
     expect(ChecklistPack.parse(parse(review)).rules.every((r) => r.check.type === "ai")).toBe(true);

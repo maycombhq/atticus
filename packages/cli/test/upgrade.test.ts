@@ -175,7 +175,7 @@ describe("atticus upgrade", () => {
   });
 });
 
-describe("atticus upgrade and the starter review (ADR 0119)", () => {
+describe("atticus upgrade and the starter review (ADR 0120)", () => {
   /** An org's own checklist with deterministic rules only: no AI review of its own. */
   const HOUSE = [
     "# The Forge house rules",

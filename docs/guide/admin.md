@@ -165,7 +165,7 @@ A small type has at most one phase before build, so its plan is one hand-off PR;
 
 ### The starter review (the critic's AI rules)
 
-The critic's AI lenses review every draft a stage writes, with Copilot too, but only where the org pack has AI rules for that gate and lens (ADR 0115). The built-in constitution has deterministic rules only, so `atticus init` and `atticus adopt` write a starter review into `org-pack/checklists/review.yaml` (ADR 0119): ten AI rules, each a prompt in plain words that asks a lens to judge the draft's meaning against the estate and the brief.
+The critic's AI lenses review every draft a stage writes, with Copilot too, but only where the org pack has AI rules for that gate and lens (ADR 0115). The built-in constitution has deterministic rules only, so `atticus init` and `atticus adopt` write a starter review into `org-pack/checklists/review.yaml` (ADR 0120): ten AI rules, each a prompt in plain words that asks a lens to judge the draft's meaning against the estate and the brief.
 
 | Gate   | Lens         | The rule asks                                                                                           | Severity |
 | ------ | ------------ | ------------------------------------------------------------------------------------------------------- | -------- |

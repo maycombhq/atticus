@@ -110,7 +110,7 @@ export async function loadConstitution(): Promise<ChecklistPack> {
 }
 
 /**
- * The starter review (ADR 0119): AI rules for the critic's lenses that `atticus init` and
+ * The starter review (ADR 0120): AI rules for the critic's lenses that `atticus init` and
  * `atticus adopt` write into the org pack, and `atticus upgrade` adds once to a metarepo that
  * has no AI review of its own. Organisation configuration, not the constitution: the critic
  * never loads this file itself, only the copy in the org pack, which the org changes or deletes.

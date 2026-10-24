@@ -153,7 +153,7 @@ export const MIGRATIONS: Migration[] = [
   {
     id: "starter-review",
     summary:
-      "The starter review: AI rules for the critic's lenses in checklists/review.yaml, for an org pack with no AI review of its own (ADR 0119)",
+      "The starter review: AI rules for the critic's lenses in checklists/review.yaml, for an org pack with no AI review of its own (ADR 0120)",
     async pending(root) {
       return (await starterReviewPlan(root)).map((f) => f.rel);
     },
@@ -169,7 +169,7 @@ export const MIGRATIONS: Migration[] = [
 ];
 
 /**
- * What adding the starter review (ADR 0119) would write: review.yaml, and the checklists README
+ * What adding the starter review (ADR 0120) would write: review.yaml, and the checklists README
  * when it is still the one Atticus wrote (or missing), so every clone can tell the review was
  * added. Nothing when the org pack has a review.yaml or a pack named review, when any of its
  * checklists has an AI rule (the org wrote its own review), when this metarepo's stamp says the

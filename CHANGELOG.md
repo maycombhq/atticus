@@ -62,7 +62,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - `atticus knowledge ask` meets "process" with "processes"; testgen no longer reads a `javascript-spa` repo as Java.
 - The evals score each replaced judgment against the rule it replaced, on `fixtures/judgments/` (the audit's failing examples among them).
 
-### A starter review every metarepo gets (ADR 0119)
+### A starter review every metarepo gets (ADR 0120)
 
 - `atticus init` and `atticus adopt` write `org-pack/checklists/review.yaml`: ten AI rules for the critic's business, architecture, story and delivery lenses, each a plain-words prompt that judges a draft's meaning against the estate and the brief and quotes the line it cites. Define: every outcome is placed; a flow the change alters isn't marked only read; a capability the brief assumes that nothing in the estate does is named as a gap. Design: every outcome has its target-flow steps; data a step returns or shows comes from somewhere; a new column has its classification and migration; each hop's pattern fits it. Plan: each outcome has a story; criteria are testable and name their data; requests are raised in time. With the default gates and change types, a new metarepo's drafts are now reviewed by a model, with Copilot too.
 - It is the organisation's configuration, not the constitution: change, waive, retire or delete its rules, or delete the file to turn it off. `init --from <pack>` doesn't add it.

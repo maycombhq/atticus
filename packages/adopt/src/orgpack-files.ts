@@ -29,18 +29,18 @@ export interface StartingPack {
   platform: string;
   owner: string;
   sources: z.input<typeof Sources>;
-  /** Write the default change types, gates, runtime, test strategy and the starter review (ADR 0119) as files (roles.yaml is deprecated, ADR 0073). */
+  /** Write the default change types, gates, runtime, test strategy and the starter review (ADR 0120) as files (roles.yaml is deprecated, ADR 0073). */
   defaults: boolean;
   platformName?: string;
 }
 
-/** checklists/README.md as Atticus wrote it before the starter review (ADR 0119). */
+/** checklists/README.md as Atticus wrote it before the starter review (ADR 0120). */
 export const CHECKLISTS_README =
   "# Checklists\n\nCritic rule packs (contract C3), one YAML file per pack. The constitution is built in; packs here add organisation rules.\n";
 
-/** checklists/README.md beside the starter review (ADR 0119). */
+/** checklists/README.md beside the starter review (ADR 0120). */
 export const STARTER_CHECKLISTS_README = `${CHECKLISTS_README}
-\`review.yaml\` is the starter review (ADR 0119): AI rules the critic's lenses apply to every draft, judging its meaning against the estate and the brief. It is this organisation's configuration, not the constitution: change, waive or retire its rules, or delete one, through a pull request. Delete the file to turn the starter review off; \`atticus upgrade\` won't add it back.
+\`review.yaml\` is the starter review (ADR 0120): AI rules the critic's lenses apply to every draft, judging its meaning against the estate and the brief. It is this organisation's configuration, not the constitution: change, waive or retire its rules, or delete one, through a pull request. Delete the file to turn the starter review off; \`atticus upgrade\` won't add it back.
 `;
 
 const FOLDER_READMES: [string, string][] = [

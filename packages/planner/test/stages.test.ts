@@ -706,7 +706,7 @@ describe("the stories stage", () => {
   });
 });
 
-describe("the starter review at each stage (ADR 0119)", () => {
+describe("the starter review at each stage (ADR 0120)", () => {
   it("the lenses review each draft with the starter rules, and the brief rides with every lens", async () => {
     const root = await estateRoot();
     await cp(

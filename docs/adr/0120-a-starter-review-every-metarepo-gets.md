@@ -1,4 +1,4 @@
-# 0119. A starter review every metarepo gets (C6 default, C3 rules)
+# 0120. A starter review every metarepo gets (C6 default, C3 rules)
 
 - Status: accepted (pending review by the product owner)
 - Date: 2026-10-23
