@@ -6,7 +6,7 @@ import { needDescription, needItems, type KnowledgeEntry, type NeedEntry } from 
 import { readKnowledgeList } from "./knowledge-read";
 import { questionGroups, SEVERITY_ICON, type Item } from "./sidebar-data";
 import type { Cli, OpenQuestion } from "./types";
-import { questionLabel } from "./words";
+import { questionLabel, WORDS } from "./words";
 
 /**
  * The Waiting on you section (ADR 0105): what waits on a person across every change, in one
@@ -75,15 +75,15 @@ export const isUnverified = (k: Pick<KnowledgeEntry, "review">) => {
 const OVER = new Set(["released", "archived"]);
 
 const firstLine = (s: string) => s.trim().split("\n")[0] ?? "";
-const why = (r: { stdout: string; stderr: string; code: number }, what: string) =>
-  firstLine(r.stderr) || firstLine(r.stdout) || `atticus ${what} exited ${r.code}`;
+const why = (r: { stdout: string; stderr: string; code: number }) =>
+  firstLine(r.stderr) || firstLine(r.stdout) || WORDS.endedWith(r.code);
 
 /** Run a command and read its JSON list; the reason when it can't be. */
 async function list<T>(cli: Cli, root: string, args: string[]): Promise<T[] | string> {
   try {
     const r = await cli([...args, "--root", root]);
     const j = parseJson<T[]>(r.stdout);
-    return r.code === 0 && Array.isArray(j) ? j : why(r, args.slice(0, 2).join(" "));
+    return r.code === 0 && Array.isArray(j) ? j : why(r);
   } catch (e) {
     return (e as Error)?.message ?? String(e);
   }

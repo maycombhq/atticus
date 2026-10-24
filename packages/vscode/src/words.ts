@@ -14,7 +14,58 @@ export const WORDS = {
   lensesFailed: (why: string) =>
     `Atticus couldn't read which flows cite this file, so it shows no lenses for now: ${why}`,
   healthFailed: (why: string) => `Atticus couldn't check this machine and the metarepo: ${why}`,
+  wholeEstate: "The whole estate",
+  diagramPick: "Open which repo on the Architecture canvas?",
+  changeDiagramPick: "Open the diagram of which change?",
+  estimatePick: "Open the estimate of which change?",
+  /**
+   * How a command ended, in words (ADR 0119), for when it printed nothing to say so: the command
+   * line's exit codes are 0 done, 1 problems found, 2 a mistake in how it was asked.
+   */
+  endedWith: (code: number | null | undefined) =>
+    code === 0
+      ? "Done."
+      : code === 1
+        ? "It found problems; the output says which."
+        : code === 2
+          ? "It couldn't run as asked; the output says why."
+          : "It stopped before it finished; the output says why.",
+  runNextStep: "Run the next step",
+  showAll: "Show all",
+  upgrade: "Upgrade",
+  dontShowAgain: "Don't show again",
+  setUpCopilot: "Set up Copilot",
+  copilotMissing:
+    "Atticus's AI steps run with GitHub Copilot, which isn't set up in this VS Code yet.",
 };
+
+/** Something the window found when it opened: its id says whether it is the same thing again. */
+export interface StartupItem {
+  id: string;
+  text: string;
+}
+
+/**
+ * The one notice a window shows when it opens (ADR 0119), instead of a toast for each thing:
+ * how many there are and the first. Undefined when nothing was found, or when the person said
+ * "Don't show again" to exactly this set; a new or changed thing shows it again.
+ */
+export function startupNotice(
+  items: StartupItem[],
+  dismissed: string | undefined,
+): { message: string; signature: string } | undefined {
+  if (!items.length) return undefined;
+  const signature = [...new Set(items.map((i) => i.id))].sort().join("|");
+  if (signature === dismissed) return undefined;
+  const first = items[0]!.text;
+  return {
+    message:
+      items.length === 1
+        ? `Atticus: ${first}`
+        : `Atticus: ${items.length} things to look at. ${first}`,
+    signature,
+  };
+}
 
 /** A change's title, by its id, when the extension can read it. */
 export type ChangeTitles = (id: string) => string | undefined;

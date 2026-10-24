@@ -34,6 +34,7 @@ import { findOutcome, runProgressTitle } from "./feedback";
 import { pickLoading, pickManyLoading } from "./pick";
 import type { Service } from "./service";
 import { isUnverified } from "./waiting-data";
+import { WORDS } from "./words";
 
 /**
  * Knowledge managed in the metarepo, from the editor (ADR 0101): add a wiki or docs repo, sync
@@ -818,7 +819,7 @@ export class KnowledgeUi {
           const all = parseJson<NeedEntry[]>(r.stdout);
           if (!Array.isArray(all))
             throw new Error(
-              (r.stderr || r.stdout).trim().split("\n")[0] || `atticus needs exited ${r.code}`,
+              (r.stderr || r.stdout).trim().split("\n")[0] || WORDS.endedWith(r.code),
             );
           return all
             .filter((n) => n.status === "open")
@@ -905,7 +906,7 @@ export class KnowledgeUi {
     }>(r.stdout);
     if (!d) {
       const pick = await vscode.window.showWarningMessage(
-        `Atticus couldn't draft the org pack: ${(r.stderr || r.stdout).trim().split("\n")[0] || `exit ${r.code}`}`,
+        `Atticus couldn't draft the org pack: ${(r.stderr || r.stdout).trim().split("\n")[0] || WORDS.endedWith(r.code)}`,
         "Show the output",
       );
       if (pick) this.svc.log.show(true);

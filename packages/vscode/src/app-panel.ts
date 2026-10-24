@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { commandText, resolveCommand, SHELL_UNSAFE, type CliOptions } from "./cli";
+import { WORDS } from "./words";
 
 /**
  * The Atticus app in a VS Code tab (ADR 0091). The extension starts `atticus ui --embed vscode`
@@ -159,7 +160,9 @@ export function startApp(o: CliOptions): Promise<RunningApp> {
       if (!url)
         reject(
           new Error(
-            err.trim() || out.trim() || `atticus ui stopped (exit ${code}) before it served.`,
+            err.trim() ||
+              out.trim() ||
+              `The app stopped before it started. ${WORDS.endedWith(code)}`,
           ),
         );
       for (const f of exits) f(code);
