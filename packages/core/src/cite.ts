@@ -29,7 +29,15 @@ export function lineNamesRoute(line: string, path: string): boolean {
   // it is named by its literal in quotes, parameters in any style.
   if (!segs.some((s) => !PARAM.test(s))) {
     const body = segs.map((s) => (PARAM.test(s) ? PARAM_RE : escape(s))).join("/");
-    return new RegExp(`["'\`]/${body}/?["'\`]`).test(line);
+    if (new RegExp(`["'\`]/${body}/?["'\`]`).test(line)) return true;
+    // the last parameter concatenated in code: `base + "/" + productId`
+    const head = segs
+      .slice(0, -1)
+      .map(() => PARAM_RE)
+      .join("/");
+    return (
+      segs.length > 0 && new RegExp(`["'\`]/${head ? `${head}/` : ""}["'\`]\\s*\\+`).test(line)
+    );
   }
   for (let k = 0; k < segs.length; k++) {
     const tail = segs.slice(k);
@@ -179,6 +187,23 @@ export function redactSecrets(line: string): string {
  * written on one of the lines, case aside, at the start of a word or of an identifier
  * (`account` in `AccountController`). Parameters need not be written.
  */
+/**
+ * Whether `/` is a conventional route's default action: a default route is declared
+ * (`MapDefaultControllerRoute`, or a template like `{controller=Home}/{action=Index}`) and the
+ * lines name that controller's class and that action.
+ */
+function defaultActionAt(lines: readonly string[], path: string): boolean {
+  if (path.split(/[?#]/, 1)[0]!.replace(/\/+/g, "") !== "") return false;
+  const text = lines.join("\n");
+  if (!/MapDefaultControllerRoute|\{controller=\w+\}/.test(text)) return false;
+  const controller = /\{controller=(\w+)\}/.exec(text)?.[1] ?? "Home";
+  const action = /\{action=(\w+)\}/.exec(text)?.[1] ?? "Index";
+  return (
+    new RegExp(`\\b${controller}Controller\\b`).test(text) &&
+    new RegExp(`\\b${action}\\s*\\(`).test(text)
+  );
+}
+
 export function partsNamePath(lines: readonly string[], path: string): boolean {
   const parts = path
     .split(/[?#]/, 1)[0]!
@@ -186,7 +211,8 @@ export function partsNamePath(lines: readonly string[], path: string): boolean {
     .filter((s) => s && !PARAM.test(s))
     .flatMap((s) => s.split("."))
     .filter(Boolean);
-  if (!parts.length) return lines.some((l) => lineNamesRoute(l, path));
+  if (!parts.length)
+    return lines.some((l) => lineNamesRoute(l, path)) || defaultActionAt(lines, path);
   return parts.every((p) =>
     lines.some((l) =>
       new RegExp(`(^|[^A-Za-z0-9]|(?<=[a-z0-9])(?=[A-Z]))${escape(p)}`, "i").test(l),

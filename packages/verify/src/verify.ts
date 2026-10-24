@@ -30,6 +30,7 @@ export type RejectCode =
   | "no-file"
   | "no-line"
   | "claim-not-on-line"
+  | "claim-in-comment"
   | "quote-mismatch"
   | "dangling-ref"
   | "ref-rejected";
@@ -101,6 +102,12 @@ export function isSourceFile(path: string, firstLine = ""): boolean {
 }
 
 const lastPart = (s: string) => s.split(".").pop() ?? s;
+/** A line that is all comment: `//`, `/*`, `*`, `#` (not a C# directive), `<!--` or SQL's `-- `. */
+const isCommentLine = (l: string) =>
+  /^\s*(\/\/|\/\*|\*|<!--|-- |#(?!\s*(region|endregion|if|elif|else|endif|define|undef|pragma|nullable|include|import)\b)(?!!))/.test(
+    l,
+  );
+
 const routeOrWord = (v: string): Claim =>
   v.includes("/") ? { kind: "route", value: v } : { kind: "word", value: v };
 
@@ -228,7 +235,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         };
       if (
         !claimOnLines(ls, p.line, routeOrWord(p.value)) &&
-        !claimOnLines(ls, p.line, { kind: "word", value: p.value.replace(/^\/+|\/+$/g, "") })
+        !claimOnLines(ls, p.line, { kind: "word", value: p.value.replace(/^\/+|\/+$/g, "") }) &&
+        // a part named at a camelCase start (`Catalog` in `CatalogController`), as the path check does
+        !partsNamePath(near(ls, p.line), p.value)
       )
         return {
           code: "claim-not-on-line",
@@ -247,6 +256,17 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
         code: "claim-not-on-line",
         message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} (or the line either side)${parts.length ? " and its parts" : ""} does not name${parts.length ? "" : "; if it is put together from other lines (a base URL, a prefix, a context path), cite them in cite.with"}`,
       };
+    // A claim written only in a comment (a commented-out example, a scaffold note) isn't code.
+    if (claims && !parts.length) {
+      const naming = [cite.line - 1, cite.line, cite.line + 1]
+        .map((n) => lines[n - 1])
+        .filter((l): l is string => l !== undefined && claims.some((c) => lineNamesClaim(l, c)));
+      if (naming.length && naming.every(isCommentLine))
+        return {
+          code: "claim-in-comment",
+          message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} writes only in a comment; cite the code that does it`,
+        };
+    }
     const line = lines[cite.line - 1] ?? "";
     if (cite.quote && !quoteNotRequired(cite.file, line)) {
       const near = [cite.line - 1, cite.line, cite.line + 1].map((n) => lines[n - 1] ?? "");

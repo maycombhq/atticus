@@ -99,6 +99,29 @@ describe("secrets never land in a map", () => {
 });
 
 describe("a path put together from several lines (ADR 0124 addendum A4)", () => {
+  it("names / for the default action of a conventional route, and nothing else", async () => {
+    const { partsNamePath } = await import("../src/index.js");
+    const home = ["public class HomeController : Controller {", "  public IActionResult Index() {"];
+    expect(partsNamePath([...home, "app.MapDefaultControllerRoute();"], "/")).toBe(true);
+    expect(
+      partsNamePath(
+        [...home, 'routes.MapRoute("Default", "{controller=Home}/{action=Index}/{id?}");'],
+        "/",
+      ),
+    ).toBe(true);
+    // another controller's Index isn't the default; no default route, no root
+    expect(
+      partsNamePath(
+        [
+          "public class CatalogController {",
+          "  public IActionResult Index() {",
+          "app.MapDefaultControllerRoute();",
+        ],
+        "/",
+      ),
+    ).toBe(false);
+    expect(partsNamePath(home, "/")).toBe(false);
+  });
   it("is named when every plain part is written on one of its lines", async () => {
     const { partsNamePath } = await import("../src/index.js");
     // Angular: base URL in the environment file, the entity in the service

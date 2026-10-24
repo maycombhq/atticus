@@ -240,6 +240,110 @@ describe("a conventional route: the controller, the action and the route templat
   });
 });
 
+describe("what the revised reads found about the verifier (A4)", () => {
+  const base = {
+    repo: "web",
+    commit: "0123abc",
+    verified: "none" as const,
+    by: "assistant" as const,
+    conf: "declared" as const,
+  };
+  it("takes a part named at a camelCase start, as the path check does", async () => {
+    const src = memorySource({
+      "Controllers/CatalogController.cs":
+        "public class CatalogController : Controller {\n  public ActionResult Details(int id) {\n    return View();\n  }\n}\n",
+      "App_Start/RouteConfig.cs":
+        'routes.MapRoute(name: "Default", url: "{controller}/{action}/{id}");\n',
+    });
+    const r = await verifyFacts({
+      source: src,
+      facts: [
+        {
+          ...base,
+          kind: "entry",
+          id: "e",
+          entryType: "rest",
+          method: "GET",
+          path: "/Catalog/Details/{id}",
+          cite: {
+            file: "Controllers/CatalogController.cs",
+            line: 2,
+            value: "Details",
+            with: [
+              { file: "Controllers/CatalogController.cs", line: 1, value: "Catalog" },
+              { file: "App_Start/RouteConfig.cs", line: 1, value: "{controller}/{action}/{id}" },
+            ],
+          },
+        },
+      ],
+    });
+    expect(r.rejected).toEqual([]);
+  });
+  it("takes a root path with a parameter concatenated in code", async () => {
+    const src = memorySource({
+      "shipping/quote.go": 'url := packagingServiceUrl + "/" + productId\n',
+    });
+    const r = await verifyFacts({
+      source: src,
+      facts: [
+        {
+          ...base,
+          kind: "call",
+          id: "c",
+          callType: "rest",
+          method: "GET",
+          path: "/{productId}",
+          to: "packaging",
+          cite: { file: "shipping/quote.go", line: 1, value: "/" },
+        },
+      ],
+    });
+    expect(r.rejected).toEqual([]);
+  });
+  it("rejects a claim only written in a comment", async () => {
+    const src = memorySource({
+      "deploy/cluster.xml":
+        '<Parameters>\n  <!-- <Parameter Name="ClusterName" Value="mycluster.westus" /> -->\n  <Parameter Name="ClusterName" Value="forge-cluster" />\n</Parameters>\n',
+      "src/Api.cs": "// GET: api/vets\npublic IActionResult Vets() => Ok();\n",
+    });
+    const r = await verifyFacts({
+      source: src,
+      facts: [
+        {
+          ...base,
+          kind: "deploy",
+          id: "d-bad",
+          platform: "service-fabric",
+          resourceName: "mycluster.westus",
+          cite: { file: "deploy/cluster.xml", line: 2, value: "mycluster.westus" },
+        },
+        {
+          ...base,
+          kind: "deploy",
+          id: "d-good",
+          platform: "service-fabric",
+          resourceName: "forge-cluster",
+          cite: { file: "deploy/cluster.xml", line: 3, value: "forge-cluster" },
+        },
+        {
+          ...base,
+          kind: "entry",
+          id: "e-comment",
+          entryType: "rest",
+          method: "GET",
+          path: "/api/vets",
+          cite: { file: "src/Api.cs", line: 1, value: "api/vets" },
+        },
+      ],
+    });
+    expect(r.rejected.map((x) => [x.fact.id, x.code])).toEqual([
+      ["d-bad", "claim-in-comment"],
+      ["e-comment", "claim-in-comment"],
+    ]);
+    expect(r.accepted.map((f) => f.id)).toEqual(["d-good"]);
+  });
+});
+
 describe("coverage: reported, never trusted (ADR 0124)", () => {
   it("doesn't count tests, build wrappers, package docs or message bundles as source", async () => {
     const { isSourceFile } = await import("../src/index.js");

@@ -152,8 +152,11 @@ const table = (name: string) =>
 const HTTP = new Set(["rest", "webhook", "websocket", "sse"]);
 /** HTTP paths compare without letter case (ASP.NET routes ignore it; few apps rely on it). */
 const httpPath = (path: string) => normalizePath(path).toLowerCase();
-const serveFact = (type: string, m: string | undefined, path: string) =>
-  HTTP.has(type) ? `${type} ${method(m)}${httpPath(path)}` : `${type} ${path.trim()}`;
+/** A webhook receiver is an HTTP route: it compares as `rest` (the references have no webhook type). */
+const serveFact = (type: string, m: string | undefined, path: string) => {
+  const t = type === "webhook" ? "rest" : type;
+  return HTTP.has(t) ? `${t} ${method(m)}${httpPath(path)}` : `${t} ${path.trim()}`;
+};
 const callFact = (type: string, m: string | undefined, path: string) =>
   type === "rest" ? `${method(m)}${httpPath(path)}` : `${type} ${path.trim()}`;
 
@@ -238,17 +241,19 @@ function referenceFacts(r: BenchReference): Record<FactKind, string[]> {
  * (`[METHOD] [host or base] path`): gRPC as Service/Method, a name with no slash as an event,
  * the rest as REST.
  */
-function unresolvedCall(raw: string): string {
+function unresolvedCall(raw: string, soap = false): string {
   const words = raw.trim().split(/\s+/);
   const m = /^[A-Z]+$/.test(words[0] ?? "") && words.length > 1 ? words.shift() : undefined;
   const path = words.at(-1) ?? "";
+  if (soap) return callFact("soap", undefined, path.replace(/^\/+/, ""));
   if (GRPC_PATH.test(path)) return callFact("grpc", undefined, path);
   if (!path.includes("/")) return callFact("event", undefined, path);
   return callFact("rest", m, words.join(" "));
 }
 
-function interfaceCall(x: Record<string, string | undefined>): string {
+function interfaceCall(x: Record<string, string | undefined>, soap = false): string {
   const path = x.normalizedPath ?? "";
+  if (soap) return callFact("soap", undefined, path.replace(/^\/+/, ""));
   const type = EVENT_VIA.has(x.via ?? "") ? "event" : GRPC_PATH.test(path) ? "grpc" : "rest";
   return callFact(type, x.method, path);
 }
@@ -257,7 +262,11 @@ function interfaceCall(x: Record<string, string | undefined>): string {
 const SIDE_OF_SCHEMA = /\.(request|response|message)$/;
 
 /** What a scan's records say, as the same kinds of fact (sorted, no repeats). */
-export function benchFacts(records: CatalogRecord[]): Record<FactKind, string[]> {
+export function benchFacts(
+  records: CatalogRecord[],
+  /** Ids of the call records that are SOAP calls (a facts file says so; C1 has no protocol). */
+  soap: ReadonlySet<string> = new Set(),
+): Record<FactKind, string[]> {
   const out = Object.fromEntries(FACT_KINDS.map((k) => [k, new Set<string>()])) as Record<
     FactKind,
     Set<string>
@@ -269,8 +278,8 @@ export function benchFacts(records: CatalogRecord[]): Record<FactKind, string[]>
     if (!o) return undefined;
     if (o.kind === "Endpoint")
       return `entry ${serveFact(o.endpointType ?? "rest", o.method, o.pathOrTopic ?? "")}`;
-    if (o.kind === "Interface") return `call ${interfaceCall(o)}`;
-    if (o.kind === "Unresolved" && o.raw) return `call ${unresolvedCall(o.raw)}`;
+    if (o.kind === "Interface") return `call ${interfaceCall(o, soap.has(id))}`;
+    if (o.kind === "Unresolved" && o.raw) return `call ${unresolvedCall(o.raw, soap.has(id))}`;
     return undefined;
   };
   for (const r of records) {
@@ -278,12 +287,12 @@ export function benchFacts(records: CatalogRecord[]): Record<FactKind, string[]>
     if (r.kind === "Endpoint")
       out.serves.add(serveFact(x.endpointType ?? "rest", x.method, x.pathOrTopic ?? ""));
     else if (r.kind === "Interface" && (x.direction ?? "outbound") !== "inbound")
-      out.calls.add(interfaceCall(x));
+      out.calls.add(interfaceCall(x, soap.has(r.id)));
     else if (r.kind === "Unresolved" && x.unresolvedKind === "http-call" && x.raw) {
       const m = /^([A-Z]+)\s+(.*)$/.exec(x.raw.trim());
       out.calls.add(m ? `${m[1]} ${normalizePath(m[2]!)}` : normalizePath(x.raw));
     } else if (r.kind === "Unresolved" && x.unresolvedKind === "call" && x.raw)
-      out.calls.add(unresolvedCall(x.raw));
+      out.calls.add(unresolvedCall(x.raw, soap.has(r.id)));
     else if (r.kind === "Table" && x.name) out.stores.add(table(x.name));
     else if (r.kind === "Deployment" && x.platform) out.deploys.add(x.platform.toLowerCase());
     else if (r.kind === "Column" && x.name && x.table) {
@@ -443,9 +452,13 @@ function totalOf(
 }
 
 /** Score one repo's scan against its reference, for the kinds the reference covers. */
-export function scoreRepo(ref: BenchReference, records: CatalogRecord[]): RepoScore {
+export function scoreRepo(
+  ref: BenchReference,
+  records: CatalogRecord[],
+  soap: ReadonlySet<string> = new Set(),
+): RepoScore {
   const want = referenceFacts(ref);
-  const got = benchFacts(records);
+  const got = benchFacts(records, soap);
   const kinds: Partial<Record<FactKind, KindScore>> = {};
   for (const k of FACT_KINDS) {
     if (!ref.covers.includes(k)) continue;
@@ -512,11 +525,16 @@ export function scoreFacts(ref: BenchReference, facts: readonly Fact[]): FactsSc
   );
   const leftOut = new Set(screenFields.map((f) => f.id));
   const kept = facts.filter((f) => !screens.has(f.id) && !leftOut.has(f.id) && f.kind !== "flow");
-  const { records, issues } = projectFacts(kept);
+  const { records, issues, ids } = projectFacts(kept);
+  const soap = new Set(
+    kept.flatMap((f) =>
+      f.kind === "call" && f.callType === "soap" && ids[f.id] ? [ids[f.id]!] : [],
+    ),
+  );
   const byKind = { entry: 0, call: 0, store: 0, field: 0, deploy: 0, config: 0, flow: 0 };
   for (const f of facts) byKind[f.kind]++;
   return {
-    ...scoreRepo(ref, records),
+    ...scoreRepo(ref, records, soap),
     facts: {
       total: facts.length,
       verified: facts.filter((f) => f.verified !== "none").length,

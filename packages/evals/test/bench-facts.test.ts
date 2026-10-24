@@ -391,3 +391,71 @@ describe("bench: the golden facts file against a real bench reference", () => {
     expect(JSON.parse(JSON.stringify(s))).toEqual(JSON.parse(readFileSync(file, "utf8")));
   });
 });
+
+describe("bench: what the measured run's facts showed about the matcher (A4)", () => {
+  const ref = parseReference(`
+repo: invented-owners
+commit: ${COMMIT}
+covers: [serves, calls]
+serves:
+  - { type: rest, method: OPTIONS, path: /check, at: "src/Hooks.cs:16" }
+calls:
+  - { type: grpc, path: forge.Basket/GetBasket, at: "src/BasketClient.cs:9" }
+  - { method: GET, path: "/api/items/type/all/brand/{brandId}", at: "src/CatalogClient.cs:20" }
+  - { type: soap, path: ICatalogService/GetItems, at: "src/CatalogProxy.cs:7" }
+  - { type: soap, path: ICatalogService/GetBrands, at: "src/CatalogProxy.cs:9" }
+`);
+  const got = [
+    // a webhook receiver is an HTTP route: the same fact as a rest entry
+    fact({
+      kind: "entry",
+      id: "e-check",
+      entryType: "webhook",
+      method: "OPTIONS",
+      path: "/check",
+      cite: cite("src/Hooks.cs", 16, "/check"),
+    }),
+    // a gRPC call written with a leading slash, as clients send it
+    fact({
+      kind: "call",
+      id: "c-basket",
+      callType: "grpc",
+      path: "/forge.Basket/GetBasket",
+      to: "basket",
+      cite: cite("src/BasketClient.cs", 9, "GetBasket"),
+    }),
+    // an optional route parameter, as ASP.NET writes it
+    fact({
+      kind: "call",
+      id: "c-brand",
+      callType: "rest",
+      method: "GET",
+      path: "/api/items/type/all/brand/{brandId?}",
+      to: "catalog",
+      cite: cite("src/CatalogClient.cs", 20, "/api/items/type/all/brand/{brandId?}"),
+    }),
+  ];
+  // a SOAP call, with a target and without one
+  got.push(
+    fact({
+      kind: "call",
+      id: "c-items",
+      callType: "soap",
+      path: "ICatalogService/GetItems",
+      to: "catalog-wcf",
+      cite: cite("src/CatalogProxy.cs", 7, "GetItems"),
+    }),
+    fact({
+      kind: "call",
+      id: "c-brands",
+      callType: "soap",
+      path: "ICatalogService/GetBrands",
+      cite: cite("src/CatalogProxy.cs", 9, "GetBrands"),
+    }),
+  );
+  it("matches a webhook entry, a slashed gRPC call, an optional parameter and SOAP calls", () => {
+    const s = scoreFacts(ref, got);
+    expect(s.kinds.serves).toMatchObject({ found: 1, missed: [], wrong: [] });
+    expect(s.kinds.calls).toMatchObject({ found: 4, missed: [], wrong: [] });
+  });
+});

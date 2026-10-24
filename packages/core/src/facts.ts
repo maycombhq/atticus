@@ -141,6 +141,16 @@ type Field = FactOf<"field">;
 
 const idPart = (text: string) => slugify(text).replace(/\./g, "-");
 
+/**
+ * A call's normalised path: a gRPC method stays `package.Service/Method` and a SOAP operation
+ * `Contract/Operation` (a client may write either with a leading slash); an HTTP path loses a parameter's optional marker and constraint first
+ * (`{brandId:int?}`), so the `?` isn't read as a query string.
+ */
+function callPath(callType: string, path: string): string {
+  if (callType === "grpc" || callType === "soap") return path.trim().replace(/^\/+/, "");
+  return normalizePath(path.replace(/\{([^}:?]*)[^}]*\}/g, "{$1}"));
+}
+
 function evidenceOf(f: Fact, source: EvidenceT["source"], side?: EvidenceT["side"]): EvidenceT {
   return {
     source,
@@ -291,7 +301,7 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
                   ? "webhook"
                   : "direct",
         ...(method ? { method } : {}),
-        normalizedPath: normalizePath(f.path),
+        normalizedPath: callPath(f.callType, f.path),
         sync: async ? "async" : "sync",
         direction: "outbound",
         conflicts: [],
