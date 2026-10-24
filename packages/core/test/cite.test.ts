@@ -23,7 +23,7 @@ describe("claim on the line (ADR 0089, moved to core for the verifier of ADR 012
     expect(lineNamesRoute('@GetMapping("/accountsx")', "/accounts")).toBe(false);
     // a root route, or one of parameters only, is named by its literal (feedback from the A4 run)
     expect(lineNamesRoute('  @GetMapping("/")', "/")).toBe(true);
-    expect(lineNamesRoute("app.MapGet(\"/\", () => ...)", "/")).toBe(true);
+    expect(lineNamesRoute('app.MapGet("/", () => ...)', "/")).toBe(true);
     expect(lineNamesRoute('  @GetMapping("/{id}")', "/{id}")).toBe(true);
     expect(lineNamesRoute("router.get('/:id', h)", "/{id}")).toBe(true);
     expect(lineNamesRoute("  return x / y;", "/")).toBe(false);
@@ -57,6 +57,9 @@ describe("quotes (ADR 0103 forgiveness, ADR 0124 anchors)", () => {
     expect(quoteMatches(line, "'/v1/rates/' + pair")).toBe(true);
     expect(quoteMatches(line, "return rest.postForObject(")).toBe(false);
     expect(quoteMatches(line, "")).toBe(true);
+    // a quote stored redacted still matches its line on the next verify
+    expect(quoteMatches('  password: "pass"', "password: <redacted>")).toBe(true);
+    expect(quoteMatches('  user: "pass"', "password: <redacted>")).toBe(false);
   });
   it("does not require a quote from a binary, a notebook or a minified line", () => {
     expect(quoteNotRequired("docs/logo.png", "x")).toBe(true);

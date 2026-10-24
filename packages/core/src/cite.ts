@@ -119,6 +119,9 @@ export function quoteMatches(line: string, quote: string | undefined): boolean {
   const q = normalizeQuote(quote).replace(/"/g, "'");
   if (q === "") return true;
   const l = normalizeQuote(line).replace(/"/g, "'");
+  // A quote the verifier stored redacted matches its line again: what came before <redacted>.
+  const at = q.indexOf("<redacted>");
+  if (at >= 0) return at === 0 || l.includes(q.slice(0, at).trimEnd());
   return l === q || l.startsWith(q) || l.includes(q);
 }
 
