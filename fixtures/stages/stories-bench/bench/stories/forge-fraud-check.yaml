@@ -1,0 +1,131 @@
+# An invented reference story for the Forge fraud check, so a draft the stories stage writes can be
+# scored in a test (atticus bench stories --change). It has a step in forge-web, the checkout
+# screen, that the stage's draft doesn't have, a field only that step names (cardLast4) and an
+# error case on it, so the score is short of full on steps, fields and error cases.
+schemaVersion: 1
+story: forge-fraud-check
+title: Screen each order for fraud before stock is reserved
+repos: [forge-orders, forge-web]
+statement:
+  asA: shop owner
+  iWant: every new order screened by Northwind Pay before stock is reserved
+  soThat: stolen cards don't empty the stock
+context: >-
+  OrderController.place (src/main/java/forge/orders/OrderController.java:9) validates the order
+  and reserves stock at once. Northwind Pay answers each screening with accepted or rejected.
+scope:
+  in:
+    - The checkout sends the card token and shows its last four digits
+    - forge-orders screens the order and keeps the verdict
+  out:
+    - Orders placed before the change are not screened
+steps:
+  - id: checkout
+    repo: forge-web
+    what: The checkout screen sends cardToken with the order and shows cardLast4
+    entry: screen /checkout
+    at: "src/checkout.ts:20"
+  - id: screen
+    repo: forge-orders
+    what: OrderController.place calls Northwind Pay before reserving stock
+    entry: POST /orders
+    at: "src/main/java/forge/orders/OrderController.java:10"
+  - id: refuse
+    repo: forge-orders
+    what: A rejected verdict refuses the order with 422
+    entry: POST /orders
+    at: "src/main/java/forge/orders/OrderController.java:11"
+  - id: save
+    repo: forge-orders
+    what: The order row keeps fraudVerdict
+    entry: POST /orders
+    at: "src/main/java/forge/orders/OrderController.java:13"
+criteria:
+  - id: c-checkout
+    step: checkout
+    given: a card is entered at the checkout
+    when: the order is placed
+    then: the request carries cardToken and the screen shows cardLast4
+    entry: screen /checkout
+    fields: [cardToken, cardLast4]
+    errors:
+      - field: cardLast4
+        rule: format
+        when: the card number is too short
+        then: the screen says the card number is wrong and sends nothing
+        at: "src/checkout.ts:24"
+    at: "src/checkout.ts:20"
+  - id: c-screen
+    step: screen
+    given: an order with sku, quantity and cardToken
+    when: POST /orders is called
+    then: Northwind Pay is sent sku, quantity and cardToken and its verdict is read
+    entry: POST /orders
+    fields: [sku, quantity, cardToken, verdict]
+    errors:
+      - field: cardToken
+        rule: required
+        status: 400
+        when: the order has no cardToken
+        then: 400 and nothing is screened
+        at: "src/main/java/forge/orders/OrderController.java:9"
+      - rule: unavailable
+        status: 503
+        when: Northwind Pay doesn't answer in 2 seconds
+        then: 503 and no stock is reserved
+        at: "src/main/java/forge/orders/OrderController.java:10"
+    at: "src/main/java/forge/orders/OrderController.java:10"
+  - id: c-refuse
+    step: refuse
+    given: a rejected verdict
+    when: POST /orders is called
+    then: 422 and no stock is reserved
+    entry: POST /orders
+    fields: [verdict]
+    errors:
+      - field: verdict
+        rule: forbidden
+        status: 422
+        when: the verdict is rejected
+        then: 422 and no stock is reserved
+        at: "src/main/java/forge/orders/OrderController.java:11"
+    at: "src/main/java/forge/orders/OrderController.java:11"
+  - id: c-save
+    step: save
+    given: an accepted order
+    when: it is saved
+    then: the orders row holds fraudVerdict
+    entry: POST /orders
+    fields: [fraudVerdict]
+    at: "src/main/java/forge/orders/OrderController.java:13"
+interfaces:
+  - repo: forge-orders
+    entry: POST /orders
+    change: changed
+    breaking: true
+    why: cardToken is required.
+    fields:
+      - { name: cardToken, side: request, type: string, required: true, change: added }
+data:
+  - repo: forge-orders
+    table: forge-orders-db.orders
+    column: fraud_verdict
+    type: varchar(20)
+    nullable: true
+    change: added
+    migration: V4__add_fraud_verdict.sql
+    classification: internal
+    retention: as long as the order
+nonFunctional:
+  auth: Unchanged.
+  audit: The verdict is kept on the order.
+  timeouts: 2 seconds, no retry.
+  performance: One more call per order.
+tests:
+  - OrderControllerTest gains the 400, 422 and 503 cases
+dependencies:
+  - The V4 migration runs first
+definitionOfDone:
+  - Every criterion has a test
+accepts:
+  fraudVerdict: [fraud_verdict]

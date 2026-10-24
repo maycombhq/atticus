@@ -1643,12 +1643,18 @@ export interface StoryFileExtras {
   requests?: RequestTask[];
 }
 
-type StoryWords = StoriesAnswer["stories"][number];
+export type StoryWords = StoriesAnswer["stories"][number];
 const NOT_WRITTEN = "Not written yet.";
 const cell = (v: string | undefined) => (v ?? "not said").replace(/\|/g, "\\|");
 
-/** A column a step adds, with the target flow's facts and the story's words over them. */
-function columnRows(s: DeltaStory, w: StoryWords): (StoryDataChange & { task?: string })[] {
+/**
+ * A column a step adds, with the target flow's facts and the story's words over them: the story
+ * file's Data changes, and the stories bench's draft of the story (B-stories-bench).
+ */
+export function storyColumns(
+  s: DeltaStory,
+  w: StoryWords,
+): (StoryDataChange & { task?: string })[] {
   const rows = Array.isArray(w.data) ? w.data : [];
   const out: (StoryDataChange & { task?: string })[] = [];
   for (const t of s.tasks)
@@ -1691,7 +1697,7 @@ function contractOf(s: DeltaStory, w: StoryWords, t: DeltaTask): string[] {
       out.push(
         `${i.entry} ${f.change === "removed" ? "loses" : f.change === "added" ? "gains" : "changes"} the ${f.side} field ${f.name} (${f.type}, ${f.required ? "required" : "optional"}${f.default ? `, default ${f.default}` : ""})${f.validation ? `. Validation: ${f.validation.replace(/[.\s]+$/, "")}` : ""}`,
       );
-  for (const r of columnRows(s, w).filter((r) => r.task === t.id))
+  for (const r of storyColumns(s, w).filter((r) => r.task === t.id))
     out.push(
       `Column ${r.table}.${r.column}: ${r.type ?? "type not said"}, ${r.nullable === undefined ? "nullable not said" : r.nullable ? "nullable" : "not null"}${r.default ? `, default ${r.default}` : ""}${r.migration ? `, migration ${r.migration}` : ""}`,
     );
@@ -1830,7 +1836,7 @@ function renderStoryFile(
 
   // ---- Data changes: the target flow's columns, with the story's words over them
   lines.push("## Data changes", "");
-  const cols = columnRows(s, w);
+  const cols = storyColumns(s, w);
   if (cols.length)
     lines.push(
       "| Table | Column | Type | Nullable | Default | Change | Migration | Classification | Retention |",
@@ -2157,6 +2163,61 @@ export async function storyExtras(
     done: definitionOfDone(ctx, change, kinds),
     commands,
     testKinds: [...kinds.required],
+  };
+}
+
+/** A change's drafted stories as the stories stage wrote them, read back from its folder. */
+export interface DraftedStories {
+  change: ChangeLifecycle;
+  /** The change's folder. */
+  dir: string;
+  stories: DeltaStory[];
+  answer: StoriesAnswer;
+  /** The definition of done, the repos' commands and the test kinds, as the story files have them. */
+  extras: Omit<StoryFileExtras, "requests">;
+  /** The requests the writer named that cite a real item and step (no judge is asked here). */
+  requests: RequestTask[];
+}
+
+/**
+ * The stories the stage drafted for a change (B-stories-bench): the stories and tasks worked out
+ * again from its target flows over the estate, the story writer's last answer, and what the story
+ * files say beside it. Writes nothing and asks no model, so the stories bench can score a draft.
+ */
+export async function draftedStories(root: string, changeId: string): Promise<DraftedStories> {
+  const change = await changeStore(root)
+    .read(changeId)
+    .catch((e: Error) => {
+      throw new PlannerError("not-found", e.message);
+    });
+  const dir = changeFolder(root, change.id);
+  const read = await readDeltas(dir);
+  if (read.problems.length)
+    throw new PlannerError("refused", `The target flows don't read: ${read.problems.join("; ")}`);
+  const deltas = read.deltas.filter((d) => !isEmptyDelta(d));
+  if (!deltas.length)
+    throw new PlannerError(
+      "refused",
+      `${change.id} has no target flows that change a step yet: run atticus change architecture ${change.id} first.`,
+    );
+  const answer = await readStoriesAnswer(dir);
+  if (!answer)
+    throw new PlannerError(
+      "refused",
+      `${change.id} has no stories yet (no ${ANSWER_FILE}): run atticus plan stories ${change.id} first.`,
+    );
+  const ctx = await loadChangeContext(root);
+  const estate = await loadEstate(root, ctx.records);
+  const items = (await readKnowledge(root)).items.filter(
+    (i): i is Process => i.kind === "ProcessDefinition",
+  );
+  return {
+    change,
+    dir,
+    stories: storiesFromDeltas(deltas, estate),
+    answer,
+    extras: await storyExtras(ctx, change),
+    requests: mergeRequests(answer, deltas, items),
   };
 }
 

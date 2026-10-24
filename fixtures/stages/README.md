@@ -53,4 +53,10 @@ addendum B-stories): `placed.yaml` and `deltas.yaml`, the feature and architectu
 non-functional notes, test notes and dependencies; and `expected/s1-place-order.md`, the story
 file the stage writes from it, with a build command from a repos manifest the test writes.
 
+`stories-bench/` is the stories bench's conversion (B-stories-bench): `stories.yaml`, the stories
+the stage works out for the fraud check from `stories/deltas.yaml`; `expected/forge-fraud-check.yaml`,
+the `BenchStory` draft `atticus bench stories --change` makes of them and `stories/answer.yaml`;
+and `bench/stories/forge-fraud-check.yaml`, an invented reference story (with a forge-web
+checkout step the draft lacks) to score it against.
+
 Everything here is invented.

@@ -1,0 +1,190 @@
+# The BenchStory draft the converter writes for add-fraud-check's stories (../stories.yaml and
+# ../../stories/answer.yaml), scored against bench/stories/forge-fraud-check.yaml. Invented.
+schemaVersion: 1
+story: forge-fraud-check
+title: Screen orders for fraud
+repos: [forge-orders]
+statement:
+  asA: shop owner
+  iWant: every new order screened by Northwind Pay
+  soThat: stolen cards don't empty the stock
+context: |-
+  Northwind Pay is a vendor outside the estate; it answers each screening with a verdict of accepted or rejected.
+
+  Today, flow forge-orders.place-order (A client places an order), started by POST /orders:
+  1. entry: OrderController.place receives the new order (forge-orders:src/main/java/forge/orders/OrderController.java:4, forge-orders:src/main/java/forge/orders/OrderController.java:9)
+  2. call-out: The stock service reserves the quantity (forge-orders:src/main/java/forge/orders/StockClient.java:7)
+  3. transform: The request becomes an Order entity (forge-orders:src/main/java/forge/orders/OrderController.java:12)
+  4. write: The order is inserted (forge-orders:src/main/java/forge/orders/OrderController.java:13)
+  5. respond: 201 Created with the saved order (forge-orders:src/main/java/forge/orders/OrderController.java:14)
+
+  Its error paths today:
+  - The body fails validation: 400 with the errors (forge-orders:src/main/java/forge/orders/OrderController.java:10)
+
+  Once the change is in:
+  1. entry: OrderController.place receives the new order
+  2. call-out, added by task 1.1: Northwind Pay screens the order for fraud
+  3. branch, added by task 1.2: A rejected order is refused with 422 and nothing is reserved
+  4. call-out: The stock service reserves the quantity
+  5. transform: The request becomes an Order entity
+  6. write, changed by task 1.3: The order is inserted with the screen's verdict
+  7. respond: 201 Created with the saved order
+scope:
+  in:
+    - "Task 1.1: Add the call-out step: Northwind Pay screens the order for fraud"
+    - "Task 1.2: Add the branch step: A rejected order is refused with 422 and nothing is reserved"
+    - "Task 1.3: Change the write step: The order is inserted with the screen's verdict"
+    - The checkout sends the card token with each order
+  out:
+    - Steps 1, 4, 5 and 7 of flow forge-orders.place-order stay as they are
+    - Orders placed before the change are not screened
+    - The stock reservation call and its fields stay as they are
+steps:
+  - id: t1-1
+    repo: forge-orders
+    what: Northwind Pay screens the order for fraud
+    entry: POST /orders
+    at: "src/main/java/forge/orders/OrderController.java:9"
+  - id: t1-2
+    repo: forge-orders
+    what: A rejected order is refused with 422 and nothing is reserved
+    entry: POST /orders
+    at: "src/main/java/forge/orders/OrderController.java:9"
+  - id: t1-3
+    repo: forge-orders
+    what: The order is inserted with the screen's verdict
+    entry: POST /orders
+    at: "src/main/java/forge/orders/OrderController.java:13"
+criteria:
+  - id: t1-1-c1
+    step: t1-1
+    given: a new order with sku, quantity and cardToken
+    when: POST /orders is called
+    then: sku, quantity and cardToken are sent to Northwind Pay and the verdict is read
+    entry: POST /orders
+    fields: [sku, quantity, cardToken, verdict]
+    errors: []
+    at: "src/main/java/forge/orders/OrderController.java:9"
+  - id: t1-1-c2
+    step: t1-1
+    given: an order without a cardToken
+    when: POST /orders is called
+    then: 400 says cardToken is required and nothing is sent to Northwind Pay
+    entry: POST /orders
+    fields: [cardToken]
+    validation: cardToken is required
+    errors:
+      - field: cardToken
+        rule: required
+        status: 400
+        when: an order without a cardToken
+        then: 400 says cardToken is required and nothing is sent to Northwind Pay
+        at: "src/main/java/forge/orders/OrderController.java:9"
+    at: "src/main/java/forge/orders/OrderController.java:9"
+  - id: t1-1-c3
+    step: t1-1
+    given: Northwind Pay doesn't answer within 2 seconds
+    when: POST /orders is called
+    then: 503 says the order can't be screened now and no stock is reserved
+    entry: POST /orders
+    fields: []
+    errors:
+      - rule: unavailable
+        status: 503
+        when: Northwind Pay doesn't answer within 2 seconds
+        then: 503 says the order can't be screened now and no stock is reserved
+        at: "src/main/java/forge/orders/OrderController.java:9"
+    at: "src/main/java/forge/orders/OrderController.java:9"
+  - id: t1-2-c1
+    step: t1-2
+    given: a rejected verdict
+    when: POST /orders is called
+    then: 422 says the verdict refused the order and no stock is reserved
+    entry: POST /orders
+    fields: [verdict]
+    errors:
+      - field: verdict
+        rule: forbidden
+        status: 422
+        when: a rejected verdict
+        then: 422 says the verdict refused the order and no stock is reserved
+        at: "src/main/java/forge/orders/OrderController.java:9"
+    at: "src/main/java/forge/orders/OrderController.java:9"
+  - id: t1-2-c2
+    step: t1-2
+    given: an accepted verdict
+    when: POST /orders is called
+    then: the verdict lets the order go on to reserve stock
+    entry: POST /orders
+    fields: [verdict]
+    errors: []
+    at: "src/main/java/forge/orders/OrderController.java:9"
+  - id: t1-3-c1
+    step: t1-3
+    given: an accepted order
+    when: it is saved
+    then: the orders row holds sku, quantity and fraud_verdict
+    entry: POST /orders
+    fields: [sku, quantity, fraud_verdict]
+    errors: []
+    at: "src/main/java/forge/orders/OrderController.java:13"
+  - id: t1-3-c2
+    step: t1-3
+    given: the insert fails
+    when: the order is saved
+    then: 500 and no orders row holds the order's fraud_verdict
+    entry: POST /orders
+    fields: [fraud_verdict]
+    errors:
+      - field: fraud_verdict
+        rule: other
+        status: 500
+        when: the insert fails
+        then: 500 and no orders row holds the order's fraud_verdict
+        at: "src/main/java/forge/orders/OrderController.java:13"
+    at: "src/main/java/forge/orders/OrderController.java:13"
+interfaces:
+  - repo: forge-orders
+    entry: POST /orders
+    change: changed
+    breaking: true
+    why: A client that doesn't send cardToken is refused with 400.
+    fields:
+      - { name: cardToken, side: request, type: string, required: true, change: added }
+  - repo: forge-orders
+    entry: POST /v1/screenings
+    change: added
+    breaking: false
+    why: A new call to the vendor.
+    fields:
+      - { name: sku, side: request, type: string, required: true, change: added }
+      - { name: quantity, side: request, type: integer, required: true, change: added }
+      - { name: cardToken, side: request, type: string, required: true, change: added }
+      - { name: verdict, side: response, type: string, required: true, change: added }
+data:
+  - repo: forge-orders
+    table: forge-orders-db.orders
+    column: fraud_verdict
+    type: varchar(20)
+    nullable: true
+    change: added
+    migration: V4__add_fraud_verdict.sql
+    classification: internal
+    retention: as long as the order row
+nonFunctional:
+  auth: POST /orders is called as today. The call to Northwind Pay sends the vendor's key from config, never logged.
+  audit: The verdict is kept on the order (fraud_verdict); a refusal is logged with the sku, never the cardToken.
+  timeouts: The call to Northwind Pay times out after 2 seconds with no retry; a timeout refuses the order with 503.
+  performance: One more call per order; no new index.
+tests:
+  - OrderControllerTest gains a refused order (422), a missing cardToken (400) and a vendor timeout (503)
+  - FraudClientTest (new) covers the verdict against a stub of POST /v1/screenings
+  - "Task 1.1: FraudClientTest sends sku, quantity and cardToken and reads the verdict"
+dependencies:
+  - The V4 migration runs before forge-orders is released
+definitionOfDone:
+  - Every acceptance criterion has a test, and the repo's build and tests pass
+  - The interface and data changes are in the code as written here, and no other entry, field or column changed
+  - A person reviewed and merged each task's pull request; nothing was pushed to a protected branch
+  - A person has raised R1 Network firewall rule and R2 Vendor onboarding (requests.md)
+notes: "Converted from the stories stage of change add-fraud-check (story s1-place-order); interface field validations are not part of the bench format."

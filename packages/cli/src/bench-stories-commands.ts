@@ -1,9 +1,13 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
-import { parseFacts } from "@maycombhq/core";
+import { basename, dirname, join, resolve } from "node:path";
+import { stringify } from "yaml";
+import { changesDirOf, parseFacts } from "@maycombhq/core";
+import { draftedStories } from "@maycombhq/planner";
 import {
+  BenchStory,
+  benchStoryFromStories,
   benchKnownFields,
   factFieldNames,
   parseDraftStory,
@@ -30,6 +34,8 @@ export async function benchScoreCli(
   arg: string | undefined,
   values: Values,
   io: Output,
+  /** The metarepo (--root), for a change given by id. */
+  root?: string,
 ): Promise<number> {
   const common = {
     ...(str(values.bench) ? { bench: str(values.bench)! } : {}),
@@ -45,13 +51,92 @@ export async function benchScoreCli(
       io,
     );
   }
+  const change = str(values.change);
+  if (change) {
+    const story = str(values.story);
+    if (!story) {
+      io.err(
+        "bench stories --change needs the reference story the change answers: atticus bench stories --change <change> --story <id> (an id in bench/stories).",
+      );
+      return 2;
+    }
+    const out = str(values.out);
+    return benchChangeStories(
+      { ...common, change, story, root: root ?? process.cwd(), ...(out ? { out } : {}) },
+      io,
+    );
+  }
   // --draft is a switch elsewhere (plan stories --draft), so the file is the word after it.
   const draft = str(values.draft) ?? arg;
   if (!draft) {
-    io.err("bench stories needs a drafted story: atticus bench stories --draft <file>");
+    io.err(
+      "bench stories needs a drafted story: atticus bench stories --draft <file>, or a change's stories: --change <change> --story <id>",
+    );
     return 2;
   }
   return benchStories({ ...common, draft }, io);
+}
+
+export interface BenchChangeStoriesOptions extends Omit<BenchStoriesOptions, "draft"> {
+  /** The change: its id, or its folder. */
+  change: string;
+  /** The reference story it answers. */
+  story: string;
+  /** The metarepo, when the change is given by id. */
+  root: string;
+  /** Where to keep the converted draft. */
+  out?: string;
+}
+
+/** A change given by its folder: its id and the metarepo it is in. */
+function changeAt(value: string, root: string): { root: string; id: string } {
+  const dir = resolve(value);
+  if (!existsSync(join(dir, "change.yaml"))) return { root: resolve(root), id: value };
+  const id = basename(dir);
+  for (let up = dirname(dir); ; up = dirname(up)) {
+    if (resolve(changesDirOf(up), id) === dir) return { root: up, id };
+    if (dirname(up) === up) break;
+  }
+  throw new Error(`${dir} is a change folder, but not in a metarepo's changes folder.`);
+}
+
+/**
+ * atticus bench stories --change <change> --story <id> [--out file] (B-stories-bench): the
+ * stories the stories stage drafted for a change, read from its folder (draftedStories), as one
+ * BenchStory (benchStoryFromStories), scored against bench/stories/<id>.yaml as --draft scores a
+ * file. Writes only --out.
+ */
+export async function benchChangeStories(
+  o: BenchChangeStoriesOptions,
+  io: Output,
+): Promise<number> {
+  let draft: BenchStory;
+  try {
+    const { root, id } = changeAt(o.change, o.root);
+    const d = await draftedStories(root, id);
+    draft = BenchStory.parse(
+      benchStoryFromStories({
+        story: o.story,
+        change: d.change.id,
+        title: d.change.title,
+        stories: d.stories,
+        answer: d.answer,
+        ...(d.extras.done ? { done: d.extras.done } : {}),
+        requests: d.requests,
+      }),
+    );
+    if (o.out) {
+      await mkdir(dirname(resolve(o.out)), { recursive: true });
+      await writeFile(
+        resolve(o.out),
+        `# The stories atticus plan stories drafted for ${d.change.id}, as a bench story (atticus bench stories --change).\n${stringify(draft, { lineWidth: 0 })}`,
+      );
+    }
+  } catch (e) {
+    io.err((e as Error).message);
+    return 2;
+  }
+  return scoreAndReport(draft, o, io, o.out ? resolve(o.out) : undefined);
 }
 
 const defaultCache = () =>
@@ -75,13 +160,30 @@ export interface BenchStoriesOptions {
  * the draft invents a field, since that must never happen; 2 when it can't be scored.
  */
 export async function benchStories(o: BenchStoriesOptions, io: Output): Promise<number> {
+  let draft: BenchStory;
+  try {
+    const draftText = await readFile(resolve(o.draft), "utf8").catch(() => undefined);
+    if (draftText === undefined) throw new Error(`There is no draft at ${resolve(o.draft)}.`);
+    draft = parseDraftStory(draftText);
+  } catch (e) {
+    io.err((e as Error).message);
+    return 2;
+  }
+  return scoreAndReport(draft, o, io);
+}
+
+/** Score a draft against its reference story and say how it did (exit 1 on an invented field). */
+async function scoreAndReport(
+  draft: BenchStory,
+  o: Omit<BenchStoriesOptions, "draft">,
+  io: Output,
+  /** Where the draft was written, to say so. */
+  written?: string,
+): Promise<number> {
   const dir = resolve(o.bench ?? "bench");
   const cache = resolve(o.cache ?? defaultCache());
   let score: StoryScore;
   try {
-    const draftText = await readFile(resolve(o.draft), "utf8").catch(() => undefined);
-    if (draftText === undefined) throw new Error(`There is no draft at ${resolve(o.draft)}.`);
-    const draft = parseDraftStory(draftText);
     const refText = await readFile(join(dir, "stories", `${draft.story}.yaml`), "utf8").catch(
       () => undefined,
     );
@@ -126,6 +228,7 @@ export async function benchStories(o: BenchStoriesOptions, io: Output): Promise<
   const row = (what: string, s: { found: number; total: number; coverage: number }) =>
     `${what.padEnd(18)} ${s.found} of ${s.total} (${pct(s.coverage)})`;
   io.out(`Story ${score.story}`);
+  if (written) io.out(`Draft: ${written}`);
   io.out(row("Changed steps", score.steps));
   if (score.steps.missed.length) io.out(`  missed: ${score.steps.missed.join(", ")}`);
   if (score.steps.extra.length)
