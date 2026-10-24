@@ -479,35 +479,41 @@ export const COPY = {
       openCount: (n: number) => `${n} open`,
     },
   },
-  /** The menu, in the order of a working day (plan 4.5, B1; ADR 0105). */
+  /** The menu: six sections, the same on every surface (ADR 0119). */
   nav: {
     main: "Main",
-    dashboard: "Dashboard",
+    dashboard: "Overview",
     onboarding: "Onboarding",
     feature: "Feature design",
     architecture: "Architecture",
     stories: "Stories",
     tasks: "Tasks",
     knowledge: "Knowledge",
-    more: "More",
-    moreHint: "Every other page, grouped by what it is about",
-    /** The groups under More, by their id in screens.ts. */
-    groups: {
-      Main: "Main",
-      Code: "Code",
+    /** The six sections, by their id in screens.ts. */
+    sections: {
+      Home: "Home",
+      Changes: "Changes",
       Knowledge: "Knowledge",
-      OrgPack: "Org pack",
+      Estate: "Estate",
+      SetUp: "Set up",
+      Atticus: "Atticus",
+    },
+    /** The phases a change's pages are grouped by. */
+    groups: {
       Define: "Define",
       Design: "Design",
       Plan: "Plan",
       Build: "Build",
       Release: "Release",
-      Run: "Run",
     },
-    /** The pages under More, by screen id. */
+    /** The tabs of a section, and where you are. */
+    tabs: (section: string) => `${section} pages`,
+    youAreHere: "You are here",
+    ofChange: (id: string) => `change ${id}`,
+    /** The pages, by screen id. */
     screens: {
       home: "Waiting on you",
-      explore: "Knowledge explorer",
+      explore: "Search the catalog",
       map: "Ecosystem map",
       impact: "Impact explorer",
       features: "Features",
@@ -526,7 +532,7 @@ export const COPY = {
       changes: "Changes",
       tasks: "Task board",
       trace: "Test trace",
-      todo: "To-do and manual steps",
+      todo: "Manual steps",
       release: "Release plan",
       serviceDesk: "Service desk queue",
       governance: "Governance",

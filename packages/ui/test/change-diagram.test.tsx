@@ -53,7 +53,7 @@ const MAP: Api.ChangeMapT = {
 };
 
 describe("the Change diagram (ADR 0108)", () => {
-  it("is a screen under More, in Design", () => {
+  it("is a tab of a change, in Design (ADR 0119)", () => {
     expect(screenOf("#/change-diagram?change=add-transfer-limit")).toMatchObject({
       id: "change-diagram",
       group: "Design",
