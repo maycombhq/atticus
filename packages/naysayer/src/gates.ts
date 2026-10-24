@@ -7,7 +7,13 @@ import {
 } from "@maycombhq/changes";
 import { gateRoundLimit, type ChangeLifecycle } from "@maycombhq/core";
 import { CriticError } from "./errors.js";
-import { readRound, readRoundMeta, roundsOf, type StoredFinding } from "./findings.js";
+import {
+  countedRounds,
+  readRound,
+  readRoundMeta,
+  roundsOf,
+  type StoredFinding,
+} from "./findings.js";
 
 export interface SeverityCounts {
   blocking: number;
@@ -86,7 +92,10 @@ export async function gateStatusOf(
     open: count(open),
     total: count(findings),
     mayProceed: reasons.length === 0,
-    humanDecides: blocking.length > 0 && maxRounds !== undefined && (round ?? 0) >= maxRounds,
+    humanDecides:
+      blocking.length > 0 &&
+      maxRounds !== undefined &&
+      (await countedRounds(root, change.id, gate)).length >= maxRounds,
     waiting,
     reasons,
     findings,

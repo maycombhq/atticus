@@ -288,6 +288,30 @@ gates:
     expect((await loopOf(root)).state).toBe("stopped");
   });
 
+  it("doesn't count a round in which no lens reviewed (Claude Code missing, a timeout) toward the limit", async () => {
+    const root = await estateRoot({ lenses: true });
+    await limited(root);
+    let up = false;
+    const rt = new MockRuntime(
+      (req: AiRequest) => {
+        if (!req.agent.id.endsWith("-critic")) return PLACED;
+        if (!up) throw new Error("Claude Code (claude) is not on PATH");
+        return "findings: []";
+      },
+      { now: () => NOW },
+    );
+    // Twice the lenses can't start: each round has every lens failed (layer 1 still ran).
+    for (const _ of [1, 2]) {
+      const e = await stopped(featureStage(root, CHANGE, { runtime: rt, now: NOW }));
+      expect(e.message).toContain("didn't review");
+      expect(e.message).not.toContain("the most it allows");
+    }
+    up = true;
+    const r = await featureStage(root, CHANGE, { runtime: rt, now: NOW });
+    expect(r.state).toBe("done");
+    expect((await roundMeta(root, 3)).lenses.map((l) => l.state)).toEqual(["ran", "ran"]);
+  });
+
   it("opens no critic round for a draft that fails the stage's own checks", async () => {
     const root = await estateRoot({ lenses: true });
     await limited(root);
