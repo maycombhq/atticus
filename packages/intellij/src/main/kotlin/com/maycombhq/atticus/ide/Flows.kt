@@ -35,6 +35,7 @@ import com.maycombhq.atticus.core.Metarepo
 import com.maycombhq.atticus.core.Next
 import com.maycombhq.atticus.core.NextAction
 import com.maycombhq.atticus.core.Pick
+import com.maycombhq.atticus.core.Peer
 import com.maycombhq.atticus.core.PickItem
 import com.maycombhq.atticus.core.Words
 import java.awt.datatransfer.StringSelection
@@ -91,8 +92,10 @@ class CommandFlow(private val project: Project) {
 
     // ---------------------------------------------------------------- asking
 
-    private fun pickOrType(title: String, message: String, values: List<String>): String? =
-        Messages.showEditableChooseDialog(message, title, null, values.toTypedArray(), values.first(), null)
+    private fun pickOrType(title: String, message: String, values: List<String>): String? {
+        val d = PickDialog(project, title, message, values)
+        return if (d.showAndGet()) d.value() else null
+    }
 
     private fun typed(title: String, prompt: String): String? = Messages.showInputDialog(project, prompt, title, null)
 
@@ -194,13 +197,19 @@ class CommandFlow(private val project: Project) {
         return v?.trim()?.takeIf { it.isNotEmpty() }
     }
 
-    /** Each argument, then the required options, then any options to add. Null: the person cancelled. */
-    fun ask(cmd: CatalogCommand): Answers? {
+    /**
+     * Each argument, then the required options, then any options to add. Null: the person cancelled.
+     * [presetArgs] and [presetFlags] are answers already given, not asked again.
+     */
+    fun ask(cmd: CatalogCommand, presetArgs: List<List<String>?> = emptyList(), presetFlags: Map<String, String?> = emptyMap()): Answers? {
         val args = mutableListOf<List<String>?>()
-        for (a in cmd.args) args += (askArg(cmd, a, args.mapNotNull { it?.firstOrNull() }) ?: return null).value
+        for ((i, a) in cmd.args.withIndex()) {
+            args += presetArgs.getOrNull(i) ?: (askArg(cmd, a, args.mapNotNull { it?.firstOrNull() }) ?: return null).value
+        }
         val flags = LinkedHashMap<String, String?>(Commands.requiredSwitches(cmd))
+        flags.putAll(presetFlags)
         var alternativeGiven = false
-        for (f in Commands.requiredToAsk(cmd)) {
+        for (f in Commands.requiredToAsk(cmd).filter { it.name !in flags }) {
             val alt = Commands.isAlternative(cmd, f)
             if (alt && alternativeGiven) continue
             val v = askFlag(cmd, f)
@@ -239,13 +248,16 @@ class CommandFlow(private val project: Project) {
     fun aiStep(argv: List<String>, slash: String?) {
         background("Reading how AI steps run here", { cli(listOf("next", "--json", "--root", cwd)) }) { r ->
             val view = Next.parse(r.stdout)
+            // WP6.1: the slash command works only where its prompt file is; else say how to write it.
+            val missing = slash != null && metarepo != null && !Peer.hasPromptFile(metarepo, slash)
             val actions =
                 listOfNotNull(
-                    slash?.let { s -> Notify.action(Copy.copy(s)) { CopyPasteManager.getInstance().setContents(StringSelection(s)) } },
+                    if (missing) Notify.action(Copy.WRITE_PROMPT_FILES) { captured(listOf("assistant-files")) { said(listOf("assistant-files"), it) } } else null,
+                    slash?.takeIf { !missing }?.let { s -> Notify.action(Copy.copy(s)) { CopyPasteManager.getInstance().setContents(StringSelection(s)) } },
                     if (view?.modelMode == true) Notify.action(Copy.RUN_MODEL) { inConsole("model", Commands.withModel(argv)) } else null,
                     Notify.action(Copy.RUN_HANDOFF) { inConsole("hand-off", Commands.handoff(argv)) },
                 )
-            val text = Copy.aiStep(slash) + (view?.runs?.let { "<br>" + Copy.howStepsRun(it) } ?: "")
+            val text = (if (missing) Copy.noPromptFile(slash!!) else Copy.aiStep(slash)) + (view?.runs?.let { "<br>" + Copy.howStepsRun(it) } ?: "")
             Notify.show(project, text, NotificationType.INFORMATION, *actions.toTypedArray()).also { it.setTitle(Copy.AI_TITLE) }
         }
     }
@@ -345,16 +357,26 @@ class CommandFlow(private val project: Project) {
 
 /** The next step (ADR 0099): in plain words, with what can be done about it. */
 class NextFlow(private val project: Project) {
+    /** Read the next step in the background (WP6.2: the IDE never waits on it), then show it. */
     fun show() {
-        val flow = CommandFlow(project)
         val cwd = Roots.cwd(project)
-        val r =
-            ProgressManager.getInstance().runProcessWithProgressSynchronously(
-                ThrowableComputable<Ran, RuntimeException> { AtticusCli.run(project, cwd, listOf("next", "--json", "--root", cwd)) },
-                "Reading the next step",
-                true,
-                project,
-            )
+        ProgressManager.getInstance().run(
+            object : Task.Backgroundable(project, "Atticus: reading the next step", true) {
+                private var r: Ran? = null
+
+                override fun run(indicator: ProgressIndicator) {
+                    r = AtticusCli.run(project, cwd, listOf("next", "--json", "--root", cwd))
+                }
+
+                override fun onSuccess() {
+                    r?.let { shown(it) }
+                }
+            },
+        )
+    }
+
+    private fun shown(r: Ran) {
+        val flow = CommandFlow(project)
         val view = Next.parse(r.stdout)
         if (view == null) {
             Notify.show(project, Copy.couldNotReadNext(Copy.firstLine(r.lines, r.code)), NotificationType.WARNING, Notify.showOutput(project))
@@ -378,6 +400,7 @@ class NextFlow(private val project: Project) {
                 if (action is NextAction.Person) append(Copy.PERSON_STEP).append(' ')
                 append(n.command)
                 if (slash != null) append("\n\nIn Copilot Chat: ").append(slash)
+                if (slash != null && Roots.metarepo(project)?.let { Peer.hasPromptFile(it, slash) } == false) append("\n\n").append(Copy.noPromptFile(slash))
                 if (action is NextAction.Ai) view.runs?.let { append("\n\n").append(Copy.howStepsRun(it)) }
             }
         val copy = { s: String -> CopyPasteManager.getInstance().setContents(StringSelection(s)) }
@@ -425,8 +448,8 @@ class StartFlow(private val project: Project) {
     fun createMetarepo() {
         val title = Copy.CREATE_METAREPO.removeSuffix("…")
         val parent = folder(title, Copy.WHERE_METAREPO, Path.of(base).parent?.toString() ?: base) ?: return
-        val name = Messages.showInputDialog(project, Copy.METAREPO_NAME, title, null)?.trim()?.takeIf { it.isNotEmpty() } ?: return
-        val platform = Messages.showInputDialog(project, Copy.PLATFORM, title, null)?.trim()?.takeIf { it.isNotEmpty() } ?: return
+        val name = Messages.showInputDialog(project, Copy.METAREPO_NAME, title, null, null, checked(Peer::checkName))?.trim() ?: return
+        val platform = Messages.showInputDialog(project, Copy.PLATFORM, title, null, null, checked(Peer::checkPlatform))?.trim() ?: return
         val dir = Path.of(parent).resolve(name).toString()
         val argv = listOf("init", dir, "--platform", platform)
         flow.captured(argv, parent) { r ->
@@ -435,7 +458,18 @@ class StartFlow(private val project: Project) {
         }
     }
 
+    /** A field's rule as the dialog's check: OK stays off, with the rule said, until the value will do. */
+    private fun checked(rule: (String) -> String?) =
+        object : com.intellij.openapi.ui.InputValidatorEx {
+            override fun getErrorText(inputString: String) = rule(inputString)
+
+            override fun checkInput(inputString: String) = rule(inputString) == null
+
+            override fun canClose(inputString: String) = rule(inputString) == null
+        }
+
     fun adopt() {
+        if (Messages.showYesNoDialog(project, Copy.adoptConfirm(base), Copy.ADOPT_CONFIRM_TITLE, Messages.getQuestionIcon()) != Messages.YES) return
         val argv = listOf("adopt", base)
         flow.captured(argv, base) { r ->
             flow.said(argv, r)

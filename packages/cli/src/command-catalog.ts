@@ -114,6 +114,7 @@ const AREA_BY_WORD: Record<string, string> = {
   catalog: "catalog",
   query: "catalog",
   context: "catalog",
+  cites: "catalog",
   impact: "catalog",
   ask: "catalog",
   guide: "catalog",

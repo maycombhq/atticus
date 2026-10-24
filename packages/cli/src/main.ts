@@ -407,6 +407,7 @@ Usage:
           [--limit n] [--json]         (see docs/query-language.md)
   atticus context show <id>            One record, flow, step, knowledge item, change, answered question or wiki section in full, with its file
   atticus context walk <id> [--hops 1] [--kind k,k] [--limit n]  The links from one id, how each was made, at most two hops
+  atticus cites --repo <repo> --path <path>  What cites each line of one file: the flow steps, with the changes in flight on them, and the records (or --file <path on disk>) [--json]
   atticus context code <id> [--around 6]  The code a fact cites, a few lines around each cited line, from the workspace checkout
           [--repo r --path p --line n]  (or one line a fact cites)
   atticus context similar <id> [--kind k,k] [--limit n]  What reads like one id, by the local embedding model: a hint where to look, never a link
@@ -854,6 +855,7 @@ const OPTIONS = {
   "warn-only": { type: "boolean" },
   write: { type: "string" },
   path: { type: "string" },
+  file: { type: "string" },
   submodule: { type: "boolean" },
   save: { type: "boolean" },
   only: { type: "string" },
@@ -1305,6 +1307,20 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
       io,
     );
   // WP7.5: follow a change without being on it.
+  if (group === "cites") {
+    const given = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+    const [repo, path, file] = [given(values.repo), given(values.path), given(values.file)];
+    return (await import("./ui-api-cites.js")).citesCli(
+      root,
+      {
+        ...(repo ? { repo } : {}),
+        ...(path ? { path } : {}),
+        ...(file ? { file: resolve(file) } : {}),
+        json: values.json === true,
+      },
+      io,
+    );
+  }
   if (group === "watch")
     return (await import("./watch-commands.js")).watchCommand(
       root,

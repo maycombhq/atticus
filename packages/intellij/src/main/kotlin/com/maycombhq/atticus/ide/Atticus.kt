@@ -46,6 +46,9 @@ object AtticusCli {
 
     fun launch(cwd: String): Launch = machine.resolve(AtticusSettings.get().state.atticusPath ?: "", cwd)
 
+    /** How a path to atticus, not yet saved, would be launched (Settings' Check). */
+    fun machineFor(path: String, cwd: String): Launch = machine.resolve(path, cwd)
+
     /** The process to start; fails when an argument can't be passed safely. */
     fun commandLine(cwd: String, args: List<String>): GeneralCommandLine {
         val l = launch(cwd)

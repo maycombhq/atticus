@@ -1,5 +1,5 @@
 import { readdir, readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import {
   catalogDirOf,
   changesDirOf,
@@ -11,6 +11,7 @@ import {
 } from "@maycombhq/core";
 import { badRequest, type Router, type ServerContext } from "@maycombhq/server";
 import { parse } from "yaml";
+import type { Output } from "./commands.js";
 import { catalogRecords } from "./site-commands.js";
 
 /**
@@ -132,6 +133,97 @@ async function inFlight(root: string): Promise<Map<string, string[]>> {
   return out;
 }
 
+/** One file's cited lines, best first by line, each flow with the changes in flight on it. */
+async function citeList(
+  root: string,
+  index: Index,
+  repo: string,
+  path: string,
+): Promise<Api.CiteListT> {
+  const lines = [...(index.get(repo)?.get(path)?.values() ?? [])].sort((a, b) => a.line - b.line);
+  const flying = await inFlight(root);
+  const shown = lines.map((l) => ({
+    ...l,
+    flows: [...l.flows]
+      .sort((a, b) => a.flow.localeCompare(b.flow) || a.step - b.step)
+      .map((f) => (flying.get(f.flow)?.length ? { ...f, changes: flying.get(f.flow)! } : f)),
+  }));
+  return { repo, path, lines: shown };
+}
+
+/**
+ * Which repo a file on disk belongs to, from where it sits in the metarepo: workspace/<repo>/,
+ * a change's worktree (workspace/.worktrees/<change>/<repo>/) or another branch's checkout
+ * (workspace/.branches/<repo>/<branch>/). Anywhere else in the metarepo (an adopted repo's own
+ * files) only the path is known; undefined outside the metarepo.
+ */
+export function fileInRepo(
+  root: string,
+  file: string,
+): { repo?: string; path: string } | undefined {
+  const rel = relative(root, file);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  const parts = rel.split(sep);
+  if (parts[0] !== "workspace") return { path: parts.join("/") };
+  const at = parts[1] === ".worktrees" ? 3 : parts[1] === ".branches" ? 2 : 1;
+  const repo = parts[at];
+  const rest = parts.slice(parts[1] === ".branches" ? 4 : at + 1);
+  if (!repo || !rest.length || !RecordId.safeParse(repo).success) return undefined;
+  return { repo, path: rest.join("/") };
+}
+
+/**
+ * atticus cites (--repo r --path p | --file f) [--json]: what cites each line of one file, as
+ * GET /api/cites gives it, for an editor that can't call the app (IntelliJ's gutter).
+ */
+export async function citesCli(
+  root: string,
+  o: { repo?: string; path?: string; file?: string; json?: boolean },
+  io: Output,
+): Promise<number> {
+  let repo = o.repo;
+  let path = o.path;
+  const index = await build(root);
+  if (o.file) {
+    const at = fileInRepo(root, o.file);
+    if (!at) {
+      io.err(`${o.file} isn't in this metarepo or a repo's checkout in its workspace.`);
+      return 1;
+    }
+    path = at.path;
+    repo = at.repo ?? [...index.keys()].find((r) => index.get(r)!.has(at.path)) ?? undefined;
+    if (!repo) {
+      if (o.json) io.out(JSON.stringify({ repo: "", path, lines: [] }, null, 2));
+      else io.out(`Nothing in the specs or the catalog cites ${path}.`);
+      return 0;
+    }
+  }
+  if (!repo || !path || !RecordId.safeParse(repo).success) {
+    io.err(
+      "Say which file: atticus cites --repo <repo> --path <its path in the repo>, or --file <path on disk>.",
+    );
+    return 2;
+  }
+  const v = await citeList(root, index, repo, path);
+  if (o.json) {
+    io.out(JSON.stringify(v, null, 2));
+    return 0;
+  }
+  if (!v.lines.length) {
+    io.out(`Nothing in the specs or the catalog cites ${repo}/${path}.`);
+    return 0;
+  }
+  for (const l of v.lines) {
+    const flows = l.flows.map(
+      (f) =>
+        `${f.name} (step ${f.step})${f.changes?.length ? `, changed by ${f.changes.join(", ")}` : ""}`,
+    );
+    const records = l.records.map((r) => `${r.kind} ${r.name ?? r.id}`);
+    io.out(`Line ${l.line}: ${[...flows, ...records].join("; ")}`);
+  }
+  return 0;
+}
+
 export function uiCiteRoutes(r: Router, ctx: ServerContext): Router {
   const root = ctx.root;
   let cached: { print: string; index: Promise<Index> } | undefined;
@@ -150,17 +242,7 @@ export function uiCiteRoutes(r: Router, ctx: ServerContext): Router {
     if (!repo || !RecordId.safeParse(repo).success)
       throw badRequest("Say which repo: ?repo=<the repo's id>.");
     if (!path) throw badRequest("Say which file: ?path=<its path in the repo>.");
-    const lines = [...((await indexNow()).get(repo)?.get(path)?.values() ?? [])].sort(
-      (a, b) => a.line - b.line,
-    );
-    const flying = await inFlight(root);
-    const shown = lines.map((l) => ({
-      ...l,
-      flows: [...l.flows]
-        .sort((a, b) => a.flow.localeCompare(b.flow) || a.step - b.step)
-        .map((f) => (flying.get(f.flow)?.length ? { ...f, changes: flying.get(f.flow)! } : f)),
-    }));
-    return { status: 200, body: { repo, path, lines: shown } satisfies Api.CiteListT };
+    return { status: 200, body: await citeList(root, await indexNow(), repo, path) };
   });
   return r;
 }

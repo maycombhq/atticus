@@ -175,6 +175,19 @@ object Commands {
     fun changeDiagramHash(change: String): String =
         "#/change-diagram?change=" + java.net.URLEncoder.encode(change, Charsets.UTF_8).replace("+", "%20")
 
+    private fun enc(s: String) = java.net.URLEncoder.encode(s, Charsets.UTF_8).replace("+", "%20")
+
+    /** A flow on the app's Flows screen, at one step (VS Code's flowHash). */
+    fun flowHash(repo: String, flow: String, step: Int? = null): String =
+        "#/flows?repo=${enc(repo)}&flow=${enc(flow)}${step?.let { "&step=$it" } ?: ""}"
+
+    /** What breaks if a thing changes, on the app's Impact screen. */
+    fun impactHash(id: String): String = "#/impact?q=${enc(id)}"
+
+    /** The app's At a glance page of one change (WP7.1). */
+    fun cockpitHash(change: String): String =
+        "#/cockpit?change=" + java.net.URLEncoder.encode(change, Charsets.UTF_8).replace("+", "%20")
+
     /** The app's Estimate on one change (ADR 0109). */
     fun estimateHash(change: String): String =
         "#/estimate?change=" + java.net.URLEncoder.encode(change, Charsets.UTF_8).replace("+", "%20")
