@@ -183,15 +183,27 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
 
   protected async produce(run: Run, signal?: AbortSignal) {
     const { request } = run;
-    const inv = this.h.invocation?.(request) ?? { cwd: this.h.root };
     const dir = join(runsDirOf(this.h.root), request.change, run.runId);
+    // A reviewer (its output is findings, kept in its run) reads the draft and writes only its
+    // findings: it runs in its run folder, so an edit anywhere else needs a permission that
+    // `--permission-prompts none` never gives. Whatever the step's own invocation says.
+    const reviewer = request.agent.outputArtifact === "findings" && request.outputIn === "run";
+    const inv = reviewer
+      ? { cwd: dir, permissionMode: "acceptEdits" as const }
+      : (this.h.invocation?.(request) ?? { cwd: this.h.root });
     await mkdir(dir, { recursive: true });
     const promptFile = join(dir, "prompt.md");
-    const prompt = HandoffRuntime.promptFor(
+    const handoff = HandoffRuntime.promptFor(
       run,
       changesRelOf(this.h.root),
       runsRelOf(this.h.root),
     ).replace(/\nWhen the file is complete.*\n$/s, "\n");
+    const prompt = reviewer
+      ? handoff.replace(
+          `Write the result to ${HandoffRuntime.outputRel(run, changesRelOf(this.h.root), runsRelOf(this.h.root))}.`,
+          `Write the result to ${request.outputPath}.`,
+        )
+      : handoff;
     await writeFile(promptFile, prompt, "utf8");
     await writeFile(
       join(dir, "context-manifest.json"),

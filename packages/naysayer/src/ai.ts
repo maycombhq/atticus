@@ -97,7 +97,7 @@ export function lensAgent(ctx: CriticContext, lens: LensName): AgentDefinition {
     outputArtifact: "findings",
     checklist: "constitution",
     tokenBudget: ctx.lifecycle.orgPack.runtime.budgets.defaultTokens,
-    allowedRuntimes: ["hand-off", "model", "mock", "replay"],
+    allowedRuntimes: ["hand-off", "model", "headless-claude-code", "mock", "replay"],
   });
 }
 

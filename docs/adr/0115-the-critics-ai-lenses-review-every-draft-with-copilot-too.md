@@ -37,5 +37,6 @@ An adversarial review of the loop found these failures. The fixes keep the decis
 5. **Data, not instructions.** The last draft's findings and the answers people gave go in an untrusted `hand-backs` source. The trusted instructions only point to it.
 6. **The text a lens saw.** The draft is copied into the lens run's folder (`draft/`) at the hand-off, and `completeLensRun` checks quotes against that copy.
 7. **Checked again once merged.** `StageSpec.check(answer, { onFile })`: a done stage's result is checked again with `onFile`. A migration the catalog now has under the same file name, and a table or entry the delta marked new, are the change's own.
+8. **Lenses run headless too, read-only.** Failing closed made a lens that may not run on headless Claude Code stop every headless stage. The built-in lens agents now allow `headless-claude-code`, and a reviewer (an agent whose output is findings, kept in its run) runs in its run folder whatever the step's invocation says, so with `--permission-prompts none` the only file it can write is its findings, never the draft. An org pack's own lens agents keep the runtimes they list.
 
 No contract shape changes: `ReasonCode` gains `lens-failed`, and the `--handoff --json` end object may carry `pagesLeft`.

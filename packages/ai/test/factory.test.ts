@@ -319,6 +319,48 @@ describe("headless Claude Code", () => {
     expect(file).not.toContain("atticus handoff done");
   });
 
+  it("runs a reviewer in its run folder, so the only file it can write is its findings", async () => {
+    const root = await tmp();
+    const seen: HeadlessInvocation[] = [];
+    const lens = AgentDefinition.parse({
+      ...agent,
+      id: "business-critic",
+      outputArtifact: "findings",
+      checklist: "constitution",
+    });
+    const r = await createRuntime(cfg, {
+      root,
+      now,
+      headless: {
+        runner: async (i) => {
+          seen.push(i);
+          // Claude Code writes the findings where its working folder is.
+          await writeFile(join(i.cwd, "findings.yaml"), "findings: []\n", "utf8");
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({ result: "Wrote findings.yaml", is_error: false }),
+            stderr: "",
+          };
+        },
+        // The step's own invocation would put it at the root, where it could edit the draft.
+        invocation: () => ({ cwd: root, permissionMode: "acceptEdits" }),
+      },
+    });
+    const prepared = await r.prepare({
+      ...request(),
+      agent: lens,
+      outputPath: "findings.yaml",
+      outputIn: "run",
+    });
+    const run = await r.run(prepared.runId);
+    expect(run.state).toBe("validated");
+    expect(run.output).toBe("findings: []\n");
+    const dir = join(root, ".runs/add-transfer-limit", prepared.runId);
+    expect(seen[0]!.cwd).toBe(dir);
+    expect(seen[0]!.prompt).toContain("Write the result to findings.yaml.");
+    expect(seen[0]!.prompt).not.toContain(".runs/add-transfer-limit");
+  });
+
   it("fails the run on a non-zero exit, an error result or output that isn't JSON", async () => {
     const root = await tmp();
     const answers = [
