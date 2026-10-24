@@ -5,7 +5,9 @@
 // The evals' tests check the file is up to date.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { renderContextEval, runContextEval } from "../dist/index.js";
+// The steps run as the tests do: the installed model off (its mode replays recorded vectors).
+process.env.ATTICUS_EMBEDDINGS = "off";
+const { renderContextEval, runContextEval } = await import("../dist/index.js");
 
 const fixtures = fileURLToPath(new URL("../../../fixtures", import.meta.url));
 const out = fileURLToPath(new URL("../../../docs/evidence/context-eval.md", import.meta.url));

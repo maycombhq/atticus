@@ -1,0 +1,17 @@
+{
+  "name": "@maycombhq/onnxruntime-wasm",
+  "version": "1.30.0",
+  "description": "onnxruntime-web 1.30.0's WebAssembly build (the three files Atticus uses), the fallback where onnxruntime's native build won't load (ADR 0116).",
+  "license": "MIT",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/model/fetch.mjs ."
+  },
+  "atticusRepackaged": {
+    "from": "onnxruntime-web@1.30.0"
+  }
+}

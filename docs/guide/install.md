@@ -15,7 +15,7 @@ No administrator rights are needed. Atticus never needs a package registry after
 
 ## Install from the offline bundle (recommended)
 
-The bundle is one zip, `atticus-<version>-offline.zip`, with a `.sha256` file beside it. It holds the command line and app with every dependency, install scripts, `SHA256SUMS`, an SBOM (`sbom.cdx.json`) and the third-party licences.
+The bundle is one zip per platform, `atticus-<version>-offline.zip` (about 113 MB on Windows), with a `.sha256` file beside it. It holds the command line and app with every dependency, the local embedding model and its runtime for that platform (search by meaning works at once, with nothing more to install), install scripts, `SHA256SUMS`, an SBOM (`sbom.cdx.json`) and the third-party licences.
 
 1. Check the zip against its `.sha256` file, then unzip it anywhere.
 2. Run the install script from the unzipped folder:
@@ -42,6 +42,19 @@ git config --global user.email you@example.com
 
 Every command and the app record you by it (the email's part before the `@`); `--by <handle>` names someone else. Without it, Atticus uses your OS user name and warns each time.
 
+## Install from your npm mirror
+
+Where the organisation mirrors npm (a bank's Artifactory or Nexus, say), one command installs Atticus for you:
+
+```bash
+npm install --global @maycombhq/cli
+atticus --version
+```
+
+That is all: the local embedding model for search by meaning (`@maycombhq/embed-model`, all-MiniLM-L6-v2, 87 MB) and its runtime (onnxruntime's CPU build for your platform, 25 to 86 MB by platform, plus a 14 MB WebAssembly fallback) come with it as ordinary dependencies. Nothing runs at install time and nothing is downloaded afterwards: no package Atticus installs has an install script. `atticus doctor` shows the model and its runtime under _Embedding model_. The VS Code and IntelliJ extensions run this `atticus`, so they don't carry the model themselves.
+
+The mirror needs these packages: every `@maycombhq/*` package `@maycombhq/cli` depends on (among them `@maycombhq/embed-model`, `@maycombhq/onnxruntime-wasm` and the `@maycombhq/onnxruntime-<platform>-<arch>` package for each platform your people use), `onnxruntime-common@1.30.0`, and the third-party packages listed in the SBOM.
+
 ## Install from source
 
 For contributors, or where the bundle can't be used:
@@ -53,7 +66,7 @@ pnpm build
 node packages/cli/dist/bin.js --version
 ```
 
-`pnpm bundle` builds the offline bundle from a checkout, and `pnpm bundle:test <zip>` installs it into a throwaway folder and uses it.
+`pnpm bundle` builds the offline bundle for the platform it runs on from a checkout (it first fills the model and runtime packages from their pinned sources, `node scripts/model/fetch.mjs --this-platform`, through a cache in `.cache/pinned`), and `pnpm bundle:test <zip>` installs it into a throwaway folder and uses it, a search by meaning included. In a checkout, `pnpm model:fetch` fetches the model and every runtime package (about 330 MB, once); without it, everything works but search by meaning, and `atticus doctor` says so.
 
 ## Check the machine
 

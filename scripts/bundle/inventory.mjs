@@ -128,12 +128,15 @@ export function inventory(deployDir) {
     if (out.has(key)) return;
     // ADR 0116: the bundled embedding model is a third party's weights, not Atticus's own code.
     const m = pkg.atticusModel;
+    // A third party's files Atticus repackages (onnxruntime's CPU and WASM builds, ADR 0116).
+    const rp = pkg.atticusRepackaged;
     out.set(key, {
       name: pkg.name,
       version: pkg.version,
       licence: licenceOf(pkg),
       text: licenceText(dir),
-      own: pkg.name.startsWith("@maycombhq/") && !m,
+      own: pkg.name.startsWith("@maycombhq/") && !m && !rp,
+      ...(rp ? { purl: `pkg:npm/${rp.from}`, repackagedFrom: rp.from } : {}),
       ...(m
         ? {
             model: m.name,

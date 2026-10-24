@@ -47,7 +47,7 @@ export interface OpenOptions {
    */
   embeddings?: "auto" | "off" | Embedder;
   /**
-   * At most this many nodes without a vector are embedded on opening (default 200, a few seconds):
+   * At most this many nodes without a vector are embedded on opening (default 500, under a minute on a slow laptop):
    * a step keeps an index's vectors up to date; a first build of a big estate is
    * `atticus index embed`. Until every node has one, similarity stays off and says so.
    */
@@ -86,8 +86,8 @@ export async function openIndex(root: string, o: OpenOptions = {}): Promise<Cata
     attachVectors(db, vectorsFileOf(file));
     const e = await embedderOf(root, o.embeddings);
     const ix = new CatalogIndex(db, file, u.problems, rebuilt, u, e.embedder, e.why);
-    if (e.embedder && (o.embedOnOpen ?? 200) > 0)
-      await ix.embed({ max: o.embedOnOpen ?? 200 }).catch((err: Error) => {
+    if (e.embedder && (o.embedOnOpen ?? 500) > 0)
+      await ix.embed({ max: o.embedOnOpen ?? 500 }).catch((err: Error) => {
         ix.meaningProblem = `the embedding model couldn't run: ${err.message.split("\n")[0]}`;
       });
     return ix;

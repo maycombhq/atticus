@@ -1,0 +1,45 @@
+{
+  "sources": {
+    "onnxruntime-web": {
+      "url": "https://registry.npmjs.org/onnxruntime-web/-/onnxruntime-web-1.30.0.tgz",
+      "what": "onnxruntime-web 1.30.0 from the npm registry",
+      "sha256": "d2228df7e4616bc3348bf504ee888f3bec43789a273f0a63f3e68d203ce3bf71"
+    },
+    "ort-licence": {
+      "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.30.0/LICENSE",
+      "what": "onnxruntime's MIT licence at v1.30.0 (its npm packages carry none)",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    }
+  },
+  "files": [
+    {
+      "path": "dist/ort.wasm.min.mjs",
+      "source": "onnxruntime-web",
+      "entry": "dist/ort.wasm.min.mjs",
+      "sha256": "219e6a1fc8a9938268d18efca3c91d310bd2f4a59bbd13744df5b2b7fc6cee3b"
+    },
+    {
+      "path": "dist/ort.wasm.min.mjs.map",
+      "source": "onnxruntime-web",
+      "entry": "dist/ort.wasm.min.mjs.map",
+      "sha256": "d6f24b0142879373054ceabcbc42de512b7cf6c6f7d571066be33126ee5835c4"
+    },
+    {
+      "path": "dist/ort-wasm-simd-threaded.mjs",
+      "source": "onnxruntime-web",
+      "entry": "dist/ort-wasm-simd-threaded.mjs",
+      "sha256": "e13f7f94fc51b4ca72b12faeb1ee95f4ace6dfbc8939bc718aabdc0a27c4299b"
+    },
+    {
+      "path": "dist/ort-wasm-simd-threaded.wasm",
+      "source": "onnxruntime-web",
+      "entry": "dist/ort-wasm-simd-threaded.wasm",
+      "sha256": "3398c10d07d229bd91b364548e130e0e51a8e5704b88c7c083ebbeb78842dee2"
+    },
+    {
+      "path": "LICENSE",
+      "source": "ort-licence",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    }
+  ]
+}

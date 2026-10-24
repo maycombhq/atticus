@@ -1,10 +1,11 @@
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { isAbsolute, join, resolve } from "node:path";
 import { parse } from "yaml";
 import { orgPackDirOf, Runtime } from "@maycombhq/core";
 import type { Embedder } from "@maycombhq/ai";
-import { modelInfo, OnnxEmbedder } from "./model.js";
+import { modelInfo, OnnxEmbedder, packageDir, runtimePackages } from "./model.js";
 
 /**
  * Which embedding model a metarepo uses (ADR 0116), from runtime.yaml's `retrieval.embeddings`:
@@ -37,17 +38,31 @@ export function bundledModelDir(runtimeDir?: string): string | undefined {
   }
 }
 
+/** The installed model's folder when its files are there (fetched, or from the registry). */
+export function installedModelDir(): string | undefined {
+  const dir = bundledModelDir();
+  return dir && existsSync(join(dir, "model.onnx")) ? dir : undefined;
+}
+
 async function settingsOf(root: string): Promise<{ model: string; runtime?: string }> {
   const text = await readFile(join(orgPackDirOf(root), "runtime.yaml"), "utf8").catch(
     () => undefined,
   );
-  if (!text) return { model: "off" };
+  // ADR 0116 addendum: the model installed with Atticus is the default.
+  if (!text) return { model: "bundled" };
   const r = Runtime.safeParse(parse(text));
   const e = r.success ? r.data.retrieval?.embeddings : undefined;
-  return e ? { model: e.model, ...(e.runtime ? { runtime: e.runtime } : {}) } : { model: "off" };
+  return e
+    ? { model: e.model, ...(e.runtime ? { runtime: e.runtime } : {}) }
+    : { model: "bundled" };
 }
 
+/** ATTICUS_EMBEDDINGS=off turns the model off for this process (the test suites set it). */
+export const embeddingsOffByEnv = () => process.env.ATTICUS_EMBEDDINGS === "off";
+
 export async function embeddingState(root: string): Promise<EmbeddingState> {
+  if (embeddingsOffByEnv())
+    return { setting: "off", problem: "ATTICUS_EMBEDDINGS is off for this process" };
   const s = await settingsOf(root);
   if (s.model === "off") return { setting: "off", problem: "retrieval.embeddings.model is off" };
   const base = orgPackDirOf(root);
@@ -79,15 +94,11 @@ export async function runtimeAvailable(root: string): Promise<"native" | "wasm" 
   const s = await settingsOf(root);
   const dir = s.runtime ? resolve(orgPackDirOf(root), s.runtime) : undefined;
   const req = createRequire(dir ? join(dir, "noop.js") : import.meta.url);
-  for (const [name, kind] of [
-    ["onnxruntime-node", "native"],
-    ["onnxruntime-web", "wasm"],
-  ] as const)
-    try {
-      req.resolve(name);
-      return kind;
-    } catch {
-      // not installed here
+  for (const kind of ["native", "wasm"] as const)
+    for (const name of runtimePackages(kind)) {
+      const d = packageDir(req, name);
+      if (d && existsSync(join(d, "dist", kind === "native" ? "index.js" : "ort.wasm.min.mjs")))
+        return kind;
     }
   return undefined;
 }

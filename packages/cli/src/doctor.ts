@@ -413,7 +413,7 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
     });
   }
 
-  // ADR 0116: the local embedding model for "similar in meaning", when runtime.yaml turns it on.
+  // ADR 0116: the local embedding model for "similar in meaning", installed with Atticus.
   {
     const { embeddingState, runtimeAvailable } = await import("@maycombhq/embed");
     const e = await embeddingState(root);
@@ -424,11 +424,11 @@ export async function doctorChecks(root: string, deps: DoctorDeps = {}): Promise
       status: e.setting === "off" ? "ok" : e.problem || !ort ? "warn" : "ok",
       detail:
         e.setting === "off"
-          ? "off (runtime.yaml retrieval.embeddings); the context engine searches by words and names"
+          ? `off (${e.problem ?? "runtime.yaml retrieval.embeddings"}); the context engine searches by words and names`
           : e.problem
             ? e.problem
             : `${e.id} (${((e.bytes ?? 0) / 1024 / 1024).toFixed(0)} MB, ${e.licence}) in ${e.dir}; runtime: ${ort ?? "none found"}`,
-      fix: "Install the offline bundle that carries the model, or point retrieval.embeddings.model at a model folder, then run atticus index embed. Until then the context engine searches by words and names only.",
+      fix: "The model comes with Atticus (@maycombhq/embed-model, installed with @maycombhq/cli). Reinstall Atticus from your npm mirror or the offline bundle; in a checkout of Atticus run pnpm model:fetch; or point retrieval.embeddings.model at a model folder. Until then the context engine searches by words and names only.",
     });
   }
   const live = Object.entries(rt.adapters).filter(

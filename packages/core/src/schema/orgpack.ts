@@ -624,8 +624,8 @@ export const Runtime = z.strictObject({
   /**
    * Retrieval by meaning in the context engine (ADR 0116). Additive and optional, so no schema
    * version bump (as history and buildEngine): a pack without it reads as everything off.
-   * - embeddings.model: off (the default), `bundled` (the model the offline bundle carries,
-   *   @maycombhq/embed-model) or a folder with `atticus-model.yaml` (relative to the org pack);
+   * - embeddings.model: `bundled` (the default: the model installed with Atticus,
+   *   @maycombhq/embed-model), off, or a folder with `atticus-model.yaml` (relative to the org pack);
    *   embeddings.runtime: a folder whose node_modules holds onnxruntime-node, when it isn't
    *   beside Atticus. Nothing is ever downloaded.
    * - expansion and rerank: one model call before a step's selection that names what the
@@ -635,10 +635,10 @@ export const Runtime = z.strictObject({
     .strictObject({
       embeddings: z
         .strictObject({
-          model: z.string().min(1).default("off"),
+          model: z.string().min(1).default("bundled"),
           runtime: z.string().min(1).optional(),
         })
-        .default({ model: "off" }),
+        .default({ model: "bundled" }),
       expansion: z.boolean().default(false),
       rerank: z.boolean().default(false),
     })

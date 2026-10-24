@@ -3,7 +3,7 @@
 // home folder, with no network, and use it: version, a practice sandbox, doctor, a scan, the
 // app's health call. On Windows it runs install.ps1, elsewhere install.sh.
 import { execFileSync, spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -78,15 +78,17 @@ const root = join(sandbox, "metarepo");
 console.log(atticus("doctor", "--root", root).trim().split("\n").at(-1));
 console.log(atticus("scan", "--root", root).trim().split("\n").at(-1));
 
-// ADR 0116: a bundle that carries the embedding model searches by meaning, with no network.
-if (existsSync(join(dir, "node_modules", "@maycombhq", "embed-model", "atticus-model.yaml"))) {
-  const rt = join(root, "org-pack", "runtime.yaml");
-  appendFileSync(rt, "\nretrieval:\n  embeddings: { model: bundled }\n");
-  console.log(
-    atticus("doctor", "--root", root)
-      .split("\n")
-      .find((l) => /Embedding model/.test(l)),
-  );
+/// ADR 0116 addendum: every bundle carries the embedding model, the default, and searches by
+// meaning with no network and nothing else to install.
+if (!existsSync(join(dir, "node_modules", "@maycombhq", "embed-model", "model.onnx")))
+  throw new Error("the bundle doesn't carry the embedding model (@maycombhq/embed-model)");
+{
+  const doctor = atticus("doctor", "--root", root)
+    .split("\n")
+    .find((l) => /Embedding model/.test(l));
+  console.log(doctor);
+  if (!/\[ok\].*all-minilm-l6-v2.*runtime: native/.test(doctor ?? ""))
+    throw new Error(`doctor didn't find the bundled model and its runtime: ${doctor}`);
   console.log(atticus("index", "embed", "--root", root).trim().split("\n").at(-1));
   const hits = atticus(
     "query",
