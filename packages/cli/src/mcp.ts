@@ -106,6 +106,28 @@ export const MCP_TOOLS: McpTool[] = [
     ],
   },
   {
+    name: "ask",
+    description:
+      "A plain question about the estate (\"who calls ledger-api?\"), read as a catalog query or an impact walk and run; it says the query it ran, and every record cites its file and line (atticus ask).",
+    args: [s("question", "The question, in plain words.")],
+    argv: (a) => ["ask", String(a.question), "--json"],
+  },
+  {
+    name: "knowledge_ask",
+    description:
+      "The knowledge items that may answer a question about how the organisation works (processes, requests, standards, decisions, teams, vendors), by words and meaning, each with its quote and page. Answer only from these, citing each item you use; if none answers, say so and name who would know. Never answer from your own knowledge (atticus knowledge ask, without a model).",
+    args: [s("question", "The question, in plain words.")],
+    argv: (a) => [
+      "query",
+      String(a.question),
+      "--search",
+      "--kind",
+      "Pattern,ProcessDefinition,Decision,Party,Product",
+      "--by",
+      "both",
+    ],
+  },
+  {
     name: "catalog_query",
     description:
       'Records in the catalog that match a query, such as "kind:Endpoint" or a name (atticus query). Every record cites the file and line it was read from.',

@@ -39,6 +39,10 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - VS Code's repo rows show the branch and the scanned commit.
 - The local API gains `GET /api/repos/branches`, `GET /api/repos/compare` and `PUT /api/repos/{id}/branches`, and the scan job takes `ref` (API 2.18.0).
 
+### Ask through MCP
+
+- The MCP server gains `ask` (a plain question read as a catalog query or an impact walk, as `atticus ask` does, saying the query it ran) and `knowledge_ask` (the knowledge items that may answer a question, by words and meaning, each with its quote and page; the assistant answers only from them and cites each, or says none answers). Both are read-only, like every tool.
+
 ### The tour and focus
 
 - The first-run tour has five steps: home, asking, one change at a glance, running a step in your assistant (`/atticus-next`), and approving by pull request. It takes focus when it opens, keeps Tab inside it, and gives focus back when it closes.

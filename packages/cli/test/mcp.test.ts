@@ -144,6 +144,33 @@ describe("atticus mcp (ADR 0104)", () => {
     ]);
   });
 
+  it("asks the catalog a plain question, and finds the knowledge items that answer one (WP3.5)", async () => {
+    const calls: string[][] = [];
+    const call = (name: string, args: Record<string, unknown>) =>
+      handleMcp(
+        { jsonrpc: "2.0", id: 11, method: "tools/call", params: { name, arguments: args } },
+        fake(calls),
+        "1",
+      );
+    await call("ask", { question: "who calls ledger-api?" });
+    await call("knowledge_ask", { question: "how do I get a firewall opened?" });
+    expect(calls).toEqual([
+      ["ask", "who calls ledger-api?", "--json"],
+      [
+        "query",
+        "how do I get a firewall opened?",
+        "--search",
+        "--kind",
+        "Pattern,ProcessDefinition,Decision,Party,Product",
+        "--by",
+        "both",
+      ],
+    ]);
+    const tools = MCP_TOOLS.filter((t) => t.name === "ask" || t.name === "knowledge_ask");
+    expect(tools).toHaveLength(2);
+    expect(tools.find((t) => t.name === "knowledge_ask")!.description).toMatch(/only from/);
+  });
+
   it("shows a record, walks its links and shows the code a fact cites (ADR 0107 addendum)", async () => {
     const calls: string[][] = [];
     const call = (name: string, args: Record<string, unknown>) =>
