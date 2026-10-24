@@ -3,6 +3,7 @@ import { changeFolder, changeStore, loadChangeContext, writeFileAtomic } from "@
 import { Lens, runsDirOf, toCanonicalYaml } from "@maycombhq/core";
 import { toRunSummary, type Run } from "@maycombhq/ai";
 import { leftOut, parseLensOutput, type Discarded, type LensName, type LensRun } from "./ai.js";
+import { checkAbsences, codeSearchFor, type CodeSearch } from "./code.js";
 import { draftDocs, DRAFT_DIR } from "./critic.js";
 import { CriticError } from "./errors.js";
 import { mergeHits, readRound, readRoundMeta, reviewedGates, roundsOf } from "./findings.js";
@@ -100,7 +101,7 @@ async function roundOf(root: string, change: string, runId: string, gate?: strin
 export async function completeLensRun(
   root: string,
   run: Run,
-  opts: { now?: string; teamPacks?: string[] } = {},
+  opts: { now?: string; teamPacks?: string[]; codeSearch?: CodeSearch } = {},
 ): Promise<CompletedLens> {
   const lens = lensRunOf(run.request);
   if (!lens) throw new CriticError("invalid", `Run ${run.runId} isn't a critic lens review.`);
@@ -170,6 +171,8 @@ export async function completeLensRun(
       )),
     ];
     const parsed = parseLensOutput(ctx, lens, run.output, rules, docs);
+    // A name a finding says is missing, looked up as a fact (W1), as in model mode.
+    await checkAbsences(root, ctx.records, parsed.hits, codeSearchFor(opts.codeSearch));
     discarded = parsed.discarded;
     const hits = mergeHits(parsed.hits, ctx.systemOf);
     const existing = await readRound(root, changeId, gateId, round);

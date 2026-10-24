@@ -18,6 +18,8 @@ import {
   type SourceInput,
 } from "@maycombhq/ai";
 import { answersText, checkedAnswerLink } from "./answers.js";
+import { checkAbsences, codeRepos, codeSearchFor, type CodeRepo, type CodeSearch } from "./code.js";
+import { recordedText } from "./recorded.js";
 import { quarantineHits } from "./defences.js";
 import { artifactOf, hopRoutes, type ArtifactName } from "./artifacts.js";
 import type { CriticContext } from "./context.js";
@@ -125,7 +127,30 @@ const ANSWERED_LINE = `    answered: { id: <the answered question's id>, quote: 
 /** What a lens is told about the answers people gave (ADR 0115 addendum, 2026-10-24). */
 const ANSWERS_RULE = `People answered questions about this change; the "answers-on-file" data block lists each question with its id and the answer. Those answers are part of the brief, as binding as its own words, and a person made each decision deliberately. A scope, a limit or a choice a person set by answering is not a finding: an artifact or a draft that follows it (that narrows the brief as an answer says, say) is right, so don't report it. If a finding of yours is still about what an answer decided, give answered with that question's id and the words of its answer, so the person sees which decision it is about.`;
 
-function instructions(ctx: CriticContext, lens: LensName, review?: StageReview): string {
+/** The output format line for the names a finding says are missing, when the lens can search (W1). */
+const ABSENT_LINE = `    absent: ["<a name the finding says doesn't exist: a class, a method, a file, METHOD /path>"]   # only when the finding says something is missing
+`;
+
+/**
+ * What a lens is told about the code (ADR 0115 addendum, W1): the estate is what Atticus has
+ * recorded, the code may hold more, so a lens looks before it says something doesn't exist.
+ */
+function codeRule(repos: readonly CodeRepo[]): string {
+  return [
+    `The repos' code is cloned in the metarepo, read-only: ${repos.map((r) => `${r.repo} at ${r.rel}/`).join(", ")}. The estate is only what Atticus has recorded of it; the code may hold more (a check inside a method, a screen in a web app, an entry the scan didn't read).`,
+    `Before you report that something doesn't exist (a check, a class, a component, a screen, an endpoint, a flow), look for it: call the grep, files and outline tools where they are offered, or search and read those folders. If you find it, don't report it as missing; cite where it is if it still matters. A finding that says something is missing lists the names it looked for under absent; Atticus searches the catalog and the code for each, and a name it finds makes the finding a note.`,
+  ].join(" ");
+}
+
+/** What a lens is told about the facts people recorded (ADR 0115 addendum, W2). */
+const RECORDED_RULE = `People recorded facts and decisions on this change's findings at its reviews; the "recorded-by-people" data block lists each with the gate, who and when. A fact a person recorded is not raised again: don't report it as a finding or a gap, at this gate or any other. You may challenge one only with new evidence you cite (a line of the draft, the estate or the code that contradicts it), naming the recorded finding in why.`;
+
+function instructions(
+  ctx: CriticContext,
+  lens: LensName,
+  review?: StageReview,
+  repos: readonly CodeRepo[] = [],
+): string {
   return [
     `# Critic: ${lens} lens`,
     "",
@@ -144,9 +169,14 @@ function instructions(ctx: CriticContext, lens: LensName, review?: StageReview):
         ]
       : []),
     ...(ctx.answers?.length ? [ANSWERS_RULE, ""] : []),
+    ...(ctx.recorded?.length ? [RECORDED_RULE, ""] : []),
+    ...(repos.length ? [codeRule(repos), ""] : []),
     "Artifact lines are numbered as `<n>: <text>`; cite those numbers.",
     "",
-    OUTPUT_FORMAT.replace("ANSWERED_LINE", ctx.answers?.length ? ANSWERED_LINE : ""),
+    OUTPUT_FORMAT.replace(
+      "ANSWERED_LINE",
+      (ctx.answers?.length ? ANSWERED_LINE : "") + (repos.length ? ABSENT_LINE : ""),
+    ),
   ].join("\n");
 }
 
@@ -244,6 +274,12 @@ const AiFinding = z.object({
   evidence: z.array(AiEvidence).default([]),
   question: z.object({ text: z.string().min(1), owner: z.string().min(1).optional() }).optional(),
   answered: z.object({ id: z.string().min(1), quote: z.string().min(1) }).optional(),
+  absent: z
+    .union([z.string(), z.array(z.coerce.string())])
+    .transform((a) =>
+      (Array.isArray(a) ? a : [a]).map((x) => x.trim()).filter((x) => x.length >= 2),
+    )
+    .optional(),
 });
 
 const norm = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
@@ -395,6 +431,7 @@ export function parseLensOutput(
             }
           : {}),
         ...(answered ? { answered } : {}),
+        ...(f.absent?.length ? { absent: [...new Set(f.absent)].slice(0, 20) } : {}),
         key: `ai|${rule.id}|${doc.path}|${line ?? heading ?? ""}`,
       },
     });
@@ -429,6 +466,8 @@ export interface LensOptions {
   maxClassification?: string;
   /** Collects the quarantine items of every lens run, for the round (ADR 0042). */
   quarantined: QuarantineItem[];
+  /** Where the code has a name a finding says is missing (W1). Default: the registered one. */
+  codeSearch?: CodeSearch;
 }
 
 /**
@@ -484,6 +523,8 @@ export async function runLenses(
   const runs: LensRun[] = [];
   const discarded: Discarded[] = [];
   const skipped: { rule: string; reason: string }[] = [];
+  // The repos' clones a lens may search before it says something is missing (W1).
+  const repos = codeRepos(ctx.root);
   for (const lens of Lens.options) {
     if (!o.lenses.includes(lens)) continue;
     const lensRules = rules.filter((r) => r.lens === lens && r.check.type === "ai");
@@ -555,7 +596,7 @@ export async function runLenses(
         id: "0-instructions",
         kind: "instruction",
         origin: "atticus/critic",
-        text: instructions(ctx, lens, review),
+        text: instructions(ctx, lens, review, repos),
         classification: "public",
         trusted: true,
       },
@@ -602,6 +643,16 @@ export async function runLenses(
         kind: "document",
         origin: "questions/ (answered for this change)",
         text: answersText(ctx.answers),
+        classification: "internal",
+        priority: 9,
+      });
+    // What people recorded on the change's findings, at any gate (W2), as data with who and when.
+    if (ctx.recorded?.length)
+      sources.push({
+        id: "recorded-by-people",
+        kind: "document",
+        origin: "review/ (what people recorded on this change's findings)",
+        text: recordedText(ctx.recorded),
         classification: "internal",
         priority: 9,
       });
@@ -733,6 +784,8 @@ export async function runLenses(
           };
         }
       }
+      // A name a finding says is missing, looked up as a fact (W1): found, the finding is a note.
+      await checkAbsences(ctx.root, ctx.records, parsed.hits, codeSearchFor(o.codeSearch));
       hits.push(...parsed.hits);
       discarded.push(...parsed.discarded);
       // An answer that isn't a review (empty, a refusal, prose) is a lens that failed, never a

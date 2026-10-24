@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parse } from "yaml";
 import { fsRepo, memoryRepo, scanRepo } from "@maycombhq/sdk";
 import { BUILT_IN_EXTRACTORS, detectModules } from "../src/index.js";
 
@@ -65,6 +67,65 @@ describe("one component per deployable module (ADR 0057)", () => {
     expect(of("Unresolved")).toEqual([
       "accounts-jobs http-call GET http://accounts-api/accounts/{id}",
     ]);
+  });
+});
+
+describe("a repo with an API, a web app and a mobile app in its folders (W1)", () => {
+  const FIX = join(dirname(fileURLToPath(import.meta.url)), "fixtures/modules");
+  const chat = () => fsRepo("forge-chat", join(FIX, "forge-chat"), SHA);
+
+  it("makes each deployable part its own component, and gives each fact the part its file is in (golden)", async () => {
+    const expected = parse(readFileSync(join(FIX, "forge-chat.expected.yaml"), "utf8")) as {
+      modules: unknown[];
+      components: Record<string, string[]>;
+      endpoints: string[];
+      calls: string[];
+    };
+    const repo = chat();
+    const modules = await detectModules(repo);
+    expect(modules).toEqual(expected.modules);
+    const s = await scanRepo({
+      repo,
+      extractors: BUILT_IN_EXTRACTORS,
+      repoInfo: { system: "forge-chat", repoType: "spring-boot", modules },
+    });
+    const components: Record<string, string[]> = {};
+    for (const r of s.records.filter((x) => x.kind === "Component")) {
+      const t = (r as unknown as { type: string }).type;
+      components[r.id] = [...new Set([...(components[r.id] ?? []), t])].sort();
+    }
+    expect(components).toEqual(expected.components);
+    const x = (r: unknown) => r as Record<string, string>;
+    expect(
+      s.records
+        .filter((r) => r.kind === "Endpoint")
+        .map((r) => `${x(r).component} ${x(r).method} ${x(r).pathOrTopic}`)
+        .sort(),
+    ).toEqual(expected.endpoints);
+    expect(
+      s.records
+        .filter((r) => r.kind === "Unresolved")
+        .map(
+          (r) =>
+            `${x(r).owner} ${x(r).unresolvedKind} ${x(r).raw} at ${r.evidence[0]!.path}:${r.evidence[0]!.line}`,
+        )
+        .sort(),
+    ).toEqual(expected.calls);
+  });
+
+  it("still leaves a lone web app, or a lone Spring app beside a library, as one component", async () => {
+    const web = memoryRepo("forge-notes-web", SHA, {
+      "package.json": JSON.stringify({ name: "forge-notes-web", dependencies: { react: "18" } }),
+      "src/App.jsx": "export default function App() { return null; }",
+      "packages/ui/package.json": JSON.stringify({ name: "@forge/ui" }),
+    });
+    expect(await detectModules(web)).toEqual([]);
+    const api = memoryRepo("forge-orders", SHA, {
+      "app/build.gradle": "",
+      "app/src/main/java/A.java": "@SpringBootApplication class A {}",
+      "lib/build.gradle": "",
+    });
+    expect(await detectModules(api)).toEqual([]);
   });
 });
 

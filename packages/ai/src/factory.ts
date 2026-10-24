@@ -9,6 +9,7 @@ import {
   runsDirOf,
   runsRelOf,
   RuntimeKind,
+  stateDirOf,
   type ModelProviderPlugin,
   type OrgPack,
   type Recording,
@@ -185,6 +186,23 @@ export function collectChild(
 
 export type PermissionMode = "acceptEdits" | "plan" | "dontAsk";
 
+/** Where the repos' clones may be: workspace/ in the metarepo, or in its state folder. */
+const cloneDirs = (root: string) => [join(root, "workspace"), join(stateDirOf(root), "workspace")];
+
+async function existingDirs(dirs: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const d of [...new Set(dirs)])
+    if ((await stat(d).catch(() => undefined))?.isDirectory()) out.push(d);
+  return out;
+}
+
+/**
+ * A path as Claude Code's permission rules match it: forward slashes, and a Windows drive as
+ * /c/... (a rule writes an absolute path with a leading //).
+ */
+export const posixPath = (p: string) =>
+  p.replace(/\\/g, "/").replace(/^([A-Za-z]):/, (_, d: string) => `/${d.toLowerCase()}`);
+
 export interface HeadlessOptions {
   /** The metarepo root; prompt files go to .runs/<change>/<runId>/prompt.md. */
   root: string;
@@ -217,7 +235,15 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
   }
 
   /** The command-line arguments for one request (exported for the audit trail and tests). */
-  static args(o: { permissionMode: PermissionMode; model?: string; allowedTools?: string[] }) {
+  static args(o: {
+    permissionMode: PermissionMode;
+    model?: string;
+    allowedTools?: string[];
+    /** Folders it may read beyond its own (a reviewer: the repos' clones). */
+    addDirs?: string[];
+    /** Permission rules it is refused (a reviewer: any edit under those folders). */
+    disallowedTools?: string[];
+  }) {
     return [
       "-p",
       "--output-format",
@@ -230,6 +256,8 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
       DATA_RULE,
       ...(o.model ? ["--model", o.model] : []),
       ...(o.allowedTools?.length ? ["--allowedTools", o.allowedTools.join(",")] : []),
+      ...(o.addDirs ?? []).flatMap((d) => ["--add-dir", d]),
+      ...(o.disallowedTools?.length ? ["--disallowedTools", o.disallowedTools.join(",")] : []),
     ];
   }
 
@@ -245,8 +273,17 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     // in the run folder; the folder goes.
     const reviewer = request.agent.outputArtifact === "findings" && request.outputIn === "run";
     const work = reviewer ? await mkdtemp(join(tmpdir(), "atticus-review-")) : undefined;
+    // It reads the repos' clones before it says something is missing (W1): they are added to
+    // what it may read, and every edit under them is refused, so they stay read-only.
+    const clones = work ? await existingDirs(cloneDirs(this.h.root)) : [];
     const base = work
-      ? { cwd: work, permissionMode: "acceptEdits" as const }
+      ? {
+          cwd: work,
+          permissionMode: "acceptEdits" as const,
+          ...(clones.length
+            ? { addDirs: clones, disallowedTools: clones.map((d) => `Edit(/${posixPath(d)}/**)`) }
+            : {}),
+        }
       : (this.h.invocation?.(request) ?? { cwd: this.h.root });
     // W3a: a stage's drafter may run the stage's own check, and nothing else besides.
     const inv =
@@ -274,7 +311,7 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     const prompt = reviewer
       ? handoff.replace(
           `Write the result to ${HandoffRuntime.outputRel(run, changesRelOf(this.h.root), runsRelOf(this.h.root))}.`,
-          `Write the result to ${request.outputPath}.`,
+          `Write the result to ${request.outputPath}.${clones.length ? ` The metarepo is at ${this.h.root}: a folder named relative to the metarepo (the repos' clones under workspace/) is there, to read, never to edit.` : ""}`,
         )
       : handoff;
     await writeFile(promptFile, prompt, "utf8");
@@ -314,6 +351,8 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
       permissionMode?: PermissionMode;
       env?: Record<string, string>;
       allowedTools?: string[];
+      addDirs?: string[];
+      disallowedTools?: string[];
     },
     prompt: string,
     promptFile: string,
@@ -330,6 +369,8 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
         permissionMode: inv.permissionMode ?? "acceptEdits",
         ...(this.h.model ? { model: this.h.model } : {}),
         ...(inv.allowedTools ? { allowedTools: inv.allowedTools } : {}),
+        ...(inv.addDirs ? { addDirs: inv.addDirs } : {}),
+        ...(inv.disallowedTools ? { disallowedTools: inv.disallowedTools } : {}),
       }),
       env: inv.env ?? {},
       timeoutMs: this.h.timeoutMs ?? 30 * 60_000,

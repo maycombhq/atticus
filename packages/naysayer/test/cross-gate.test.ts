@@ -42,15 +42,44 @@ describe("one finding at several gates", () => {
     expect(stored.resolution?.by).toBe("ari");
   });
 
-  it("carries only asked questions across gates: a question nobody asked stays open, and a dismissed issue is raised afresh", async () => {
+  it("carries a person's decision across gates (W2): a dismissed issue stays dismissed, with a link to where it was decided, and a question nobody asked stays open", async () => {
     const root = await forgeChangeRoot();
     await runCritic(root, CHANGE, { now: NOW, gate: "design" });
     await act(root, CHANGE, ISSUE, "not-relevant", { by: "ari", reason: "Not ours", now: NOW });
     const plan = await runCritic(root, CHANGE, { now: LATER, gate: "plan" });
     const issue = plan.findings.find((f) => f.finding.id === ISSUE)!;
+    expect(issue.finding.state).toBe("dismissed");
+    expect(issue.carried).toBe(true);
+    expect(issue.finding.resolution).toMatchObject({ action: "not-relevant", by: "ari", at: NOW });
+    expect(issue.finding.resolution?.reason).toBe(
+      `Not ours (decided at the design gate: see review/design/1/${ISSUE}.yaml)`,
+    );
+    expect(plan.findings.find((f) => f.finding.id === GAP)?.finding.state).toBe("open");
+    // Carried again to a later round, the link isn't stacked.
+    const again = await runCritic(root, CHANGE, { now: LATER, gate: "plan" });
+    expect(again.findings.find((f) => f.finding.id === ISSUE)!.finding.resolution?.reason).toBe(
+      `Not ours (decided at the design gate: see review/design/1/${ISSUE}.yaml)`,
+    );
+  });
+
+  it("carries a fact a person wrote in for a gap (edit-and-apply with a reason) to a later gate, but not a fix that didn't take", async () => {
+    const root = await forgeChangeRoot();
+    await runCritic(root, CHANGE, { now: NOW, gate: "design" });
+    await act(root, CHANGE, GAP, "edit-and-apply", {
+      by: "ari",
+      reason: "The ledger's SLO is 99.9% monthly; wrote it into design.md.",
+      now: NOW,
+    });
+    await act(root, CHANGE, ISSUE, "apply", { by: "ari", now: NOW });
+    const plan = await runCritic(root, CHANGE, { now: LATER, gate: "plan" });
+    const gap = plan.findings.find((f) => f.finding.id === GAP)!;
+    expect(gap.finding.state).toBe("applied");
+    expect(gap.carried).toBe(true);
+    expect(gap.finding.resolution?.by).toBe("ari");
+    // A fix applied that the next gate still finds didn't take: it is raised again.
+    const issue = plan.findings.find((f) => f.finding.id === ISSUE)!;
     expect(issue.finding.state).toBe("open");
     expect(issue.carried).toBe(false);
-    expect(plan.findings.find((f) => f.finding.id === GAP)?.finding.state).toBe("open");
   });
 
   it("acts on the copy from the latest round across gates when no gate is given", async () => {

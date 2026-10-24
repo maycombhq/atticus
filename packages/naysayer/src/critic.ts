@@ -21,6 +21,7 @@ import { writeQuarantineItems } from "./defences.js";
 import { runLenses, type Discarded, type LensName, type LensRun } from "./ai.js";
 import { parseDoc, type Doc } from "./doc.js";
 import { artifactOf } from "./artifacts.js";
+import type { CodeSearch } from "./code.js";
 import { checkRegistry } from "./checks/index.js";
 import { CriticError } from "./errors.js";
 import {
@@ -73,6 +74,11 @@ export interface RunCriticOptions {
    * with the artifacts it was drafted from, and the estate the drafter read, as data.
    */
   review?: { stage: string; files: string[]; sources: SourceInput[] };
+  /**
+   * Where the code has a name a lens's finding says is missing (W1). Default: the search the
+   * command line registered (registerCodeSearch); without one, only the catalog is checked.
+   */
+  codeSearch?: CodeSearch;
 }
 
 /** The change-folder files a lens reads that aren't artifacts (a stage's draft), as documents. */
@@ -249,6 +255,7 @@ export async function runCritic(
       ? { review: { stage: opts.review.stage, docs: draft, sources: opts.review.sources } }
       : {}),
     quarantined,
+    ...(opts.codeSearch ? { codeSearch: opts.codeSearch } : {}),
   });
   // A lens handed off keeps the draft as it was given, so its answer is checked against that.
   for (const r of ai.runs)

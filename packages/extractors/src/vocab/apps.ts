@@ -1,6 +1,7 @@
 import type { CatalogRecord } from "@maycombhq/core";
 import { defineExtractor, type RepoHandle, type ScanContext } from "@maycombhq/sdk";
 import { callsIn, stringValue, withTree } from "../lang/code-tree.js";
+import { componentOf } from "../facts.js";
 import { parseJava } from "../lang/java.js";
 import {
   component,
@@ -132,11 +133,13 @@ const joinUrl = (base: string | undefined, path: string) =>
 
 export const appsExtractor = defineExtractor({
   id: "apps",
-  version: "0.1.0",
+  version: "0.2.0",
   claims: [...MARKERS, ...KOTLIN, ...SWIFT, ...DART],
   async *scan(repo, ctx) {
-    const comp = own(repo, ctx);
     const found = await markers(repo, ctx);
+    // The app is the module its marker is in (W1): an Android app in android/app/ of a repo
+    // that also holds an API and a web app is that module, not the whole repo.
+    const comp = found.length ? componentOf(repo, ctx, found[0]!.path) : own(repo, ctx);
     if (found.length > 0) {
       const first = found[0]!;
       const c = component({
@@ -149,14 +152,23 @@ export const appsExtractor = defineExtractor({
         path: first.path,
         line: first.line,
       });
-      c.evidence = found.map((m) => ev(repo, "config", m.path, m.line));
+      c.evidence = found
+        .filter((m) => componentOf(repo, ctx, m.path) === comp)
+        .map((m) => ev(repo, "config", m.path, m.line));
       yield c;
     }
     const android = found.some((m) => m.runtime === "android");
     const calls: CatalogRecord[] = [];
     const call = (method: string, url: string, path: string, line: number) =>
       calls.push(
-        loose(repo, comp, "http-call", `${method.toUpperCase()} ${templatePath(url)}`, path, line),
+        loose(
+          repo,
+          componentOf(repo, ctx, path),
+          "http-call",
+          `${method.toUpperCase()} ${templatePath(url)}`,
+          path,
+          line,
+        ),
       );
 
     // Retrofit, read from the Java and Kotlin syntax trees.

@@ -13,6 +13,7 @@ import {
   type PhaseId,
 } from "@maycombhq/changes";
 import type { ChangeAnswer } from "./answers.js";
+import type { RecordedFact } from "./recorded.js";
 import { readHops, type ChangeFiles, type Hop } from "./artifacts.js";
 
 /** One gate from gates.yaml (C6). */
@@ -64,6 +65,11 @@ export interface CriticContext {
    * the lenses read them as data. Empty when none.
    */
   answers?: ChangeAnswer[];
+  /**
+   * The facts and decisions people recorded on the change's findings at any gate (W2): an
+   * edit-and-apply, a waiver or a dismissal, each with its reason, who and when.
+   */
+  recorded?: RecordedFact[];
 }
 
 export function buildContext(o: {

@@ -1,6 +1,7 @@
 import {
   contextToolBox,
   defaultCodeDir,
+  namesInCode,
   openIndex,
   workspaceRepos,
   type ContextToolOptions,
@@ -37,4 +38,21 @@ export function metarepoToolBox(root: string, calls?: { name: string; output: st
     ...codeToolOptions(root),
     ...(calls ? { calls } : {}),
   });
+}
+
+/**
+ * The code search the critic checks a lens's "missing" names with (W1): a name is in the code
+ * by its declaration in a source file, or as a file of a repo's tree (namesInCode, ADR 0118
+ * addendum), cited `repo:path[:line]`. Registered for every command that runs the critic.
+ */
+export async function criticCodeSearch(
+  root: string,
+  names: string[],
+): Promise<Map<string, string>> {
+  const x = await import("@maycombhq/extractors");
+  const r = await namesInCode(root, names, {
+    ...codeToolOptions(root),
+    outlines: (path) => x.syntaxLanguageOf(path) !== undefined,
+  });
+  return r.found;
 }

@@ -79,8 +79,42 @@ export function endpointKey(s: string): string {
   return `${m[1]!.toUpperCase()} ${path}`;
 }
 
-/** One flow in a line or two: trigger, then its steps with positions and fields. */
-export function flowLine(f: SpecFlow): string {
+/**
+ * A flow's trigger entry (W5): the method and path of the endpoint that starts it, from the
+ * catalog's Endpoint record the trigger cites, else the record's id. Undefined without one.
+ */
+export function triggerEntry(f: SpecFlow, e?: Estate): string | undefined {
+  const ref = f.flow.trigger.ref;
+  if (!ref) return undefined;
+  const r = e?.byId.get(ref);
+  const method = str(r?.method);
+  const path = str(r?.pathOrTopic);
+  return r?.kind === "Endpoint" && path ? `${method ? `${method} ` : ""}${path}` : undefined;
+}
+
+/** The flows each endpoint starts, by the endpoint's record id. */
+function flowsStartedBy(e: Estate, endpoint: string): string[] {
+  return e.flows
+    .filter((f) => f.flow.trigger.ref === endpoint)
+    .map((f) => f.flow.id)
+    .sort();
+}
+
+/** A flow's trigger in words, with its entry first when it has one (W5). */
+function triggerText(f: SpecFlow, e?: Estate): string {
+  const t = f.flow.trigger;
+  const entry = triggerEntry(f, e);
+  return entry ? `trigger ${entry} (${t.kind} ${t.ref}): ${t.what}` : `${t.kind} ${t.what}`;
+}
+
+/** A flow in one line, as the context engine lists one it doesn't give in full: with its trigger entry. */
+export function flowSummary(f: SpecFlow, e?: Estate): string {
+  const entry = triggerEntry(f, e);
+  return `flow ${f.flow.id} (repo ${f.repo}, component ${f.flow.component}) "${f.flow.name}"${entry ? `, trigger ${entry}` : ""}`;
+}
+
+/** One flow in a line or two: trigger (its entry first), then its steps with positions and fields. */
+export function flowLine(f: SpecFlow, e?: Estate): string {
   const fl = f.flow;
   const steps = fl.steps
     .map((s, i) => {
@@ -98,14 +132,14 @@ export function flowLine(f: SpecFlow): string {
       return `${i + 1} ${s.kind}${where}${fields.length ? ` [${[...new Set(fields)].join(", ")}]` : ""}`;
     })
     .join("; ");
-  return `flow ${fl.id} (repo ${f.repo}, component ${fl.component}) "${fl.name}": ${fl.trigger.kind} ${fl.trigger.what}. Steps: ${steps}`;
+  return `flow ${fl.id} (repo ${f.repo}, component ${fl.component}) "${fl.name}": ${triggerText(f, e)}. Steps: ${steps}`;
 }
 
 /** One record or flow of the estate, as the compact index writes it; undefined for other kinds. */
 export function estateLine(e: Estate, kind: string, id: string, rec?: Rec): string | undefined {
   if (kind === "Flow") {
     const f = e.flowById.get(id);
-    return f ? flowLine(f) : undefined;
+    return f ? flowLine(f, e) : undefined;
   }
   const r = rec ?? (e.records as Rec[]).find((x) => x.kind === kind && x.id === id);
   if (!r) return undefined;
@@ -115,11 +149,13 @@ export function estateLine(e: Estate, kind: string, id: string, rec?: Rec): stri
     return `component ${r.id}: system ${str(r.system) ?? "?"}${str(r.repo) ? `, repo ${str(r.repo)}` : ""}${str(r.type) ? `, ${str(r.type)}` : ""}`;
   if (kind === "Capability")
     return `feature ${r.id} "${str(r.name) ?? r.id}": entry points ${arr(r.entryPoints).join(", ") || "none"}`;
-  if (kind === "Endpoint")
-    return `endpoint ${r.id}: ${str(r.component) ?? "?"} serves ${str(r.method) ?? ""} ${str(r.pathOrTopic) ?? ""}`.replace(
-      / {2,}/g,
-      " ",
-    );
+  if (kind === "Endpoint") {
+    const starts = flowsStartedBy(e, r.id);
+    return `endpoint ${r.id}: ${str(r.component) ?? "?"} serves ${str(r.method) ?? ""} ${str(r.pathOrTopic) ?? ""}`
+      .replace(/ {2,}/g, " ")
+      .trimEnd()
+      .concat(starts.length ? `; trigger of flow ${starts.join(", ")}` : "");
+  }
   if (kind === "Table") {
     const cols = (e.records as Rec[])
       .filter((x) => x.kind === "Column" && str(x.table) === r.id)
@@ -199,7 +235,7 @@ export function estateIndex(e: Estate): string {
   for (const k of ["System", "Component", "Capability"])
     for (const r of of(k)) lines.push(estateLine(e, k, r.id, r)!);
   for (const f of [...e.flows].sort((a, b) => a.flow.id.localeCompare(b.flow.id)))
-    lines.push(flowLine(f));
+    lines.push(flowLine(f, e));
   for (const k of ["Endpoint", "Table"])
     for (const r of of(k)) lines.push(estateLine(e, k, r.id, r)!);
   if (lines.length === 2) lines.push("Nothing is scanned or specified yet.");

@@ -1,3 +1,4 @@
+import { briefEndpointNotes } from "./brief-endpoints.js";
 import { readdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { isMap, isSeq, LineCounter, parse, parseDocument, stringify } from "yaml";
@@ -1882,12 +1883,19 @@ export async function architectureStage(
       const { deltas, reads } = splitAnswer(r.value);
       return { answer: { flows: deltas, reads }, issues };
     },
-    check: async (a, c) =>
-      checkDeltas(a.flows, estate, placement, a.reads, {
+    check: async (a, c) => [
+      ...checkDeltas(a.flows, estate, placement, a.reads, {
         levels: classificationLevels(ctx),
         templates: ctx.orgPack.specTemplates,
         ...(c?.onFile ? { onFile: true } : {}),
       }),
+      // W5: an endpoint the brief names whose flow the design leaves alone (a note, not blocking).
+      ...briefEndpointNotes(
+        await readFile(join(dir, "brief.md"), "utf8").catch(() => ""),
+        estate,
+        a.flows,
+      ),
+    ],
     write: (answer) => writeTargetFlows(dir, answer, estate),
     reviewSources: (a) => [mergedFlowsSource(a.flows, estate, rel)],
     current: () => readTargetFlows(dir),

@@ -1,5 +1,6 @@
 import type { FindingEvidence, FindingLocator } from "@maycombhq/core";
 import { z } from "zod";
+import type { FoundAt } from "./code.js";
 import type { CriticContext } from "./context.js";
 import { quoteOf, type Doc } from "./doc.js";
 import type { EffectiveRule } from "./rules.js";
@@ -28,6 +29,10 @@ export interface Hit {
   subject?: string;
   /** The person's answer for the change that decided what it is about (a lens says, checked). */
   answered?: { question: string; quote: string };
+  /** The names a lens's finding says are missing (W1): Atticus looks each up as a fact. */
+  absent?: string[];
+  /** Where Atticus found a name the finding says is missing: the finding becomes a note. */
+  found?: FoundAt[];
 }
 
 export interface CheckResult {
