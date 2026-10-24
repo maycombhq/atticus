@@ -52,6 +52,7 @@ describe("atticus setup: the checklist until the catalog is accepted", () => {
       "machine",
       "org-pack",
       "org-pack-owner",
+      "ai",
       "repos",
       "clones",
       "scan",
@@ -84,6 +85,13 @@ describe("a new metarepo's checklist", () => {
     expect(steps.get("org-pack")).toMatchObject({ done: true, detail: "no problems in its files" });
     expect(steps.get("org-pack-owner")).toMatchObject({ done: false, detail: "unassigned" });
     expect(steps.get("org-pack-owner")!.fix).toMatch(/pack\.yaml/);
+    // How AI runs is left as atticus init wrote it: a choice still to make, though optional.
+    expect(steps.get("ai")).toMatchObject({
+      done: false,
+      optional: true,
+      detail: "Hand-off to GitHub Copilot",
+    });
+    expect(steps.get("ai")!.fix).toMatch(/Set up › AI/);
   });
 });
 

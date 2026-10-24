@@ -4,6 +4,7 @@ export * from "./steps.js";
 export * from "./specify.js";
 export * from "./render.js";
 export * from "./assistants.js";
+export * from "./runs-where.js";
 export * from "./write.js";
 export * from "./smoke.js";
 export * from "./generate.js";

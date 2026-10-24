@@ -6260,7 +6260,7 @@
     "/api/settings/ai": {
       "get": {
         "operationId": "getAiSettings",
-        "summary": "How AI runs here: on or off, the modes, the assistants by name, the providers and their settings, the configured model, and whether its key variable is set (by name)",
+        "summary": "How AI runs here: one line for what runs a step, on or off, the modes, the assistants by name, the providers and their settings, the configured model, and whether its key variable is set (by name)",
         "tags": [
           "run"
         ],

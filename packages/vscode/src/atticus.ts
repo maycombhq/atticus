@@ -15,11 +15,18 @@ export async function readNext(
   cli: Cli,
   root: string,
   token?: Cancel,
-): Promise<Read<{ next?: NextStep; steps: NextStep[] }>> {
+): Promise<Read<{ next?: NextStep; steps: NextStep[]; runs?: string }>> {
   const r = await cli(["next", "--json", "--root", root], token);
-  const j = parseJson<{ next?: NextStep; steps?: NextStep[] }>(r.stdout);
+  const j = parseJson<{ next?: NextStep; steps?: NextStep[]; runs?: string }>(r.stdout);
   if (!j) return { ok: false, message: why(r.stderr, r.stdout, r.code) };
-  return { ok: true, value: { ...(j.next ? { next: j.next } : {}), steps: j.steps ?? [] } };
+  return {
+    ok: true,
+    value: {
+      ...(j.next ? { next: j.next } : {}),
+      steps: j.steps ?? [],
+      ...(typeof j.runs === "string" ? { runs: j.runs } : {}),
+    },
+  };
 }
 
 export async function readOpenQuestions(

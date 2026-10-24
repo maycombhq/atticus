@@ -36,6 +36,16 @@ class NextTest {
     }
 
     @Test
+    fun `reads what runs a step, and whether it can run on the configured model (ADR 0121)`() {
+        val v = Next.parse("""{"steps": [], "runs": "Hand-off to GitHub Copilot · model mode allowed: vertex", "modelMode": true}""")!!
+        assertEquals("Hand-off to GitHub Copilot · model mode allowed: vertex", v.runs)
+        assertEquals(true, v.modelMode)
+        assertEquals(false, Next.parse("{\"steps\": []}")!!.modelMode)
+        assertEquals(listOf("change", "feature", "add-limit", "--mode", "model"), Commands.withModel(listOf("change", "feature", "add-limit")))
+        assertEquals(listOf("change", "feature", "add-limit", "--mode", "model"), Commands.withModel(listOf("change", "feature", "add-limit", "--handoff", "--mode", "hand-off")))
+    }
+
+    @Test
     fun `the words of a printed command, quotes kept together`() {
         assertEquals(listOf("change", "new", "Tag notes", "--type", "feature"), Next.argsOf("atticus change new \"Tag notes\" --type feature"))
     }

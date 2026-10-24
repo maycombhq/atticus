@@ -34,6 +34,7 @@ const every: NextNode[] = [
   { kind: "setup-step", step: setupStep },
   { kind: "setup-step", step: { ...setupStep, done: true } },
   { kind: "app" },
+  { kind: "runs", runs: "Hand-off to GitHub Copilot", model: "" },
   { kind: "no-root" },
 ];
 
@@ -93,5 +94,24 @@ describe("the Next section's rows", () => {
       args: ["scan"],
     });
     expect(nextRow(every[6]!).command).toMatchObject({ command: "atticus.acceptCatalog" });
+  });
+});
+
+describe("what runs a step (ADR 0121 item 6)", () => {
+  it("says runtime.yaml's line, and the model VS Code runs steps on; a click picks the model", () => {
+    const r = nextRow({
+      kind: "runs",
+      runs: "Hand-off to GitHub Copilot · model mode allowed: anthropic",
+      model: "copilot/gpt-4o",
+    });
+    expect(r.label).toBe("Hand-off to GitHub Copilot · model mode allowed: anthropic");
+    expect(r.description).toBe("in VS Code: copilot/gpt-4o");
+    expect(r.command).toEqual({ command: "atticus.pickModel", title: "Pick the model" });
+    expect(nextRow({ kind: "runs", runs: "x", model: "" }).description).toBe(
+      "in VS Code: the chat's model",
+    );
+    expect(nextRow({ kind: "runs", runs: "x", model: "atticus" }).description).toBe(
+      "in VS Code: Atticus's configured model",
+    );
   });
 });

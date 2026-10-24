@@ -1,6 +1,6 @@
 import { setupProgress, type SetupStep } from "./guided";
 import type { NextStep } from "./types";
-import { stepTitle, type ChangeTitles } from "./words";
+import { modelChoice, modelSetting, stepTitle, WORDS, type ChangeTitles } from "./words";
 
 /**
  * The Next section's rows (ADR 0090, 0098, 0100), as plain data: view.ts turns them into tree
@@ -18,6 +18,8 @@ export type NextNode =
   | { kind: "setup"; steps: SetupStep[] }
   | { kind: "setup-step"; step: SetupStep }
   | { kind: "app" }
+  /** What runs a step (ADR 0121 item 6): runtime.yaml's line, and the setting atticus.model. */
+  | { kind: "runs"; runs: string; model: string }
   | { kind: "no-root" };
 
 export interface NextRow {
@@ -101,6 +103,20 @@ export function nextRow(node: NextNode, titles?: ChangeTitles): NextRow {
     }
     case "no-next":
       return { label: "Nothing to do next: everything is up to date.", icon: "check" };
+    case "runs": {
+      const c = modelChoice(node.model);
+      const here =
+        c === "configured" ? WORDS.modelConfigured : c ? modelSetting(c) : "the chat's model";
+      return {
+        label: node.runs,
+        description: `in VS Code: ${here}`,
+        icon: "hubot",
+        tooltip:
+          "How AI steps run here, from runtime.yaml (Set up › AI in the app), and the model VS Code runs them on. Click to pick the model.",
+        plain: true,
+        command: { command: "atticus.pickModel", title: WORDS.pickModel },
+      };
+    }
     case "app":
       return {
         label: "Open the app",

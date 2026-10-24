@@ -672,12 +672,24 @@ export const Runtime = z.strictObject({
       wiki: adapter(["confluence", "ado-wiki", "sharepoint"] as const).optional(),
       notify: adapter(["teams", "slack", "email"] as const).optional(),
       design: adapter(["figma"] as const).optional(),
-      model: adapter(
-        ["anthropic", "openai-compatible", "azure-openai", "bedrock", "vertex"] as const,
-        {
-          manual: false,
-        },
-      ).optional(),
+      /**
+       * A built-in provider, or (ADR 0121 item 4) the id of a model-provider plugin in
+       * org-pack/plugins/model-providers/<id>/. Widening the list keeps every v1 file valid.
+       */
+      model: z
+        .strictObject({
+          type: z.union([
+            z.enum(["anthropic", "openai-compatible", "azure-openai", "bedrock", "vertex", "mock"]),
+            z
+              .string()
+              .regex(
+                /^(?!manual$)[a-z][a-z0-9-]*$/,
+                "a built-in provider (anthropic, openai-compatible, azure-openai, bedrock) or the id of a plugin in org-pack/plugins/model-providers/; there is no manual model: hand-off mode is the manual way",
+              ),
+          ]),
+          settings: AdapterSettings.default({}),
+        })
+        .optional(),
     })
     .default({}),
   /**

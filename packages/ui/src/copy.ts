@@ -1213,6 +1213,10 @@ export const COPY = {
     noChangeSelected: "No change selected",
   },
   commandCenter: {
+    /** ADR 0121 item 6: what runs a step here, in one line, beside a link to change it. */
+    howStepsRun: "How AI steps run:",
+    howStepsRunChange: "Change in Set up › AI",
+    howStepsRunCantRead: "Atticus couldn't read how AI steps run here (org-pack/runtime.yaml).",
     define: "Define",
     design: "Design",
     plan: "Plan",
@@ -2156,7 +2160,9 @@ export const COPY = {
     providerLabel: "Model provider",
     noProvider: "None: AI steps hand off to the person's assistant",
     providerHint:
-      "Used when a step runs in model mode. A key never goes here: name the environment variable that holds it in keyEnv.",
+      "Used when a step runs in model mode. A key never goes here: name the environment variable that holds it in keyEnv. For a provider Atticus has no built-in for, add a plugin: atticus plugin add vertex, or your own in org-pack/plugins/model-providers/.",
+    pluginProvider: (id: string, pinned: boolean) =>
+      pinned ? `${id} (plugin)` : `${id} (plugin, not pinned yet: atticus plugin pin ${id})`,
     keySet: (name: string) => `${name} is set on this machine.`,
     keyNotSet: (name: string) =>
       `${name} isn't set on this machine: set it to the key before testing.`,
@@ -2169,6 +2175,15 @@ export const COPY = {
       `Saved ${path}. Commit it in a pull request: the org pack is reviewed like code.`,
     saveNote: (path: string) => `Saving writes ${path}; commit it in a pull request.`,
     test: "Test the provider",
+    budgetsLabel: "Models and budgets",
+    modelsLabel: "Models allowed",
+    modelsHint: "One model id a line. Model mode refuses any other; empty allows any.",
+    defaultTokensLabel: "Tokens for a step",
+    perAgentLabel: "Tokens for an agent",
+    perAgentHint: "One a line, for example architect: 300000. Others get the tokens for a step.",
+    badDefaultTokens: "The tokens for a step must be a whole number above 0, such as 200000.",
+    badBudgetLine: (line: string) =>
+      `"${line}" doesn't read as an agent and its tokens: write it as architect: 300000.`,
     answered: (model: string, ms: number) => `${model} answered in ${ms} ms.`,
     notAnswered: (why: string) => `It didn't answer: ${why}`,
   },

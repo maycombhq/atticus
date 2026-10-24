@@ -72,7 +72,7 @@ describe("atticus plugin test and pin (ADR 0080)", () => {
     expect(await pluginTest(root, "forge-nothing", t.io)).toBe(1);
     expect(await pluginPin(root, "forge-nothing", t.io)).toBe(1);
     expect(t.err[0]).toBe(
-      "No plugin org-pack/plugins/forge-nothing/plugin.yaml. Plugins here: forge-anvil-routes, forge-hogs-memory, forge-loops, forge-opens-socket, forge-reads-outside, forge-spawns, forge-writes-file",
+      "No plugin forge-nothing in org-pack/plugins/ or org-pack/plugins/model-providers/. Plugins here: forge-anvil-routes, forge-hogs-memory, forge-loops, forge-opens-socket, forge-reads-outside, forge-spawns, forge-writes-file",
     );
   });
 });

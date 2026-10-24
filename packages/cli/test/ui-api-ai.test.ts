@@ -71,6 +71,9 @@ describe("the AI tab's API (ADR 0121)", () => {
       path: string;
     };
     expect(b.ai).toBe("on");
+    expect((r.body as { runs: string }).runs).toBe(
+      "Hand-off to GitHub Copilot · headless Claude Code allowed",
+    );
     expect(b.modes.default).toBe("hand-off");
     expect(b.assistants.map((a) => a.id)).toEqual(
       expect.arrayContaining(["copilot", "claude-code", "cursor", "agents-md"]),

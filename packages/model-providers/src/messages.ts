@@ -82,4 +82,11 @@ export const copy = {
     `${w.provider} stopped the answer at the output limit (${max} tokens), so it is incomplete and Atticus doesn't use it. Raise adapters.model.settings.maxOutput, or make the step smaller.`,
   declined: (w: Where, reason: string) =>
     `${w.provider} declined to answer (${reason}). Nothing was written; a person can do this step, or hand it off.`,
+  // ---------------------------------------------------------------- plugins (ADR 0121 item 4)
+  pluginRefused: (id: string, why: string) =>
+    `The ${id} model-provider plugin built a request Atticus won't send: ${why}. Nothing was sent. Fix the plugin's request function, then review and pin it again (atticus plugin pin ${id}).`,
+  pluginFailed: (id: string, what: string, why: string) =>
+    `The ${id} model-provider plugin couldn't ${what}: ${why}`,
+  hostPart: (id: string, name: string) =>
+    `adapters.model.settings.${name} for the ${id} model provider goes into the host name, so it must be lowercase letters, digits and hyphens only.`,
 };

@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { COPY } from "../src/copy.js";
-import { AiSettingsForm, toSave, type AiSettings } from "../src/screens/run/AiSettings.js";
+import {
+  AiSettingsForm,
+  limitsOf,
+  toSave,
+  type AiSettings,
+} from "../src/screens/run/AiSettings.js";
 import { screenOf } from "../src/app/screens.js";
 
 /** The AI tab (ADR 0121): how AI runs here, chosen in a form instead of runtime.yaml by hand. */
@@ -69,6 +74,81 @@ describe("the AI tab (ADR 0121)", () => {
     expect(out).toMatch(/id="ai-key" type="password"/);
     expect(out).toContain(esc(T.setKey));
     expect(out).toContain(T.test);
+  });
+
+  it("names the org pack's provider plugins, and says when one isn't pinned (ADR 0121 item 4)", () => {
+    const out = html(
+      <AiSettingsForm
+        data={{
+          ...DATA,
+          providers: [
+            ...DATA.providers,
+            {
+              type: "vertex",
+              settings: ["model", "keyEnv", "project", "region"],
+              plugin: true,
+              pinned: true,
+            },
+            { type: "northwind-gateway", settings: ["model"], plugin: true, pinned: false },
+          ],
+        }}
+      />,
+    );
+    expect(out).toContain(esc(T.pluginProvider("vertex", true)));
+    expect(out).toContain(esc(T.pluginProvider("northwind-gateway", false)));
+    expect(T.pluginProvider("northwind-gateway", false)).toContain(
+      "atticus plugin pin northwind-gateway",
+    );
+  });
+
+  it("edits the models allowed and the budgets, keeping the recommended models (ADR 0121)", () => {
+    const base = {
+      ai: "on",
+      modes: { allowed: ["hand-off"], default: "hand-off" },
+      assistants: { allowed: ["copilot"], default: "copilot" },
+      provider: "",
+      settings: {},
+    };
+    const saved = toSave({
+      ...base,
+      limits: {
+        models: "claude-opus-5-5\n\n  gemini-2.5-pro \n",
+        recommended: { architect: "claude-opus-5-5" },
+        defaultTokens: "150000",
+        perAgent: "architect: 300000\nplanner:80000\n",
+      },
+    });
+    expect(saved.models).toEqual({
+      allowed: ["claude-opus-5-5", "gemini-2.5-pro"],
+      recommended: { architect: "claude-opus-5-5" },
+    });
+    expect(saved.budgets).toEqual({
+      defaultTokens: 150000,
+      perAgent: { architect: 300000, planner: 80000 },
+    });
+    // Without the limits, the tab sends neither, and runtime.yaml keeps them.
+    expect(toSave(base)).not.toHaveProperty("budgets");
+  });
+
+  it("says which budget line doesn't read, and shows the form's fields for them", () => {
+    expect(limitsOf({ models: "", recommended: {}, defaultTokens: "lots", perAgent: "" })).toEqual({
+      error: T.badDefaultTokens,
+    });
+    expect(
+      limitsOf({
+        models: "",
+        recommended: {},
+        defaultTokens: "1000",
+        perAgent: "architect 300000",
+      }),
+    ).toEqual({ error: T.badBudgetLine("architect 300000") });
+    const out = html(
+      <AiSettingsForm data={{ ...DATA, models: { allowed: ["m-1"], recommended: {} } }} />,
+    );
+    expect(out).toContain(esc(T.modelsLabel));
+    expect(out).toContain(esc(T.budgetsLabel));
+    expect(out).toContain("m-1");
+    expect(out).toContain("200000");
   });
 
   it("sends only what the tab changes, and no empty settings", () => {
