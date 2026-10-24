@@ -346,7 +346,7 @@ const FLYWAY_CLAIMS = ["**/db/migration/**/*.sql", "**/migrations/*.sql", "**/fl
 
 export const migrationsExtractor = defineExtractor({
   id: "migrations",
-  version: "1.3.0",
+  version: "1.4.0",
   claims: [...FLYWAY_CLAIMS, ...LIQUIBASE_CLAIMS],
   async *scan(repo, ctx) {
     const owner = componentOf(repo, ctx);
@@ -474,6 +474,7 @@ export const migrationsExtractor = defineExtractor({
           type: c.type,
           nullable: c.nullable,
           ...(c.default !== undefined ? { default: c.default } : {}),
+          ...allowedOf(c, state),
           evidence: c.ev,
         } as unknown as CatalogRecord;
       }
@@ -523,7 +524,11 @@ export const migrationsExtractor = defineExtractor({
 });
 
 type Ev = ReturnType<typeof evidence>;
-type StateColumn = Omit<SqlColumn, "line" | "primaryKey" | "references"> & { ev: Ev[] };
+type StateColumn = Omit<SqlColumn, "line" | "primaryKey" | "references" | "allowed"> & {
+  ev: Ev[];
+  /** The values it allows, the line that says so, and the constraint's name when it has one. */
+  allowed?: { values: string[]; ev: Ev; constraint?: string };
+};
 interface StateTable {
   name: string;
   ev: Ev;
@@ -545,6 +550,8 @@ class DesignState {
     string,
     { name: string; table: string; columns: string[]; unique: boolean; ev: Ev }
   >();
+  /** CREATE TYPE ... AS ENUM, by type name: what a column of that type allows. */
+  readonly enums = new Map<string, { values: string[]; ev: Ev }>();
 
   apply(ddl: SqlDdl, ev: (line?: number) => Ev): void {
     type Step = { line: number; run: () => void };
@@ -556,6 +563,15 @@ class DesignState {
       })),
       ...ddl.alters.map((a) => ({ line: a.line, run: () => this.alter(a, ev(a.line)) })),
       ...ddl.drops.map((d) => ({ line: d.line, run: () => this.drop(d) })),
+      ...ddl.enums.map((x) => ({
+        line: x.line,
+        run: () => this.enums.set(x.name, { values: x.values, ev: ev(x.line) }),
+      })),
+      ...ddl.checks.map((c) => ({ line: c.line, run: () => this.check(c.table, c, ev(c.line)) })),
+      ...ddl.droppedConstraints.map((d) => ({
+        line: d.line,
+        run: () => this.dropConstraint(d.table, d.name),
+      })),
     ];
     // Stable sort: actions on one line keep the order they were read in.
     for (const s of steps.sort((a, b) => a.line - b.line)) s.run();
@@ -565,10 +581,27 @@ class DesignState {
     this.tables.set(t.name, {
       name: t.name,
       ev: ev(t.line),
-      columns: new Map(t.columns.map((c) => [c.name, column(c, ev(c.line))])),
+      columns: new Map(t.columns.map((c) => [c.name, column(c, ev(c.line), ev)])),
       primaryKey: t.primaryKey && { columns: t.primaryKey.columns, ev: ev(t.primaryKey.line) },
       foreignKeys: t.foreignKeys.map(({ line, ...fk }) => ({ ...fk, ev: ev(line) })),
     });
+    for (const c of t.checks) this.check(t.name, c, ev(c.line));
+  }
+
+  /** A CHECK (column IN (...)) constraint: the column allows those values, by that line. */
+  private check(
+    table: string,
+    c: { name?: string; column: string; values: string[] },
+    ev: Ev,
+  ): void {
+    const col = this.tables.get(table)?.columns.get(c.column);
+    if (col) col.allowed = { values: c.values, ev, ...(c.name ? { constraint: c.name } : {}) };
+  }
+
+  /** DROP CONSTRAINT: a check it named no longer limits its column. */
+  private dropConstraint(table: string, name: string): void {
+    for (const col of this.tables.get(table)?.columns.values() ?? [])
+      if (col.allowed?.constraint === name) delete col.allowed;
   }
 
   private alter(a: SqlAlter, ev: Ev): void {
@@ -582,7 +615,10 @@ class DesignState {
     }
     const existing = t.columns.get(a.column);
     if (a.op === "add-column" && a.definition) {
-      t.columns.set(a.column, column(a.definition, ev));
+      t.columns.set(
+        a.column,
+        column(a.definition, ev, () => ev),
+      );
       if (a.definition.primaryKey && !t.primaryKey) t.primaryKey = { columns: [a.column], ev };
       if (a.definition.references)
         t.foreignKeys.push({
@@ -612,6 +648,9 @@ class DesignState {
       if (a.definition) {
         next.type = a.definition.type;
         next.nullable = a.definition.nullable;
+        // A full redefinition says again what its own definition allows, or that nothing does.
+        if (a.definition.allowed) next.allowed = { values: a.definition.allowed.values, ev };
+        else if (next.allowed && !next.allowed.constraint) delete next.allowed;
         if (a.definition.default !== undefined) next.default = a.definition.default;
       }
       if (a.type !== undefined) next.type = a.type;
@@ -632,14 +671,27 @@ class DesignState {
   }
 }
 
-function column(c: SqlColumn, ev: Ev): StateColumn {
+function column(c: SqlColumn, ev: Ev, at: (line?: number) => Ev): StateColumn {
   return {
     name: c.name,
     type: c.type,
     nullable: c.nullable,
     ...(c.default !== undefined ? { default: c.default } : {}),
+    ...(c.allowed ? { allowed: { values: c.allowed.values, ev: at(c.allowed.line) } } : {}),
     ev: [ev],
   };
+}
+
+/**
+ * A column's allowed values as its Column record carries them (C1, optional): its own check or
+ * ENUM type, else the CREATE TYPE ... AS ENUM its type names, cited to the line that says so.
+ */
+function allowedOf(
+  c: StateColumn,
+  state: DesignState,
+): { allowedValues?: { values: string[]; evidence: Ev } } {
+  const a = c.allowed ?? state.enums.get(c.type);
+  return a ? { allowedValues: { values: a.values, evidence: a.ev } } : {};
 }
 
 // ------------------------------------------------------------------ infrastructure as code

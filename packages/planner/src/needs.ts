@@ -615,6 +615,7 @@ export async function findNeeds(
         ...reportOf(got.selection!, room),
         gaps: g.gaps,
         ...(g.inCode.length ? { inCode: g.inCode } : {}),
+        ...(g.known.length ? { known: g.known } : {}),
         ...(g.gaps.length || g.inCode.length ? { searched: g.searched } : {}),
         ...(retrieval ? { retrieval } : {}),
         ...(notes.length ? { note: notes.join("; ") } : {}),

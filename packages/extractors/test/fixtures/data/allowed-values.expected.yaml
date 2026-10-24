@@ -1,0 +1,153 @@
+# Hand-written: what the migrations extractor must produce for fixtures/data/allowed-values
+# (component boards-api, system boards, no datasource config, so the store is boards-db).
+# A column's allowed values are a fact the migration states, cited to the line that states
+# them: a CHECK (column IN (...)) on the column or the table, one added by ALTER TABLE, an
+# ENUM(...) column type, or a type made by CREATE TYPE ... AS ENUM. A check dropped by a later
+# migration (DROP CONSTRAINT) is gone from the latest state. Defaults stay as they were read.
+- kind: DataStore
+  id: boards-db
+  confidence: verified
+  storeType: unknown
+  ownerComponent: boards-api
+  entitiesHeld: []
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 1 }]
+
+- kind: Migration
+  id: boards-db.v1
+  confidence: verified
+  dataStore: boards-db
+  version: "1"
+  tool: flyway
+  file: db/migration/V1__boards.sql
+  operations: [create type pin_colour, create table board_pin]
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 1 }]
+- kind: Migration
+  id: boards-db.v2
+  confidence: verified
+  dataStore: boards-db
+  version: "2"
+  tool: flyway
+  file: db/migration/V2__pin_size.sql
+  operations:
+    - alter table board_pin add column size
+    - alter table board_pin add constraint
+    - alter table board_pin add column layout
+    - alter table board_pin add column priority
+  evidence: [{ source: migration, path: db/migration/V2__pin_size.sql, line: 1 }]
+- kind: Migration
+  id: boards-db.v3
+  confidence: verified
+  dataStore: boards-db
+  version: "3"
+  tool: flyway
+  file: db/migration/V3__drop_size_check.sql
+  operations: []
+  evidence: [{ source: migration, path: db/migration/V3__drop_size_check.sql, line: 1 }]
+
+- kind: Table
+  id: boards-db.board-pin
+  confidence: verified
+  dataStore: boards-db
+  name: board_pin
+  tableKind: table
+  ownerComponent: boards-api
+  readers: [boards-api]
+  writers: [boards-api]
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 4 }]
+
+- kind: Column
+  id: boards-db.board-pin.id
+  confidence: verified
+  table: boards-db.board-pin
+  name: id
+  type: bigint
+  nullable: false
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 5 }]
+- kind: Column
+  id: boards-db.board-pin.board-id
+  confidence: verified
+  table: boards-db.board-pin
+  name: board_id
+  type: bigint
+  nullable: false
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 6 }]
+- kind: Column
+  id: boards-db.board-pin.kind
+  confidence: verified
+  table: boards-db.board-pin
+  name: kind
+  type: varchar(16)
+  nullable: false
+  default: "'note'"
+  allowedValues:
+    values: [note, link, image, system]
+    evidence: { source: migration, path: db/migration/V1__boards.sql, line: 11 }
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 7 }]
+- kind: Column
+  id: boards-db.board-pin.colour
+  confidence: verified
+  table: boards-db.board-pin
+  name: colour
+  type: pin_colour
+  nullable: false
+  allowedValues:
+    values: [red, amber, green]
+    evidence: { source: migration, path: db/migration/V1__boards.sql, line: 2 }
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 8 }]
+- kind: Column
+  id: boards-db.board-pin.state
+  confidence: verified
+  table: boards-db.board-pin
+  name: state
+  type: varchar(10)
+  nullable: false
+  allowedValues:
+    values: [open, closed]
+    evidence: { source: migration, path: db/migration/V1__boards.sql, line: 9 }
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 9 }]
+- kind: Column
+  id: boards-db.board-pin.body
+  confidence: verified
+  table: boards-db.board-pin
+  name: body
+  type: text
+  nullable: true
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 10 }]
+- kind: Column
+  id: boards-db.board-pin.size
+  confidence: verified
+  table: boards-db.board-pin
+  name: size
+  type: varchar(8)
+  nullable: true
+  evidence: [{ source: migration, path: db/migration/V2__pin_size.sql, line: 1 }]
+- kind: Column
+  id: boards-db.board-pin.layout
+  confidence: verified
+  table: boards-db.board-pin
+  name: layout
+  type: enum('grid','list')
+  nullable: false
+  allowedValues:
+    values: [grid, list]
+    evidence: { source: migration, path: db/migration/V2__pin_size.sql, line: 3 }
+  evidence: [{ source: migration, path: db/migration/V2__pin_size.sql, line: 3 }]
+- kind: Column
+  id: boards-db.board-pin.priority
+  confidence: verified
+  table: boards-db.board-pin
+  name: priority
+  type: int
+  nullable: true
+  allowedValues:
+    values: ["1", "2", "3"]
+    evidence: { source: migration, path: db/migration/V2__pin_size.sql, line: 4 }
+  evidence: [{ source: migration, path: db/migration/V2__pin_size.sql, line: 4 }]
+
+- kind: IndexConstraint
+  id: boards-db.board-pin.pk
+  confidence: verified
+  table: boards-db.board-pin
+  constraintKind: primary-key
+  columns: [id]
+  evidence: [{ source: migration, path: db/migration/V1__boards.sql, line: 5 }]

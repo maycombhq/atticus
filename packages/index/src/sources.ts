@@ -772,9 +772,23 @@ function questionNodes(path: string, text: string): FileRead {
       },
     ],
     // An answered gap (ADR 0107 point 5): the name it was about is known from now on, by this answer.
-    names: gap ? [{ name: foldName(gap), id: q.id, kind: "Question", how: "answered gap" }] : [],
+    // An endpoint is also named as the selection looks endpoints up (U2): method, path, {} params.
+    names: gap
+      ? answeredGapNames(gap).map((name) => ({
+          name,
+          id: q.id,
+          kind: "Question",
+          how: "answered gap",
+        }))
+      : [],
     links: [{ from: key, to: q.repo, by: "id", type: "about", how: "question repo" }],
   };
+}
+
+/** The names an answered gap makes known: as written, and as an endpoint when it is one. */
+function answeredGapNames(gap: string): string[] {
+  const m = /^\s*(GET|POST|PUT|PATCH|DELETE)\s+(\/\S*)\s*$/i.exec(gap);
+  return [...new Set([foldName(gap), ...(m ? [endpointName(m[1]!, m[2]!)] : [])])];
 }
 
 function wikiNodes(root: string, path: string, text: string): FileRead {

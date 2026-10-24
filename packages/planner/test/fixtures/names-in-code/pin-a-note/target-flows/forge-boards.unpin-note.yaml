@@ -1,0 +1,16 @@
+schemaVersion: 2
+flow: forge-boards.unpin-note
+repo: forge-boards
+change: new
+name: Unpin a note
+trigger:
+  kind: endpoint
+  what: A member unpins the board's note
+  entry: DELETE /api/boards/{id}/pin
+why: A pinned note can be taken down.
+steps:
+  - op: add
+    after: 0
+    kind: write
+    what: The pin is removed
+    store: { table: forge-boards-db.note_pin, columns: [board_id] }

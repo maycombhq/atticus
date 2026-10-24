@@ -25,6 +25,7 @@
     "@maycombhq/ai": "workspace:*",
     "@maycombhq/changes": "workspace:*",
     "@maycombhq/core": "workspace:*",
+    "@maycombhq/extractors": "workspace:*",
     "@maycombhq/index": "workspace:*",
     "@maycombhq/ingestors": "workspace:*",
     "@maycombhq/intake": "workspace:*",

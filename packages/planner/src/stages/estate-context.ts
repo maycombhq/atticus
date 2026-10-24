@@ -110,7 +110,9 @@ export async function estateContext(
     return first.note ? { note: first.note, consumed: first.consumed } : undefined;
   // What neither the wikis nor the repos say (ADR 0107 point 5): listed, never guessed. The gaps
   // and the answers people gave take their room from the selection, not from the step's input.
-  const g = o.change ? await gapContext(root, o.change, first.selection.unknown) : undefined;
+  const g = o.change
+    ? await gapContext(root, o.change, first.selection.unknown, e ? { records: e.records } : {})
+    : undefined;
   const less = g ? sourceTokens(g.sources) : 0;
   const final = await retrieve(
     root,
@@ -155,6 +157,7 @@ export async function estateContext(
   if (g) {
     report.gaps = g.gaps;
     if (g.inCode.length) report.inCode = g.inCode;
+    if (g.known.length) report.known = g.known;
     if (g.gaps.length || g.inCode.length) report.searched = g.searched;
     sources.push(...g.sources);
   }

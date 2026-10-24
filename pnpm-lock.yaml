@@ -865,6 +865,9 @@ importers:
       '@maycombhq/core':
         specifier: workspace:*
         version: link:../core
+      '@maycombhq/extractors':
+        specifier: workspace:*
+        version: link:../extractors
       '@maycombhq/index':
         specifier: workspace:*
         version: link:../index

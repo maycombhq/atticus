@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Known names and values aren't gaps (ADR 0116 and 0118 addenda)
+
+- **A name is in the code when a source file declares it.** The gap check used to match any word in any file, so it cited a markdown plan for a class and missed classes the code declares. It now reads only files a reader has a grammar for. It finds a class, interface, record, enum, function or type by its declaration, cited to that line. A comment, a use or a sentence in a repo's `docs/` doesn't count. A name only used and never declared, such as a parameter's type from a library, is a gap.
+- **A file of the repo is found by its path.** A migration such as `V10__chat.sql`, or `ChatController.java`, is no longer asked about. Nor is a migration file the catalog records.
+- **What the change adds is known.** Names from the change's own target flows are never gaps: a new flow's id, name and trigger endpoint, a step's new target, a new table and the columns a step adds. Each is cited to its line, whatever its path parameters are called.
+- **A name a person answered for the change stays answered.** The gap check reads the change's answered questions itself. The index now also matches an answered endpoint however its parameters are named.
+- **Values the code defines.** The SQL reader reads `CHECK (column IN (...))` constraints, `ENUM(...)` column types and `CREATE TYPE ... AS ENUM`, and drops a check its migration drops. A Column record carries them as `allowedValues` (C1, optional, cited to the line; migrations extractor 1.4.0). The architecture and stories drafts and their lenses get them for the tables the steps store into (`allowed-values`), so a value the code defines isn't called unknown.
+
 ### A new table's one definition everywhere, and plainer stage files (ADR 0111 addendum)
 
 - data.md and design.md read a new table from its one definition, however the flows sort. A flow that uses the table before the flow that creates it no longer turns its columns into "add column" rows with no migration, so the critic no longer raises false missing-migration findings. Where several steps still mark the table new, the step with the migration and the columns is the definition.

@@ -8,13 +8,21 @@ import { describe, expect, it } from "vitest";
 import { MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
 import { namesInCode } from "@maycombhq/index";
-import { architectureStage, EXPAND_AGENT, featureStage, gapSources } from "../src/index.js";
+import {
+  architectureStage,
+  codeReaders,
+  EXPAND_AGENT,
+  featureStage,
+  gapSources,
+} from "../src/index.js";
 
 /**
  * A4 (fixtures/names-in-code): a name the change uses that a repo in the workspace declares or
- * uses in its code is not a knowledge gap. Whether a name is in the code is a fact Atticus
- * checks (ADR 0118's code search, a whole-word match in the clone); only a name found in neither
- * the catalog nor the code is listed as a gap, and the gap says the code was searched.
+ * declares in its code is not a knowledge gap. Whether a name is in the code is a fact Atticus
+ * checks (ADR 0118's code search: a declaration the outline reads from a source file, S1); only
+ * a name found in neither the catalog nor the code is listed as a gap, and the gap says the code
+ * was searched. NewOrder, which the controller only uses as a parameter's type and no file of
+ * the workspace declares, is a gap since S1: nothing Atticus can read says what it is.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -109,12 +117,16 @@ describe("names the code has are not gaps (A4)", () => {
     );
   });
 
-  it("namesInCode matches whole words only, skips what .gitignore ignores, and says which repos it searched", async () => {
+  it("namesInCode finds declarations only, skips what .gitignore ignores, and says which repos it searched", async () => {
     const r0 = await root();
     await writeFile(join(r0, "workspace/forge-orders/.gitignore"), "build/\n");
     await mkdir(join(r0, "workspace/forge-orders/build"), { recursive: true });
     await writeFile(join(r0, "workspace/forge-orders/build/Gen.java"), "class PinBoard {}\n");
-    const got = await namesInCode(r0, ["Order", "OrderCon", "PinBoard", "StockClient"]);
+    const got = await namesInCode(
+      r0,
+      ["Order", "OrderCon", "PinBoard", "StockClient"],
+      await codeReaders(),
+    );
     expect(got.repos).toEqual(["forge-orders"]);
     expect([...got.found.keys()].sort()).toEqual(["Order", "StockClient"]);
     expect(got.found.get("StockClient")).toMatch(/^forge-orders:src\/main\/java\/forge\/orders\//);
