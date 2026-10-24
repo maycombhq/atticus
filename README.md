@@ -16,7 +16,7 @@ Atticus is an open-source, configurable framework for teams whose systems span m
 - **Configurable.** Everything organisation-specific lives in an org pack: dialects for house frameworks, change types, roles, checklists, integration patterns, templates and AI policy.
 - **Adopts what you have.** Runs on top of an existing AI metarepo or OpenSpec repo without moving anything, and absorbs other teams' repos and wikis.
 
-AI teaches and drafts; deterministic code does the repeated work. Scans never call a model.
+The assistant reads the code and drafts; deterministic code verifies every citation, keeps the files and does the repeated work (ADR 0124). Tests never call a model.
 
 ## Repository layout
 
