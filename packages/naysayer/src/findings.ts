@@ -225,6 +225,30 @@ export async function countedRounds(root: string, change: string, gate: string):
   return out;
 }
 
+/** The states a person's decision on a finding leaves it in (C3): fixed, waived or dismissed. */
+const DECIDED: ReadonlySet<string> = new Set(["applied", "waived", "dismissed"]);
+
+/**
+ * Whether a gate whose rounds are used up may have one checking round past its limit (ADR 0115
+ * addendum): a person acted on every blocking finding of its newest counted round (applied a
+ * fix, waived it with a reason, or dismissed it as not relevant), and acted on at least one in
+ * that round itself, not carried from the round before. The checking round reviews the fixes;
+ * if it raises a blocking finding, a person decides again. The ids acted on come back; none
+ * when no checking round is due.
+ */
+export async function checkRoundDue(root: string, change: string, gate: string): Promise<string[]> {
+  const n = (await countedRounds(root, change, gate)).at(-1);
+  if (n === undefined) return [];
+  const meta = await readRoundMeta(root, change, gate, n);
+  const carried = new Set((meta?.findings ?? []).filter((f) => f.carried).map((f) => f.id));
+  const blocking = (await readRound(root, change, gate, n)).findings.filter(
+    (f) => f.finding.severity === "blocking",
+  );
+  if (blocking.some((f) => !DECIDED.has(f.finding.state) || !f.finding.resolution)) return [];
+  const actedOn = blocking.filter((f) => !carried.has(f.finding.id)).map((f) => f.finding.id);
+  return actedOn.sort();
+}
+
 /** Gates that have a review folder. */
 export async function reviewedGates(root: string, change: string): Promise<string[]> {
   try {

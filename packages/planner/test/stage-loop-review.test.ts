@@ -3,15 +3,16 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parse } from "yaml";
+import { parse, stringify } from "yaml";
 import { describe, expect, it } from "vitest";
 import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
 import { answerQuestion, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
-import { runCritic } from "@maycombhq/naysayer";
+import { act, gateStatus, runCritic } from "@maycombhq/naysayer";
 import {
   architectureStage,
   checkDeltas,
   featureStage,
+  storiesStage,
   FlowDelta,
   loadEstate,
   PlannerError,
@@ -264,12 +265,12 @@ describe("a newer critic round at the gate while the stage waits on its lenses (
 });
 
 describe("the gate's round limit (H3)", () => {
-  async function limited(root: string): Promise<void> {
+  async function limited(root: string, max = 1): Promise<void> {
     await writeFile(
       join(root, "org-pack/gates.yaml"),
       `schemaVersion: 2
 gates:
-  - { id: define, phase: define, approvers: [product-owner], maxAuthorRounds: 1, checks: [{ check: openspec-validate }] }
+  - { id: define, phase: define, approvers: [product-owner], maxAuthorRounds: ${max}, checks: [{ check: openspec-validate }] }
   - { id: design, phase: design, approvers: [architect], checks: [{ check: openspec-validate }] }
   - { id: plan, phase: plan, approvers: [team-lead], checks: [{ check: openspec-validate }] }
   - { id: build, phase: build, approvers: [developer], checks: [{ check: tests-pass }] }
@@ -318,6 +319,84 @@ gates:
     const r = await featureStage(root, CHANGE, { runtime: rt, now: NOW });
     expect(r.state).toBe("done");
     expect((await roundMeta(root, 3)).lenses.map((l) => l.state)).toEqual(["ran", "ran"]);
+  });
+
+  // Found on a real metarepo: round 2 of 2 had one real blocking finding; a person fixed the
+  // draft by hand and applied the finding, and the stage still said "a person decides now".
+  describe("a fix a person applied when no critic round is left", () => {
+    // The architecture lens finds the flow marked read until the placement marks it changed.
+    const lens = () =>
+      new MockRuntime(
+        (req: AiRequest) =>
+          req.agent.id === "architecture-critic"
+            ? req.pack.prompt.includes("Flow forge-stock.reserve-stock (read)")
+              ? FINDING
+              : "findings: []"
+            : req.agent.id.endsWith("-critic")
+              ? "findings: []"
+              : PLACED,
+        { now: () => NOW },
+      );
+    const stuck = async (root: string) => {
+      await limited(root, 2);
+      const e = await stopped(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
+      expect(e.message).toContain("the most it allows");
+      const s = await gateStatus(root, CHANGE, "define");
+      expect(s.round).toBe(2);
+      expect(s.humanDecides).toBe(true);
+      return s.findings.find((f) => f.finding.rule === "flow-use-matches-estate")!.finding.id;
+    };
+    const placement = (root: string) => join(root, "openspec/changes", CHANGE, "feature.yaml");
+
+    it("gets one checking round past the limit, which reviews the fix and finishes the stage", async () => {
+      const root = await estateRoot({ lenses: true });
+      const id = await stuck(root);
+      // The person fixes the placement by hand (feature.yaml), then applies the finding.
+      const placed = parse(await readFile(placement(root), "utf8")) as {
+        flows: { id: string; how: string }[];
+      };
+      placed.flows.find((f) => f.id === "forge-stock.reserve-stock")!.how = "changed";
+      await writeFile(placement(root), stringify(placed));
+      const applied = await act(root, CHANGE, id, "apply", { by: "pat" });
+      expect(applied.message).toContain("one checking round past the limit");
+      expect(applied.message).not.toContain("The next critic round checks the fix");
+      expect((await gateStatus(root, CHANGE, "define")).checkRound).toBe(true);
+      // The stage runs the checking round on the draft on file, drafts nothing, and is done.
+      const r = await featureStage(root, CHANGE, { runtime: lens(), now: NOW });
+      expect(r.state).toBe("done");
+      expect(r.drafts).toBe(0);
+      expect((await roundMeta(root, 3)) as unknown).toMatchObject({
+        checkRound: { after: 2, actedOn: [id] },
+      });
+      // Nothing blocking is open; the fixture's own knowledge gap waits for its owner as before.
+      expect((await gateStatus(root, CHANGE, "define")).open.blocking).toBe(0);
+    });
+
+    it("goes to a person again when the checking round still finds it, without drafting over the fix", async () => {
+      const root = await estateRoot({ lenses: true });
+      const id = await stuck(root);
+      // Marked applied, but the placement on file wasn't fixed.
+      await act(root, CHANGE, id, "apply", { by: "pat" });
+      const e = await stopped(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
+      expect(e.message).toContain("the checking round past its limit, found a blocking finding");
+      expect((await loopOf(root)).state).toBe("stopped");
+      const s = await gateStatus(root, CHANGE, "define");
+      expect(s.round).toBe(3);
+      expect(s.humanDecides).toBe(true);
+      expect(s.checkRound).toBe(false);
+      // Bounded: a further run is refused until a person acts on round 3's finding.
+      const again = await stopped(featureStage(root, CHANGE, { runtime: lens(), now: NOW }));
+      expect(again.message).toContain("the most it allows, and a checking round past it");
+      // A waiver is a person's decision too, recorded with a reason, never silent.
+      const id3 = s.findings.find((f) => f.finding.rule === "flow-use-matches-estate")!.finding.id;
+      await act(root, CHANGE, id3, "waive", { by: "pat", reason: "Reserving stock is read only." });
+      const r = await featureStage(root, CHANGE, { runtime: lens(), now: NOW });
+      expect(r.state).toBe("done");
+      const waived = (await gateStatus(root, CHANGE, "define")).findings.find(
+        (f) => f.finding.rule === "flow-use-matches-estate",
+      )!.finding;
+      expect(waived).toMatchObject({ round: 4, state: "waived" });
+    });
   });
 
   it("opens no critic round for a draft that fails the stage's own checks", async () => {
@@ -672,5 +751,84 @@ describe("what a lens is checked against, and what the drafter is given (L3, M1,
     const data = prompt.indexOf('<atticus-data id="hand-backs"');
     expect(data).toBeGreaterThan(-1);
     expect(prompt.indexOf("Feature cap-checkout isn't in the catalog")).toBeGreaterThan(data);
+  });
+});
+
+// Found on a real metarepo: the stories stage ran while the design gate was stuck (its rounds
+// used up, a person deciding). Each stage reads the one before (ADR 0087), so a later stage
+// waits for the earlier stage's loop to be done and its gate to pass; it may run before that
+// phase's hand-off PR merges, and says so.
+describe("a later stage while an earlier stage's gate is stuck", () => {
+  const TARGET = "target-flows/forge-orders.place-order.yaml";
+  const BRANCH_FINDING = `findings:
+  - rule: flow-use-matches-estate
+    artifact: ${TARGET}
+    summary: The refusal branch reads a verdict before the screen gives one.
+    why: A step reads a field no earlier step gives.
+    fix: Put the branch after the call-out.
+    evidence:
+      - { path: ${TARGET}, quote: "kind: branch" }
+`;
+  const designLimited = (root: string) =>
+    writeFile(
+      join(root, "org-pack/gates.yaml"),
+      `schemaVersion: 2
+gates:
+  - { id: define, phase: define, approvers: [product-owner], checks: [{ check: openspec-validate }] }
+  - { id: design, phase: design, approvers: [architect], maxAuthorRounds: 1, checks: [{ check: openspec-validate }] }
+  - { id: plan, phase: plan, approvers: [team-lead], checks: [{ check: openspec-validate }] }
+  - { id: build, phase: build, approvers: [developer], checks: [{ check: tests-pass }] }
+  - { id: qa, phase: qa, approvers: [qa], checks: [{ check: tests-pass }] }
+  - { id: release, phase: release, approvers: [delivery-lead], checks: [{ check: snow-requests-closed }] }
+`,
+    );
+  // The architecture lens finds the branch wrong in every target flow it reads.
+  const rt = (draft: string) =>
+    new MockRuntime(
+      (req: AiRequest) =>
+        req.agent.id === "architecture-critic" && req.pack.prompt.includes(TARGET)
+          ? BRANCH_FINDING
+          : req.agent.id.endsWith("-critic")
+            ? "findings: []"
+            : draft,
+      { now: () => NOW },
+    );
+
+  it("the stories stage refuses, naming the architecture stage and the design gate to finish first", async () => {
+    const root = await estateRoot({ lenses: true });
+    await designLimited(root);
+    expect((await featureStage(root, CHANGE, { runtime: rt(PLACED), now: NOW })).state).toBe(
+      "done",
+    );
+    const e = await stopped(architectureStage(root, CHANGE, { runtime: rt(DELTAS), now: NOW }));
+    expect(e.message).toContain("the most it allows");
+    const refused = await storiesStage(root, CHANGE, { runtime: rt("stories: []"), now: NOW }).then(
+      () => undefined,
+      (x: unknown) => x as PlannerError,
+    );
+    expect(refused).toBeInstanceOf(PlannerError);
+    expect(refused!.code).toBe("refused");
+    expect(refused!.message).toContain(
+      "The stories stage can't run yet: the architecture stage isn't finished at the design gate.",
+    );
+    expect(refused!.message).toContain("atticus change architecture add-fraud-check");
+    // Nothing of the stories stage was written.
+    await expect(
+      readFile(join(root, "openspec/changes", CHANGE, "stage/stories.yaml"), "utf8"),
+    ).rejects.toThrow();
+  });
+
+  it("the architecture stage refuses while the feature stage is stopped", async () => {
+    const root = await estateRoot();
+    expect((await featureStage(root, CHANGE, { runtime: rt(PLACED), now: NOW })).state).toBe(
+      "done",
+    );
+    const file = join(root, "openspec/changes", CHANGE, "stage/feature.yaml");
+    await writeFile(file, (await readFile(file, "utf8")).replace("state: done", "state: stopped"));
+    await expect(
+      architectureStage(root, CHANGE, { runtime: rt(DELTAS), now: NOW }),
+    ).rejects.toThrow(
+      "The architecture stage can't run yet: the feature stage isn't finished at the define gate. The feature stage stopped and isn't done",
+    );
   });
 });

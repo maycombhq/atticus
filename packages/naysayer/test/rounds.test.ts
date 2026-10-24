@@ -178,6 +178,63 @@ describe("rounds, gates and actions", () => {
     ).rejects.toThrow(/is from round 1 of the plan gate; act on round 2, the newest/);
   });
 
+  it("allows one checking round past the limit once a person acted on every blocking finding, and only one", async () => {
+    const root = await forgeChangeRoot();
+    await runCritic(root, CHANGE, { now: NOW, runtime: await replay() });
+    const r2 = await runCritic(root, CHANGE, { now: LATER, runtime: await replay() });
+    expect(r2.status.humanDecides).toBe(true);
+    expect(r2.status.checkRound).toBe(false);
+    const blocking = r2.findings.filter(
+      (f) => f.finding.state === "open" && f.finding.severity === "blocking",
+    );
+    expect(blocking.length).toBeGreaterThan(1);
+
+    // A person fixes one by hand, with no rounds left: the message says what really comes next.
+    const first = await act(root, CHANGE, blocking[0]!.finding.id, "apply", {
+      by: "ari",
+      now: LATER,
+    });
+    expect(first.message).not.toContain("The next critic round checks");
+    expect(first.message).toContain("no critic round is left");
+    expect(first.message).toMatch(/act on the other \d+ blocking findings? of round 2/);
+    await expect(runCritic(root, CHANGE, { now: LATER })).rejects.toThrow(
+      /A person decides now: act on each blocking finding/,
+    );
+
+    // Every blocking finding of the newest round acted on by a person: one checking round.
+    let last = first;
+    for (const f of blocking.slice(1))
+      last = await act(root, CHANGE, f.finding.id, "apply", { by: "ari", now: LATER });
+    expect(last.message).toContain(
+      `one checking round past the limit: run atticus critic ${CHANGE} --gate plan`,
+    );
+    // The knowledge gaps still open are asked of their owners.
+    for (const g of r2.findings.filter(
+      (f) => f.finding.state === "open" && f.finding.severity === "gap",
+    ))
+      await act(root, CHANGE, g.finding.id, "ask", {
+        by: "bao",
+        askedOf: "team-ledger",
+        now: LATER,
+      });
+    const s = await gateStatus(root, CHANGE, "plan");
+    expect(s.humanDecides).toBe(false);
+    expect(s.checkRound).toBe(true);
+
+    // The fixes weren't real, so the checking round finds them again: a person decides again.
+    const r3 = await runCritic(root, CHANGE, { now: LATER, runtime: await replay() });
+    expect(r3.round).toBe(3);
+    expect(r3.checkRound).toBe(true);
+    const meta = parse(await readText(join(changeDir(root), "review/plan/3/meta/round.yaml"))) as {
+      checkRound?: { after: number; actedOn: string[] };
+    };
+    expect(meta.checkRound?.after).toBe(2);
+    expect(meta.checkRound?.actedOn.sort()).toEqual(blocking.map((f) => f.finding.id).sort());
+    expect(r3.status.humanDecides).toBe(true);
+    expect(r3.status.checkRound).toBe(false);
+    await expect(runCritic(root, CHANGE, { now: LATER })).rejects.toThrow(/the most it allows/);
+  });
+
   it("reports a gate with no rounds as open and refuses unknown gates", async () => {
     const root = await forgeChangeRoot();
     const s = await gateStatus(root, CHANGE, "design");

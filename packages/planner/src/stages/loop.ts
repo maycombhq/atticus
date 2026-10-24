@@ -27,8 +27,11 @@ import {
 import {
   changeFolder,
   changeStore,
+  checkFindings,
+  checkStage,
   loadChangeContext,
   phaseGates,
+  stageCommand,
   writeFileAtomic,
   type ChangeContext,
 } from "@maycombhq/changes";
@@ -263,6 +266,53 @@ const BUILT: ReadonlySet<string> = new Set([
 
 export const stagePr = (change: string) => `atticus change handoff ${change} --approve`;
 
+/**
+ * Refuse a stage while an earlier stage of the path isn't finished (ADR 0087, ADR 0115
+ * addendum): each stage reads what the one before wrote, so the earlier stage's loop must be
+ * done and nothing may block its gate (an open knowledge gap waits for its owner and doesn't). A stage may still run before the earlier phase's hand-off PR
+ * merges (the stage says so); a merged hand-off means a person approved that gate. An earlier
+ * stage that never ran here (its file written by a person, or the change-draft path) is the
+ * earlier stage's own check: the later stage refuses when its input is missing.
+ */
+export async function refuseWhileEarlierStuck(
+  root: string,
+  ctx: ChangeContext,
+  change: ChangeLifecycle,
+  stage: Stage,
+): Promise<void> {
+  const path = ctx.policy.stages;
+  const at = path.findIndex((x) => x.stage === stage);
+  if (at < 1) return;
+  const dir = changeFolder(root, change.id);
+  for (const earlier of path.slice(0, at)) {
+    if (change.handoffs.some((h) => h.phase === earlier.phase && h.state === "merged")) continue;
+    const ran = await readFile(join(dir, ...earlier.loop.split("/"))).then(
+      () => true,
+      () => false,
+    );
+    if (!ran) continue;
+    const gate = phaseGates(ctx, earlier.phase)[0];
+    const why = (await checkStage(root, change, earlier)).map((r) => r.message);
+    // What stops the gate: an open blocking finding, a lens not in or that didn't review. A
+    // knowledge gap waits for its owner's answer and doesn't hold the next stage up.
+    if (gate)
+      why.push(
+        ...(await checkFindings(root, change, [gate]))
+          .filter((r) => r.code !== "open-gap")
+          .map((r) => r.message),
+      );
+    if (!why.length) continue;
+    throw new PlannerError(
+      "refused",
+      [
+        `The ${stage} stage can't run yet: the ${earlier.stage} stage isn't finished${gate ? ` at the ${gate} gate` : ""}. ${why[0]}`,
+        ...why.slice(1).map((w) => `  - ${w}`),
+        `Each stage reads what the one before wrote: finish the ${earlier.stage} stage (${stageCommand(earlier, change.id)}${gate ? `; atticus findings ${change.id} shows the ${gate} gate's findings` : ""}), then run ${rerunOf(stage, change.id)}.`,
+      ].join("\n"),
+    );
+  }
+}
+
 export async function runStageLoop<A>(
   root: string,
   changeId: string,
@@ -492,6 +542,17 @@ export async function runStageLoop<A>(
       if (lenses.waiting) return handedToLens(lenses.waiting, review);
       if (lenses.failed.length) {
         const stop = lensStop(spec.stage, change.id, loop.iteration, lenses.failed);
+        await stopNow(stop.message, stop.lines);
+      }
+      // The lenses of a checking round past the gate's limit found something: a person decides.
+      if (
+        lenses.issues.some((i) => i.blocking) &&
+        (await readRoundMeta(root, change.id, review.gate, review.round))?.checkRound
+      ) {
+        const stop = checkRoundStop(spec.stage, change.id, review.gate, review.round, [
+          ...review.issues,
+          ...lenses.issues,
+        ]);
         await stopNow(stop.message, stop.lines);
       }
       delete loop.review;
@@ -1058,7 +1119,30 @@ async function criticRound(
     .filter((l) => l.state === "failed")
     .map((l) => ({ lens: l.lens, reason: l.reason ?? "it gave no review" }));
   if (failed.length) return { issues: [], stop: lensStop(spec.stage, change.id, draftNo, failed) };
-  return { issues: await criticIssues(root, change.id, r.findings, kindOf) };
+  const issues = await criticIssues(root, change.id, r.findings, kindOf);
+  // A checking round past the limit reviewed what a person did: what it finds goes to a person,
+  // not to another draft no round is left to review (ADR 0115 addendum).
+  if (r.checkRound && issues.some((i) => i.blocking))
+    return { issues, stop: checkRoundStop(spec.stage, change.id, gate, r.round, issues) };
+  return { issues };
+}
+
+/** The stop when a checking round past a gate's limit finds something blocking: a person decides. */
+function checkRoundStop(
+  stage: Stage,
+  change: string,
+  gate: string,
+  round: number,
+  issues: StageIssue[],
+): { message: string; lines: string[] } {
+  const blocking = issues.filter((i) => i.blocking);
+  return {
+    message: `The ${stage} stage stopped: round ${round} at the ${gate} gate, the checking round past its limit, found ${blocking.length === 1 ? "a blocking finding" : `${blocking.length} blocking findings`} in what was done. A person decides now.`,
+    lines: [
+      ...blocking.map((i) => `  - ${i.message}${i.evidence ? ` (${i.evidence})` : ""}`),
+      `See atticus findings ${change}. Fix each by hand and apply it, waive it with a reason, or dismiss it as not relevant; once every one is acted on, run ${rerunOf(stage, change)} again for one more checking round. Or return the change.`,
+    ],
+  };
 }
 
 /** The stop when a lens didn't review a draft: which, why, and that a rerun reviews it again. */

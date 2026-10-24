@@ -20,6 +20,7 @@ import {
   type StageOptions,
   type StageResult,
   type StageSpec,
+  refuseWhileEarlierStuck,
   retrievalWaiting,
   stageRetrievalAi,
   withoutResume,
@@ -932,6 +933,7 @@ export async function architectureStage(
     });
   const dir = changeFolder(root, change.id);
   const rel = `${changesRelOf(root)}/${change.id}`;
+  await refuseWhileEarlierStuck(root, await loadChangeContext(root), change, "architecture");
   const placement = await readPlacement(dir);
   if (!placement)
     throw new PlannerError(

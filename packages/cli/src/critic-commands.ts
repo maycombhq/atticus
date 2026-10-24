@@ -68,7 +68,10 @@ function statusLine(s: GateStatus): string {
   if (s.waiting.length)
     return `The ${s.gate} gate is not decided: ${plural(s.waiting.length, "AI lens", "AI lenses")} ${s.waiting.length === 1 ? "is" : "are"} with your assistant. Run atticus handoff done <run> for each, then look at the findings again.`;
   const counts = `${s.open.blocking} blocking, ${s.open.gaps} open gap${s.open.gaps === 1 ? "" : "s"}`;
-  if (s.mayProceed) return `The ${s.gate} gate may proceed: nothing blocking is open.`;
+  if (s.mayProceed)
+    return s.checkRound
+      ? `The ${s.gate} gate may proceed: a person acted on every blocking finding. Its ${s.maxRounds} critic rounds are used, so one checking round past the limit may review what was done (atticus critic <change> --gate ${s.gate}).`
+      : `The ${s.gate} gate may proceed: nothing blocking is open.`;
   if (s.humanDecides)
     return `The ${s.gate} gate is closed (${counts}) and its ${s.maxRounds} critic rounds are used: a person decides now.`;
   return `The ${s.gate} gate is closed: ${counts}. Act on each with atticus finding <id> <action>.`;
@@ -137,6 +140,8 @@ export async function critic(
           round: r.round,
           mayProceed: r.status.mayProceed,
           humanDecides: r.status.humanDecides,
+          checkRound: r.status.checkRound,
+          ...(r.checkRound ? { pastLimit: true } : {}),
           open: r.status.open,
           findings: r.findings.map((f) => ({
             id: f.finding.id,
@@ -176,7 +181,7 @@ export async function critic(
     io.err(`Refused ${x.file}${x.rule ? ` (rule ${x.rule})` : ""}: ${x.reason}`);
   const s = r.status;
   io.out(
-    `Critic round ${r.round}${s.maxRounds !== undefined ? ` of ${s.maxRounds}` : ""} at the ${r.gate} gate for ${r.change}: ${s.total.blocking} blocking, ${s.total.gaps} gaps, ${s.total.risks} risks, ${s.total.ideas} ideas.`,
+    `Critic round ${r.round}${r.checkRound ? `, a checking round past the limit of ${s.maxRounds},` : s.maxRounds !== undefined ? ` of ${s.maxRounds}` : ""} at the ${r.gate} gate for ${r.change}: ${s.total.blocking} blocking, ${s.total.gaps} gaps, ${s.total.risks} risks, ${s.total.ideas} ideas.`,
   );
   if (r.findings.length) {
     for (const line of table(
@@ -334,6 +339,7 @@ export async function findings(
           round: s.round,
           mayProceed: s.mayProceed,
           humanDecides: s.humanDecides,
+          checkRound: s.checkRound,
           open: s.open,
           findings: s.findings.map((f) => ({ ...f.finding, path: f.path })),
         })),

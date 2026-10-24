@@ -12,8 +12,10 @@ import {
 } from "@maycombhq/core";
 import {
   APPLIES_SPEC,
+  judgesDirectly,
   COVERS_FIELD_SPEC,
   judge,
+  settle,
   type AiRuntime,
   type JudgeItem,
   type JudgeOptions,
@@ -37,6 +39,7 @@ import {
   type StageOptions,
   type StageResult,
   type StageSpec,
+  refuseWhileEarlierStuck,
   retrievalWaiting,
   stageRetrievalAi,
   withoutResume,
@@ -489,60 +492,79 @@ export function unwrittenChecks(a: StoriesAnswer, stories: DeltaStory[]): Unwrit
 
 /** A judge for criteria, where the runtime calls a model directly; none for hand-off and mock. */
 export const judgeRuntime = (runtime: AiRuntime): AiRuntime | undefined =>
-  runtime.kind === "hand-off" || runtime.kind === "mock" ? undefined : runtime;
+  judgesDirectly(runtime) ? runtime : undefined;
+
+const coversItem = (c: UnwrittenCheck): JudgeItem => ({
+  inputs: { v: 1, field: c.field, criterion: c.criterion },
+  texts: { criterion: c.criterion },
+  facts: [`the field: ${c.field}`],
+});
+
+/** How the criteria's claims to check a field they don't write were settled (ADR 0117). */
+async function settleCoverage(
+  claims: UnwrittenCheck[],
+  j: { runtime?: AiRuntime; store: JudgmentStore; change: string; now: Date },
+): Promise<{ claim: UnwrittenCheck; verdict: string | undefined }[]> {
+  if (!claims.length) return [];
+  const items = claims.map(coversItem);
+  const r = await settle(COVERS_FIELD_SPEC, items, {
+    ...(j.runtime ? { runtime: j.runtime } : {}),
+    store: j.store,
+    change: j.change,
+    now: j.now,
+  });
+  return claims.map((claim, i) => ({
+    claim,
+    // No entry in settle's results: nothing settled it, so the claim is unjudged.
+    verdict: r.get(judgmentKey(COVERS_FIELD_SPEC.kind, items[i]!.inputs))?.verdict,
+  }));
+}
 
 /**
- * Whether each criterion checks the field it claims to and doesn't write (ADR 0117): a stored
- * judgment, else the judge, asked once for all of them. "no" hands the criterion back, and so
- * does "unsure". With no judge (hand-off: another round would cost the person a prompt) a claim
- * the criterion doesn't write is handed back too, so the writer names the field: what a test
- * checks is then on the page.
+ * Whether each criterion checks the field it claims to and doesn't write (ADR 0117). Whether
+ * it does is meaning, so a check doesn't decide it: a stored verdict does, else the judge, asked
+ * once for all of them, where the runtime calls a model directly (settle). "no" goes back to the
+ * writer, as a person's decision if it comes back. "unsure", and a claim no judge read (a
+ * hand-off spends no extra prompt and guesses nothing), is a note, never a stop: the story file
+ * says so, for the critic's story lens and the PR's reviewer (writeStories' `unjudged`).
  */
 export async function coverageIssues(
   claims: UnwrittenCheck[],
   j: { runtime?: AiRuntime; store: JudgmentStore; change: string; now: Date },
 ): Promise<StageIssue[]> {
-  if (!claims.length) return [];
-  const items: JudgeItem[] = claims.map((c) => ({
-    inputs: { v: 1, field: c.field, criterion: c.criterion },
-    texts: { criterion: c.criterion },
-    facts: [`the field: ${c.field}`],
-  }));
-  const verdicts = new Map<string, string>();
-  for (const it of items) {
-    const key = judgmentKey(COVERS_FIELD_SPEC.kind, it.inputs);
-    const stored = await j.store.get(COVERS_FIELD_SPEC.kind, key);
-    if (stored && typeof stored.verdict === "string") verdicts.set(key, stored.verdict);
-  }
-  const open = items.filter((it) => !verdicts.has(judgmentKey(COVERS_FIELD_SPEC.kind, it.inputs)));
-  if (open.length && j.runtime) {
-    const r = await judge(COVERS_FIELD_SPEC, open, {
-      runtime: j.runtime,
-      store: j.store,
-      change: j.change,
-      now: j.now,
-    });
-    for (const [k, v] of r.results) verdicts.set(k, v.verdict);
-  }
   const out: StageIssue[] = [];
-  claims.forEach((c, i) => {
-    const v = verdicts.get(judgmentKey(COVERS_FIELD_SPEC.kind, items[i]!.inputs));
-    if (v === "yes") return;
-    const why =
-      v === "no"
-        ? "its then clause doesn't assert that field's value"
-        : v === "unsure"
-          ? "a judge couldn't tell that it does"
-          : "it doesn't name it";
-    out.push({
-      rule: "stories.check-not-in-criterion",
-      target: `${c.task}:${c.field}`,
-      message: `Task ${c.task}: the criterion "${c.criterion}" says it checks ${c.field}, but ${why}: name ${c.field} in its then clause, or check it in another criterion.`,
-      blocking: true,
-      repo: c.repo,
-    });
-  });
+  for (const { claim: c, verdict: v } of await settleCoverage(claims, j)) {
+    if (v === "yes") continue;
+    if (v === "no")
+      out.push({
+        rule: "stories.check-not-in-criterion",
+        target: `${c.task}:${c.field}`,
+        message: `Task ${c.task}: the criterion "${c.criterion}" says it checks ${c.field}, but a judge read its then clause and says it doesn't assert that field's value: make the then clause assert it, or check it in another criterion.`,
+        blocking: true,
+        kind: "decision",
+        repo: c.repo,
+        ask: `Does the criterion "${c.criterion}" of task ${c.task} check ${c.field}? A judge read it and says no.`,
+      });
+    else
+      out.push({
+        rule: "stories.check-unjudged",
+        target: `${c.task}:${c.field}`,
+        message: `Task ${c.task}: the criterion "${c.criterion}" says it checks ${c.field} without naming it; ${v === "unsure" ? "a judge couldn't tell whether it does" : "no judge read it here"}. The story lens and the reviewer confirm it.`,
+        blocking: false,
+        repo: c.repo,
+      });
+  }
   return out;
+}
+
+/** The claims no judgment settled (unjudged or unsure), for the story file's note. */
+export async function unjudgedChecks(
+  claims: UnwrittenCheck[],
+  j: { runtime?: AiRuntime; store: JudgmentStore; change: string; now: Date },
+): Promise<UnwrittenCheck[]> {
+  return (await settleCoverage(claims, j))
+    .filter((x) => x.verdict !== "yes" && x.verdict !== "no")
+    .map((x) => x.claim);
 }
 
 const sentence = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`);
@@ -574,6 +596,7 @@ function renderStoryFile(
   change: string,
   s: DeltaStory,
   w: StoriesAnswer["stories"][number],
+  unjudged: UnwrittenCheck[] = [],
 ): string {
   const lines = [
     `${GENERATED_MARK} stories from the target flows (target-flows/). Edit the wording freely; tasks, fields and evidence come from the flows. -->`,
@@ -604,7 +627,17 @@ function renderStoryFile(
       ...(t.target ? [`- Goes to: ${t.target}`] : []),
       ...(t.store ? [`- Store: ${t.store}`] : []),
       "- Acceptance criteria:",
-      ...(c.length ? c.map((x) => `  - ${sentence(x.text)}`) : ["  - None yet."]),
+      ...(c.length
+        ? c.flatMap((x) => [
+            `  - ${sentence(x.text)}`,
+            ...unjudged
+              .filter((u) => u.task === t.id && u.criterion === x.text)
+              .map(
+                (u) =>
+                  `  - Not judged yet: this criterion says it checks ${u.field} without naming it. The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).`,
+              ),
+          ])
+        : ["  - None yet."]),
       "",
       "Prompt for Copilot or Claude Code:",
       "",
@@ -717,6 +750,8 @@ export async function writeStories(
   a: StoriesAnswer,
   requests: RequestTask[],
   now: Date,
+  /** Criteria's claims no judgment settled: noted under them for the story lens and the reviewer. */
+  unjudged: UnwrittenCheck[] = [],
 ): Promise<string[]> {
   const dir = changeFolder(root, change);
   const keep = new Set(stories.map((s) => `${s.id}.md`));
@@ -735,7 +770,10 @@ export async function writeStories(
       soThat: "the change works",
       tasks: [],
     };
-    await writeFileAtomic(join(dir, "stories", `${s.id}.md`), renderStoryFile(change, s, w));
+    await writeFileAtomic(
+      join(dir, "stories", `${s.id}.md`),
+      renderStoryFile(change, s, w, unjudged),
+    );
     files.push(`stories/${s.id}.md`);
   }
   await writeFileAtomic(join(dir, "stories.md"), renderIndex(stories, a));
@@ -775,6 +813,7 @@ export async function storiesStage(
     });
   const dir = changeFolder(root, change.id);
   const rel = `${changesRelOf(root)}/${change.id}`;
+  await refuseWhileEarlierStuck(root, await loadChangeContext(root), change, "stories");
   const read = await readDeltas(dir);
   if (read.problems.length)
     throw new PlannerError("refused", `The target flows don't read: ${read.problems.join("; ")}`);
@@ -974,7 +1013,13 @@ Rules:
     ],
     write: async (a) => {
       requests = await merge(a);
-      return writeStories(root, change.id, stories, a, requests, now);
+      const open = await unjudgedChecks(unwrittenChecks(a, stories), {
+        ...(judging ? { runtime: judging } : {}),
+        store,
+        change: change.id,
+        now,
+      });
+      return writeStories(root, change.id, stories, a, requests, now, open);
     },
     current: () => readStoriesAnswer(dir),
   };

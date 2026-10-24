@@ -21,6 +21,8 @@ import { ownersFor } from "./codeowners.js";
 import { loadChangeContext, type ChangeContext } from "./context.js";
 import { ChangeError, type Reason } from "./errors.js";
 import {
+  phaseStage,
+  stageFiles,
   artifactFiles,
   handoffName,
   phaseArtifacts,
@@ -104,6 +106,9 @@ async function handoffFiles(
     artifacts.push(art);
     for (const x of f) files.add(x);
   }
+  // On the stage path, the files the phase's stage wrote and its loop state (ADR 0087).
+  const stage = await phaseStage(ctx, a.change, phase);
+  if (stage) for (const f of await stageFiles(dir, stage)) files.add(f);
   if (phase === "build") {
     for (const extra of ["tasks.md", "repos.yaml"]) {
       try {

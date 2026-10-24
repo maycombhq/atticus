@@ -4,6 +4,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### Four fixes from a live run of the stages (ADR 0087, 0115 and 0117 addenda)
+
+- A fix a person applies when the gate has no critic round left no longer leaves the change stuck. Once a person has acted on every blocking finding of the gate's newest round (applied, waived or dismissed), the gate allows one checking round past its limit; `atticus critic` and the stage run it. If it finds something blocking, a person decides again, and the stage stops without drafting over their fix. `atticus finding … apply` says what really comes next instead of "the next critic round checks the fix". `gateStatus` and `atticus findings --json` show `checkRound`.
+- `atticus change status`, `canAdvance` and `change handoff` follow the path a change is on. On the stage path (feature, architecture, stories) a phase is due its stage's files and its loop done, not `proposal.md` and `specs/`; the hand-off PR carries the stage's files. The path is the change policy's new `stages` section, so an org pack can change it.
+- A criterion that checks a field without naming it is no longer handed back with "name it in its then clause". Where a model is called directly a judge reads it (`covers-field`); with a hand-off it is a note under the criterion in the story file for the story lens and the reviewer, never a stop. It reads verdicts with `settle()` from `@maycombhq/ai`.
+- The architecture and stories stages refuse while an earlier stage isn't finished (its loop not done, or its gate blocked), naming the stage, the gate and the command. They may still run before the earlier hand-off PR merges.
+
 ### Any assistant, set up from the app (ADR 0121)
 
 - The app has an **AI** tab under Set up. It sets whether AI runs here, which assistants your people use and the default one, the modes a step may run in and the default, and the model provider, with one field for each setting the provider accepts. It shows whether the provider's key variable is set on this machine, by name.

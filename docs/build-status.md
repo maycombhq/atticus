@@ -265,6 +265,8 @@ Model providers (ADR 0065); onboarding for framework models (0066); the shared p
 
 Retrieval by meaning in the context engine (ADR 0116): 61 retrieval cases in the context eval; identifier words, glossary synonyms, wiki sections by heading path and in parts, documents in `inputs/`, rank fusion; a local embedding model (`@maycombhq/embed`, fp32 ONNX on the CPU, int8 vectors, `atticus index embed`, `search --by`, `similar`); the model's expansion and rerank (planner `expand.ts`, `rerank.ts`, hand-offs of their own, run record version 3), the gaps' word lists removed. Then the addendum: the bundled model and the expansion on by default (rerank off), one `retrievalOf` helper, lexical search with a note where the model or onnxruntime isn't installed, the expansion kept by what the model was shown and picked up again without `--resume`. Open items in G8.
 
+Four fixes from a live run of the stages on a real metarepo (2026-10-24; ADR 0087, 0115 and 0117 addenda): one checking round past a gate's limit once a person acted on every blocking finding (`checkRoundDue`, `gateStatus.checkRound`, the `apply` message); the lifecycle follows the stage path from the change policy's `stages` (status, `canAdvance`, the hand-off PR's files); an unjudged criterion is a note for the story lens, judged with `settle()` where a model is called directly; a later stage refuses while an earlier stage or its gate is stuck. Not yet: `atticus next` and the app's stage pages still pick the stage from the change's state, so they don't name a stuck earlier gate.
+
 ## How to work
 
 Follow `CLAUDE.md`: fixtures and tests first, `pnpm check` green, one commit per ticket with the attribution lines, never commit client data.

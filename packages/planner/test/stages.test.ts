@@ -6,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { describe, expect, it } from "vitest";
 import { HandoffRuntime, MockRuntime, type AiRequest } from "@maycombhq/ai";
-import { listQuestions, parseRecord, recordPath, serializeRecord } from "@maycombhq/core";
+import {
+  listQuestions,
+  memoryJudgments,
+  parseRecord,
+  recordPath,
+  serializeRecord,
+} from "@maycombhq/core";
 import {
   architectureStage,
   checkDeltas,
@@ -19,6 +25,7 @@ import {
   featureStage,
   readFigma,
   storiesStage,
+  coverageIssues,
   EXPAND_AGENT,
   type StageResult,
 } from "../src/index.js";
@@ -804,6 +811,105 @@ describe("the stories stage", () => {
       ["firewall-rule-request", "forge-orders.place-order", 1],
       ["vendor-onboarding", "forge-orders.place-order", 1],
     ]);
+  });
+});
+
+// Found on a real metarepo: a criterion that checks a field without naming it ("then
+// unreadCount is 4, counting messages after joinedAt" checks lastReadAt) was refused three
+// drafts running in hand-off mode, and the stage stopped. Whether a criterion checks a field is
+// meaning (ADR 0117): a judge reads it where a model is called directly; with a hand-off it is
+// left unjudged, a note for the story lens and the reviewer, never a hard stop.
+describe("a criterion that checks a field without naming it", () => {
+  const UNNAMED = STORIES.replace(
+    "then the orders row holds sku, quantity and fraud_verdict",
+    "then the orders row holds sku, quantity and what the screen decided",
+  );
+  const CLAIM = {
+    task: "1.3",
+    repo: "forge-orders",
+    field: "fraud_verdict",
+    criterion:
+      "Given an accepted order, when it is saved, then the orders row holds sku, quantity and what the screen decided",
+  };
+  /** A runtime that calls a model directly, answering the judge with one verdict. */
+  class Judge extends MockRuntime {
+    override readonly kind = "model" as const;
+    constructor(verdict: string, quote = "what the screen decided") {
+      super(
+        () =>
+          `judgments:\n  - item: 1\n    verdict: ${verdict}\n    quotes: [{ of: criterion, text: "${quote}" }]\n`,
+        { now: () => NOW },
+      );
+    }
+  }
+
+  it("in hand-off mode is a note for the story lens and the reviewer, and the stage is done", async () => {
+    const root = await estateRoot();
+    await featured(root);
+    await architectureStage(root, CHANGE, { runtime: assistant([DELTAS]), now: NOW });
+    const r = await storiesStage(root, CHANGE, { runtime: assistant([UNNAMED]), now: NOW });
+    expect(r.state).toBe("done");
+    expect(r.drafts).toBe(1);
+    const note = r.findings.find((f) => f.rule === "stories.check-unjudged");
+    expect(note).toMatchObject({ blocking: false, target: "1.3:fraud_verdict" });
+    expect(r.findings.some((f) => f.rule === "stories.check-not-in-criterion")).toBe(false);
+    // The story file says so, where the story lens and the PR's reviewer read it.
+    const story = await readFile(join(dir(root), "stories/s1-place-order.md"), "utf8");
+    expect(story).toContain(
+      "  - Not judged yet: this criterion says it checks fraud_verdict without naming it. The story lens and the reviewer confirm it does (judgments/covers-field/ keeps a verdict).",
+    );
+  });
+
+  it("with a direct model, asks the judge: yes passes, no goes back, unsure is a note", async () => {
+    const store = memoryJudgments();
+    const at = { store, change: CHANGE, now: NOW };
+    expect(await coverageIssues([CLAIM], { ...at, runtime: new Judge("yes") })).toEqual([]);
+    const no = await coverageIssues([CLAIM], {
+      store: memoryJudgments(),
+      change: CHANGE,
+      now: NOW,
+      runtime: new Judge("no", "the orders row holds sku, quantity"),
+    });
+    expect(no).toMatchObject([
+      { rule: "stories.check-not-in-criterion", blocking: true, kind: "decision" },
+    ]);
+    expect(no[0]!.message).toContain("a judge read its then clause");
+    const unsure = await coverageIssues([CLAIM], {
+      store: memoryJudgments(),
+      change: CHANGE,
+      now: NOW,
+      runtime: new Judge("unsure"),
+    });
+    expect(unsure).toMatchObject([{ rule: "stories.check-unjudged", blocking: false }]);
+    // With no direct model nothing is asked, and nothing is guessed.
+    const handoff = await coverageIssues([CLAIM], {
+      store: memoryJudgments(),
+      change: CHANGE,
+      now: NOW,
+    });
+    expect(handoff).toMatchObject([{ rule: "stories.check-unjudged", blocking: false }]);
+    // The verdict the judge gave is kept: the same claim asks no model again.
+    expect(await coverageIssues([CLAIM], { ...at })).toEqual([]);
+  });
+
+  it("keeps the fact checks: a field under no criterion's checks, and a check that isn't a field", async () => {
+    const root = await estateRoot();
+    await featured(root);
+    await architectureStage(root, CHANGE, { runtime: assistant([DELTAS]), now: NOW });
+    const bad = STORIES.replace(
+      "checks: [sku, quantity, fraud_verdict]",
+      "checks: [sku, quantity, colour]",
+    );
+    const prompts: string[] = [];
+    const r = await storiesStage(root, CHANGE, {
+      runtime: assistant([bad, STORIES], prompts),
+      now: NOW,
+    });
+    expect(r.state).toBe("done");
+    expect(prompts[1]).toContain(
+      "a criterion says it checks colour, which isn't one of the task's fields",
+    );
+    expect(prompts[1]).toContain("Task 1.3's criteria check no value of fraud_verdict");
   });
 });
 

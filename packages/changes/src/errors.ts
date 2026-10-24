@@ -11,6 +11,7 @@ export type ReasonCode =
   | "critic-round-missing"
   | "lens-waiting"
   | "lens-failed"
+  | "stage-not-done"
   | "pr-not-merged"
   | "approval-missing"
   | "self-approval"

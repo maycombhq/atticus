@@ -1,0 +1,15 @@
+# The feature placement (ADR 0087). Atticus writes this file.
+schemaVersion: 1
+change: add-transfer-limit
+entry: brief
+summary: Each account gets a daily transfer limit; a transfer over it is refused.
+features:
+  - id: cap-transfers
+    why: Sending money between accounts is the feature that gains the limit.
+flows:
+  - id: ledger.accept-transfer
+    how: changed
+    why: The limit is checked where Ledger accepts a transfer.
+newFlows: []
+gaps: []
+conflicts: []

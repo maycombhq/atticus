@@ -1,0 +1,11 @@
+schemaVersion: 2
+flow: ledger.accept-transfer
+repo: ledger
+change: modify
+why: Ledger refuses a transfer over the account's daily limit.
+steps:
+  - op: add
+    after: 1
+    kind: branch
+    what: A transfer over today's limit is refused
+    fields: { reads: [amount, dailyLimit] }
