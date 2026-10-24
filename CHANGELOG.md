@@ -12,6 +12,13 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - A call to a component the map has no entry of is a note: nothing confirms it. So is a breaking change to a flow whose trigger names no endpoint.
 - No deploy order is a note for now, not blocking, so drafts recorded before it keep passing.
 
+### A story a developer can build without asking (ADR 0124 addendum B-stories)
+
+- **Every story file has the sections of a professional story**: Context (what the code doesn't say, then today's flow with its citations and error paths, and the flow once the change is in, each changed step naming its task), Scope in and out (the tasks, and the steps the flow keeps), Acceptance criteria, Interface changes (each entry with its fields' side, type, required, default and validation, breaking or additive, and its consumers), Data changes (each column the steps add, with its type, nullable, default, migration, classification and retention), Non-functional (auth, audit, timeouts and retries, performance), Tests and Test notes, Depends on, and a Definition of done from your org pack's test strategy and build and qa gates.
+- **Each task names** the files to touch (from its citations, and the migration it adds), the tests to add, and the command to run (the repo's `build` in `repos.manifest.yaml`). A criterion can name the entry it exercises, the validation it relies on, and for an error its rule and status.
+- **`stories.md` fills Depends on** when a story calls an entry or uses a table another story of the change adds.
+- **The stories stage checks a story is complete** before the critic sees it, and sends it back with the list: every entry the target flows add is in the interface changes; every request field an entry of the repo gains has a validation and an error criterion; no section names a field, column, entry, consumer, story or repo the target flows and the catalog don't know; a column's facts match the target flow's; every write that adds a column names its migration. A section a story leaves out is reported but doesn't stop the stage yet, so answers written before this still pass.
+
 ### A path written across lines can be cited (ADR 0124, A4)
 
 - **`cite.with`** in a fact: the other lines its path is built from (a class prefix, a base URL, a context path, a route template, a proto package). `atticus verify` checks every part is written on one of the lines.

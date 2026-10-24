@@ -1,0 +1,101 @@
+# The story writer's answer for add-fraud-check with every section of a professional story
+# (ADR 0124 addendum B-stories). Invented: the Forge estate and the vendor Northwind Pay.
+stories:
+  - id: s1-place-order
+    title: Screen each order for fraud
+    asA: shop owner
+    iWant: every new order screened by Northwind Pay
+    soThat: stolen cards don't empty the stock
+    context: Northwind Pay is a vendor outside the estate; it answers each screening with a verdict of accepted or rejected.
+    scope:
+      in:
+        - The checkout sends the card token with each order
+      out:
+        - Orders placed before the change are not screened
+        - The stock reservation call and its fields stay as they are
+    interfaces:
+      - entry: POST /orders
+        change: changed
+        breaking: true
+        why: A client that doesn't send cardToken is refused with 400.
+        fields:
+          - { name: cardToken, side: request, type: string, required: true, change: added, validation: "required; 1 to 64 characters" }
+      - entry: POST /v1/screenings
+        change: added
+        breaking: false
+        why: A new call to the vendor.
+        consumers: [forge-orders]
+        fields:
+          - { name: sku, side: request, type: string, required: true, change: added }
+          - { name: quantity, side: request, type: integer, required: true, change: added }
+          - { name: cardToken, side: request, type: string, required: true, change: added }
+          - { name: verdict, side: response, type: string, required: true, change: added }
+    data:
+      - table: forge-orders-db.orders
+        column: fraud_verdict
+        type: varchar(20)
+        nullable: true
+        change: added
+        migration: V4__add_fraud_verdict.sql
+        classification: internal
+        retention: as long as the order row
+    nonFunctional:
+      auth: POST /orders is called as today. The call to Northwind Pay sends the vendor's key from config, never logged.
+      audit: The verdict is kept on the order (fraud_verdict); a refusal is logged with the sku, never the cardToken.
+      timeouts: The call to Northwind Pay times out after 2 seconds with no retry; a timeout refuses the order with 503.
+      performance: One more call per order; no new index.
+    tests:
+      - OrderControllerTest gains a refused order (422), a missing cardToken (400) and a vendor timeout (503)
+      - FraudClientTest (new) covers the verdict against a stub of POST /v1/screenings
+    dependencies:
+      notes:
+        - The V4 migration runs before forge-orders is released
+    tasks:
+      - id: "1.1"
+        criteria:
+          - text: "Given a new order with sku, quantity and cardToken, when POST /orders is called, then sku, quantity and cardToken are sent to Northwind Pay and the verdict is read"
+            checks: [sku, quantity, cardToken, verdict]
+            entry: POST /orders
+          - text: "Given an order without a cardToken, when POST /orders is called, then 400 says cardToken is required and nothing is sent to Northwind Pay"
+            checks: [cardToken]
+            outcome: error
+            entry: POST /orders
+            validation: cardToken is required
+            rule: required
+            status: 400
+          - text: "Given Northwind Pay doesn't answer within 2 seconds, when POST /orders is called, then 503 says the order can't be screened now and no stock is reserved"
+            outcome: error
+            entry: POST /orders
+            rule: unavailable
+            status: 503
+        tests:
+          - FraudClientTest sends sku, quantity and cardToken and reads the verdict
+      - id: "1.2"
+        criteria:
+          - text: "Given a rejected verdict, when POST /orders is called, then 422 says the verdict refused the order and no stock is reserved"
+            checks: [verdict]
+            outcome: error
+            rule: forbidden
+            status: 422
+          - text: "Given an accepted verdict, when POST /orders is called, then the verdict lets the order go on to reserve stock"
+            checks: [verdict]
+      - id: "1.3"
+        criteria:
+          - text: "Given an accepted order, when it is saved, then the orders row holds sku, quantity and fraud_verdict"
+            checks: [sku, quantity, fraud_verdict]
+          - text: "Given the insert fails, when the order is saved, then 500 and no orders row holds the order's fraud_verdict"
+            checks: [fraud_verdict]
+            outcome: error
+            rule: other
+            status: 500
+requests:
+  - item: firewall-rule-request
+    flow: forge-orders.place-order
+    step: 1
+    why: The new call reaches the Northwind Pay host.
+    quote: "including every new vendor host"
+  - item: vendor-onboarding
+    flow: forge-orders.place-order
+    step: 1
+    why: The order's details go to Northwind Pay for the first time.
+    quote: "Before a service sends any data to a vendor for the first time."

@@ -47,4 +47,10 @@ order; `wrong-order.yaml`, which deploys forge-orders before its migration and b
 forge-stock; and `clean.yaml`, which is right. `expected/` holds the findings of the first two
 and the sections design.md gains from the third. The tests copy it in themselves.
 
+`stories/` is the fraud check's story with every section of a professional story (ADR 0124
+addendum B-stories): `placed.yaml` and `deltas.yaml`, the feature and architecture answers;
+`answer.yaml`, the story writer's answer with context, scope, interface and data changes,
+non-functional notes, test notes and dependencies; and `expected/s1-place-order.md`, the story
+file the stage writes from it, with a build command from a repos manifest the test writes.
+
 Everything here is invented.
