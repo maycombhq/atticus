@@ -2160,6 +2160,10 @@ export const COPY = {
     keySet: (name: string) => `${name} is set on this machine.`,
     keyNotSet: (name: string) =>
       `${name} isn't set on this machine: set it to the key before testing.`,
+    keyLabel: (name: string) => `The key for ${name}`,
+    setKey: "Set the key on this machine",
+    keyKept: (name: string) =>
+      `Kept ${name} in this machine's credential store. It never goes in runtime.yaml.`,
     save: "Save",
     saved: (path: string) =>
       `Saved ${path}. Commit it in a pull request: the org pack is reviewed like code.`,

@@ -84,7 +84,7 @@ adapters:
       keyEnv: ATTICUS_MODEL_KEY # the NAME of the variable holding the key
 ```
 
-**The key is never in runtime.yaml.** `keyEnv` names an environment variable; set that variable in the environment Atticus runs in (a user environment variable, or your secrets tooling). Atticus refuses a setting that looks like a key or token, and never prints a key: messages name the variable instead.
+**The key is never in runtime.yaml.** `keyEnv` names where the key is: an environment variable of that name in the environment Atticus runs in (a user environment variable, or your secrets tooling), or this machine's credential store under that name. Use `atticus secret set ATTICUS_MODEL_KEY` and pipe the key in, or the AI tab's "Set the key on this machine". The environment is read first. Atticus refuses a setting that looks like a key or token, and never prints a key: messages name the variable instead.
 
 Settings every provider reads:
 

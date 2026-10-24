@@ -8,6 +8,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - The app has an **AI** tab under Set up. It sets whether AI runs here, which assistants your people use and the default one, the modes a step may run in and the default, and the model provider, with one field for each setting the provider accepts. It shows whether the provider's key variable is set on this machine, by name.
 - **Save** writes the org pack's `runtime.yaml`. It keeps everything the tab doesn't change, is checked against the schema, refuses anything that looks like a key, and says to commit the file in a pull request.
+- A provider's key can be kept in this machine's credential store instead of an environment variable, under the name `runtime.yaml` gives as `keyEnv`. The runtime reads the environment first, then the store. `atticus secret set|check|forget <name>` manages it: the key is read from stdin and never printed. The AI tab has a password field, "Set the key on this machine" (`POST /api/settings/ai/key`). It uses the system's own command, so no dependency is added: on Windows the key is encrypted with DPAPI for the current user; on macOS it goes in the Keychain; on Linux in the Secret Service.
 - **Test the provider** asks the configured provider one short question, with nothing of the estate in it, and says whether it answered.
 - The local API gains `GET` and `PUT /api/settings/ai` and `POST /api/settings/ai/test` (API 2.16.0). `@maycombhq/model-providers` exports each provider's accepted settings (`PROVIDER_SETTINGS`).
 

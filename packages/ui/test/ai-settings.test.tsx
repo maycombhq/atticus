@@ -65,6 +65,9 @@ describe("the AI tab (ADR 0121)", () => {
     expect(out).toContain('id="ai-setting-baseUrl"');
     expect(out).not.toContain('id="ai-setting-region"');
     expect(out).toContain(esc(T.keySet("ATTICUS_MODEL_KEY")));
+    // The key itself is typed into a password field and kept on this machine, never in the file.
+    expect(out).toMatch(/id="ai-key" type="password"/);
+    expect(out).toContain(esc(T.setKey));
     expect(out).toContain(T.test);
   });
 

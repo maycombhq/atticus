@@ -17,6 +17,7 @@ const FORGE = join(dirname(fileURLToPath(import.meta.url)), "../../../fixtures/f
 let srv: RunningServer;
 let root: string;
 const asked: string[] = [];
+const kept = new Map<string, string>();
 
 const call = async (method: string, path: string, body?: unknown) => {
   const r = await fetch(srv.url + path, {
@@ -38,6 +39,11 @@ beforeAll(async () => {
     extend: (r, ctx) =>
       uiAiRoutes(r, ctx, {
         env: { ATTICUS_MODEL_KEY: "set" },
+        keys: {
+          get: (n) => kept.get(n),
+          set: (n, v) => void kept.set(n, v),
+          forget: (n) => void kept.delete(n),
+        },
         provider: (type, settings) => ({
           model: String(settings.model ?? type),
           complete: async ({ prompt }) => {
@@ -121,6 +127,17 @@ describe("the AI tab's API (ADR 0121)", () => {
     });
     expect(bad.status).toBe(422);
     expect(JSON.stringify(bad.body)).toMatch(/default mode must be allowed/);
+  });
+
+  it("keeps a key in this machine's credential store, never in runtime.yaml or the answer", async () => {
+    const key = "sk-abcdefghijklmnopqrstuvwx";
+    const r = await call("POST", "/api/settings/ai/key", { name: "OTHER_KEY", value: key });
+    expect(r.status).toBe(200);
+    expect(JSON.stringify(r.body)).not.toContain(key);
+    expect(kept.get("OTHER_KEY")).toBe(key);
+    expect(await runtimeFile()).not.toContain(key);
+    const bad = await call("POST", "/api/settings/ai/key", { name: "not a name", value: key });
+    expect(bad.status).toBe(422);
   });
 
   it("asks the provider once, with nothing from the estate, and says whether it answered", async () => {

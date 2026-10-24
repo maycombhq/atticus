@@ -88,4 +88,5 @@ Home and the editors' Next view say which mode, assistant and model will run a s
 ## Built
 
 - Item 1.
-- Item 2: the AI tab (`ui/src/screens/run/AiSettings.tsx`), with its routes in `cli/src/ui-api-ai.ts` and the providers' settings from `PROVIDER_SETTINGS`. Not built yet: models allowed and budgets in the form (they are kept as they are), and keys in the OS credential store (item 3).
+- Item 2: the AI tab (`ui/src/screens/run/AiSettings.tsx`), with its routes in `cli/src/ui-api-ai.ts` and the providers' settings from `PROVIDER_SETTINGS`. Not built yet: models allowed and budgets in the form (they are kept as they are), and keys in the OS credential store (item 3, now built).
+- Item 3: `@maycombhq/model-providers` `systemKeyStore` and `defaultKeyStore`; `readKey` reads the environment, then the store; `atticus secret`; the AI tab's key field. On macOS the key goes to `security -i` on stdin; on Windows it goes to PowerShell on stdin and is kept encrypted with DPAPI in `%APPDATA%\atticus\keys`; on Linux to `secret-tool` on stdin.

@@ -72,6 +72,8 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
   const [f, setF] = useState<AiForm>(() => formOf(p.data));
   const save = useAction();
   const test = useAction();
+  const keep = useAction();
+  const [key, setKey] = useState("");
   const fields = p.data.providers.find((x) => x.type === f.provider)?.settings ?? [];
   const keyEnv = f.settings.keyEnv?.trim();
   const configured = p.data.model?.type;
@@ -224,6 +226,39 @@ export function AiSettingsForm(p: { data: AiSettings; onSaved?: () => void }) {
             {p.data.keySet ? T.keySet(keyEnv) : T.keyNotSet(keyEnv)}
           </p>
         )}
+        {keyEnv && (
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <label htmlFor="ai-key" className="mono">
+              {T.keyLabel(keyEnv)}
+            </label>
+            <input
+              id="ai-key"
+              type="password"
+              className="field"
+              autoComplete="off"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+            />
+            <button
+              type="button"
+              className="btn"
+              disabled={keep.busy || !key.trim()}
+              onClick={() =>
+                void keep.run(async () => {
+                  await api("/api/settings/ai/key", {
+                    method: "POST",
+                    body: { name: keyEnv, value: key },
+                  });
+                  setKey("");
+                  p.onSaved?.();
+                }, T.keyKept(keyEnv))
+              }
+            >
+              {T.setKey}
+            </button>
+          </div>
+        )}
+        <Note note={keep.note} />
       </fieldset>
 
       <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>

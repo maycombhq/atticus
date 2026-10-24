@@ -22,6 +22,7 @@ export {
 export { copy } from "./messages.js";
 export * from "./network.js";
 export * from "./settings.js";
+export * from "./credentials.js";
 export * from "./sigv4.js";
 
 /**
