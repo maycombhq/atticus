@@ -122,6 +122,30 @@ The built-in readers on the new kinds (no scan settings): fields 42 found, 544 m
 
 `atticus bench facts [<repo>] [--facts file]` projects the facts file the assistant wrote (`projectFacts`, the same projection `atticus verify` feeds the catalog) and scores the records with `bench run`'s matcher, so found, missed and wrong mean the same and the numbers compare with the readers' 58%/86% precision and 32%/58% recall. Without `--facts` it reads `<cache>/<repo>/.atticus/facts/<repo>.jsonl` (the assistant ran `/atticus map` in the clone) or `<cache>/facts/<repo>.jsonl`. It prints each repo's total, a line per kind, and the total over serves to deploys beside the total over every kind. Screens (no reference lists a UI's routes as served), their fields and flows (scored against `flows/`) are left out and counted; facts of another commit than the pin are refused. No clone is needed. The first measured run (A4: the assistant reading batch 1 with the verifier on) is recorded here when it is made.
 
+## The assistant reading batch 1 (A4, 2026-10-24)
+
+Claude (Opus) as the reading assistant, one session per one or two repos, following `/atticus-map` with `atticus verify` in the loop, never opening `bench/`. Every kept fact passed the verifier. Serves to deploys, the kinds the readers' baseline is measured on:
+
+| Repo                     |   Found | Missed |  Wrong | Precision |  Recall | Readers (P / R) |
+| ------------------------ | ------: | -----: | -----: | --------: | ------: | --------------: |
+| spring-petclinic         |      25 |      0 |      0 |      100% |    100% |      100% / 96% |
+| spring-petclinic-rest    |      46 |      0 |      0 |      100% |    100% |       17% / 17% |
+| spring-petclinic-angular |      30 |      0 |      0 |      100% |    100% |         0% / 0% |
+| eshop                    |     120 |      2 |     34 |       78% |     98% |       82% / 34% |
+| eshop-modernizing        |      48 |      7 |     16 |       75% |     87% |       75% / 16% |
+| microservices-demo       |      50 |      1 |     11 |       82% |     98% |       61% / 39% |
+| **Batch 1**              | **319** | **10** | **61** |   **84%** | **97%** |   **60% / 31%** |
+
+With fields and config (the two references that cover them): spring-petclinic-rest 96% precision, 98% recall over every kind.
+
+**This batch is tuned, not held out.** It was read twice: the first read found the protocol's and the verifier's gaps (paths built across lines, gRPC names, routes without a leading slash, conventional routes, config keys with `:`), those were fixed (ADR 0124 addendum A4), and the facts were revised under the fixed protocol. The protocol's rules are product semantics, never the references' answers, but they were shaped on these repos, so batch 2 (16 repos, read once with the protocol frozen) is the measure that counts.
+
+What the remaining wrong facts are, by count:
+
+1. **Scope the references leave out and the protocol keeps** (about 40 of 61): eShop's YARP gateway routes (the protocol records a gateway's routes as its entries; the reference leaves them out as pass-through), Blazor form posts, the dev-only health checks, a hosted background service as a batch job, microservices-demo's load generator requests, and eshop-modernizing's hilo sequences and Azure SDK calls (both since ruled out by the protocol, after these reads). Each is a decision, recorded here, not hidden.
+2. **Modelling differences:** a docker-compose host counted as a deploy in eshop-modernizing (the protocol says compose is local running), an Azure AI Foundry resource as a deploy in eShop, Redis key patterns as stores.
+3. **Real misses:** two ASP.NET Identity tables used only by the library, the WebForms `.aspx` pages (since added to the protocol), and one call built from a runtime value.
+
 ## The stories bench (Phase B)
 
 `stories/rubric.md` is the rubric for a professional user story, and three reference stories, written by reading the code with every changed step, criterion and error case cited, are the answers:
