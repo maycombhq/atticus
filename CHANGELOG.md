@@ -4,6 +4,14 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 ## Unreleased
 
+### The architecture stage checks who a change breaks and the order it deploys in (ADR 0124 addendum B-arch)
+
+- A change that breaks who uses an entry or a table today lists them: `consumers` on the target flow, or `store.consumers` on the step. Breaking means a field the response returns is gone, the entry reads one field in place of another, the entry, the response or the flow is removed, a column gets another type, or the step is marked `breaking`. The consumers come from the map (Interface records, the specs' calls, the table's readers and writers), and the architect sees them before its first draft. One the map knows that the draft leaves out goes back to the drafter.
+- The target flows give a **deploy order** (`deploy`): each migration before the code that reads or writes its table, each callee before the caller of an entry it adds or changes, and every repo and migration of the change. A wrong order goes back to the drafter. design.md shows the order, and the breaking changes with who they break.
+- A type given for a column the table has, other than the catalog's, is a type change: it needs its migration, it breaks the table's readers, and data.md says so.
+- A call to a component the map has no entry of is a note: nothing confirms it. So is a breaking change to a flow whose trigger names no endpoint.
+- No deploy order is a note for now, not blocking, so drafts recorded before it keep passing.
+
 <<<<<<< HEAD
 ### A path written across lines can be cited (ADR 0124, A4)
 

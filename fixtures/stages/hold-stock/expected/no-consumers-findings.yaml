@@ -1,0 +1,6 @@
+# What the architecture stage's checks give drafts/no-consumers.yaml, as rule, target and
+# whether it blocks, in order: each breaking change names the consumers the map knows, and the
+# missing deploy order is a risk (not blocking, so drafts recorded before it keep passing).
+- [delta.consumer-missing, forge-stock.reserve-stock, true]
+- [delta.consumer-missing, "forge-orders.place-order#2", true]
+- [delta.no-deploy-order, deploy, false]

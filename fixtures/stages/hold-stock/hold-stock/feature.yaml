@@ -1,0 +1,18 @@
+# The feature placed against the estate (ADR 0087): the stock service holds stock for a while
+# instead of reserving it, and the order keeps the hold.
+schemaVersion: 1
+change: hold-stock
+entry: brief
+summary: The stock service holds stock for a set time instead of reserving it, and returns the hold's id and when it ends. The order keeps the hold's id, and counts large quantities.
+features: []
+flows:
+  - id: forge-stock.reserve-stock
+    how: changed
+    why: The reservation becomes a hold, with its own id and an end.
+  - id: forge-orders.place-order
+    how: changed
+    why: The order keeps the hold's id.
+newFlows: []
+gaps: []
+conflicts: []
+questions: []

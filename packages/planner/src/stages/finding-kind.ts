@@ -70,6 +70,13 @@ export const DRAFTING_STAGE_RULES: ReadonlySet<string> = new Set([
   "delta.key-not-on-definition",
   "delta.key-unknown-column",
   "delta.key-unknown-reference",
+  // B-arch: the consumers the map knows and the deploy order the target flows need are facts.
+  "delta.consumer-missing",
+  "delta.unknown-consumer",
+  "delta.deploy-order",
+  "delta.deploy-missing",
+  "delta.deploy-unknown-repo",
+  "delta.deploy-unknown-migration",
   "stories.no-criteria",
   "stories.field-not-checked",
   "stories.unknown-check",

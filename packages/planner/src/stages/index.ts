@@ -6,6 +6,8 @@ export * from "./design-check.js";
 export * from "./loop.js";
 export * from "./feature.js";
 export * from "./architecture.js";
+export * from "./contracts.js";
+export * from "./deploy-order.js";
 export * from "./merge.js";
 export * from "./stories.js";
 export * from "./answer.js";
