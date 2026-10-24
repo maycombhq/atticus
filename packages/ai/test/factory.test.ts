@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -319,7 +320,7 @@ describe("headless Claude Code", () => {
     expect(file).not.toContain("atticus handoff done");
   });
 
-  it("runs a reviewer in its run folder, so the only file it can write is its findings", async () => {
+  it("runs a reviewer in a short folder of its own, so the only file it can write is its findings", async () => {
     const root = await tmp();
     const seen: HeadlessInvocation[] = [];
     const lens = AgentDefinition.parse({
@@ -356,7 +357,14 @@ describe("headless Claude Code", () => {
     expect(run.state).toBe("validated");
     expect(run.output).toBe("findings: []\n");
     const dir = join(root, ".runs/add-transfer-limit", prepared.runId);
-    expect(seen[0]!.cwd).toBe(dir);
+    // Outside the metarepo, under the system's temp folder: a short path Windows can start a
+    // program in (a run folder under a deep metarepo can pass 260 characters), and nothing of
+    // the metarepo's to edit. The findings are kept in the run folder; the folder is removed.
+    const cwd = seen[0]!.cwd;
+    expect(cwd.startsWith(tmpdir())).toBe(true);
+    expect(cwd.startsWith(root)).toBe(false);
+    expect(await readFile(join(dir, "findings.yaml"), "utf8")).toBe("findings: []\n");
+    expect(existsSync(cwd)).toBe(false);
     expect(seen[0]!.prompt).toContain("Write the result to findings.yaml.");
     expect(seen[0]!.prompt).not.toContain(".runs/add-transfer-limit");
   });

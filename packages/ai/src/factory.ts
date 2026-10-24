@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import {
   changesDirOf,
   changesRelOf,
@@ -111,6 +112,7 @@ export function claudeCodeCliRunner(o: { command?: string } = {}): HeadlessRunne
         }),
       i.prompt,
       i.timeoutMs,
+      i.cwd,
     );
 }
 
@@ -132,6 +134,8 @@ export function collectChild(
   start: () => ChildLike,
   prompt: string,
   timeoutMs: number,
+  cwd?: string,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     let done = false;
@@ -142,11 +146,15 @@ export function collectChild(
       done = true;
       clearTimeout(timer.id);
       const code = (e as NodeJS.ErrnoException).code;
+      // Windows says ENOENT too when the folder to start in has a path over 260 characters.
+      const tooLong = platform === "win32" && cwd !== undefined && cwd.length >= 248;
       reject(
         new RuntimeError(
-          code === "ENOENT"
-            ? "Claude Code (claude) is not on PATH; install it or use hand-off mode"
-            : `Claude Code couldn't be run: ${(e as Error).message}`,
+          code === "ENOENT" && tooLong
+            ? `Claude Code couldn't start in ${cwd}: its path is ${cwd.length} characters, more than Windows lets a program start in. Move the metarepo to a shorter path, or turn on long paths.`
+            : code === "ENOENT"
+              ? "Claude Code (claude) is not on PATH; install it or use hand-off mode"
+              : `Claude Code couldn't be run: ${(e as Error).message}`,
         ),
       );
     };
@@ -228,11 +236,16 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
     const { request } = run;
     const dir = join(runsDirOf(this.h.root), request.change, run.runId);
     // A reviewer (its output is findings, kept in its run) reads the draft and writes only its
-    // findings: it runs in its run folder, so an edit anywhere else needs a permission that
-    // `--permission-prompts none` never gives. Whatever the step's own invocation says.
+    // findings: it runs in an empty folder of its own, so an edit anywhere else needs a
+    // permission that `--permission-prompts none` never gives. Whatever the step's own
+    // invocation says. The folder is under the system's temp folder: outside the metarepo, and
+    // a short path, since Windows can't start a program in one over 260 characters and a run
+    // folder under a deep metarepo can pass that (found on a real run). Its findings are kept
+    // in the run folder; the folder goes.
     const reviewer = request.agent.outputArtifact === "findings" && request.outputIn === "run";
-    const inv = reviewer
-      ? { cwd: dir, permissionMode: "acceptEdits" as const }
+    const work = reviewer ? await mkdtemp(join(tmpdir(), "atticus-review-")) : undefined;
+    const inv = work
+      ? { cwd: work, permissionMode: "acceptEdits" as const }
       : (this.h.invocation?.(request) ?? { cwd: this.h.root });
     await mkdir(dir, { recursive: true });
     const promptFile = join(dir, "prompt.md");
@@ -257,10 +270,40 @@ export class HeadlessClaudeCodeRuntime extends OneShotRuntime {
       throw new RuntimeError(`the worktree ${inv.cwd} doesn't exist`);
     // The prompt asks for the result in a file; Claude Code writes it there and answers with a
     // summary. The file is the output when this run wrote it (created or changed it).
-    const outputFile =
-      request.outputIn === "run"
+    const outputFile = work
+      ? join(work, request.outputPath)
+      : request.outputIn === "run"
         ? join(dir, request.outputPath)
         : join(changesDirOf(this.h.root), request.change, request.outputPath);
+    try {
+      return await this.runIn(run, dir, inv, prompt, promptFile, outputFile, signal);
+    } finally {
+      if (work) {
+        const kept = await readFile(outputFile, "utf8").catch(() => undefined);
+        if (kept !== undefined) {
+          await mkdir(dirname(join(dir, request.outputPath)), { recursive: true });
+          await writeFile(join(dir, request.outputPath), kept, "utf8");
+        }
+        await rm(work, { recursive: true, force: true, maxRetries: 5 }).catch(() => undefined);
+      }
+    }
+  }
+
+  private async runIn(
+    run: Run,
+    dir: string,
+    inv: {
+      cwd: string;
+      permissionMode?: PermissionMode;
+      env?: Record<string, string>;
+      allowedTools?: string[];
+    },
+    prompt: string,
+    promptFile: string,
+    outputFile: string,
+    signal?: AbortSignal,
+  ) {
+    const { request } = run;
     const before = (await stat(outputFile).catch(() => undefined))?.mtimeMs;
     const res = await this.runner({
       cwd: inv.cwd,

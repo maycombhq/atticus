@@ -15,6 +15,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 - `atticus next` says where to type the slash command, from the default assistant ("In Cursor's chat: /atticus-feature …").
 - Outside a metarepo, `atticus next` now says the folder isn't one and how to make or open one, instead of suggesting a step.
 - `doctor` looks for each allowed assistant's program.
+- A critic lens on headless Claude Code runs in an empty folder of its own under the system's temp folder, not in its run folder: outside the metarepo, and a short path. Windows can't start a program in a folder over 260 characters, and a run folder under a deep metarepo can pass that; a real run hit it. Its findings are kept in the run folder. When Windows still can't start Claude Code in a long folder, the message says so instead of blaming PATH.
 - Running headless Claude Code no longer stops the command line on a pipe error (`ENOTCONN` on Windows): an error on the process or any of its streams fails that run with its reason (`collectChild`).
 
 ### The critic's lenses run on headless Claude Code (ADR 0115 addendum)

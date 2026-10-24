@@ -50,6 +50,14 @@ describe("running Claude Code to its end (ADR 0119: no crash on a pipe error)", 
     await expect(done).rejects.toThrow("not on PATH");
   });
 
+  it("on Windows, names a folder too long to start in rather than blaming PATH", async () => {
+    const c = fakeChild();
+    const deep = `C:/metarepo/${"d".repeat(270)}`;
+    const done = collectChild(() => c, "the prompt", 60_000, deep, "win32");
+    c.emit("error", Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" }));
+    await expect(done).rejects.toThrow(/its path is \d+ characters/);
+  });
+
   it("fails the run when the process can't even start", async () => {
     await expect(
       collectChild(
