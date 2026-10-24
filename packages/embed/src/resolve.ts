@@ -9,7 +9,7 @@ import { modelInfo, OnnxEmbedder, packageDir, runtimePackages } from "./model.js
 
 /**
  * Which embedding model a metarepo uses (ADR 0116), from runtime.yaml's `retrieval.embeddings`:
- * off (the default), `bundled` (the @maycombhq/embed-model package the offline bundle carries)
+ * `bundled` (the default: the @maycombhq/embed-model package installed with Atticus), off,
  * or a model folder. The embedder is made only when the model is there; otherwise the state says
  * why, for `atticus doctor` and the selection's note.
  */
