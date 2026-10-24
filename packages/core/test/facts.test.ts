@@ -284,6 +284,11 @@ describe("config facts: secrets by the key's last part", () => {
     expect(parseFacts(base("Identity:TokenUrl", "https://id.example/connect/token")).ok).toBe(true);
     expect(parseFacts(base("AccessTokenLifetime", "7200")).ok).toBe(true);
     expect(parseFacts(base("TokenLifetimeMinutes", "60")).ok).toBe(true);
+    // a flag or a mode is not a secret, whatever its key's name
+    expect(parseFacts(base("withCredentials", "true")).ok).toBe(true);
+    expect(parseFacts(base("credentials", "include")).ok).toBe(true);
+    expect(parseFacts(base("aadCredentials", "false")).ok).toBe(true);
+    expect(parseFacts(base("db.password", "hunter2")).ok).toBe(false);
   });
 });
 

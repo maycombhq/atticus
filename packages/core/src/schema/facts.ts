@@ -188,6 +188,8 @@ export const SETTING_KINDS = [
 const SECRET_KEY =
   /(password|passwd|pwd|secret|token|api[-_]?key|access[-_]?key|private[-_]?key|credentials?)$/i;
 const SECRET_SOURCE = /^(env:|vault:|secret:|ref:|\$\{|\{\{)/;
+/** A flag or a mode (`withCredentials: true`, `credentials: "include"`) is not a secret. */
+const NOT_A_SECRET = /^(true|false|yes|no|on|off|include|omit|same-origin|none|null|\d+)$/i;
 
 export const ConfigFact = z
   .strictObject({
@@ -210,7 +212,12 @@ export const ConfigFact = z
         .trim()
         .split(/[.:]|__|\s+/)
         .pop() ?? c.key;
-    if (c.value !== undefined && SECRET_KEY.test(last) && !SECRET_SOURCE.test(c.value)) {
+    if (
+      c.value !== undefined &&
+      SECRET_KEY.test(last) &&
+      !SECRET_SOURCE.test(c.value) &&
+      !NOT_A_SECRET.test(c.value.trim())
+    ) {
       ctx.addIssue({
         code: "custom",
         path: ["value"],

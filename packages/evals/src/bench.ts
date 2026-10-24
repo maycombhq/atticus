@@ -154,7 +154,10 @@ const HTTP = new Set(["rest", "webhook", "websocket", "sse"]);
 const httpPath = (path: string) => normalizePath(path).toLowerCase();
 /** A webhook receiver is an HTTP route: it compares as `rest` (the references have no webhook type). */
 const serveFact = (type: string, m: string | undefined, path: string) => {
-  const t = type === "webhook" ? "rest" : type;
+  // a webhook receiver and a websocket upgrade are HTTP routes: the references write them as rest
+  const t = type === "webhook" || type === "websocket" ? "rest" : type;
+  // a GraphQL operation is its field, whether or not it is written with its root type
+  if (t === "graphql") return `${t} ${path.trim().replace(/^(Query|Mutation|Subscription)\./, "")}`;
   return HTTP.has(t) ? `${t} ${method(m)}${httpPath(path)}` : `${t} ${path.trim()}`;
 };
 const callFact = (type: string, m: string | undefined, path: string) =>
@@ -190,6 +193,12 @@ const EVENT_VIA = new Set(["event-bus", "pubsub", "mq"]);
  * A field's name as compared: lower case, underscores and hyphens left out (first_name is
  * firstName), the planner's way of folding names.
  */
+/** A platform as compared: lower case, without its cloud's prefix (`azure-app-service` is `app-service`). */
+const platformName = (p: string) =>
+  p
+    .trim()
+    .toLowerCase()
+    .replace(/^(azure|aws|amazon|gcp|google-cloud|google)-(?=.)/, "");
 const fieldName = (n: string) => n.toLowerCase().replace(/[_-]/g, "");
 /** A config key as compared: lower case, `:` and `__` (.NET's section separators) as dots. */
 const configKey = (k: string) => k.trim().toLowerCase().replace(/__|:/g, ".");
@@ -222,7 +231,7 @@ function referenceFacts(r: BenchReference): Record<FactKind, string[]> {
     serves: (r.serves ?? []).map((s) => serveFact(s.type, s.method, s.path)),
     calls: (r.calls ?? []).map((c) => callFact(c.type, c.method, c.path)),
     stores: (r.stores ?? []).map((s) => table(s.table)),
-    deploys: (r.deploys ?? []).map((d) => d.platform.toLowerCase()),
+    deploys: (r.deploys ?? []).map((d) => platformName(d.platform)),
     fields: (r.fields ?? []).map((f) => {
       if (f.table !== undefined) return fieldFact(`column ${table(f.table)}`, undefined, f.name);
       if (f.entry !== undefined) {
@@ -294,7 +303,7 @@ export function benchFacts(
     } else if (r.kind === "Unresolved" && x.unresolvedKind === "call" && x.raw)
       out.calls.add(unresolvedCall(x.raw, soap.has(r.id)));
     else if (r.kind === "Table" && x.name) out.stores.add(table(x.name));
-    else if (r.kind === "Deployment" && x.platform) out.deploys.add(x.platform.toLowerCase());
+    else if (r.kind === "Deployment" && x.platform) out.deploys.add(platformName(x.platform));
     else if (r.kind === "Column" && x.name && x.table) {
       const t = byId.get(x.table) as unknown as { name?: string } | undefined;
       const tableName = t?.name ?? x.table.split(".").pop()!;
@@ -497,9 +506,10 @@ export interface FactsScore extends RepoScore {
     byKind: Record<Fact["kind"], number>;
     /**
      * What the score leaves out: screens (no reference lists a UI's routes as served), the
-     * fields of screens, and flows (scored against bench/flows, not here).
+     * fields of screens, scheduled jobs (no reference lists them) and flows (scored against
+     * bench/flows, not here).
      */
-    left: { screens: number; screenFields: number; flows: number };
+    left: { screens: number; screenFields: number; batchJobs: number; flows: number };
   };
   /** What the projection refused or couldn't join (a dangling reference), as it said it. */
   issues: { factId?: string; code: string; message: string }[];
@@ -523,7 +533,11 @@ export function scoreFacts(ref: BenchReference, facts: readonly Fact[]): FactsSc
   const screenFields = facts.filter(
     (f) => f.kind === "field" && (screens.has(f.owner) || f.side === "screen"),
   );
-  const leftOut = new Set(screenFields.map((f) => f.id));
+  // No reference lists scheduled jobs (ADR 0124 §6): they are left out and counted, like screens.
+  const jobs = new Set(
+    facts.filter((f) => f.kind === "entry" && f.entryType === "batch-job").map((f) => f.id),
+  );
+  const leftOut = new Set([...screenFields.map((f) => f.id), ...jobs]);
   const kept = facts.filter((f) => !screens.has(f.id) && !leftOut.has(f.id) && f.kind !== "flow");
   const { records, issues, ids } = projectFacts(kept);
   const soap = new Set(
@@ -542,6 +556,7 @@ export function scoreFacts(ref: BenchReference, facts: readonly Fact[]): FactsSc
       left: {
         screens: screens.size,
         screenFields: screenFields.length,
+        batchJobs: jobs.size,
         flows: byKind.flow,
       },
     },

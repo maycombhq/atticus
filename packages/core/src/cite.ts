@@ -30,6 +30,8 @@ export function lineNamesRoute(line: string, path: string): boolean {
   if (!segs.some((s) => !PARAM.test(s))) {
     const body = segs.map((s) => (PARAM.test(s) ? PARAM_RE : escape(s))).join("/");
     if (new RegExp(`["'\`]/${body}/?["'\`]`).test(line)) return true;
+    // a front end's root route: Angular's `path: ''`, React Router's `index: true`
+    if (!segs.length && /\bpath:\s*(['"`])\1|\bindex:\s*true\b/.test(line)) return true;
     // the last parameter concatenated in code: `base + "/" + productId`
     const head = segs
       .slice(0, -1)
@@ -63,8 +65,15 @@ export function lineNamesRoute(line: string, path: string): boolean {
 }
 
 /** Whether a line names a word (a table, a topic): case aside, not inside a longer word. */
-export const lineNamesWord = (line: string, word: string) =>
-  new RegExp(`(^|[^A-Za-z0-9_])${escape(word)}($|[^A-Za-z0-9_])`, "i").test(line);
+export const lineNamesWord = (line: string, word: string) => {
+  // A boundary is needed only where the word itself ends in a word character: `foo(` may be
+  // followed by anything, `foo` not by another letter.
+  const w = word.trim();
+  if (!w) return false;
+  const before = /^[A-Za-z0-9_]/.test(w) ? "(^|[^A-Za-z0-9_])" : "";
+  const after = /[A-Za-z0-9_]$/.test(w) ? "($|[^A-Za-z0-9_])" : "";
+  return new RegExp(`${before}${escape(w)}${after}`, "i").test(line);
+};
 
 /** Whether a line names a field, letter case and _ or - aside (first_name matches firstName). */
 export const lineNamesField = (line: string, field: string) => {
@@ -213,9 +222,12 @@ export function partsNamePath(lines: readonly string[], path: string): boolean {
     .filter(Boolean);
   if (!parts.length)
     return lines.some((l) => lineNamesRoute(l, path)) || defaultActionAt(lines, path);
+  // A slugified segment (`my-account`) is the name written without its hyphens (`MyAccount`).
   return parts.every((p) =>
-    lines.some((l) =>
-      new RegExp(`(^|[^A-Za-z0-9]|(?<=[a-z0-9])(?=[A-Z]))${escape(p)}`, "i").test(l),
+    [p, p.replace(/-/g, "")].some((q) =>
+      lines.some((l) =>
+        new RegExp(`(^|[^A-Za-z0-9]|(?<=[a-z0-9])(?=[A-Z]))${escape(q)}`, "i").test(l),
+      ),
     ),
   );
 }

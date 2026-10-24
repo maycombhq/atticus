@@ -5444,6 +5444,10 @@
             "schema": {
               "type": "string",
               "enum": [
+                "true",
+                "complete",
+                "safe",
+                "ship",
                 "business",
                 "architecture",
                 "story",
@@ -22317,6 +22321,10 @@
           "lens": {
             "type": "string",
             "enum": [
+              "true",
+              "complete",
+              "safe",
+              "ship",
               "business",
               "architecture",
               "story",

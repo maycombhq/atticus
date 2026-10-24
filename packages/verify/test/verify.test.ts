@@ -344,6 +344,71 @@ describe("what the revised reads found about the verifier (A4)", () => {
   });
 });
 
+describe("a route the file's place gives (held-out run)", () => {
+  const base = {
+    repo: "web",
+    commit: "0123abc",
+    verified: "none" as const,
+    by: "assistant" as const,
+    conf: "declared" as const,
+  };
+  const entry = (id: string, path: string, file: string, line = 1) => ({
+    ...base,
+    kind: "entry" as const,
+    id,
+    entryType: "rest" as const,
+    method: "GET",
+    path,
+    cite: { file, line, value: path },
+  });
+  const src = memorySource({
+    "src/Web/Pages/Basket/Checkout.cshtml": "@page\n@model CheckoutModel\n",
+    "src/Web/Pages/Index.cshtml": "@page\n@model IndexModel\n",
+    "src/Web/Areas/Identity/Pages/Account/Login.cshtml": "@page\n@model LoginModel\n",
+    "src/Web/Pages/Admin/Edit.cshtml": '@page "{id:int}"\n',
+    "WebForms/Web.config": "<configuration />\n",
+    "WebForms/Catalog/Create.aspx":
+      '<%@ Page Title="Create" Language="C#" CodeBehind="Create.aspx.cs" Inherits="Forge.Create" %>\n',
+    "web/src/app/discussions/[discussionId]/page.tsx": "export default function Page() {}\n",
+    "web/src/pages/teams/index.tsx": "export default function Teams() {}\n",
+    "public/_redirects": "/* /index.html 200\n",
+  });
+  it("takes a Razor Page, a WebForms page and a Next.js page at the path their file gives", async () => {
+    const r = await verifyFacts({
+      source: src,
+      facts: [
+        entry("rp", "/Basket/Checkout", "src/Web/Pages/Basket/Checkout.cshtml"),
+        entry("rp-index", "/", "src/Web/Pages/Index.cshtml"),
+        entry(
+          "rp-area",
+          "/Identity/Account/Login",
+          "src/Web/Areas/Identity/Pages/Account/Login.cshtml",
+        ),
+        entry("rp-template", "/Admin/Edit/{id}", "src/Web/Pages/Admin/Edit.cshtml"),
+        entry("wf", "/Catalog/Create.aspx", "WebForms/Catalog/Create.aspx"),
+        entry(
+          "next-app",
+          "/discussions/{discussionId}",
+          "web/src/app/discussions/[discussionId]/page.tsx",
+        ),
+        entry("next-pages", "/teams", "web/src/pages/teams/index.tsx"),
+        entry("redirect", "/*", "public/_redirects"),
+      ],
+    });
+    expect(r.rejected.map((x) => [x.fact.id, x.code, x.message])).toEqual([]);
+  });
+  it("rejects a path the file doesn't give", async () => {
+    const r = await verifyFacts({
+      source: src,
+      facts: [
+        entry("rp-wrong", "/Basket/Index", "src/Web/Pages/Basket/Checkout.cshtml"),
+        entry("wf-wrong", "/Catalog/Edit.aspx", "WebForms/Catalog/Create.aspx"),
+      ],
+    });
+    expect(r.rejected.map((x) => x.code)).toEqual(["claim-not-on-line", "claim-not-on-line"]);
+  });
+});
+
 describe("coverage: reported, never trusted (ADR 0124)", () => {
   it("doesn't count tests, build wrappers, package docs or message bundles as source", async () => {
     const { isSourceFile } = await import("../src/index.js");

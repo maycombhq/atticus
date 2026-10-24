@@ -99,6 +99,29 @@ describe("secrets never land in a map", () => {
 });
 
 describe("a path put together from several lines (ADR 0124 addendum A4)", () => {
+  it("names what the held-out reads wrote (A4, batch 2)", async () => {
+    const { partsNamePath } = await import("../src/index.js");
+    // a value ending in punctuation, followed by an identifier
+    expect(
+      lineNamesWord("    return ArticleInResponse(article=x)", "return ArticleInResponse("),
+    ).toBe(true);
+    expect(lineNamesWord('placeholder="Write a comment..."', "Write a comment...")).toBe(true);
+    expect(lineNamesWord("entries.push(x)", "entry")).toBe(false);
+    // a front end's root route
+    expect(lineNamesRoute("  { path: '', component: HomeComponent },", "/")).toBe(true);
+    expect(lineNamesRoute("      { index: true, element: <Landing /> },", "/")).toBe(true);
+    // a slugified route: the action's name, written with hyphens in the URL
+    expect(
+      partsNamePath(
+        [
+          "public class ManageController : Controller {",
+          "  public async Task<IActionResult> MyAccount() {",
+          "options.Conventions.Add(new RouteTokenTransformerConvention(new SlugifyParameterTransformer()));",
+        ],
+        "/manage/my-account",
+      ),
+    ).toBe(true);
+  });
   it("names / for the default action of a conventional route, and nothing else", async () => {
     const { partsNamePath } = await import("../src/index.js");
     const home = ["public class HomeController : Controller {", "  public IActionResult Index() {"];

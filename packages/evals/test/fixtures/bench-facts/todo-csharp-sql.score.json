@@ -203,6 +203,7 @@
     "left": {
       "screens": 1,
       "screenFields": 1,
+      "batchJobs": 0,
       "flows": 1
     }
   },

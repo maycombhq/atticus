@@ -12,6 +12,7 @@ import {
   type Fact,
 } from "@maycombhq/core";
 import { globToRegExp } from "@maycombhq/sdk";
+import { pageRouteMatches } from "./pages.js";
 import { insideRepo, type FileSource } from "./source.js";
 
 /**
@@ -247,6 +248,9 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
     }
     const holds = (c: Claim) =>
       claimOnLines(lines, cite.line, c) ||
+      // a framework that routes by file place (Razor Pages, WebForms, Next.js)
+      (c.kind === "route" &&
+        pageRouteMatches(cite.file, lines, (p) => linesOf(p) !== undefined, c.value)) ||
       (parts.length > 0 &&
         (c.kind === "route"
           ? partsNamePath([...near(lines, cite.line), ...partLines], c.value)
@@ -261,7 +265,8 @@ export async function verifyFacts(o: VerifyOptions): Promise<VerifyReport> {
       const naming = [cite.line - 1, cite.line, cite.line + 1]
         .map((n) => lines[n - 1])
         .filter((l): l is string => l !== undefined && claims.some((c) => lineNamesClaim(l, c)));
-      if (naming.length && naming.every(isCommentLine))
+      // Netlify's `_redirects` starts its rules with `/*`, which is no comment there
+      if (naming.length && !/(^|\/)_redirects$/.test(cite.file) && naming.every(isCommentLine))
         return {
           code: "claim-in-comment",
           message: `${label} claims ${claims.map((c) => `"${c.value}"`).join(" or ")}, which ${where} writes only in a comment; cite the code that does it`,

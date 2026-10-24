@@ -294,7 +294,7 @@ describe("bench: an assistant's facts file, projected and scored", () => {
       total: 16,
       verified: 16,
       byKind: { entry: 3, call: 1, store: 1, field: 6, deploy: 1, config: 3, flow: 1 },
-      left: { screens: 1, screenFields: 1, flows: 1 },
+      left: { screens: 1, screenFields: 1, batchJobs: 0, flows: 1 },
     });
     expect(s.issues).toEqual([]);
   });
@@ -457,5 +457,58 @@ calls:
     const s = scoreFacts(ref, got);
     expect(s.kinds.serves).toMatchObject({ found: 1, missed: [], wrong: [] });
     expect(s.kinds.calls).toMatchObject({ found: 4, missed: [], wrong: [] });
+  });
+});
+
+describe("bench: names that mean the same platform or operation (held-out run)", () => {
+  const ref = parseReference(`
+repo: invented-owners
+commit: ${COMMIT}
+covers: [serves, deploys]
+serves:
+  - { type: graphql, path: article, at: "src/schema.graphqls:3" }
+  - { type: graphql, path: createUser, at: "src/schema.graphqls:9" }
+deploys:
+  - { platform: azure-app-service, at: "infra/main.bicep:4" }
+`);
+  const got = [
+    fact({
+      kind: "entry",
+      id: "q-article",
+      entryType: "graphql",
+      path: "Query.article",
+      cite: cite("src/schema.graphqls", 3, "article"),
+    }),
+    fact({
+      kind: "entry",
+      id: "m-create-user",
+      entryType: "graphql",
+      path: "Mutation.createUser",
+      cite: cite("src/schema.graphqls", 9, "createUser"),
+    }),
+    fact({
+      kind: "deploy",
+      id: "d-web",
+      platform: "app-service",
+      cloud: "azure",
+      resourceName: "web",
+      cite: cite("infra/main.bicep", 4, "web"),
+    }),
+  ];
+  got.push(
+    // no reference lists scheduled jobs: left out and counted, like screens
+    fact({
+      kind: "entry",
+      id: "job-backup",
+      entryType: "batch-job",
+      path: "0 0 0 * * *",
+      cite: cite("src/Backup.java", 12, "0 0 0 * * *"),
+    }),
+  );
+  it("compares Query.field with field, and a platform with or without its cloud's prefix", () => {
+    const s = scoreFacts(ref, got);
+    expect(s.facts.left).toMatchObject({ batchJobs: 1 });
+    expect(s.kinds.serves).toMatchObject({ found: 2, missed: [], wrong: [] });
+    expect(s.kinds.deploys).toMatchObject({ found: 1, missed: [], wrong: [] });
   });
 });

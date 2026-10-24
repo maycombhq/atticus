@@ -148,6 +148,40 @@ What the remaining wrong facts are, by count:
 2. **Modelling differences:** a docker-compose host counted as a deploy in eshop-modernizing (the protocol says compose is local running), an Azure AI Foundry resource as a deploy in eShop, Redis key patterns as stores.
 3. **Real misses:** two ASP.NET Identity tables used only by the library, the WebForms `.aspx` pages (since added to the protocol), and one call built from a runtime value.
 
+## The assistant reading batch 2, held out (A4, 2026-10-24)
+
+The 16 repos of batch 2, read once by four Claude (Opus) sessions with the protocol frozen after batch 1; nothing was tuned on them first. Serves to deploys:
+
+| Repo                           |   Found | Missed |  Wrong | Readers' found / missed / wrong |
+| ------------------------------ | ------: | -----: | -----: | ------------------------------: |
+| spring-petclinic-microservices |      33 |     14 |      3 |                     30 / 17 / 4 |
+| piggymetrics                   |      23 |      6 |      6 |                      4 / 25 / 9 |
+| spring-realworld               |      44 |      0 |      0 |                    26 / 18 / 18 |
+| spring-soap                    |       1 |      0 |      1 |                       0 / 1 / 0 |
+| jenkins-maven                  |       0 |      0 |      0 |                       0 / 0 / 0 |
+| eshop-on-web                   |      53 |     26 |     27 |                    18 / 61 / 29 |
+| clean-architecture             |      13 |     17 |      3 |                      2 / 28 / 1 |
+| todo-csharp-sql                |      24 |      0 |      0 |                     12 / 12 / 2 |
+| angular-realworld              |      19 |      0 |      0 |                      0 / 19 / 0 |
+| bulletproof-react              |      16 |     16 |      0 |                      0 / 32 / 0 |
+| node-realworld                 |      27 |      0 |      0 |                     5 / 22 / 19 |
+| nestjs-realworld               |      26 |      1 |      1 |                      21 / 6 / 0 |
+| todo-nodejs-mongo              |      26 |      0 |      0 |                     12 / 14 / 0 |
+| fastapi-template               |      42 |      1 |      3 |                     0 / 43 / 23 |
+| fastapi-realworld              |      27 |      0 |      3 |                     0 / 27 / 19 |
+| podinfo                        |      48 |      0 |     10 |                     36 / 12 / 1 |
+| **Batch 2**                    | **422** | **81** | **57** |             **166 / 337 / 125** |
+
+**88% precision, 84% recall**, against the readers' 57% and 33% on the same repos. Scored with three matcher equivalences added after the read and applied to every score (a GraphQL `Query.field` is the field; a platform compares without its cloud's prefix, `azure-app-service` is `app-service`; a websocket route compares as `rest`) and with scheduled jobs left out like screens (no reference lists them). Before those: 82% precision, 79% recall. Two reference copies for four of these repos were in a scratch folder the readers could reach; no reader reported opening them, and they are deleted.
+
+Where it falls short of the bar (85% recall, 95% precision), biggest first:
+
+1. **Routes a framework derives** (eshop-on-web, clean-architecture): slugified MVC routes, Razor Pages by file place, ASP.NET Identity's tables. The verifier couldn't check a path no line writes, so the readers wrote names as written or dropped them. Fixed after the read: the verifier now derives Razor Pages, WebForms and Next.js routes from the file's place and matches a slug against its name; the protocol says how to cite them.
+2. **Calls through a gateway or a generated client** (spring-petclinic-microservices, piggymetrics, clean-architecture, bulletproof-react): the protocol's late rule that a page script's requests to its own app aren't calls was too broad, and a generated client not in the repo left no call site to cite. Fixed in the protocol: a front end's requests that reach another service are calls; a generated client's call is cited at its call site with the server's route in `with`.
+3. **Framework endpoints** (fastapi-*, podinfo): API documentation and profiler routes. The protocol now leaves them out.
+
+These fixes are measured only by a second read, which would make batch 2 tuned too; the number above is the held-out one.
+
 ## The stories bench (Phase B)
 
 `stories/rubric.md` is the rubric for a professional user story, and three reference stories, written by reading the code with every changed step, criterion and error case cited, are the answers:
