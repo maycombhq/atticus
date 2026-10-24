@@ -196,6 +196,7 @@ export const ALLOW = [
       "confluence",
       "copilot",
       "figma",
+      "gemini",
       "github",
       "gitlab",
       "jira",
