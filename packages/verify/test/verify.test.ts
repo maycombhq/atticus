@@ -202,6 +202,44 @@ describe("a claim put together from several lines (ADR 0124 addendum A4)", () =>
   });
 });
 
+describe("a conventional route: the controller, the action and the route template (A4)", () => {
+  const src = memorySource({
+    "App_Start/RouteConfig.cs":
+      'public class RouteConfig {\n  public static void Register(RouteCollection routes) {\n    routes.MapRoute(name: "Default", url: "{controller}/{action}/{id}");\n  }\n}\n',
+    "Controllers/CatalogController.cs":
+      "public class CatalogController : Controller {\n  [HttpPost]\n  public ActionResult Create(CatalogItem item) {\n    return View();\n  }\n}\n",
+  });
+  const entry = (path: string) => ({
+    kind: "entry" as const,
+    id: "e",
+    repo: "web",
+    commit: "0123abc",
+    entryType: "rest" as const,
+    method: "POST",
+    path,
+    cite: {
+      file: "Controllers/CatalogController.cs",
+      line: 3,
+      value: "Create",
+      with: [
+        { file: "Controllers/CatalogController.cs", line: 1, value: "CatalogController" },
+        { file: "App_Start/RouteConfig.cs", line: 3, value: "{controller}/{action}/{id}" },
+      ],
+    },
+    verified: "none" as const,
+    by: "assistant" as const,
+    conf: "declared" as const,
+  });
+  it("accepts /Catalog/Create from the action, its controller and the template", async () => {
+    const r = await verifyFacts({ source: src, facts: [entry("/Catalog/Create")] });
+    expect(r.rejected).toEqual([]);
+  });
+  it("rejects an action the controller doesn't have", async () => {
+    const r = await verifyFacts({ source: src, facts: [entry("/Catalog/Delete")] });
+    expect(r.rejected[0]?.code).toBe("claim-not-on-line");
+  });
+});
+
 describe("coverage: reported, never trusted (ADR 0124)", () => {
   it("doesn't count tests, build wrappers, package docs or message bundles as source", async () => {
     const { isSourceFile } = await import("../src/index.js");

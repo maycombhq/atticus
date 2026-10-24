@@ -135,7 +135,13 @@ describe("atticus map <repo> --estimate: what the first read costs", () => {
     expect(text).toContain(`Facts file: .atticus/facts/${REPO}.jsonl`);
     expect(text).toMatch(/12 source files, 190 lines, about \d+ tokens/);
     // runtime.yaml's defaults: Copilot and Claude Code allowed, Copilot the default, in VS Code.
-    expect(text).toMatch(/Your assistant: agentic \(tier 1\)\. Copilot in VS Code agent mode/);
+    expect(text).toMatch(
+      /The org's assistant \(runtime\.yaml\): agentic \(tier 1\)\. Copilot in VS Code agent mode/,
+    );
+    // another assistant isn't left guessing (feedback from the A4 run)
+    expect(text).toContain(
+      "Another agentic assistant (Claude Code, Cursor, Gemini CLI) reads it the same way: /atticus-map",
+    );
     expect(text).toMatch(/In batches at 6000 tokens a prompt: [2-9] prompts/);
   });
 

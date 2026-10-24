@@ -452,13 +452,14 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
   for (const f of facts) {
     if (f.kind !== "config") continue;
     const component = componentOf(f);
-    const id = `${component}.${slugify(f.key)}`;
+    const id = `${component}.${f.env ? `${slugify(f.env)}.` : ""}${slugify(f.key)}`;
     catalogIdOf.set(f.id, id);
     out.push({
       kind: "Setting",
       ...common(f),
       id,
       component,
+      ...(f.env ? { env: f.env } : {}),
       settingKind: f.settingKind,
       key: f.key,
       valueOrRef: f.value ?? f.source ?? "",

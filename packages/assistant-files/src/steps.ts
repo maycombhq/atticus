@@ -82,7 +82,9 @@ export function mapCommand(): CommandDef {
         "Write what the code can't settle (which host is production, whether a folder is generated) to `<repo>.questions.jsonl` beside the facts file, one question per line in the shape above. Never guess, and never answer a question yourself.",
         "Run `atticus verify {{ARGS}}`. While it exits 1, read `<repo>.rejected.jsonl` beside the facts file: for each fact in it, read the cited lines again, then rewrite the fact in the facts file or drop it. Run `atticus verify {{ARGS}}` again, until it exits 0.",
         "Then read the files `<repo>.verify.yaml` lists as `unknown`, add their facts and verify again. Generated or vendored code isn't read: propose an exclusion (`exclude: [{path: \"<glob>\"}]` in the org pack's `scan/<repo>.yaml`) for the person to accept in a pull request; never write it yourself.",
+        "The questions you raised don't stop the loop: a fact that waits on one is left out or marked `conf: inferred`. When `atticus verify {{ARGS}}` exits 0, show the person each question with its options, and say they answer with `/atticus-answer` or `atticus questions answer <id> --option <n>`. Never answer one yourself.",
       ],
+      { stop: false },
     ),
   );
 }

@@ -286,3 +286,37 @@ describe("config facts: secrets by the key's last part", () => {
     expect(parseFacts(base("TokenLifetimeMinutes", "60")).ok).toBe(true);
   });
 });
+
+describe("config facts per environment (ADR 0124, A4)", () => {
+  const cfg = (id: string, env: string | undefined, value: string) => ({
+    kind: "config",
+    id,
+    repo: "forge-ledger",
+    commit: "0123abc",
+    key: "Ledger:PageSize",
+    value,
+    ...(env ? { env } : {}),
+    cite: { file: `appsettings.${env ?? "json"}`, line: 3, value: "PageSize" },
+  });
+  it("keeps a value per environment as its own Setting, with env", () => {
+    const parsed = parseFacts(
+      [cfg("page-size", undefined, "20"), cfg("page-size-prod", "prod", "50")]
+        .map((f) => JSON.stringify(f))
+        .join("\n"),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    const { records, issues } = projectFacts(parsed.facts);
+    expect(issues).toEqual([]);
+    const settings = records.filter((r) => r.kind === "Setting") as unknown as {
+      id: string;
+      env?: string;
+      valueOrRef: string;
+    }[];
+    expect(settings.map((s) => [s.id, s.env, s.valueOrRef])).toEqual([
+      ["forge-ledger.ledger-pagesize", undefined, "20"],
+      ["forge-ledger.prod.ledger-pagesize", "prod", "50"],
+    ]);
+    for (const r of records) expect(parseRecord(r).ok).toBe(true);
+  });
+});

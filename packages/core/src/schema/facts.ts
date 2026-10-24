@@ -201,6 +201,8 @@ export const ConfigFact = z
     source: z.string().optional(),
     /** The component or system the setting is about (a client's timeout names its target). */
     target: z.string().optional(),
+    /** The environment the value is for (`prod`, `Local`), when the file is one environment's (A4). */
+    env: z.string().optional(),
   })
   .superRefine((c, ctx) => {
     const last =

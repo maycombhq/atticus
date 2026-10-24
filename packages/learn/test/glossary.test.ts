@@ -48,6 +48,11 @@ describe("the product glossary (WP5.1)", () => {
     expect(e.title).toBe("gate");
     expect(e.lines[0]).toBe(termNamed("gate")!.says);
     expect((await explain(root, "atticus scan")).kind).toBe("command");
+    // what verify's help points to (feedback from the A4 run)
+    expect((await explain(root, "verify")).kind).toBe("command");
+    expect((await explain(root, "atticus map")).title).toMatch(/^atticus map:/);
+    expect((await explain(root, "atticus map render")).title).toMatch(/^atticus map render:/);
+    expect((await explain(root, "atticus change knowledge")).kind).toBe("command");
   });
 
   it("is the same list as the app's What the words mean", async () => {

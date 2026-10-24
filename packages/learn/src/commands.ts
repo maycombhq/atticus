@@ -30,6 +30,32 @@ export const COMMANDS: readonly CommandHelp[] = [
     related: ["catalog diff", "index rebuild"],
   },
   {
+    name: "map",
+    usage:
+      "atticus map <repo> [--estimate] [--handoff | --copy [--answer <file>] | --mode m] [--next] [--max-tokens n] [--force]",
+    what: "Has your assistant read a repo into facts, each citing its file and line: an agentic assistant follows /atticus-map; one without tools gets the repo in batches that fit its model, each answer checked before the next.",
+    who: ["developer", "architect"],
+    changes: "facts/<repo>.jsonl and the questions the reader raised",
+    related: ["verify", "map render"],
+  },
+  {
+    name: "map render",
+    usage: "atticus map render <repo> [--json]",
+    what: "Renders the repo's map from the catalog: map.md, a page per flow with its sequence diagram, and an OpenAPI file per component.",
+    who: ["developer", "architect"],
+    changes: "map/<repo>/ (the rendered pages)",
+    related: ["map", "verify"],
+  },
+  {
+    name: "verify",
+    usage: "atticus verify <repo> [--write] [--dir path] [--commit sha] [--routed a,b] [--json]",
+    what: "Checks every fact in a repo's facts file against the line it cites, keeps the ones that hold, writes the rest with why to <repo>.rejected.jsonl, and says which source files no fact has read yet. With --write the kept facts become catalog records.",
+    who: ["developer", "architect"],
+    changes:
+      "facts/ (the kept facts, the rejected ones, the coverage); catalog/generated with --write",
+    related: ["map", "map render"],
+  },
+  {
     name: "catalog validate",
     usage: "atticus catalog validate <dir> [--fix]",
     what: "Checks record files against the catalog schema, their place and their canonical form.",
@@ -229,6 +255,14 @@ export const COMMANDS: readonly CommandHelp[] = [
     what: "Follow a change without being on it; your digest says how it is doing. With no change, how each one you watch is doing.",
     who: ["product-owner", "team-lead", "delivery-lead"],
     changes: "your own .atticus/me.yaml (never committed)",
+  },
+  {
+    name: "change knowledge",
+    usage: "atticus change knowledge <id> [--confirm id] [--exclude id] [--json]",
+    what: "Lists the wiki sections, documents, patterns, decisions and processes that apply to a change, picked by its stages, with the near-misses; confirm one, or exclude it so later stages leave it out.",
+    who: ["developer", "business-analyst", "architect"],
+    changes: "the change's knowledge.yaml",
+    related: ["change status"],
   },
   {
     name: "change status",

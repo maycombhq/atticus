@@ -760,7 +760,10 @@ async function estimate(
   io.out(
     `${plural(whole.files, "source file")}, ${plural(whole.lines, "line")}, about ${whole.tokens} tokens${whole.excluded.length ? `; ${whole.excluded.length} excluded` : ""}.`,
   );
-  io.out(`Your assistant: ${tierWords(tier)}. ${tier.how}`);
+  io.out(`The org's assistant (runtime.yaml): ${tierWords(tier)}. ${tier.how}`);
+  io.out(
+    `Another agentic assistant (Claude Code, Cursor, Gemini CLI) reads it the same way: /atticus-map ${repo}; one without file tools gets batches with atticus map ${repo} --handoff --max-tokens <its limit>.`,
+  );
   if (tier.fallback) io.out(tier.fallback);
   if (tier.model) io.out(tier.model);
   io.out(
