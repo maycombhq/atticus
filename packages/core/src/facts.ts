@@ -141,12 +141,24 @@ type Field = FactOf<"field">;
 
 const idPart = (text: string) => slugify(text).replace(/\./g, "-");
 
+/** A name as a part of a projected catalog id: its slug, with dots made dashes (a component, a store). */
+export const factIdPart = idPart;
+
+/** The Endpoint id an entry fact projects to in its component (`projectFacts`). */
+export function entryEndpointId(f: FactOf<"entry">, component: string): string {
+  const name =
+    f.entryType === "event-topic" || f.entryType === "mq-queue"
+      ? `on-${idPart(f.path)}`
+      : idPart(`${f.method ?? ""} ${f.path}`);
+  return `${component}.${name}`;
+}
+
 /**
  * A call's normalised path: a gRPC method stays `package.Service/Method` and a SOAP operation
  * `Contract/Operation` (a client may write either with a leading slash); an HTTP path loses a parameter's optional marker and constraint first
  * (`{brandId:int?}`), so the `?` isn't read as a query string.
  */
-function callPath(callType: string, path: string): string {
+export function callPath(callType: string, path: string): string {
   if (callType === "grpc" || callType === "soap") return path.trim().replace(/^\/+/, "");
   return normalizePath(path.replace(/\{([^}:?]*)[^}]*\}/g, "{$1}"));
 }
@@ -251,11 +263,7 @@ export function projectFacts(input: readonly Fact[], opts: ProjectOptions = {}):
   for (const f of facts) {
     if (f.kind !== "entry") continue;
     const component = componentOf(f);
-    const name =
-      f.entryType === "event-topic" || f.entryType === "mq-queue"
-        ? `on-${idPart(f.path)}`
-        : idPart(`${f.method ?? ""} ${f.path}`);
-    const id = `${component}.${name}`;
+    const id = entryEndpointId(f, component);
     catalogIdOf.set(f.id, id);
     const isPath = f.entryType !== "event-topic" && f.entryType !== "mq-queue";
     out.push({

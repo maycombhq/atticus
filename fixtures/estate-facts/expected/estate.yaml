@@ -1,0 +1,1526 @@
+joins:
+  - entry: ledger-api forge.ledger.v1.Ledger/OpenAccount
+    from:
+      evidence: src/main/java/forge/customers/CustomerService.java:32
+      flow: customers-api.create-a-customer
+      repo: forge-customers
+      step: 4
+    how: interface
+    interface: if-fc58b23d49c7c652
+    to:
+      evidence: src/main/proto/ledger.proto:6
+      flow: ledger-api.open-an-account
+      repo: forge-ledger
+      trigger: ledger-api.forge-ledger-v1-ledger-openaccount
+  - entry: customers-api POST /api/customers
+    from:
+      evidence: src/app/customers/new-customer.component.ts:18
+      flow: web-app.add-a-customer
+      repo: forge-web
+      step: 2
+    how: interface
+    interface: if-0f06d434a34c81c9
+    to:
+      evidence: src/main/java/forge/customers/CustomerController.java:24
+      flow: customers-api.create-a-customer
+      repo: forge-customers
+      trigger: customers-api.post-customer
+  - entry: customers-api GET /api/customers/{customerId}
+    from:
+      evidence: src/app/customers/customer.component.ts:15
+      flow: web-app.view-a-customer
+      repo: forge-web
+      step: 1
+    how: interface
+    interface: if-32758fa9e8968383
+    to:
+      evidence: src/main/java/forge/customers/CustomerController.java:40
+      flow: customers-api.get-a-customer
+      repo: forge-customers
+      trigger: customers-api.get-customer
+records:
+  - classification: personal
+    confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 5
+        path: src/main/resources/db/migration/V1__customers.sql
+        repo: forge-customers
+        source: migration
+    id: customers-db.customers.email_address
+    kind: Column
+    name: email_address
+    nullable: false
+    schemaVersion: 2
+    status: current
+    table: customers-db.customers
+    type: varchar(255)
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 3
+        path: src/main/resources/db/migration/V1__customers.sql
+        repo: forge-customers
+        source: migration
+    id: customers-db.customers.first_name
+    kind: Column
+    name: first_name
+    nullable: false
+    schemaVersion: 2
+    status: current
+    table: customers-db.customers
+    type: varchar(30)
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 4
+        path: src/main/resources/db/migration/V1__customers.sql
+        repo: forge-customers
+        source: migration
+    id: customers-db.customers.last_name
+    kind: Column
+    name: last_name
+    nullable: false
+    schemaVersion: 2
+    status: current
+    table: customers-db.customers
+    type: varchar(30)
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 3
+        path: src/main/resources/db/migration/V1__accounts.sql
+        repo: forge-ledger
+        source: migration
+    id: ledger-db.accounts.customer_id
+    kind: Column
+    name: customer_id
+    nullable: false
+    schemaVersion: 2
+    status: current
+    table: ledger-db.accounts
+    type: varchar(36)
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 17
+        path: src/main/java/forge/customers/LedgerClient.java
+        repo: forge-customers
+        source: code
+    id: customers-api
+    kind: Component
+    repo: forge-customers
+    schemaVersion: 2
+    status: current
+    system: customers
+    type: service
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 18
+        path: src/main/java/forge/ledger/AccountController.java
+        repo: forge-ledger
+        source: code
+    id: ledger-api
+    kind: Component
+    repo: forge-ledger
+    schemaVersion: 2
+    status: current
+    system: ledger
+    type: service
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 21
+        path: src/app/customers/customer.service.ts
+        repo: forge-web
+        source: code
+    id: web-app
+    kind: Component
+    repo: forge-web
+    schemaVersion: 2
+    status: current
+    system: customers
+    type: spa
+  - confidence: verified
+    entitiesHeld:
+      - customers
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 16
+        path: src/main/java/forge/customers/CustomerRepository.java
+        repo: forge-customers
+        source: code
+    id: customers-db
+    kind: DataStore
+    ownerComponent: customers-api
+    schemaVersion: 2
+    status: current
+    storeType: relational
+  - confidence: verified
+    entitiesHeld:
+      - accounts
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 9
+        path: src/main/java/forge/ledger/AccountRepository.java
+        repo: forge-ledger
+        source: code
+    id: ledger-db
+    kind: DataStore
+    ownerComponent: ledger-api
+    schemaVersion: 2
+    status: current
+    storeType: relational
+  - component: customers-api
+    confidence: verified
+    endpointType: rest
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 15
+        path: src/main/java/forge/customers/LegacyAccountController.java
+        repo: forge-customers
+        side: callee
+        source: code
+    id: customers-api.get-account
+    kind: Endpoint
+    method: GET
+    normalizedPath: /api/accounts/{}
+    pathOrTopic: /api/accounts/{id}
+    schemaRefs: []
+    schemaVersion: 2
+    status: current
+  - component: customers-api
+    confidence: verified
+    endpointType: rest
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 40
+        path: src/main/java/forge/customers/CustomerController.java
+        repo: forge-customers
+        side: callee
+        source: code
+    id: customers-api.get-customer
+    kind: Endpoint
+    method: GET
+    normalizedPath: /api/customers/{}
+    pathOrTopic: /api/customers/{customerId}
+    schemaRefs:
+      - customers-api.get-customer.response
+    schemaVersion: 2
+    status: current
+  - component: customers-api
+    confidence: verified
+    endpointType: rest
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 24
+        path: src/main/java/forge/customers/CustomerController.java
+        repo: forge-customers
+        side: callee
+        source: code
+    id: customers-api.post-customer
+    kind: Endpoint
+    method: POST
+    normalizedPath: /api/customers
+    pathOrTopic: /api/customers
+    schemaRefs:
+      - customers-api.post-customer.request
+      - customers-api.post-customer.response
+    schemaVersion: 2
+    status: current
+  - component: ledger-api
+    confidence: verified
+    endpointType: grpc
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 6
+        path: src/main/proto/ledger.proto
+        repo: forge-ledger
+        side: callee
+        source: code
+    id: ledger-api.forge-ledger-v1-ledger-openaccount
+    kind: Endpoint
+    normalizedPath: /forge.ledger.v1.Ledger/OpenAccount
+    pathOrTopic: forge.ledger.v1.Ledger/OpenAccount
+    schemaRefs:
+      - ledger-api.forge-ledger-v1-ledger-openaccount.request
+      - ledger-api.forge-ledger-v1-ledger-openaccount.response
+    schemaVersion: 2
+    status: current
+  - component: ledger-api
+    confidence: verified
+    endpointType: rest
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 18
+        path: src/main/java/forge/ledger/AccountController.java
+        repo: forge-ledger
+        side: callee
+        source: code
+    id: ledger-api.get-account
+    kind: Endpoint
+    method: GET
+    normalizedPath: /api/accounts/{}
+    pathOrTopic: /api/accounts/{accountId}
+    schemaRefs: []
+    schemaVersion: 2
+    status: current
+  - component: ledger-api
+    confidence: verified
+    endpointType: event-topic
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 12
+        path: src/main/java/forge/ledger/CustomerCreatedListener.java
+        repo: forge-ledger
+        side: callee
+        source: code
+    id: ledger-api.on-forge-customers-created
+    kind: Endpoint
+    pathOrTopic: forge.customers.created
+    schemaRefs:
+      - ledger-api.on-forge-customers-created.message
+    schemaVersion: 2
+    status: current
+  - component: web-app
+    confidence: verified
+    endpointType: rest
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 10
+        path: src/app/app.routes.ts
+        repo: forge-web
+        side: callee
+        source: code
+    id: web-app.any-customer
+    kind: Endpoint
+    normalizedPath: /customers/{}
+    pathOrTopic: /customers/:id
+    schemaRefs: []
+    schemaVersion: 2
+    status: current
+  - component: web-app
+    confidence: verified
+    endpointType: rest
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 9
+        path: src/app/app.routes.ts
+        repo: forge-web
+        side: callee
+        source: code
+    id: web-app.any-new
+    kind: Endpoint
+    normalizedPath: /customers/new
+    pathOrTopic: /customers/new
+    schemaRefs: []
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 8
+        path: src/main/java/forge/customers/NewCustomer.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 5
+        path: src/main/resources/db/migration/V1__customers.sql
+        repo: forge-customers
+        source: migration
+    id: if-0f06d434a34c81c9.column.email-to-customers-email_address
+    interface: if-0f06d434a34c81c9
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: email
+    status: current
+    targetField: customers.email_address
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 6
+        path: src/main/java/forge/customers/NewCustomer.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 3
+        path: src/main/resources/db/migration/V1__customers.sql
+        repo: forge-customers
+        source: migration
+    id: if-0f06d434a34c81c9.column.firstname-to-customers-first_name
+    interface: if-0f06d434a34c81c9
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: firstName
+    status: current
+    targetField: customers.first_name
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 7
+        path: src/main/java/forge/customers/NewCustomer.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 4
+        path: src/main/resources/db/migration/V1__customers.sql
+        repo: forge-customers
+        source: migration
+    id: if-0f06d434a34c81c9.column.lastname-to-customers-last_name
+    interface: if-0f06d434a34c81c9
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: lastName
+    status: current
+    targetField: customers.last_name
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 5
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 8
+        path: src/main/java/forge/customers/NewCustomer.java
+        repo: forge-customers
+        source: code
+    id: if-0f06d434a34c81c9.request.email-to-email
+    interface: if-0f06d434a34c81c9
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: email
+    status: current
+    targetField: email
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 3
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 6
+        path: src/main/java/forge/customers/NewCustomer.java
+        repo: forge-customers
+        source: code
+    id: if-0f06d434a34c81c9.request.firstname-to-firstname
+    interface: if-0f06d434a34c81c9
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: firstName
+    status: current
+    targetField: firstName
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 4
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 7
+        path: src/main/java/forge/customers/NewCustomer.java
+        repo: forge-customers
+        source: code
+    id: if-0f06d434a34c81c9.request.lastname-to-lastname
+    interface: if-0f06d434a34c81c9
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: lastName
+    status: current
+    targetField: lastName
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 5
+        path: src/main/java/forge/customers/CustomerView.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 2
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+    id: if-0f06d434a34c81c9.response.id-to-id
+    interface: if-0f06d434a34c81c9
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: id
+    status: current
+    targetField: id
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 8
+        path: src/main/java/forge/customers/CustomerView.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 5
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+    id: if-32758fa9e8968383.response.email-to-email
+    interface: if-32758fa9e8968383
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: email
+    status: current
+    targetField: email
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 6
+        path: src/main/java/forge/customers/CustomerView.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 3
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+    id: if-32758fa9e8968383.response.firstname-to-firstname
+    interface: if-32758fa9e8968383
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: firstName
+    status: current
+    targetField: firstName
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 4
+        path: src/main/java/forge/customers/CustomerCreated.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 3333ccc
+        line: 4
+        path: src/main/java/forge/ledger/CustomerCreated.java
+        repo: forge-ledger
+        source: code
+    id: if-b0f886eee91a68ad.message.customerid-to-customerid
+    interface: if-b0f886eee91a68ad
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: customerId
+    status: current
+    targetField: customerId
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 10
+        path: src/main/proto/ledger.proto
+        repo: forge-ledger
+        source: code
+      - by: assistant
+        commit: 3333ccc
+        line: 3
+        path: src/main/resources/db/migration/V1__accounts.sql
+        repo: forge-ledger
+        source: migration
+    id: if-fc58b23d49c7c652.column.customer_id-to-accounts-customer_id
+    interface: if-fc58b23d49c7c652
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: customer_id
+    status: current
+    targetField: accounts.customer_id
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 16
+        path: src/main/java/forge/customers/LedgerClient.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 3333ccc
+        line: 10
+        path: src/main/proto/ledger.proto
+        repo: forge-ledger
+        source: code
+    id: if-fc58b23d49c7c652.request.customerid-to-customer_id
+    interface: if-fc58b23d49c7c652
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: customerId
+    status: current
+    targetField: customer_id
+  - confidence: inferred
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 14
+        path: src/main/proto/ledger.proto
+        repo: forge-ledger
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 18
+        path: src/main/java/forge/customers/LedgerClient.java
+        repo: forge-customers
+        source: code
+    id: if-fc58b23d49c7c652.response.account_id-to-accountid
+    interface: if-fc58b23d49c7c652
+    kind: FieldMapping
+    schemaVersion: 2
+    sourceField: account_id
+    status: current
+    targetField: accountId
+  - confidence: verified
+    conflicts: []
+    direction: outbound
+    endpoint: customers-api.post-customer
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 21
+        path: src/app/customers/customer.service.ts
+        repo: forge-web
+        side: caller
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 4
+        path: src/environments/environment.ts
+        repo: forge-web
+        side: caller
+        source: config
+      - by: assistant
+        commit: 2222bbb
+        line: 24
+        path: src/main/java/forge/customers/CustomerController.java
+        repo: forge-customers
+        side: callee
+        source: code
+    from: web-app
+    id: if-0f06d434a34c81c9
+    kind: Interface
+    method: POST
+    normalizedPath: /api/customers
+    schemaVersion: 2
+    status: current
+    sync: sync
+    to: customers-api
+    via: direct
+  - confidence: verified
+    conflicts: []
+    direction: outbound
+    endpoint: customers-api.get-customer
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 26
+        path: src/app/customers/customer.service.ts
+        repo: forge-web
+        side: caller
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 4
+        path: src/environments/environment.ts
+        repo: forge-web
+        side: caller
+        source: config
+      - by: assistant
+        commit: 2222bbb
+        line: 40
+        path: src/main/java/forge/customers/CustomerController.java
+        repo: forge-customers
+        side: callee
+        source: code
+    from: web-app
+    id: if-32758fa9e8968383
+    kind: Interface
+    method: GET
+    normalizedPath: /api/customers/{}
+    schemaVersion: 2
+    status: current
+    sync: sync
+    to: customers-api
+    via: direct
+  - confidence: verified
+    conflicts: []
+    direction: outbound
+    endpoint: ledger-api.on-forge-customers-created
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 14
+        path: src/main/java/forge/customers/CustomerEvents.java
+        repo: forge-customers
+        side: caller
+        source: code
+      - by: assistant
+        commit: 3333ccc
+        line: 12
+        path: src/main/java/forge/ledger/CustomerCreatedListener.java
+        repo: forge-ledger
+        side: callee
+        source: code
+    from: customers-api
+    id: if-b0f886eee91a68ad
+    kind: Interface
+    normalizedPath: forge.customers.created
+    schemaVersion: 2
+    status: current
+    sync: async
+    to: ledger-api
+    via: event-bus
+  - confidence: verified
+    conflicts: []
+    direction: outbound
+    endpoint: ledger-api.forge-ledger-v1-ledger-openaccount
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 17
+        path: src/main/java/forge/customers/LedgerClient.java
+        repo: forge-customers
+        side: caller
+        source: code
+      - by: assistant
+        commit: 3333ccc
+        line: 6
+        path: src/main/proto/ledger.proto
+        repo: forge-ledger
+        side: callee
+        source: code
+    from: customers-api
+    id: if-fc58b23d49c7c652
+    kind: Interface
+    normalizedPath: forge.ledger.v1.Ledger/OpenAccount
+    schemaVersion: 2
+    status: current
+    sync: sync
+    to: ledger-api
+    via: direct
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 8
+        path: src/main/java/forge/customers/CustomerView.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 6
+        path: src/main/java/forge/customers/CustomerView.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 7
+        path: src/main/java/forge/customers/CustomerView.java
+        repo: forge-customers
+        source: code
+    fields:
+      - name: email
+        type: string
+      - name: firstName
+        type: string
+      - name: lastName
+        type: string
+    format: other
+    id: customers-api.get-customer.response
+    kind: Schema
+    ref: customers-api.get-customer
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 8
+        path: src/main/java/forge/customers/NewCustomer.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 6
+        path: src/main/java/forge/customers/NewCustomer.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 7
+        path: src/main/java/forge/customers/NewCustomer.java
+        repo: forge-customers
+        source: code
+    fields:
+      - name: email
+        type: string
+      - name: firstName
+        type: string
+      - name: lastName
+        type: string
+    format: other
+    id: customers-api.post-customer.request
+    kind: Schema
+    ref: customers-api.post-customer
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 5
+        path: src/main/java/forge/customers/CustomerView.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 9
+        path: src/main/java/forge/customers/CustomerView.java
+        repo: forge-customers
+        source: code
+    fields:
+      - name: id
+        type: uuid
+      - name: status
+        type: string
+    format: other
+    id: customers-api.post-customer.response
+    kind: Schema
+    ref: customers-api.post-customer
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 5
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 3
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 4
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 6
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+    fields:
+      - name: email
+        type: string
+      - name: firstName
+        type: string
+      - name: lastName
+        type: string
+      - name: phone
+        type: string
+    format: other
+    id: if-0f06d434a34c81c9.request
+    kind: Schema
+    ref: if-0f06d434a34c81c9
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 2
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+    fields:
+      - name: id
+        type: string
+    format: other
+    id: if-0f06d434a34c81c9.response
+    kind: Schema
+    ref: if-0f06d434a34c81c9
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 5
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 3
+        path: src/app/customers/customer.ts
+        repo: forge-web
+        source: code
+    fields:
+      - name: email
+        type: string
+      - name: firstName
+        type: string
+    format: other
+    id: if-32758fa9e8968383.response
+    kind: Schema
+    ref: if-32758fa9e8968383
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 4
+        path: src/main/java/forge/customers/CustomerCreated.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 5
+        path: src/main/java/forge/customers/CustomerCreated.java
+        repo: forge-customers
+        source: code
+    fields:
+      - name: customerId
+        type: string
+      - name: email
+        type: string
+    format: other
+    id: if-b0f886eee91a68ad.message
+    kind: Schema
+    ref: if-b0f886eee91a68ad
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 16
+        path: src/main/java/forge/customers/LedgerClient.java
+        repo: forge-customers
+        source: code
+    fields:
+      - name: customerId
+        type: string
+    format: other
+    id: if-fc58b23d49c7c652.request
+    kind: Schema
+    ref: if-fc58b23d49c7c652
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 18
+        path: src/main/java/forge/customers/LedgerClient.java
+        repo: forge-customers
+        source: code
+    fields:
+      - name: accountId
+        type: string
+    format: other
+    id: if-fc58b23d49c7c652.response
+    kind: Schema
+    ref: if-fc58b23d49c7c652
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 10
+        path: src/main/proto/ledger.proto
+        repo: forge-ledger
+        source: code
+    fields:
+      - name: customer_id
+        type: string
+    format: other
+    id: ledger-api.forge-ledger-v1-ledger-openaccount.request
+    kind: Schema
+    ref: ledger-api.forge-ledger-v1-ledger-openaccount
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 14
+        path: src/main/proto/ledger.proto
+        repo: forge-ledger
+        source: code
+    fields:
+      - name: account_id
+        type: string
+    format: other
+    id: ledger-api.forge-ledger-v1-ledger-openaccount.response
+    kind: Schema
+    ref: ledger-api.forge-ledger-v1-ledger-openaccount
+    schemaVersion: 2
+    status: current
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 4
+        path: src/main/java/forge/ledger/CustomerCreated.java
+        repo: forge-ledger
+        source: code
+    fields:
+      - name: customerId
+        type: string
+    format: other
+    id: ledger-api.on-forge-customers-created.message
+    kind: Schema
+    ref: ledger-api.on-forge-customers-created
+    schemaVersion: 2
+    status: current
+  - component: web-app
+    confidence: verified
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 4
+        path: src/environments/environment.ts
+        repo: forge-web
+        source: config
+    id: web-app.environment.customersapi
+    key: environment.customersApi
+    kind: Setting
+    schemaVersion: 2
+    settingKind: config
+    status: current
+    valueOrRef: https://customers.forge.example
+  - accessGroup: everyone
+    boundary: product
+    confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 17
+        path: src/main/java/forge/customers/LedgerClient.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 1111aaa
+        line: 21
+        path: src/app/customers/customer.service.ts
+        repo: forge-web
+        source: code
+    id: customers
+    kind: System
+    name: Customers
+    owner: team-customers
+    repos:
+      - forge-web
+      - forge-customers
+    schemaVersion: 2
+    status: current
+    tags: []
+  - accessGroup: everyone
+    boundary: product
+    confidence: verified
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 18
+        path: src/main/java/forge/ledger/AccountController.java
+        repo: forge-ledger
+        source: code
+    id: ledger
+    kind: System
+    name: Ledger
+    owner: team-ledger
+    repos:
+      - forge-ledger
+    schemaVersion: 2
+    status: current
+    tags: []
+  - accessGroup: everyone
+    boundary: vendor
+    confidence: inferred
+    evidence:
+      - path: org-pack/profiles/forge/profile.yaml
+        source: config
+    id: northwind-risk
+    kind: System
+    name: Northwind Risk
+    repos: []
+    schemaVersion: 2
+    status: current
+    tags:
+      - saas
+  - confidence: verified
+    dataStore: customers-db
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 16
+        path: src/main/java/forge/customers/CustomerRepository.java
+        repo: forge-customers
+        source: code
+      - by: assistant
+        commit: 2222bbb
+        line: 12
+        path: src/main/java/forge/customers/CustomerRepository.java
+        repo: forge-customers
+        source: code
+    id: customers-db.customers
+    kind: Table
+    name: customers
+    ownerComponent: customers-api
+    readers:
+      - customers-api
+    schemaVersion: 2
+    status: current
+    tableKind: table
+    writers:
+      - customers-api
+  - confidence: verified
+    dataStore: ledger-db
+    evidence:
+      - by: assistant
+        commit: 3333ccc
+        line: 9
+        path: src/main/java/forge/ledger/AccountRepository.java
+        repo: forge-ledger
+        source: code
+    id: ledger-db.accounts
+    kind: Table
+    name: accounts
+    ownerComponent: ledger-api
+    readers: []
+    schemaVersion: 2
+    status: current
+    tableKind: table
+    writers:
+      - ledger-api
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 1111aaa
+        line: 14
+        path: src/app/accounts/account.service.ts
+        repo: forge-web
+        side: caller
+        source: code
+    id: unresolved.c-get-account
+    kind: Unresolved
+    owner: web-app
+    raw: GET /api/accounts/{id}
+    schemaVersion: 2
+    status: current
+    unresolvedKind: call
+  - confidence: verified
+    evidence:
+      - by: assistant
+        commit: 2222bbb
+        line: 20
+        path: src/main/java/forge/customers/RiskClient.java
+        repo: forge-customers
+        side: caller
+        source: code
+    id: unresolved.c-risk-score
+    kind: Unresolved
+    owner: customers-api
+    raw: POST http://risk.vendor.example/v2/score
+    schemaVersion: 2
+    status: current
+    unresolvedKind: http-call
+specs:
+  - flows:
+      - component: web-app
+        confidence: verified
+        errors: []
+        evidence: []
+        family: []
+        id: web-app.add-a-customer
+        kind: Flow
+        name: Add a customer
+        schemaVersion: 2
+        status: current
+        steps:
+          - evidence:
+              - by: assistant
+                commit: 1111aaa
+                line: 30
+                path: src/app/customers/new-customer.component.html
+                repo: forge-web
+                source: code
+            kind: validate
+            refs: []
+            what: Save stays disabled until the form is valid
+          - confirmedBy: check
+            data:
+              sends:
+                - email
+                - firstName
+                - lastName
+                - phone
+            evidence:
+              - by: assistant
+                commit: 1111aaa
+                line: 18
+                path: src/app/customers/new-customer.component.ts
+                repo: forge-web
+                source: code
+            kind: call-out
+            refs:
+              - if-0f06d434a34c81c9
+            to:
+              component: customers-api
+              entry: POST /api/customers
+            what: POST the new customer to the customers API
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 1111aaa
+                line: 18
+                path: src/app/customers/new-customer.component.ts
+                repo: forge-web
+                source: code
+            kind: respond
+            refs: []
+            what: Open the new customer's page
+        template: facts@1
+        trigger:
+          evidence:
+            - by: assistant
+              commit: 1111aaa
+              line: 9
+              path: src/app/app.routes.ts
+              repo: forge-web
+              source: code
+          kind: action
+          ref: web-app.any-new
+          what: /customers/new
+      - component: web-app
+        confidence: verified
+        errors: []
+        evidence: []
+        family: []
+        id: web-app.view-a-customer
+        kind: Flow
+        name: View a customer
+        schemaVersion: 2
+        status: current
+        steps:
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 1111aaa
+                line: 15
+                path: src/app/customers/customer.component.ts
+                repo: forge-web
+                source: code
+            kind: call-out
+            refs:
+              - if-32758fa9e8968383
+            to:
+              component: customers-api
+              entry: GET /api/customers/{customerId}
+            what: GET the customer from the customers API
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 1111aaa
+                line: 16
+                path: src/app/customers/customer.component.ts
+                repo: forge-web
+                source: code
+            kind: call-out
+            refs:
+              - unresolved.c-get-account
+            to:
+              component: unresolved.c-get-account
+              entry: GET /api/accounts/{id}
+            what: GET the customer's account
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 1111aaa
+                line: 3
+                path: src/app/customers/customer.component.html
+                repo: forge-web
+                source: code
+            kind: respond
+            refs: []
+            what: Show the customer's name, email and balance
+        template: facts@1
+        trigger:
+          evidence:
+            - by: assistant
+              commit: 1111aaa
+              line: 10
+              path: src/app/app.routes.ts
+              repo: forge-web
+              source: code
+          kind: action
+          ref: web-app.any-customer
+          what: /customers/:id
+    repo: forge-web
+  - flows:
+      - component: customers-api
+        confidence: verified
+        errors: []
+        evidence: []
+        family: []
+        id: customers-api.create-a-customer
+        kind: Flow
+        name: Create a customer
+        schemaVersion: 2
+        status: current
+        steps:
+          - data:
+              checks:
+                - email
+            evidence:
+              - by: assistant
+                commit: 2222bbb
+                line: 25
+                path: src/main/java/forge/customers/CustomerController.java
+                repo: forge-customers
+                source: code
+            kind: validate
+            refs:
+              - customers-api.post-customer.request
+            what: The body is validated (names and email required)
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 2222bbb
+                line: 30
+                path: src/main/java/forge/customers/CustomerService.java
+                repo: forge-customers
+                source: code
+            kind: call-out
+            refs:
+              - unresolved.c-risk-score
+            to:
+              component: unresolved.c-risk-score
+              entry: POST /v2/score
+            what: The risk score is asked of the vendor
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 2222bbb
+                line: 31
+                path: src/main/java/forge/customers/CustomerService.java
+                repo: forge-customers
+                source: code
+            kind: write
+            refs:
+              - customers-db.customers
+            store:
+              columns:
+                - first_name
+                - last_name
+                - email_address
+              table: customers-db.customers
+            what: The customer is inserted
+          - confirmedBy: check
+            data:
+              sends:
+                - customerId
+            evidence:
+              - by: assistant
+                commit: 2222bbb
+                line: 32
+                path: src/main/java/forge/customers/CustomerService.java
+                repo: forge-customers
+                source: code
+            kind: call-out
+            refs:
+              - if-fc58b23d49c7c652
+            to:
+              component: ledger-api
+              entry: forge.ledger.v1.Ledger/OpenAccount
+            what: The ledger opens the customer's account
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 2222bbb
+                line: 33
+                path: src/main/java/forge/customers/CustomerService.java
+                repo: forge-customers
+                source: code
+            kind: publish
+            refs:
+              - if-b0f886eee91a68ad
+            to:
+              component: ledger-api
+              entry: forge.customers.created
+            what: customer.created is published
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 2222bbb
+                line: 27
+                path: src/main/java/forge/customers/CustomerController.java
+                repo: forge-customers
+                source: code
+            kind: respond
+            refs: []
+            what: 201 with the new customer
+        template: facts@1
+        trigger:
+          evidence:
+            - by: assistant
+              commit: 2222bbb
+              line: 24
+              path: src/main/java/forge/customers/CustomerController.java
+              repo: forge-customers
+              source: code
+          kind: endpoint
+          ref: customers-api.post-customer
+          what: POST /api/customers
+      - component: customers-api
+        confidence: verified
+        errors: []
+        evidence: []
+        family: []
+        id: customers-api.get-a-customer
+        kind: Flow
+        name: Get a customer
+        schemaVersion: 2
+        status: current
+        steps:
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 2222bbb
+                line: 42
+                path: src/main/java/forge/customers/CustomerController.java
+                repo: forge-customers
+                source: code
+            kind: read
+            refs:
+              - customers-db.customers
+            store:
+              columns:
+                - id
+                - first_name
+                - last_name
+                - email_address
+              table: customers-db.customers
+            what: The customer is read by id
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 2222bbb
+                line: 43
+                path: src/main/java/forge/customers/CustomerController.java
+                repo: forge-customers
+                source: code
+            kind: respond
+            refs: []
+            what: 200 with the customer, or 404
+        template: facts@1
+        trigger:
+          evidence:
+            - by: assistant
+              commit: 2222bbb
+              line: 40
+              path: src/main/java/forge/customers/CustomerController.java
+              repo: forge-customers
+              source: code
+          kind: endpoint
+          ref: customers-api.get-customer
+          what: GET /api/customers/{customerId}
+    repo: forge-customers
+  - flows:
+      - component: ledger-api
+        confidence: verified
+        errors: []
+        evidence: []
+        family: []
+        id: ledger-api.open-an-account
+        kind: Flow
+        name: Open an account
+        schemaVersion: 2
+        status: current
+        steps:
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 3333ccc
+                line: 21
+                path: src/main/java/forge/ledger/LedgerService.java
+                repo: forge-ledger
+                source: code
+            kind: write
+            refs:
+              - ledger-db.accounts
+            store:
+              columns:
+                - customer_id
+              table: ledger-db.accounts
+            what: The account is inserted for the customer
+          - confirmedBy: check
+            evidence:
+              - by: assistant
+                commit: 3333ccc
+                line: 22
+                path: src/main/java/forge/ledger/LedgerService.java
+                repo: forge-ledger
+                source: code
+            kind: respond
+            refs: []
+            what: The account id is returned
+        template: facts@1
+        trigger:
+          evidence:
+            - by: assistant
+              commit: 3333ccc
+              line: 6
+              path: src/main/proto/ledger.proto
+              repo: forge-ledger
+              source: code
+          kind: endpoint
+          ref: ledger-api.forge-ledger-v1-ledger-openaccount
+          what: forge.ledger.v1.Ledger/OpenAccount
+    repo: forge-ledger

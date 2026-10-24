@@ -19,11 +19,13 @@ const fact = (o: Record<string, unknown>) =>
     ...o,
   });
 
-async function scan(facts?: string, commit = COMMIT) {
+async function scan(facts?: string, commit = COMMIT, more: Record<string, string> = {}) {
   const root = await mkdtemp(join(tmpdir(), "atticus-scan-facts-"));
   if (facts !== undefined) {
     await mkdir(join(root, "facts"), { recursive: true });
     await writeFile(join(root, "facts", "forge-ledger.jsonl"), facts);
+    for (const [repo, text] of Object.entries(more))
+      await writeFile(join(root, "facts", `${repo}.jsonl`), text);
   }
   return scanEstate({
     root,
@@ -92,6 +94,41 @@ describe("a scan takes a repo's verified facts over its readers (ADR 0124 §3)",
       const r = await scan(facts, "b".repeat(40));
       expect(ledgerEndpoints(r.records).length).toBeGreaterThan(1);
       expect(r.notes.join("\n")).toMatch(/forge-ledger: its facts are of commit a{7}/);
+    },
+    T,
+  );
+
+  it(
+    "joins the calls of repos read from their facts to each other's entries (ADR 0124, C-join)",
+    async () => {
+      const ledger = fact({
+        kind: "entry",
+        id: "e-post",
+        entryType: "grpc",
+        path: "forge.ledger.v1.Ledger/Post",
+        cite: { file: "src/main/proto/ledger.proto", line: 7, value: "Post" },
+      });
+      const job = JSON.stringify({
+        kind: "call",
+        id: "c-post",
+        repo: "forge-reports-job",
+        commit: COMMIT,
+        callType: "grpc",
+        path: "forge.ledger.v1.Ledger/Post",
+        cite: { file: "src/main/java/forge/reports/LedgerClient.java", line: 12, value: "post" },
+        verified: "line",
+        by: "assistant",
+        conf: "declared",
+      });
+      const r = await scan(ledger, COMMIT, { "forge-reports-job": job });
+      const iface = r.records.find(
+        (x) => x.kind === "Interface" && x.from === "reports-job" && x.to === "ledger-api",
+      );
+      expect(iface?.evidence.map((e) => `${e.repo}:${e.side}`)).toEqual([
+        "forge-reports-job:caller",
+        "forge-ledger:callee",
+      ]);
+      expect(r.records.some((x) => x.id === "unresolved.c-post")).toBe(false);
     },
     T,
   );

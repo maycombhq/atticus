@@ -1,4 +1,8 @@
 import {
+  callTargetQuestion,
+  factIdPart,
+  joinFacts,
+  joinRecords,
   normalizePath,
   parseRecord,
   projectFacts,
@@ -8,7 +12,11 @@ import {
   type CuratedProblem,
   type Fact,
   type FactOf,
+  type FactJoin,
+  type FactJoinAsk,
+  type FactsJoinResult,
   type FlowRecord,
+  type JoinRepo,
   type OrgPack,
   type Question,
   type QuestionDraft,
@@ -44,6 +52,15 @@ export interface FactsCatalogInput {
   decisions: readonly CatalogRecord[];
   /** A target a person named for a call fact that had none, by fact id (`targetsFromAnswers`). */
   targets?: Readonly<Record<string, string>>;
+  /**
+   * The other repos' verified facts (their facts/<repo>.jsonl), for the estate join (ADR 0124
+   * addendum C-join): this repo's calls join the entries of the repo that serves them, and the
+   * other repos' calls into this repo are joined again. Left out, calls join only as the merge
+   * joins loose ends (by host).
+   */
+  estate?: readonly { repo: string; facts: readonly Fact[] }[];
+  /** The targets people named for the other repos' calls, by repo and call fact id. */
+  estateTargets?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
 /** A call of the repo that is still a loose end after the merge. */
@@ -69,6 +86,11 @@ export interface FactsCatalogResult {
   /** Records the merge made that fail C1 (a bug if ever non-empty). */
   invalid: { record: unknown; issues: RecordIssue[] }[];
   notes: string[];
+  /**
+   * With the estate: the joins of this repo's calls and of other repos' calls into it, with
+   * their field lineage, and what is asked about this repo's calls (ADR 0124 addendum C-join).
+   */
+  join?: FactsJoinResult;
 }
 
 type Rec = CatalogRecord & Record<string, unknown>;
@@ -109,10 +131,8 @@ function needsTarget(f: Fact, facts: readonly Fact[]): f is FactOf<"call"> {
 /** The question for a call with no target and no host: its words and the line it cites. */
 export function targetQuestionFor(f: Fact): { question: string; evidence: string[] } | undefined {
   if (f.kind !== "call") return undefined;
-  const what = [f.method?.toUpperCase(), f.path].filter(Boolean).join(" ");
-  const component = slugify(f.component ?? f.repo).replace(/\./g, "-");
   return {
-    question: `Which repo or system answers ${what}, which ${component} calls${f.base ? ` through ${f.base}` : ""}?`,
+    question: callTargetQuestion(f, factIdPart(f.component ?? f.repo)),
     evidence: [`${f.cite.file}:${f.cite.line}`],
   };
 }
@@ -136,6 +156,8 @@ export function targetQuestionDrafts(
   facts: readonly Fact[],
   records: readonly CatalogRecord[],
   op: OrgPack,
+  /** The estate join's questions: a call two or more entries could answer offers only those. */
+  asks?: readonly FactJoinAsk[],
 ): { factId: string; id: string; repo: string; draft: QuestionDraft }[] {
   const repoOf = new Map<string, string>();
   for (const r of records) if (r.kind === "Component" && r.repo) repoOf.set(r.id, r.repo);
@@ -149,17 +171,22 @@ export function targetQuestionDrafts(
     const q = targetQuestionFor(f)!;
     const own = slugify(f.component ?? f.repo).replace(/\./g, "-");
     const types = new Set(SERVES[f.callType] ?? []);
-    const servers = [
-      ...new Set(
-        records
-          .filter(
-            (r): r is Extract<CatalogRecord, { kind: "Endpoint" }> =>
-              r.kind === "Endpoint" && types.has(r.endpointType) && r.component !== own,
-          )
-          .filter((r) => repoOf.get(r.component) !== f.repo)
-          .map((r) => r.component),
-      ),
-    ].sort();
+    const ask = asks?.find(
+      (a) => a.reason === "ambiguous" && a.call.repo === f.repo && a.call.fact === f.id,
+    );
+    const servers = ask
+      ? [...new Set(ask.candidates.map((c) => c.component))].sort()
+      : [
+          ...new Set(
+            records
+              .filter(
+                (r): r is Extract<CatalogRecord, { kind: "Endpoint" }> =>
+                  r.kind === "Endpoint" && types.has(r.endpointType) && r.component !== own,
+              )
+              .filter((r) => repoOf.get(r.component) !== f.repo)
+              .map((r) => r.component),
+          ),
+        ].sort();
     const what = [f.method?.toUpperCase(), f.path].filter(Boolean).join(" ");
     const draft: QuestionDraft = {
       question: q.question,
@@ -297,9 +324,101 @@ export function factsRecords(input: {
   return { facts, projected, factById, newRecords, newFlows, loose, looseFact };
 }
 
+/** The estate's repos as the join reads them (ADR 0124, C-join): the manifest's component, hosts and modules. */
+export function joinReposOf(
+  op: OrgPack,
+  list: readonly { repo: string; facts: readonly Fact[] }[],
+): JoinRepo[] {
+  const manifests = estateRepos(op);
+  return list.map(({ repo, facts }) => {
+    const m = manifests.find((r) => r.id === repo);
+    const modules = (m?.modules ?? []).filter((x) => x.hosts.length > 0);
+    return {
+      repo,
+      facts,
+      ...(m?.component ? { component: m.component } : {}),
+      ...(m?.hosts.length ? { hosts: m.hosts } : {}),
+      ...(modules.length
+        ? { modules: modules.map((x) => ({ component: x.component, hosts: x.hosts })) }
+        : {}),
+    };
+  });
+}
+
+/**
+ * Records with the joins put in (ADR 0124, C-join): what a joined call made before (an
+ * Unresolved loose end, or an Interface to the name the call gave) and the old field mappings
+ * of the joined Interfaces go, and the joins' Interfaces and FieldMappings take their place,
+ * a publish's to each listener of its topic among them.
+ */
+export function applyFactJoins(
+  records: readonly CatalogRecord[],
+  join: FactsJoinResult,
+  repos: readonly JoinRepo[],
+): CatalogRecord[] {
+  /** A joined call, by its repo, cited line and component: the first Interface it joined. */
+  const calls = new Map<string, string>();
+  for (const j of join.joins) {
+    const k = `${j.call.repo}|${j.call.at}|${j.call.component}`;
+    if (!calls.has(k)) calls.set(k, j.interface);
+  }
+  const ifaces = new Set(join.joins.map((j) => j.interface));
+  /** The Interface a record a joined call made stands for now, if it is one. */
+  const madeByCall = (r: CatalogRecord): string | undefined => {
+    if (r.kind === "Interface" && ifaces.has(r.id)) return r.id;
+    if (r.kind !== "Interface" && r.kind !== "Unresolved") return undefined;
+    const owner = r.kind === "Interface" ? r.from : r.owner;
+    for (const e of r.evidence as Ev[]) {
+      if (e.side === "callee") continue;
+      const to = calls.get(`${e.repo}|${e.path}:${e.line}|${owner}`);
+      if (to) return to;
+    }
+    return undefined;
+  };
+  const was = new Map<string, string>();
+  const kept: CatalogRecord[] = [];
+  for (const r of records) {
+    const to = madeByCall(r);
+    if (to) {
+      if (to !== r.id) was.set(r.id, to);
+    } else if (!(r.kind === "FieldMapping" && ifaces.has(r.interface))) kept.push(r);
+  }
+  // The call's request and response schemas (`<call>.<side>`) and mappings follow its Interface.
+  const re = (id: string) => {
+    for (const [from, to] of was)
+      if (id === from || id.startsWith(`${from}.`)) return to + id.slice(from.length);
+    return id;
+  };
+  return [
+    ...kept.map((r): CatalogRecord => {
+      if (r.kind === "Schema" && re(r.ref) !== r.ref) return { ...r, id: re(r.id), ref: re(r.ref) };
+      if (r.kind === "FieldMapping" && re(r.interface) !== r.interface)
+        return { ...r, id: re(r.id), interface: re(r.interface) };
+      return r;
+    }),
+    ...joinRecords(join, repos),
+  ];
+}
+
+/** "METHOD /path" of the entry a join reaches, or its gRPC or SOAP name or topic. */
+const entryText = (j: FactJoin) => (j.method ? `${j.method} ${j.path}` : j.path);
+
+/** The part of an estate join about one repo: its calls, and the other repos' calls into it. */
+function joinAbout(all: FactsJoinResult, repo: string): FactsJoinResult {
+  const joins = all.joins.filter((j) => j.call.repo === repo || j.entry.repo === repo);
+  const ifaces = new Set(joins.map((j) => j.interface));
+  return {
+    joins,
+    asks: all.asks.filter((a) => a.call.repo === repo),
+    misses: all.misses.filter((m) => m.call.repo === repo),
+    lineage: all.lineage.filter((l) => ifaces.has(l.interface)),
+    gaps: all.gaps.filter((g) => ifaces.has(g.interface)),
+  };
+}
+
 export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
   const { repo, op } = input;
-  const { projected, newRecords, newFlows, looseFact } = factsRecords(input);
+  const { facts, projected, newRecords, newFlows, looseFact } = factsRecords(input);
 
   // ---- the existing catalog without what came from this repo
   const mine = (e: unknown) => (e as Ev).repo === repo;
@@ -335,12 +454,77 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
     kept.push(out);
   }
 
+  // A component the merge made up for a call into this repo before the repo was read (inferred,
+  // no repo, cited only by its callers) gives way to the component the facts now project.
+  const projectedComponents = new Set(
+    newRecords.filter((r) => r.kind === "Component").map((r) => r.id),
+  );
+  // The profile's systems are rebuilt by the merge from their components on every write, so
+  // their evidence doesn't keep what an earlier write's components said.
+  const profileSystems = new Set(
+    op.profiles.flatMap((p) => p.profile?.systems ?? []).map((x) => x.id),
+  );
+  for (let i = kept.length - 1; i >= 0; i--) {
+    const r = kept[i]!;
+    if (
+      (r.kind === "Component" &&
+        projectedComponents.has(r.id) &&
+        r.confidence === "inferred" &&
+        !r.repo) ||
+      (input.estate && r.kind === "System" && profileSystems.has(r.id))
+    )
+      kept.splice(i, 1);
+  }
+
+  // ---- the estate join (ADR 0124, C-join): this repo's calls to the entries that serve them,
+  //      and the other repos' calls into this repo, joined again
+  const remap = new Map<string, string>();
+  /** A joined call's projected record id → the callee and the entry a call-out step reaches. */
+  const stepTo = new Map<string, { component: string; entry: string }>();
+  let join: FactsJoinResult | undefined;
+  let records0 = [...kept, ...newRecords];
+  if (input.estate) {
+    const repos = joinReposOf(op, [
+      { repo, facts },
+      ...input.estate.filter((x) => x.repo !== repo),
+    ]);
+    join = joinAbout(
+      joinFacts({ repos, targets: { ...input.estateTargets, [repo]: input.targets ?? {} } }),
+      repo,
+    );
+    records0 = applyFactJoins(records0, join, repos);
+    // A publish names its first listener's Interface (sorted), whether or not the listener's
+    // repo is written yet, so its schema's id doesn't depend on which repo was written first.
+    for (const j of join.joins) {
+      const id = j.call.repo === repo ? projected.ids[j.call.fact] : undefined;
+      if (!id || remap.has(id)) continue;
+      remap.set(id, j.interface);
+      stepTo.set(id, { component: j.entry.component, entry: entryText(j) });
+    }
+  }
+
   // ---- the scan's passes: merge (identity, hosts, systems, loose ends), then curated decisions
-  const merged = mergeEstate(op, estateRepos(op), [...kept, ...newRecords].sort(byKindId));
+  const merged0 = mergeEstate(op, estateRepos(op), records0.sort(byKindId));
+  // A listener the joins pair with a publish needs no loose end of its own.
+  const heard = new Set(
+    (join?.joins ?? [])
+      .filter((j) => j.how === "topic")
+      .map((j) => `${j.entry.repo}|${j.entry.at}|${j.entry.component}`),
+  );
+  const merged = {
+    ...merged0,
+    records: merged0.records.filter(
+      (r) =>
+        !(
+          r.kind === "Unresolved" &&
+          r.unresolvedKind === "event-subscribe" &&
+          (r.evidence as Ev[]).some((e) => heard.has(`${e.repo}|${e.path}:${e.line}|${r.owner}`))
+        ),
+    ),
+  };
 
   // Endpoint ids the merge gave (canonical: <component>.<method>-<resource>), and the
   // interfaces loose calls became, so schemas and flows name the catalog's ids.
-  const remap = new Map<string, string>();
   const endpoints = merged.records.filter(
     (r): r is Extract<CatalogRecord, { kind: "Endpoint" }> => r.kind === "Endpoint",
   );
@@ -393,6 +577,7 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
     if (r.kind === "Schema") return { ...r, id: re(r.id), ref: re(r.ref) };
     if (r.kind === "Endpoint" && r.schemaRefs.length)
       return { ...r, schemaRefs: r.schemaRefs.map(re).sort() };
+    if (r.kind === "FieldMapping") return { ...r, interface: re(r.interface) };
     return r;
   });
   const applied = applyCurated([...records].sort(byKindId), input.decisions);
@@ -407,8 +592,13 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
       trigger: { ...f.trigger, ...(f.trigger.ref ? { ref: re(f.trigger.ref) } : {}) },
       steps: f.steps.map((s) => {
         const was = s.to?.component;
+        const direct = s.refs.map((r) => stepTo.get(r)).find((x) => !!x);
         const to =
-          s.to && was && joinedTo.has(was) ? { ...s.to, component: joinedTo.get(was)! } : s.to;
+          s.to && direct
+            ? { ...s.to, ...direct }
+            : s.to && was && joinedTo.has(was)
+              ? { ...s.to, component: joinedTo.get(was)! }
+              : s.to;
         return { ...s, refs: s.refs.map(re), ...(to ? { to } : {}) };
       }),
     };
@@ -440,5 +630,50 @@ export function catalogWithFacts(input: FactsCatalogInput): FactsCatalogResult {
     projectionIssues: projected.issues.filter((i) => i.code !== "unresolved-target"),
     invalid: merged.invalid,
     notes: merged.notes,
+    ...(join ? { join } : {}),
   };
+}
+
+/**
+ * Every repo's facts written into one catalog, as `atticus verify <repo> --write` writes them
+ * one by one with the others' facts as the estate (ADR 0124, C-join): the catalog, each repo's
+ * flows (in the order given) and the estate's whole join. The bench measures the estate with it.
+ */
+export function estateFromFacts(input: {
+  op: OrgPack;
+  repos: readonly { repo: string; facts: readonly Fact[] }[];
+  existing?: readonly CatalogRecord[];
+  decisions?: readonly CatalogRecord[];
+}): {
+  records: CatalogRecord[];
+  specs: { repo: string; flows: FlowRecord[] }[];
+  join: FactsJoinResult;
+  invalid: FactsCatalogResult["invalid"];
+} {
+  let records = [...(input.existing ?? [])];
+  const specs: { repo: string; flows: FlowRecord[] }[] = [];
+  const invalid: FactsCatalogResult["invalid"] = [];
+  for (const { repo, facts } of input.repos) {
+    const out = catalogWithFacts({
+      repo,
+      facts,
+      existing: records,
+      op: input.op,
+      decisions: input.decisions ?? [],
+      estate: input.repos.filter((x) => x.repo !== repo),
+    });
+    records = out.records;
+    specs.push({ repo, flows: out.flows });
+    invalid.push(...out.invalid);
+  }
+  const join = joinFacts({
+    repos: joinReposOf(
+      input.op,
+      input.repos.map(({ repo, facts }) => ({
+        repo,
+        facts: factsRecords({ repo, facts, op: input.op }).facts,
+      })),
+    ),
+  });
+  return { records, specs, join, invalid };
 }

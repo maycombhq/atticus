@@ -1,0 +1,96 @@
+# What joinFacts gives for the three Forge repos' facts (ADR 0124 addendum C-join), written by
+# hand from the facts before the code: every join cites the caller's call and the callee's entry
+# (and the config fact that ties a base URL to its host); a host no repo lists and a call two
+# repos could answer are asked, never guessed.
+joins:
+  - call: { repo: forge-customers, fact: c-open-account, component: customers-api, at: "src/main/java/forge/customers/LedgerClient.java:17" }
+    entry: { repo: forge-ledger, fact: e-open-account, component: ledger-api, at: "src/main/proto/ledger.proto:6" }
+    how: path
+    callType: grpc
+    path: forge.ledger.v1.Ledger/OpenAccount
+    interface: if-fc58b23d49c7c652
+  - call: { repo: forge-customers, fact: c-publish-created, component: customers-api, at: "src/main/java/forge/customers/CustomerEvents.java:14" }
+    entry: { repo: forge-ledger, fact: e-on-customer-created, component: ledger-api, at: "src/main/java/forge/ledger/CustomerCreatedListener.java:12" }
+    how: topic
+    callType: event-topic
+    path: forge.customers.created
+    interface: if-b0f886eee91a68ad
+  - call: { repo: forge-web, fact: c-create-customer, component: web-app, at: "src/app/customers/customer.service.ts:21" }
+    entry: { repo: forge-customers, fact: e-post-customers, component: customers-api, at: "src/main/java/forge/customers/CustomerController.java:24" }
+    tie: { repo: forge-web, fact: cfg-customers-api, component: web-app, at: "src/environments/environment.ts:4" }
+    how: host
+    callType: rest
+    method: POST
+    path: /api/customers
+    interface: if-0f06d434a34c81c9
+  - call: { repo: forge-web, fact: c-get-customer, component: web-app, at: "src/app/customers/customer.service.ts:26" }
+    entry: { repo: forge-customers, fact: e-get-customer, component: customers-api, at: "src/main/java/forge/customers/CustomerController.java:40" }
+    tie: { repo: forge-web, fact: cfg-customers-api, component: web-app, at: "src/environments/environment.ts:4" }
+    how: host
+    callType: rest
+    method: GET
+    path: /api/customers/{customerId}
+    interface: if-32758fa9e8968383
+asks:
+  - call: { repo: forge-customers, fact: c-risk-score, component: customers-api, at: "src/main/java/forge/customers/RiskClient.java:20" }
+    reason: unknown-host
+    host: risk.vendor.example
+    question: Which repo answers on risk.vendor.example?
+    candidates: []
+  - call: { repo: forge-web, fact: c-get-account, component: web-app, at: "src/app/accounts/account.service.ts:14" }
+    reason: ambiguous
+    question: Which repo or system answers GET /api/accounts/{id}, which web-app calls?
+    candidates:
+      - { repo: forge-customers, fact: e-get-account-legacy, component: customers-api, at: "src/main/java/forge/customers/LegacyAccountController.java:15" }
+      - { repo: forge-ledger, fact: e-get-account, component: ledger-api, at: "src/main/java/forge/ledger/AccountController.java:18" }
+misses: []
+lineage:
+  - interface: if-0f06d434a34c81c9
+    side: request
+    from: { repo: forge-web, fact: c-create-customer.email, name: email }
+    to: { repo: forge-customers, fact: e-post-customers.email, name: email }
+    column: { table: customers-db.customers, name: email_address, fact: s-customers-write.email-address, how: mapped }
+  - interface: if-0f06d434a34c81c9
+    side: request
+    from: { repo: forge-web, fact: c-create-customer.first-name, name: firstName }
+    to: { repo: forge-customers, fact: e-post-customers.first-name, name: firstName }
+    column: { table: customers-db.customers, name: first_name, fact: s-customers-write.first-name, how: name }
+  - interface: if-0f06d434a34c81c9
+    side: request
+    from: { repo: forge-web, fact: c-create-customer.last-name, name: lastName }
+    to: { repo: forge-customers, fact: e-post-customers.last-name, name: lastName }
+    column: { table: customers-db.customers, name: last_name, fact: s-customers-write.last-name, how: name }
+  - interface: if-0f06d434a34c81c9
+    side: response
+    from: { repo: forge-customers, fact: e-post-customers.id, name: id }
+    to: { repo: forge-web, fact: c-create-customer.id, name: id }
+  - interface: if-32758fa9e8968383
+    side: response
+    from: { repo: forge-customers, fact: e-get-customer.email, name: email }
+    to: { repo: forge-web, fact: c-get-customer.email, name: email }
+  - interface: if-32758fa9e8968383
+    side: response
+    from: { repo: forge-customers, fact: e-get-customer.first-name, name: firstName }
+    to: { repo: forge-web, fact: c-get-customer.first-name, name: firstName }
+  - interface: if-b0f886eee91a68ad
+    side: message
+    from: { repo: forge-customers, fact: c-publish-created.customer-id, name: customerId }
+    to: { repo: forge-ledger, fact: e-on-customer-created.customer-id, name: customerId }
+  - interface: if-fc58b23d49c7c652
+    side: request
+    from: { repo: forge-customers, fact: c-open-account.customer-id, name: customerId }
+    to: { repo: forge-ledger, fact: e-open-account.customer-id, name: customer_id }
+    column: { table: ledger-db.accounts, name: customer_id, fact: s-accounts-write.customer-id, how: mapped }
+  - interface: if-fc58b23d49c7c652
+    side: response
+    from: { repo: forge-ledger, fact: e-open-account.account-id, name: account_id }
+    to: { repo: forge-customers, fact: c-open-account.account-id, name: accountId }
+gaps:
+  - interface: if-0f06d434a34c81c9
+    side: request
+    field: { repo: forge-web, fact: c-create-customer.phone, name: phone }
+    message: web-app sends phone to POST /api/customers, and no request field of customers-api's entry takes it
+  - interface: if-b0f886eee91a68ad
+    side: message
+    field: { repo: forge-customers, fact: c-publish-created.email, name: email }
+    message: customers-api sends email to forge.customers.created, and no message field of ledger-api's entry takes it

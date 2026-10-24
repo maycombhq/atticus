@@ -1,0 +1,8 @@
+schemaVersion: 1
+platform: forge
+name: Forge customers estate (invented, for the estate join of ADR 0124 addendum C-join)
+systems:
+  - { id: customers, name: Customers, boundary: product, owner: team-customers, aliases: [] }
+  - { id: ledger, name: Ledger, boundary: product, owner: team-ledger, aliases: [] }
+  - { id: northwind-risk, name: Northwind Risk, boundary: vendor, aliases: [], tags: [saas] }
+environments: [dev, prod]

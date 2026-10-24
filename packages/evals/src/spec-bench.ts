@@ -64,7 +64,8 @@ const EstateFlows = z.strictObject({
   flows: z.array(RefFlow).min(1),
 });
 export type ReferenceFlows = z.infer<typeof EstateFlows>;
-type RefStepT = z.infer<typeof RefStep>;
+export type RefStepT = z.infer<typeof RefStep>;
+export type RefFlowT = z.infer<typeof RefFlow>;
 
 /** Parse bench/flows/<estate>.yaml. Throws with every problem on one line. */
 export function parseReferenceFlows(text: string): ReferenceFlows {
@@ -206,7 +207,7 @@ const sameEntry = (
   (a.path === b.path || a.path.endsWith(b.path) || b.path.endsWith(a.path)) &&
   Math.min(a.path.length, b.path.length) > 1;
 
-interface Segment {
+export interface Segment {
   repo: string;
   /** Where it starts: the reference trigger or the segment's first step. */
   start: string;
@@ -332,28 +333,30 @@ function matching(drafted: Drafted, records: readonly CatalogRecord[]) {
   };
   const flowsOf = (repo: string) => drafted.find((d) => d.repo === repo)?.flows ?? [];
 
-  const matchFlow = (seg: Segment): FlowRecord | undefined => {
+  /** Every drafted flow the rule matches to a segment, in the specs' order; the first is the match. */
+  const matchFlows = (seg: Segment): FlowRecord[] => {
     const cands = flowsOf(seg.repo);
     // A family member's (or the trigger's) catalog entry point cited where the segment starts.
     const cites = (id: string) => {
       const r = byId.get(id);
       return !!r && near(seg.start, r.evidence);
     };
-    const byCite = cands.find(
+    const byCite = cands.filter(
       (f) =>
         near(seg.start, f.trigger.evidence) ||
         f.steps.some((s) => s.kind === "entry" && near(seg.start, s.evidence)) ||
         [f.trigger.ref, ...f.family].some((id) => !!id && cites(id)),
     );
-    if (byCite || !seg.entry) return byCite;
+    if (byCite.length || !seg.entry) return byCite;
     const want = entryOf(seg.entry);
-    return cands.find((f) =>
+    return cands.filter((f) =>
       [f.trigger.ref, ...f.family].some((id) => {
         const e = endpointOf(id);
         return !!e && sameEntry(want, e);
       }),
     );
   };
+  const matchFlow = (seg: Segment): FlowRecord | undefined => matchFlows(seg)[0];
   const stepMatch = (r: RefStepT, d: FlowRecord["steps"][number]) => {
     if (r.kind !== d.kind) return false;
     if (near(r.at, d.evidence)) return true;
@@ -388,7 +391,7 @@ function matching(drafted: Drafted, records: readonly CatalogRecord[]) {
     }
     return pairs;
   };
-  return { matchFlow, lcs, tableName };
+  return { matchFlow, matchFlows, lcs, tableName, stepMatch };
 }
 
 /** One reference flow scored against the drafted flows. */
@@ -460,3 +463,6 @@ function scoreFlow(rf: z.infer<typeof RefFlow>, m: ReturnType<typeof matching>):
     citations: { checked, correct },
   };
 }
+
+/** For the estate scorer (estate-bench.ts): the same segments, matching and field names. */
+export { segments as referenceSegments, matching as specMatching, fieldKey as specFieldKey };

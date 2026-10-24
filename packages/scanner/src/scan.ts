@@ -17,11 +17,13 @@ import {
 } from "@maycombhq/sdk";
 import {
   applyCurated,
+  joinFacts,
   loadOrgPack,
   mergeCatalog,
   throwIfCancelled,
   type CatalogRecord,
   type Dialect,
+  type Fact,
   type FrameworkModel,
   type OrgPack,
 } from "@maycombhq/core";
@@ -48,6 +50,7 @@ import { resolveFederatedLooseEnds } from "./federate-loose.js";
 import { readCatalog } from "./files.js";
 import { curatedDirOf, estateMergeInput, estateRepos } from "./merge-input.js";
 import { factsForScan } from "./facts-scan.js";
+import { applyFactJoins, joinReposOf } from "./facts-catalog.js";
 import {
   applyClients,
   applyPrefixes,
@@ -400,6 +403,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const repos = estateRepos(op, o.repos);
   const results: RepoScan[] = [];
   const factNotes: string[] = [];
+  /** The repos read from their facts, for the estate join (ADR 0124, C-join). */
+  const factRepos: { repo: string; facts: Fact[]; targets: Record<string, string> }[] = [];
   /** Each repo's structured files, to tell which no record cites. */
   const structuredOf = new Map<string, string[]>();
   /** Each repo's modules with their own component (ADR 0057): the manifest's, else found. */
@@ -534,6 +539,8 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
     // stale: the readers stand in until the repo is read again.
     const fromFacts = await factsForScan(o.root, op, r.id, state.commit, readerRecords);
     if (fromFacts.note) factNotes.push(fromFacts.note);
+    if (fromFacts.facts)
+      factRepos.push({ repo: r.id, facts: fromFacts.facts, targets: fromFacts.targets ?? {} });
     results.push({ ...scan, records: fromFacts.records ?? readerRecords });
     o.onProgress?.(++done, repos.length, r.id);
   }
@@ -541,10 +548,19 @@ export async function scanEstate(o: ScanOptions): Promise<EstateScan> {
   const mergeInput = (records: CatalogRecord[]) =>
     estateMergeInput(op, repos, records, (id) => modulesOf.get(id) ?? []);
   // What the org's pipeline templates and library steps do, on the pipelines using them (ADR 0062).
-  const codeRecords = applyPipelineModels(
+  let codeRecords = applyPipelineModels(
     results.flatMap((s) => s.records),
     frameworks,
   );
+  // The repos read from their facts join each other's entries, as verify --write joins them.
+  if (factRepos.length) {
+    const joinRepos = joinReposOf(op, factRepos);
+    const join = joinFacts({
+      repos: joinRepos,
+      targets: Object.fromEntries(factRepos.map((x) => [x.repo, x.targets])),
+    });
+    codeRecords = applyFactJoins(codeRecords, join, joinRepos);
+  }
   let merged = mergeCatalog(mergeInput(codeRecords));
   const curatedDir = o.curatedDir ?? curatedDirOf(o.root, op);
   const curated = await readCatalog(curatedDir);

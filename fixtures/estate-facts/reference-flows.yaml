@@ -1,0 +1,63 @@
+# A reference flow for the invented Forge estate of fixtures/estate-facts (ADR 0124 addendum
+# C-join), written by hand in the shape of bench/flows/: a customer added in the web front end,
+# through the customers API, to the ledger over gRPC. It is the yardstick the estate scorer's
+# tests read; createdAt is a field the facts don't name, so the crossing fields are 8 of 9.
+estate: forge-customers
+repos: [forge-web, forge-customers, forge-ledger]
+flows:
+  - id: add-customer
+    name: A person adds a customer
+    trigger:
+      kind: action
+      repo: forge-web
+      what: The new customer page is opened and the form saved
+      at: "src/app/app.routes.ts:9"
+    steps:
+      - kind: validate
+        repo: forge-web
+        what: Save stays disabled until the form is valid
+        at: "src/app/customers/new-customer.component.html:30"
+      - kind: call-out
+        repo: forge-web
+        what: POST /api/customers with the form's fields
+        to: { repo: forge-customers, entry: "POST /api/customers" }
+        data: { sends: [firstName, lastName, email, phone] }
+        at: "src/app/customers/new-customer.component.ts:18"
+      - kind: entry
+        repo: forge-customers
+        what: CustomerController.create receives the new customer
+        at: "src/main/java/forge/customers/CustomerController.java:24"
+      - kind: validate
+        repo: forge-customers
+        what: The names and the email are required
+        at: "src/main/java/forge/customers/CustomerController.java:25"
+      - kind: write
+        repo: forge-customers
+        what: The customer is inserted
+        store: { table: customers, fields: [first_name, last_name, email_address] }
+        at: "src/main/java/forge/customers/CustomerService.java:31"
+      - kind: call-out
+        repo: forge-customers
+        what: The ledger is asked to open an account
+        to: { repo: forge-ledger, entry: "forge.ledger.v1.Ledger/OpenAccount" }
+        data: { sends: [customerId] }
+        at: "src/main/java/forge/customers/CustomerService.java:32"
+      - kind: write
+        repo: forge-ledger
+        what: The account is inserted
+        store: { table: accounts, fields: [customer_id] }
+        at: "src/main/java/forge/ledger/LedgerService.java:21"
+      - kind: respond
+        repo: forge-ledger
+        what: The account id is returned
+        data: { returns: [account_id] }
+        at: "src/main/java/forge/ledger/LedgerService.java:22"
+      - kind: respond
+        repo: forge-customers
+        what: 201 Created with the customer
+        data: { returns: [id, status, createdAt] }
+        at: "src/main/java/forge/customers/CustomerController.java:27"
+      - kind: respond
+        repo: forge-web
+        what: The new customer's page opens
+        at: "src/app/customers/new-customer.component.ts:18"

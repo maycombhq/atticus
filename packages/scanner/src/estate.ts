@@ -136,13 +136,25 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
       const miss = (u: Omit<EstateUnmatched, "from" | "entry">) =>
         unmatched.push({ from, entry, ...u });
       const comp = byId.get(s.to.component);
-      if (comp?.kind !== "Component") {
+      // A step written before its callee was read names the repo the call went to, or the
+      // call's loose end (ADR 0124, C-join): an Interface the estate join made since, from the
+      // caller to a component of that repo (or to any, for a loose end), stands for it.
+      const reach =
+        comp?.kind === "Component"
+          ? new Set([s.to.component])
+          : repoComponents(o.records, s.to.component).size
+            ? repoComponents(o.records, s.to.component)
+            : s.to.component.startsWith("unresolved.") && !byId.has(s.to.component)
+              ? undefined
+              : new Set<string>();
+      if (reach?.size === 0) {
         miss({
           reason: "no-target",
           message: `${s.to.component} isn't a component in the catalog`,
         });
         continue;
       }
+      const reaches = (to: string) => !reach || reach.has(to);
       const named = byId.get(s.to.entry);
       const want =
         named?.kind === "Endpoint"
@@ -152,12 +164,12 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
             : parseEntry(s.to.entry);
       // 1. The Interface: one the step names, else the best from the caller to the target.
       let iface = [named, ...s.refs.map((r) => byId.get(r))].find(
-        (r): r is Interface => r?.kind === "Interface" && r.to === s.to!.component,
+        (r): r is Interface => r?.kind === "Interface" && reaches(r.to),
       );
       if (!iface) {
         let best = 0;
         for (const x of interfaces) {
-          if (!callers.has(x.from) || x.to !== s.to.component || !sameMethod(want.method, x.method))
+          if (!callers.has(x.from) || !reaches(x.to) || !sameMethod(want.method, x.method))
             continue;
           const score = Math.max(...arrivals(x).map((p) => pathScore(want.path, p)));
           if (score > best) {
@@ -186,6 +198,12 @@ export async function joinEstate(o: JoinEstateInput): Promise<JoinEstateResult> 
       } else if (named?.kind === "Endpoint") {
         how = "endpoint";
         target = named;
+      } else if (comp?.kind !== "Component") {
+        miss({
+          reason: "no-target",
+          message: `${s.to.component} isn't a component in the catalog, and no Interface from ${flow.component} reaches ${s.to.entry}`,
+        });
+        continue;
       } else {
         how = "path";
         target = bestEndpoint(s.to.component, want.method, [want.path]);
