@@ -116,7 +116,7 @@ describe("the practice sandbox", () => {
       "forge-reports-job",
     ]);
     expect(await isSandbox(sb.root)).toBe(true);
-    expect(existsSync(join(sb.root, "org-pack/agents/story-critic.yaml"))).toBe(true);
+    expect(existsSync(join(sb.root, "org-pack/agents/complete-critic.yaml"))).toBe(true);
     expect(existsSync(join(sb.root, "openspec/changes/add-transfer-limit/change.yaml"))).toBe(true);
     expect(existsSync(join(sb.root, "workspace/forge-ledger/.git"))).toBe(true);
     expect(JSON.parse(await readFile(join(sb.root, SANDBOX_MARKER), "utf8"))).toMatchObject({
