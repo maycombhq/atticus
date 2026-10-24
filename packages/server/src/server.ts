@@ -68,6 +68,11 @@ export interface ServerOptions {
    */
   embed?: "vscode";
   /**
+   * `atticus ui --full`: the app offers every page in its menu, not only the six entries (the
+   * Surfaces design). Reported by health; it changes what the app shows, never what the API does.
+   */
+  full?: boolean;
+  /**
    * Follow the metarepo's files and send what changed as live events (ADR 0119), so the app
    * updates when an assistant or the CLI writes. Default true.
    */
@@ -166,6 +171,7 @@ export async function startServer(o: ServerOptions): Promise<RunningServer> {
     user: person.handle,
     person,
     version: o.version ?? "0.0.0",
+    full: o.full === true,
     events,
     jobs,
   };

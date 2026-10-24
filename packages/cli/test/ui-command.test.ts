@@ -31,8 +31,20 @@ describe("atticus ui", () => {
       expect(page).toContain(`<meta name="atticus-token" content="${srv.token}" />`);
       expect(page).toMatch(/<script type="module"[^>]+src="\.\/assets\/index-[\w-]+\.js"/);
       const h = await fetch(srv.url + "/api/health", { headers: { "X-Atticus-Token": srv.token } });
-      expect(await h.json()).toMatchObject({ user: "pat", version: "1.2.3" });
+      expect(await h.json()).toMatchObject({ user: "pat", version: "1.2.3", full: false });
       expect((await fetch(srv.url + "/api/changes", { method: "POST" })).status).toBe(401);
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it("tells the app it was started with --full, so every page is in the menu", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atticus-ui-cmd-"));
+    await cp(join(FORGE, "metarepo"), root, { recursive: true });
+    const srv = await startUi(root, { port: 0, user: "pat", full: true });
+    try {
+      const h = await fetch(srv.url + "/api/health", { headers: { "X-Atticus-Token": srv.token } });
+      expect(await h.json()).toMatchObject({ full: true });
     } finally {
       await srv.close();
     }

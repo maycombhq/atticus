@@ -20,33 +20,30 @@ test("starts from the same home as everyone, as their Git user (ADR 0073)", asyn
   await expect(page.getByRole("dialog")).toHaveCount(0);
   // No view to pick: one navigation, every screen in its group.
   await expect(page.getByLabel("View", { exact: true })).toHaveCount(0);
-  // ADR 0119: six sections, the same on every surface; every page a tab of its section.
+  // The Surfaces design: six entries; Home is one page, so it has no tabs.
   const nav = page.getByRole("navigation", { name: "Main" });
   const main = nav.getByRole("group", { name: "Main" });
   await expect(main.getByRole("link")).toHaveText([
     "Home",
-    "Changes",
+    "Map",
+    "Change",
+    "Questions",
     "Knowledge",
-    "Estate",
     "Set up",
-    "Atticus",
   ]);
   await expect(main.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
   await expect(nav.getByRole("button", { name: "More" })).toHaveCount(0);
-  const home = page.getByRole("navigation", { name: "Home pages" });
-  await expect(home.getByRole("link", { name: "Waiting on you" })).toHaveAttribute(
-    "aria-current",
-    "page",
-  );
-  // A change's pages are tabs of Changes, grouped by phase.
-  await main.getByRole("link", { name: "Changes" }).click();
-  const define = page
-    .getByRole("navigation", { name: "Changes pages" })
-    .getByRole("group", { name: "Define" });
-  await expect(define.getByRole("link", { name: "Feature brief" })).toHaveAttribute(
-    "href",
-    "#/brief",
-  );
+  await expect(page.getByRole("navigation", { name: "Home pages" })).toHaveCount(0);
+  // Change has a tab per stage; the separate brief is behind --full, its address still opens.
+  await main.getByRole("link", { name: "Change" }).click();
+  const tabs = page.getByRole("navigation", { name: "Change pages" });
+  await expect(tabs.getByRole("link")).toHaveText([
+    "Feature design",
+    "Architecture",
+    "Stories",
+    "Tasks",
+  ]);
+  await expect(tabs.getByRole("link", { name: "Feature brief" })).toHaveCount(0);
   await open(page, app(), "home");
   await expect(page.getByRole("heading", { level: 2, name: "Needs a person" })).toBeVisible();
   await expect(page.getByText(/Approving is the pull request/).first()).toBeVisible();

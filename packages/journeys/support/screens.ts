@@ -7,6 +7,9 @@ export const SCREENS = [
   "task-list?change=add-transfer-limit",
   "home",
   "questions",
+  // The Surfaces design: the Map's estate canvas and Trust tab.
+  "canvas",
+  "trust",
   "explore",
   "flows",
   "map",

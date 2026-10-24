@@ -44,7 +44,15 @@ import {
   type SavedFind,
   type Snapshot,
 } from "@maycombhq/knowledge";
-import { markNeed, NEEDS_FILE, readNeeds, type Need } from "@maycombhq/planner";
+import {
+  markNeed,
+  NEEDS_FILE,
+  readKnowledgeApplies,
+  readNeeds,
+  setKnowledgeStatus,
+  type KnowledgeApplies,
+  type Need,
+} from "@maycombhq/planner";
 import {
   badRequest,
   HttpError,
@@ -158,6 +166,29 @@ export function uiKnowledgeRoutes(
   const root = ctx.root;
   const now = deps.now ?? (() => new Date());
   const changed = (path: string) => ctx.events.publish({ type: "file.changed", path });
+
+  /** A change's knowledge.yaml as the app shows it (ADR 0124); a file that isn't one is refused. */
+  const appliesView = async (change: string): Promise<Api.ChangeKnowledgeViewT> => {
+    const file = `${changesRelOf(root)}/${change}/knowledge.yaml`;
+    const present = await exists(join(changeFolder(root, change), "knowledge.yaml"));
+    const doc: KnowledgeApplies | undefined = present
+      ? await readKnowledgeApplies(root, change)
+      : undefined;
+    if (present && !doc)
+      throw new HttpError(
+        422,
+        "Atticus can't read that file",
+        `${file} isn't a valid knowledge list.`,
+      );
+    return {
+      change,
+      file,
+      present,
+      items: doc?.items ?? [],
+      nearMisses: doc?.nearMisses ?? [],
+      command: `atticus change knowledge ${change}`,
+    };
+  };
 
   /** One item as people reviewed it now (rejected ones included). */
   const reviewed = async (id: string) => {
@@ -510,6 +541,45 @@ export function uiKnowledgeRoutes(
             file,
           },
         };
+      })
+
+      // ------------------------------------------------ the knowledge that applies (ADR 0124)
+      .add("GET", "/api/changes/{changeId}/knowledge", async ({ params }) => {
+        const change = idOf(params.changeId!, "change");
+        if (!(await exists(changeFolder(root, change))))
+          throw notFound(`There is no change ${change}.`);
+        return { status: 200, body: await appliesView(change) };
+      })
+      .add("POST", "/api/changes/{changeId}/knowledge/{itemId}", async ({ params, body }) => {
+        const change = idOf(params.changeId!, "change");
+        const item = params.itemId!;
+        // Index ids of wiki and document sections carry ':', '/' and '#': any printable id.
+        if (!item.trim() || item.length > 400 || /[\p{Cc}]/u.test(item))
+          throw badRequest(`${JSON.stringify(item)} isn't a knowledge item id.`);
+        const b = Api.SetChangeKnowledgeRequest.safeParse(body ?? {});
+        if (!b.success) throw invalid("Say confirmed or excluded: { status }.", b.error);
+        if (!(await exists(changeFolder(root, change))))
+          throw notFound(`There is no change ${change}.`);
+        const before = await appliesView(change);
+        if (!before.present)
+          throw new HttpError(
+            422,
+            "Atticus can't do that yet",
+            `${before.file} doesn't exist yet: its stages write it when they select context (${before.command}).`,
+          );
+        try {
+          await setKnowledgeStatus(root, change, item, b.data.status);
+        } catch (e) {
+          throw notFound((e as Error).message);
+        }
+        changed(before.file);
+        // The app runs no git: it shows the command that commits the file.
+        const result: Api.SetChangeKnowledgeResultT = {
+          knowledge: await appliesView(change),
+          file: before.file,
+          commit: `git add ${before.file} && git commit -m "${change}: the knowledge that applies"`,
+        };
+        return { status: 200, body: result };
       })
 
       // ------------------------------------------------------------ the org pack from the wikis

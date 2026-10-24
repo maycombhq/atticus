@@ -8,8 +8,8 @@ import { changesIn, SystemPicker, systemHash } from "../src/screens/know/Systems
 const LEDGER = { id: "ledger", name: "Forge Ledger", repos: ["forge-ledger", "ledger-db"] };
 
 describe("a system's page (WP7.7)", () => {
-  it("is a tab of Estate", () => {
-    expect(screenOf("systems")?.section).toBe("Estate");
+  it("is a page of Map, reached from a system's link", () => {
+    expect(screenOf("systems")?.section).toBe("Map");
   });
 
   it("lists the changes in flight in the system's repos, not released ones or other systems'", () => {

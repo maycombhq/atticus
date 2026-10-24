@@ -1,25 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
   changeOf,
+  FULL_SECTIONS,
   groupLabel,
   landingOf,
+  offered,
   PHASES,
   SCREENS,
   screenOf,
   sectionLabel,
   SECTIONS,
+  sectionsShown,
   tabHref,
   tabsOf,
   type Section,
 } from "../src/app/screens.js";
 import { SCREEN_COMPONENTS } from "../src/screens/registry.js";
 
-/** Every screen the app had before (plan 4.5): none is removed, each stays reachable. */
+/** Every screen the app had before (plan 4.5, ADR 0119): none is removed, each stays reachable. */
 const BEFORE = [
   "home",
+  "dashboard",
   "questions",
   "explore",
   "map",
+  "systems",
+  "flows",
   "impact",
   "features",
   "orgpack",
@@ -27,6 +33,7 @@ const BEFORE = [
   "scans",
   "brief",
   "ux",
+  "feature-design",
   "arch-review",
   "diagrams",
   "change-diagram",
@@ -39,54 +46,131 @@ const BEFORE = [
   "breakdown",
   "initiatives",
   "changes",
+  "cockpit",
+  "stories",
+  "task-list",
   "tasks",
   "trace",
   "todo",
   "release",
   "service-desk",
   "governance",
+  "knowledge",
+  "wikis",
+  "documents",
+  "wiki-search",
+  "parties",
+  "orgpack-draft",
+  "onboarding",
+  "repos",
+  "ai",
+  "settings",
+  "runs",
+  "history",
   "evals",
   "learning",
-  "settings",
+  "words",
 ];
 
-describe("the app's map: six sections, every page a tab (ADR 0119)", () => {
-  it("has the six sections in the order a person uses them, each opening on its first tab", () => {
+/** What the product owner's design keeps behind --full until a need brings it back. */
+const BEHIND_FULL = [
+  "dashboard",
+  "map",
+  "features",
+  "mappings",
+  "diagrams",
+  "reconcile",
+  "governance",
+  "initiatives",
+  "brief",
+  "ux",
+  "arch-review",
+  "breakdown",
+  "estimate",
+  "conformance",
+  "trace",
+  "todo",
+  "release",
+  "service-desk",
+  "tasks",
+  "parties",
+  "orgpack-draft",
+  "scans",
+  "intake",
+  "settings",
+  "runs",
+  "history",
+  "evals",
+  "learning",
+];
+
+const of = (s: Section, full = false) => tabsOf(s, full).map((x) => x.id);
+
+describe("the app's map: six entries (the Surfaces design)", () => {
+  it("has exactly the six entries in order, each opening on its first tab", () => {
     expect(SECTIONS.map(sectionLabel)).toEqual([
       "Home",
-      "Changes",
+      "Map",
+      "Change",
+      "Questions",
       "Knowledge",
-      "Estate",
       "Set up",
-      "Atticus",
     ]);
+    expect(sectionsShown()).toEqual(SECTIONS);
     expect(SECTIONS.map((s) => landingOf(s).id)).toEqual([
       "home",
-      "changes",
+      "canvas",
+      "feature-design",
+      "questions",
       "knowledge",
-      "explore",
-      "onboarding",
-      "runs",
+      "repos",
     ]);
   });
 
-  it("puts each page in its section, and a change's pages under their phase", () => {
-    const of = (s: Section) => tabsOf(s).map((x) => x.id);
-    expect(of("Home")).toEqual(["home", "dashboard"]);
-    expect(of("Knowledge")).toEqual(["knowledge", "wikis", "documents", "wiki-search", "parties"]);
-    expect(of("SetUp")).toEqual([
-      "onboarding",
-      "repos",
-      "scans",
-      "intake",
-      "orgpack",
-      "orgpack-draft",
-      "ai",
-      "settings",
+  it("gives each entry exactly its tabs", () => {
+    expect(of("Home")).toEqual(["home"]);
+    expect(of("Map")).toEqual(["canvas", "flows", "contracts", "impact", "trust"]);
+    expect(of("Change")).toEqual(["feature-design", "architecture", "stories", "task-list"]);
+    expect(of("Questions")).toEqual(["questions"]);
+    expect(of("Knowledge")).toEqual(["knowledge", "wikis", "documents", "wiki-search"]);
+    expect(of("SetUp")).toEqual(["repos", "ai", "orgpack"]);
+    expect(of("Atticus")).toEqual([]);
+  });
+
+  it("keeps the pages the design names behind --full out of the menu, the tabs and Ctrl+K", () => {
+    const full = SCREENS.filter((s) => s.full).map((s) => s.id);
+    expect([...full].sort()).toEqual([...BEHIND_FULL].sort());
+    const tabs = new Set(SECTIONS.flatMap((s) => of(s)));
+    for (const id of BEHIND_FULL) {
+      expect(tabs.has(id), id).toBe(false);
+      expect(offered(SCREENS.find((s) => s.id === id)!), id).toBe(false);
+    }
+  });
+
+  it("reaches a change's list, At a glance and picture, Ask, a system and the words by link", () => {
+    const aside = SCREENS.filter((s) => s.aside).map((s) => s.id);
+    expect(aside.sort()).toEqual(
+      ["change-diagram", "changes", "cockpit", "explore", "onboarding", "systems", "words"].sort(),
+    );
+    for (const id of aside) expect(offered(SCREENS.find((s) => s.id === id)!), id).toBe(true);
+  });
+
+  it("with --full: every page is a tab, Atticus's own pages a seventh entry, a change's by phase", () => {
+    expect(sectionsShown(true)).toEqual(FULL_SECTIONS);
+    expect(sectionLabel("Atticus")).toBe("Atticus");
+    expect(of("Atticus", true)).toEqual(["runs", "history", "evals", "learning"]);
+    const all = new Set(FULL_SECTIONS.flatMap((s) => of(s, true)));
+    expect(SCREENS.filter((s) => !s.under && !all.has(s.id)).map((s) => s.id)).toEqual([]);
+    expect(of("Map", true).slice(0, 5)).toEqual([
+      "canvas",
+      "flows",
+      "contracts",
+      "impact",
+      "trust",
     ]);
-    expect(of("Atticus")).toEqual(["runs", "history", "evals", "learning", "words"]);
+    expect(landingOf("Change", true).id).toBe("changes");
     const phase = (g: string) =>
-      tabsOf("Changes")
+      tabsOf("Change", true)
         .filter((x) => x.group === g)
         .map((x) => x.id);
     expect(PHASES.map(groupLabel)).toEqual(["Define", "Design", "Plan", "Build", "Release"]);
@@ -97,35 +181,19 @@ describe("the app's map: six sections, every page a tab (ADR 0119)", () => {
     expect(phase("Release")).toEqual(["release", "service-desk"]);
   });
 
-  it("keeps every page and every address; Questions is part of Waiting on you", () => {
+  it("keeps every page and every address", () => {
     const ids = new Set(SCREENS.map((s) => s.id));
     expect(ids.size).toBe(SCREENS.length);
     expect(BEFORE.filter((id) => !ids.has(id))).toEqual([]);
-    for (const id of [
-      "flows",
-      "wikis",
-      "knowledge",
-      "wiki-search",
-      "parties",
-      "orgpack-draft",
-      "runs",
-      "history",
-      "dashboard",
-      "onboarding",
-      "feature-design",
-      "stories",
-      "task-list",
-    ])
-      expect(ids.has(id), id).toBe(true);
-    expect(SECTIONS.flatMap((s) => tabsOf(s)).map((s) => s.id)).not.toContain("questions");
-    expect(screenOf("#/questions/q-1")).toMatchObject({ id: "questions", under: "home" });
+    for (const id of BEFORE) expect(screenOf(`#/${id}`).id, id).toBe(id);
+    expect(screenOf("#/questions/q-1").id).toBe("questions");
   });
 
   it("routes a hash to its page, and anything unknown to Home", () => {
     expect(screenOf("#/changes/add-transfer-limit").id).toBe("changes");
     expect(screenOf("#/explore?q=daily").id).toBe("explore");
-    expect(screenOf("#/home").id).toBe("home");
-    expect(screenOf("#/dashboard").id).toBe("dashboard");
+    expect(screenOf("#/canvas?lens=data").id).toBe("canvas");
+    expect(screenOf("#/trust").id).toBe("trust");
     expect(screenOf("#/runs?run=run-20261023034001-0001").id).toBe("runs");
     expect(screenOf("#/history?change=add-transfer-limit").id).toBe("history");
     expect(screenOf("#/flows?repo=forge-web&flow=forge-web.save-customer").id).toBe("flows");
@@ -138,13 +206,11 @@ describe("the app's map: six sections, every page a tab (ADR 0119)", () => {
     expect(changeOf("#/changes/add-transfer-limit")).toBe("add-transfer-limit");
     expect(changeOf("#/estimate?change=add-fraud-check")).toBe("add-fraud-check");
     expect(changeOf("#/explore?q=x")).toBeUndefined();
-    const estimate = SCREENS.find((s) => s.id === "estimate")!;
-    const list = SCREENS.find((s) => s.id === "changes")!;
-    const map = SCREENS.find((s) => s.id === "map")!;
-    expect(tabHref(estimate, "add-fraud-check")).toBe("#/estimate?change=add-fraud-check");
-    expect(tabHref(list, "add-fraud-check")).toBe("#/changes/add-fraud-check");
-    expect(tabHref(estimate, undefined)).toBe("#/estimate");
-    expect(tabHref(map, "add-fraud-check")).toBe("#/map");
+    const byId = (id: string) => SCREENS.find((s) => s.id === id)!;
+    expect(tabHref(byId("stories"), "add-fraud-check")).toBe("#/stories?change=add-fraud-check");
+    expect(tabHref(byId("changes"), "add-fraud-check")).toBe("#/changes/add-fraud-check");
+    expect(tabHref(byId("stories"), undefined)).toBe("#/stories");
+    expect(tabHref(byId("canvas"), "add-fraud-check")).toBe("#/canvas");
   });
 
   it("builds every screen", () => {

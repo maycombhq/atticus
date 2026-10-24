@@ -19,6 +19,8 @@ interface Health {
   version: string;
   root: string;
   user: string;
+  /** `atticus ui --full`: every page in the menu, not only the six entries. */
+  full?: boolean;
 }
 
 function useHash(): string {
@@ -187,6 +189,8 @@ export function App() {
   const hash = useHash();
   const current = screenOf(hash);
   const health = useApi<Health>("/api/health");
+  // The server says whether it was started with --full; until it answers, the six.
+  const full = health.state === "ready" && health.data.full === true;
   const server = useServer();
   const reloadHealth = health.reload;
   useEffect(() => {
@@ -209,13 +213,13 @@ export function App() {
         <a className="skip" href="#main">
           {T.skipToContent}
         </a>
-        <Nav current={current} />
-        <CommandPalette />
+        <Nav current={current} full={full} />
+        <CommandPalette full={full} />
         <Tour />
         <main id="main" className="main" tabIndex={-1}>
           <TopBar health={health.state === "ready" ? health.data : undefined} />
           <h1 className="sr">{current.label}</h1>
-          <SectionTabs current={current} hash={hash} />
+          <SectionTabs current={current} hash={hash} full={full} />
           {server.down && <ServerDown inPanel={!!hostBridge()} />}
           {(() => {
             const S = SCREEN_COMPONENTS[current.id];

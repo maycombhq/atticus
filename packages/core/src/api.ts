@@ -45,8 +45,11 @@ import { ChangeRepos, GitRef, ManifestRepo } from "./schema/workspace.js";
  * 2.14.0 (ADR 0114): does the code do what the design says, GET /api/changes/{id}/conformance.
  * 2.15.0 (ADR 0116): how a run's context was retrieved, retrieval in the transcript (the model's
  *   expansion and rerank); run records are at version 3.
+ * 2.22.0 (ADR 0124 addendum, the app's six entries): GET /api/trust (the Trust tab), a change's
+ *   knowledge.yaml (GET /api/changes/{id}/knowledge, POST .../knowledge/{item}), and `full` in
+ *   health (`atticus ui --full`). Additive only.
  */
-export const API_VERSION = "2.21.0";
+export const API_VERSION = "2.22.0";
 export const DEFAULT_PORT = 4321;
 
 // ------------------------------------------------------------------ shared response shapes
@@ -542,6 +545,120 @@ export const OnboardingView = z.object({
 export type OnboardingViewT = z.infer<typeof OnboardingView>;
 
 /**
+ * 2.22.0 (ADR 0124 addendum, the app's Trust tab): how far to trust each repo's map, read from
+ * files only: `facts/<repo>.jsonl`, the verifier's `<repo>.verify.yaml`, the checkout's HEAD read
+ * from its `.git` files (no git runs), and which records of catalog/generated cite the repo from
+ * its facts and which from the built-in readers.
+ */
+export const TrustState = z.enum([
+  /** No facts file: the assistant hasn't read the repo. */
+  "not-read",
+  /** Facts the verifier hasn't checked (no report, or facts still marked unverified). */
+  "unverified",
+  /** The verifier rejected some: fix them and verify again. */
+  "rejected",
+  /** The facts are of another commit than the checkout's. */
+  "stale",
+  /** Verified, but the catalog doesn't hold them yet (atticus verify --write). */
+  "unwritten",
+  /** Verified and in the catalog, with source files no fact cites yet. */
+  "unknown-files",
+  "trusted",
+]);
+export const TrustRepo = z.object({
+  repo: z.string(),
+  /** `facts/<repo>.jsonl`: how many facts, how many not verified, and their commit. */
+  facts: z.object({
+    path: z.string(),
+    present: z.boolean(),
+    count: z.number().int(),
+    unverified: z.number().int(),
+    commit: z.string().optional(),
+  }),
+  /** `facts/<repo>.verify.yaml`; report is null when it isn't there or can't be read. */
+  verify: z.object({
+    path: z.string(),
+    report: z
+      .object({
+        accepted: z.number().int(),
+        rejected: z.number().int(),
+        redacted: z.number().int(),
+        coverage: z.object({
+          /** Files read over files that count, 0 to 1. */
+          ratio: z.number(),
+          read: z.number().int(),
+          unknown: z.number().int(),
+          excluded: z.number().int(),
+        }),
+        /** The first files no fact cites (at most 50). */
+        unknownFiles: z.array(z.string()),
+        commit: z.string().optional(),
+      })
+      .nullable(),
+  }),
+  /** The repo's checkout (its base clone, or the metarepo when adopted) and its HEAD. */
+  checkout: z.object({ path: z.string(), present: z.boolean(), commit: z.string().optional() }),
+  /** Whether the facts' commit is the checkout's; null when either isn't known. */
+  sameCommit: z.boolean().nullable(),
+  /** Records of catalog/generated citing the repo: from its facts, from the readers. */
+  catalog: z.object({
+    from: z.enum(["facts", "readers", "both", "none"]),
+    fromFacts: z.number().int(),
+    fromReaders: z.number().int(),
+  }),
+  state: TrustState,
+  /** The command to run next (and the assistant's slash command), absent when trusted. */
+  next: z.object({ command: z.string(), slash: z.string().optional() }).optional(),
+});
+export const TrustView = z.object({
+  /** Where the facts files are, relative to the metarepo. */
+  factsDir: z.string(),
+  repos: z.array(TrustRepo),
+  /** Files that couldn't be read: a manifest, a facts file, a report or a catalog file. */
+  problems: z.array(z.object({ file: z.string(), message: z.string() })),
+});
+export type TrustViewT = z.infer<typeof TrustView>;
+export type TrustRepoT = z.infer<typeof TrustRepo>;
+
+/**
+ * 2.22.0 (ADR 0124, Part 5): the org knowledge that applies to a change (`knowledge.yaml`, as its
+ * stages' selections wrote it), with what a person confirmed or excluded and the near-misses.
+ */
+export const ChangeKnowledgeItem = z.object({
+  id: z.string(),
+  kind: z.string(),
+  status: z.enum(["suggested", "confirmed", "excluded"]),
+  stages: z.array(z.string()),
+  score: z.number(),
+  why: z.string().optional(),
+  file: z.string().optional(),
+});
+export const ChangeKnowledgeView = z.object({
+  change: z.string(),
+  file: z.string(),
+  /** False before a stage of the change has selected context. */
+  present: z.boolean(),
+  items: z.array(ChangeKnowledgeItem),
+  nearMisses: z.array(
+    z.object({ id: z.string(), kind: z.string(), score: z.number(), stage: z.string() }),
+  ),
+  /** The command that lists it (and confirms or excludes with --confirm, --exclude). */
+  command: z.string(),
+});
+/** atticus change knowledge <change> --confirm|--exclude <item>. */
+export const SetChangeKnowledgeRequest = z.strictObject({
+  status: z.enum(["confirmed", "excluded"]),
+});
+export const SetChangeKnowledgeResult = z.object({
+  knowledge: ChangeKnowledgeView,
+  file: z.string(),
+  /** The git command that commits the file (the app runs no git). */
+  commit: z.string(),
+});
+export type ChangeKnowledgeViewT = z.infer<typeof ChangeKnowledgeView>;
+export type SetChangeKnowledgeResultT = z.infer<typeof SetChangeKnowledgeResult>;
+
+/**
  * ADR 0092: the specs (ADR 0079) as the Flows screen reads them, from files only: the repos
  * with a spec, one repo's flows, and one flow with the joins of the estate pass (ADR 0085).
  */
@@ -903,6 +1020,8 @@ export const Health = z.object({
   root: z.string(),
   openspec: z.string().optional(),
   user: z.string(),
+  /** 2.22.0: started with `atticus ui --full`, so the app offers every page, not only the six. */
+  full: z.boolean().optional(),
 });
 
 // ------------------------------------------------------------------ request bodies
@@ -2270,6 +2389,15 @@ const OPS: Record<string, Record<string, Op>> = {
       ok: { status: 200, schema: "OnboardingView", description: "OK" },
     },
   },
+  "/api/trust": {
+    get: {
+      id: "getTrust",
+      summary:
+        "How far to trust each repo's map: its facts, the verifier's report (kept, rejected, coverage, unknown files), the facts' commit against the checkout's, and whether its catalog records come from the facts or the readers (ADR 0124)",
+      tag: "workspace",
+      ok: { status: 200, schema: "TrustView", description: "OK" },
+    },
+  },
   "/api/workspace/sync": {
     post: {
       id: "syncWorkspace",
@@ -3116,6 +3244,29 @@ const OPS: Record<string, Record<string, Op>> = {
       errors: [400, 404, 422],
     },
   },
+  "/api/changes/{changeId}/knowledge": {
+    get: {
+      id: "getChangeKnowledge",
+      summary:
+        "The org knowledge that applies to the change (knowledge.yaml): each item with why its stages picked it and a person's status, and the near-misses (ADR 0124)",
+      tag: "changes",
+      params: [p("changeId")],
+      ok: { status: 200, schema: "ChangeKnowledgeView", description: "OK" },
+      errors: [400, 404, 422],
+    },
+  },
+  "/api/changes/{changeId}/knowledge/{itemId}": {
+    post: {
+      id: "setChangeKnowledge",
+      summary:
+        "Confirm or exclude an item (or a near-miss) in the change's knowledge.yaml; an excluded item stays out of every later stage. Returns the git command that commits the file",
+      tag: "changes",
+      params: [p("changeId"), p("itemId")],
+      body: SetChangeKnowledgeRequest,
+      ok: { status: 200, schema: "SetChangeKnowledgeResult", description: "Set" },
+      errors: [400, 404, 422],
+    },
+  },
   "/api/orgpack/draft": {
     get: {
       id: "getOrgPackDraft",
@@ -3226,6 +3377,9 @@ export function openApiDocument(): Record<string, unknown> {
     KeptCandidate,
     ChangeNeedsView,
     MarkedNeed,
+    TrustView,
+    ChangeKnowledgeView,
+    SetChangeKnowledgeResult,
     OrgPackDraftView,
     AcceptedOrgPack,
   };

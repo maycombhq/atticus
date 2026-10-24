@@ -188,59 +188,88 @@ describe("Run next", () => {
   });
 });
 
-describe("the menu: six sections (ADR 0119)", () => {
-  it("lists the six in order, each opening on its first tab, the section shown marked", () => {
-    const out = html(<Nav current={screenOf("#/dashboard")} />);
-    const order = ["Home", "Changes", "Knowledge", "Estate", "Set up", "Atticus"].map((l) =>
-      out.indexOf(`>${l}</a>`),
-    );
+describe("the menu: six entries (the Surfaces design)", () => {
+  const ENTRIES = ["Home", "Map", "Change", "Questions", "Knowledge", "Set up"];
+
+  it("lists the six in order, each opening on its first tab, the entry shown marked", () => {
+    const out = html(<Nav current={screenOf("#/flows")} />);
+    const order = ENTRIES.map((l) => out.indexOf(`>${l}</a>`));
     expect(order.every((i) => i > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
-    expect(out).toContain('href="#/home" aria-current="page"');
-    expect(out).toContain('href="#/onboarding"');
+    expect(out).toContain('href="#/canvas" aria-current="page"');
+    expect(out).toContain('href="#/feature-design"');
+    expect(out).toContain('href="#/repos"');
+    expect(out).not.toContain(">Atticus</a>");
     expect(out).not.toContain("nav-more");
     expect(out).not.toContain('aria-expanded="');
   });
 
-  it("marks the section of the page shown, and Home while Questions is shown", () => {
+  it("adds Atticus's own pages as a seventh entry with --full", () => {
+    const out = html(<Nav current={screenOf("#/runs")} full />);
+    expect(out).toContain('href="#/runs" aria-current="page">Atticus</a>');
+    expect(out).toContain('href="#/changes">Change</a>');
+  });
+
+  it("marks the entry of the page shown, also one behind --full opened by its address", () => {
     expect(html(<Nav current={screenOf("#/scans")} />)).toContain(
-      'href="#/onboarding" aria-current="page"',
+      'href="#/repos" aria-current="page"',
     );
     expect(html(<Nav current={screenOf("#/questions")} />)).toContain(
-      'href="#/home" aria-current="page"',
+      'href="#/questions" aria-current="page"',
+    );
+    expect(html(<Nav current={screenOf("#/cockpit?change=x")} />)).toContain(
+      'href="#/feature-design" aria-current="page"',
     );
   });
 });
 
-describe("a section's tabs (ADR 0119)", () => {
-  it("shows where you are and every tab of the section, the page shown marked", () => {
-    const out = html(<SectionTabs current={screenOf("#/scans")} hash="#/scans" />);
+describe("an entry's tabs", () => {
+  it("shows where you are and the entry's tabs only, the page shown marked", () => {
+    const out = html(<SectionTabs current={screenOf("#/trust")} hash="#/trust" />);
     expect(out).toContain('aria-label="You are here"');
-    expect(out).toContain('aria-label="Set up pages"');
-    expect(out).toContain('href="#/scans" aria-current="page"');
-    expect(out).toContain('href="#/settings"');
-    expect(out).not.toContain('href="#/runs"');
+    expect(out).toContain('aria-label="Map pages"');
+    expect(out).toContain('href="#/trust" aria-current="page"');
+    for (const id of ["canvas", "flows", "contracts", "impact"]) expect(out).toContain(`#/${id}"`);
+    for (const id of ["map", "features", "explore", "systems"])
+      expect(out).not.toContain(`href="#/${id}"`);
   });
 
-  it("groups a change's tabs by phase and keeps the change on every one", () => {
-    const hash = "#/estimate?change=add-fraud-check";
+  it("gives Change its four stage tabs, keeping the change, with no phase groups", () => {
+    const hash = "#/stories?change=add-fraud-check";
     const out = html(<SectionTabs current={screenOf(hash)} hash={hash} />);
+    expect(out).toContain("change add-fraud-check");
+    expect(out).toContain('href="#/stories?change=add-fraud-check" aria-current="page"');
+    for (const id of ["feature-design", "architecture", "task-list"])
+      expect(out).toContain(`href="#/${id}?change=add-fraud-check"`);
+    expect(out).not.toContain('href="#/brief');
+    expect(out).not.toContain('aria-label="Define"');
+  });
+
+  it("with --full groups a change's pages by phase, the list's tab named for the change", () => {
+    const hash = "#/estimate?change=add-fraud-check";
+    const out = html(<SectionTabs current={screenOf(hash)} hash={hash} full />);
     for (const g of ["Define", "Design", "Plan", "Build", "Release"])
       expect(out).toContain(`aria-label="${g}"`);
-    expect(out).toContain("change add-fraud-check");
     expect(out).toContain('href="#/estimate?change=add-fraud-check" aria-current="page"');
     expect(out).toContain('href="#/brief?change=add-fraud-check"');
     expect(out).toContain('href="#/changes/add-fraud-check"');
-    // The list's tab doesn't repeat the section's name.
+    // The list's tab doesn't repeat the entry's name.
     expect(out).toContain(">This change</a>");
-    expect(out).not.toContain(">Changes</a>");
-    const list = html(<SectionTabs current={screenOf("#/changes")} hash="#/changes" />);
+    const list = html(<SectionTabs current={screenOf("#/changes")} hash="#/changes" full />);
     expect(list).toContain(">All changes</a>");
   });
 
-  it("marks Waiting on you while Questions, a part of it, is shown", () => {
-    const out = html(<SectionTabs current={screenOf("#/questions")} hash="#/questions" />);
-    expect(out).toContain('href="#/home" aria-current="page"');
+  it("shows no tabs for a one-page entry, but says where a page reached by a link is", () => {
+    expect(html(<SectionTabs current={screenOf("#/questions")} hash="#/questions" />)).toBe("");
+    expect(html(<SectionTabs current={screenOf("#/home")} hash="#/home" />)).toBe("");
+    const words = html(<SectionTabs current={screenOf("#/words")} hash="#/words" />);
+    expect(words).toContain('aria-label="You are here"');
+    expect(words).not.toContain('aria-label="Home pages"');
+    const glance = html(
+      <SectionTabs current={screenOf("#/cockpit?change=x")} hash="#/cockpit?change=x" />,
+    );
+    expect(glance).toContain('aria-current="location">At a glance</span>');
+    expect(glance).not.toContain('aria-current="page"');
   });
 });
 

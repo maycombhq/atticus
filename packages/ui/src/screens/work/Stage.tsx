@@ -5,6 +5,7 @@ import { queryParam, setQueryParam, Table } from "../know/common.js";
 import { Architecture } from "../architecture/Architecture.js";
 import { NeedsPanel } from "../knowledge/Needs.js";
 import { ChangeInputs } from "../ChangeInputs.js";
+import { ChangeKnowledgePanel } from "./Knowledge.js";
 import {
   architectureStep,
   pickChange,
@@ -171,6 +172,11 @@ export function StagePage(p: {
                 </span>
               </p>
               <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+                {/* The change's pages that aren't stage tabs: its list and At a glance. */}
+                <a href={`#/cockpit?change=${encodeURIComponent(c.id)}`}>
+                  {COPY.nav.screens.cockpit}
+                </a>
+                <a href="#/changes">{COPY.nav.allChanges}</a>
                 <RunsLink change={c.id} />
                 {p.stage === "tasks" && (
                   <a href={`#/conformance?change=${encodeURIComponent(c.id)}`}>
@@ -204,6 +210,8 @@ export function StagePage(p: {
               )}
               {/* ADR 0113: the specs, screenshots and documents the change starts from. */}
               {p.stage === "feature" && <ChangeInputs change={c.id} />}
+              {/* ADR 0124, Part 5: the org knowledge that applies, confirmed or excluded here. */}
+              {p.stage === "feature" && <ChangeKnowledgePanel change={c.id} />}
               {/* ADR 0102: what the change needs from the organisation. */}
               <NeedsPanel change={c.id} />
             </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SCREENS } from "../src/app/screens.js";
+import { landingOf, SCREENS, SECTIONS } from "../src/app/screens.js";
 import { TOUR } from "../src/app/tour.js";
 
 describe("first-run tour", () => {
@@ -13,6 +13,17 @@ describe("first-run tour", () => {
     }
   });
 
+  it("points only at the menu's six entries, never at a page behind --full", () => {
+    const menu = new Set(SECTIONS.map((s) => landingOf(s).id));
+    for (const s of TOUR) {
+      const m = /\.nav a\[href="#\/([a-z-]+)"\]/.exec(s.target ?? "");
+      if (m) expect(menu.has(m[1]!), m[1]).toBe(true);
+    }
+    const text = TOUR.map((s) => s.body).join(" ");
+    for (const entry of ["Map", "Change", "Questions", "Knowledge", "Set up"])
+      expect(text).toContain(entry);
+  });
+
   it("says approving is the pull request, not a role (ADR 0073)", () => {
     const text = TOUR.map((s) => s.body).join(" ");
     expect(text).toContain("Merging it approves the gate");
@@ -21,11 +32,11 @@ describe("first-run tour", () => {
 });
 
 describe("the tour's path (WP5.3)", () => {
-  it("walks home, asking, a change at a glance, a step in your assistant and the pull request", () => {
+  it("walks home, asking, a change's tabs, a step in your assistant and the pull request", () => {
     expect(TOUR.map((s) => s.title)).toEqual([
       "Your home",
       "Ask in plain words",
-      "One change at a glance",
+      "One change, a tab per stage",
       "Run a step in your assistant",
       "Approving is the pull request",
     ]);

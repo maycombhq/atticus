@@ -1,6 +1,6 @@
 import { COPY } from "../copy.js";
 import "../screens/work/work.css";
-import { landingOf, sectionLabel, SECTIONS, type ScreenDef } from "./screens.js";
+import { landingOf, sectionLabel, sectionsShown, type ScreenDef } from "./screens.js";
 
 const T = COPY.menu;
 
@@ -31,11 +31,12 @@ function Logo() {
 }
 
 /**
- * One navigation for everyone (ADR 0073), in six sections, the same on every surface (ADR 0119):
- * Home, Changes, Knowledge, the Estate, Set up and Atticus. Each opens on its first tab; the
- * section of the page shown is marked, and its tabs are above the page.
+ * One navigation for everyone (ADR 0073), in six entries (the Surfaces design): Home, Map,
+ * Change, Questions, Knowledge and Set up; with `atticus ui --full`, Atticus's own pages too.
+ * Each opens on its first tab; the entry of the page shown is marked, and its tabs are above the
+ * page. A page behind --full opened by its address marks its entry all the same.
  */
-export function Nav({ current }: { current: ScreenDef }) {
+export function Nav({ current, full = false }: { current: ScreenDef; full?: boolean }) {
   return (
     <nav aria-label={COPY.nav.main} className="nav">
       <div className="brand">
@@ -43,8 +44,8 @@ export function Nav({ current }: { current: ScreenDef }) {
         {T.atticus}
       </div>
       <div role="group" aria-label={COPY.nav.main}>
-        {SECTIONS.map((s) => {
-          const to = landingOf(s);
+        {sectionsShown(full).map((s) => {
+          const to = landingOf(s, full);
           return (
             <a
               key={s}

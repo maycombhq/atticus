@@ -33,6 +33,8 @@ export interface Context {
   /** The Git user behind `user`: name, email, and a warning when the OS user stood in. */
   person?: GitUser;
   version: string;
+  /** `atticus ui --full`: the app offers every page, not only the six entries. */
+  full?: boolean;
 }
 
 /** Index work runs one call at a time per root: a first build or a rebuild must not race. */
@@ -110,6 +112,7 @@ export function apiRoutes(r: Router, ctx: Context): Router {
         root,
         openspec: layoutOf(root).openspec.replace(/\/+$/, ""),
         user: ctx.user,
+        full: ctx.full === true,
       },
     }))
     .add("GET", "/api/catalog/kinds", async () => ({

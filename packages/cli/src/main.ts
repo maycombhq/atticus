@@ -640,6 +640,7 @@ Usage:
           [--embed vscode]             Let a VS Code panel show the app (the Atticus extension starts it so)
           [--parent pid]               Stop when that process ends (an editor that started it)
           [--show-token]               Print the session token, for an assistant or a script (an editor that starts it gets it)
+          [--full]                     Every page in the menu, not only the six entries (the others open by address)
   atticus --version                    Print the version
   atticus --help                       Show this help
 
@@ -1835,6 +1836,7 @@ async function dispatchCommand(argv: string[], io: Output): Promise<number> {
             : {}),
         open: values.open === true,
         showToken: values["show-token"] === true,
+        ...(values.full === true ? { full: true } : {}),
         ...(values.embed === "vscode" ? { embed: "vscode" as const } : {}),
         ...(parent !== undefined ? { parent } : {}),
         version: VERSION,

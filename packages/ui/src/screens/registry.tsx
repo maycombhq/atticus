@@ -1,5 +1,7 @@
 import type { ComponentType } from "react";
+import { Architecture } from "./architecture/Architecture.js";
 import { Changes } from "./Changes.js";
+import { Trust } from "./map/Trust.js";
 import { CommandCenter } from "./CommandCenter.js";
 import { Explore } from "./Explore.js";
 import { Flows } from "./flows/Flows.js";
@@ -25,14 +27,17 @@ import { ArchitecturePage, FeatureDesign, Stories, TaskListScreen } from "./work
 export type Screen = ComponentType<{ hash: string }>;
 
 export const SCREEN_COMPONENTS: Record<string, Screen> = {
-  // The six screens that follow the work (plan 4.5).
+  // The stage screens of plan 4.5 (Change's tabs), the Overview and the first steps.
   dashboard: () => <Dashboard />,
   onboarding: () => <Onboarding />,
   "feature-design": FeatureDesign,
   architecture: ArchitecturePage,
   stories: Stories,
   "task-list": TaskListScreen,
-  // Under More, unchanged.
+  // Map: the estate canvas (the Architecture workspace, without a change's step) and Trust.
+  canvas: ({ hash }) => <Architecture hash={hash} screen="canvas" />,
+  trust: () => <Trust />,
+  // Every other page, unchanged (behind --full, or reached by a link).
   home: () => <CommandCenter />,
   changes: Changes,
   explore: Explore,

@@ -2,6 +2,7 @@ import { statSync, watch, type FSWatcher } from "node:fs";
 import { join, relative, sep } from "node:path";
 import {
   catalogDirOf,
+  factsDirOf,
   inputsDirOf,
   knowledgeDirOf,
   openspecDirOf,
@@ -103,6 +104,8 @@ export function watchMetarepo(o: WatchOptions): MetarepoWatch {
       proposalsDirOf(root),
       inputsDirOf(root),
       runsDirOf(root),
+      // ADR 0124: the facts and the verifier's reports, for the Map's Trust tab.
+      factsDirOf(root),
       join(root, ".atticus", "history"),
     ].filter((d) => !skipped(posix(relative(root, d))));
     const unique = [...new Set(all)].sort();

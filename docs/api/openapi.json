@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Atticus local API",
-    "version": "2.21.0",
+    "version": "2.22.0",
     "description": "Served by `atticus ui` on 127.0.0.1. The UI only calls this API, and the API only reads and writes files in the metarepo.",
     "license": {
       "name": "Apache-2.0",
@@ -3416,6 +3416,37 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OnboardingView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/trust": {
+      "get": {
+        "operationId": "getTrust",
+        "summary": "How far to trust each repo's map: its facts, the verifier's report (kept, rejected, coverage, unknown files), the facts' commit against the checkout's, and whether its catalog records come from the facts or the readers (ADR 0124)",
+        "tags": [
+          "workspace"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrustView"
                 }
               }
             }
@@ -8818,6 +8849,179 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MarkedNeed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/knowledge": {
+      "get": {
+        "operationId": "getChangeKnowledge",
+        "summary": "The org knowledge that applies to the change (knowledge.yaml): each item with why its stages picked it and a person's status, and the near-misses (ADR 0124)",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeKnowledgeView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or wrong session token",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Atticus refused: the problem carries the command's own words (ADR 0043)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{changeId}/knowledge/{itemId}": {
+      "post": {
+        "operationId": "setChangeKnowledge",
+        "summary": "Confirm or exclude an item (or a near-miss) in the change's knowledge.yaml; an excluded item stays out of every later stage. Returns the git command that commits the file",
+        "tags": [
+          "changes"
+        ],
+        "parameters": [
+          {
+            "name": "changeId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "confirmed",
+                      "excluded"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetChangeKnowledgeResult"
                 }
               }
             }
@@ -22045,6 +22249,9 @@
           },
           "user": {
             "type": "string"
+          },
+          "full": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -24422,6 +24629,378 @@
         "required": [
           "need",
           "file"
+        ],
+        "additionalProperties": false
+      },
+      "TrustView": {
+        "type": "object",
+        "properties": {
+          "factsDir": {
+            "type": "string"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "repo": {
+                  "type": "string"
+                },
+                "facts": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "present": {
+                      "type": "boolean"
+                    },
+                    "count": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "unverified": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "commit": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "present",
+                    "count",
+                    "unverified"
+                  ],
+                  "additionalProperties": false
+                },
+                "verify": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "report": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "accepted": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "rejected": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "redacted": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "coverage": {
+                              "type": "object",
+                              "properties": {
+                                "ratio": {
+                                  "type": "number"
+                                },
+                                "read": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "unknown": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "excluded": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "ratio",
+                                "read",
+                                "unknown",
+                                "excluded"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "unknownFiles": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "commit": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "accepted",
+                            "rejected",
+                            "redacted",
+                            "coverage",
+                            "unknownFiles"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "report"
+                  ],
+                  "additionalProperties": false
+                },
+                "checkout": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "present": {
+                      "type": "boolean"
+                    },
+                    "commit": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "present"
+                  ],
+                  "additionalProperties": false
+                },
+                "sameCommit": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "catalog": {
+                  "type": "object",
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "enum": [
+                        "facts",
+                        "readers",
+                        "both",
+                        "none"
+                      ]
+                    },
+                    "fromFacts": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "fromReaders": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "from",
+                    "fromFacts",
+                    "fromReaders"
+                  ],
+                  "additionalProperties": false
+                },
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "not-read",
+                    "unverified",
+                    "rejected",
+                    "stale",
+                    "unwritten",
+                    "unknown-files",
+                    "trusted"
+                  ]
+                },
+                "next": {
+                  "type": "object",
+                  "properties": {
+                    "command": {
+                      "type": "string"
+                    },
+                    "slash": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "command"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "repo",
+                "facts",
+                "verify",
+                "checkout",
+                "sameCommit",
+                "catalog",
+                "state"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "message"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "factsDir",
+          "repos",
+          "problems"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeKnowledgeView": {
+        "type": "object",
+        "properties": {
+          "change": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "present": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "suggested",
+                    "confirmed",
+                    "excluded"
+                  ]
+                },
+                "stages": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "score": {
+                  "type": "number"
+                },
+                "why": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "status",
+                "stages",
+                "score"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "nearMisses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "number"
+                },
+                "stage": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "kind",
+                "score",
+                "stage"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "command": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "change",
+          "file",
+          "present",
+          "items",
+          "nearMisses",
+          "command"
+        ],
+        "additionalProperties": false
+      },
+      "SetChangeKnowledgeResult": {
+        "type": "object",
+        "properties": {
+          "knowledge": {
+            "$ref": "#/components/schemas/ChangeKnowledgeView"
+          },
+          "file": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "knowledge",
+          "file",
+          "commit"
         ],
         "additionalProperties": false
       },

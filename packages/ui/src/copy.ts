@@ -539,7 +539,7 @@ export const COPY = {
       openCount: (n: number) => `${n} open`,
     },
   },
-  /** The menu: six sections, the same on every surface (ADR 0119). */
+  /** The menu: six entries (the Surfaces design), and Atticus's own pages with --full. */
   nav: {
     main: "Main",
     dashboard: "Overview",
@@ -549,12 +549,13 @@ export const COPY = {
     stories: "Stories",
     tasks: "Tasks",
     knowledge: "Knowledge",
-    /** The six sections, by their id in screens.ts. */
+    /** The six entries, by their id in screens.ts, and Atticus's own pages with --full. */
     sections: {
       Home: "Home",
-      Changes: "Changes",
+      Map: "Map",
+      Change: "Change",
+      Questions: "Questions",
       Knowledge: "Knowledge",
-      Estate: "Estate",
       SetUp: "Set up",
       Atticus: "Atticus",
     },
@@ -576,6 +577,8 @@ export const COPY = {
     /** The pages, by screen id. */
     screens: {
       home: "Waiting on you",
+      canvas: "Estate canvas",
+      trust: "Trust",
       explore: "Search the catalog",
       map: "Ecosystem map",
       impact: "Impact explorer",
@@ -613,6 +616,93 @@ export const COPY = {
       estimate: "Estimate",
       conformance: "Code against design",
     },
+  },
+  /** Map › Trust (ADR 0124): how far to trust each repo's map, from the verifier's report. */
+  trust: {
+    intro:
+      "How far to trust each repo's map. Your assistant reads a repo and writes facts, each citing a file and line; the verifier keeps the facts whose line says what they claim and rejects the rest. Here is what it kept and rejected, how much of the code the facts cover, whether they are of the commit the checkout is at, and whether the catalog is built from them or from the built-in readers.",
+    empty:
+      "No repo is listed yet. Add your repos in Set up › Repos, then have your assistant read one with /atticus-map <repo>.",
+    reportIn: (dir: string) => `The verifier's reports are in ${dir}/.`,
+    summary: (trusted: number, all: number) => `${trusted} of ${all} repos trusted`,
+    states: {
+      "not-read": "Not read yet",
+      unverified: "Not verified",
+      rejected: "Facts rejected",
+      stale: "Facts of another commit",
+      unwritten: "Verified, not in the catalog",
+      "unknown-files": "Files not read yet",
+      trusted: "Trusted",
+    } as Record<string, string>,
+    why: {
+      notRead:
+        "Your assistant hasn't read this repo yet, so any map of it comes from the built-in readers.",
+      unverified: "Its facts haven't been checked by the verifier yet.",
+      rejected: (n: number) =>
+        `The verifier rejected ${n} fact${n === 1 ? "" : "s"}: the cited line doesn't say what the fact claims. Fix ${n === 1 ? "it" : "them"} and verify again.`,
+      stale: (facts: string, checkout: string) =>
+        `The facts are of commit ${facts.slice(0, 7)}, but the checkout is at ${checkout.slice(0, 7)}. Read the repo again.`,
+      unwritten: "Its facts are verified, but the catalog isn't built from them yet.",
+      unknownFiles: (n: number, repo: string) =>
+        `${n} source file${n === 1 ? " has" : "s have"} no fact citing ${n === 1 ? "it" : "them"} yet: read ${n === 1 ? "it" : "them"}, or exclude generated code in org-pack/scan/${repo}.yaml.`,
+      trusted:
+        "Every fact is verified at the checkout's commit, every source file is read, and the catalog is built from the facts.",
+    },
+    kept: "Facts kept",
+    rejected: "Rejected",
+    redacted: (n: number) => `${n} quote${n === 1 ? "" : "s"} redacted`,
+    coverage: "Coverage",
+    coverageOf: (ratio: number, read: number, unknown: number, excluded: number) =>
+      `${Math.round(ratio * 100)}%: ${read} file${read === 1 ? "" : "s"} read, ${unknown} not read, ${excluded} excluded`,
+    noReport: "No verifier's report yet",
+    commit: "Commit",
+    sameCommit: (c: string) => `${c.slice(0, 7)}, the checkout's`,
+    otherCommit: (facts: string, checkout: string) =>
+      `Facts ${facts.slice(0, 7)}, checkout ${checkout.slice(0, 7)}`,
+    noCheckout: (facts: string) => `Facts ${facts.slice(0, 7)}; no checkout to compare with`,
+    noFactsCommit: "No facts yet",
+    catalogFrom: "Catalog from",
+    from: {
+      facts: "Its facts",
+      readers: "The built-in readers",
+      both: "Its facts and the readers",
+      none: "Nothing yet",
+    } as Record<string, string>,
+    records: (facts: number, readers: number) =>
+      `${facts} record${facts === 1 ? "" : "s"} from facts, ${readers} from readers`,
+    unknownFiles: (n: number) => `The ${n} file${n === 1 ? "" : "s"} no fact cites yet`,
+    more: (n: number, path: string) => `and ${n} more, listed in ${path}`,
+    files: (facts: string, report: string) => `Files: ${facts}, ${report}`,
+  },
+  /** Change › Feature (ADR 0124, Part 5): the org knowledge that applies to the change. */
+  changeKnowledge: {
+    title: "Knowledge that applies",
+    intro:
+      "What the change's stages picked from the org's knowledge (patterns, standards, decisions, processes, vendors, terms, wiki and document sections), with why. Confirm what applies; exclude what doesn't, and no later stage picks it again.",
+    none: "No stage of this change has picked knowledge yet. Its stages write the list when they select context, starting with the feature stage:",
+    featureCommand: (id: string) => `atticus change feature ${id}`,
+    working: "Writing knowledge.yaml…",
+    caption: "Knowledge that applies to this change",
+    item: "Item",
+    why: "Why",
+    stages: "Stages",
+    status: "Status",
+    actions: "Confirm or exclude",
+    statuses: {
+      suggested: "Suggested",
+      confirmed: "Confirmed",
+      excluded: "Excluded",
+    } as Record<string, string>,
+    confirm: "Confirm",
+    exclude: "Exclude",
+    confirmItem: (id: string) => `Confirm ${id}`,
+    excludeItem: (id: string) => `Exclude ${id}`,
+    nearMisses: (n: number) => `Nearly picked (${n}): left out for room`,
+    nearMissStage: (stage: string) => `left out of ${stage}`,
+    set: (id: string, status: string, file: string) =>
+      `${id} is ${status}, in ${file}. Commit it with the change's files:`,
+    copyCommit: "Copy the git command",
+    noStages: "a person",
   },
   /** ADR 0114: does the code do what the design says? */
   conformance: {
@@ -1096,15 +1186,15 @@ export const COPY = {
     steps: {
       home: {
         title: "Your home",
-        body: "Waiting on you shows what needs a person across every change (changes in each phase, blocking findings, open needs, questions and manual steps) and the changes in flight. Everyone sees the same screens; Ctrl+K jumps anywhere.",
+        body: "Home shows what needs a person across every change (changes in each phase, blocking findings, open needs, questions and manual steps) and the changes in flight. Beside it: Map, Change, Questions, Knowledge and Set up. Everyone sees the same screens; Ctrl+K jumps anywhere.",
       },
       ask: {
         title: "Ask in plain words",
         body: "Type a question such as “who calls ledger-api?” in the box at the top. Atticus answers from the catalog and always shows the query it ran.",
       },
       change: {
-        title: "One change at a glance",
-        body: "Open a change and its first page says where it is, the next step with its slash command, what blocks it and each stage's progress. Watch a change you aren't on, and your digest says how it is doing.",
+        title: "One change, a tab per stage",
+        body: "Change has a tab for each stage: feature, architecture, stories and tasks. Each shows that stage's files and the command to run next; Feature also lists the org knowledge that applies, to confirm or exclude. At a glance says where the change is and what blocks it. Watch a change you aren't on, and your digest says how it is doing.",
       },
       assistant: {
         title: "Run a step in your assistant",

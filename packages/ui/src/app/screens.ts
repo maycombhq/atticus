@@ -1,17 +1,24 @@
 import { COPY } from "../copy.js";
 
 /**
- * The app's map (ADR 0119; before it, plan 4.5, B1 and ADR 0105). Six sections, the same on every
- * surface and in the order a person uses them: Home (what waits on you), Changes, Knowledge, the
- * Estate, Set up, and Atticus itself. Every page is a tab of one section; the pages of a change
- * are grouped by phase. There is no More: the menu has the six, the section shows its tabs. No
- * route is removed or renamed, so every old address still opens its page.
+ * The app's map (the product owner's Surfaces design; ADR 0119 before it, plan 4.5, B1 and ADR
+ * 0105). Six entries: Home (what needs you), Map (the estate, its flows, contracts, impact and how
+ * far to trust it), Change (one change, a tab per stage), Questions (everything open), Knowledge
+ * (the org's wikis and documents, cited) and Set up (what the files hold, as forms). The app
+ * shows files and asks questions; it runs no scans, model calls or git.
+ *
+ * Every other page stays, working as it did, behind `atticus ui --full` until a need brings it
+ * back: with the flag it is a tab of its section (and Atticus's own pages a seventh entry);
+ * without it, it is in neither the menu, the tabs nor Ctrl+K, but its address still opens it.
+ * No route is removed or renamed, so every old address still opens its page.
  */
 
-export const SECTIONS = ["Home", "Changes", "Knowledge", "Estate", "SetUp", "Atticus"] as const;
-export type Section = (typeof SECTIONS)[number];
+export const SECTIONS = ["Home", "Map", "Change", "Questions", "Knowledge", "SetUp"] as const;
+/** The sections with --full: the six, then Atticus's own pages. */
+export const FULL_SECTIONS = [...SECTIONS, "Atticus"] as const;
+export type Section = (typeof FULL_SECTIONS)[number];
 
-/** The phases a change's pages are grouped by, within Changes. */
+/** The phases a change's pages are grouped by, within Change, with --full. */
 export const PHASES = ["Define", "Design", "Plan", "Build", "Release"] as const;
 export type Phase = (typeof PHASES)[number];
 
@@ -19,10 +26,17 @@ export interface ScreenDef {
   id: string;
   label: string;
   section: Section;
-  /** Within Changes: the phase the page belongs to. */
+  /** Within Change: the phase the page belongs to (the tabs are grouped by it with --full). */
   group?: Phase;
   /** A page out of the tabs: the tab it is a part of. */
   under?: string;
+  /**
+   * A page of the six reached by a link from another (a change's list and its At a glance, the
+   * Ask page, a system's page, the words): not a tab, but in Ctrl+K. A tab with --full.
+   */
+  aside?: true;
+  /** Behind --full: a tab only when the app runs with `atticus ui --full`. */
+  full?: true;
 }
 
 const N = COPY.nav;
@@ -30,71 +44,86 @@ const S = COPY.nav.screens;
 const K = COPY.knowledge.nav;
 
 export const SCREENS: ScreenDef[] = [
-  // Home: what waits on you first, then the estate at a glance.
+  // Home: one page, what needs you.
   { id: "home", label: S.home, section: "Home" },
-  { id: "dashboard", label: N.dashboard, section: "Home" },
-  { id: "questions", label: COPY.questions.title, section: "Home", under: "home" },
-  // Changes: the list, then each phase's pages.
-  { id: "changes", label: S.changes, section: "Changes" },
-  // WP7.1: one change at a glance, the first of its pages.
-  { id: "cockpit", label: S.cockpit, section: "Changes", group: "Define" },
-  { id: "brief", label: S.brief, section: "Changes", group: "Define" },
-  { id: "ux", label: S.ux, section: "Changes", group: "Define" },
-  { id: "feature-design", label: N.feature, section: "Changes", group: "Define" },
-  { id: "architecture", label: N.architecture, section: "Changes", group: "Design" },
-  { id: "arch-review", label: S.archReview, section: "Changes", group: "Design" },
-  // ADR 0108: a change's picture, from its target flows.
-  { id: "change-diagram", label: S.changeDiagram, section: "Changes", group: "Design" },
-  { id: "stories", label: N.stories, section: "Changes", group: "Plan" },
-  { id: "breakdown", label: S.breakdown, section: "Changes", group: "Plan" },
+  // The words, from the link beside Help.
+  { id: "words", label: S.words, section: "Home", aside: true },
+  { id: "dashboard", label: N.dashboard, section: "Home", full: true },
+
+  // Map: the estate drawn, its flows, contracts, what breaks, and how far to trust it.
+  { id: "canvas", label: S.canvas, section: "Map" },
+  { id: "flows", label: COPY.flows.title, section: "Map" },
+  { id: "contracts", label: S.contracts, section: "Map" },
+  { id: "impact", label: S.impact, section: "Map" },
+  { id: "trust", label: S.trust, section: "Map" },
+  // Ask (the box at the top), and a system's page (WP7.7).
+  { id: "explore", label: S.explore, section: "Map", aside: true },
+  { id: "systems", label: S.systems, section: "Map", aside: true },
+  { id: "map", label: S.map, section: "Map", full: true },
+  { id: "features", label: S.features, section: "Map", full: true },
+  { id: "mappings", label: S.mappings, section: "Map", full: true },
+  { id: "diagrams", label: S.diagrams, section: "Map", full: true },
+  { id: "reconcile", label: S.reconcile, section: "Map", full: true },
+  { id: "governance", label: S.governance, section: "Map", full: true },
+  { id: "initiatives", label: S.initiatives, section: "Map", full: true },
+
+  // Change: one change, a tab per stage.
+  { id: "changes", label: S.changes, section: "Change", aside: true },
+  // WP7.1: one change at a glance.
+  { id: "cockpit", label: S.cockpit, section: "Change", group: "Define", aside: true },
+  { id: "brief", label: S.brief, section: "Change", group: "Define", full: true },
+  { id: "ux", label: S.ux, section: "Change", group: "Define", full: true },
+  { id: "feature-design", label: N.feature, section: "Change", group: "Define" },
+  { id: "architecture", label: N.architecture, section: "Change", group: "Design" },
+  { id: "arch-review", label: S.archReview, section: "Change", group: "Design", full: true },
+  // ADR 0108: a change's picture, from its target flows (linked from Architecture).
+  { id: "change-diagram", label: S.changeDiagram, section: "Change", group: "Design", aside: true },
+  { id: "stories", label: N.stories, section: "Change", group: "Plan" },
+  { id: "breakdown", label: S.breakdown, section: "Change", group: "Plan", full: true },
   // ADR 0109: a change's estimate, from its target flows.
-  { id: "estimate", label: S.estimate, section: "Changes", group: "Plan" },
-  { id: "task-list", label: N.tasks, section: "Changes", group: "Build" },
-  { id: "tasks", label: S.tasks, section: "Changes", group: "Build" },
+  { id: "estimate", label: S.estimate, section: "Change", group: "Plan", full: true },
+  { id: "task-list", label: N.tasks, section: "Change", group: "Build" },
+  { id: "tasks", label: S.tasks, section: "Change", group: "Build", full: true },
   // ADR 0114: does the code do what the design says?
-  { id: "conformance", label: S.conformance, section: "Changes", group: "Build" },
-  { id: "trace", label: S.trace, section: "Changes", group: "Build" },
-  { id: "todo", label: S.todo, section: "Changes", group: "Build" },
-  { id: "release", label: S.release, section: "Changes", group: "Release" },
-  { id: "service-desk", label: S.serviceDesk, section: "Changes", group: "Release" },
-  // Knowledge (ADR 0102): the items, the wikis they come from, searching them, the parties.
+  { id: "conformance", label: S.conformance, section: "Change", group: "Build", full: true },
+  { id: "trace", label: S.trace, section: "Change", group: "Build", full: true },
+  { id: "todo", label: S.todo, section: "Change", group: "Build", full: true },
+  { id: "release", label: S.release, section: "Change", group: "Release", full: true },
+  { id: "service-desk", label: S.serviceDesk, section: "Change", group: "Release", full: true },
+
+  // Questions: everything open, across repos and changes, with evidence.
+  { id: "questions", label: COPY.questions.title, section: "Questions" },
+
+  // Knowledge (ADR 0102): the items, the wikis they come from, the files dropped in, searching.
   { id: "knowledge", label: K.items, section: "Knowledge" },
   { id: "wikis", label: K.sources, section: "Knowledge" },
   { id: "documents", label: K.documents, section: "Knowledge" },
   { id: "wiki-search", label: K.search, section: "Knowledge" },
-  { id: "parties", label: K.parties, section: "Knowledge" },
-  // The estate: what the code says, searched, drawn and followed.
-  { id: "explore", label: S.explore, section: "Estate" },
-  { id: "map", label: S.map, section: "Estate" },
-  // WP7.7: one system's page.
-  { id: "systems", label: S.systems, section: "Estate" },
-  { id: "flows", label: COPY.flows.title, section: "Estate" },
-  { id: "impact", label: S.impact, section: "Estate" },
-  { id: "features", label: S.features, section: "Estate" },
-  { id: "contracts", label: S.contracts, section: "Estate" },
-  { id: "mappings", label: S.mappings, section: "Estate" },
-  { id: "diagrams", label: S.diagrams, section: "Estate" },
-  { id: "reconcile", label: S.reconcile, section: "Estate" },
-  { id: "governance", label: S.governance, section: "Estate" },
-  { id: "initiatives", label: S.initiatives, section: "Estate" },
-  // Set up: the repos, their scans, what was dropped in, the org pack, this machine.
-  { id: "onboarding", label: N.onboarding, section: "SetUp" },
+  { id: "parties", label: K.parties, section: "Knowledge", full: true },
+  { id: "orgpack-draft", label: K.orgpack, section: "Knowledge", full: true },
+
+  // Set up: what the files hold, as forms.
   { id: "repos", label: S.repos, section: "SetUp" },
-  { id: "scans", label: S.scans, section: "SetUp" },
-  { id: "intake", label: S.intake, section: "SetUp" },
-  { id: "orgpack", label: S.orgpack, section: "SetUp" },
-  { id: "orgpack-draft", label: K.orgpack, section: "SetUp" },
   // ADR 0121: how AI runs here, chosen in a form.
   { id: "ai", label: S.ai, section: "SetUp" },
-  { id: "settings", label: S.settings, section: "SetUp" },
-  // Atticus itself: what it asked a model (ADR 0106), what people asked theirs (ADR 0110).
-  { id: "runs", label: S.runs, section: "Atticus" },
-  { id: "history", label: S.history, section: "Atticus" },
-  { id: "evals", label: S.evals, section: "Atticus" },
-  { id: "learning", label: S.learning, section: "Atticus" },
-  // WP5.1: Atticus's own words, in plain sentences.
-  { id: "words", label: S.words, section: "Atticus" },
+  { id: "orgpack", label: S.orgpack, section: "SetUp" },
+  // The first steps, from Home's next step.
+  { id: "onboarding", label: N.onboarding, section: "SetUp", aside: true },
+  { id: "scans", label: S.scans, section: "SetUp", full: true },
+  { id: "intake", label: S.intake, section: "SetUp", full: true },
+  { id: "settings", label: S.settings, section: "SetUp", full: true },
+
+  // Atticus itself, with --full: what it asked a model (ADR 0106), what people asked theirs
+  // (ADR 0110), its quality and what it learned.
+  { id: "runs", label: S.runs, section: "Atticus", full: true },
+  { id: "history", label: S.history, section: "Atticus", full: true },
+  { id: "evals", label: S.evals, section: "Atticus", full: true },
+  { id: "learning", label: S.learning, section: "Atticus", full: true },
 ];
+
+/** The menu's entries: the six, and Atticus's own pages with --full. */
+export const sectionsShown = (full = false): readonly Section[] =>
+  full ? FULL_SECTIONS : SECTIONS;
 
 /** A section's name as the menu shows it. */
 export const sectionLabel = (s: Section): string => N.sections[s];
@@ -102,14 +131,20 @@ export const sectionLabel = (s: Section): string => N.sections[s];
 /** A phase's name, as a group of a change's pages. */
 export const groupLabel = (g: Phase): string => N.groups[g];
 
-/** The tabs of a section, in order: every page of it but those that are part of another. */
-export const tabsOf = (s: Section): ScreenDef[] =>
-  SCREENS.filter((x) => x.section === s && !x.under);
+/** Whether a page is offered (menu, tabs, Ctrl+K): every page with --full, else not those behind it. */
+export const offered = (s: ScreenDef, full = false): boolean => full || !s.full;
+
+/**
+ * The tabs of a section, in order: every page of it but those that are part of another; without
+ * --full, only the six's own tabs (no page behind --full, no page reached by a link).
+ */
+export const tabsOf = (s: Section, full = false): ScreenDef[] =>
+  SCREENS.filter((x) => x.section === s && !x.under && (full || (!x.full && !x.aside)));
 
 /** Where a section opens: its first tab. */
-export const landingOf = (s: Section): ScreenDef => tabsOf(s)[0]!;
+export const landingOf = (s: Section, full = false): ScreenDef => tabsOf(s, full)[0]!;
 
-/** The page a hash opens; an unknown one opens Home, what waits on you. */
+/** The page a hash opens; an unknown one opens Home, what needs you. */
 export function screenOf(hash: string): ScreenDef {
   const id = hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "home";
   return SCREENS.find((s) => s.id === id) ?? SCREENS[0]!;
@@ -129,7 +164,7 @@ export function changeOf(hash: string): string | undefined {
 
 /** A tab's address: a change's pages keep the change they are about. */
 export function tabHref(s: ScreenDef, change: string | undefined): string {
-  if (s.section !== "Changes" || !change) return `#/${s.id}`;
+  if (s.section !== "Change" || !change) return `#/${s.id}`;
   if (s.id === "changes") return `#/changes/${encodeURIComponent(change)}`;
   return `#/${s.id}?change=${encodeURIComponent(change)}`;
 }

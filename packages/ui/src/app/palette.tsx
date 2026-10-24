@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client.js";
-import { groupLabel, sectionLabel, SCREENS } from "./screens.js";
+import { groupLabel, offered, sectionLabel, SCREENS } from "./screens.js";
 import { COPY } from "../copy.js";
 
 const T = COPY.palette;
@@ -17,11 +17,13 @@ export function paletteItems(
   text: string,
   changes: { id: string; title: string; state: string }[],
   records: { kind: string; id: string; name?: string }[],
+  /** With `atticus ui --full`: the pages behind it too. */
+  full = false,
 ): Item[] {
   const t = text.trim().toLowerCase();
   const hit = (s: string) => !t || s.toLowerCase().includes(t);
   const out: Item[] = [
-    ...SCREENS.filter((s) => hit(s.label) || hit(s.id)).map((s) => ({
+    ...SCREENS.filter((s) => offered(s, full) && (hit(s.label) || hit(s.id))).map((s) => ({
       kind: "screen" as const,
       label: s.label,
       detail: s.group
@@ -58,7 +60,7 @@ export function paletteItems(
 }
 
 /** Ctrl+K (Cmd+K): jump to any screen, change or catalog record, or ask a question. */
-export function CommandPalette() {
+export function CommandPalette({ full = false }: { full?: boolean }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [sel, setSel] = useState(0);
@@ -105,7 +107,10 @@ export function CommandPalette() {
     return () => clearTimeout(timer);
   }, [text, open]);
 
-  const items = useMemo(() => paletteItems(text, changes, records), [text, changes, records]);
+  const items = useMemo(
+    () => paletteItems(text, changes, records, full),
+    [text, changes, records, full],
+  );
   const close = () => {
     setOpen(false);
     (back.current as HTMLElement | null)?.focus?.();

@@ -22,6 +22,7 @@ import { uiAiRoutes } from "./ui-api-ai.js";
 import { uiDocumentRoutes } from "./ui-api-documents.js";
 import { uiRepoRoutes } from "./ui-api-repos.js";
 import { uiCockpitRoutes } from "./ui-api-cockpit.js";
+import { uiTrustRoutes } from "./ui-api-trust.js";
 
 /** Start the local server with the app and the write calls (ADR 0015, 0043). */
 export async function startUi(
@@ -33,6 +34,8 @@ export async function startUi(
     staticDir?: string;
     /** Let a VS Code panel frame the app (ADR 0091). */
     embed?: "vscode";
+    /** Every page in the app's menu, not only the six entries (`atticus ui --full`). */
+    full?: boolean;
   } = {},
   deps: UiDeps = {},
 ): Promise<RunningServer> {
@@ -40,6 +43,7 @@ export async function startUi(
     root,
     port: o.port ?? DEFAULT_PORT,
     ...(o.embed ? { embed: o.embed } : {}),
+    ...(o.full ? { full: true } : {}),
     staticDir: o.staticDir ?? uiDistDir(),
     ...(o.user ? { user: o.user } : {}),
     ...(o.version ? { version: o.version } : {}),
@@ -61,13 +65,16 @@ export async function startUi(
       // ADR 0110: the prompts people sent their assistant and the responses they got.
       // ADR 0121: the AI tab, how AI runs here.
       // ADR 0122: general knowledge as files, in inputs/. ADR 0123: branches you can see.
-      // WP7.1: one change at a glance.
-      return uiCockpitRoutes(
-        uiRepoRoutes(
-          uiDocumentRoutes(
-            uiAiRoutes(
-              uiHistoryRoutes(
-                uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+      // WP7.1: one change at a glance. ADR 0124: how far to trust each repo's map.
+      return uiTrustRoutes(
+        uiCockpitRoutes(
+          uiRepoRoutes(
+            uiDocumentRoutes(
+              uiAiRoutes(
+                uiHistoryRoutes(
+                  uiModelRunRoutes(uiKnowledgeRoutes(uiCiteRoutes(specs, ctx), ctx), ctx),
+                  ctx,
+                ),
                 ctx,
               ),
               ctx,
@@ -196,12 +203,15 @@ export async function uiCommand(
     parent?: number;
     /** Print the session token (ADR 0119): an editor that starts the app reads it, a person rarely needs it. */
     showToken?: boolean;
+    /** Every page in the menu, not only the six entries (the Surfaces design). */
+    full?: boolean;
   },
   io: Output,
 ): Promise<number> {
   let srv: RunningServer;
   try {
     srv = await startUi(root, {
+      ...(o.full ? { full: true } : {}),
       ...(o.port !== undefined ? { port: o.port } : {}),
       ...(o.user ? { user: o.user } : {}),
       ...(o.version ? { version: o.version } : {}),
