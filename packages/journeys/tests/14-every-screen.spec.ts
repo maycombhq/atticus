@@ -2,7 +2,7 @@ import { accessible, expect, forgeJourney, open, test } from "../support/app.js"
 import { SCREENS } from "../support/screens.js";
 
 /**
- * WCAG 2.1 AA on every screen in the dark theme: axe reports no serious or critical violation
+ * WCAG 2.1 AA on every screen in the dark theme: axe reports no moderate, serious or critical violation
  * on any of them. 17-light-theme does the same in the light theme.
  */
 const app = forgeJourney();

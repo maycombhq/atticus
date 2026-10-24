@@ -43,6 +43,7 @@ All notable changes to Atticus. Versions follow [Semantic Versioning](https://se
 
 - The first-run tour has five steps: home, asking, one change at a glance, running a step in your assistant (`/atticus-next`), and approving by pull request. It takes focus when it opens, keeps Tab inside it, and gives focus back when it closes.
 - Moving to another screen puts focus on its content, so a keyboard or screen reader user starts there rather than in the menu.
+- The accessibility journeys fail on a moderate axe violation too, not only serious and critical ones; every screen passes in both themes.
 
 ### IntelliJ as a peer of VS Code
 

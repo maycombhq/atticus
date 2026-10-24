@@ -138,13 +138,13 @@ async function skipTour(page: Page): Promise<void> {
   if (await skip.isVisible().catch(() => false)) await skip.click();
 }
 
-/** WCAG 2.1 AA: no serious or critical axe violation on the page as it is now. */
+/** WCAG 2.1 AA: no moderate, serious or critical axe violation on the page as it is now (WP5.6). */
 export async function accessible(page: Page, where: string): Promise<void> {
   const r = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze();
   const bad = r.violations
-    .filter((v) => v.impact === "serious" || v.impact === "critical")
+    .filter((v) => v.impact === "moderate" || v.impact === "serious" || v.impact === "critical")
     .map(
       (v) =>
         `${v.id} (${v.impact}): ${v.help} — ${v.nodes
